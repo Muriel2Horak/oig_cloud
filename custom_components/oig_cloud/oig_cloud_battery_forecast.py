@@ -4,15 +4,16 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
-from .oig_cloud_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class OigCloudBatteryForecastSensor(OigCloudSensor):
+class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     """Senzor pro predikci nabití baterie."""
 
     def __init__(
@@ -20,52 +21,35 @@ class OigCloudBatteryForecastSensor(OigCloudSensor):
         coordinator: Any,
         sensor_type: str,
         config_entry: ConfigEntry,
-        device_info: Dict[str, Any],  # PŘIDÁNO: přebíráme device_info jako parametr
+        device_info: Dict[str, Any],
     ) -> None:
-        super().__init__(coordinator, sensor_type)
+        """Initialize the battery forecast sensor."""
+        super().__init__(coordinator)
+        
+        self._sensor_type = sensor_type
         self._config_entry = config_entry
-        self._device_info = device_info  # OPRAVA: použijeme předané device_info
+        self._device_info = device_info
         self._hass: Optional[HomeAssistant] = None
 
-        # Získáme inverter_sn ze správného místa
-        inverter_sn = "unknown"
-
-        # DEBUG: Výpis stavu coordinatoru
-        _LOGGER.debug(f"Battery forecast init: coordinator type: {type(coordinator)}")
-        _LOGGER.debug(f"Battery forecast init: has config_entry: {hasattr(coordinator, 'config_entry')}")
-        if hasattr(coordinator, 'config_entry'):
-            _LOGGER.debug(f"Battery forecast init: config_entry: {coordinator.config_entry}")
-            if coordinator.config_entry:
-                _LOGGER.debug(f"Battery forecast init: config_entry.data: {coordinator.config_entry.data}")
-        _LOGGER.debug(f"Battery forecast init: coordinator.data: {coordinator.data}")
-
-        # Zkusíme získat z coordinator.config_entry.data
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry and coordinator.config_entry.data:
-            inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-            _LOGGER.debug(
-                f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}"
-            )
-
-        # Pokud stále unknown, zkusíme z coordinator.data
-        if inverter_sn == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            inverter_sn = first_device_key
-            _LOGGER.debug(
-                f"Battery forecast: Got inverter_sn from coordinator.data keys: {inverter_sn}"
-            )
-
-        # Pokud stále unknown, něco je špatně - nebudeme vytvářet senzor
+        # Získáme inverter_sn z config_entry
+        inverter_sn = config_entry.data.get("inverter_sn", "unknown")
+        
         if inverter_sn == "unknown":
-            _LOGGER.error(
-                "Battery forecast: Cannot determine inverter_sn - skipping sensor creation"
-            )
+            _LOGGER.error("Cannot determine inverter_sn for battery forecast sensor")
             raise ValueError("Cannot determine inverter_sn for battery forecast sensor")
 
-        _LOGGER.debug(f"Battery forecast: Final inverter_sn: {inverter_sn}")
+        _LOGGER.debug(f"Battery forecast: Using inverter_sn: {inverter_sn}")
 
-        # OPRAVA: Nastavit _box_id a entity_id podle vzoru z OigCloudDataSensor
+        # Nastavit atributy senzoru
         self._box_id = inverter_sn
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+        self._attr_name = "Predikce kapacity baterie"
+        self._attr_unique_id = f"{self._box_id}_{sensor_type}"
+        self._attr_icon = "mdi:battery-charging-60"
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = None
 
         # OPRAVA: Přepsat název podle name_cs logiky - bez replace("_", " ").title()
         from .sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
