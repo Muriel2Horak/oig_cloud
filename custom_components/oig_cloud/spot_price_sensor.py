@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
+from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.dt import now as dt_now
@@ -742,6 +743,19 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         self._spot_data: Dict[str, Any] = {}
         self._last_update: Optional[datetime] = None
         self._track_time_interval_remove = None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # OPRAVA: Číst spot price data z coordinatoru
+        if self.coordinator.data and "spot_prices" in self.coordinator.data:
+            self._spot_data = self.coordinator.data["spot_prices"]
+            self._last_update = dt_now()
+            _LOGGER.debug(
+                f"[{self.entity_id}] Updated spot price data from coordinator: "
+                f"{self._spot_data.get('hours_count', 0)} hours"
+            )
+        super()._handle_coordinator_update()
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""

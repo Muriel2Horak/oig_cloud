@@ -997,23 +997,25 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return {"current_kwh": 0, "max_kwh": 10.0, "current_percent": 0}
 
         # 1. Načíst instalovanou kapacitu baterie (celková kapacita v Wh)
-        installed_capacity_sensor_id = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        installed_capacity_sensor_id = (
+            f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        )
         installed_state = self._hass.states.get(installed_capacity_sensor_id)
-        
+
         installed_capacity_wh = 0.0
         if installed_state and installed_state.state not in ["unknown", "unavailable"]:
             try:
                 installed_capacity_wh = float(installed_state.state)
             except (ValueError, TypeError):
                 installed_capacity_wh = 0.0
-        
+
         # 2. Použitelná kapacita = 80% z celkové (20% buffer pro životnost baterie)
         if installed_capacity_wh > 0:
             max_kwh = round((installed_capacity_wh * 0.8) / 1000, 2)  # Převod Wh → kWh
         else:
             # Fallback na konfiguraci
             max_kwh = self._config_entry.options.get("battery_capacity_kwh", 10.0)
-        
+
         # 3. Načíst aktuální stav nabití baterie (procenta)
         percent_sensor_id = f"sensor.oig_{self._box_id}_batt_bat_c"
         percent_state = self._hass.states.get(percent_sensor_id)
