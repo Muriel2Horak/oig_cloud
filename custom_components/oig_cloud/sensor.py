@@ -283,7 +283,9 @@ async def async_setup_entry(
 
     # 4b. Battery helper sensors - only if battery prediction enabled
     battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
+    _LOGGER.info(f"🔋 Battery prediction check: enabled={battery_prediction_enabled}")
     if battery_prediction_enabled:
+        _LOGGER.info("🔋 Battery prediction is ENABLED - entering battery helper block")
         try:
             from .oig_cloud_battery_helper_sensor import OigCloudBatteryHelperSensor
 
@@ -293,8 +295,10 @@ async def async_setup_entry(
                 for sensor_type, config in SENSOR_TYPES.items():
                     if config.get("sensor_type_category") == "battery_optimization":
                         try:
-                            _LOGGER.debug(f"Creating battery helper sensor: {sensor_type}")
-                            
+                            _LOGGER.debug(
+                                f"Creating battery helper sensor: {sensor_type}"
+                            )
+
                             sensor = OigCloudBatteryHelperSensor(
                                 hass,
                                 entry,
@@ -303,7 +307,7 @@ async def async_setup_entry(
                                 analytics_device_info,
                                 inverter_sn,
                             )
-                            
+
                             battery_helper_sensors.append(sensor)
                             _LOGGER.debug(
                                 f"Successfully created battery helper sensor: {sensor_type}"
@@ -325,7 +329,9 @@ async def async_setup_entry(
             else:
                 _LOGGER.debug("SENSOR_TYPES empty, skipping battery helper sensors")
         except Exception as e:
-            _LOGGER.error(f"Error initializing battery helper sensors: {e}", exc_info=True)
+            _LOGGER.error(
+                f"Error initializing battery helper sensors: {e}", exc_info=True
+            )
     else:
         _LOGGER.info("Battery prediction disabled - skipping battery helper sensors")
 
