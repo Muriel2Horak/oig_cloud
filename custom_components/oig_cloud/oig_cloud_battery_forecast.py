@@ -195,7 +195,8 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Počkat na klíčové senzory před výpočetem
         critical_sensors = [
             "sensor.hourly_real_fve_total_kwh",
-            f"sensor.oig_{self._box_id}_remaining_usable_capacity",
+            f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh",
+            f"sensor.oig_{self._box_id}_batt_bat_c",
         ]
 
         for sensor_id in critical_sensors:
@@ -993,28 +994,49 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             Dict s aktuální kapacitou a maximem
         """
         if not self._hass:
-            return {"current_kwh": 0, "max_kwh": 10.0}
+            return {"current_kwh": 0, "max_kwh": 10.0, "current_percent": 0}
 
-        # Senzor s aktuální kapacitou
-        capacity_sensor_id = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
-        capacity_state = self._hass.states.get(capacity_sensor_id)
-
-        current_kwh = 0.0
-        if capacity_state and capacity_state.state not in ["unknown", "unavailable"]:
+        # 1. Načíst instalovanou kapacitu baterie (celková kapacita v Wh)
+        installed_capacity_sensor_id = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        installed_state = self._hass.states.get(installed_capacity_sensor_id)
+        
+        installed_capacity_wh = 0.0
+        if installed_state and installed_state.state not in ["unknown", "unavailable"]:
             try:
-                current_kwh = float(capacity_state.state)
+                installed_capacity_wh = float(installed_state.state)
             except (ValueError, TypeError):
-                current_kwh = 0.0
+                installed_capacity_wh = 0.0
+        
+        # 2. Použitelná kapacita = 80% z celkové (20% buffer pro životnost baterie)
+        if installed_capacity_wh > 0:
+            max_kwh = round((installed_capacity_wh * 0.8) / 1000, 2)  # Převod Wh → kWh
+        else:
+            # Fallback na konfiguraci
+            max_kwh = self._config_entry.options.get("battery_capacity_kwh", 10.0)
+        
+        # 3. Načíst aktuální stav nabití baterie (procenta)
+        percent_sensor_id = f"sensor.oig_{self._box_id}_batt_bat_c"
+        percent_state = self._hass.states.get(percent_sensor_id)
 
-        # Maximální kapacita z konfigurace nebo default
-        max_kwh = self._config_entry.options.get("battery_capacity_kwh", 10.0)
+        current_percent = 0.0
+        if percent_state and percent_state.state not in ["unknown", "unavailable"]:
+            try:
+                current_percent = float(percent_state.state)
+            except (ValueError, TypeError):
+                current_percent = 0.0
+
+        # 4. Vypočítat aktuální kWh z procent a použitelné kapacity
+        current_kwh = round((current_percent / 100.0) * max_kwh, 2)
+
+        _LOGGER.debug(
+            f"🔋 Battery state: installed={installed_capacity_wh}Wh, "
+            f"usable={max_kwh}kWh (80%), current={current_percent}% = {current_kwh}kWh"
+        )
 
         return {
             "current_kwh": current_kwh,
             "max_kwh": max_kwh,
-            "current_percent": (
-                round((current_kwh / max_kwh * 100), 1) if max_kwh > 0 else 0
-            ),
+            "current_percent": round(current_percent, 1),
         }
 
     def _get_existing_spot_prices(self) -> Dict[str, float]:

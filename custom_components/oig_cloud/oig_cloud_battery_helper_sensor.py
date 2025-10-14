@@ -221,7 +221,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 if entry.get("is_charging_recommended"):
                     charging_start = entry.get("timestamp")
                     break
-            
+
             if charging_start:
                 self._attr_native_value = (
                     charging_start.isoformat()
@@ -239,7 +239,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 if entry.get("is_charging_recommended"):
                     charging_end = entry.get("timestamp")
                     break
-            
+
             if charging_end:
                 self._attr_native_value = (
                     charging_end.isoformat()
@@ -255,7 +255,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
             if len(timeline_data) >= 2:
                 # Najít první pokles kapacity
                 for i in range(1, len(timeline_data)):
-                    prev_battery = timeline_data[i-1].get("battery_kwh", 0)
+                    prev_battery = timeline_data[i - 1].get("battery_kwh", 0)
                     curr_battery = timeline_data[i].get("battery_kwh", 0)
                     if curr_battery < prev_battery:
                         discharge_start = timeline_data[i].get("timestamp")
@@ -278,7 +278,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 if entry.get("battery_kwh", 0) == 0:
                     discharge_end = entry.get("timestamp")
                     break  # První výskyt 0 kWh
-            
+
             if discharge_end:
                 self._attr_native_value = (
                     discharge_end.isoformat()
