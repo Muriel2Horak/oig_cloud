@@ -30,8 +30,17 @@ class OigCloudBatteryForecastSensor(OigCloudSensor):
         # Získáme inverter_sn ze správného místa
         inverter_sn = "unknown"
 
+        # DEBUG: Výpis stavu coordinatoru
+        _LOGGER.debug(f"Battery forecast init: coordinator type: {type(coordinator)}")
+        _LOGGER.debug(f"Battery forecast init: has config_entry: {hasattr(coordinator, 'config_entry')}")
+        if hasattr(coordinator, 'config_entry'):
+            _LOGGER.debug(f"Battery forecast init: config_entry: {coordinator.config_entry}")
+            if coordinator.config_entry:
+                _LOGGER.debug(f"Battery forecast init: config_entry.data: {coordinator.config_entry.data}")
+        _LOGGER.debug(f"Battery forecast init: coordinator.data: {coordinator.data}")
+
         # Zkusíme získat z coordinator.config_entry.data
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
+        if hasattr(coordinator, "config_entry") and coordinator.config_entry and coordinator.config_entry.data:
             inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
             _LOGGER.debug(
                 f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}"
