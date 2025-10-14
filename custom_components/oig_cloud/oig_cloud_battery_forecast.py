@@ -4,7 +4,11 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.core import HomeAssistant, callback
@@ -25,7 +29,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the battery forecast sensor."""
         super().__init__(coordinator)
-        
+
         self._sensor_type = sensor_type
         self._config_entry = config_entry
         self._device_info = device_info
@@ -33,19 +37,28 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # Získání inverter_sn STEJNĚ jako OigCloudStatisticsSensor
         inverter_sn = "unknown"
-        
+
         # Zkusit z coordinator.config_entry
         if hasattr(coordinator, "config_entry") and coordinator.config_entry:
-            if hasattr(coordinator.config_entry, "data") and coordinator.config_entry.data:
-                inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-                _LOGGER.debug(f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}")
-        
+            if (
+                hasattr(coordinator.config_entry, "data")
+                and coordinator.config_entry.data
+            ):
+                inverter_sn = coordinator.config_entry.data.get(
+                    "inverter_sn", "unknown"
+                )
+                _LOGGER.debug(
+                    f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}"
+                )
+
         # Fallback - zkusit získat z coordinator.data
         if inverter_sn == "unknown" and coordinator.data:
             first_device_key = list(coordinator.data.keys())[0]
             inverter_sn = first_device_key
-            _LOGGER.debug(f"Battery forecast: Got inverter_sn from coordinator.data: {inverter_sn}")
-        
+            _LOGGER.debug(
+                f"Battery forecast: Got inverter_sn from coordinator.data: {inverter_sn}"
+            )
+
         if inverter_sn == "unknown":
             _LOGGER.error("Cannot determine inverter_sn for battery forecast sensor")
             raise ValueError("Cannot determine inverter_sn for battery forecast sensor")

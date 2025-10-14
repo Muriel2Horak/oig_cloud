@@ -212,63 +212,81 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 "days_in_month": attrs.get("days_counted"),
             }
 
-        # Nové battery_optimization_* senzory z control_signals
+        # Nové battery_optimization_* senzory - čtou z timeline_data
         elif self._sensor_type == "battery_optimization_charge_start":
-            control_signals = attrs.get("control_signals", {})
-            timeline = control_signals.get("timeline", [])
-            if timeline:
-                first_event = timeline[0]
-                charge_start = first_event.get("charge_start")
-                if charge_start:
-                    self._attr_native_value = (
-                        charge_start.isoformat()
-                        if hasattr(charge_start, "isoformat")
-                        else str(charge_start)
-                    )
-                else:
-                    self._attr_native_value = None
+            # Najít první charging_recommended=true v timeline_data
+            timeline_data = attrs.get("timeline_data", [])
+            charging_start = None
+            for entry in timeline_data:
+                if entry.get("is_charging_recommended"):
+                    charging_start = entry.get("timestamp")
+                    break
+            
+            if charging_start:
+                self._attr_native_value = (
+                    charging_start.isoformat()
+                    if hasattr(charging_start, "isoformat")
+                    else str(charging_start)
+                )
             else:
                 self._attr_native_value = None
 
         elif self._sensor_type == "battery_optimization_charge_end":
-            control_signals = attrs.get("control_signals", {})
-            timeline = control_signals.get("timeline", [])
-            if timeline:
-                last_event = timeline[-1]
-                charge_end = last_event.get("charge_end")
-                if charge_end:
-                    self._attr_native_value = (
-                        charge_end.isoformat()
-                        if hasattr(charge_end, "isoformat")
-                        else str(charge_end)
-                    )
-                else:
-                    self._attr_native_value = None
+            # Najít poslední charging_recommended=true v timeline_data
+            timeline_data = attrs.get("timeline_data", [])
+            charging_end = None
+            for entry in reversed(timeline_data):
+                if entry.get("is_charging_recommended"):
+                    charging_end = entry.get("timestamp")
+                    break
+            
+            if charging_end:
+                self._attr_native_value = (
+                    charging_end.isoformat()
+                    if hasattr(charging_end, "isoformat")
+                    else str(charging_end)
+                )
             else:
                 self._attr_native_value = None
 
         elif self._sensor_type == "battery_optimization_discharge_start":
-            # Vybíjení začíná po konci nabíjení (pokud je nabíjení)
-            control_signals = attrs.get("control_signals", {})
-            timeline = control_signals.get("timeline", [])
-            if timeline:
-                last_event = timeline[-1]
-                discharge_start = last_event.get("charge_end")
-                if discharge_start:
-                    self._attr_native_value = (
-                        discharge_start.isoformat()
-                        if hasattr(discharge_start, "isoformat")
-                        else str(discharge_start)
-                    )
+            # Vybíjení = kdy baterie klesne pod určitou úroveň (např. první pokles v timeline)
+            timeline_data = attrs.get("timeline_data", [])
+            if len(timeline_data) >= 2:
+                # Najít první pokles kapacity
+                for i in range(1, len(timeline_data)):
+                    prev_battery = timeline_data[i-1].get("battery_kwh", 0)
+                    curr_battery = timeline_data[i].get("battery_kwh", 0)
+                    if curr_battery < prev_battery:
+                        discharge_start = timeline_data[i].get("timestamp")
+                        self._attr_native_value = (
+                            discharge_start.isoformat()
+                            if hasattr(discharge_start, "isoformat")
+                            else str(discharge_start)
+                        )
+                        break
                 else:
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
 
         elif self._sensor_type == "battery_optimization_discharge_end":
-            # Konec vybíjení = začátek dalšího nabíjení (pokud existuje)
-            # TODO: Toto vyžaduje dodatečnou logiku z battery_forecast
-            self._attr_native_value = None
+            # Konec vybíjení = kdy baterie dosáhne minima (0 kWh)
+            timeline_data = attrs.get("timeline_data", [])
+            discharge_end = None
+            for entry in timeline_data:
+                if entry.get("battery_kwh", 0) == 0:
+                    discharge_end = entry.get("timestamp")
+                    break  # První výskyt 0 kWh
+            
+            if discharge_end:
+                self._attr_native_value = (
+                    discharge_end.isoformat()
+                    if hasattr(discharge_end, "isoformat")
+                    else str(discharge_end)
+                )
+            else:
+                self._attr_native_value = None
 
         elif self._sensor_type == "battery_optimization_strategy":
             battery_config = attrs.get("battery_config", {})
