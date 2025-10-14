@@ -616,6 +616,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             f"cheapest: {off_peak_prices[0][1]:.2f} CZK/kWh, "
             f"most expensive: {off_peak_prices[-1][1]:.2f} CZK/kWh"
         )
+        _LOGGER.debug(
+            f"🔋 Off-peak hours: {[f'{t}={p:.2f}' for t, p in off_peak_prices[:10]]}"
+        )
 
         # KROK 3: Detekce nepřízně počasí (pokud je zapnuto)
         bad_weather_detected = False
@@ -664,7 +667,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Najít nejlevnější off-peak hodinu PŘED kritickým časem
                 selected_hour: Optional[tuple[str, float]] = None
 
+                _LOGGER.debug(
+                    f"🔋 Looking for off-peak hour before critical_time={critical_time}"
+                )
+
                 for time_key, price in off_peak_prices:
+                    _LOGGER.debug(
+                        f"🔋 Checking {time_key} < {critical_time}? {time_key < critical_time}"
+                    )
                     # Musí být před kritickým časem a ještě nenabíjená
                     if time_key < critical_time and time_key not in [
                         h for h, _ in charging_hours
