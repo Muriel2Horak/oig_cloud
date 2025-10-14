@@ -26,7 +26,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the helper sensor."""
         super().__init__(coordinator)
-        
+
         self._sensor_type = sensor_type
         self._config = config
         self._device_info = device_info
@@ -44,7 +44,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
         self._attr_extra_state_attributes: Dict[str, Any] = {}
 
         _LOGGER.debug(f"🔋 Created battery helper sensor: {sensor_type}")
-        
+
         # Načíst data při inicializaci
         self._handle_coordinator_update()
 
@@ -58,18 +58,20 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         if not self.coordinator.data:
             return
-            
+
         # Získat battery_forecast data z coordinatora
         battery_forecast_data = self.coordinator.data.get("battery_forecast")
         if not battery_forecast_data:
             # Fallback: zkusit načíst z hlavního device
             device_data = self.coordinator.data.get(self._inverter_sn, {})
             battery_forecast_data = device_data.get("battery_forecast")
-        
+
         if not battery_forecast_data:
-            _LOGGER.debug(f"🔋 No battery forecast data in coordinator for {self._sensor_type}")
+            _LOGGER.debug(
+                f"🔋 No battery forecast data in coordinator for {self._sensor_type}"
+            )
             return
-        
+
         self._update_from_battery_forecast_data(battery_forecast_data)
         super()._handle_coordinator_update()
 
@@ -210,6 +212,81 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 "days_in_month": attrs.get("days_counted"),
             }
 
+        # Nové battery_optimization_* senzory z control_signals
+        elif self._sensor_type == "battery_optimization_charge_start":
+            control_signals = attrs.get("control_signals", {})
+            timeline = control_signals.get("timeline", [])
+            if timeline:
+                first_event = timeline[0]
+                charge_start = first_event.get("charge_start")
+                if charge_start:
+                    self._attr_native_value = charge_start.isoformat() if hasattr(charge_start, 'isoformat') else str(charge_start)
+                else:
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+
+        elif self._sensor_type == "battery_optimization_charge_end":
+            control_signals = attrs.get("control_signals", {})
+            timeline = control_signals.get("timeline", [])
+            if timeline:
+                last_event = timeline[-1]
+                charge_end = last_event.get("charge_end")
+                if charge_end:
+                    self._attr_native_value = charge_end.isoformat() if hasattr(charge_end, 'isoformat') else str(charge_end)
+                else:
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+
+        elif self._sensor_type == "battery_optimization_discharge_start":
+            # Vybíjení začíná po konci nabíjení (pokud je nabíjení)
+            control_signals = attrs.get("control_signals", {})
+            timeline = control_signals.get("timeline", [])
+            if timeline:
+                last_event = timeline[-1]
+                discharge_start = last_event.get("charge_end")
+                if discharge_start:
+                    self._attr_native_value = discharge_start.isoformat() if hasattr(discharge_start, 'isoformat') else str(discharge_start)
+                else:
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+
+        elif self._sensor_type == "battery_optimization_discharge_end":
+            # Konec vybíjení = začátek dalšího nabíjení (pokud existuje)
+            # TODO: Toto vyžaduje dodatečnou logiku z battery_forecast
+            self._attr_native_value = None
+
+        elif self._sensor_type == "battery_optimization_strategy":
+            battery_config = attrs.get("battery_config", {})
+            optimization_enabled = attrs.get("optimization_enabled", False)
+            if optimization_enabled:
+                self._attr_native_value = "auto_optimization"
+            else:
+                self._attr_native_value = "manual"
+            self._attr_extra_state_attributes = {
+                "min_capacity_percent": battery_config.get("min_capacity_percent"),
+                "target_capacity_percent": battery_config.get("target_capacity_percent"),
+                "max_price_czk": battery_config.get("max_price_czk"),
+            }
+
+        elif self._sensor_type == "battery_optimization_expected_savings":
+            # Očekávaná úspora = savings_vs_peak
+            self._attr_native_value = attrs.get("savings_vs_peak", 0)
+
+        elif self._sensor_type == "battery_optimization_confidence":
+            # Míra jistoty z forecast_accuracy
+            self._attr_native_value = attrs.get("forecast_accuracy", 0)
+
+        elif self._sensor_type == "battery_optimization_last_update":
+            # Čas posledního výpočtu
+            calc_time = attrs.get("calculation_time")
+            if calc_time:
+                self._attr_native_value = calc_time
+            else:
+                self._attr_native_value = None
+
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return extra state attributes."""
@@ -220,14 +297,14 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
         """Return True if entity is available."""
         if not self.coordinator.last_update_success:
             return False
-        
+
         if not self.coordinator.data:
             return False
-            
+
         # Zkontrolovat, jestli máme battery_forecast data
         battery_forecast_data = self.coordinator.data.get("battery_forecast")
         if not battery_forecast_data:
             device_data = self.coordinator.data.get(self._inverter_sn, {})
             battery_forecast_data = device_data.get("battery_forecast")
-        
+
         return battery_forecast_data is not None

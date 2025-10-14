@@ -482,7 +482,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             # Sloučíme standardní a extended data
             result = stats.copy() if stats else {}
             result.update(self.extended_data)
-            
+
             # Přidáme battery forecast data pokud jsou k dispozici
             if self.battery_forecast_data:
                 result["battery_forecast"] = self.battery_forecast_data

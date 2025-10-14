@@ -555,7 +555,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_charge_end": {
         "name": "Battery Optimization Charge End",
@@ -563,7 +563,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_discharge_start": {
         "name": "Battery Optimization Discharge Start",
@@ -571,7 +571,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_discharge_end": {
         "name": "Battery Optimization Discharge End",
@@ -579,7 +579,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_strategy": {
         "name": "Battery Optimization Strategy",
@@ -587,7 +587,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_expected_savings": {
         "name": "Battery Optimization Expected Savings",
@@ -595,7 +595,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": "monetary",
         "unit_of_measurement": "CZK",
         "state_class": "total",
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_confidence": {
         "name": "Battery Optimization Confidence",
@@ -603,7 +603,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": None,
         "unit_of_measurement": "%",
         "state_class": "measurement",
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
     "battery_optimization_last_update": {
         "name": "Battery Optimization Last Update",
@@ -611,6 +611,6 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "device_class": "timestamp",
         "unit_of_measurement": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # OPRAVA: změna z battery_optimization
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
     },
 }
