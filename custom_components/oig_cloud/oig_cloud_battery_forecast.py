@@ -31,8 +31,20 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         self._device_info = device_info
         self._hass: Optional[HomeAssistant] = None
 
-        # Získáme inverter_sn z config_entry
-        inverter_sn = config_entry.data.get("inverter_sn", "unknown")
+        # Získání inverter_sn STEJNĚ jako OigCloudStatisticsSensor
+        inverter_sn = "unknown"
+        
+        # Zkusit z coordinator.config_entry
+        if hasattr(coordinator, "config_entry") and coordinator.config_entry:
+            if hasattr(coordinator.config_entry, "data") and coordinator.config_entry.data:
+                inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
+                _LOGGER.debug(f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}")
+        
+        # Fallback - zkusit získat z coordinator.data
+        if inverter_sn == "unknown" and coordinator.data:
+            first_device_key = list(coordinator.data.keys())[0]
+            inverter_sn = first_device_key
+            _LOGGER.debug(f"Battery forecast: Got inverter_sn from coordinator.data: {inverter_sn}")
         
         if inverter_sn == "unknown":
             _LOGGER.error("Cannot determine inverter_sn for battery forecast sensor")
