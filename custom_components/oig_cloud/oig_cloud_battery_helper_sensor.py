@@ -1,33 +1,32 @@
-"""Battery Helper Sensors - čtou data z battery_forecast a zobrazují je jako samostatné senzory."""
+"""Battery Helper Sensors - čtou data z battery_forecast coordinator data."""
 
 import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.core import HomeAssistant, callback, State
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.event import async_track_state_change_event
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class OigCloudBatteryHelperSensor(SensorEntity):
-    """Helper senzor který čte data z battery_forecast senzoru."""
+class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
+    """Helper senzor který čte data z battery_forecast z coordinator data."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
-        entry: ConfigEntry,
+        coordinator: Any,
         sensor_type: str,
         config: Dict[str, Any],
         device_info: Dict[str, Any],
         inverter_sn: str,
     ) -> None:
         """Initialize the helper sensor."""
-        self.hass = hass
-        self._entry = entry
+        super().__init__(coordinator)
+        
         self._sensor_type = sensor_type
         self._config = config
         self._device_info = device_info
@@ -45,50 +44,39 @@ class OigCloudBatteryHelperSensor(SensorEntity):
         self._attr_extra_state_attributes: Dict[str, Any] = {}
 
         _LOGGER.debug(f"🔋 Created battery helper sensor: {sensor_type}")
+        
+        # Načíst data při inicializaci
+        self._handle_coordinator_update()
 
     @property
     def device_info(self) -> Dict[str, Any]:
         """Return device info."""
         return self._device_info
 
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Najít battery_forecast senzor
-        battery_forecast_entity_id = f"sensor.{self._inverter_sn}_battery_forecast"
-
-        # Poslouchat změny battery_forecast senzoru
-        @callback
-        def battery_forecast_changed(event: Any) -> None:
-            """Handle battery forecast sensor changes."""
-            new_state = event.data.get("new_state")
-            if new_state is None:
-                return
-
-            self._update_from_battery_forecast(new_state)
-            self.async_write_ha_state()
-
-        # Zaregistrovat listener
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, battery_forecast_entity_id, battery_forecast_changed
-            )
-        )
-
-        # Okamžitě načíst aktuální stav
-        current_state = self.hass.states.get(battery_forecast_entity_id)
-        if current_state:
-            self._update_from_battery_forecast(current_state)
-
-    def _update_from_battery_forecast(self, battery_forecast_state: State) -> None:
-        """Update this sensor from battery_forecast state."""
-        if battery_forecast_state is None or not hasattr(
-            battery_forecast_state, "attributes"
-        ):
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.data:
             return
+            
+        # Získat battery_forecast data z coordinatora
+        battery_forecast_data = self.coordinator.data.get("battery_forecast")
+        if not battery_forecast_data:
+            # Fallback: zkusit načíst z hlavního device
+            device_data = self.coordinator.data.get(self._inverter_sn, {})
+            battery_forecast_data = device_data.get("battery_forecast")
+        
+        if not battery_forecast_data:
+            _LOGGER.debug(f"🔋 No battery forecast data in coordinator for {self._sensor_type}")
+            return
+        
+        self._update_from_battery_forecast_data(battery_forecast_data)
+        super()._handle_coordinator_update()
 
-        attrs = battery_forecast_state.attributes
+    def _update_from_battery_forecast_data(self, attrs: Dict[str, Any]) -> None:
+        """Update this sensor from battery_forecast data."""
+        if not attrs:
+            return
 
         # Mapování sensor_type na atribut v battery_forecast
         if self._sensor_type == "should_charge_battery_now":
@@ -230,9 +218,16 @@ class OigCloudBatteryHelperSensor(SensorEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        battery_forecast_entity_id = f"sensor.{self._inverter_sn}_battery_forecast"
-        battery_state = self.hass.states.get(battery_forecast_entity_id)
-        return battery_state is not None and battery_state.state not in [
-            "unavailable",
-            "unknown",
-        ]
+        if not self.coordinator.last_update_success:
+            return False
+        
+        if not self.coordinator.data:
+            return False
+            
+        # Zkontrolovat, jestli máme battery_forecast data
+        battery_forecast_data = self.coordinator.data.get("battery_forecast")
+        if not battery_forecast_data:
+            device_data = self.coordinator.data.get(self._inverter_sn, {})
+            battery_forecast_data = device_data.get("battery_forecast")
+        
+        return battery_forecast_data is not None

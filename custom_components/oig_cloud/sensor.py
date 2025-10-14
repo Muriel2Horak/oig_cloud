@@ -300,8 +300,7 @@ async def async_setup_entry(
                             )
 
                             sensor = OigCloudBatteryHelperSensor(
-                                hass,
-                                entry,
+                                coordinator,
                                 sensor_type,
                                 config,
                                 analytics_device_info,
