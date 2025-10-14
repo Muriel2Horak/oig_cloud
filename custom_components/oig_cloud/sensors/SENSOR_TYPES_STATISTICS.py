@@ -307,7 +307,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-charging-100",
         "device_class": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": None,  # Hlavní senzor pro automatizaci
         "description": "ANO/NE - Zda právě teď nabíjet baterii ze sítě (10min předstih pro změnu režimu)",
     },
@@ -319,7 +319,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:clock-check",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": None,
         "description": "Počet hodin kdy má dnes nabíjet baterie ze sítě. Atributy obsahují konkrétní časy.",
     },
@@ -331,7 +331,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:clock-outline",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Počet hodin kdy má zítra nabíjet baterie ze sítě. Atributy obsahují konkrétní časy.",
     },
@@ -343,7 +343,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:clock-start",
         "device_class": SensorDeviceClass.TIMESTAMP,
         "state_class": None,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": None,
         "description": "Timestamp kdy začíná příští doporučené nabíjení baterie",
     },
@@ -355,7 +355,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:state-machine",
         "device_class": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Aktuální stav: idle/pre_signal/charging/post_signal",
     },
@@ -370,7 +370,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:cash",
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": SensorStateClass.TOTAL,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": None,
         "description": "Celkové náklady na nabíjení baterie dnes v CZK (podle spotových cen)",
     },
@@ -382,7 +382,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:cash-clock",
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Plánované náklady na nabíjení baterie zítra podle optimalizace",
     },
@@ -394,7 +394,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:piggy-bank",
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": SensorStateClass.TOTAL,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": None,
         "description": "Kolik ušetříte nabíjením v off-peak místo v peak hodinách",
     },
@@ -406,7 +406,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:chart-line",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Průměrná cena za kterou se dnes nabíjela baterie",
     },
@@ -418,7 +418,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:chart-bell-curve-cumulative",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Počet peak hodin s vysokými cenami (kdy se NENABÍJÍ)",
     },
@@ -430,7 +430,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:chart-bell-curve",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Počet off-peak hodin s nízkými cenami (kdy se může nabíjet)",
     },
@@ -442,7 +442,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:currency-czk",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Nejlevnější spotová cena elektřiny dnes",
     },
@@ -454,7 +454,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:currency-czk",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Nejvyšší spotová cena elektřiny dnes",
     },
@@ -469,7 +469,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:chart-timeline-variant",
         "device_class": None,
         "state_class": None,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Kompletní timeline data pro ApexCharts - kapacita baterie, FVE, spotřeba, ceny",
     },
@@ -481,7 +481,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-low",
         "device_class": SensorDeviceClass.ENERGY_STORAGE,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Nejnižší predikovaná kapacita baterie v příštích 48h (kWh + čas)",
     },
@@ -493,7 +493,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-high",
         "device_class": SensorDeviceClass.ENERGY_STORAGE,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Nejvyšší predikovaná kapacita baterie v příštích 48h (kWh + čas)",
     },
@@ -505,7 +505,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-clock",
         "device_class": SensorDeviceClass.ENERGY_STORAGE,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Predikovaná kapacita baterie zítra ráno v 6:00 (klíčová hodnota)",
     },
@@ -517,7 +517,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:scale-balance",
         "device_class": SensorDeviceClass.ENERGY,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Bilance: FVE výroba - spotřeba - nabíjení baterie (kladná = přebytek, záporná = deficit)",
     },
@@ -532,7 +532,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:target",
         "device_class": None,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Přesnost predikce kapacity baterie (porovnání předpovědi vs. realita)",
     },
@@ -544,7 +544,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:piggy-bank",
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": SensorStateClass.TOTAL,
-        "sensor_type_category": "statistics",  # ✅ OPRAVENO: Helper senzor
+        "sensor_type_category": "battery_optimization",  # Battery helper sensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Celková úspora na nákladech za nabíjení v tomto měsíci díky optimalizaci",
     },

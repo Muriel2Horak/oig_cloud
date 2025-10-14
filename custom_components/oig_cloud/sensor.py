@@ -281,6 +281,54 @@ async def async_setup_entry(
     else:
         _LOGGER.info("Statistics sensors disabled - skipping creation")
 
+    # 4b. Battery helper sensors - only if battery prediction enabled
+    battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
+    if battery_prediction_enabled:
+        try:
+            from .oig_cloud_battery_helper_sensor import OigCloudBatteryHelperSensor
+
+            battery_helper_sensors: List[Any] = []
+
+            if SENSOR_TYPES:
+                for sensor_type, config in SENSOR_TYPES.items():
+                    if config.get("sensor_type_category") == "battery_optimization":
+                        try:
+                            _LOGGER.debug(f"Creating battery helper sensor: {sensor_type}")
+                            
+                            sensor = OigCloudBatteryHelperSensor(
+                                hass,
+                                entry,
+                                sensor_type,
+                                config,
+                                analytics_device_info,
+                                inverter_sn,
+                            )
+                            
+                            battery_helper_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Successfully created battery helper sensor: {sensor_type}"
+                            )
+                        except Exception as e:
+                            _LOGGER.error(
+                                f"Error creating battery helper sensor {sensor_type}: {e}",
+                                exc_info=True,
+                            )
+                            continue
+
+                if battery_helper_sensors:
+                    _LOGGER.info(
+                        f"Registering {len(battery_helper_sensors)} battery helper sensors"
+                    )
+                    async_add_entities(battery_helper_sensors, True)
+                else:
+                    _LOGGER.debug("No battery helper sensors found")
+            else:
+                _LOGGER.debug("SENSOR_TYPES empty, skipping battery helper sensors")
+        except Exception as e:
+            _LOGGER.error(f"Error initializing battery helper sensors: {e}", exc_info=True)
+    else:
+        _LOGGER.info("Battery prediction disabled - skipping battery helper sensors")
+
     # 5. Solar forecast sensors - only if enabled
     if entry.options.get("enable_solar_forecast", False):
         try:
