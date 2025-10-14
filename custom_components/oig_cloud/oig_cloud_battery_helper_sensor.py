@@ -220,7 +220,11 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 first_event = timeline[0]
                 charge_start = first_event.get("charge_start")
                 if charge_start:
-                    self._attr_native_value = charge_start.isoformat() if hasattr(charge_start, 'isoformat') else str(charge_start)
+                    self._attr_native_value = (
+                        charge_start.isoformat()
+                        if hasattr(charge_start, "isoformat")
+                        else str(charge_start)
+                    )
                 else:
                     self._attr_native_value = None
             else:
@@ -233,7 +237,11 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 last_event = timeline[-1]
                 charge_end = last_event.get("charge_end")
                 if charge_end:
-                    self._attr_native_value = charge_end.isoformat() if hasattr(charge_end, 'isoformat') else str(charge_end)
+                    self._attr_native_value = (
+                        charge_end.isoformat()
+                        if hasattr(charge_end, "isoformat")
+                        else str(charge_end)
+                    )
                 else:
                     self._attr_native_value = None
             else:
@@ -247,7 +255,11 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 last_event = timeline[-1]
                 discharge_start = last_event.get("charge_end")
                 if discharge_start:
-                    self._attr_native_value = discharge_start.isoformat() if hasattr(discharge_start, 'isoformat') else str(discharge_start)
+                    self._attr_native_value = (
+                        discharge_start.isoformat()
+                        if hasattr(discharge_start, "isoformat")
+                        else str(discharge_start)
+                    )
                 else:
                     self._attr_native_value = None
             else:
@@ -267,7 +279,9 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                 self._attr_native_value = "manual"
             self._attr_extra_state_attributes = {
                 "min_capacity_percent": battery_config.get("min_capacity_percent"),
-                "target_capacity_percent": battery_config.get("target_capacity_percent"),
+                "target_capacity_percent": battery_config.get(
+                    "target_capacity_percent"
+                ),
                 "max_price_czk": battery_config.get("max_price_czk"),
             }
 
@@ -280,10 +294,17 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_value = attrs.get("forecast_accuracy", 0)
 
         elif self._sensor_type == "battery_optimization_last_update":
-            # Čas posledního výpočtu
+            # Čas posledního výpočtu - timestamp device class vyžaduje datetime objekt
+            from datetime import datetime
             calc_time = attrs.get("calculation_time")
             if calc_time:
-                self._attr_native_value = calc_time
+                if isinstance(calc_time, str):
+                    try:
+                        self._attr_native_value = datetime.fromisoformat(calc_time)
+                    except (ValueError, AttributeError):
+                        self._attr_native_value = None
+                else:
+                    self._attr_native_value = calc_time
             else:
                 self._attr_native_value = None
 
