@@ -314,16 +314,27 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
         elif self._sensor_type == "battery_optimization_last_update":
             # Čas posledního výpočtu - timestamp device class vyžaduje datetime objekt
             from datetime import datetime
+            from homeassistant.util import dt as dt_util
 
             calc_time = attrs.get("calculation_time")
             if calc_time:
                 if isinstance(calc_time, str):
                     try:
-                        self._attr_native_value = datetime.fromisoformat(calc_time)
+                        # Parse datetime a přidej timezone info
+                        dt_obj = datetime.fromisoformat(calc_time)
+                        # Pokud nemá timezone, přidej lokální timezone
+                        if dt_obj.tzinfo is None:
+                            self._attr_native_value = dt_util.as_local(dt_obj)
+                        else:
+                            self._attr_native_value = dt_obj
                     except (ValueError, AttributeError):
                         self._attr_native_value = None
                 else:
-                    self._attr_native_value = calc_time
+                    # Pokud už je datetime objekt, zajisti timezone
+                    if hasattr(calc_time, 'tzinfo') and calc_time.tzinfo is None:
+                        self._attr_native_value = dt_util.as_local(calc_time)
+                    else:
+                        self._attr_native_value = calc_time
             else:
                 self._attr_native_value = None
 
