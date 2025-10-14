@@ -1,4 +1,5 @@
 aiohttp>=3.8.0
+oig-cloud-client @ git+https://github.com/psimsa/oig_cloud_client.git
 opentelemetry-sdk==1.29.0
 grpcio==1.70.0
 opentelemetry-exporter-otlp-proto-http==1.29.0

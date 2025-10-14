@@ -14,7 +14,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api.oig_cloud_api import OigCloudApi
+from oig_cloud_client.api.oig_cloud_api import OigCloudApi
 from .const import (
     CONF_NO_TELEMETRY,
     CONF_USERNAME,
@@ -314,8 +314,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
-        # Vytvoření OIG API instance
-        oig_api = OigCloudApi(username, password, no_telemetry, hass)
+        oig_api = OigCloudApi(username, password, no_telemetry)
 
         _LOGGER.debug("Authenticating with OIG Cloud")
         await oig_api.authenticate()

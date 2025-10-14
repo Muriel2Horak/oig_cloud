@@ -13,7 +13,7 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
 )
-from .api.oig_cloud_api import OigCloudApi
+from oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class InvalidAuth(Exception):
 
 async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate the user input allows us to connect."""
-    api = OigCloudApi(data[CONF_USERNAME], data[CONF_PASSWORD], False, hass)
+    api = OigCloudApi(data[CONF_USERNAME], data[CONF_PASSWORD], False)
 
     if not await api.authenticate():
         raise InvalidAuth

@@ -10,9 +10,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEFAULT_NAME, DOMAIN
 
-# Změníme import koordinátoru na přímý bez tracing
 from .coordinator import OigCloudDataUpdateCoordinator
-from .models import OigCloudData
+from oig_cloud_client.models import OigCloudData
 
 _LOGGER = logging.getLogger(__name__)
 

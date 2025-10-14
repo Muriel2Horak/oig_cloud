@@ -10,3 +10,6 @@ isort
 
 # Optional: Type checking
 mypy
+
+# Home assistant
+homeassistant==2025.1.4

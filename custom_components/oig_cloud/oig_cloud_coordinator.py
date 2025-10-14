@@ -8,7 +8,7 @@ from homeassistant.util.dt import now as dt_now, utcnow as dt_utcnow
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api.oig_cloud_api import OigCloudApi
+from oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
 
