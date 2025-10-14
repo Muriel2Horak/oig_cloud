@@ -101,7 +101,17 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = sensor_def.get("state_class")
         self._node_id: Optional[str] = sensor_def.get("node_id")
         self._node_key: Optional[str] = sensor_def.get("node_key")
-        self._box_id: str = list(self.coordinator.data.keys())[0]
+        
+        # OPRAVA: Kontrola jestli coordinator.data není None
+        if self.coordinator.data and len(self.coordinator.data.keys()) > 0:
+            self._box_id: str = list(self.coordinator.data.keys())[0]
+        else:
+            # Fallback: zkusit získat z config_entry
+            if hasattr(self.coordinator, 'config_entry') and self.coordinator.config_entry:
+                self._box_id = self.coordinator.config_entry.data.get("inverter_sn", "unknown")
+            else:
+                self._box_id = "unknown"
+                
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         _LOGGER.debug(f"Created sensor {self.entity_id}")
 

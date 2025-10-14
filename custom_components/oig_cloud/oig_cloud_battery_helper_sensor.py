@@ -296,6 +296,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
         elif self._sensor_type == "battery_optimization_last_update":
             # Čas posledního výpočtu - timestamp device class vyžaduje datetime objekt
             from datetime import datetime
+
             calc_time = attrs.get("calculation_time")
             if calc_time:
                 if isinstance(calc_time, str):
