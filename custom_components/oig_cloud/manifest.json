@@ -11,7 +11,9 @@
   "homekit": {},
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/psimsa/oig_cloud/issues",
-  "requirements": [],
+  "requirements": [
+    "oig-cloud-client @ git+https://github.com/psimsa/oig_cloud_client.git"
+  ],
   "ssdp": [],
   "version": "2.0.1-alpha3",
   "zeroconf": [],
