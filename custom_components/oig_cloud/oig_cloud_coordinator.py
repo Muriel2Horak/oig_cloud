@@ -528,35 +528,44 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         return time_diff > self.extended_interval
 
     async def _update_battery_forecast(self) -> None:
-        """Aktualizuje battery forecast data voláním metody na senzoru."""
+        """Aktualizuje battery forecast data přímo v coordinatoru."""
         try:
-            # OPRAVA: Najdeme battery forecast senzor pomocí entity registry
-            from homeassistant.helpers import entity_registry as er
+            _LOGGER.debug("🔋 Starting battery forecast calculation in coordinator")
 
-            entity_reg = er.async_get(self.hass)
-            entries = er.async_entries_for_config_entry(
-                entity_reg, self.config_entry.entry_id
+            # Importujeme battery forecast třídu
+            from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
+
+            # Získat inverter_sn z config_entry
+            inverter_sn: str = self.config_entry.data.get("inverter_sn", "unknown")
+
+            # Vytvořit device_info pro Analytics Module
+            from .const import DOMAIN
+
+            device_info: Dict[str, Any] = {
+                "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
+                "name": "Analytics & Predictions",
+                "manufacturer": "ČEZ",
+                "model": "Battery Box Analytics Module",
+                "sw_version": "1.0.0",
+            }
+
+            # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
+            temp_sensor = OigCloudBatteryForecastSensor(
+                self, "battery_forecast", self.config_entry, device_info
             )
+            temp_sensor._hass = self.hass
 
-            for entry in entries:
-                if "battery_forecast" in entry.entity_id:
-                    # Najdeme skutečnou instanci entity v platform manageru
-                    sensor_platform = self.hass.data.get("sensor")
-                    if sensor_platform:
-                        entity = sensor_platform.get_entity(entry.entity_id)
-                        if entity and hasattr(entity, "async_update"):
-                            await entity.async_update()
-                            _LOGGER.debug("🔋 Battery forecast updated successfully")
-                            return
-
-            # Fallback - pokud senzor nenajdeme, vytvoříme jednoduchá data
+            # Spustíme výpočet
+            self.battery_forecast_data = await temp_sensor._calculate_battery_forecast()
             _LOGGER.debug(
-                "🔋 Battery forecast sensor not found, creating simple forecast"
+                "🔋 Battery forecast data updated in coordinator successfully"
             )
-            self.battery_forecast_data = self._create_simple_battery_forecast()
 
         except Exception as e:
-            _LOGGER.error(f"🔋 Failed to update battery forecast: {e}")
+            _LOGGER.error(
+                f"🔋 Failed to update battery forecast in coordinator: {e}",
+                exc_info=True,
+            )
             self.battery_forecast_data = None
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:

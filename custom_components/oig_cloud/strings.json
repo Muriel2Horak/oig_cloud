@@ -12,7 +12,118 @@
           "enable_pricing": "Povolit cenové senzory",
           "enable_spot_prices": "Povolit spotové ceny elektřiny",
           "enable_extended_sensors": "Povolit rozšířené senzory",
-          "enable_dashboard": "Povolit webový dashboard"
+          "enable_dashboard": "Povolit webový dashboard",
+          "setup_type": "Typ nastavení"
+        }
+      },
+      "credentials": {
+        "title": "Přihlášení do OIG Cloud",
+        "data": {
+          "username": "E-mail",
+          "password": "Heslo"
+        }
+      },
+      "quick_modules": {
+        "title": "Výběr funkcí",
+        "data": {
+          "enable_statistics": "Statistiky a analýzy",
+          "enable_solar_forecast": "Solární předpověď",
+          "enable_battery_prediction": "Chytré nabíjení baterie",
+          "enable_spot_prices": "Spotové ceny elektřiny",
+          "enable_extended_sensors": "Rozšířené senzory"
+        }
+      },
+      "quick_solar": {
+        "title": "Solární předpověď",
+        "data": {
+          "solar_latitude": "GPS šířka",
+          "solar_longitude": "GPS délka",
+          "solar_kwp": "Výkon FVE (kWp)",
+          "solar_declination": "Sklon panelů (°)",
+          "solar_azimuth": "Orientace panelů"
+        }
+      },
+      "quick_battery": {
+        "title": "Chytré nabíjení",
+        "data": {
+          "battery_min_percent": "Minimální kapacita (%)",
+          "battery_target_percent": "Cílová kapacita (%)",
+          "battery_charge_rate": "Nabíjecí výkon (kW)",
+          "battery_max_price": "Max. cena (CZK/kWh)"
+        }
+      },
+      "quick_pricing": {
+        "title": "Spotové ceny",
+        "data": {
+          "pricing_provider": "Dodavatel elektřiny",
+          "distribution_area": "Distribuční oblast"
+        }
+      },
+      "select_modules": {
+        "title": "Pokročilý výběr modulů",
+        "data": {
+          "enable_statistics": "Statistiky",
+          "enable_solar_forecast": "Solární předpověď",
+          "enable_battery_prediction": "Chytré nabíjení",
+          "enable_spot_prices": "Spotové ceny",
+          "enable_extended_sensors": "Rozšířené senzory",
+          "enable_extended_battery_sensors": "Rozšířené senzory baterie",
+          "enable_extended_fve_sensors": "Rozšířené senzory FVE",
+          "enable_extended_grid_sensors": "Rozšířené senzory sítě"
+        }
+      },
+      "advanced_solar": {
+        "title": "Solární předpověď (pokročilé)",
+        "data": {
+          "solar_latitude": "GPS šířka",
+          "solar_longitude": "GPS délka",
+          "solar_api_key": "Forecast.Solar API klíč",
+          "solar_mode": "Režim aktualizace",
+          "string1_enabled": "String 1 - zapnout",
+          "string1_kwp": "String 1 - výkon (kWp)",
+          "string1_declination": "String 1 - sklon (°)",
+          "string1_azimuth": "String 1 - azimut (°)",
+          "string2_enabled": "String 2 - zapnout",
+          "string2_kwp": "String 2 - výkon (kWp)",
+          "string2_declination": "String 2 - sklon (°)",
+          "string2_azimuth": "String 2 - azimut (°)"
+        }
+      },
+      "advanced_battery": {
+        "title": "Chytré nabíjení (pokročilé)",
+        "data": {
+          "battery_min_percent": "Minimální kapacita (%)",
+          "battery_target_percent": "Cílová kapacita (%)",
+          "battery_charge_rate": "Nabíjecí výkon (kW)",
+          "battery_max_price": "Max. cena (CZK/kWh)",
+          "battery_percentile": "Percentil špičky (%)",
+          "charge_on_bad_weather": "Nabíjet při špatném počasí",
+          "weather_entity": "Weather entita"
+        }
+      },
+      "advanced_pricing": {
+        "title": "Spotové ceny (pokročilé)",
+        "data": {
+          "pricing_model": "Model výpočtu cen",
+          "distribution_area": "Distribuční oblast",
+          "dual_tariff": "Dvoutarifní sazba"
+        }
+      },
+      "advanced_pricing_custom": {
+        "title": "Vlastní pricing model",
+        "data": {
+          "spot_positive_fee_percent": "Přirážka kladná cena (%)",
+          "spot_negative_fee_percent": "Přirážka záporná cena (%)",
+          "export_fee_percent": "Srážka za export (%)",
+          "distribution_fee_vt": "Distribuce VT (CZK/kWh)",
+          "distribution_fee_nt": "Distribuce NT (CZK/kWh)",
+          "vat_rate": "DPH (%)"
+        }
+      },
+      "import_config": {
+        "title": "Import konfigurace",
+        "data": {
+          "config_file": "Cesta k souboru"
         }
       },
       "init": {
@@ -43,7 +154,8 @@
       "solar_forecast_no_strings": "Musíte povolit alespoň jeden string."
     },
     "abort": {
-      "already_configured": "Zařízení je již nakonfigurováno"
+      "already_configured": "Zařízení je již nakonfigurováno",
+      "import_not_implemented": "Import konfigurace ještě není implementován"
     }
   },
   "options": {

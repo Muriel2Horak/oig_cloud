@@ -473,6 +473,7 @@ async def async_setup_entry(
 
             from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
             from .oig_cloud_analytics_sensor import OigCloudAnalyticsSensor
+            from .spot_price_sensor import SpotPrice15MinSensor, ExportPrice15MinSensor
 
             analytics_sensors: List[Any] = []
 
@@ -488,10 +489,26 @@ async def async_setup_entry(
                 try:
                     _LOGGER.debug(f"Creating analytics sensor: {sensor_type}")
 
-                    # OPRAVA: Použít předem definované analytics_device_info
-                    sensor = OigCloudAnalyticsSensor(
-                        coordinator, sensor_type, entry, analytics_device_info
-                    )
+                    # OPRAVA: Přidat 15min senzor pokud je typ spot_price_current_15min
+                    if sensor_type == "spot_price_current_15min":
+                        sensor = SpotPrice15MinSensor(
+                            coordinator, entry, sensor_type, analytics_device_info
+                        )
+                        _LOGGER.debug(f"Created 15min spot price sensor: {sensor_type}")
+                    elif sensor_type == "export_price_current_15min":
+                        sensor = ExportPrice15MinSensor(
+                            coordinator, entry, sensor_type, analytics_device_info
+                        )
+                        _LOGGER.debug(
+                            f"Created 15min export price sensor: {sensor_type}"
+                        )
+                    else:
+                        # OPRAVA: Použít předem definované analytics_device_info
+                        sensor = OigCloudAnalyticsSensor(
+                            coordinator, sensor_type, entry, analytics_device_info
+                        )
+                        _LOGGER.debug(f"Created analytics sensor: {sensor_type}")
+
                     analytics_sensors.append(sensor)
                     _LOGGER.debug(
                         f"Successfully created analytics sensor: {sensor_type}"

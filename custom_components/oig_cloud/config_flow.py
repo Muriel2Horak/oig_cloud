@@ -490,36 +490,172 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_battery_prediction(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Zobrazit informace o predikci baterie (modul ve vývoji)."""
+        """Konfigurace predikce baterie a optimalizace nabíjení."""
         if user_input is not None:
-            # Pouze návrat do menu - žádné změny nejsou možné
-            return await self.async_step_init()
+            new_options = {**self.config_entry.options, **user_input}
+
+            # Restart integrace pro aplikování nových nastavení
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+            return self.async_create_entry(title="", data=new_options)
 
         current_options = self.config_entry.options
         battery_enabled = current_options.get("enable_battery_prediction", False)
 
-        # Read-only schema - pouze informační tlačítko
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    "info_only",
-                    default="back_to_menu",
-                    description="Modul ve vývoji - změny nejsou možné",
-                ): vol.In({"back_to_menu": "Zpět do hlavního menu"})
-            }
+        # NOVÉ: Získat seznam dostupných weather entit
+        weather_entities: Dict[str, str] = {}
+        if self.hass:
+            for state in self.hass.states.async_all("weather"):
+                # Preferujeme entity s forecast atributem
+                has_forecast = bool(state.attributes.get("forecast"))
+                label = f"{state.attributes.get('friendly_name', state.entity_id)}"
+                if has_forecast:
+                    label += " ✅ (má forecast)"
+                weather_entities[state.entity_id] = label
+
+        # Plně funkční schema s možností úprav
+        schema_fields: Dict[str, Any] = {
+            vol.Optional(
+                "enable_battery_prediction",
+                default=battery_enabled,
+                description="🔋 Povolit inteligentní optimalizaci nabíjení baterie",
+            ): bool,
+            vol.Optional(
+                "min_capacity_percent",
+                default=current_options.get("min_capacity_percent", 20.0),
+                description="📉 Minimální kapacita baterie (%)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=50.0)),
+            vol.Optional(
+                "target_capacity_percent",
+                default=current_options.get("target_capacity_percent", 80.0),
+                description="🎯 Cílová kapacita baterie (%)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=100.0)),
+            vol.Optional(
+                "home_charge_rate",
+                default=current_options.get("home_charge_rate", 2.8),
+                description="⚡ Nabíjecí výkon ze sítě (kW)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            vol.Optional(
+                "percentile_conf",
+                default=current_options.get("percentile_conf", 75.0),
+                description="📊 Percentil pro detekci špičky (%)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=95.0)),
+            vol.Optional(
+                "max_price_conf",
+                default=current_options.get("max_price_conf", 10.0),
+                description="💰 Maximální cena pro nabíjení (CZK/kWh)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+        }
+
+        # NOVÉ: Přidat weather monitoring pokud je battery prediction zapnutý
+        if battery_enabled and weather_entities:
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "charge_on_bad_weather",
+                        default=current_options.get("charge_on_bad_weather", False),
+                        description="🌧️ Nabíjet preventivně při špatném počasí",
+                    ): bool,
+                }
+            )
+
+            # Pokud je zapnutý bad weather mode, nabídnout výběr entity
+            if current_options.get("charge_on_bad_weather", False):
+                # Přidat "auto" možnost jako první
+                weather_options = {"": "🤖 Automaticky (první dostupná)"}
+                weather_options.update(weather_entities)
+
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            "weather_entity",
+                            default=current_options.get("weather_entity", ""),
+                            description="🌦️ Weather entita pro předpověď (volitelné)",
+                        ): vol.In(weather_options),
+                    }
+                )
+
+        # Vysvětlení parametrů
+        min_cap = current_options.get("min_capacity_percent", 20.0)
+        target_cap = current_options.get("target_capacity_percent", 80.0)
+        charge_rate = current_options.get("home_charge_rate", 2.8)
+        percentile = current_options.get("percentile_conf", 75.0)
+        max_price = current_options.get("max_price_conf", 10.0)
+        bad_weather = current_options.get("charge_on_bad_weather", False)
+
+        info_text = (
+            f"🔋 CHYTRÉ NABÍJENÍ BATERIE\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{'✅ ZAPNUTO' if battery_enabled else '❌ VYPNUTO'}\n\n"
+            f"📊 Aktuální nastavení:\n"
+            f"  • Min. kapacita: {min_cap:.0f}%\n"
+            f"  • Cílová kapacita: {target_cap:.0f}%\n"
+            f"  • Nabíjecí výkon: {charge_rate:.1f} kW\n"
+            f"  • Percentil špičky: {percentile:.0f}%\n"
+            f"  • Max. cena: {max_price:.1f} CZK/kWh\n"
+            f"  • Špatné počasí: {'✅ Zapnuto' if bad_weather else '❌ Vypnuto'}\n\n"
+            f"❓ Jak to funguje?\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"1️⃣ Systém sleduje spotové ceny elektřiny\n"
+            f"2️⃣ Identifikuje levné off-peak hodiny\n"
+            f"3️⃣ Plánuje nabíjení tak, aby baterie\n"
+            f"   neklesla pod minimální kapacitu\n"
+            f"4️⃣ Preferuje nejlevnější hodiny\n"
+            f"5️⃣ Nikdy nenabíjí nad max. cenu\n"
+            f"6️⃣ NOVÉ: Preventivní nabití před bouřkou\n\n"
+            f"💡 Příklad:\n"
+            f"  Baterie má 30% → OK, necháme vybíjet\n"
+            f"  Baterie klesne na {min_cap:.0f}% → START nabíjení\n"
+            f"  Vybere 3 nejlevnější hodiny do rána\n"
+            f"  Nabije zpět na {target_cap:.0f}% pro další den\n\n"
+            f"⚙️ Parametry:\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📉 Min. kapacita:\n"
+            f"   Pod touto úrovní začne nabíjet ze sítě\n"
+            f"   Doporučeno: 15-25%\n\n"
+            f"🎯 Cílová kapacita:\n"
+            f"   Optimální stav baterie\n"
+            f"   Používá se při bad weather módu\n"
+            f"   Doporučeno: 70-90%\n\n"
+            f"⚡ Nabíjecí výkon:\n"
+            f"   Max. výkon vašeho systému ze sítě\n"
+            f"   Zjistěte z dokumentace invertru\n\n"
+            f"📊 Percentil špičky:\n"
+            f"   Ceny nad tímto percentilem = špička\n"
+            f"   Doporučeno: 75-85%\n\n"
+            f"💰 Max. cena:\n"
+            f"   Nikdy nenabíjet dráž než tato cena\n"
+            f"   Doporučeno: 8-12 CZK/kWh\n\n"
+            f"🌧️ Špatné počasí:\n"
+            f"   Preventivní nabití před bouřkou/vichřicí\n"
+            f"   Automaticky detekuje weather entitu\n"
+            f"   Nabije na cílovou kapacitu\n\n"
+            f"✅ Výhody:\n"
+            f"  • Nabíjení v nejlevnějších hodinách\n"
+            f"  • Baterie vždy nad minimem\n"
+            f"  • Automatická optimalizace\n"
+            f"  • Úspora nákladů na elektřinu\n"
+            f"  • Ochrana před výpadky při nepřízni\n\n"
+            f"⚠️ Vyžaduje:\n"
+            f"  • Zapnuté spotové ceny (OTE)\n"
+            f"  • Zapnuté statistiky spotřeby\n"
+            f"  • Solární předpověď (doporučeno)\n"
+            f"  • Weather entitu (pro bad weather)"
         )
 
         return self.async_show_form(
             step_id="battery_prediction",
-            data_schema=schema,
+            data_schema=vol.Schema(schema_fields),
             description_placeholders={
-                "current_state": ("Povolen" if battery_enabled else "Zakázán"),
-                "min_capacity": current_options.get("min_capacity_percent", 20.0),
-                "charge_rate": current_options.get("home_charge_rate", 2800),
-                "percentile": current_options.get("percentile_conf", 80.0),
-                "max_price": current_options.get("max_price_conf", 4.0),
-                "total_hours": current_options.get("total_hours", 24),
-                "info": "Predikce baterie je momentálně ve vývoji a není dostupná pro konfiguraci",
+                "current_state": ("✅ Zapnuto" if battery_enabled else "❌ Vypnuto"),
+                "min_capacity": min_cap,
+                "target_capacity": target_cap,
+                "charge_rate": charge_rate,
+                "bad_weather": ("✅ Ano" if bad_weather else "❌ Ne"),
+                "info": info_text,
             },
         )
 
@@ -990,426 +1126,536 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_pricing_config(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Handle pricing configuration including spot prices."""
-        current_options = self.config_entry.options
-        errors: Dict[str, str] = {}
-
+        """Main pricing configuration menu."""
         if user_input is not None:
-            # NOVÁ VALIDACE: Kontrola spotových cen konfigurace
-            spot_enabled = user_input.get("enable_spot_prices", False)
+            # Uložit změnu enable_spot_prices pokud byla provedena
+            if "enable_spot_prices" in user_input:
+                new_options = {**self.config_entry.options, **user_input}
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_options
+                )
 
-            if spot_enabled:
-                pricing_model = user_input.get("spot_pricing_model", "percentage")
+            # Přesměrování na vybraný podkrok
+            if user_input.get("pricing_submenu"):
+                return await getattr(
+                    self, f"async_step_{user_input['pricing_submenu']}"
+                )()
 
-                try:
-                    if pricing_model == "percentage":
-                        # Validace procentního modelu - pouze relevantní pole
-                        positive_fee = float(
-                            user_input.get("spot_positive_fee_percent", 0)
-                        )
-                        negative_fee = float(
-                            user_input.get("spot_negative_fee_percent", 0)
-                        )
-
-                        if positive_fee <= 0:
-                            errors["spot_positive_fee_percent"] = "invalid_positive_fee"
-                        if negative_fee <= 0:
-                            errors["spot_negative_fee_percent"] = "invalid_negative_fee"
-
-                    elif pricing_model == "fixed":
-                        # Validace fixního modelu - pouze relevantní pole
-                        fixed_fee = float(user_input.get("spot_fixed_fee_mwh", 0))
-
-                        if fixed_fee <= 0:
-                            errors["spot_fixed_fee_mwh"] = "invalid_fixed_fee"
-
-                    # Validace fixních obchodních cen (pokud jsou povoleny)
-                    if pricing_model == "fixed_prices":
-                        fixed_vt = float(user_input.get("fixed_commercial_price_vt", 0))
-                        fixed_nt = float(user_input.get("fixed_commercial_price_nt", 0))
-
-                        if fixed_vt <= 0:
-                            errors["fixed_commercial_price_vt"] = "invalid_fixed_price"
-                        if fixed_nt <= 0:
-                            errors["fixed_commercial_price_nt"] = "invalid_fixed_price"
-
-                    # Validace distribučních poplatků (vždy povinné)
-                    distribution_fee_vt = float(
-                        user_input.get("distribution_fee_vt_kwh", 0)
-                    )
-
-                    if distribution_fee_vt < 0:  # Může být 0, ale ne záporný
-                        errors["distribution_fee_vt_kwh"] = "invalid_distribution_fee"
-
-                    # Validace DPH
-                    vat_rate = float(user_input.get("vat_rate", 21.0))
-                    if not (0 <= vat_rate <= 50):
-                        errors["vat_rate"] = "invalid_vat_rate"
-
-                    # Validace NT poplatku pouze pokud je dvoutarifní sazba
-                    dual_tariff = user_input.get("dual_tariff_enabled", True)
-                    if dual_tariff:
-                        distribution_fee_nt = float(
-                            user_input.get("distribution_fee_nt_kwh", 0)
-                        )
-                        if distribution_fee_nt < 0:  # Může být 0, ale ne záporný
-                            errors["distribution_fee_nt_kwh"] = (
-                                "invalid_distribution_fee"
-                            )
-
-                        # Validace tarifních časů pouze pro dvoutarifní sazbu
-                        def validate_tariff_times(
-                            time_str: str, field_name: str
-                        ) -> bool:
-                            """Validuje formát tarifních časů."""
-                            if not time_str.strip():
-                                return True  # Prázdné je OK (žádné intervaly)
-
-                            try:
-                                hours = [
-                                    int(h.strip())
-                                    for h in time_str.split(",")
-                                    if h.strip()
-                                ]
-                                for hour in hours:
-                                    if not (0 <= hour <= 23):
-                                        errors[field_name] = "invalid_hour_range"
-                                        return False
-                                return True
-                            except (ValueError, AttributeError):
-                                errors[field_name] = "invalid_hour_format"
-                                return False
-
-                        validate_tariff_times(
-                            user_input.get("tariff_nt_start_weekday", ""),
-                            "tariff_nt_start_weekday",
-                        )
-                        validate_tariff_times(
-                            user_input.get("tariff_vt_start_weekday", ""),
-                            "tariff_vt_start_weekday",
-                        )
-                        validate_tariff_times(
-                            user_input.get("tariff_nt_start_weekend", ""),
-                            "tariff_nt_start_weekend",
-                        )
-                        validate_tariff_times(
-                            user_input.get("tariff_vt_start_weekend", ""),
-                            "tariff_vt_start_weekend",
-                        )
-
-                except (ValueError, TypeError):
-                    errors["base"] = "invalid_spot_pricing_config"
-
-            # Pokud nejsou chyby, pokračuj
-            if not errors:
-                new_options = current_options.copy()
-                new_options.update(user_input)
-
-                # ZJEDNODUŠENO: Vždy reload integrace po změně cenových senzorů
-                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                return self.async_create_entry(title="", data=new_options)
+            # Návrat do hlavního menu
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
         spot_enabled = current_options.get("enable_spot_prices", False)
 
-        # Pokud máme user_input, použij hodnotu odtamtud (pro live preview)
-        if user_input is not None:
-            spot_enabled = user_input.get("enable_spot_prices", spot_enabled)
-
+        # Hlavní menu pro pricing
         schema_fields: Dict[str, Any] = {
-            vol.Optional(
+            vol.Required(
                 "enable_spot_prices",
                 default=spot_enabled,
-                description="Povolit spotové ceny elektřiny z OTE",
+                description="💰 Povolit spotové ceny elektřiny z OTE",
             ): bool,
         }
 
-        # OPRAVA: Přidat konfiguraci pouze pokud jsou spotové ceny zapnuté
+        # Pokud jsou spotové ceny zapnuté, zobrazit submenu
         if spot_enabled:
-            # Získat aktuálně vybraný model (z user_input nebo current_options)
-            current_model = "percentage"
-            if user_input is not None:
-                current_model = user_input.get("spot_pricing_model", current_model)
-            else:
-                current_model = current_options.get("spot_pricing_model", current_model)
-
-            # Model je vždy povinný
-            schema_fields[
-                vol.Required(
-                    "spot_pricing_model",
-                    default=current_model,
-                    description="Model výpočtu obchodní ceny",
-                )
-            ] = vol.In(
+            schema_fields[vol.Required("pricing_submenu")] = vol.In(
                 {
-                    "percentage": "Procentní model (různé % pro kladné/záporné spotové ceny)",
-                    "fixed": "Fixní poplatek za MWh ke spotové ceně",
-                    "fixed_prices": "Fixní obchodní ceny VT/NT (bez spotových cen)",
+                    "pricing_import": "📥 Nákupní cena - jak počítat cenu za odebranou elektřinu",
+                    "pricing_export": "📤 Výkupní cena - kolik dostanete za prodej do sítě",
+                    "pricing_distribution": "🔌 Distribuce & DPH - pevné poplatky",
+                    "pricing_tariffs": "⏰ Tarifní pásma - kdy platí VT a NT",
                 }
             )
 
-            # Podmíněná pole podle vybraného modelu
-            if current_model == "percentage":
-                # Pro procentní model - spotové ceny s procenty
-                schema_fields.update(
-                    {
-                        vol.Required(
-                            "spot_positive_fee_percent",
-                            default=current_options.get(
-                                "spot_positive_fee_percent", 15.0
-                            ),
-                            description="Obchodní přirážka při kladné spotové ceně (%). Např. 15% = cena × 1,15",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                        vol.Required(
-                            "spot_negative_fee_percent",
-                            default=current_options.get(
-                                "spot_negative_fee_percent", 9.0
-                            ),
-                            description="Obchodní přirážka při záporné spotové ceně (%). Např. 9% = cena × 0,91",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                        # Ostatní pole jako nepovinné (skryté)
-                        vol.Optional(
-                            "spot_fixed_fee_mwh",
-                            default=current_options.get("spot_fixed_fee_mwh", 500.0),
-                            description="Fixní poplatek (nepoužívá se v procentním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
-                        vol.Optional(
-                            "fixed_commercial_price_vt",
-                            default=current_options.get(
-                                "fixed_commercial_price_vt", 4.50
-                            ),
-                            description="Fixní cena VT (nepoužívá se v procentním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                        vol.Optional(
-                            "fixed_commercial_price_nt",
-                            default=current_options.get(
-                                "fixed_commercial_price_nt", 3.20
-                            ),
-                            description="Fixní cena NT (nepoužívá se v procentním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                    }
-                )
-            elif current_model == "fixed":
-                # Pro fixní model - spotové ceny s fixním poplatkem
-                schema_fields.update(
-                    {
-                        vol.Required(
-                            "spot_fixed_fee_mwh",
-                            default=current_options.get("spot_fixed_fee_mwh", 500.0),
-                            description="Fixní obchodní poplatek v CZK/MWh přičtený ke spotové ceně",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.1)),
-                        # Ostatní pole jako nepovinné (skryté)
-                        vol.Optional(
-                            "spot_positive_fee_percent",
-                            default=current_options.get(
-                                "spot_positive_fee_percent", 15.0
-                            ),
-                            description="Obchodní přirážka (nepoužívá se ve fixním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-                        vol.Optional(
-                            "spot_negative_fee_percent",
-                            default=current_options.get(
-                                "spot_negative_fee_percent", 9.0
-                            ),
-                            description="Obchodní přirážka (nepoužívá se ve fixním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-                        vol.Optional(
-                            "fixed_commercial_price_vt",
-                            default=current_options.get(
-                                "fixed_commercial_price_vt", 4.50
-                            ),
-                            description="Fixní cena VT (nepoužívá se ve fixním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                        vol.Optional(
-                            "fixed_commercial_price_nt",
-                            default=current_options.get(
-                                "fixed_commercial_price_nt", 3.20
-                            ),
-                            description="Fixní cena NT (nepoužívá se ve fixním modelu)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                    }
-                )
-            elif current_model == "fixed_prices":
-                # Pro fixní ceny - bez spotových cen
-                schema_fields.update(
-                    {
-                        vol.Required(
-                            "fixed_commercial_price_vt",
-                            default=current_options.get(
-                                "fixed_commercial_price_vt", 4.50
-                            ),
-                            description="Fixní obchodní cena VT v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                        vol.Required(
-                            "fixed_commercial_price_nt",
-                            default=current_options.get(
-                                "fixed_commercial_price_nt", 3.20
-                            ),
-                            description="Fixní obchodní cena NT v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                        # Ostatní pole jako nepovinné (skryté)
-                        vol.Optional(
-                            "spot_positive_fee_percent",
-                            default=current_options.get(
-                                "spot_positive_fee_percent", 15.0
-                            ),
-                            description="Obchodní přirážka (nepoužívá se s fixními cenami)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-                        vol.Optional(
-                            "spot_negative_fee_percent",
-                            default=current_options.get(
-                                "spot_negative_fee_percent", 9.0
-                            ),
-                            description="Obchodní přirážka (nepoužívá se s fixními cenami)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-                        vol.Optional(
-                            "spot_fixed_fee_mwh",
-                            default=current_options.get("spot_fixed_fee_mwh", 500.0),
-                            description="Fixní poplatek (nepoužívá se s fixními cenami)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
-                    }
-                )
+        # Výpočet ukázkové ceny pro help
+        if spot_enabled:
+            model = current_options.get("spot_pricing_model", "percentage")
+            spot_price = 3.00
 
-            # Distribuční poplatky jsou vždy povinné (VT a NT)
-            schema_fields.update(
-                {
-                    vol.Required(
-                        "dual_tariff_enabled",
-                        default=current_options.get("dual_tariff_enabled", True),
-                        description="Povolit dvoutarifní sazbu (VT/NT). Pokud ne, bude se používat pouze VT sazba",
-                    ): bool,
-                    vol.Required(
-                        "distribution_fee_vt",
-                        default=current_options.get("distribution_fee_vt_kwh", 1.35),
-                        description="Distribuční poplatek VT (vysoký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
-                    vol.Required(
-                        "vat_rate",
-                        default=current_options.get("vat_rate", 21.0),
-                        description="Sazba DPH v procentech (obvykle 21%)",
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
-                }
-            )
+            if model == "percentage":
+                fee = current_options.get("spot_positive_fee_percent", 15.0)
+                commercial = spot_price * (1 + fee / 100)
+            elif model == "fixed":
+                fee_mwh = current_options.get("spot_fixed_fee_mwh", 500.0)
+                commercial = spot_price + (fee_mwh / 1000)
+            else:  # fixed_prices
+                commercial = current_options.get("fixed_commercial_price_vt", 4.50)
 
-            # Podmíněné zobrazení NT parametrů pouze pro dvoutarifní sazbu
-            dual_tariff = current_options.get("dual_tariff_enabled", True)
-            if user_input is not None:
-                dual_tariff = user_input.get("dual_tariff_enabled", dual_tariff)
+            dist_vt = current_options.get("distribution_fee_vt_kwh", 1.42)
+            vat = current_options.get("vat_rate", 21.0)
+            final_price = (commercial + dist_vt) * (1 + vat / 100)
 
-            if dual_tariff:
-                schema_fields.update(
-                    {
-                        vol.Required(
-                            "distribution_fee_nt",
-                            default=current_options.get(
-                                "distribution_fee_nt_kwh", 1.05
-                            ),
-                            description="Distribuční poplatek NT (nízký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
-                        vol.Required(
-                            "tariff_nt_start_weekday",
-                            default=current_options.get(
-                                "tariff_nt_start_weekday", "22,2"
-                            ),
-                            description="Začátky NT tarifu v pracovní dny (pondělí-pátek), hodiny oddělené čárkou. Např: '22,2' = 22:00-6:00 a 2:00-6:00",
-                        ): str,
-                        vol.Required(
-                            "tariff_vt_start_weekday",
-                            default=current_options.get("tariff_vt_start_weekday", "6"),
-                            description="Začátky VT tarifu v pracovní dny (pondělí-pátek), hodiny oddělené čárkou. Např: '6' = 6:00-22:00",
-                        ): str,
-                        vol.Required(
-                            "tariff_nt_start_weekend",
-                            default=current_options.get("tariff_nt_start_weekend", "0"),
-                            description="Začátky NT tarifu o víkendu (sobota-neděle), hodiny oddělené čárkou. Např: '0' = celý víkend NT",
-                        ): str,
-                        vol.Required(
-                            "tariff_vt_start_weekend",
-                            default=current_options.get("tariff_vt_start_weekend", ""),
-                            description="Začátky VT tarifu o víkendu (sobota-neděle), hodiny oddělené čárkou. Prázdné = žádný VT o víkendu",
-                        ): str,
-                    }
-                )
+            # Export price
+            export_model = current_options.get("export_pricing_model", "percentage")
+            if export_model == "percentage":
+                export_fee = current_options.get("export_fee_percent", 15.0)
+                export_price = spot_price * (1 - export_fee / 100)
             else:
-                # Pro jednotarifní sazbu skryjeme NT parametry ale uložíme defaulty
-                schema_fields.update(
-                    {
-                        vol.Optional(
-                            "distribution_fee_nt",
-                            default=current_options.get(
-                                "distribution_fee_nt_kwh", 1.05
-                            ),
-                            description="Distribuční poplatek NT (nepoužívá se v jednotarifní sazbě)",
-                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
-                        vol.Optional(
-                            "tariff_nt_start_weekday",
-                            default=current_options.get(
-                                "tariff_nt_start_weekday", "22,2"
-                            ),
-                            description="Začátky NT tarifu v týdnu (nepoužívá se v jednotarifní sazbě)",
-                        ): str,
-                        vol.Optional(
-                            "tariff_vt_start_weekday",
-                            default=current_options.get("tariff_vt_start_weekday", "6"),
-                            description="Začátky VT tarifu v týdnu (nepoužívá se v jednotarifní sazbě)",
-                        ): str,
-                        vol.Optional(
-                            "tariff_nt_start_weekend",
-                            default=current_options.get("tariff_nt_start_weekend", "0"),
-                            description="Začátky NT tarifu o víkendu (nepoužívá se v jednotarifní sazbě)",
-                        ): str,
-                        vol.Optional(
-                            "tariff_vt_start_weekend",
-                            default=current_options.get("tariff_vt_start_weekend", ""),
-                            description="Začátky VT tarifu o víkendu (nepoužívá se v jednotarifní sazbě)",
-                        ): str,
-                    }
-                )
+                export_fee_czk = current_options.get("export_fixed_fee_czk", 0.20)
+                export_price = spot_price - export_fee_czk
+
+            info_text = (
+                f"✅ Spotové ceny jsou ZAPNUTÉ\n\n"
+                f"📊 Rychlý přehled aktuálního nastavení:\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📥 NÁKUP (import ze sítě):\n"
+                f"  • Model: {model}\n"
+                f"  • Příklad: {final_price:.2f} CZK/kWh s DPH\n"
+                f"    (spot {spot_price:.2f} + obchod + dist {dist_vt:.2f} + DPH {vat:.0f}%)\n\n"
+                f"📤 PRODEJ (export do sítě):\n"
+                f"  • Model: {export_model}\n"
+                f"  • Příklad: {export_price:.2f} CZK/kWh bez DPH\n"
+                f"    (spot {spot_price:.2f} - poplatek)\n\n"
+                f"🔌 Distribuce:\n"
+                f"  • VT: {dist_vt:.2f} CZK/kWh\n"
+                f"  • NT: {current_options.get('distribution_fee_nt_kwh', 0.91):.2f} CZK/kWh\n"
+                f"  • Tarif: {('Dvoutarifní' if current_options.get('dual_tariff_enabled', True) else 'Jednotarifní')}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"💡 TIP: Vyberte sekci pro detailní nastavení"
+            )
+        else:
+            info_text = (
+                "❌ Spotové ceny jsou VYPNUTÉ\n\n"
+                "❓ Co jsou spotové ceny?\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Spotové ceny elektřiny se mění každých 15 minut\n"
+                "podle aktuální nabídky a poptávky na burze.\n\n"
+                "✅ Výhody:\n"
+                "  • Nižší ceny v noci a o víkendech\n"
+                "  • Možnost optimalizace baterie\n"
+                "  • Reálná cena elektřiny v reálném čase\n"
+                "  • Automatické aktualizace každý den\n\n"
+                "📊 Co budete potřebovat:\n"
+                "  1. Smlouvu se spotovými cenami (např. Nano Energies)\n"
+                "  2. Znát své distribuční poplatky\n"
+                "  3. Znát obchodní přirážku dodavatele\n\n"
+                "💡 TIP: Zapněte spotové ceny pro přístup k nastavení"
+            )
 
         return self.async_show_form(
             step_id="pricing_config",
             data_schema=vol.Schema(schema_fields),
-            errors=errors,
             description_placeholders={
-                "current_state": "Povolen" if spot_enabled else "Zakázáno",
-                "current_model": current_options.get(
-                    "spot_pricing_model", "percentage"
-                ),
-                "positive_fee": current_options.get("spot_positive_fee_percent", 15.0),
-                "negative_fee": current_options.get("spot_negative_fee_percent", 9.0),
-                "fixed_fee": current_options.get("spot_fixed_fee_mwh", 500.0),
-                "distribution_fee_vt": current_options.get(
-                    "distribution_fee_vt_kwh", 1.35
-                ),
-                "distribution_fee_nt": current_options.get(
-                    "distribution_fee_nt_kwh", 1.05
-                ),
-                "dual_tariff": (
-                    "Dvoutarifní"
-                    if current_options.get("dual_tariff_enabled", True)
-                    else "Jednotarifní"
-                ),
-                "pricing_type": (
-                    "Fixní obchodní ceny"
-                    if current_options.get("spot_pricing_model") == "fixed_prices"
-                    else "Spotové ceny"
-                ),
-                "tariff_times_weekday": (
-                    f"NT: {current_options.get('tariff_nt_start_weekday', '22,2')}, VT: {current_options.get('tariff_vt_start_weekday', '6')}"
-                    if current_options.get("dual_tariff_enabled", True)
-                    else "Pouze VT"
-                ),
-                "tariff_times_weekend": (
-                    f"NT: {current_options.get('tariff_nt_start_weekend', '0')}, VT: {current_options.get('tariff_vt_start_weekend', '')}"
-                    if current_options.get("dual_tariff_enabled", True)
-                    else "Pouze VT"
-                ),
-                "update_interval": "denně ve 13:00",
-                "info": (
-                    "⚠️ Spotové ceny jsou vypnuté - zapněte je pro zobrazení dalších možností"
-                    if not spot_enabled
-                    else f"✅ Ceny jsou zapnuté - Model: {current_options.get('spot_pricing_model', 'percentage')}, Tarif: {('Dvoutarifní' if current_options.get('dual_tariff_enabled', True) else 'Jednotarifní')}, Distribuce VT: {current_options.get('distribution_fee_vt_kwh', 1.35)} CZK/kWh{(', NT: ' + str(current_options.get('distribution_fee_nt_kwh', 1.05)) + ' CZK/kWh') if current_options.get('dual_tariff_enabled', True) else ''} ⚠️ VŠECHNY CENY BEZ DPH!"
-                ),
+                "current_state": "✅ Povolen" if spot_enabled else "❌ Zakázáno",
+                "info": info_text,
+            },
+        )
+
+    async def async_step_pricing_import(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Configure import (buy) pricing."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options, **user_input}
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return await self.async_step_pricing_config()
+
+        current_options = self.config_entry.options
+        current_model = current_options.get("spot_pricing_model", "percentage")
+
+        schema_fields: Dict[str, Any] = {
+            vol.Required(
+                "spot_pricing_model",
+                default=current_model,
+                description="📊 Jak se počítá obchodní cena",
+            ): vol.In(
+                {
+                    "percentage": "% Procentní přirážka (doporučeno pro většinu)",
+                    "fixed": "💵 Fixní poplatek v CZK/MWh",
+                    "fixed_prices": "🔒 Fixní ceny VT/NT (ignoruje spot)",
+                }
+            ),
+        }
+
+        if current_model == "percentage":
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "spot_positive_fee_percent",
+                        default=current_options.get("spot_positive_fee_percent", 15.0),
+                        description="💚 Přirážka při kladné ceně (%)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
+                    vol.Required(
+                        "spot_negative_fee_percent",
+                        default=current_options.get("spot_negative_fee_percent", 9.0),
+                        description="💙 Přirážka při záporné ceně (%)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
+                }
+            )
+        elif current_model == "fixed":
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "spot_fixed_fee_mwh",
+                        default=current_options.get("spot_fixed_fee_mwh", 500.0),
+                        description="💵 Fixní poplatek (CZK/MWh)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1)),
+                }
+            )
+        else:  # fixed_prices
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "fixed_commercial_price_vt",
+                        default=current_options.get("fixed_commercial_price_vt", 4.50),
+                        description="☀️ Fixní cena VT (CZK/kWh bez DPH)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                    vol.Required(
+                        "fixed_commercial_price_nt",
+                        default=current_options.get("fixed_commercial_price_nt", 3.20),
+                        description="🌙 Fixní cena NT (CZK/kWh bez DPH)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                }
+            )
+
+        # Příklad výpočtu s vysvětlením
+        if current_model == "percentage":
+            pos_fee = current_options.get("spot_positive_fee_percent", 15.0)
+            neg_fee = current_options.get("spot_negative_fee_percent", 9.0)
+            example = (
+                f"📝 Jak to funguje (PROCENTNÍ model):\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"💚 Když je spotová cena KLADNÁ (+):\n"
+                f"  Vzorec: spot × (1 + {pos_fee}% / 100)\n"
+                f"  Příklad:\n"
+                f"    Spot:  3.00 CZK/kWh\n"
+                f"    →      3.00 × 1.{int(pos_fee):02d}\n"
+                f"    =      {3.00 * (1 + pos_fee/100):.2f} CZK/kWh\n\n"
+                f"💙 Když je spotová cena ZÁPORNÁ (-):\n"
+                f"  Vzorec: spot × (1 - {neg_fee}% / 100)\n"
+                f"  Příklad:\n"
+                f"    Spot: -1.00 CZK/kWh\n"
+                f"    →     -1.00 × 0.{int(100-neg_fee):02d}\n"
+                f"    =     {-1.00 * (1 - neg_fee/100):.2f} CZK/kWh\n"
+                f"    💰 DOSTANETE peníze za spotřebu!\n\n"
+                f"❓ Co znamenají záporné ceny?\n"
+                f"  V době přebytku elektřiny (víkend, slunečno)\n"
+                f"  vám dodavatel PLATÍ za to, že spotřebujete.\n"
+                f"  Ideální čas pro nabíjení baterie!"
+            )
+        elif current_model == "fixed":
+            fee_mwh = current_options.get("spot_fixed_fee_mwh", 500.0)
+            fee_kwh = fee_mwh / 1000
+            example = (
+                f"📝 Jak to funguje (FIXNÍ model):\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Vzorec: spot + {fee_mwh:.0f} CZK/MWh\n"
+                f"        = spot + {fee_kwh:.3f} CZK/kWh\n\n"
+                f"Příklad:\n"
+                f"  Spot:      3.000 CZK/kWh\n"
+                f"  Poplatek: +{fee_kwh:.3f} CZK/kWh\n"
+                f"  ═════════════════════════\n"
+                f"  Celkem:    {3.000 + fee_kwh:.3f} CZK/kWh\n\n"
+                f"💡 Tento model je jednodušší, ale méně\n"
+                f"   flexibilní než procentní."
+            )
+        else:
+            vt = current_options.get("fixed_commercial_price_vt", 4.50)
+            nt = current_options.get("fixed_commercial_price_nt", 3.20)
+            example = (
+                f"📝 Jak to funguje (FIXNÍ ceny):\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Spotové ceny jsou IGNOROVÁNY.\n"
+                f"Používají se pouze vaše fixní ceny:\n\n"
+                f"☀️ VT (vysoký tarif): {vt:.2f} CZK/kWh\n"
+                f"🌙 NT (nízký tarif):  {nt:.2f} CZK/kWh\n\n"
+                f"❓ Kdy použít tento model?\n"
+                f"  • Máte fixní smlouvu bez spotů\n"
+                f"  • Chcete stabilní předvídatelné ceny\n"
+                f"  • Neobchodujete na spotovém trhu\n\n"
+                f"⚠️ POZOR: Všechny ceny zadávejte BEZ DPH!"
+            )
+
+        return self.async_show_form(
+            step_id="pricing_import",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={
+                "info": f"📥 NÁKUPNÍ CENA (import ze sítě)\n{example}",
+            },
+        )
+
+    async def async_step_pricing_export(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Configure export (sell) pricing."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options, **user_input}
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return await self.async_step_pricing_config()
+
+        current_options = self.config_entry.options
+        export_model = current_options.get("export_pricing_model", "percentage")
+
+        schema_fields: Dict[str, Any] = {
+            vol.Required(
+                "export_pricing_model",
+                default=export_model,
+                description="📊 Jak se počítá výkupní cena",
+            ): vol.In(
+                {
+                    "percentage": "% Procentní srážka (doporučeno)",
+                    "fixed": "💵 Fixní poplatek v CZK/kWh",
+                }
+            ),
+        }
+
+        if export_model == "percentage":
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "export_fee_percent",
+                        default=current_options.get("export_fee_percent", 15.0),
+                        description="📉 Poplatek za prodej (%)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+                }
+            )
+            spot_price = 3.00
+            fee = current_options.get("export_fee_percent", 15.0)
+            final_price = spot_price * (1 - fee / 100)
+            example = (
+                f"📝 Jak to funguje (PROCENTNÍ srážka):\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Vzorec: spot × (1 - {fee}% / 100)\n"
+                f"      = spot × {(1 - fee/100):.2f}\n\n"
+                f"Příklad:\n"
+                f"  Spot:      {spot_price:.2f} CZK/kWh\n"
+                f"  Poplatek: -{fee:.0f}%\n"
+                f"  ═════════════════════════\n"
+                f"  Dostanete: {final_price:.2f} CZK/kWh\n"
+                f"            ({100-fee:.0f}% ze spotové ceny)\n\n"
+                f"✅ BEZ DPH (vy neplatíte DPH z výkupu)\n"
+                f"✅ BEZ distribuce (to platí odběratel)\n\n"
+                f"💡 Typické poplatky: 10-20%"
+            )
+        else:  # fixed
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "export_fixed_fee_czk",
+                        default=current_options.get("export_fixed_fee_czk", 0.20),
+                        description="💵 Fixní poplatek (CZK/kWh)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                }
+            )
+            spot_price = 3.00
+            fee = current_options.get("export_fixed_fee_czk", 0.20)
+            final_price = spot_price - fee
+            example = (
+                f"📝 Jak to funguje (FIXNÍ poplatek):\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Vzorec: spot - {fee:.2f} CZK/kWh\n\n"
+                f"Příklad:\n"
+                f"  Spot:      {spot_price:.2f} CZK/kWh\n"
+                f"  Poplatek: -{fee:.2f} CZK/kWh\n"
+                f"  ═════════════════════════\n"
+                f"  Dostanete: {final_price:.2f} CZK/kWh\n\n"
+                f"✅ BEZ DPH (vy neplatíte DPH z výkupu)\n"
+                f"✅ BEZ distribuce (to platí odběratel)\n\n"
+                f"💡 Typický poplatek: 0.10-0.30 CZK/kWh"
+            )
+
+        return self.async_show_form(
+            step_id="pricing_export",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={
+                "info": f"📤 VÝKUPNÍ CENA (export do sítě)\n{example}",
+            },
+        )
+
+    async def async_step_pricing_distribution(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Configure distribution fees and VAT."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options, **user_input}
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return await self.async_step_pricing_config()
+
+        current_options = self.config_entry.options
+        dual_tariff = current_options.get("dual_tariff_enabled", True)
+
+        schema_fields: Dict[str, Any] = {
+            vol.Required(
+                "dual_tariff_enabled",
+                default=dual_tariff,
+                description="⚡ Dvoutarifní sazba (VT/NT)?",
+            ): bool,
+            vol.Required(
+                "distribution_fee_vt",
+                default=current_options.get("distribution_fee_vt_kwh", 1.42),
+                description="☀️ Distribuce VT (CZK/kWh bez DPH)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+            vol.Required(
+                "vat_rate",
+                default=current_options.get("vat_rate", 21.0),
+                description="💰 Sazba DPH (%)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+        }
+
+        if dual_tariff:
+            schema_fields.update(
+                {
+                    vol.Required(
+                        "distribution_fee_nt",
+                        default=current_options.get("distribution_fee_nt_kwh", 0.91106),
+                        description="🌙 Distribuce NT (CZK/kWh bez DPH)",
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                }
+            )
+
+        # Příklad celkové ceny s detailním rozpisem
+        spot = 3.00
+        dist_vt = current_options.get("distribution_fee_vt_kwh", 1.42)
+        dist_nt = current_options.get("distribution_fee_nt_kwh", 0.91106)
+        vat = current_options.get("vat_rate", 21.0)
+
+        # Výpočet pro VT
+        total_vt_bez_dph = spot + dist_vt
+        total_vt_s_dph = total_vt_bez_dph * (1 + vat / 100)
+        dph_vt = total_vt_s_dph - total_vt_bez_dph
+
+        if dual_tariff:
+            total_nt_bez_dph = spot + dist_nt
+            total_nt_s_dph = total_nt_bez_dph * (1 + vat / 100)
+            dph_nt = total_nt_s_dph - total_nt_bez_dph
+
+            example = (
+                f"📝 Výpočet FINÁLNÍ ceny s DPH:\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"☀️ VYSOKÝ TARIF (VT):\n"
+                f"  Spot:        {spot:.2f} CZK/kWh\n"
+                f"  + Distribuce: {dist_vt:.2f} CZK/kWh\n"
+                f"  ─────────────────────────\n"
+                f"  Bez DPH:     {total_vt_bez_dph:.2f} CZK/kWh\n"
+                f"  + DPH {vat:.0f}%:   {dph_vt:.2f} CZK/kWh\n"
+                f"  ═════════════════════════\n"
+                f"  S DPH:       {total_vt_s_dph:.2f} CZK/kWh\n\n"
+                f"🌙 NÍZKÝ TARIF (NT):\n"
+                f"  Spot:        {spot:.2f} CZK/kWh\n"
+                f"  + Distribuce: {dist_nt:.2f} CZK/kWh\n"
+                f"  ─────────────────────────\n"
+                f"  Bez DPH:     {total_nt_bez_dph:.2f} CZK/kWh\n"
+                f"  + DPH {vat:.0f}%:   {dph_nt:.2f} CZK/kWh\n"
+                f"  ═════════════════════════\n"
+                f"  S DPH:       {total_nt_s_dph:.2f} CZK/kWh\n\n"
+                f"💰 ÚSPORA NT: {total_vt_s_dph - total_nt_s_dph:.2f} CZK/kWh\n\n"
+                f"❓ Kde najdu své distribuční poplatky?\n"
+                f"  • Ve smlouvě s distributorem (PRE, ČEZ, EG.D)\n"
+                f"  • Na vyúčtování elektřiny\n"
+                f"  • Na webu distributora\n\n"
+                f"⚠️ POZOR: Zadávejte ceny BEZ DPH!\n"
+                f"  DPH se připočítá automaticky."
+            )
+        else:
+            example = (
+                f"📝 Výpočet FINÁLNÍ ceny s DPH:\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"⚡ JEDNOTNÁ SAZBA:\n"
+                f"  Spot:        {spot:.2f} CZK/kWh\n"
+                f"  + Distribuce: {dist_vt:.2f} CZK/kWh\n"
+                f"  ─────────────────────────\n"
+                f"  Bez DPH:     {total_vt_bez_dph:.2f} CZK/kWh\n"
+                f"  + DPH {vat:.0f}%:   {dph_vt:.2f} CZK/kWh\n"
+                f"  ═════════════════════════\n"
+                f"  S DPH:       {total_vt_s_dph:.2f} CZK/kWh\n\n"
+                f"💡 Jednotná sazba = jedna cena 24/7\n"
+                f"   (žádné rozlišení VT/NT)\n\n"
+                f"⚠️ POZOR: Zadávejte ceny BEZ DPH!\n"
+                f"  DPH se připočítá automaticky."
+            )
+
+        return self.async_show_form(
+            step_id="pricing_distribution",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={
+                "info": f"🔌 DISTRIBUCE & DPH\n{example}",
+            },
+        )
+
+    async def async_step_pricing_tariffs(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Configure tariff time periods."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options, **user_input}
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return await self.async_step_pricing_config()
+
+        current_options = self.config_entry.options
+
+        schema_fields: Dict[str, Any] = {
+            vol.Required(
+                "tariff_nt_start_weekday",
+                default=current_options.get("tariff_nt_start_weekday", "9,13,16,20"),
+                description="🌙 NT začátky - PRACOVNÍ DNY (Po-Pá)",
+            ): str,
+            vol.Required(
+                "tariff_vt_start_weekday",
+                default=current_options.get("tariff_vt_start_weekday", "8,12,15,19"),
+                description="☀️ VT začátky - PRACOVNÍ DNY (Po-Pá)",
+            ): str,
+            vol.Required(
+                "tariff_nt_start_weekend",
+                default=current_options.get("tariff_nt_start_weekend", "0"),
+                description="🌙 NT začátky - VÍKEND (So-Ne)",
+            ): str,
+            vol.Required(
+                "tariff_vt_start_weekend",
+                default=current_options.get("tariff_vt_start_weekend", ""),
+                description="☀️ VT začátky - VÍKEND (So-Ne)",
+            ): str,
+        }
+
+        # Vizualizace tarifních pásem
+        nt_weekday = current_options.get("tariff_nt_start_weekday", "9,13,16,20")
+        vt_weekday = current_options.get("tariff_vt_start_weekday", "8,12,15,19")
+        nt_weekend = current_options.get("tariff_nt_start_weekend", "0")
+        vt_weekend = current_options.get("tariff_vt_start_weekend", "")
+
+        example = (
+            f"⏰ TARIFNÍ PÁSMA VT/NT\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📅 PRACOVNÍ DNY (pondělí - pátek):\n"
+            f"  🌙 NT začíná: {nt_weekday}\n"
+            f"  ☀️ VT začíná: {vt_weekday}\n\n"
+            f"📅 VÍKEND (sobota - neděle):\n"
+            f"  🌙 NT začíná: {nt_weekend if nt_weekend else '(celý víkend)'}\n"
+            f"  ☀️ VT začíná: {vt_weekend if vt_weekend else '(žádný VT)'}\n\n"
+            f"❓ Jak to zadat?\n"
+            f"  • Hodiny oddělujte čárkou\n"
+            f"  • Použijte 24hodinový formát (0-23)\n"
+            f"  • Např: '22,2' = NT od 22:00 a od 2:00\n\n"
+            f"💡 Příklad typického d25:\n"
+            f"  Pracovní dny:\n"
+            f"    NT: 9,13,16,20 (4 pásma)\n"
+            f"    VT: 8,12,15,19\n"
+            f"  Víkend:\n"
+            f"    NT: 0 (celý den)\n"
+            f"    VT: (prázdné)\n\n"
+            f"❓ Kde najdu svoje pásma?\n"
+            f"  • Ve smlouvě s distributorem\n"
+            f"  • Na webu PRE/ČEZ/EG.D\n"
+            f"  • Zákaznická linka distributora\n\n"
+            f"⚠️ POZOR: Každý distributor má jiné časy!"
+        )
+
+        return self.async_show_form(
+            step_id="pricing_tariffs",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={
+                "info": example,
             },
         )
 

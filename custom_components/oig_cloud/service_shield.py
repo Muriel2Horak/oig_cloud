@@ -894,8 +894,15 @@ class ServiceShield:
             ]:
                 return True
         elif "box_prms_mode" in entity_id:
-            # Režim Battery Box: Home 1=0, Home 2=1, Home 3=2, Home UPS=3
-            mode_mapping = {0: "Home 1", 1: "Home 2", 2: "Home 3", 3: "Home UPS"}
+            # OPRAVA: Přidání nových režimů Home 5 a Home 6
+            mode_mapping = {
+                0: "Home 1",
+                1: "Home 2",
+                2: "Home 3",
+                3: "Home UPS",
+                4: "Home 5",
+                5: "Home 6",
+            }
             if current_value == mode_mapping.get(expected_value):
                 return True
         elif "invertor_prms_to_grid" in entity_id:

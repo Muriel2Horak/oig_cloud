@@ -39,6 +39,9 @@ analytics_device_info: Dict[str, Any] = {
     "sw_version": "1.0",
 }
 
+# OPRAVA: Definujeme všechny možné box modes pro konzistenci
+ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
+
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     """Set up OIG Cloud integration."""
@@ -550,6 +553,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             _LOGGER.warning("ServiceShield není dostupný - služby nebudou chráněny")
 
+        # OPRAVA: ODSTRANĚNÍ duplicitní registrace služeb - způsobovala přepsání správného schématu
+        # Služby se už registrovaly výše v async_setup_entry_services_with_shield
+        # await services.async_setup_services(hass)  # ODSTRANĚNO
+        # await services.async_setup_entry_services(hass, entry)  # ODSTRANĚNO
+
         _LOGGER.debug("OIG Cloud integration setup complete")
         return True
 
@@ -677,9 +685,7 @@ async def async_update_options(
         hass.config_entries.async_update_entry(config_entry, options=new_options)
 
 
-async def _cleanup_unused_devices(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> None:
+async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Vyčištění nepoužívaných zařízení."""
     try:
         from homeassistant.helpers import device_registry as dr

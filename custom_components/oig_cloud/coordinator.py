@@ -154,8 +154,18 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
                     # Neházeme chybu - notifikace nejsou kritické pro fungování integrace
 
             # Aktualizuj battery forecast pokud je povolen
-            if self.config_entry.options.get("enable_battery_prediction", True):
+            battery_prediction_enabled: bool = self.config_entry.options.get(
+                "enable_battery_prediction", False
+            )
+            _LOGGER.info(
+                f"🔋 Battery prediction check: enabled={battery_prediction_enabled}"
+            )
+
+            if battery_prediction_enabled:
+                _LOGGER.info("🔋 Battery prediction is ENABLED, starting update...")
                 await self._update_battery_forecast()
+            else:
+                _LOGGER.info("🔋 Battery prediction is DISABLED, skipping update")
 
             return combined_data
 
@@ -169,9 +179,21 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             # Importujeme battery forecast třídu a použijeme její logiku
             from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
 
+            # Získat inverter_sn z config_entry
+            inverter_sn: str = self.config_entry.data.get("inverter_sn", "unknown")
+
+            # Vytvořit device_info pro Analytics Module
+            device_info: Dict[str, Any] = {
+                "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
+                "name": "Analytics & Predictions",
+                "manufacturer": "ČEZ",
+                "model": "Battery Box Analytics Module",
+                "sw_version": "1.0.0",
+            }
+
             # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
             temp_sensor = OigCloudBatteryForecastSensor(
-                self, "battery_forecast", self.config_entry
+                self, "battery_forecast", self.config_entry, device_info
             )
             temp_sensor._hass = self.hass
 
@@ -180,7 +202,8 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("🔋 Battery forecast data updated in coordinator")
 
         except Exception as e:
-            _LOGGER.error(f"🔋 Failed to update battery forecast in coordinator: {e}")
+            _LOGGER.error(
+                f"🔋 Failed to update battery forecast in coordinator: {e}",
+                exc_info=True,
+            )
             self.battery_forecast_data = None
-        except Exception as e:
-            _LOGGER.debug(f"Battery forecast update failed: {e}")

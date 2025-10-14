@@ -1,4 +1,6 @@
-"""OTE (Operator trhu s elektřinou) API pro stahování spotových cen elektřiny."""
+# OTE (Operator trhu s elektřinou) – zjednodušené API:
+# Pouze DAM Period (PT15M) + agregace na hodiny průměrem.
+# Důležité: OTE SOAP endpoint je HTTP a vyžaduje správnou SOAPAction.
 
 import logging
 import aiohttp
@@ -7,35 +9,51 @@ from datetime import datetime, timedelta, date, time, timezone
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Any, TypedDict, cast, Literal
 from decimal import Decimal
-import asyncio
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
 
-# SOAP query template pro elektřinu - zjednodušený
-QUERY_ELECTRICITY = """<?xml version="1.0" encoding="UTF-8" ?>
+# --- NAMESPACE & SOAP ---
+NAMESPACE = "http://www.ote-cr.cz/schema/service/public"
+SOAPENV = "http://schemas.xmlsoap.org/soap/envelope/"
+
+# OTE používá HTTP endpoint (viz WSDL soap:address)
+OTE_PUBLIC_URL = "http://www.ote-cr.cz/services/PublicDataService"
+
+SOAP_ACTIONS = {
+    "GetDamPricePeriodE": f"{NAMESPACE}/GetDamPricePeriodE",
+}
+
+
+def _soap_headers(action: str) -> Dict[str, str]:
+    return {
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": f'"{SOAP_ACTIONS[action]}"',
+    }
+
+
+QUERY_DAM_PERIOD_E = """<?xml version="1.0" encoding="UTF-8" ?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
-    <soapenv:Header/>
-    <soapenv:Body>
-        <pub:GetDamPriceE>
-            <pub:StartDate>{start}</pub:StartDate>
-            <pub:EndDate>{end}</pub:EndDate>
-            <pub:InEur>{in_eur}</pub:InEur>
-        </pub:GetDamPriceE>
-    </soapenv:Body>
+  <soapenv:Header/>
+  <soapenv:Body>
+    <pub:GetDamPricePeriodE>
+      <pub:StartDate>{start}</pub:StartDate>
+      <pub:EndDate>{end}</pub:EndDate>
+      <pub:PeriodResolution>PT15M</pub:PeriodResolution>
+      {range_parts}
+    </pub:GetDamPricePeriodE>
+  </soapenv:Body>
 </soapenv:Envelope>
 """
 
+# ---------- ČNB kurzy ----------
+
 
 class OTEFault(Exception):
-    """Výjimka pro chyby OTE API."""
-
     pass
 
 
 class InvalidDateError(Exception):
-    """Exception raised for invalid date format in CNB API response."""
-
     pass
 
 
@@ -50,7 +68,7 @@ class Rate(TypedDict):
 
 
 class Rates(TypedDict):
-    rates: list[Rate]
+    rates: List[Rate]
 
 
 class RateError(TypedDict):
@@ -62,8 +80,6 @@ class RateError(TypedDict):
 
 
 class CnbRate:
-    """Třída pro získávání kurzů z ČNB API."""
-
     RATES_URL: str = "https://api.cnb.cz/cnbapi/exrates/daily"
 
     def __init__(self) -> None:
@@ -72,9 +88,7 @@ class CnbRate:
         self._last_checked_date: Optional[date] = None
 
     async def download_rates(self, day: date) -> Rates:
-        """Stažení kurzů pro daný den."""
         params = {"date": day.isoformat()}
-
         async with aiohttp.ClientSession() as session:
             async with session.get(self.RATES_URL, params=params) as response:
                 if response.status > 299:
@@ -82,17 +96,12 @@ class CnbRate:
                         error = cast(RateError, await response.json())
                         if error.get("errorCode") == "VALIDATION_ERROR":
                             raise InvalidDateError(f"Invalid date format: {day}")
-
                     raise Exception(f"Error {response.status} while downloading rates")
                 text = cast(Rates, await response.json())
         return text
 
     async def get_day_rates(self, day: date) -> Dict[str, Decimal]:
-        """Získání kurzů pro daný den."""
-        rates: Dict[str, Decimal] = {
-            "CZK": Decimal(1),
-        }
-
+        rates: Dict[str, Decimal] = {"CZK": Decimal(1)}
         cnb_rates: Optional[Rates] = None
         for previous_day in range(0, 7):
             try:
@@ -102,35 +111,28 @@ class CnbRate:
                 break
             except InvalidDateError:
                 continue
-
         if not cnb_rates:
             raise Exception("Could not download CNB rates for last 7 days")
-
         for rate in cnb_rates["rates"]:
             rates[rate["currencyCode"]] = Decimal(rate["rate"])
-
         return rates
 
     async def get_current_rates(self) -> Dict[str, Decimal]:
-        """Získání aktuálních kurzů."""
         now = datetime.now(timezone.utc)
         day = now.astimezone(self._timezone).date()
-
-        # Update if needed
         if self._last_checked_date is None or day != self._last_checked_date:
             self._rates = await self.get_day_rates(day)
             self._last_checked_date = day
-
         return self._rates
 
 
-class OteApi:
-    """API pro stahování dat z OTE - zjednodušeno podle fungujícího příkladu."""
+# ---------- OTE API ----------
 
-    OTE_PUBLIC_URL = "https://www.ote-cr.cz/services/PublicDataService"
+
+class OteApi:
+    """Pouze DAM Period (PT15M) + agregace na hodiny průměrem."""
 
     def __init__(self) -> None:
-        """Inicializace OTE API."""
         self._last_data: Dict[str, Any] = {}
         self._cache_time: Optional[datetime] = None
         self._eur_czk_rate: Optional[float] = None
@@ -139,59 +141,51 @@ class OteApi:
         self.utc = ZoneInfo("UTC")
         self._cnb_rate = CnbRate()
 
+    # ---------- interní utilitky ----------
+
     def _is_cache_valid(self) -> bool:
-        """Kontrola platnosti cache - data jsou platná do večera."""
         if not self._cache_time or not self._last_data:
             return False
-
         now = datetime.now()
-        cache_date = self._cache_time.date()
-        current_date = now.date()
+        return self._cache_time.date() == now.date()
 
-        # Cache je platný celý den
-        if cache_date == current_date:
-            # Po 13:00 zkontrolujeme, jestli máme zítřejší data
-            if now.hour >= 13:
-                tomorrow_available = bool(self._last_data.get("tomorrow_stats"))
-                if not tomorrow_available:
-                    _LOGGER.debug("Cache invalid - no tomorrow data after 13:00")
-                    return False
-            return True
-
-        return False
-
-    def _get_electricity_query(self, start: date, end: date, in_eur: bool) -> str:
-        """Vytvoření SOAP query pro elektřinu."""
-        return QUERY_ELECTRICITY.format(
+    def _dam_period_query(
+        self,
+        start: date,
+        end: date,
+        start_period: Optional[int] = None,
+        end_period: Optional[int] = None,
+    ) -> str:
+        parts: List[str] = []
+        if start_period is not None:
+            parts.append(f"<pub:StartPeriod>{start_period}</pub:StartPeriod>")
+        if end_period is not None:
+            parts.append(f"<pub:EndPeriod>{end_period}</pub:EndPeriod>")
+        return QUERY_DAM_PERIOD_E.format(
             start=start.isoformat(),
             end=end.isoformat(),
-            in_eur="true" if in_eur else "false",
+            range_parts="".join(parts),
         )
 
-    async def _download_soap(self, query: str) -> str:
-        """Download SOAP response - zjednodušeno podle fungujícího příkladu."""
-        _LOGGER.debug(f"Sending SOAP request to {self.OTE_PUBLIC_URL}")
-        _LOGGER.debug(f"SOAP Query:\n{query}")
-
+    async def _download_soap(self, body_xml: str, action: str) -> str:
+        _LOGGER.debug(f"Sending SOAP request to {OTE_PUBLIC_URL} action={action}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
-                    response_text = await response.text()
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    OTE_PUBLIC_URL, data=body_xml, headers=_soap_headers(action)
+                ) as response:
+                    text = await response.text()
                     _LOGGER.debug(f"SOAP Response status: {response.status}")
-
                     if response.status != 200:
-                        _LOGGER.error(
-                            f"SOAP request failed with status {response.status}"
+                        raise aiohttp.ClientError(
+                            f"HTTP {response.status}: {text[:500]}"
                         )
-                        _LOGGER.debug(f"Error response: {response_text}")
-                        raise aiohttp.ClientError(f"HTTP {response.status}")
-
-                    return response_text
+                    return text
         except aiohttp.ClientError as e:
-            raise OTEFault(f"Unable to download rates: {e}")
+            raise OTEFault(f"Unable to download OTE data: {e}")
 
     def _parse_soap_response(self, soap_response: str) -> ET.Element:
-        """Parse SOAP response podle fungujícího příkladu."""
         try:
             root = ET.fromstring(soap_response)
         except Exception as e:
@@ -199,79 +193,73 @@ class OteApi:
                 raise UpdateFailed("OTE Portal is currently not available!") from e
             raise UpdateFailed("Failed to parse query response.") from e
 
-        # Check for SOAP fault
-        fault = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}Fault")
-        if fault:
+        fault = root.find(f".//{{{SOAPENV}}}Fault")
+        if fault is not None:
             faultstring = fault.find("faultstring")
-            error = "Unknown error"
-            if faultstring is not None:
-                error = faultstring.text
-            else:
-                error = soap_response
+            error = faultstring.text if faultstring is not None else "Unknown error"
             raise OTEFault(error)
 
         return root
 
-    async def _get_electricity_rates(
-        self, start: datetime, in_eur: bool, unit: Literal["kWh", "MWh"]
+    def _period_index_to_time(self, date_obj: date, period_index: int) -> datetime:
+        """PT15M; index 1..96 (DST dny 92/100)."""
+        minutes = (period_index - 1) * 15
+        local_dt = datetime.combine(
+            date_obj, time(0), tzinfo=self.timezone
+        ) + timedelta(minutes=minutes)
+        return local_dt.astimezone(self.utc)
+
+    def _aggregate_quarter_to_hour(
+        self, qh_map: Dict[datetime, Decimal]
     ) -> Dict[datetime, Decimal]:
-        """Získání elektrických cen podle fungujícího příkladu."""
-        assert start.tzinfo, "Timezone must be set"
-        start_tz = start.astimezone(self.timezone)
-        first_day = start_tz.date()
+        buckets: Dict[datetime, List[Decimal]] = {}
+        for dt_utc, val in qh_map.items():
+            hkey = dt_utc.replace(minute=0, second=0, microsecond=0)
+            buckets.setdefault(hkey, []).append(val)
+        # prostý průměr ze 4 kvartálů (nebo 3/5 v DST dnech)
+        return {k: (sum(v) / Decimal(len(v))) for k, v in buckets.items() if v}
 
-        # Od včerejška do zítřka
-        query = self._get_electricity_query(
-            first_day - timedelta(days=1),
-            first_day + timedelta(days=1),
-            in_eur=in_eur,
-        )
-
-        text = await self._download_soap(query)
-        root = self._parse_soap_response(text)
+    async def _get_dam_period_prices(
+        self, start_day: date, end_day: date
+    ) -> Dict[datetime, Decimal]:
+        """Stáhne DAM PT15M (EUR/kWh interně)."""
+        query = self._dam_period_query(start_day, end_day)
+        xml = await self._download_soap(query, action="GetDamPricePeriodE")
+        root = self._parse_soap_response(xml)
 
         result: Dict[datetime, Decimal] = {}
         for item in root.findall(".//{http://www.ote-cr.cz/schema/service/public}Item"):
-            date_el = item.find("{http://www.ote-cr.cz/schema/service/public}Date")
-            if date_el is None or date_el.text is None:
-                continue
-
-            current_date = date.fromisoformat(date_el.text)
-
-            hour_el = item.find("{http://www.ote-cr.cz/schema/service/public}Hour")
-            if hour_el is None or hour_el.text is None:
-                current_hour = 0
-                _LOGGER.warning(f'Item has no "Hour" child or is empty: {current_date}')
-            else:
-                current_hour = (
-                    int(hour_el.text) - 1
-                )  # OTE používá 1-24, my potřebujeme 0-23
-
+            d_el = item.find("{http://www.ote-cr.cz/schema/service/public}Date")
+            pidx_el = item.find(
+                "{http://www.ote-cr.cz/schema/service/public}PeriodIndex"
+            )
+            pres_el = item.find(
+                "{http://www.ote-cr.cz/schema/service/public}PeriodResolution"
+            )
             price_el = item.find("{http://www.ote-cr.cz/schema/service/public}Price")
-            if price_el is None or price_el.text is None:
-                _LOGGER.info(
-                    f'Item has no "Price" child or is empty: {current_date} {current_hour}'
-                )
+            if not (
+                d_el is not None
+                and pidx_el is not None
+                and pres_el is not None
+                and price_el is not None
+            ):
+                continue
+            if not (d_el.text and pidx_el.text and pres_el.text and price_el.text):
+                continue
+            if pres_el.text != "PT15M":
+                # bezpečnostně ignorujeme jiné periody
                 continue
 
-            current_price = Decimal(price_el.text)
+            d = date.fromisoformat(d_el.text)
+            pidx = int(pidx_el.text)
+            price_eur_mwh = Decimal(price_el.text)  # EUR/MWh
 
-            if unit == "kWh":
-                # API vrací cenu za MWh, převedeme na kWh
-                current_price /= Decimal(1000)
-            elif unit != "MWh":
-                raise ValueError(f"Invalid unit {unit}")
-
-            # Převedeme na datetime s timezone
-            start_of_day = datetime.combine(current_date, time(0), tzinfo=self.timezone)
-            dt = start_of_day.astimezone(self.utc) + timedelta(hours=current_hour)
-
-            result[dt] = current_price
+            dt_utc = self._period_index_to_time(d, pidx)
+            result[dt_utc] = price_eur_mwh / Decimal(1000)  # EUR/kWh
 
         return result
 
     async def get_cnb_exchange_rate(self) -> Optional[float]:
-        """Získání kurzu EUR/CZK z ČNB API."""
         if self._rate_cache_time and self._eur_czk_rate:
             now = datetime.now()
             if self._rate_cache_time.date() == now.date():
@@ -281,85 +269,132 @@ class OteApi:
             _LOGGER.debug("Fetching CNB exchange rate from API")
             rates = await self._cnb_rate.get_current_rates()
             eur_rate = rates.get("EUR")
-
             if eur_rate:
                 rate_float = float(eur_rate)
                 self._eur_czk_rate = rate_float
                 self._rate_cache_time = datetime.now()
                 _LOGGER.info(f"Successfully fetched CNB rate: {rate_float}")
                 return rate_float
-            else:
-                _LOGGER.warning("EUR rate not found in CNB response")
-
+            _LOGGER.warning("EUR rate not found in CNB response")
         except Exception as e:
             _LOGGER.warning(f"Error fetching CNB rate: {e}")
 
         return None
 
+    # ---------- veřejné API ----------
+
+    @staticmethod
+    def get_current_15min_interval(now: datetime) -> int:
+        """
+        Vrátí index 15min intervalu (0-95) pro daný čas.
+
+        Interval 0 = 00:00-00:15
+        Interval 1 = 00:15-00:30
+        ...
+        Interval 95 = 23:45-24:00
+        """
+        hour: int = now.hour
+        minute: int = now.minute
+
+        # Zaokrouhlit dolů na nejbližších 15 min
+        quarter: int = minute // 15
+
+        # Index = (hodina * 4) + čtvrthodina
+        return (hour * 4) + quarter
+
+    @staticmethod
+    def get_15min_price_for_interval(
+        interval_index: int,
+        spot_data: Dict[str, Any],
+        target_date: Optional[date] = None,
+    ) -> Optional[float]:
+        """
+        Vrátí spotovou cenu pro daný 15min interval z dat.
+
+        Args:
+            interval_index: Index intervalu 0-95
+            spot_data: Data z get_spot_prices()
+            target_date: Datum pro které hledat cenu (default = dnes)
+
+        Returns:
+            Cena v CZK/kWh nebo None pokud není dostupná
+        """
+        if not spot_data or "prices15m_czk_kwh" not in spot_data:
+            return None
+
+        if target_date is None:
+            target_date = datetime.now().date()
+
+        # Vypočítat hodinu a minutu z indexu
+        hour: int = interval_index // 4
+        minute: int = (interval_index % 4) * 15
+
+        # Sestavit klíč pro vyhledání v datech
+        time_key: str = f"{target_date.strftime('%Y-%m-%d')}T{hour:02d}:{minute:02d}:00"
+
+        prices_15m: Dict[str, float] = spot_data["prices15m_czk_kwh"]
+        return prices_15m.get(time_key)
+
     async def get_spot_prices(
         self, date: Optional[datetime] = None, force_today_only: bool = False
     ) -> Dict[str, Any]:
-        """Stažení spotových cen - zjednodušeno podle fungujícího příkladu."""
+        """
+        Stáhne DAM PT15M, agreguje na hodiny průměrem.
+        - Před 13:00 (nebo force_today_only) bere jen dnešek.
+        - Po 13:00 bere včera/dnes/zítra.
+        """
         if date is None:
             date = datetime.now(tz=self.timezone)
 
-        # Cache kontrola
         if self._is_cache_valid():
             _LOGGER.debug("Using cached spot prices from OTE SOAP API")
             return self._last_data
 
         try:
-            # Získáme kurz EUR/CZK
             eur_czk_rate = await self.get_cnb_exchange_rate()
             if not eur_czk_rate:
                 _LOGGER.warning("No CNB rate available, using default 25.0")
                 eur_czk_rate = 25.0
 
-            # NOVÉ: Rozhodnout o rozsahu dat podle času a parametru
             now = datetime.now(tz=self.timezone)
-
             if force_today_only or now.hour < 13:
-                # Před 13:00 nebo force_today_only - stahujeme pouze dnešek
                 start_date = date.date()
                 end_date = date.date()
-                _LOGGER.info(
-                    f"Fetching spot prices from OTE SOAP API for today only: {start_date}"
-                )
+                _LOGGER.info(f"Fetching PT15M prices for today only: {start_date}")
             else:
-                # Po 13:00 - standardní rozsah (včera, dnes, zítra)
                 start_date = date.date() - timedelta(days=1)
                 end_date = date.date() + timedelta(days=1)
-                _LOGGER.info(
-                    f"Fetching spot prices from OTE SOAP API for {start_date} to {end_date}"
-                )
+                _LOGGER.info(f"Fetching PT15M prices for {start_date} to {end_date}")
 
-            # Získáme data v EUR
-            rates_eur = await self._get_electricity_rates(date, in_eur=True, unit="kWh")
-
-            # Převedeme EUR na CZK
-            rates_czk = {}
-            for dt, price_eur in rates_eur.items():
-                rates_czk[dt] = float(price_eur) * eur_czk_rate
-
-            _LOGGER.debug(f"Parsed {len(rates_eur)} hourly rates from OTE API")
-
-            if not rates_eur:
-                _LOGGER.warning("No hourly rates found in OTE response")
+            # 1) stáhni 15m a připrav i agregované hodiny
+            qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
+            if not qh_eur_kwh:
+                _LOGGER.warning("No DAM PT15M data found.")
                 return {}
 
-            # Zpracujeme data do našeho formátu
+            hourly_eur_kwh = self._aggregate_quarter_to_hour(qh_eur_kwh)
+
+            # 2) přepočty na CZK/kWh
+            qh_czk_kwh: Dict[datetime, float] = {
+                dt: float(val) * eur_czk_rate for dt, val in qh_eur_kwh.items()
+            }
+            hourly_czk_kwh: Dict[datetime, float] = {
+                dt: float(val) * eur_czk_rate for dt, val in hourly_eur_kwh.items()
+            }
+
+            # 3) formát výsledku (primárně hodinové klíče; 15m přidány aditivně)
             data = await self._format_spot_data(
-                rates_czk, rates_eur, eur_czk_rate, date
+                hourly_czk_kwh,
+                hourly_eur_kwh,
+                eur_czk_rate,
+                date,
+                qh_rates_czk=qh_czk_kwh,
+                qh_rates_eur=qh_eur_kwh,
             )
 
             if data:
                 self._last_data = data
                 self._cache_time = datetime.now()
-                hours_count = data.get("hours_count", 0)
-                tomorrow_available = bool(data.get("tomorrow_stats"))
-                _LOGGER.info(
-                    f"Successfully fetched spot prices: {hours_count} hours, tomorrow data: {'yes' if tomorrow_available else 'no'}"
-                )
                 return data
 
         except Exception as e:
@@ -369,72 +404,70 @@ class OteApi:
 
     async def _format_spot_data(
         self,
-        rates_czk: Dict[datetime, float],
-        rates_eur: Dict[datetime, Decimal],
+        hourly_czk: Dict[datetime, float],
+        hourly_eur_kwh: Dict[datetime, Decimal],
         eur_czk_rate: float,
         reference_date: datetime,
+        qh_rates_czk: Optional[Dict[datetime, float]] = None,
+        qh_rates_eur: Optional[Dict[datetime, Decimal]] = None,
     ) -> Dict[str, Any]:
-        """Formátování dat do našeho standardního formátu."""
+        """Sestaví výsledek – hlavní výstup jsou hodinové ceny; 15m jsou přiloženy aditivně."""
         today = reference_date.date()
         tomorrow = today + timedelta(days=1)
 
-        hourly_prices_czk_kwh = {}
-        hourly_prices_eur_mwh = {}
+        prices_czk_kwh: Dict[str, float] = {}
+        prices_eur_mwh: Dict[str, float] = {}
 
-        today_prices_czk = []
-        tomorrow_prices_czk = []
+        today_prices_czk: List[float] = []
+        tomorrow_prices_czk: List[float] = []
 
-        for dt, price_czk in rates_czk.items():
-            # Převedeme UTC datetime na lokální čas pro klíč
+        for dt, price_czk in hourly_czk.items():
             local_dt = dt.astimezone(self.timezone)
             price_date = local_dt.date()
-
             time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:00:00"
 
-            # Cena v CZK/kWh
-            hourly_prices_czk_kwh[time_key] = round(price_czk, 4)
+            prices_czk_kwh[time_key] = round(price_czk, 4)
+            prices_eur_mwh[time_key] = round(float(hourly_eur_kwh[dt]) * 1000.0, 2)
 
-            # Cena v EUR/MWh (zpětný převod)
-            price_eur_mwh = float(rates_eur[dt]) * 1000.0  # EUR/kWh -> EUR/MWh
-            hourly_prices_eur_mwh[time_key] = round(price_eur_mwh, 2)
-
-            # Statistiky podle dnů
             if price_date == today:
                 today_prices_czk.append(price_czk)
             elif price_date == tomorrow:
                 tomorrow_prices_czk.append(price_czk)
 
-        if not today_prices_czk:
+        if not prices_czk_kwh:
             return {}
 
-        # Sestavíme výsledek
         all_prices_czk = today_prices_czk + tomorrow_prices_czk
 
-        result = {
+        result: Dict[str, Any] = {
             "date": today.strftime("%Y-%m-%d"),
-            "prices_czk_kwh": hourly_prices_czk_kwh,
-            "prices_eur_mwh": hourly_prices_eur_mwh,
+            "prices_czk_kwh": prices_czk_kwh,  # agregované hodiny v CZK/kWh
+            "prices_eur_mwh": prices_eur_mwh,  # agregované hodiny v EUR/MWh
             "eur_czk_rate": eur_czk_rate,
             "rate_source": "ČNB",
-            "average_price_czk": round(sum(all_prices_czk) / len(all_prices_czk), 4),
-            "min_price_czk": round(min(all_prices_czk), 4),
-            "max_price_czk": round(max(all_prices_czk), 4),
-            "source": "OTE SOAP API + ČNB kurz",
+            "average_price_czk": (
+                round(sum(all_prices_czk) / len(all_prices_czk), 4)
+                if all_prices_czk
+                else None
+            ),
+            "min_price_czk": round(min(all_prices_czk), 4) if all_prices_czk else None,
+            "max_price_czk": round(max(all_prices_czk), 4) if all_prices_czk else None,
+            "source": "OTE SOAP API (DAM PT15M) + ČNB kurz",
             "updated": datetime.now().isoformat(),
-            "hours_count": len(hourly_prices_czk_kwh),
+            "hours_count": len(prices_czk_kwh),
             "date_range": {
-                "from": (
-                    min(hourly_prices_czk_kwh.keys()) if hourly_prices_czk_kwh else None
-                ),
-                "to": (
-                    max(hourly_prices_czk_kwh.keys()) if hourly_prices_czk_kwh else None
-                ),
+                "from": (min(prices_czk_kwh.keys()) if prices_czk_kwh else None),
+                "to": (max(prices_czk_kwh.keys()) if prices_czk_kwh else None),
             },
-            "today_stats": {
-                "avg_czk": round(sum(today_prices_czk) / len(today_prices_czk), 4),
-                "min_czk": round(min(today_prices_czk), 4),
-                "max_czk": round(max(today_prices_czk), 4),
-            },
+            "today_stats": (
+                {
+                    "avg_czk": round(sum(today_prices_czk) / len(today_prices_czk), 4),
+                    "min_czk": round(min(today_prices_czk), 4),
+                    "max_czk": round(max(today_prices_czk), 4),
+                }
+                if today_prices_czk
+                else None
+            ),
             "tomorrow_stats": (
                 {
                     "avg_czk": round(
@@ -447,5 +480,19 @@ class OteApi:
                 else None
             ),
         }
+
+        # aditivně přidáme 15m (můžeš klidně smazat, pokud nechceš)
+        if qh_rates_czk and qh_rates_eur:
+            qh_prices_czk_kwh: Dict[str, float] = {}
+            qh_prices_eur_mwh: Dict[str, float] = {}
+            for dt, price_czk in qh_rates_czk.items():
+                local_dt = dt.astimezone(self.timezone)
+                price_date = local_dt.date()
+                time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
+                qh_prices_czk_kwh[time_key] = round(price_czk, 4)
+                qh_prices_eur_mwh[time_key] = round(float(qh_rates_eur[dt]) * 1000.0, 2)
+
+            result["prices15m_czk_kwh"] = qh_prices_czk_kwh
+            result["prices15m_eur_mwh"] = qh_prices_eur_mwh
 
         return result

@@ -23,15 +23,15 @@
   "services": {
     "set_box_mode": {
       "name": "Set Battery Box Mode",
-      "description": "Set the operational mode of the battery box.",
+      "description": "Set Battery Box mode (Home 1, Home 2, Home 3, Home UPS, Home 5, Home 6)",
       "fields": {
         "mode": {
-          "name": "Battery Mode",
-          "description": "Select the battery mode: Home 1, Home 2, Home 3, or Home UPS."
+          "name": "Mode",
+          "description": "Battery Box mode"
         },
         "acknowledgement": {
           "name": "Acknowledgement",
-          "description": "I acknowledge that calling this service modifies a live system. I take full responsibility for the changes and any effects."
+          "description": "Acknowledge mode change"
         }
       }
     },
@@ -87,6 +87,18 @@
           "name": "Acknowledgement",
           "description": "I acknowledge that starting battery charging from the grid modifies a live system and accept responsibility."
         }
+      }
+    }
+  },
+  "selector": {
+    "set_box_mode": {
+      "options": {
+        "Home 1": "Home 1",
+        "Home 2": "Home 2",
+        "Home 3": "Home 3",
+        "Home UPS": "Home UPS",
+        "Home 5": "Home 5",
+        "Home 6": "Home 6"
       }
     }
   },

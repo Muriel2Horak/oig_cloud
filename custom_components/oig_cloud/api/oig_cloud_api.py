@@ -484,6 +484,14 @@ class OigCloudApi:
                         )
                         return {}
 
+        except (asyncio.TimeoutError, ServerTimeoutError) as e:
+            self._logger.warning(f"Timeout while getting extended stats '{name}': {e}")
+            return {}
+        except ClientConnectorError as e:
+            self._logger.warning(
+                f"Connection error while getting extended stats '{name}': {e}"
+            )
+            return {}
         except Exception as e:
             self._logger.error(f"Error in get_extended_stats for '{name}': {e}")
             return {}

@@ -179,3 +179,14 @@ blueprints/
 /wslvenv
 custom_components/oig_cloud/sensor_dump.json
 .DS_Store
+
+# Backup scripts and folders
+backup_from_ha.sh
+backup_ha_simple.sh
+create_backup.sh
+simple_backup.sh
+backups/
+*.tar.gz
+*.zip
+*BACKUP*.txt
+restore_to_ha.sh

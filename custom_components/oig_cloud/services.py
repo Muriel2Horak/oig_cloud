@@ -19,11 +19,13 @@ _LOGGER = logging.getLogger(__name__)
 SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema({})
 
 # Konstanty pro služby
-MODES = {
+MODES: Dict[str, str] = {
     "Home 1": "0",
     "Home 2": "1",
     "Home 3": "2",
     "Home UPS": "3",
+    "Home 5": "4",
+    "Home 6": "5",
 }
 
 GRID_DELIVERY = {"Vypnuto / Off": 0, "Zapnuto / On": 1, "S omezením / Limited": 2}
@@ -202,7 +204,7 @@ async def async_setup_entry_services_with_shield(
             schema=vol.Schema(
                 {
                     vol.Required("mode"): vol.In(
-                        ["Home 1", "Home 2", "Home 3", "Home UPS"]
+                        ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
                     ),
                     vol.Required("acknowledgement"): vol.In([True]),
                 }
@@ -330,7 +332,7 @@ async def async_setup_entry_services_fallback(
                 handle_set_box_mode,
                 {
                     vol.Required("mode"): vol.In(
-                        ["Home 1", "Home 2", "Home 3", "Home UPS"]
+                        ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
                     ),
                     vol.Required("acknowledgement"): vol.In([True]),
                 },

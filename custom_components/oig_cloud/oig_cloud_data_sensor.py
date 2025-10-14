@@ -382,7 +382,8 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(f"Error computing {sensor_type}: {e}", exc_info=True)
             return None
 
-    def _get_mode_name(self, node_value: Any, language: str) -> str:
+    def _get_mode_name(self, node_value: int, language: str) -> str:
+        """Convert box mode number to human-readable name."""
         if node_value == 0:
             return "Home 1"
         elif node_value == 1:
@@ -391,6 +392,10 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             return "Home 3"
         elif node_value == 3:
             return "Home UPS"
+        elif node_value == 4:
+            return "Home 5"
+        elif node_value == 5:
+            return "Home 6"
         return _LANGS["unknown"][language]
 
     def _grid_mode(
