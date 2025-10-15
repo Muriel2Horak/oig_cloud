@@ -331,7 +331,7 @@ class OigCloudBatteryHelperSensor(CoordinatorEntity, SensorEntity):
                         self._attr_native_value = None
                 else:
                     # Pokud už je datetime objekt, zajisti timezone
-                    if hasattr(calc_time, 'tzinfo') and calc_time.tzinfo is None:
+                    if hasattr(calc_time, "tzinfo") and calc_time.tzinfo is None:
                         self._attr_native_value = dt_util.as_local(calc_time)
                     else:
                         self._attr_native_value = calc_time

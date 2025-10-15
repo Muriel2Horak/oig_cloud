@@ -312,6 +312,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             "charging_hours_tomorrow": charging_tomorrow,
             "peak_hours": [k for k, v in peak_hours.items() if v],
             "off_peak_hours": [k for k, v in peak_hours.items() if not v],
+            "spot_prices": spot_prices_data,  # NOVÉ: Pro dashboard graf
             "optimization_enabled": optimization_config.get("enabled", False),
             # NOVÉ: Control signály pro řízení
             "control_signals": control_signals,

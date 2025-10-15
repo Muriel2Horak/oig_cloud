@@ -202,7 +202,8 @@ class OigBatteryForecastCard extends HTMLElement {
         const options = {
             chart: {
                 type: 'line',
-                height: 400,
+                height: 500,
+                stacked: false,
                 animations: {
                     enabled: true,
                     easing: 'easeinout',
@@ -216,7 +217,7 @@ class OigBatteryForecastCard extends HTMLElement {
                         zoom: true,
                         zoomin: true,
                         zoomout: true,
-                        pan: false,
+                        pan: true,
                         reset: true,
                     }
                 }
@@ -225,60 +226,108 @@ class OigBatteryForecastCard extends HTMLElement {
             xaxis: {
                 type: 'datetime',
                 labels: {
-                    format: 'HH:mm'
+                    format: 'HH:mm',
+                    style: {
+                        fontSize: '11px'
+                    }
                 },
-                title: {
-                    text: 'Čas'
+                axisBorder: {
+                    show: true
+                },
+                axisTicks: {
+                    show: true
                 }
             },
             yaxis: [
                 {
+                    seriesName: 'Kapacita baterie',
                     title: {
-                        text: 'Kapacita baterie (kWh)'
+                        text: 'Kapacita (kWh)',
+                        style: {
+                            fontSize: '12px'
+                        }
                     },
-                    min: 0
+                    min: 0,
+                    max: undefined, // Bude nastaveno dynamicky
+                    labels: {
+                        formatter: (val) => val ? val.toFixed(1) : '0'
+                    }
                 },
                 {
+                    seriesName: 'Výroba',
                     opposite: true,
                     title: {
-                        text: 'Výkon (kW)'
+                        text: 'Výkon (kW)',
+                        style: {
+                            fontSize: '12px'
+                        }
+                    },
+                    min: 0,
+                    labels: {
+                        formatter: (val) => val ? val.toFixed(1) : '0'
                     }
                 }
             ],
             stroke: {
-                width: [3, 3, 2, 2, 2],
+                width: [0, 3, 3, 0],
                 curve: 'smooth'
             },
-            colors: ['#008FFB', '#00E396', '#FEB019', '#FF4560', '#775DD0'],
+            fill: {
+                type: ['gradient', 'solid', 'solid', 'solid'],
+                gradient: {
+                    shadeIntensity: 1,
+                    opacityFrom: 0.7,
+                    opacityTo: 0.2,
+                    stops: [0, 90, 100]
+                }
+            },
+            colors: ['#FF9800', '#4CAF50', '#F44336', '#2196F3'],
             legend: {
-                show: false // Používáme vlastní legendu
+                show: true,
+                position: 'bottom',
+                horizontalAlign: 'center',
+                labels: {
+                    colors: 'var(--primary-text-color, #212121)'
+                },
+                markers: {
+                    width: 12,
+                    height: 12
+                }
             },
             tooltip: {
                 shared: true,
                 intersect: false,
                 x: {
                     format: 'dd.MM HH:mm'
+                },
+                y: {
+                    formatter: (val, opts) => {
+                        if (!val) return '0';
+                        const seriesName = opts.w.config.series[opts.seriesIndex]?.name || '';
+                        if (seriesName.includes('Kapacita')) {
+                            return val.toFixed(2) + ' kWh';
+                        }
+                        return val.toFixed(2) + ' kW';
+                    }
                 }
             },
             grid: {
-                borderColor: '#e7e7e7',
-                row: {
-                    colors: ['#f3f3f3', 'transparent'],
-                    opacity: 0.5
+                borderColor: 'var(--divider-color, #e0e0e0)',
+                strokeDashArray: 3,
+                xaxis: {
+                    lines: {
+                        show: true
+                    }
+                },
+                yaxis: {
+                    lines: {
+                        show: true
+                    }
                 }
             },
             annotations: {
-                xaxis: [{
-                    x: new Date().getTime(),
-                    borderColor: '#999',
-                    label: {
-                        text: 'Nyní',
-                        style: {
-                            color: '#fff',
-                            background: '#999'
-                        }
-                    }
-                }]
+                xaxis: [],
+                points: []
             }
         };
 
@@ -295,178 +344,275 @@ class OigBatteryForecastCard extends HTMLElement {
         if (!entity) return;
 
         const attrs = entity.attributes;
+        
         // Příprava dat pro graf
         const series = this.prepareSeries(attrs);
-        const stats = this.prepareStats(attrs);
-
+        const annotations = this.prepareAnnotations(attrs);
+        
+        // Nastavení max hodnoty pro Y-axis kapacity
+        const maxCapacity = attrs.max_capacity_kwh || 15;
+        
         // Aktualizace grafu
-        this.chart.updateSeries(series);
+        this.chart.updateOptions({
+            series: series,
+            annotations: annotations,
+            yaxis: [
+                {
+                    seriesName: 'Kapacita baterie',
+                    title: {
+                        text: 'Kapacita (kWh)',
+                        style: {
+                            fontSize: '12px'
+                        }
+                    },
+                    min: 0,
+                    max: maxCapacity * 1.1, // 10% rezerva
+                    labels: {
+                        formatter: (val) => val ? val.toFixed(1) : '0'
+                    }
+                },
+                {
+                    seriesName: 'Výroba',
+                    opposite: true,
+                    title: {
+                        text: 'Výkon (kW)',
+                        style: {
+                            fontSize: '12px'
+                        }
+                    },
+                    min: 0,
+                    labels: {
+                        formatter: (val) => val ? val.toFixed(1) : '0'
+                    }
+                }
+            ]
+        });
 
         // Aktualizace statistik
+        const stats = this.prepareStats(attrs);
         this.updateStats(stats);
+    }
+
+    prepareAnnotations(attrs) {
+        const annotations = {
+            xaxis: [],
+            points: []
+        };
+
+        // Přidat vertikální čáru pro "Nyní"
+        const now = new Date().getTime();
+        annotations.xaxis.push({
+            x: now,
+            borderColor: '#999',
+            strokeDashArray: 5,
+            label: {
+                text: 'Nyní',
+                style: {
+                    color: '#fff',
+                    background: '#999'
+                }
+            }
+        });
+
+        // Přidat spot price annotations (červená čísla nahoře)
+        const spotPrices = attrs.spot_prices || {};
+        const peakHours = attrs.peak_hours || [];
+        const offPeakHours = attrs.off_peak_hours || [];
+        
+        Object.entries(spotPrices).forEach(([timestamp, price]) => {
+            const time = new Date(timestamp).getTime();
+            const isPeak = peakHours.includes(timestamp);
+            
+            // Zobrazit ceny pouze každou hodinu (00 minut)
+            if (new Date(timestamp).getMinutes() === 0) {
+                annotations.points.push({
+                    x: time,
+                    y: 0,
+                    marker: {
+                        size: 0
+                    },
+                    label: {
+                        text: price.toFixed(1),
+                        style: {
+                            color: '#fff',
+                            background: isPeak ? '#F44336' : '#4CAF50',
+                            fontSize: '10px',
+                            padding: {
+                                left: 4,
+                                right: 4,
+                                top: 2,
+                                bottom: 2
+                            }
+                        },
+                        offsetY: -10
+                    }
+                });
+            }
+        });
+
+        // Přidat charging hours jako zelené sloupce
+        const chargingHours = [
+            ...(attrs.charging_hours_today || []),
+            ...(attrs.charging_hours_tomorrow || [])
+        ];
+        
+        chargingHours.forEach(timestamp => {
+            const time = new Date(timestamp).getTime();
+            annotations.xaxis.push({
+                x: time,
+                x2: time + (15 * 60 * 1000), // 15 minut
+                fillColor: '#4CAF50',
+                opacity: 0.3,
+                label: {
+                    text: '⚡',
+                    style: {
+                        color: '#fff',
+                        background: '#4CAF50',
+                        fontSize: '10px'
+                    },
+                    offsetY: 0
+                }
+            });
+        });
+
+        return annotations;
     }
 
     prepareSeries(attrs) {
         const series = [];
-        const now = new Date();
 
-        // Kombinace skutečných a predikovaných dat pro baterii
-        const batteryData = this.combineBatteryData(attrs);
+        // 1. KAPACITA BATERIE (oranžová area chart)
+        const batteryData = this.prepareBatteryData(attrs);
         if (batteryData.length > 0) {
             series.push({
                 name: 'Kapacita baterie',
-                data: batteryData,
-                yAxisIndex: 0
+                type: 'area',
+                data: batteryData
             });
         }
-        // Solární výroba
-        const solarData = this.combineSolarData(attrs);
+
+        // 2. VÝROBA (zelená křivka)
+        const solarData = this.prepareSolarData(attrs);
         if (solarData.length > 0) {
             series.push({
-                name: 'Solární výroba',
-                data: solarData,
-                yAxisIndex: 1
+                name: 'Výroba',
+                type: 'line',
+                data: solarData
             });
         }
-        // Spotřeba domu
-        const consumptionData = this.combineConsumptionData(attrs);
+
+        // 3. SPOTŘEBA (červená křivka)
+        const consumptionData = this.prepareConsumptionData(attrs);
         if (consumptionData.length > 0) {
             series.push({
-                name: 'Spotřeba domu',
-                data: consumptionData,
-                yAxisIndex: 1
+                name: 'Spotřeba',
+                type: 'line',
+                data: consumptionData
             });
         }
-        // Nabíjení ze sítě (jako bodové značky)
-        const chargingData = this.prepareChargingData(attrs);
-        if (chargingData.length > 0) {
-            series.push({
-                name: 'Nabíjení ze sítě',
-                data: chargingData,
-                type: 'scatter',
-                yAxisIndex: 0
-            });
-        }
+
+        // 4. NABÍJENÍ (zelené sloupce) - použijeme annotations místo series
+        // Viz prepareAnnotations()
 
         return series;
     }
 
-    combineBatteryData(attrs) {
+    prepareBatteryData(attrs) {
         const data = [];
-
-        // Včerejšek
-        const yesterdayActual = attrs.battery_yesterday_actual || {};
-        Object.entries(yesterdayActual).forEach(([timestamp, value]) => {
-            data.push({
-                x: new Date(timestamp).getTime(),
-                y: value
+        const timelineData = attrs.timeline_data || [];
+        
+        // Pokud máme timeline_data, použijeme je
+        if (timelineData.length > 0) {
+            timelineData.forEach(point => {
+                if (point.timestamp && point.battery_kwh !== undefined) {
+                    data.push({
+                        x: new Date(point.timestamp).getTime(),
+                        y: point.battery_kwh
+                    });
+                }
             });
-        });
-
-        // Dnešek - skutečná data
-        const todayActual = attrs.battery_today_actual || {};
-        Object.entries(todayActual).forEach(([timestamp, value]) => {
+        } else {
+            // Fallback na původní metodu
+            const current = attrs.current_battery_kwh || 0;
+            const now = new Date().getTime();
+            
             data.push({
-                x: new Date(timestamp).getTime(),
-                y: value
+                x: now,
+                y: current
             });
-        });
-        // Dnešek - predikce (od aktuální hodiny)
-        const todayPredicted = attrs.battery_today_predicted || {};
-        Object.entries(todayPredicted).forEach(([timestamp, value]) => {
-            const time = new Date(timestamp);
-            if (time >= new Date()) {
+
+            // Predikce z battery_today_predicted a battery_tomorrow_predicted
+            const todayPredicted = attrs.battery_today_predicted || {};
+            const tomorrowPredicted = attrs.battery_tomorrow_predicted || {};
+            
+            Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
                 data.push({
-                    x: time.getTime(),
+                    x: new Date(timestamp).getTime(),
                     y: value
                 });
-            }
-        });
-        // Zítra - predikce
-        const tomorrowPredicted = attrs.battery_tomorrow_predicted || {};
-        Object.entries(tomorrowPredicted).forEach(([timestamp, value]) => {
-            const time = new Date(timestamp);
-            data.push({
-                x: time.getTime(),
-                y: value
             });
-        });
+        }
 
         return data.sort((a, b) => a.x - b.x);
     }
 
-    combineSolarData(attrs) {
+    prepareSolarData(attrs) {
         const data = [];
-        // Skutečná výroba
-        const yesterdayActual = attrs.solar_yesterday_actual || {};
-        const todayActual = attrs.solar_today_actual || {};
-
-        Object.entries({...yesterdayActual, ...todayActual}).forEach(([timestamp, value]) => {
-            data.push({
-                x: new Date(timestamp).getTime(),
-                y: value
+        const timelineData = attrs.timeline_data || [];
+        
+        if (timelineData.length > 0) {
+            timelineData.forEach(point => {
+                if (point.timestamp && point.solar_kw !== undefined) {
+                    data.push({
+                        x: new Date(point.timestamp).getTime(),
+                        y: point.solar_kw
+                    });
+                }
             });
-        });
-
-        // Predikce
-        const todayPredicted = attrs.solar_today_predicted || {};
-        const tomorrowPredicted = attrs.solar_tomorrow_predicted || {};
-
-        Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
-            const time = new Date(timestamp);
-            if (time >= new Date()) {
+        } else {
+            // Fallback
+            const todayPredicted = attrs.solar_today_predicted || {};
+            const tomorrowPredicted = attrs.solar_tomorrow_predicted || {};
+            
+            Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
                 data.push({
-                    x: time.getTime(),
+                    x: new Date(timestamp).getTime(),
                     y: value
                 });
-            }
-        });
+            });
+        }
 
         return data.sort((a, b) => a.x - b.x);
     }
 
-    combineConsumptionData(attrs) {
+    prepareConsumptionData(attrs) {
         const data = [];
-
-        // Skutečná spotřeba
-        const yesterdayActual = attrs.consumption_yesterday_actual || {};
-        const todayActual = attrs.consumption_today_actual || {};
-
-        Object.entries({...yesterdayActual, ...todayActual}).forEach(([timestamp, value]) => {
-            data.push({
-                x: new Date(timestamp).getTime(),
-                y: Math.abs(value) // Spotřeba jako pozitivní hodnota
+        const timelineData = attrs.timeline_data || [];
+        
+        if (timelineData.length > 0) {
+            timelineData.forEach(point => {
+                if (point.timestamp && point.consumption_kw !== undefined) {
+                    data.push({
+                        x: new Date(point.timestamp).getTime(),
+                        y: Math.abs(point.consumption_kw) // Spotřeba jako pozitivní
+                    });
+                }
             });
-        });
-        // Predikce
-        const todayPredicted = attrs.consumption_today_predicted || {};
-        const tomorrowPredicted = attrs.consumption_tomorrow_predicted || {};
-
-        Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
-            const time = new Date(timestamp);
-            if (time >= new Date()) {
+        } else {
+            // Fallback - použít konstantní spotřebu z prediction
+            const prediction = attrs.consumption_prediction || {};
+            const avgHourly = prediction.average_hourly_kwh || 0.5;
+            
+            // Vytvoř predikci na 48 hodin
+            const now = new Date();
+            for (let i = 0; i < 48; i++) {
+                const timestamp = new Date(now.getTime() + i * 60 * 60 * 1000);
                 data.push({
-                    x: time.getTime(),
-                    y: Math.abs(value) // Spotřeba jako pozitivní hodnota
+                    x: timestamp.getTime(),
+                    y: avgHourly
                 });
             }
-        });
-
-        return data.sort((a, b) => a.x - b.x);
-    }
-
-    prepareChargingData(attrs) {
-        const data = [];
-        const chargingToday = attrs.charging_hours_today || [];
-        const chargingTomorrow = attrs.charging_hours_tomorrow || [];
-        const maxCapacity = attrs.battery_config?.max_capacity_kwh || 10;
-
-        [...chargingToday, ...chargingTomorrow].forEach(timestamp => {
-            data.push({
-                x: new Date(timestamp).getTime(),
-                y: maxCapacity * 0.9 // Zobrazit nabíjení nahoře v grafu
-            });
-        });
+        }
 
         return data.sort((a, b) => a.x - b.x);
     }
