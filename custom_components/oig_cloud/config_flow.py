@@ -1662,22 +1662,27 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_dashboard_config(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Zobrazit informace o dashboard (modul ve vývoji)."""
+        """Konfigurace webového dashboardu."""
         if user_input is not None:
-            # Pouze návrat do menu - žádné změny nejsou možné
-            return await self.async_step_init()
+            # Aktualizovat options
+            new_options = {**self.config_entry.options, **user_input}
+            
+            # Restart integrace pro aplikování změn (dashboard se musí zaregistrovat/odregistrovat)
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            
+            return self.async_create_entry(title="", data=new_options)
 
         current_options = self.config_entry.options
         dashboard_enabled = current_options.get("enable_dashboard", False)
 
-        # Read-only schema - pouze informační tlačítko
+        # Konfigurace dashboardu
         schema = vol.Schema(
             {
                 vol.Required(
-                    "info_only",
-                    default="back_to_menu",
-                    description="Modul ve vývoji - změny nejsou možné",
-                ): vol.In({"back_to_menu": "Zpět do hlavního menu"})
+                    "enable_dashboard",
+                    default=dashboard_enabled,
+                    description="Povolit energetický dashboard s grafy (ApexCharts)",
+                ): bool,
             }
         )
 
@@ -1685,7 +1690,15 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="dashboard_config",
             data_schema=schema,
             description_placeholders={
-                "current_state": ("Povolen" if dashboard_enabled else "Zakázán"),
-                "info": "Webový dashboard je momentálně ve vývoji a není dostupný pro konfiguraci",
+                "info": (
+                    "📊 Energetický dashboard zobrazuje:\n"
+                    "• Graf kapacity baterie (48h předpověď)\n"
+                    "• Solární výrobu a spotřebu\n"
+                    "• Spotové ceny elektřiny\n"
+                    "• Doporučené nabíjecí hodiny\n"
+                    "• Control signály pro automatizace\n\n"
+                    "Dashboard najdete v: Boční panel → OIG Dashboard\n"
+                    "Custom card: oig-battery-forecast-card"
+                )
             },
         )
