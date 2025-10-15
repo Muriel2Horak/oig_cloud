@@ -664,46 +664,51 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"(below {min_capacity_kwh:.2f}kWh) at {critical_time}"
                 )
 
-                # Najít nejlevnější off-peak hodinu která pomůže
-                # Preferujeme hodiny PŘED critical_time, ale pokud žádná není, vezmeme první dostupnou
-                selected_hour: Optional[tuple[str, float]] = None
-                fallback_hour: Optional[tuple[str, float]] = None
-
-                _LOGGER.debug(
-                    f"🔋 Looking for off-peak hour to prevent critical state at {critical_time}"
-                )
+                # SPRÁVNÁ LOGIKA podle původního zadání:
+                # 1. Najdi všechny off-peak hodiny PŘED critical_time (a po current_time)
+                # 2. Z nich vyber NEJLEVNĚJŠÍ
 
                 current_time = datetime.now().strftime("%Y-%m-%dT%H:00:00")
-                
-                for time_key, price in off_peak_prices:
-                    # Skip hodiny které už proběhly nebo už jsou v charging_hours
-                    if time_key < current_time or time_key in [h for h, _ in charging_hours]:
-                        continue
-                    
-                    _LOGGER.debug(
-                        f"🔋 Checking {time_key}: before_critical={time_key < critical_time}, price={price:.2f}"
-                    )
-                    
-                    # Preferujeme hodiny PŘED critical_time
-                    if time_key < critical_time:
-                        selected_hour = (time_key, price)
-                        _LOGGER.debug(f"🔋 ✓ Found hour before critical time: {time_key}")
-                        break
-                    elif fallback_hour is None:
-                        # Záložní varianta: první dostupná hodina (i po critical_time)
-                        fallback_hour = (time_key, price)
 
-                # Pokud nemáme hodinu před critical_time, použij fallback
-                if not selected_hour and fallback_hour:
-                    selected_hour = fallback_hour
-                    _LOGGER.warning(
-                        f"🔋 ⚠️ No off-peak before critical time, using fallback: {selected_hour[0]}"
+                # Filtruj hodiny: musí být v budoucnu (>= current_time) A před critical_time
+                hours_before_critical = [
+                    (time_key, price)
+                    for time_key, price in off_peak_prices
+                    if current_time <= time_key < critical_time
+                    and time_key not in [h for h, _ in charging_hours]
+                ]
+
+                selected_hour: Optional[tuple[str, float]] = None
+
+                if hours_before_critical:
+                    # Vyber NEJLEVNĚJŠÍ z hodin před critical_time
+                    selected_hour = min(hours_before_critical, key=lambda x: x[1])
+                    _LOGGER.info(
+                        f"🔋 ✓ Found cheapest off-peak before critical: {selected_hour[0]} "
+                        f"at {selected_hour[1]:.2f} CZK/kWh (from {len(hours_before_critical)} options)"
                     )
+                else:
+                    # Fallback: žádná off-peak hodina před critical_time
+                    # Vyber nejbližší dostupnou (i po critical_time) - lepší pozdě než nikdy
+                    future_hours = [
+                        (time_key, price)
+                        for time_key, price in off_peak_prices
+                        if time_key >= current_time
+                        and time_key not in [h for h, _ in charging_hours]
+                    ]
+
+                    if future_hours:
+                        # Vyber časově nejbližší (ne nejlevnější!)
+                        selected_hour = min(future_hours, key=lambda x: x[0])
+                        _LOGGER.warning(
+                            f"🔋 ⚠️ No off-peak before critical time! Using nearest future: {selected_hour[0]} "
+                            f"at {selected_hour[1]:.2f} CZK/kWh (AFTER critical_time!)"
+                        )
 
                 if selected_hour:
                     charging_hours.append(selected_hour)
                     _LOGGER.info(
-                        f"🔋 ✅ EMERGENCY charging at {selected_hour[0]} "
+                        f"🔋 ✅ Adding charging hour: {selected_hour[0]} "
                         f"(price: {selected_hour[1]:.2f} CZK/kWh)"
                     )
 
