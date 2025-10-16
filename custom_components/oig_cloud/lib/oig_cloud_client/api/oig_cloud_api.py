@@ -141,7 +141,9 @@ class OigCloudApi:
                 "Chrome/141.0.0.0 Mobile Safari/537.36"
             ),
             "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
+            "Connection": "keep-alive",
             "Referer": "https://www.oigpower.cz/cez/",
             "Origin": "https://www.oigpower.cz",
             "Sec-Ch-Ua": '"Not)A;Brand";v="99", "Google Chrome";v="141", "Chromium";v="141"',
