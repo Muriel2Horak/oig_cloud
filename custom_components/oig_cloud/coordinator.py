@@ -123,6 +123,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
         """Fetch data from API endpoint with jittered timing."""
         # Apply jitter to this update cycle
         jitter = self._calculate_jitter()
+        _LOGGER.debug(f"⏱️  Applying jitter: {jitter:+.2f}s to this update cycle")
         if jitter > 0:
             await asyncio.sleep(jitter)
         # Note: negative jitter is handled by scheduling earlier next time

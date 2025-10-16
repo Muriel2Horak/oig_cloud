@@ -240,6 +240,10 @@ class OigCloudApi:
                 
                 self._logger.debug(f"Getting stats from {url}")
                 async with session.get(url, headers=extra_headers) as response:
+                    # Debug: log response headers
+                    etag_header = response.headers.get("ETag")
+                    self._logger.debug(f"Response status: {response.status}, ETag header: {etag_header}")
+                    
                     # Handle 304 Not Modified - return cached data
                     if response.status == 304:
                         if cached and cached.get("data") is not None:
