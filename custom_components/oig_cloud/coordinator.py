@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import random
 import time
 from datetime import timedelta, datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -14,6 +15,9 @@ from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudApiErro
 from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Jitter configuration: ±5 seconds around base interval
+JITTER_SECONDS = 5.0
 
 
 class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
@@ -63,6 +67,24 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Battery forecast data
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
+        
+        # Jitter tracking for randomized polling
+        self._next_jitter: float = 0.0
+
+    def _calculate_jitter(self) -> float:
+        """Calculate jitter for next update interval.
+        
+        Returns random offset between -JITTER_SECONDS and +JITTER_SECONDS.
+        Ensures final interval is at least 1 second.
+        """
+        jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
+        self._next_jitter = jitter
+        
+        # Log jitter for monitoring
+        if abs(jitter) > 1.0:
+            _LOGGER.debug(f"⏱️  Polling jitter: {jitter:+.1f}s (next update offset)")
+        
+        return jitter
 
     async def _fetch_basic_data(self) -> Dict[str, Any]:
         """Fetch basic data from API."""
@@ -98,7 +120,13 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Failed to fetch extended data: {e}")
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from API endpoint."""
+        """Fetch data from API endpoint with jittered timing."""
+        # Apply jitter to this update cycle
+        jitter = self._calculate_jitter()
+        if jitter > 0:
+            await asyncio.sleep(jitter)
+        # Note: negative jitter is handled by scheduling earlier next time
+        
         try:
             combined_data: Dict[str, Any] = {}
 

@@ -83,7 +83,12 @@ class OigCloudApi:
         self.box_id: Optional[str] = None
         self.last_state: Optional[Dict[str, Any]] = None
         self.last_parsed_state: Optional[OigCloudData] = None
-        self._logger.debug("OigCloud initialized")
+        
+        # ETag cache: per-endpoint storage
+        # Structure: {endpoint: {"etag": str|None, "data": Any|None, "ts": float}}
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        
+        self._logger.debug("OigCloud initialized with ETag caching support")
 
     async def authenticate(self) -> bool:
         """Authenticate with the OIG Cloud API."""
@@ -156,6 +161,26 @@ class OigCloudApi:
 
         return aiohttp.ClientSession(headers=headers, timeout=self._timeout)
 
+    def _update_cache(
+        self, endpoint: str, response: aiohttp.ClientResponse, data: Any
+    ) -> None:
+        """Update ETag cache for endpoint.
+        
+        Args:
+            endpoint: API endpoint path (e.g., 'json.php')
+            response: aiohttp response object
+            data: Parsed response data
+        """
+        etag = response.headers.get("ETag")
+        if etag:
+            self._logger.debug(f"💾 Caching ETag for {endpoint}: {etag[:20]}...")
+        
+        self._cache[endpoint] = {
+            "etag": etag,
+            "data": data,
+            "ts": time.time(),
+        }
+
     async def get_stats(self) -> Optional[Dict[str, Any]]:
         """Get stats from the OIG Cloud API with caching."""
         async with lock:
@@ -199,14 +224,49 @@ class OigCloudApi:
             raise OigCloudApiError(f"Failed to get stats: {e}") from e
 
     async def _try_get_stats(self, dependent: bool = False) -> Optional[Dict[str, Any]]:
-        """Try to get stats with proper error handling."""
+        """Try to get stats with proper error handling and ETag support."""
+        endpoint = "json.php"
+        
         try:
             async with self.get_session() as session:
                 url: str = self._base_url + self._get_stats_url
+                
+                # Prepare headers with If-None-Match if we have cached ETag
+                extra_headers: Dict[str, str] = {}
+                cached = self._cache.get(endpoint)
+                if cached and cached.get("etag"):
+                    extra_headers["If-None-Match"] = cached["etag"]
+                    self._logger.debug(f"📋 ETag hit → If-None-Match={cached['etag'][:20]}...")
+                
                 self._logger.debug(f"Getting stats from {url}")
-                async with session.get(url) as response:
+                async with session.get(url, headers=extra_headers) as response:
+                    # Handle 304 Not Modified - return cached data
+                    if response.status == 304:
+                        if cached and cached.get("data") is not None:
+                            self._logger.debug("✅ 304 Not Modified → using cached data")
+                            return cached["data"]
+                        else:
+                            self._logger.warning("⚠️  304 received but no cached data available")
+                            # Fallback: retry without If-None-Match
+                            async with session.get(url) as retry_response:
+                                if retry_response.status == 200:
+                                    result = await retry_response.json()
+                                    self._update_cache(endpoint, retry_response, result)
+                                    return result
+                                else:
+                                    raise ClientResponseError(
+                                        request_info=retry_response.request_info,
+                                        history=retry_response.history,
+                                        status=retry_response.status,
+                                        message=f"Failed to fetch stats, status {retry_response.status}",
+                                    )
+                    
                     if response.status == 200:
                         result: Dict[str, Any] = await response.json()
+                        
+                        # Update cache with new data and ETag
+                        self._update_cache(endpoint, response, result)
+                        
                         if not isinstance(result, dict) and not dependent:
                             self._logger.info("Retrying authentication")
                             if await self.authenticate():
@@ -457,7 +517,9 @@ class OigCloudApi:
     async def get_extended_stats(
         self, name: str, from_date: str, to_date: str
     ) -> Dict[str, Any]:
-        """Get extended statistics - fixed to return actual data."""
+        """Get extended statistics with ETag support."""
+        endpoint = f"json2.php:{name}"  # Per-name caching
+        
         try:
             self._logger.debug(
                 f"Getting extended stats '{name}' from {from_date} to {to_date}"
@@ -466,17 +528,42 @@ class OigCloudApi:
             async with self.get_session() as session:
                 url: str = self._base_url + "json2.php"
 
+                # Prepare headers with If-None-Match if we have cached ETag
+                extra_headers: Dict[str, str] = {"Content-Type": "application/json"}
+                cached = self._cache.get(endpoint)
+                if cached and cached.get("etag"):
+                    extra_headers["If-None-Match"] = cached["etag"]
+                    self._logger.debug(f"📋 ETag hit for '{name}' → If-None-Match={cached['etag'][:20]}...")
+
                 # Původní payload formát
                 payload: Dict[str, str] = {
                     "name": name,
                     "range": f"{from_date},{to_date},0",
                 }
-                headers: Dict[str, str] = {"Content-Type": "application/json"}
 
-                async with session.post(url, json=payload, headers=headers) as response:
+                async with session.post(url, json=payload, headers=extra_headers) as response:
+                    # Handle 304 Not Modified
+                    if response.status == 304:
+                        if cached and cached.get("data") is not None:
+                            self._logger.debug(f"✅ 304 Not Modified for '{name}' → using cached data")
+                            return cached["data"]
+                        else:
+                            self._logger.warning(f"⚠️  304 received for '{name}' but no cached data available")
+                            # Fallback without If-None-Match
+                            async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as retry_response:
+                                if retry_response.status == 200:
+                                    result = await retry_response.json()
+                                    self._update_cache(endpoint, retry_response, result)
+                                    return result
+                                return {}
+                    
                     if response.status == 200:
                         try:
                             result: Dict[str, Any] = await response.json()
+                            
+                            # Update cache with new data and ETag
+                            self._update_cache(endpoint, response, result)
+                            
                             self._logger.debug(
                                 f"Extended stats '{name}' retrieved successfully, data size: {len(str(result))}"
                             )

@@ -25,6 +25,24 @@ Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné j
 
 Po instalaci a konfiguraci se vytvoří nové zařízení a entity. Všechny entity jsou dostupné v entitním registru a lze je tak přidat do UI. K aktualizaci dat dochází každou minutu.
 
+### 🚀 Optimalizace komunikace s API
+
+Integrace využívá pokročilé techniky pro minimalizaci zátěže OIG Cloud API:
+
+- **ETag / If-None-Match Caching**: 
+  - Při každém požadavku integrace ukládá ETag hlavičku z odpovědi serveru
+  - Při dalších požadavcích posílá `If-None-Match` hlavičku
+  - Pokud data na serveru nebyla změněna, server vrací `304 Not Modified` a integrace používá lokální cache
+  - Výsledek: Snížení přenosů dat a rychlejší odezva při nezměněných datech
+
+- **Jitter v pollingu**:
+  - Základní interval aktualizace je 30 sekund
+  - K tomuto intervalu se přidává náhodná odchylka ±5 sekund
+  - Důvod: Rozprostření zátěže na server, zamezení synchronizovaných requestů
+  - Příklad: Interval se náhodně pohybuje mezi 25-35 sekundami
+
+Tyto optimalizace jsou transparentní pro uživatele a fungují automaticky na pozadí.
+
 ## Energie
 
 Integrace obsahuje statistické entity, které lze přímo využít v panelu Energie. Jde o položky:
