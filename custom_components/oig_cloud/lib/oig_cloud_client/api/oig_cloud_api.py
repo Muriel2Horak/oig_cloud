@@ -70,7 +70,7 @@ class OigCloudApi:
         timeout: int = 30,
     ) -> None:
         """Initialize the API client.
-        
+
         Args:
             username: OIG Cloud username
             password: OIG Cloud password
@@ -190,7 +190,7 @@ class OigCloudApi:
 
     async def get_stats(self) -> Optional[Dict[str, Any]]:
         """Get stats from the OIG Cloud API.
-        
+
         Note: No internal caching - coordinator controls timing.
         last_state is only used for timeout fallback.
         """
