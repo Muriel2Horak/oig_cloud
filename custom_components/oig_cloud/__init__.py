@@ -314,14 +314,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
+        # NOVÉ: Vytvoření OigCloudApi a zabalení do SessionManageru
         oig_api = OigCloudApi(username, password, no_telemetry)
 
-        _LOGGER.debug("Authenticating with OIG Cloud")
-        await oig_api.authenticate()
+        _LOGGER.debug("Creating session manager wrapper")
+        from .api.oig_cloud_session_manager import OigCloudSessionManager
 
-        # Inicializace koordinátoru
+        session_manager = OigCloudSessionManager(oig_api)
+
+        _LOGGER.debug("Initial authentication via session manager")
+        # Session manager zavolá authenticate() při prvním požadavku,
+        # ale provedeme to i zde pro kontrolu přihlašovacích údajů
+        await session_manager._ensure_auth()
+
+        # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
         coordinator = OigCloudCoordinator(
-            hass, oig_api, standard_scan_interval, extended_scan_interval, entry
+            hass, session_manager, standard_scan_interval, extended_scan_interval, entry
         )
 
         # OPRAVA: Počkej na první data před vytvořením senzorů
@@ -347,8 +355,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
             # OPRAVA: Použít oig_api objekt (OigCloudApi) místo jakéhokoliv jiného
+            # NOVÉ: Použít session_manager.api pro přístup k underlying API
             notification_manager = OigNotificationManager(
-                hass, oig_api, "https://www.oigpower.cz/cez/"
+                hass, session_manager.api, "https://www.oigpower.cz/cez/"
             )
 
             # Nastavíme device_id z prvního dostupného zařízení v coordinator.data
@@ -437,6 +446,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Uložení dat do hass.data
         hass.data[DOMAIN][entry.entry_id] = {
             "coordinator": coordinator,
+            "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
             "solar_forecast": solar_forecast,
             "statistics_enabled": statistics_enabled,
@@ -618,6 +628,13 @@ async def async_unload_entry(
     """Unload a config entry."""
     # Odebrání dashboard panelu při unload
     await _remove_frontend_panel(hass, entry)
+
+    # NOVÉ: Cleanup session manageru
+    if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+        session_manager = hass.data[DOMAIN][entry.entry_id].get("session_manager")
+        if session_manager:
+            _LOGGER.debug("Closing session manager")
+            await session_manager.close()
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
     if unload_ok:
