@@ -8,8 +8,8 @@ from datetime import timedelta, datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_point_in_utc_time
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util.dt import utcnow
 
@@ -69,78 +69,24 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Battery forecast data
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
-        
-        # Jitter tracking for randomized polling
-        self._next_jitter: float = 0.0
-        
+
         _LOGGER.info(
             f"Coordinator initialized with intervals: standard={effective_interval.total_seconds()}s, "
             f"extended={self._extended_update_interval}s, jitter=±{JITTER_SECONDS}s"
         )
 
-    def _schedule_refresh(self) -> None:
-        """Schedule the next refresh with jitter."""
-        if self._unsub_refresh:
-            self._unsub_refresh()
-            self._unsub_refresh = None
-
-        if not self.update_interval:
-            return
-
-        # Calculate jittered interval
-        jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
-        jittered_interval = self.update_interval + timedelta(seconds=jitter)
-        
-        # Ensure minimum interval of 5 seconds
-        if jittered_interval.total_seconds() < 5:
-            jittered_interval = timedelta(seconds=5)
-        
-        _LOGGER.debug(
-            f"⏱️  Scheduling next update in {jittered_interval.total_seconds():.1f}s "
-            f"(base: {self.update_interval.total_seconds()}s, jitter: {jitter:+.1f}s)"
-        )
-
-        self._unsub_refresh = async_track_point_in_utc_time(
-            self.hass,
-            self._handle_refresh_interval,
-            utcnow() + jittered_interval,
-        )
-
-    async def _fetch_basic_data(self) -> Dict[str, Any]:
-        """Fetch basic data from API."""
-        try:
-            data: Optional[Dict[str, Any]] = await self.api.get_stats()
-            return {"basic": data if data is not None else {}}
-        except OigCloudApiError as e:
-            _LOGGER.error(f"Error fetching basic data: {e}")
-            raise UpdateFailed(f"Failed to fetch basic data: {e}")
-
-    async def _fetch_extended_data(self) -> Dict[str, Any]:
-        """Fetch extended data from API."""
-        try:
-            # Get extended stats for different time periods
-            today: datetime = datetime.now()
-            yesterday: datetime = today.replace(day=today.day - 1)
-
-            today_str: str = today.strftime("%Y-%m-%d")
-            yesterday_str: str = yesterday.strftime("%Y-%m-%d")
-
-            # Fetch different types of extended data
-            daily_data: Dict[str, Any] = await self.api.get_extended_stats(
-                name="daily", from_date=yesterday_str, to_date=today_str
-            )
-
-            monthly_data: Dict[str, Any] = await self.api.get_extended_stats(
-                name="monthly", from_date=today.strftime("%Y-%m-01"), to_date=today_str
-            )
-
-            return {"extended": {"daily": daily_data, "monthly": monthly_data}}
-        except OigCloudApiError as e:
-            _LOGGER.error(f"Error fetching extended data: {e}")
-            raise UpdateFailed(f"Failed to fetch extended data: {e}")
-
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from API endpoint."""
+        """Fetch data from API endpoint with jittered timing."""
+        # Apply jitter - random delay at start of update
+        jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
+
+        # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
+        if jitter > 0:
+            _LOGGER.debug(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
+            await asyncio.sleep(jitter)
+        else:
+            _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
+
         try:
             combined_data: Dict[str, Any] = {}
 

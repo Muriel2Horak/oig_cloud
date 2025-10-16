@@ -37,16 +37,16 @@ RESPONSE_HEADERS=$(sshpass -p "$PASSWORD" ssh "$HOST" "docker exec $CONTAINER gr
 
 if [ -n "$RESPONSE_HEADERS" ]; then
     echo "📋 HTTP Responses (poslední 20):"
-    
+
     # Počítadla
     TOTAL=0
     WITH_ETAG=0
     WITHOUT_ETAG=0
     STATUS_304=0
-    
+
     while read line; do
         TOTAL=$((TOTAL + 1))
-        
+
         # Extrakt status a ETag
         if echo "$line" | grep -q "ETag header: None"; then
             WITHOUT_ETAG=$((WITHOUT_ETAG + 1))
@@ -55,19 +55,19 @@ if [ -n "$RESPONSE_HEADERS" ]; then
             WITH_ETAG=$((WITH_ETAG + 1))
             echo "   ✅ $line"
         fi
-        
+
         if echo "$line" | grep -q "status: 304"; then
             STATUS_304=$((STATUS_304 + 1))
         fi
     done <<< "$RESPONSE_HEADERS"
-    
+
     echo ""
     echo "📊 STATISTIKA:"
     echo "   Celkem responses: $TOTAL"
     echo "   S ETag headerem: $WITH_ETAG ($(awk "BEGIN {printf \"%.1f\", ($WITH_ETAG/$TOTAL)*100}")%)"
     echo "   Bez ETag headeru: $WITHOUT_ETAG ($(awk "BEGIN {printf \"%.1f\", ($WITHOUT_ETAG/$TOTAL)*100}")%)"
     echo "   304 Not Modified: $STATUS_304"
-    
+
     if [ $WITH_ETAG -gt 0 ]; then
         echo ""
         echo "✅ SERVER PODPORUJE ETAG!"
@@ -91,11 +91,11 @@ CACHE_HITS=$(sshpass -p "$PASSWORD" ssh "$HOST" "docker exec $CONTAINER grep -E 
 
 if [ -n "$CACHE_HITS" ]; then
     echo "📋 Cache aktivita (poslední 30):"
-    
+
     ETAG_HITS=0
     CACHE_304=0
     CACHE_STORES=0
-    
+
     while read line; do
         if echo "$line" | grep -q "ETag hit"; then
             ETAG_HITS=$((ETAG_HITS + 1))
@@ -108,13 +108,13 @@ if [ -n "$CACHE_HITS" ]; then
             echo "   💾 $line"
         fi
     done <<< "$CACHE_HITS"
-    
+
     echo ""
     echo "📊 CACHE STATISTIKA:"
     echo "   If-None-Match odesláno: $ETAG_HITS"
     echo "   304 Not Modified přijato: $CACHE_304"
     echo "   Nové ETagy uloženy: $CACHE_STORES"
-    
+
     if [ $CACHE_304 -gt 0 ]; then
         HIT_RATE=$(awk "BEGIN {printf \"%.1f\", ($CACHE_304/($CACHE_304 + $CACHE_STORES))*100}")
         echo "   Cache hit rate: ~$HIT_RATE%"
@@ -131,7 +131,7 @@ JITTER_LOGS=$(sshpass -p "$PASSWORD" ssh "$HOST" "docker exec $CONTAINER grep -E
 
 if [ -n "$JITTER_LOGS" ]; then
     echo "📋 Jitter hodnoty (poslední 50):"
-    
+
     # Extrakt jitter hodnot
     JITTER_VALUES=()
     while read line; do
@@ -139,7 +139,7 @@ if [ -n "$JITTER_LOGS" ]; then
         VALUE=$(echo "$line" | grep -oE '[-+][0-9]+\.[0-9]+s' | head -1 | sed 's/s$//')
         if [ -n "$VALUE" ]; then
             JITTER_VALUES+=("$VALUE")
-            
+
             # Formátovaný výstup s barvou
             if (( $(echo "$VALUE > 0" | bc -l) )); then
                 echo "   ⏱️  $line"
@@ -148,26 +148,26 @@ if [ -n "$JITTER_LOGS" ]; then
             fi
         fi
     done <<< "$JITTER_LOGS"
-    
+
     if [ ${#JITTER_VALUES[@]} -gt 0 ]; then
         echo ""
         echo "📊 JITTER STATISTIKA:"
         echo "   Celkem vzorků: ${#JITTER_VALUES[@]}"
-        
+
         # Výpočet min/max/avg
         MIN=$(printf '%s\n' "${JITTER_VALUES[@]}" | sort -n | head -1)
         MAX=$(printf '%s\n' "${JITTER_VALUES[@]}" | sort -n | tail -1)
         AVG=$(printf '%s\n' "${JITTER_VALUES[@]}" | awk '{sum+=$1} END {printf "%.2f", sum/NR}')
-        
+
         echo "   Minimum: ${MIN}s"
         echo "   Maximum: ${MAX}s"
         echo "   Průměr: ${AVG}s"
         echo "   Očekávaný rozsah: ±5.0s"
-        
+
         # Kontrola rozsahu
         MIN_OK=$(echo "$MIN >= -5.0" | bc -l)
         MAX_OK=$(echo "$MAX <= 5.0" | bc -l)
-        
+
         if [ "$MIN_OK" -eq 1 ] && [ "$MAX_OK" -eq 1 ]; then
             echo ""
             echo "   ✅ Jitter v očekávaném rozsahu (-5.0s až +5.0s)"
@@ -175,14 +175,14 @@ if [ -n "$JITTER_LOGS" ]; then
             echo ""
             echo "   ⚠️  Jitter mimo očekávaný rozsah!"
         fi
-        
+
         # Distribuce
         echo ""
         echo "   📊 Distribuce:"
         NEGATIVE=$(printf '%s\n' "${JITTER_VALUES[@]}" | awk '$1 < 0' | wc -l)
         POSITIVE=$(printf '%s\n' "${JITTER_VALUES[@]}" | awk '$1 > 0' | wc -l)
         ZERO=$(printf '%s\n' "${JITTER_VALUES[@]}" | awk '$1 == 0' | wc -l)
-        
+
         echo "   Negativní (<0s): $NEGATIVE"
         echo "   Pozitivní (>0s): $POSITIVE"
         echo "   Nulové (=0s): $ZERO"
@@ -202,20 +202,20 @@ REQUEST_TIMES=$(sshpass -p "$PASSWORD" ssh "$HOST" "docker exec $CONTAINER grep 
 
 if [ -n "$REQUEST_TIMES" ]; then
     echo "📋 Request timestamps (poslední 20):"
-    
+
     PREV_TIME=""
     INTERVALS=()
-    
+
     while read line; do
         # Extract timestamp (formát: 2025-10-16 12:25:18.426)
         TIMESTAMP=$(echo "$line" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}')
-        
+
         if [ -n "$TIMESTAMP" ]; then
             # Convert to epoch seconds
             EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "${TIMESTAMP%.*}" "+%s" 2>/dev/null || echo "")
             MILLIS=$(echo "$TIMESTAMP" | grep -oE '\.[0-9]{3}' | sed 's/\.//')
             EPOCH_MS="${EPOCH}${MILLIS}"
-            
+
             if [ -n "$PREV_TIME" ] && [ -n "$EPOCH_MS" ]; then
                 # Vypočítej interval v sekundách
                 INTERVAL=$(awk "BEGIN {printf \"%.1f\", ($EPOCH_MS - $PREV_TIME) / 1000}")
@@ -224,24 +224,24 @@ if [ -n "$REQUEST_TIMES" ]; then
             else
                 echo "   ⏱️  $TIMESTAMP (první request)"
             fi
-            
+
             PREV_TIME=$EPOCH_MS
         fi
     done <<< "$REQUEST_TIMES"
-    
+
     if [ ${#INTERVALS[@]} -gt 0 ]; then
         echo ""
         echo "📊 INTERVAL STATISTIKA:"
-        
+
         MIN_INT=$(printf '%s\n' "${INTERVALS[@]}" | sort -n | head -1)
         MAX_INT=$(printf '%s\n' "${INTERVALS[@]}" | sort -n | tail -1)
         AVG_INT=$(printf '%s\n' "${INTERVALS[@]}" | awk '{sum+=$1} END {printf "%.1f", sum/NR}')
-        
+
         echo "   Minimum: ${MIN_INT}s"
         echo "   Maximum: ${MAX_INT}s"
         echo "   Průměr: ${AVG_INT}s"
         echo "   Očekávaný rozsah: 25-35s (base 30s ± 5s jitter)"
-        
+
         # Kontrola, zda je průměr blízko 30s
         AVG_OK=$(echo "$AVG_INT >= 25 && $AVG_INT <= 35" | bc -l)
         if [ "$AVG_OK" -eq 1 ]; then
