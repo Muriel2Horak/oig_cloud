@@ -29,7 +29,8 @@ Po instalaci a konfiguraci se vytvoří nové zařízení a entity. Všechny ent
 
 Integrace využívá pokročilé techniky pro minimalizaci zátěže OIG Cloud API:
 
-- **ETag / If-None-Match Caching**: 
+- **ETag / If-None-Match Caching**:
+
   - Při každém požadavku integrace ukládá ETag hlavičku z odpovědi serveru
   - Při dalších požadavcích posílá `If-None-Match` hlavičku
   - Pokud data na serveru nebyla změněna, server vrací `304 Not Modified` a integrace používá lokální cache

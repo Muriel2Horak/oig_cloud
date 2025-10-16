@@ -9,7 +9,9 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util.dt import utcnow
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudApiError
 from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
@@ -70,21 +72,39 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
         
         # Jitter tracking for randomized polling
         self._next_jitter: float = 0.0
+        
+        _LOGGER.info(
+            f"Coordinator initialized with intervals: standard={effective_interval.total_seconds()}s, "
+            f"extended={self._extended_update_interval}s, jitter=±{JITTER_SECONDS}s"
+        )
 
-    def _calculate_jitter(self) -> float:
-        """Calculate jitter for next update interval.
-        
-        Returns random offset between -JITTER_SECONDS and +JITTER_SECONDS.
-        Ensures final interval is at least 1 second.
-        """
+    def _schedule_refresh(self) -> None:
+        """Schedule the next refresh with jitter."""
+        if self._unsub_refresh:
+            self._unsub_refresh()
+            self._unsub_refresh = None
+
+        if not self.update_interval:
+            return
+
+        # Calculate jittered interval
         jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
-        self._next_jitter = jitter
+        jittered_interval = self.update_interval + timedelta(seconds=jitter)
         
-        # Log jitter for monitoring
-        if abs(jitter) > 1.0:
-            _LOGGER.debug(f"⏱️  Polling jitter: {jitter:+.1f}s (next update offset)")
+        # Ensure minimum interval of 5 seconds
+        if jittered_interval.total_seconds() < 5:
+            jittered_interval = timedelta(seconds=5)
         
-        return jitter
+        _LOGGER.debug(
+            f"⏱️  Scheduling next update in {jittered_interval.total_seconds():.1f}s "
+            f"(base: {self.update_interval.total_seconds()}s, jitter: {jitter:+.1f}s)"
+        )
+
+        self._unsub_refresh = async_track_point_in_utc_time(
+            self.hass,
+            self._handle_refresh_interval,
+            utcnow() + jittered_interval,
+        )
 
     async def _fetch_basic_data(self) -> Dict[str, Any]:
         """Fetch basic data from API."""
@@ -120,14 +140,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Failed to fetch extended data: {e}")
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from API endpoint with jittered timing."""
-        # Apply jitter to this update cycle
-        jitter = self._calculate_jitter()
-        _LOGGER.debug(f"⏱️  Applying jitter: {jitter:+.2f}s to this update cycle")
-        if jitter > 0:
-            await asyncio.sleep(jitter)
-        # Note: negative jitter is handled by scheduling earlier next time
-        
+        """Fetch data from API endpoint."""
         try:
             combined_data: Dict[str, Any] = {}
 

@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - **ETag / If-None-Match Caching**: HTTP ETag support for reducing data transfers
+
   - API client now sends `If-None-Match` header with cached ETag values
   - Server returns `304 Not Modified` when data unchanged → uses local cache
   - Per-endpoint caching for `json.php` (basic stats) and `json2.php` (extended stats)
@@ -22,11 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reduces peak load on OIG Cloud servers
 
 ### Changed
+
 - API client now tracks ETag values and cached responses per endpoint
 - Coordinator update cycle includes randomized jitter for load distribution
 - Improved logging for ETag cache hits and jitter calculations
 
 ### Technical
+
 - Added `_cache` dictionary to `OigCloudApi` for ETag storage
 - Added `_update_cache()` helper method for cache management
 - Modified `_try_get_stats()` and `get_extended_stats()` to support ETag headers
@@ -36,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.6] - Previous Release
 
 ### Added
+
 - Extended sensors for battery charging/discharging tracking
 - Separate measurement of battery charging from PV vs. grid
 - Configurable update intervals for standard and extended statistics
@@ -43,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved boiler power calculation
 
 ### Changed
+
 - Statistics reset at end of day/month/year
 - Code structure improvements for reliability
 - Enhanced logging for debugging
