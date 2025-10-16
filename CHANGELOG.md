@@ -9,25 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ETag / If-None-Match Caching**: HTTP ETag support for reducing data transfers
-
-  - API client now sends `If-None-Match` header with cached ETag values
-  - Server returns `304 Not Modified` when data unchanged → uses local cache
-  - Per-endpoint caching for `json.php` (basic stats) and `json2.php` (extended stats)
-  - Significantly reduces bandwidth usage and improves response times
-
-- **Jitter in Polling**: Randomized update intervals to spread API load
+- **Jitter in Polling**: ✅ VERIFIED IN PRODUCTION - Randomized update intervals to spread API load
   - Base interval: 30 seconds
   - Random jitter: ±5 seconds
   - Final interval ranges between 25-35 seconds
   - Prevents synchronized requests from multiple instances
   - Reduces peak load on OIG Cloud servers
+  - **Status**: Fully functional, logs visible in production
+  - **Verification**: See `docs/ETAG_JITTER_VERIFICATION_SUMMARY.md`
+
+- **ETag / If-None-Match Caching**: HTTP ETag implementation (server not supported)
+  - API client sends `If-None-Match` header with cached ETag values
+  - Handles `304 Not Modified` responses with local cache fallback
+  - Per-endpoint caching for `json.php` (basic stats) and `json2.php` (extended stats)
+  - **Server Limitation**: OIG Cloud server does NOT return ETag headers (100% responses have `ETag: None`)
+  - **Status**: Implementation correct, fallback mode active, no bandwidth savings due to server limitation
+  - **Future**: Ready for when/if server adds ETag support
 
 ### Changed
 
-- API client now tracks ETag values and cached responses per endpoint
-- Coordinator update cycle includes randomized jitter for load distribution
-- Improved logging for ETag cache hits and jitter calculations
+- API client now tracks ETag values and cached responses per endpoint (ready for future server support)
+- Coordinator update cycle includes randomized jitter for load distribution (verified working)
+- Improved logging: ETag cache monitoring (debug level), jitter calculations (info level)
+
+### Fixed
+
+- Jitter implementation moved to correct coordinator file (`oig_cloud_coordinator.py` instead of unused `coordinator.py`)
+- Added INFO level logging for jitter to ensure visibility without debug mode
 
 ### Technical
 
