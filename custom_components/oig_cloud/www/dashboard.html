@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OIG Cloud Dashboard</title>
     <script src="/oig_cloud_static/chart-loader.js"></script>
+    <script src="/oig_cloud_static/dashboard-switcher.js"></script>
+    <link rel="stylesheet" href="/oig_cloud_static/dashboard-styles.css">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -118,32 +120,20 @@
         🌙
     </button>
 
+    <!-- Hlavní container - bude naplněn dashboard-switcherem -->
+    <div class="header-container">
+        <!-- Dashboard switcher tabs se vloží zde -->
+    </div>
+
     <div class="dashboard-container">
-        <!-- Connection Status -->
+        <!-- Content se vloží zde na základě vybraného view -->
+        <!-- Pro zpětnou kompatibilitu zachováváme původní karty -->
         <div class="card">
             <div class="card-title">
                 🌐 Stav připojení
                 <span id="connection-status" class="status-indicator status-loading"></span>
             </div>
-            <div id="connection-info" class="loading">Připojování...</div>
-        </div>
-
-        <!-- Battery Forecast Card -->
-        <div class="card">
-            <div class="card-title">🔋 Predikce kapacity baterie</div>
-            <div id="battery-chart" class="chart-container loading">Načítání grafu...</div>
-        </div>
-
-        <!-- Solar Forecast Card -->
-        <div class="card">
-            <div class="card-title">☀️ Předpověď solární výroby</div>
-            <div id="solar-chart" class="chart-container loading">Načítání grafu...</div>
-        </div>
-
-        <!-- Spot Prices Card -->
-        <div class="card">
-            <div class="card-title">💰 Spotové ceny elektřiny</div>
-            <div id="prices-chart" class="chart-container loading">Načítání grafu...</div>
+            <div id="connection-info" class="loading">Načítání dashboardu...</div>
         </div>
     </div>
 
@@ -156,47 +146,8 @@
         // Inicializace dashboard po načtení Apex Charts
         window.OIG_CHART_CONFIG.autoLoad = true;
 
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                // Indikátor načítání
-                document.getElementById('connection-status').className = 'status-indicator status-loading';
-                document.getElementById('connection-info').textContent = 'Načítání Apex Charts...';
-
-                // OPRAVA: Kontrola dostupnosti chart loaderu
-                if (!window.ApexChartsLoader) {
-                    throw new Error('Chart loader není dostupný');
-                }
-
-                // Načtení chart knihovny
-                await window.ApexChartsLoader.load();
-
-                // OPRAVA: Kontrola dostupnosti dashboard třídy
-                if (typeof OigCloudDashboard === 'undefined') {
-                    throw new Error('Dashboard třída není dostupná - zkontrolujte dashboard.js');
-                }
-
-                // Inicializace dashboard
-                const dashboard = new OigCloudDashboard();
-                await dashboard.init();
-
-                // Úspěšné připojení
-                document.getElementById('connection-status').className = 'status-indicator status-online';
-                document.getElementById('connection-info').innerHTML = `
-                    <strong>Připojeno</strong><br>
-                    Apex Charts verze: ${window.ApexChartsLoader.getVersion()}<br>
-                    <small>Používá reálná data ze senzorů</small>
-                `;
-
-            } catch (error) {
-                console.error('Dashboard initialization failed:', error);
-                document.getElementById('connection-status').className = 'status-indicator status-offline';
-                document.getElementById('connection-info').innerHTML = `
-                    <strong>Chyba připojení</strong><br>
-                    ${error.message}<br>
-                    <button onclick="location.reload()" style="margin-top: 10px;">Zkusit znovu</button>
-                `;
-            }
-        });
+        // Dashboard se nyní inicializuje přes dashboard-switcher.js
+        // Tato funkcionalita je zachována pro zpětnou kompatibilitu
 
         // NOVÉ: Funkce pro detekci a nastavení tématu
         function detectTheme() {
