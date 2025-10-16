@@ -1666,10 +1666,10 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Aktualizovat options
             new_options = {**self.config_entry.options, **user_input}
-            
+
             # Restart integrace pro aplikování změn (dashboard se musí zaregistrovat/odregistrovat)
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-            
+
             return self.async_create_entry(title="", data=new_options)
 
         current_options = self.config_entry.options

@@ -248,6 +248,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "target_capacity_percent": optimization_config.get(
                         "target_capacity_percent", 80.0
                     ),
+                    "max_price": optimization_config.get("max_price", 10.0),
                     "charge_on_bad_weather": optimization_config.get(
                         "charge_on_bad_weather", False
                     ),
@@ -565,7 +566,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         3. Minimální délka bloku = 30 minut (2× 15min)
         4. Vybrat bloky s nejnižší průměrnou cenou
         5. Nabíjet v souvislých blocích (ne přepínat každých 15min)
-        
+
         DŮLEŽITÉ OMEZENÍ:
         - Zapnutí/vypnutí nabíjení trvá ~10 minut
         - Minimální nabíjecí blok = 30 minut (2× 15min intervaly)
@@ -615,10 +616,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # KROK 2: Vytvořit SOUVISLÉ BLOKY z off-peak intervalů
         # Minimální délka bloku = 30 minut (2× 15min)
         charging_blocks = self._create_charging_blocks(
-            off_peak_prices, 
-            min_block_duration_minutes=30
+            off_peak_prices, min_block_duration_minutes=30
         )
-        
+
         if not charging_blocks:
             _LOGGER.warning("🔋 No charging blocks available (all too short)!")
             return []
@@ -642,8 +642,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "🔋 ⚠️ BAD WEATHER detected! Preventive charging enabled"
                 )
 
-        # KROK 4: Iterativní výběr nabíjecích hodin
-        charging_hours: List[str] = []
+        # KROK 4: Iterativní výběr nabíjecích BLOKŮ (15min intervaly)
+        selected_blocks: List[Dict[str, Any]] = []
+        charging_intervals: List[str] = []  # Všechny 15min intervaly ze všech bloků
         working_forecast = battery_forecast.copy()
 
         max_iterations = 100
@@ -662,13 +663,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     min_capacity_time = time_key
 
                 # Kritický pokles pod minimum
-                if capacity < min_capacity_kwh and time_key not in [
-                    h for h, _ in charging_hours
-                ]:
+                if capacity < min_capacity_kwh and time_key not in charging_intervals:
                     critical_time = time_key
                     break
 
-            # KROK 5: Rozhodování o nabíjení
+            # KROK 5: Rozhodování o nabíjení (BLOKY)
 
             # Případ A: KRITICKÝ stav - klesáme pod minimum
             if critical_time:
@@ -677,78 +676,94 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"(below {min_capacity_kwh:.2f}kWh) at {critical_time}"
                 )
 
-                # SPRÁVNÁ LOGIKA podle původního zadání:
-                # 1. Najdi všechny off-peak hodiny PŘED critical_time (a po current_time)
-                # 2. Z nich vyber NEJLEVNĚJŠÍ
+                # LOGIKA: Najít bloky PŘED critical_time
+                current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:00")
 
-                current_time = datetime.now().strftime("%Y-%m-%dT%H:00:00")
-
-                # Filtruj hodiny: musí být v budoucnu (>= current_time) A před critical_time
-                hours_before_critical = [
-                    (time_key, price)
-                    for time_key, price in off_peak_prices
-                    if current_time <= time_key < critical_time
-                    and time_key not in [h for h, _ in charging_hours]
+                # Filtrovat bloky: musí začínat PŘED critical_time
+                # A nesmí být již použité
+                blocks_before_critical = [
+                    block
+                    for block in charging_blocks
+                    if block["start_time"] < critical_time
+                    and block["start_time"] >= current_time
+                    and block not in selected_blocks
                 ]
 
-                selected_hour: Optional[tuple[str, float]] = None
+                selected_block: Optional[Dict[str, Any]] = None
 
-                if hours_before_critical:
-                    # Vyber NEJLEVNĚJŠÍ z hodin před critical_time
-                    selected_hour = min(hours_before_critical, key=lambda x: x[1])
+                if blocks_before_critical:
+                    # Vyber nejlevnější blok (již seřazené podle avg_price)
+                    selected_block = blocks_before_critical[0]
                     _LOGGER.info(
-                        f"🔋 ✓ Found cheapest off-peak before critical: {selected_hour[0]} "
-                        f"at {selected_hour[1]:.2f} CZK/kWh (from {len(hours_before_critical)} options)"
+                        f"🔋 ✓ Found cheapest block before critical: "
+                        f"{selected_block['start_time']} - {selected_block['end_time']} "
+                        f"({selected_block['duration_min']}min) "
+                        f"at {selected_block['avg_price']:.2f} CZK/kWh avg "
+                        f"(from {len(blocks_before_critical)} options)"
                     )
                 else:
-                    # EMERGENCY: Žádná off-peak hodina před critical_time
-                    # NOVÉ ŘEŠENÍ: Nebíjíme AFTER critical, ale hledáme nejlevnější PEAK hodinu před critical
+                    # EMERGENCY: Žádný blok před critical_time
                     _LOGGER.error(
-                        f"🔋 ❌ No off-peak hours available BEFORE critical time {critical_time}!"
+                        f"🔋 ❌ No charging blocks available BEFORE critical time {critical_time}!"
                     )
                     _LOGGER.warning(
                         f"🔋 💡 RECOMMENDATION: Consider charging NOW or lower max_price limit"
                     )
-                    
-                    # EMERGENCY: Najít nejlevnější JAKOUKOLIV hodinu (včetně peak) před critical_time
-                    all_hours_before_critical = [
+
+                    # EMERGENCY: Vytvořit "nouzový" blok z JAKÝCHKOLIV intervalů (včetně peak)
+                    # Najít všechny intervaly před critical_time
+                    emergency_intervals = [
                         (time_key, spot_prices[time_key])
                         for time_key in sorted(spot_prices.keys())
                         if current_time <= time_key < critical_time
-                        and time_key not in [h for h, _ in charging_hours]
+                        and time_key not in charging_intervals
                     ]
-                    
-                    if all_hours_before_critical:
-                        # Vyber absolutně nejlevnější (i když je peak)
-                        selected_hour = min(all_hours_before_critical, key=lambda x: x[1])
-                        _LOGGER.warning(
-                            f"🔋 🚨 EMERGENCY CHARGING: Using cheapest hour (even if PEAK): {selected_hour[0]} "
-                            f"at {selected_hour[1]:.2f} CZK/kWh"
-                        )
-                    else:
-                        # Poslední možnost: vůbec žádné hodiny před critical_time
-                        _LOGGER.error(
-                            f"🔋 ❌ CANNOT PREVENT CRITICAL! No hours available before {critical_time}"
-                        )
-                        break  # STOP algoritmu - nemůžeme zabránit kritickému stavu
 
-                if selected_hour:
-                    charging_hours.append(selected_hour)
+                    if emergency_intervals:
+                        # Vytvořit bloky z emergency intervalů
+                        emergency_blocks = self._create_charging_blocks(
+                            emergency_intervals, min_block_duration_minutes=30
+                        )
+
+                        if emergency_blocks:
+                            selected_block = emergency_blocks[0]  # Nejlevnější
+                            _LOGGER.warning(
+                                f"🔋 🚨 EMERGENCY BLOCK (may include PEAK): "
+                                f"{selected_block['start_time']} - {selected_block['end_time']} "
+                                f"at {selected_block['avg_price']:.2f} CZK/kWh avg"
+                            )
+                        else:
+                            _LOGGER.error(
+                                f"🔋 ❌ CANNOT PREVENT CRITICAL! No blocks available before {critical_time}"
+                            )
+                            break
+                    else:
+                        _LOGGER.error(
+                            f"🔋 ❌ CANNOT PREVENT CRITICAL! No intervals available before {critical_time}"
+                        )
+                        break
+
+                if selected_block:
+                    # Přidat blok a všechny jeho intervaly
+                    selected_blocks.append(selected_block)
+                    charging_intervals.extend(selected_block["intervals"])
+
                     _LOGGER.info(
-                        f"🔋 ✅ Adding charging hour: {selected_hour[0]} "
-                        f"(price: {selected_hour[1]:.2f} CZK/kWh)"
+                        f"🔋 ✅ Adding charging block: {selected_block['start_time']} - {selected_block['end_time']} "
+                        f"({selected_block['duration_min']}min, {len(selected_block['intervals'])} intervals, "
+                        f"avg: {selected_block['avg_price']:.2f} CZK/kWh, "
+                        f"total: {selected_block['total_kwh']:.2f} kWh)"
                     )
 
-                    # Přepočítat forecast s touto nabíjecí hodinou
+                    # Přepočítat forecast se všemi nabíjecími intervaly
                     working_forecast = self._recalculate_forecast_with_charging(
                         working_forecast,
-                        [h for h, _ in charging_hours],
+                        charging_intervals,
                         charge_rate_kw,
                         max_capacity_kwh,
                     )
                     continue
                 else:
-                    # Safety break - nebyla vybrána žádná hodina
                     break
 
             # Případ B: Nepřízeň počasí - nabít na target
@@ -758,24 +773,26 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"(current min: {min_capacity_value:.2f}kWh)"
                 )
 
-                # Vybrat nejlevnější dostupnou off-peak hodinu
-                selected_hour: Optional[tuple[str, float]] = None
+                # Vybrat nejlevnější dostupný blok
+                selected_block: Optional[Dict[str, Any]] = None
 
-                for time_key, price in off_peak_prices:
-                    if time_key not in [h for h, _ in charging_hours]:
-                        selected_hour = (time_key, price)
+                for block in charging_blocks:
+                    if block not in selected_blocks:
+                        selected_block = block
                         break
 
-                if selected_hour:
-                    charging_hours.append(selected_hour)
+                if selected_block:
+                    selected_blocks.append(selected_block)
+                    charging_intervals.extend(selected_block["intervals"])
+
                     _LOGGER.info(
-                        f"🔋 ✅ Weather charging at {selected_hour[0]} "
-                        f"(price: {selected_hour[1]:.2f} CZK/kWh)"
+                        f"🔋 ✅ Weather charging block: {selected_block['start_time']} - {selected_block['end_time']} "
+                        f"(avg: {selected_block['avg_price']:.2f} CZK/kWh)"
                     )
 
                     working_forecast = self._recalculate_forecast_with_charging(
                         working_forecast,
-                        [h for h, _ in charging_hours],
+                        charging_intervals,
                         charge_rate_kw,
                         max_capacity_kwh,
                     )
@@ -791,21 +808,28 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 )
                 break
 
-        # KROK 6: Výstup
-        final_hours = sorted([h for h, _ in charging_hours])
+        # KROK 6: Výstup - vrátit všechny 15min intervaly
+        final_intervals = sorted(charging_intervals)
 
-        if final_hours:
-            total_cost = sum(p for _, p in charging_hours) * charge_rate_kw
+        if final_intervals:
+            total_cost = sum(
+                block["avg_price"] * block["total_kwh"] for block in selected_blocks
+            )
             _LOGGER.info(
-                f"🔋 📊 Final plan: {len(final_hours)} charging hours, "
+                f"🔋 📊 Final plan: {len(selected_blocks)} charging blocks, "
+                f"{len(final_intervals)} total 15min intervals, "
                 f"total cost: ~{total_cost:.2f} CZK"
             )
-            for hour, price in sorted(charging_hours, key=lambda x: x[0]):
-                _LOGGER.info(f"🔋   • {hour}: {price:.2f} CZK/kWh")
+            for block in sorted(selected_blocks, key=lambda x: x["start_time"]):
+                _LOGGER.info(
+                    f"🔋   • {block['start_time']} - {block['end_time']}: "
+                    f"{block['duration_min']}min, {block['avg_price']:.2f} CZK/kWh avg, "
+                    f"{block['total_kwh']:.2f} kWh"
+                )
         else:
             _LOGGER.info("🔋 ✅ No charging needed - battery forecast is sufficient")
 
-        return final_hours
+        return final_intervals
 
     async def _check_bad_weather_forecast(self) -> bool:
         """
@@ -1146,42 +1170,64 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     ) -> Dict[str, Any]:
         """
         Jednoduchý výpočet predikce baterie bez nabíjení ze sítě.
+        NOVĚ: Pracuje s 15-minutovými intervaly!
 
         Args:
-            solar_forecast: Hodinová předpověď FVE
+            solar_forecast: Hodinová předpověď FVE (stále hodiny, interpolujeme)
             consumption_stats: Statistiky spotřeby
             battery_state: Aktuální stav baterie
 
         Returns:
-            Dict s předpovědí kapacity po hodinách
+            Dict s předpovědí kapacity po 15-minutových intervalech
         """
         now = datetime.now()
         current_capacity = battery_state.get("current_kwh", 0)
         max_capacity = battery_state.get("max_kwh", 10.0)
-        average_consumption = consumption_stats.get("average_hourly_kwh", 0.5)
+
+        # Průměrná spotřeba za hodinu → na 15min
+        average_consumption_hourly = consumption_stats.get("average_hourly_kwh", 0.5)
+        average_consumption_15min = (
+            average_consumption_hourly / 4.0
+        )  # Rozdělit na 4× 15min
 
         today_solar = solar_forecast.get("today_hourly_total_kw", {})
         tomorrow_solar = solar_forecast.get("tomorrow_hourly_total_kw", {})
 
-        # Spojená časová řada
+        # Spojená časová řada - 15min intervaly
         continuous_forecast: Dict[str, float] = {}
         capacity = current_capacity
 
-        # Zpracovat dnes + zítra (48 hodin)
-        for hour_offset in range(48):
-            target_time = now + timedelta(hours=hour_offset)
-            hour_key = f"{target_time.hour:02d}:00"
-            date_str = target_time.strftime("%Y-%m-%d")
-            timestamp = f"{date_str}T{target_time.hour:02d}:00:00"
+        # Zpracovat dnes + zítra (48 hodin = 192× 15min intervalů)
+        total_intervals = 48 * 4  # 192 intervalů
 
-            # Získat FVE výrobu pro tuto hodinu
-            if target_time.date() == now.date():
-                solar_kwh = today_solar.get(hour_key, 0)
+        for interval_offset in range(total_intervals):
+            # Posun v minutách
+            minutes_offset = interval_offset * 15
+            target_time = now + timedelta(minutes=minutes_offset)
+
+            # Vytvořit timestamp pro 15min interval
+            # Zaokrouhlit na násobek 15 minut
+            minute_rounded = (target_time.minute // 15) * 15
+            target_time_rounded = target_time.replace(
+                minute=minute_rounded, second=0, microsecond=0
+            )
+
+            date_str = target_time_rounded.strftime("%Y-%m-%d")
+            time_str = target_time_rounded.strftime("%H:%M")
+            timestamp = f"{date_str}T{time_str}:00"
+
+            # Získat FVE výrobu pro tuto hodinu (interpolace z hodinových dat)
+            hour_key = f"{target_time_rounded.hour:02d}:00"
+            if target_time_rounded.date() == now.date():
+                solar_kwh_hourly = today_solar.get(hour_key, 0)
             else:
-                solar_kwh = tomorrow_solar.get(hour_key, 0)
+                solar_kwh_hourly = tomorrow_solar.get(hour_key, 0)
 
-            # Bilance: FVE - spotřeba
-            net_kwh = solar_kwh - average_consumption
+            # FVE výroba za 15min = hodinová / 4
+            solar_kwh_15min = solar_kwh_hourly / 4.0
+
+            # Bilance: FVE - spotřeba (za 15min)
+            net_kwh = solar_kwh_15min - average_consumption_15min
 
             # Aktualizovat kapacitu
             capacity += net_kwh
@@ -1245,16 +1291,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     def _recalculate_forecast_with_charging(
         self,
         base_forecast: Dict[str, float],
-        charging_hours: List[str],
+        charging_intervals: List[str],
         charge_rate_kw: float,
         max_capacity_kwh: float,
     ) -> Dict[str, float]:
         """
         Přepočítá forecast baterie s přidáním nabíjení ze sítě.
+        NOVĚ: Pracuje s 15-minutovými intervaly!
 
         Args:
             base_forecast: Základní forecast bez nabíjení {timestamp: kwh}
-            charging_hours: Seznam timestampů kdy nabíjet
+            charging_intervals: Seznam 15min timestampů kdy nabíjet
             charge_rate_kw: Nabíjecí výkon [kW]
             max_capacity_kwh: Maximální kapacita baterie
 
@@ -1266,10 +1313,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         for timestamp in sorted(base_forecast.keys()):
             base_capacity = base_forecast[timestamp]
 
-            # Pokud je toto nabíjecí hodina, přidat nabití
-            if timestamp in charging_hours:
-                # Nabít o charge_rate_kw (za 1 hodinu)
-                new_capacity = base_capacity + charge_rate_kw
+            # Pokud je toto nabíjecí interval, přidat nabití
+            if timestamp in charging_intervals:
+                # Nabít o charge_rate_kw za 15 minut
+                # 15min = 0.25 hodiny → energie = výkon × čas
+                charge_kwh_15min = charge_rate_kw * 0.25
+                new_capacity = base_capacity + charge_kwh_15min
                 # Omezit na maximum
                 new_capacity = min(new_capacity, max_capacity_kwh)
                 optimized_forecast[timestamp] = round(new_capacity, 2)
@@ -1324,17 +1373,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     ) -> List[Dict[str, Any]]:
         """
         Vytvoří SOUVISLÉ BLOKY nabíjecích intervalů z off-peak cen.
-        
+
         Algoritmus:
         1. Seřadit intervaly chronologicky
         2. Najít souvislé sekvence (časově po sobě jdoucí 15min intervaly)
         3. Vytvořit bloky minimálně 30 minut (2× 15min)
         4. Seřadit bloky podle průměrné ceny
-        
+
         Args:
             off_peak_prices: List[(timestamp, price)] off-peak intervalů
             min_block_duration_minutes: Minimální délka bloku v minutách (default 30)
-            
+
         Returns:
             List bloků, seřazené od nejlevnější průměrné ceny:
             [
@@ -1351,17 +1400,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """
         if not off_peak_prices:
             return []
-            
+
         # Seřadit chronologicky
         sorted_intervals = sorted(off_peak_prices, key=lambda x: x[0])
-        
+
         # Najít souvislé bloky
         blocks: List[Dict[str, Any]] = []
         current_block_intervals: List[tuple[str, float]] = []
-        
+
         for i, (timestamp, price) in enumerate(sorted_intervals):
             current_time = datetime.fromisoformat(timestamp)
-            
+
             if not current_block_intervals:
                 # Začátek nového bloku
                 current_block_intervals.append((timestamp, price))
@@ -1369,63 +1418,64 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Zkontrolovat, jestli je souvislý s předchozím
                 last_timestamp = current_block_intervals[-1][0]
                 last_time = datetime.fromisoformat(last_timestamp)
-                
+
                 time_diff = (current_time - last_time).total_seconds() / 60  # minuty
-                
+
                 if time_diff == 15:  # Souvislý interval (15min)
                     current_block_intervals.append((timestamp, price))
                 else:
                     # Konec bloku - uložit pokud je dostatečně dlouhý
-                    if len(current_block_intervals) >= (min_block_duration_minutes / 15):
+                    if len(current_block_intervals) >= (
+                        min_block_duration_minutes / 15
+                    ):
                         blocks.append(self._create_block_info(current_block_intervals))
-                    
+
                     # Začít nový blok
                     current_block_intervals = [(timestamp, price)]
-        
+
         # Uložit poslední blok
-        if current_block_intervals and len(current_block_intervals) >= (min_block_duration_minutes / 15):
+        if current_block_intervals and len(current_block_intervals) >= (
+            min_block_duration_minutes / 15
+        ):
             blocks.append(self._create_block_info(current_block_intervals))
-        
+
         # Seřadit bloky podle průměrné ceny (od nejlevnější)
-        blocks.sort(key=lambda b: b['avg_price'])
-        
+        blocks.sort(key=lambda b: b["avg_price"])
+
         return blocks
-    
-    def _create_block_info(
-        self,
-        intervals: List[tuple[str, float]]
-    ) -> Dict[str, Any]:
+
+    def _create_block_info(self, intervals: List[tuple[str, float]]) -> Dict[str, Any]:
         """
         Vytvoří info dict pro nabíjecí blok.
-        
+
         Args:
             intervals: List[(timestamp, price)] souvislých intervalů
-            
+
         Returns:
             Dict s informacemi o bloku
         """
         if not intervals:
             return {}
-            
+
         start_time = intervals[0][0]
         end_time = intervals[-1][0]
-        
+
         # Konec je +15 minut od posledního intervalu
         end_datetime = datetime.fromisoformat(end_time) + timedelta(minutes=15)
         end_time = end_datetime.strftime("%Y-%m-%dT%H:%M:00")
-        
+
         duration_min = len(intervals) * 15
         avg_price = sum(p for _, p in intervals) / len(intervals)
-        
+
         # Energie nabita při 10kW po dobu bloku
         # 10kW * (duration_min / 60) = kWh
         total_kwh = 10.0 * (duration_min / 60.0)
-        
+
         return {
-            'start_time': start_time,
-            'end_time': end_time,
-            'duration_min': duration_min,
-            'intervals': [t for t, _ in intervals],
-            'avg_price': round(avg_price, 2),
-            'total_kwh': round(total_kwh, 2)
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_min": duration_min,
+            "intervals": [t for t, _ in intervals],
+            "avg_price": round(avg_price, 2),
+            "total_kwh": round(total_kwh, 2),
         }

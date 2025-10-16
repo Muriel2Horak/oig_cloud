@@ -344,14 +344,14 @@ class OigBatteryForecastCard extends HTMLElement {
         if (!entity) return;
 
         const attrs = entity.attributes;
-        
+
         // Příprava dat pro graf
         const series = this.prepareSeries(attrs);
         const annotations = this.prepareAnnotations(attrs);
-        
+
         // Nastavení max hodnoty pro Y-axis kapacity
         const maxCapacity = attrs.max_capacity_kwh || 15;
-        
+
         // Aktualizace grafu
         this.chart.updateOptions({
             series: series,
@@ -418,11 +418,11 @@ class OigBatteryForecastCard extends HTMLElement {
         const spotPrices = attrs.spot_prices || {};
         const peakHours = attrs.peak_hours || [];
         const offPeakHours = attrs.off_peak_hours || [];
-        
+
         Object.entries(spotPrices).forEach(([timestamp, price]) => {
             const time = new Date(timestamp).getTime();
             const isPeak = peakHours.includes(timestamp);
-            
+
             // Zobrazit ceny pouze každou hodinu (00 minut)
             if (new Date(timestamp).getMinutes() === 0) {
                 annotations.points.push({
@@ -455,7 +455,7 @@ class OigBatteryForecastCard extends HTMLElement {
             ...(attrs.charging_hours_today || []),
             ...(attrs.charging_hours_tomorrow || [])
         ];
-        
+
         chargingHours.forEach(timestamp => {
             const time = new Date(timestamp).getTime();
             annotations.xaxis.push({
@@ -520,7 +520,7 @@ class OigBatteryForecastCard extends HTMLElement {
     prepareBatteryData(attrs) {
         const data = [];
         const timelineData = attrs.timeline_data || [];
-        
+
         // Pokud máme timeline_data, použijeme je
         if (timelineData.length > 0) {
             timelineData.forEach(point => {
@@ -535,7 +535,7 @@ class OigBatteryForecastCard extends HTMLElement {
             // Fallback na původní metodu
             const current = attrs.current_battery_kwh || 0;
             const now = new Date().getTime();
-            
+
             data.push({
                 x: now,
                 y: current
@@ -544,7 +544,7 @@ class OigBatteryForecastCard extends HTMLElement {
             // Predikce z battery_today_predicted a battery_tomorrow_predicted
             const todayPredicted = attrs.battery_today_predicted || {};
             const tomorrowPredicted = attrs.battery_tomorrow_predicted || {};
-            
+
             Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
                 data.push({
                     x: new Date(timestamp).getTime(),
@@ -559,7 +559,7 @@ class OigBatteryForecastCard extends HTMLElement {
     prepareSolarData(attrs) {
         const data = [];
         const timelineData = attrs.timeline_data || [];
-        
+
         if (timelineData.length > 0) {
             timelineData.forEach(point => {
                 if (point.timestamp && point.solar_kw !== undefined) {
@@ -573,7 +573,7 @@ class OigBatteryForecastCard extends HTMLElement {
             // Fallback
             const todayPredicted = attrs.solar_today_predicted || {};
             const tomorrowPredicted = attrs.solar_tomorrow_predicted || {};
-            
+
             Object.entries({...todayPredicted, ...tomorrowPredicted}).forEach(([timestamp, value]) => {
                 data.push({
                     x: new Date(timestamp).getTime(),
@@ -588,7 +588,7 @@ class OigBatteryForecastCard extends HTMLElement {
     prepareConsumptionData(attrs) {
         const data = [];
         const timelineData = attrs.timeline_data || [];
-        
+
         if (timelineData.length > 0) {
             timelineData.forEach(point => {
                 if (point.timestamp && point.consumption_kw !== undefined) {
@@ -602,7 +602,7 @@ class OigBatteryForecastCard extends HTMLElement {
             // Fallback - použít konstantní spotřebu z prediction
             const prediction = attrs.consumption_prediction || {};
             const avgHourly = prediction.average_hourly_kwh || 0.5;
-            
+
             // Vytvoř predikci na 48 hodin
             const now = new Date();
             for (let i = 0; i < 48; i++) {
