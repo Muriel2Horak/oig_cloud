@@ -688,11 +688,11 @@
         }
 
         @keyframes pulse-status {
-            0%, 100% { 
+            0%, 100% {
                 opacity: 1;
                 box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
             }
-            50% { 
+            50% {
                 opacity: 0.8;
                 box-shadow: 0 0 20px rgba(255, 193, 7, 0.5);
             }
@@ -725,12 +725,12 @@
         }
 
         @keyframes pulse-pending {
-            0%, 100% { 
+            0%, 100% {
                 opacity: 1;
                 transform: scale(1);
                 box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
             }
-            50% { 
+            50% {
                 opacity: 0.75;
                 transform: scale(1.02);
                 box-shadow: 0 0 20px rgba(255, 193, 7, 0.5);
@@ -952,16 +952,19 @@
                 hass.connection.subscribeEvents((event) => {
                     if (event.event_type === 'state_changed') {
                         const entityId = event.data.entity_id;
-                        
+
                         // Shield status sensors
                         if (entityId.includes('service_shield_')) {
                             console.log(`[Shield] Shield sensor changed: ${entityId}`, event.data.new_state);
                             updateShieldUI();
                             updateButtonStates();
                         }
-                        
-                        // Target state sensors (box mode, boiler mode)
-                        if (entityId.includes('box_prms_mode') || entityId.includes('boiler_manual_mode')) {
+
+                        // Target state sensors (box mode, boiler mode, grid delivery)
+                        if (entityId.includes('box_prms_mode') || 
+                            entityId.includes('boiler_manual_mode') ||
+                            entityId.includes('invertor_prms_to_grid') ||
+                            entityId.includes('invertor_prm1_p_max_feed_grid')) {
                             console.log(`[Shield] Target sensor changed: ${entityId}`, event.data.new_state);
                             updateButtonStates();
                         }
@@ -980,14 +983,14 @@
             if (!activity || activity === 'Idle' || activity === 'idle') {
                 return null;
             }
-            
+
             // Try to match pattern: "service_name: target_value"
             const match = activity.match(/^(\w+):\s*(.+)$/);
             if (!match) {
                 console.warn('[Shield] Cannot parse activity:', activity);
                 return null;
             }
-            
+
             return {
                 service: match[1],      // "set_box_mode"
                 target: match[2].trim() // "Home 5"
@@ -1037,30 +1040,36 @@
                 const shieldStatus = await getSensor(getSensorId('service_shield_status'));
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
                 const shieldActivity = await getSensor(getSensorId('service_shield_activity'));
-                
+
                 // Get current states
                 const boxMode = await getSensor(getSensorId('box_prms_mode'));
                 const boilerMode = await getSensor(getSensorId('boiler_manual_mode'));
-                
+
                 // Parse shield activity
                 const pending = parseShieldActivity(shieldActivity.value);
                 const isRunning = (shieldStatus.value === 'Running' || shieldStatus.value === 'running');
                 const queueCount = parseInt(shieldQueue.value) || 0;
 
-                console.log('[Shield] Parsed state:', { 
-                    pending, 
-                    isRunning, 
+                console.log('[Shield] Parsed state:', {
+                    pending,
+                    isRunning,
                     queueCount,
                     boxMode: boxMode.value,
                     boilerMode: boilerMode.value
                 });
-                
+
                 // Update Box Mode buttons
                 updateBoxModeButtons(boxMode.value, pending, isRunning);
-                
+
                 // Update Boiler Mode buttons
                 updateBoilerModeButtons(boilerMode.value, pending, isRunning);
-                
+
+                // Update Grid Delivery buttons
+                await updateGridDeliveryButtons(pending, isRunning);
+
+                // Update Battery Formating buttons
+                await updateBatteryFormatingButtons(pending, isRunning);
+
             } catch (e) {
                 console.error('[Shield] Error updating button states:', e);
             }
@@ -1077,14 +1086,14 @@
                 'Home 5': 'btn-mode-home5',
                 'Home 6': 'btn-mode-home6'
             };
-            
+
             modes.forEach(mode => {
                 const btn = document.getElementById(buttonIds[mode]);
                 if (!btn) return;
-                
+
                 // Reset classes
                 btn.classList.remove('active', 'pending', 'processing');
-                
+
                 // Check if this is pending task
                 if (pending && pending.service === 'set_box_mode' && pending.target === mode) {
                     if (isRunning) {
@@ -1101,7 +1110,7 @@
                     console.log(`[Shield] Button ${mode} -> active`);
                 }
             });
-            
+
             // Update status text
             const statusEl = document.getElementById('box-mode-status');
             if (!statusEl) return;
@@ -1119,15 +1128,15 @@
             // boiler_manual_mode sensor: "Vypnuto" = CBB, "Zapnuto" = Manual
             const currentMode = currentModeRaw === 'Vypnuto' ? 'CBB' : 'Manual';
             const modes = ['CBB', 'Manual'];
-            
+
             modes.forEach(mode => {
                 const btnId = `btn-boiler-${mode.toLowerCase()}`;
                 const btn = document.getElementById(btnId);
                 if (!btn) return;
-                
+
                 // Reset classes
                 btn.classList.remove('active', 'pending', 'processing');
-                
+
                 // Check if pending
                 if (pending && pending.service === 'set_boiler_mode' && pending.target === mode) {
                     if (isRunning) {
@@ -1144,7 +1153,7 @@
                     console.log(`[Shield] Boiler ${mode} -> active`);
                 }
             });
-            
+
             // Update status
             const statusEl = document.getElementById('boiler-mode-status');
             if (!statusEl) return;
@@ -1154,6 +1163,108 @@
                 statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending.target}</span>`;
             } else {
                 statusEl.textContent = currentMode;
+            }
+        }
+
+        // Update Grid Delivery buttons
+        async function updateGridDeliveryButtons(pending, isRunning) {
+            try {
+                // Get current grid delivery mode and limit
+                const gridModeData = await getSensor(getSensorId('invertor_prms_to_grid'));
+                const gridLimitData = await getSensor(getSensorId('invertor_prm1_p_max_feed_grid'));
+                
+                const currentMode = gridModeData.value || '';
+                const currentLimit = gridLimitData.value || 0;
+                
+                console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit);
+                
+                // Update mode buttons
+                const modeButtons = {
+                    'Vypnuto / Off': 'btn-grid-off',
+                    'Zapnuto / On': 'btn-grid-on',
+                    'S omezením / Limited': 'btn-grid-limited'
+                };
+                
+                Object.entries(modeButtons).forEach(([mode, btnId]) => {
+                    const btn = document.getElementById(btnId);
+                    if (!btn) return;
+                    
+                    btn.classList.remove('active', 'pending', 'processing');
+                    
+                    // Check if pending (mode change)
+                    if (pending && pending.service === 'set_grid_delivery') {
+                        // Pokud pending target obsahuje "Vypnuto", "Zapnuto", "Limited"
+                        if (pending.target && pending.target.includes(mode.split(' ')[0])) {
+                            btn.classList.add(isRunning ? 'processing' : 'pending');
+                            console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'}`);
+                        }
+                    }
+                    // Check if active
+                    else if (currentMode === mode) {
+                        btn.classList.add('active');
+                        console.log(`[Shield] Grid ${mode} -> active`);
+                    }
+                });
+                
+                // Update limit display (if pending limit change)
+                if (pending && pending.service === 'set_grid_delivery' && !isNaN(parseInt(pending.target))) {
+                    const inputEl = document.getElementById('grid-limit');
+                    if (inputEl) {
+                        inputEl.value = pending.target;
+                        inputEl.style.borderColor = isRunning ? '#42a5f5' : '#ffc107';
+                    }
+                }
+                
+            } catch (e) {
+                console.error('[Shield] Error updating grid delivery buttons:', e);
+            }
+        }
+
+        // Update Battery Formating buttons
+        async function updateBatteryFormatingButtons(pending, isRunning) {
+            try {
+                // Battery formating nemá dedikovaný sensor
+                // Můžeme odvozovat z výkonu baterie, ale není to přesné
+                const batteryPowerData = await getSensor(getSensorId('batt_batt_comp_p'));
+                const batteryPower = batteryPowerData.value || 0;
+                
+                // Pokud je pending task pro battery formating
+                if (pending && pending.service === 'set_formating_mode') {
+                    const isCharging = pending.target.includes('Nabíjet');
+                    
+                    const btnOn = document.getElementById('btn-batt-on');
+                    const btnOff = document.getElementById('btn-batt-off');
+                    
+                    if (btnOn) {
+                        btnOn.classList.remove('active', 'pending', 'processing');
+                        if (isCharging) {
+                            btnOn.classList.add(isRunning ? 'processing' : 'pending');
+                        }
+                    }
+                    
+                    if (btnOff) {
+                        btnOff.classList.remove('active', 'pending', 'processing');
+                        if (!isCharging) {
+                            btnOff.classList.add(isRunning ? 'processing' : 'pending');
+                        }
+                    }
+                    
+                    console.log(`[Shield] Battery formating -> ${pending.target} (${isRunning ? 'processing' : 'pending'})`);
+                } else {
+                    // Odvozujeme z aktuálního výkonu (není 100% přesné)
+                    const btnOn = document.getElementById('btn-batt-on');
+                    const btnOff = document.getElementById('btn-batt-off');
+                    
+                    if (btnOn) btnOn.classList.remove('active', 'pending', 'processing');
+                    if (btnOff) btnOff.classList.remove('active', 'pending', 'processing');
+                    
+                    // Můžeme označit aktivní podle toho, jestli baterie nabíjí
+                    // ale není to přesné, protože formating_mode může být "Nabíjet" i když zrovna nenabíjí
+                    // Ponecháme bez active stavu, pokud není pending task
+                }
+                
+            } catch (e) {
+                console.error('[Shield] Error updating battery formating buttons:', e);
             }
         }
 
@@ -1213,7 +1324,7 @@
                 // Check shield queue before adding task
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
-                
+
                 // Warn if queue is getting full
                 if (queueCount >= 3) {
                     const proceed = confirm(
@@ -1361,7 +1472,7 @@
                 // Check shield queue before adding task
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
-                
+
                 // Warn if queue is getting full
                 if (queueCount >= 3) {
                     const proceed = confirm(
