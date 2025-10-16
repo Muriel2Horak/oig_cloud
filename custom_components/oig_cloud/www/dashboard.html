@@ -311,6 +311,26 @@
         }
 
         /* Responsive */
+        /* Desktop - wider screens, avoid overlap */
+        @media (min-width: 1400px) {
+            .flow-canvas {
+                margin-right: 460px; /* Make space for control panel */
+            }
+        }
+
+        /* Tablet - medium screens */
+        @media (max-width: 1200px) and (min-width: 769px) {
+            .control-panel {
+                width: 380px;
+                right: 15px;
+            }
+
+            .flow-canvas {
+                margin-right: 420px;
+            }
+        }
+
+        /* Mobile - small screens */
         @media (max-width: 768px) {
             .flow-canvas {
                 height: 800px;
@@ -1125,8 +1145,8 @@
 
         // Update Boiler Mode buttons
         function updateBoilerModeButtons(currentModeRaw, pending, isRunning) {
-            // boiler_manual_mode sensor: "Vypnuto" = CBB, "Zapnuto" = Manual
-            const currentMode = currentModeRaw === 'Vypnuto' ? 'CBB' : 'Manual';
+            // boiler_manual_mode sensor: "CBB" = CBB, "Manuální" = Manual
+            const currentMode = currentModeRaw === 'Manuální' ? 'Manual' : 'CBB';
             const modes = ['CBB', 'Manual'];
 
             modes.forEach(mode => {
