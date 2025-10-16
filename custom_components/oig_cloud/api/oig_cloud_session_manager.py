@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Callable, TypeVar, ParamSpec
 from functools import wraps
 
-from oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
+from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,16 +73,16 @@ class OigCloudSessionManager:
             # Base URL
             base_url = getattr(self._api, '_base_url', 'https://www.oigpower.cz/cez')
             _LOGGER.info(f"🌐 Base URL: {base_url}")
-            
+
             # Try to get session info via get_session() method
             try:
                 # OigCloudApi.get_session() creates a new session with headers
                 # We'll inspect what it would create
                 session = self._api.get_session()
-                
+
                 if session:
                     _LOGGER.info("📋 HTTP HEADERS sent by OigCloudApi:")
-                    
+
                     # Log headers
                     if hasattr(session, '_default_headers'):
                         for key, value in session._default_headers.items():
@@ -90,21 +90,21 @@ class OigCloudSessionManager:
                     elif hasattr(session, 'headers'):
                         for key, value in session.headers.items():
                             _LOGGER.info(f"   {key}: {value}")
-                    
+
                     # Close the test session
                     await session.close()
                 else:
                     _LOGGER.debug("No session object available from get_session()")
-                    
+
             except Exception as e:
                 _LOGGER.debug(f"Could not inspect session headers: {e}")
-            
+
             # Log known API endpoints
             _LOGGER.info("� Known API endpoints:")
             _LOGGER.info(f"   Login: {base_url}/login")
             _LOGGER.info(f"   Stats: {base_url}/api/get_stats")
             _LOGGER.info(f"   Extended: {base_url}/api/get_extended_stats")
-            
+
         except Exception as e:
             _LOGGER.debug(f"Error logging API session info: {e}")
 
@@ -139,12 +139,12 @@ class OigCloudSessionManager:
                     old_session = getattr(self._api, "_phpsessid", None)
                     if old_session:
                         _LOGGER.debug(f"📝 Old PHPSESSID: {old_session[:16]}...")
-                    
+
                     # Log authentication URL
                     base_url = getattr(self._api, '_base_url', None)
                     if base_url:
                         _LOGGER.info(f"🌐 Auth URL: {base_url}/login")
-                    
+
                     await self._api.authenticate()
                     self._last_auth_time = datetime.now()
 
@@ -154,7 +154,7 @@ class OigCloudSessionManager:
                         _LOGGER.info(
                             f"🍪 New PHPSESSID: {new_session[:16]}... (length: {len(new_session)})"
                         )
-                    
+
                     # Try to inspect session headers (if API creates session)
                     await self._log_api_session_info()
 
@@ -217,7 +217,7 @@ class OigCloudSessionManager:
 
                 # Call actual API method
                 method_name = method.__name__
-                
+
                 # Log URL endpoint based on method name
                 endpoint_map = {
                     'get_stats': '/api/get_stats',
@@ -232,11 +232,11 @@ class OigCloudSessionManager:
                     'set_formating_mode': '/api/set_formating_mode',
                 }
                 endpoint = endpoint_map.get(method_name, '/api/unknown')
-                
+
                 _LOGGER.debug(
                     f"📡 Request #{request_num}: {method_name}() → {endpoint} (attempt {attempt + 1}/{max_retries})"
                 )
-                
+
                 # Log request parameters if any
                 if args:
                     _LOGGER.debug(f"   📝 Args: {args}")

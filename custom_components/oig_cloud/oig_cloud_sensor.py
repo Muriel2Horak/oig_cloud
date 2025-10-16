@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DEFAULT_NAME, DOMAIN
 
 from .coordinator import OigCloudDataUpdateCoordinator
-from oig_cloud_client.models import OigCloudData
+from .lib.oig_cloud_client.models import OigCloudData
 
 _LOGGER = logging.getLogger(__name__)
 

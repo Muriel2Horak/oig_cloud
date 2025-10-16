@@ -14,7 +14,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from oig_cloud_client.api.oig_cloud_api import OigCloudApi
+from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 from .const import (
     CONF_NO_TELEMETRY,
     CONF_USERNAME,

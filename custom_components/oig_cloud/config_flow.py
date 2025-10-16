@@ -13,7 +13,7 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
 )
-from oig_cloud_client.api.oig_cloud_api import OigCloudApi
+from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
 
