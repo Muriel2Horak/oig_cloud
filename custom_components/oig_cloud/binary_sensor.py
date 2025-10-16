@@ -2,12 +2,16 @@ import logging
 from datetime import timedelta
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 from .const import DOMAIN, DEFAULT_NAME, CONF_STANDARD_SCAN_INTERVAL
 from .binary_sensor_types import BINARY_SENSOR_TYPES
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def __init__(self, coordinator, sensor_type):
@@ -21,7 +25,9 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
         await super().async_added_to_hass()
         if self.coordinator.data:
             self._box_id = list(self.coordinator.data.keys())[0]
-            _LOGGER.debug(f"Created binary sensor {self.name} with box_id {self._box_id}")
+            _LOGGER.debug(
+                f"Created binary sensor {self.name} with box_id {self._box_id}"
+            )
 
     @property
     def name(self):
@@ -73,6 +79,7 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
             }
         except Exception:
             return None
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     _LOGGER.debug("Setting up OIG Cloud Binary Sensors")

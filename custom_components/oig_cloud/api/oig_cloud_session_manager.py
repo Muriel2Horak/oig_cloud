@@ -83,13 +83,25 @@ class OigCloudSessionManager:
                 if session:
                     _LOGGER.info("📋 HTTP HEADERS sent by OigCloudApi:")
 
-                    # Log headers
-                    if hasattr(session, '_default_headers'):
+                    # aiohttp stores headers in internal structure
+                    # Try multiple ways to access them
+                    headers_found = False
+                    
+                    # Method 1: _default_headers (internal CIMultiDict)
+                    if hasattr(session, '_default_headers') and session._default_headers:
                         for key, value in session._default_headers.items():
                             _LOGGER.info(f"   {key}: {value}")
-                    elif hasattr(session, 'headers'):
-                        for key, value in session.headers.items():
+                            headers_found = True
+                    
+                    # Method 2: Direct inspection via connector's headers
+                    if not headers_found and hasattr(session, '_connector') and hasattr(session._connector, '_default_headers'):
+                        for key, value in session._connector._default_headers.items():
                             _LOGGER.info(f"   {key}: {value}")
+                            headers_found = True
+                    
+                    if not headers_found:
+                        _LOGGER.debug("Could not find headers in session object, checking attributes...")
+                        _LOGGER.debug(f"Session attributes: {[attr for attr in dir(session) if 'header' in attr.lower()]}")
 
                     # Close the test session
                     await session.close()
@@ -97,7 +109,7 @@ class OigCloudSessionManager:
                     _LOGGER.debug("No session object available from get_session()")
 
             except Exception as e:
-                _LOGGER.debug(f"Could not inspect session headers: {e}")
+                _LOGGER.warning(f"Could not inspect session headers: {e}", exc_info=True)
 
             # Log known API endpoints
             _LOGGER.info("� Known API endpoints:")
