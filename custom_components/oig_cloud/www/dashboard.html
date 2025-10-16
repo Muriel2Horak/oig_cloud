@@ -961,7 +961,7 @@
                         }
 
                         // Target state sensors (box mode, boiler mode, grid delivery)
-                        if (entityId.includes('box_prms_mode') || 
+                        if (entityId.includes('box_prms_mode') ||
                             entityId.includes('boiler_manual_mode') ||
                             entityId.includes('invertor_prms_to_grid') ||
                             entityId.includes('invertor_prm1_p_max_feed_grid')) {
@@ -1172,25 +1172,25 @@
                 // Get current grid delivery mode and limit
                 const gridModeData = await getSensor(getSensorId('invertor_prms_to_grid'));
                 const gridLimitData = await getSensor(getSensorId('invertor_prm1_p_max_feed_grid'));
-                
+
                 const currentMode = gridModeData.value || '';
                 const currentLimit = gridLimitData.value || 0;
-                
+
                 console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit);
-                
+
                 // Update mode buttons
                 const modeButtons = {
                     'Vypnuto / Off': 'btn-grid-off',
                     'Zapnuto / On': 'btn-grid-on',
                     'S omezením / Limited': 'btn-grid-limited'
                 };
-                
+
                 Object.entries(modeButtons).forEach(([mode, btnId]) => {
                     const btn = document.getElementById(btnId);
                     if (!btn) return;
-                    
+
                     btn.classList.remove('active', 'pending', 'processing');
-                    
+
                     // Check if pending (mode change)
                     if (pending && pending.service === 'set_grid_delivery') {
                         // Pokud pending target obsahuje "Vypnuto", "Zapnuto", "Limited"
@@ -1205,7 +1205,7 @@
                         console.log(`[Shield] Grid ${mode} -> active`);
                     }
                 });
-                
+
                 // Update limit display (if pending limit change)
                 if (pending && pending.service === 'set_grid_delivery' && !isNaN(parseInt(pending.target))) {
                     const inputEl = document.getElementById('grid-limit');
@@ -1214,7 +1214,7 @@
                         inputEl.style.borderColor = isRunning ? '#42a5f5' : '#ffc107';
                     }
                 }
-                
+
             } catch (e) {
                 console.error('[Shield] Error updating grid delivery buttons:', e);
             }
@@ -1227,42 +1227,42 @@
                 // Můžeme odvozovat z výkonu baterie, ale není to přesné
                 const batteryPowerData = await getSensor(getSensorId('batt_batt_comp_p'));
                 const batteryPower = batteryPowerData.value || 0;
-                
+
                 // Pokud je pending task pro battery formating
                 if (pending && pending.service === 'set_formating_mode') {
                     const isCharging = pending.target.includes('Nabíjet');
-                    
+
                     const btnOn = document.getElementById('btn-batt-on');
                     const btnOff = document.getElementById('btn-batt-off');
-                    
+
                     if (btnOn) {
                         btnOn.classList.remove('active', 'pending', 'processing');
                         if (isCharging) {
                             btnOn.classList.add(isRunning ? 'processing' : 'pending');
                         }
                     }
-                    
+
                     if (btnOff) {
                         btnOff.classList.remove('active', 'pending', 'processing');
                         if (!isCharging) {
                             btnOff.classList.add(isRunning ? 'processing' : 'pending');
                         }
                     }
-                    
+
                     console.log(`[Shield] Battery formating -> ${pending.target} (${isRunning ? 'processing' : 'pending'})`);
                 } else {
                     // Odvozujeme z aktuálního výkonu (není 100% přesné)
                     const btnOn = document.getElementById('btn-batt-on');
                     const btnOff = document.getElementById('btn-batt-off');
-                    
+
                     if (btnOn) btnOn.classList.remove('active', 'pending', 'processing');
                     if (btnOff) btnOff.classList.remove('active', 'pending', 'processing');
-                    
+
                     // Můžeme označit aktivní podle toho, jestli baterie nabíjí
                     // ale není to přesné, protože formating_mode může být "Nabíjet" i když zrovna nenabíjí
                     // Ponecháme bez active stavu, pokud není pending task
                 }
-                
+
             } catch (e) {
                 console.error('[Shield] Error updating battery formating buttons:', e);
             }
