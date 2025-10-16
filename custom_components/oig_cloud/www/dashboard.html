@@ -1104,10 +1104,10 @@
                         console.log(`[Shield] Button ${mode} -> pending`);
                     }
                 }
-                // Check if this is current mode
-                else if (currentMode && currentMode.includes(mode.replace('Home ', ''))) {
+                // Check if this is current mode (exact match)
+                else if (currentMode === mode) {
                     btn.classList.add('active');
-                    console.log(`[Shield] Button ${mode} -> active`);
+                    console.log(`[Shield] Button ${mode} -> active (currentMode: ${currentMode})`);
                 }
             });
 
@@ -1179,11 +1179,22 @@
                 console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit);
 
                 // Update mode buttons
+                // Sensor vrací: "Vypnuto", "Zapnuto", "S omezením"
+                // Mapování sensor hodnota -> button label
+                const modeMapping = {
+                    'Vypnuto': 'Vypnuto / Off',
+                    'Zapnuto': 'Zapnuto / On',
+                    'S omezením': 'S omezením / Limited'
+                };
+
                 const modeButtons = {
                     'Vypnuto / Off': 'btn-grid-off',
                     'Zapnuto / On': 'btn-grid-on',
                     'S omezením / Limited': 'btn-grid-limited'
                 };
+
+                // Zjistit jaký button label odpovídá current mode
+                const currentModeLabel = modeMapping[currentMode] || currentMode;
 
                 Object.entries(modeButtons).forEach(([mode, btnId]) => {
                     const btn = document.getElementById(btnId);
@@ -1199,19 +1210,25 @@
                             console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'}`);
                         }
                     }
-                    // Check if active
-                    else if (currentMode === mode) {
+                    // Check if active (porovnat label s currentModeLabel)
+                    else if (mode === currentModeLabel) {
                         btn.classList.add('active');
-                        console.log(`[Shield] Grid ${mode} -> active`);
+                        console.log(`[Shield] Grid ${mode} -> active (currentMode: ${currentMode})`);
                     }
                 });
 
-                // Update limit display (if pending limit change)
-                if (pending && pending.service === 'set_grid_delivery' && !isNaN(parseInt(pending.target))) {
-                    const inputEl = document.getElementById('grid-limit');
-                    if (inputEl) {
+                // Update limit display
+                const inputEl = document.getElementById('grid-limit');
+                if (inputEl) {
+                    // If pending limit change, show target value with highlight
+                    if (pending && pending.service === 'set_grid_delivery' && !isNaN(parseInt(pending.target))) {
                         inputEl.value = pending.target;
                         inputEl.style.borderColor = isRunning ? '#42a5f5' : '#ffc107';
+                    }
+                    // Otherwise show current limit
+                    else {
+                        inputEl.value = currentLimit;
+                        inputEl.style.borderColor = '';
                     }
                 }
 
@@ -1871,6 +1888,11 @@
 
             // Subscribe to shield state changes for real-time updates
             subscribeToShield();
+
+            // Initial button state update
+            setTimeout(() => {
+                updateButtonStates();
+            }, 1000); // Delay to ensure sensors are loaded
 
             setInterval(loadData, 5000);  // Update data every 5s
             setInterval(updateTime, 1000); // Update time every 1s
