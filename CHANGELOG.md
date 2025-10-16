@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Jitter in Polling**: ✅ VERIFIED IN PRODUCTION - Randomized update intervals to spread API load
+
   - Base interval: 30 seconds
   - Random jitter: ±5 seconds
   - Final interval ranges between 25-35 seconds
@@ -36,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Jitter implementation moved to correct coordinator file (`oig_cloud_coordinator.py` instead of unused `coordinator.py`)
 - Added INFO level logging for jitter to ensure visibility without debug mode
+- **Removed duplicate caching logic** from `OigCloudApi.get_stats()` that conflicted with coordinator timing
+  - API had internal 30s cache that caused race conditions with coordinator jitter
+  - Result was unpredictable cache behavior (40% cache hit rate instead of 0% or 100%)
+  - Now coordinator controls 100% of timing, API only executes HTTP requests on demand
+  - `last_state` retained only for timeout fallback scenarios
 
 ### Technical
 

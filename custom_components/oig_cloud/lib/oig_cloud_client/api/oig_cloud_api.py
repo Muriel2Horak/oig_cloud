@@ -67,10 +67,16 @@ class OigCloudApi:
         username: str,
         password: str,
         no_telemetry: bool,
-        standard_scan_interval: int = 30,
         timeout: int = 30,
     ) -> None:
-        """Initialize the API client."""
+        """Initialize the API client.
+        
+        Args:
+            username: OIG Cloud username
+            password: OIG Cloud password
+            no_telemetry: Disable telemetry
+            timeout: Request timeout in seconds
+        """
         self._no_telemetry: bool = no_telemetry
         self._logger: logging.Logger = logging.getLogger(__name__)
         self._username: str = username
@@ -79,7 +85,6 @@ class OigCloudApi:
         self._timeout: ClientTimeout = ClientTimeout(total=timeout)
 
         self._last_update: datetime.datetime = datetime.datetime(1, 1, 1, 0, 0)
-        self._standard_scan_interval: int = standard_scan_interval
         self.box_id: Optional[str] = None
         self.last_state: Optional[Dict[str, Any]] = None
         self.last_parsed_state: Optional[OigCloudData] = None
@@ -88,7 +93,9 @@ class OigCloudApi:
         # Structure: {endpoint: {"etag": str|None, "data": Any|None, "ts": float}}
         self._cache: Dict[str, Dict[str, Any]] = {}
 
-        self._logger.debug("OigCloud initialized with ETag caching support")
+        self._logger.debug(
+            "OigCloudApi initialized (ETag support enabled, timing controlled by coordinator)"
+        )
 
     async def authenticate(self) -> bool:
         """Authenticate with the OIG Cloud API."""
@@ -182,22 +189,19 @@ class OigCloudApi:
         }
 
     async def get_stats(self) -> Optional[Dict[str, Any]]:
-        """Get stats from the OIG Cloud API with caching."""
+        """Get stats from the OIG Cloud API.
+        
+        Note: No internal caching - coordinator controls timing.
+        last_state is only used for timeout fallback.
+        """
         async with lock:
-            current_time = datetime.datetime.now()
-            if (
-                current_time - self._last_update
-            ).total_seconds() < self._standard_scan_interval:
-                self._logger.debug("Using cached stats")
-                return self.last_state
-
             return await self._get_stats_internal()
 
     async def _get_stats_internal(self) -> Optional[Dict[str, Any]]:
         """Internal get stats method with proper error handling."""
         try:
             to_return = await self._try_get_stats()
-            self._logger.debug("Retrieved stats")
+            self._logger.debug("Stats retrieved successfully")
             if self.box_id is None and to_return:
                 self.box_id = list(to_return.keys())[0]
             self._last_update = datetime.datetime.now()

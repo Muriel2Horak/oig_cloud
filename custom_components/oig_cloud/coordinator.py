@@ -78,7 +78,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint with jittered timing."""
         _LOGGER.warning("🔄 _async_update_data called - starting update cycle")
-        
+
         # Apply jitter - random delay at start of update
         jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
 

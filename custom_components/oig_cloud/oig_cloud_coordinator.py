@@ -290,7 +290,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Aktualizace základních dat."""
         _LOGGER.info("🔄 _async_update_data called - starting update cycle")
-        
+
         # Apply jitter - random delay at start of update
         jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
 
@@ -300,7 +300,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             await asyncio.sleep(jitter)
         else:
             _LOGGER.info(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
-        
+
         try:
             # Standardní OIG data
             stats = await self._try_get_stats()
