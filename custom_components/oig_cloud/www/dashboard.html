@@ -1036,14 +1036,14 @@
             try {
                 console.log('[Shield] Updating button states...');
 
-                // Get shield sensors
-                const shieldStatus = await getSensor(getSensorId('service_shield_status'));
+                // Get shield sensors (string values for status/activity)
+                const shieldStatus = await getSensorString(getSensorId('service_shield_status'));
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
-                const shieldActivity = await getSensor(getSensorId('service_shield_activity'));
+                const shieldActivity = await getSensorString(getSensorId('service_shield_activity'));
 
-                // Get current states
-                const boxMode = await getSensor(getSensorId('box_prms_mode'));
-                const boilerMode = await getSensor(getSensorId('boiler_manual_mode'));
+                // Get current states (string values)
+                const boxMode = await getSensorString(getSensorId('box_prms_mode'));
+                const boilerMode = await getSensorString(getSensorId('boiler_manual_mode'));
 
                 // Parse shield activity
                 const pending = parseShieldActivity(shieldActivity.value);
@@ -1169,8 +1169,8 @@
         // Update Grid Delivery buttons
         async function updateGridDeliveryButtons(pending, isRunning) {
             try {
-                // Get current grid delivery mode and limit
-                const gridModeData = await getSensor(getSensorId('invertor_prms_to_grid'));
+                // Get current grid delivery mode (string) and limit (number)
+                const gridModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const gridLimitData = await getSensor(getSensorId('invertor_prm1_p_max_feed_grid'));
 
                 const currentMode = gridModeData.value || '';
@@ -1594,6 +1594,25 @@
                 return { value, lastUpdated };
             } catch (e) {
                 return { value: 0, lastUpdated: null };
+            }
+        }
+
+        // Fetch sensor data as string (for non-numeric sensors like box_prms_mode)
+        async function getSensorString(entityId) {
+            const token = getHAToken();
+            if (!token) return { value: '', lastUpdated: null };
+
+            try {
+                const response = await fetch(`/api/states/${entityId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) return { value: '', lastUpdated: null };
+                const data = await response.json();
+                const value = (data.state !== 'unavailable' && data.state !== 'unknown') ? data.state : '';
+                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
+                return { value, lastUpdated };
+            } catch (e) {
+                return { value: '', lastUpdated: null };
             }
         }
 
