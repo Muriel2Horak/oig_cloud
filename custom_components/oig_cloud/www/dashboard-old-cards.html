@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OIG Cloud Energy Flow</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: white;
+            padding: 20px;
+            overflow: hidden;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding: 0 20px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .time {
+            font-size: 18px;
+            font-weight: 600;
+            opacity: 0.8;
+        }
+
+        /* Energy Flow Layout */
+        .energy-flow {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            display: grid;
+            grid-template-areas:
+                ". solar ."
+                "battery center grid"
+                ". house .";
+            grid-template-columns: 1fr 2fr 1fr;
+            grid-template-rows: 1fr 2fr 1fr;
+            gap: 40px;
+            padding: 20px;
+        }
+
+        /* Component Base */
+        .component {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .component:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Solar */
+        .solar {
+            grid-area: solar;
+            border-color: rgba(255, 213, 79, 0.3);
+            background: linear-gradient(135deg, rgba(255, 213, 79, 0.1) 0%, rgba(255, 179, 0, 0.05) 100%);
+        }
+
+        .solar .icon {
+            font-size: 64px;
+            margin-bottom: 10px;
+            margin-bottom: 8px;
+        }
+
+        .sub-value {
+            font-size: 14px;
+            opacity: 0.6;
+            margin-bottom: 16px;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 24px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        .status-badge.charging {
+            background: rgba(33, 150, 243, 0.2);
+            color: #42a5f5;
+        }
+
+        .status-badge.discharging {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ffb74d;
+        }
+
+        .status-badge.idle {
+            background: rgba(76, 175, 80, 0.2);
+            color: #81c784;
+        }
+
+        .status-badge.importing {
+            background: rgba(244, 67, 54, 0.2);
+            color: #e57373;
+        }
+
+        .status-badge.exporting {
+            background: rgba(76, 175, 80, 0.2);
+            color: #81c784;
+        }
+
+        /* Pulse Animation */
+        .pulse {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.95); }
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 16px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease, background 0.3s ease;
+        }
+
+        .progress-fill.high {
+            background: linear-gradient(90deg, #4caf50, #8bc34a);
+        }
+
+        .progress-fill.medium {
+            background: linear-gradient(90deg, #ff9800, #ffc107);
+        }
+
+        .progress-fill.low {
+            background: linear-gradient(90deg, #f44336, #e91e63);
+        }
+
+        /* Details List */
+        .details {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        .detail-label {
+            font-size: 13px;
+            opacity: 0.7;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* Phases Grid */
+        .phases {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .phase {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .phase-label {
+            font-size: 11px;
+            opacity: 0.6;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .phase-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        /* Colors */
+        .solar { border-left: 4px solid #ffd54f; }
+        .battery { border-left: 4px solid #4caf50; }
+        .consumption { border-left: 4px solid #f06292; }
+        .grid { border-left: 4px solid #42a5f5; }
+        .boiler { border-left: 4px solid #ff7043; }
+        .system { border-left: 4px solid #9575cd; }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 12px; text-align: center; }
+            .header-info { text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⚡ OIG Cloud</h1>
+            <div class="header-info">
+                <div class="status" id="status">Načítám...</div>
+                <div class="time" id="time">--:--:--</div>
+            </div>
+        </div>
+
+        <!-- Cards Grid -->
+        <div class="grid">
+            <!-- Solar Card -->
+            <div class="card solar">
+                <div class="card-header">
+                    <div class="card-icon">☀️</div>
+                    <div class="card-title">Výroba FVE</div>
+                </div>
+                <div class="main-value" id="solar-power">-- W</div>
+                <div class="sub-value" id="solar-today">Dnes: --</div>
+                <div class="details">
+                    <div class="detail-row">
+                        <span class="detail-label">String 1</span>
+                        <span class="detail-value" id="solar-s1">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">String 2</span>
+                        <span class="detail-value" id="solar-s2">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Napětí S1</span>
+                        <span class="detail-value" id="solar-v1">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Napětí S2</span>
+                        <span class="detail-value" id="solar-v2">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Battery Card -->
+            <div class="card battery">
+                <div class="card-header">
+                    <div class="card-icon">🔋</div>
+                    <div class="card-title">Baterie</div>
+                </div>
+                <div class="main-value" id="battery-soc">--%</div>
+                <div class="sub-value" id="battery-power-text">--</div>
+                <div id="battery-status"></div>
+                <div class="progress-bar">
+                    <div class="progress-fill high" id="battery-progress" style="width: 0%"></div>
+                </div>
+                <div class="details">
+                    <div class="detail-row">
+                        <span class="detail-label">Kapacita</span>
+                        <span class="detail-value" id="battery-cap">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Teplota</span>
+                        <span class="detail-value" id="battery-temp">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Napětí</span>
+                        <span class="detail-value" id="battery-voltage">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Proud</span>
+                        <span class="detail-value" id="battery-current">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Consumption Card -->
+            <div class="card consumption">
+                <div class="card-header">
+                    <div class="card-icon">🏠</div>
+                    <div class="card-title">Spotřeba</div>
+                </div>
+                <div class="main-value" id="consumption-power">-- W</div>
+                <div class="sub-value" id="consumption-today">Dnes: --</div>
+                <div class="phases">
+                    <div class="phase">
+                        <div class="phase-label">L1</div>
+                        <div class="phase-value" id="load-l1">--</div>
+                    </div>
+                    <div class="phase">
+                        <div class="phase-label">L2</div>
+                        <div class="phase-value" id="load-l2">--</div>
+                    </div>
+                    <div class="phase">
+                        <div class="phase-label">L3</div>
+                        <div class="phase-value" id="load-l3">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grid Card -->
+            <div class="card grid">
+                <div class="card-header">
+                    <div class="card-icon">🔌</div>
+                    <div class="card-title">Síť</div>
+                </div>
+                <div class="main-value" id="grid-power">-- W</div>
+                <div class="sub-value" id="grid-direction">--</div>
+                <div id="grid-status"></div>
+                <div class="phases">
+                    <div class="phase">
+                        <div class="phase-label">L1</div>
+                        <div class="phase-value" id="grid-l1">--</div>
+                    </div>
+                    <div class="phase">
+                        <div class="phase-label">L2</div>
+                        <div class="phase-value" id="grid-l2">--</div>
+                    </div>
+                    <div class="phase">
+                        <div class="phase-label">L3</div>
+                        <div class="phase-value" id="grid-l3">--</div>
+                    </div>
+                </div>
+                <div class="details">
+                    <div class="detail-row">
+                        <span class="detail-label">Odběr dnes</span>
+                        <span class="detail-value" id="grid-import">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Dodávka dnes</span>
+                        <span class="detail-value" id="grid-export">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Battery Energy Card -->
+            <div class="card battery">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <div class="card-title">Baterie - Energie dnes</div>
+                </div>
+                <div class="details" style="margin-top: 0; padding-top: 0; border-top: none;">
+                    <div class="detail-row">
+                        <span class="detail-label">Nabito ze slunce</span>
+                        <span class="detail-value" id="batt-charge-solar">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Nabito ze sítě</span>
+                        <span class="detail-value" id="batt-charge-grid">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Vybito celkem</span>
+                        <span class="detail-value" id="batt-discharge">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boiler Card -->
+            <div class="card boiler">
+                <div class="card-header">
+                    <div class="card-icon">🌡️</div>
+                    <div class="card-title">Bojler</div>
+                </div>
+                <div class="main-value" id="boiler-power">-- W</div>
+                <div class="sub-value" id="boiler-today">Dnes: --</div>
+                <div class="details">
+                    <div class="detail-row">
+                        <span class="detail-label">Režim</span>
+                        <span class="detail-value" id="boiler-mode">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Stav</span>
+                        <span class="detail-value" id="boiler-status">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Card -->
+            <div class="card system">
+                <div class="card-header">
+                    <div class="card-icon">⚙️</div>
+                    <div class="card-title">Systém</div>
+                </div>
+                <div class="details" style="margin-top: 0; padding-top: 0; border-top: none;">
+                    <div class="detail-row">
+                        <span class="detail-label">Box ID</span>
+                        <span class="detail-value" id="box-id">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Poslední update</span>
+                        <span class="detail-value" id="last-update">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Bypass</span>
+                        <span class="detail-value" id="bypass">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Spotová cena</span>
+                        <span class="detail-value" id="spot-price">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get inverter SN from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const sn = urlParams.get('inverter_sn');
+
+        if (!sn) {
+            document.getElementById('status').textContent = '❌ Chybí inverter_sn v URL';
+            throw new Error('Missing inverter_sn parameter');
+        }
+
+        document.getElementById('box-id').textContent = sn;
+
+        // API Functions
+        async function getSensor(entityId) {
+            try {
+                const token = parent.document.querySelector('home-assistant')?.hass?.auth?.data?.access_token;
+                if (!token) throw new Error('No HA token');
+
+                const response = await fetch(`/api/states/${entityId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.state;
+                }
+            } catch (e) {
+                console.error('Sensor error:', entityId, e);
+            }
+            return null;
+        }
+
+        // Helper Functions
+        function num(v) {
+            return parseFloat(v || '0') || 0;
+        }
+
+        function set(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function fmtPower(v) {
+            const n = Math.abs(v);
+            return n >= 1000 ? `${(n/1000).toFixed(2)} kW` : `${Math.round(n)} W`;
+        }
+
+        function fmtEnergy(v) {
+            const n = Math.abs(v);
+            return n >= 1 ? `${n.toFixed(2)} kWh` : `${(n*1000).toFixed(0)} Wh`;
+        }
+
+        function fmtVoltage(v) {
+            return `${v.toFixed(1)} V`;
+        }
+
+        function fmtCurrent(v) {
+            return `${v.toFixed(1)} A`;
+        }
+
+        function fmtTemp(v) {
+            return `${v.toFixed(1)} °C`;
+        }
+
+        function fmtPrice(v) {
+            return `${v.toFixed(2)} Kč/kWh`;
+        }
+
+        // Main Data Loading Function
+        async function loadData() {
+            try {
+                // Load all sensors in parallel
+                const [
+                    // Solar
+                    solP1, solP2, solToday, solV1, solV2,
+                    // Battery
+                    batSoc, batPwr, batCap, batTemp, batVolt, batCurr,
+                    batChgSol, batChgGrid, batDischarge,
+                    // Consumption
+                    consPwr, consToday, loadL1, loadL2, loadL3,
+                    // Grid
+                    gridTotal, gridL1, gridL2, gridL3, gridImp, gridExp,
+                    // Boiler
+                    boilerPwr, boilerToday, boilerMode, boilerUse,
+                    // System
+                    lastUpdate, bypass, spotPrice
+                ] = await Promise.all([
+                    // Solar
+                    getSensor(`sensor.oig_${sn}_actual_fv_p1`),
+                    getSensor(`sensor.oig_${sn}_actual_fv_p2`),
+                    getSensor(`sensor.oig_${sn}_dc_in_fv_ad`),
+                    getSensor(`sensor.oig_${sn}_extended_fve_voltage_1`),
+                    getSensor(`sensor.oig_${sn}_extended_fve_voltage_2`),
+                    // Battery
+                    getSensor(`sensor.oig_${sn}_batt_bat_c`),
+                    getSensor(`sensor.oig_${sn}_batt_batt_comp_p`),
+                    getSensor(`sensor.oig_${sn}_remaining_usable_capacity`),
+                    getSensor(`sensor.oig_${sn}_extended_battery_temperature`),
+                    getSensor(`sensor.oig_${sn}_extended_battery_voltage`),
+                    getSensor(`sensor.oig_${sn}_extended_battery_current`),
+                    getSensor(`sensor.oig_${sn}_computed_batt_charge_fve_energy_today`),
+                    getSensor(`sensor.oig_${sn}_computed_batt_charge_grid_energy_today`),
+                    getSensor(`sensor.oig_${sn}_computed_batt_discharge_energy_today`),
+                    // Consumption
+                    getSensor(`sensor.oig_${sn}_actual_aco_p`),
+                    getSensor(`sensor.oig_${sn}_ac_out_en_day`),
+                    getSensor(`sensor.oig_${sn}_extended_load_l1_power`),
+                    getSensor(`sensor.oig_${sn}_extended_load_l2_power`),
+                    getSensor(`sensor.oig_${sn}_extended_load_l3_power`),
+                    // Grid
+                    getSensor(`sensor.oig_${sn}_actual_aci_wtotal`),
+                    getSensor(`sensor.oig_${sn}_actual_aci_wr`),
+                    getSensor(`sensor.oig_${sn}_actual_aci_ws`),
+                    getSensor(`sensor.oig_${sn}_actual_aci_wt`),
+                    getSensor(`sensor.oig_${sn}_extended_grid_consumption`),
+                    getSensor(`sensor.oig_${sn}_extended_grid_delivery`),
+                    // Boiler
+                    getSensor(`sensor.oig_${sn}_boiler_current_cbb_w`),
+                    getSensor(`sensor.oig_${sn}_boiler_day_w`),
+                    getSensor(`sensor.oig_${sn}_boiler_manual_mode`),
+                    getSensor(`sensor.oig_${sn}_boiler_is_use`),
+                    // System
+                    getSensor(`sensor.oig_${sn}_real_data_update`),
+                    getSensor(`sensor.oig_${sn}_bypass_status`),
+                    getSensor(`sensor.oig_${sn}_spot_price_current_czk_kwh`)
+                ]);
+
+                // === SOLAR ===
+                const totalSolar = num(solP1) + num(solP2);
+                set('solar-power', fmtPower(totalSolar));
+                set('solar-today', `Dnes: ${fmtEnergy(num(solToday))}`);
+                set('solar-s1', fmtPower(num(solP1)));
+                set('solar-s2', fmtPower(num(solP2)));
+                set('solar-v1', fmtVoltage(num(solV1)));
+                set('solar-v2', fmtVoltage(num(solV2)));
+
+                // === BATTERY ===
+                const socNum = num(batSoc);
+                const batPwrNum = num(batPwr);
+
+                set('battery-soc', `${Math.round(socNum)}%`);
+                set('battery-power-text', fmtPower(Math.abs(batPwrNum)));
+
+                // Battery status badge
+                let batStatus = '';
+                if (batPwrNum > 10) {
+                    batStatus = '<div class="status-badge charging"><span class="pulse"></span> Nabíjení</div>';
+                } else if (batPwrNum < -10) {
+                    batStatus = '<div class="status-badge discharging"><span class="pulse"></span> Vybíjení</div>';
+                } else {
+                    batStatus = '<div class="status-badge idle">Klid</div>';
+                }
+                set('battery-status', batStatus);
+
+                // Battery progress bar
+                const progressBar = document.getElementById('battery-progress');
+                if (progressBar) {
+                    progressBar.style.width = `${socNum}%`;
+                    progressBar.className = 'progress-fill';
+                    if (socNum >= 70) progressBar.classList.add('high');
+                    else if (socNum >= 30) progressBar.classList.add('medium');
+                    else progressBar.classList.add('low');
+                }
+
+                set('battery-cap', fmtEnergy(num(batCap)));
+                set('battery-temp', fmtTemp(num(batTemp)));
+                set('battery-voltage', fmtVoltage(num(batVolt)));
+                set('battery-current', fmtCurrent(num(batCurr)));
+
+                // === CONSUMPTION ===
+                set('consumption-power', fmtPower(num(consPwr)));
+                set('consumption-today', `Dnes: ${fmtEnergy(num(consToday))}`);
+                set('load-l1', fmtPower(num(loadL1)));
+                set('load-l2', fmtPower(num(loadL2)));
+                set('load-l3', fmtPower(num(loadL3)));
+
+                // === GRID ===
+                const gridNum = num(gridTotal);
+                set('grid-power', fmtPower(Math.abs(gridNum)));
+
+                // Grid direction
+                if (gridNum > 10) {
+                    set('grid-direction', 'Odběr ze sítě');
+                    set('grid-status', '<div class="status-badge importing"><span class="pulse"></span> Import</div>');
+                } else if (gridNum < -10) {
+                    set('grid-direction', 'Dodávka do sítě');
+                    set('grid-status', '<div class="status-badge exporting"><span class="pulse"></span> Export</div>');
+                } else {
+                    set('grid-direction', 'Vyrovnaný stav');
+                    set('grid-status', '<div class="status-badge idle">—</div>');
+                }
+
+                set('grid-l1', fmtPower(num(gridL1)));
+                set('grid-l2', fmtPower(num(gridL2)));
+                set('grid-l3', fmtPower(num(gridL3)));
+                set('grid-import', fmtEnergy(num(gridImp)));
+                set('grid-export', fmtEnergy(num(gridExp)));
+
+                // === BATTERY ENERGY ===
+                set('batt-charge-solar', fmtEnergy(num(batChgSol)));
+                set('batt-charge-grid', fmtEnergy(num(batChgGrid)));
+                set('batt-discharge', fmtEnergy(num(batDischarge)));
+
+                // === BOILER ===
+                set('boiler-power', fmtPower(num(boilerPwr)));
+                set('boiler-today', `Dnes: ${fmtEnergy(num(boilerToday) / 1000)}`);
+                set('boiler-mode', boilerMode === '1' ? 'Manuální' : 'Auto');
+                set('boiler-status', boilerUse === '1' ? '🟢 Aktivní' : '⚪ Neaktivní');
+
+                // === SYSTEM ===
+                set('last-update', lastUpdate || 'N/A');
+                set('bypass', bypass === '1' ? '🟡 Aktivní' : '🟢 OK');
+                set('spot-price', spotPrice ? fmtPrice(num(spotPrice)) : 'N/A');
+
+                // Update status
+                set('status', '🟢 Online');
+
+            } catch (e) {
+                console.error('Load error:', e);
+                set('status', '⚠️ Chyba načítání');
+            }
+        }
+
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            set('time', now.toLocaleTimeString('cs-CZ'));
+        }
+
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+
+        function init() {
+            // Initial load
+            loadData();
+            updateTime();
+
+            // Auto refresh
+            setInterval(loadData, 10000); // Every 10 seconds
+            setInterval(updateTime, 1000); // Every second
+        }
+    </script>
+</body>
+</html>

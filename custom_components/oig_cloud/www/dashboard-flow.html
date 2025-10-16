@@ -416,7 +416,7 @@
 
         // Get sensor entity ID
         function getSensorId(sensor) {
-            return `sensor.oig_${INVERTER_SN}_${sensor}`;
+            return `sensor.oig_cloud_${INVERTER_SN}_${sensor}`;
         }
 
         // Get HA token from parent
@@ -429,46 +429,21 @@
             }
         }
 
-        // Fetch sensor data (returns { value, lastUpdated })
+        // Fetch sensor data
         async function getSensor(entityId) {
             const token = getHAToken();
-            if (!token) return { value: 0, lastUpdated: null };
+            if (!token) return null;
 
             try {
                 const response = await fetch(`/api/states/${entityId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (!response.ok) return { value: 0, lastUpdated: null };
+                if (!response.ok) return null;
                 const data = await response.json();
-                const value = data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
-                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
-                return { value, lastUpdated };
+                return data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
             } catch (e) {
-                return { value: 0, lastUpdated: null };
+                return 0;
             }
-        }
-
-        // Format relative time (like Home Assistant)
-        function formatRelativeTime(date) {
-            if (!date) return '';
-
-            const now = new Date();
-            const diffMs = now - date;
-            const diffSec = Math.floor(diffMs / 1000);
-            const diffMin = Math.floor(diffSec / 60);
-            const diffHour = Math.floor(diffMin / 60);
-            const diffDay = Math.floor(diffHour / 24);
-
-            if (diffSec < 10) return 'právě teď';
-            if (diffSec < 60) return `před ${diffSec} sekundami`;
-            if (diffMin === 1) return 'před minutou';
-            if (diffMin < 60) return `před ${diffMin} minutami`;
-            if (diffHour === 1) return 'před hodinou';
-            if (diffHour < 24) return `před ${diffHour} hodinami`;
-            if (diffDay === 1) return 'včera';
-            if (diffDay < 7) return `před ${diffDay} dny`;
-
-            return date.toLocaleDateString('cs-CZ');
         }
 
         // Update time
@@ -610,22 +585,13 @@
         // Load and update data
         async function loadData() {
             // Solar
-            const solarP1Data = await getSensor(getSensorId('actual_fv_p1'));
-            const solarP2Data = await getSensor(getSensorId('actual_fv_p2'));
-            const solarP1 = solarP1Data.value || 0;
-            const solarP2 = solarP2Data.value || 0;
+            const solarP1 = await getSensor(getSensorId('actual_fv_p1')) || 0;
+            const solarP2 = await getSensor(getSensorId('actual_fv_p2')) || 0;
             const solarPower = solarP1 + solarP2;
-            const solarTodayData = await getSensor(getSensorId('dc_in_fv_ad'));
-            const solarTodayWh = solarTodayData.value || 0;
-            const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
+            const solarToday = await getSensor(getSensorId('dc_in_fv_ad')) || 0;
 
-            // Display solar power in kW if > 1000W, otherwise W
-            if (solarPower >= 1000) {
-                document.getElementById('solar-power').textContent = (solarPower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('solar-power').textContent = Math.round(solarPower) + ' W';
-            }
-            document.getElementById('solar-today').textContent = 'Dnes: ' + solarTodayKWh.toFixed(1) + ' kWh';
+            document.getElementById('solar-power').textContent = Math.round(solarPower) + ' W';
+            document.getElementById('solar-today').textContent = 'Dnes: ' + solarToday.toFixed(1) + ' kWh';
 
             if (solarPower > 50) {
                 document.querySelector('.solar').classList.add('active');
@@ -634,19 +600,11 @@
             }
 
             // Battery
-            const batterySoCData = await getSensor(getSensorId('batt_bat_c'));
-            const batteryPowerData = await getSensor(getSensorId('batt_batt_comp_p'));
-            const batterySoC = batterySoCData.value || 0;
-            const batteryPower = batteryPowerData.value || 0;
+            const batterySoC = await getSensor(getSensorId('batt_bat_c')) || 0;
+            const batteryPower = await getSensor(getSensorId('batt_batt_comp_p')) || 0;
 
             document.getElementById('battery-soc').textContent = Math.round(batterySoC) + ' %';
-
-            // Display battery power in kW if > 1000W, otherwise W
-            if (Math.abs(batteryPower) >= 1000) {
-                document.getElementById('battery-power').textContent = (batteryPower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('battery-power').textContent = Math.round(batteryPower) + ' W';
-            }
+            document.getElementById('battery-power').textContent = Math.round(batteryPower) + ' W';
 
             const gauge = document.getElementById('battery-gauge');
             gauge.style.width = batterySoC + '%';
@@ -667,22 +625,12 @@
             }
 
             // Grid
-            const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
-            const gridConsumptionData = await getSensor(getSensorId('extended_grid_consumption'));
-            const gridDeliveryData = await getSensor(getSensorId('extended_grid_delivery'));
-            const gridPower = gridPowerData.value || 0;
-            const gridConsumptionWh = gridConsumptionData.value || 0;
-            const gridDeliveryWh = gridDeliveryData.value || 0;
-            const gridConsumptionKWh = gridConsumptionWh / 1000; // Convert Wh to kWh
-            const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
+            const gridPower = await getSensor(getSensorId('actual_aci_wtotal')) || 0;
+            const gridConsumption = await getSensor(getSensorId('extended_grid_consumption')) || 0;
+            const gridDelivery = await getSensor(getSensorId('extended_grid_delivery')) || 0;
 
-            // Display grid power in kW if > 1000W, otherwise W
-            if (Math.abs(gridPower) >= 1000) {
-                document.getElementById('grid-power').textContent = (Math.abs(gridPower) / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('grid-power').textContent = Math.round(Math.abs(gridPower)) + ' W';
-            }
-            document.getElementById('grid-today').textContent = 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh';
+            document.getElementById('grid-power').textContent = Math.round(Math.abs(gridPower)) + ' W';
+            document.getElementById('grid-today').textContent = 'Dnes: ' + (gridConsumption + gridDelivery).toFixed(1) + ' kWh';
 
             const gridStatus = document.getElementById('grid-status');
             if (gridPower > 10) {
@@ -697,32 +645,15 @@
             }
 
             // House
-            const housePowerData = await getSensor(getSensorId('actual_aco_p'));
-            const houseTodayData = await getSensor(getSensorId('ac_out_en_day'));
-            const housePower = housePowerData.value || 0;
-            const houseTodayWh = houseTodayData.value || 0;
-            const houseTodayKWh = houseTodayWh / 1000; // Convert Wh to kWh
+            const housePower = await getSensor(getSensorId('actual_aco_p')) || 0;
+            const houseToday = await getSensor(getSensorId('ac_out_en_day')) || 0;
 
-            // Display house power in kW if > 1000W, otherwise W
-            if (housePower >= 1000) {
-                document.getElementById('house-power').textContent = (housePower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('house-power').textContent = Math.round(housePower) + ' W';
-            }
-            document.getElementById('house-today').textContent = 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh';
+            document.getElementById('house-power').textContent = Math.round(housePower) + ' W';
+            document.getElementById('house-today').textContent = 'Dnes: ' + houseToday.toFixed(1) + ' kWh';
 
             // Inverter
-            const inverterTempData = await getSensor(getSensorId('extended_battery_temperature'));
-            const inverterTemp = inverterTempData.value || 0;
+            const inverterTemp = await getSensor(getSensorId('extended_battery_temperature')) || 0;
             document.getElementById('inverter-temp').textContent = inverterTemp.toFixed(1) + ' °C';
-
-            // Show last update time (use most recent sensor update)
-            const lastUpdate = solarP1Data.lastUpdated || batteryPowerData.lastUpdated || gridPowerData.lastUpdated;
-            if (lastUpdate) {
-                const relativeTime = formatRelativeTime(lastUpdate);
-                document.getElementById('inverter-status').textContent = 'Online';
-                document.getElementById('inverter-status').title = `Poslední aktualizace: ${relativeTime}`;
-            }
 
             // Animate particles
             animateFlow(solarPower, batteryPower, gridPower);
