@@ -77,15 +77,17 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint with jittered timing."""
+        _LOGGER.warning("🔄 _async_update_data called - starting update cycle")
+        
         # Apply jitter - random delay at start of update
         jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
 
         # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
         if jitter > 0:
-            _LOGGER.debug(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
+            _LOGGER.info(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
             await asyncio.sleep(jitter)
         else:
-            _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
+            _LOGGER.info(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
 
         try:
             combined_data: Dict[str, Any] = {}
