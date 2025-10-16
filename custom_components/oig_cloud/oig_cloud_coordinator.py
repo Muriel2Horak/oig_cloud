@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import random
 from datetime import timedelta, datetime, time
 from typing import Dict, Any, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
@@ -11,6 +12,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
+
+# Jitter configuration: ±5 seconds around base interval
+JITTER_SECONDS = 5.0
 
 
 class OigCloudCoordinator(DataUpdateCoordinator):
@@ -81,7 +85,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
 
         _LOGGER.info(
-            f"Coordinator initialized with intervals: standard={standard_interval_seconds}s, extended={extended_interval_seconds}s"
+            f"Coordinator initialized with intervals: standard={standard_interval_seconds}s, extended={extended_interval_seconds}s, jitter=±{JITTER_SECONDS}s"
         )
 
     def update_intervals(self, standard_interval: int, extended_interval: int) -> None:
@@ -285,6 +289,18 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Aktualizace základních dat."""
+        _LOGGER.info("🔄 _async_update_data called - starting update cycle")
+        
+        # Apply jitter - random delay at start of update
+        jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
+
+        # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
+        if jitter > 0:
+            _LOGGER.info(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
+            await asyncio.sleep(jitter)
+        else:
+            _LOGGER.info(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
+        
         try:
             # Standardní OIG data
             stats = await self._try_get_stats()
