@@ -113,10 +113,10 @@
             transform: translateX(-50%) scale(1.05);
         }
 
-        /* Grid - Left Middle - MENŠÍ ODSTUP OD KRAJE */
+        /* Grid - Left Middle - BLÍŽE KE STŘEDU */
         .grid-node {
             top: 50%;
-            left: 80px;
+            left: 150px;
             transform: translateY(-50%);
             border-color: rgba(66, 165, 245, 0.4);
             background: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
@@ -126,9 +126,9 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Battery - Bottom Center - POSUNUTÁ DÍŽ */
+        /* Battery - Bottom Center - JEŠTĚ VÍC DOLŮ */
         .battery {
-            bottom: 20px;
+            bottom: 5px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(76, 175, 80, 0.4);
@@ -139,10 +139,10 @@
             transform: translateX(-50%) scale(1.05);
         }
 
-        /* House - Right Middle - MENŠÍ ODSTUP OD KRAJE */
+        /* House - Right Middle - BLÍŽE KE STŘEDU */
         .house {
             top: 50%;
-            right: 80px;
+            right: 150px;
             transform: translateY(-50%);
             border-color: rgba(240, 98, 146, 0.4);
             background: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
@@ -152,10 +152,10 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Boiler - Right Bottom, Below House - MENŠÍ ODSTUP OD KRAJE */
+        /* Boiler - Right Bottom, Below House - BLÍŽE KE STŘEDU */
         .boiler {
             top: 62%;
-            right: 80px;
+            right: 150px;
             transform: translateY(0);
             border-color: rgba(255, 152, 0, 0.4);
             background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(245, 124, 0, 0.08) 100%);
@@ -468,25 +468,25 @@
 
             .grid-node {
                 top: 50%;
-                left: 20px;
+                left: 60px;
                 transform: translateY(-50%);
             }
 
             .battery {
-                bottom: 10px;
+                bottom: 5px;
                 left: 50%;
                 transform: translateX(-50%);
             }
 
             .house {
                 top: 50%;
-                right: 20px;
+                right: 60px;
                 transform: translateY(-50%);
             }
 
             .boiler {
                 top: 60%;
-                right: 20px;
+                right: 60px;
                 transform: translateY(0);
             }
         }
@@ -1294,7 +1294,7 @@
                         <span class="detail-value" id="inverter-mode">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Přemostění:</span>
+                        <span class="detail-label">Bypass:</span>
                         <span class="detail-value warning-capable" id="inverter-bypass">--</span>
                     </div>
                     <div class="detail-row">
@@ -2595,8 +2595,8 @@
 
                 // Solar forecast - tomorrow's total (from attributes)
                 // Sensor: sensor.oig_2206237016_solar_forecast
-                // Atribut: tomorrow (value in kWh)
-                const forecastTomorrow = solarForecast.attributes?.tomorrow || 0;
+                // Atribut: tomorrow_total_sum_kw (value in kW, needs conversion to kWh)
+                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
                 updateElementIfChanged('solar-forecast-tomorrow', parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
