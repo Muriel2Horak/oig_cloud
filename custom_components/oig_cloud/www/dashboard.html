@@ -96,7 +96,7 @@
 
         /* Solar - Top Center */
         .solar {
-            top: 20px;
+            top: 50px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(255, 213, 79, 0.4);
@@ -107,7 +107,7 @@
             transform: translateX(-50%) scale(1.05);
         }
 
-        /* Grid - Left Middle (SWAPPED!) */
+        /* Grid - Left Middle */
         .grid-node {
             top: 50%;
             left: 50px;
@@ -120,20 +120,20 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Battery - Left Side, Below Grid */
+        /* Battery - Bottom Center */
         .battery {
-            top: 60%;
-            left: 50px;
-            transform: translateY(30px);
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
             border-color: rgba(76, 175, 80, 0.4);
             background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
         }
 
         .battery:hover {
-            transform: translateY(30px) scale(1.05);
+            transform: translateX(-50%) scale(1.05);
         }
 
-        /* House - Right Middle (SWAPPED!) */
+        /* House - Right Middle */
         .house {
             top: 50%;
             right: 50px;
@@ -146,17 +146,17 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Boiler - Right Side, Below House (NEW!) */
+        /* Boiler - Right Bottom, Below House */
         .boiler {
             top: 60%;
             right: 50px;
-            transform: translateY(30px);
+            transform: translateY(0);
             border-color: rgba(255, 152, 0, 0.4);
             background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(245, 124, 0, 0.08) 100%);
         }
 
         .boiler:hover {
-            transform: translateY(30px) scale(1.05);
+            transform: translateY(0) scale(1.05);
         }
 
         .boiler.hidden {
@@ -425,29 +425,31 @@
 
             /* Přizpůsobení pozic - NOVÝ LAYOUT */
             .solar {
-                top: 30px;
+                top: 40px;
             }
 
             .grid-node {
-                top: 45%;
+                top: 50%;
                 left: 30px;
+                transform: translateY(-50%);
             }
 
             .battery {
-                top: 65%;
-                left: 30px;
-                transform: translateY(20px);
+                bottom: 40px;
+                left: 50%;
+                transform: translateX(-50%);
             }
 
             .house {
-                top: 45%;
+                top: 50%;
                 right: 30px;
+                transform: translateY(-50%);
             }
 
             .boiler {
-                top: 65%;
+                top: 60%;
                 right: 30px;
-                transform: translateY(20px);
+                transform: translateY(0);
             }
         }
 
