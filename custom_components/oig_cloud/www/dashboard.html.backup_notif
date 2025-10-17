@@ -1897,9 +1897,9 @@
             <!-- Battery -->
             <div class="node battery">
                 <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
-                     data-entity="extended_battery_voltage"
+                     data-entity="batt_bat_v"
                      data-tooltip="Napětí baterie"
-                     onclick="openEntityDialog(getSensorId('extended_battery_voltage'))">
+                     onclick="openEntityDialog(getSensorId('batt_bat_v'))">
                     <span style="font-size: 10px;">⚡</span>
                     <span id="battery-voltage-value">-- V</span>
                 </div>
@@ -1997,29 +1997,19 @@
                     </div>
                     <div class="detail-group">
                         <div class="detail-subheader">🔔 Notifikace</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 8px; align-items: center;">
-                            <div style="text-align: center;">
-                                <span class="detail-icon">📨</span>
-                                <span class="detail-value entity-value notification-badge" id="inverter-notifications-unread"
-                                      data-entity="notification_count_unread"
-                                      data-tooltip="Nepřečtené notifikace"
-                                      onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</span>
-                            </div>
-                            <div style="text-align: center;">
-                                <span class="detail-icon">❌</span>
-                                <span class="detail-value entity-value notification-badge" id="inverter-notifications-error"
-                                      data-entity="notification_count_error"
-                                      data-tooltip="Chybové notifikace"
-                                      onclick="openEntityDialog(getSensorId('notification_count_error'))">--</span>
-                            </div>
-                            <div style="text-align: left; padding-left: 4px;">
-                                <span class="detail-icon">📧</span>
-                                <span class="detail-value entity-value" id="inverter-latest-notification"
-                                      data-entity="latest_notification"
-                                      data-tooltip="Poslední notifikace"
-                                      onclick="openEntityDialog(getSensorId('latest_notification'))"
-                                      style="font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px;">--</span>
-                            </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">�</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-unread"
+                                  data-entity="notification_count_unread"
+                                  data-tooltip="Nepřečtené notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">❌</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-error"
+                                  data-entity="notification_count_error"
+                                  data-tooltip="Chybové notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_error'))">--</span>
                         </div>
                     </div>
                 </div>
@@ -3297,7 +3287,7 @@
             }
 
             // Update battery corner indicators
-            const batteryVoltageData = await getSensor(getSensorId('extended_battery_voltage'));
+            const batteryVoltageData = await getSensor(getSensorId('batt_bat_v'));
             const batteryCurrentData = await getSensor(getSensorId('extended_battery_current'));
             const batteryTempData = await getSensor(getSensorId('extended_battery_temperature'));
 
@@ -3376,6 +3366,48 @@
             updateElementIfChanged('house-power', formatPower(housePower), 'house-power');
             updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
+            // Inverter
+            const inverterTempData = await getSensor(getSensorId('extended_invertor_temperature'));
+            const inverterTemp = inverterTempData.value || 0;
+            updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
+
+            // Update inverter temperature icon and animation
+            const inverterTempIcon = document.getElementById('inverter-temp-icon');
+            let inverterTempIconEmoji;
+            let inverterTempClass = '';
+            if (inverterTemp > 35) {
+                inverterTempIconEmoji = '🌡️';
+                inverterTempClass = 'inverter-temp-hot';
+            } else if (inverterTemp < 15) {
+                inverterTempIconEmoji = '🧊';
+                inverterTempClass = 'inverter-temp-cold';
+            } else {
+                inverterTempIconEmoji = '🌡️';
+                inverterTempClass = '';
+            }
+            updateElementIfChanged('inverter-temp-icon', inverterTempIconEmoji, 'inverter-temp-icon');
+            inverterTempIcon.className = 'inverter-temp-icon ' + inverterTempClass;
+
+            // Update bypass indicator
+            const bypassData = await getSensorString(getSensorId('bypass_status'));
+            const bypassStatus = (bypassData.value || 'Off').toLowerCase();
+            const bypassIndicator = document.getElementById('inverter-bypass-indicator');
+            if (bypassStatus === 'on' || bypassStatus === 'active') {
+                bypassIndicator.className = 'inverter-bypass-indicator entity-value warning-active';
+            } else {
+                bypassIndicator.className = 'inverter-bypass-indicator entity-value status-ok';
+            }
+
+            // Update distribution crisis indicator
+            const distributionData = await getSensorString(getSensorId('box_prms_crct'));
+            const distributionStatus = (distributionData.value || 'Off').toLowerCase();
+            const distributionIndicator = document.getElementById('inverter-distribution-crisis');
+            if (distributionStatus === 'on' || distributionStatus === 'active') {
+                distributionIndicator.className = 'inverter-distribution-crisis entity-value warning-active';
+            } else {
+                distributionIndicator.className = 'inverter-distribution-crisis entity-value status-ok';
+            }
+
             // Update box mode with icons
             const boxModeData = await getSensorString(getSensorId('box_prms_mode'));
             const boxMode = boxModeData.value || '--';
@@ -3406,59 +3438,6 @@
                     lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
                     previousValues['last-update'] = lastUpdate;
                 }
-            }
-
-            // ===== INVERTER CORNER INDICATORS =====
-            // Bypass indicator (top-left corner)
-            const bypassStatusData = await getSensorString(getSensorId('bypass_status'));
-            const bypassStatus = bypassStatusData.value || 'off';
-            const bypassIndicator = document.getElementById('inverter-bypass-indicator');
-            const bypassIconElement = document.getElementById('inverter-bypass-icon');
-            let bypassIcon, bypassClass;
-            if (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1') {
-                bypassIcon = '🔴';
-                bypassClass = 'inverter-bypass-indicator bypass-warning';
-            } else {
-                bypassIcon = '🟢';
-                bypassClass = 'inverter-bypass-indicator bypass-ok';
-            }
-            if (previousValues['inverter-bypass-icon'] !== bypassIcon) {
-                bypassIconElement.textContent = bypassIcon;
-                bypassIndicator.className = bypassClass;
-                previousValues['inverter-bypass-icon'] = bypassIcon;
-            }
-
-            // Temperature indicator (top-right corner)
-            const inverterTempData = await getSensor(getSensorId('box_temp'));
-            const inverterTemp = inverterTempData.value || 0;
-            const inverterTempIndicator = document.getElementById('inverter-temp-indicator');
-            const inverterTempIconElement = document.getElementById('inverter-temp-icon');
-            let inverterTempIcon, inverterTempClass;
-            if (inverterTemp > 35) {
-                inverterTempIcon = '🌡️';
-                inverterTempClass = 'inverter-temp-indicator temp-hot';
-            } else {
-                inverterTempIcon = '🌡️';
-                inverterTempClass = 'inverter-temp-indicator';
-            }
-            if (previousValues['inverter-temp-icon'] !== inverterTempIcon || previousValues['inverter-temp-class'] !== inverterTempClass) {
-                inverterTempIconElement.textContent = inverterTempIcon;
-                inverterTempIndicator.className = inverterTempClass;
-                previousValues['inverter-temp-icon'] = inverterTempIcon;
-                previousValues['inverter-temp-class'] = inverterTempClass;
-            }
-            updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
-
-            // Warning border around entire inverter (when bypass ON OR temp >35°C)
-            const inverterBox = document.getElementById('inverter-box');
-            const hasWarning = (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1') || inverterTemp > 35;
-            if (previousValues['inverter-warning'] !== hasWarning) {
-                if (hasWarning) {
-                    inverterBox.classList.add('warning-active');
-                } else {
-                    inverterBox.classList.remove('warning-active');
-                }
-                previousValues['inverter-warning'] = hasWarning;
             }
 
             // ===== ANIMATION DATA LOADING =====
@@ -3687,11 +3666,6 @@
                 } else {
                     errorEl.classList.remove('has-error', 'has-unread');
                 }
-
-                // Latest notification text
-                const latestNotification = await getSensorString(getSensorId('latest_notification'));
-                const latestNotificationText = latestNotification.value || '--';
-                updateElementIfChanged('inverter-latest-notification', latestNotificationText);
 
                 // === BOILER DETAILS (if available) ===
                 if (!document.getElementById('boiler-node').classList.contains('hidden')) {
