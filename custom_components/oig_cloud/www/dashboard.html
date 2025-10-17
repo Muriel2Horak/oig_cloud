@@ -3528,10 +3528,10 @@
             const bypassIsOn = bypassStatus && (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1' || bypassStatus.toLowerCase().includes('on'));
             const tempIsHigh = inverterTemp > 35;
             const hasWarning = bypassIsOn || tempIsHigh;
-            
+
             // Debug log for bypass status
             console.log('[Inverter] Bypass status:', bypassStatus, 'isOn:', bypassIsOn, 'tempIsHigh:', tempIsHigh, 'hasWarning:', hasWarning);
-            
+
             // Force update on first load or when changed
             if (previousValues['inverter-warning'] === undefined || previousValues['inverter-warning'] !== hasWarning) {
                 if (hasWarning) {
