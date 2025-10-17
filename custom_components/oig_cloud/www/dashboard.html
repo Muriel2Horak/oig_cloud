@@ -1896,19 +1896,19 @@
 
             <!-- Battery -->
             <div class="node battery">
-                <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
-                     data-entity="extended_battery_voltage"
-                     data-tooltip="Napětí baterie"
-                     onclick="openEntityDialog(getSensorId('extended_battery_voltage'))">
-                    <span style="font-size: 10px;">⚡</span>
-                    <span id="battery-voltage-value">-- V</span>
-                </div>
                 <div class="battery-current-indicator entity-value" id="battery-current-indicator"
                      data-entity="extended_battery_current"
                      data-tooltip="Proud baterie"
                      onclick="openEntityDialog(getSensorId('extended_battery_current'))">
                     <span style="font-size: 12px;">〰️</span>
                     <span id="battery-current-value">-- A</span>
+                </div>
+                <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
+                     data-entity="extended_battery_voltage"
+                     data-tooltip="Napětí baterie"
+                     onclick="openEntityDialog(getSensorId('extended_battery_voltage'))">
+                    <span style="font-size: 10px;">⚡</span>
+                    <span id="battery-voltage-value">-- V</span>
                 </div>
                 <div class="battery-temp-indicator entity-value" id="battery-temp-indicator"
                      data-entity="extended_battery_temperature"
@@ -1928,33 +1928,41 @@
                 <div class="node-details">
                     <div class="detail-group">
                         <div class="detail-subheader">⚡ Energie</div>
-                        <div class="detail-row">
-                            <span class="detail-label">Nabito:</span>
-                            <span class="detail-value entity-value" id="battery-charge-total"
-                                  data-entity="computed_batt_charge_energy_today"
-                                  data-tooltip="Nabito dnes celkem"
-                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">└ z FVE:</span>
-                            <span class="detail-value entity-value" id="battery-charge-solar"
-                                  data-entity="computed_batt_charge_fve_energy_today"
-                                  data-tooltip="Nabito z FVE dnes"
-                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">-- kWh</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">└ ze sítě:</span>
-                            <span class="detail-value entity-value" id="battery-charge-grid"
-                                  data-entity="computed_batt_charge_grid_energy_today"
-                                  data-tooltip="Nabito ze sítě dnes"
-                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">-- kWh</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Vybito:</span>
-                            <span class="detail-value entity-value" id="battery-discharge-total"
-                                  data-entity="computed_batt_discharge_energy_today"
-                                  data-tooltip="Vybito dnes celkem"
-                                  onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <!-- Nabíjení (levý sloupec) -->
+                            <div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Nabito:</span>
+                                    <span class="detail-value entity-value" id="battery-charge-total"
+                                          data-entity="computed_batt_charge_energy_today"
+                                          data-tooltip="Nabito dnes celkem"
+                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">└ z FVE:</span>
+                                    <span class="detail-value entity-value" id="battery-charge-solar"
+                                          data-entity="computed_batt_charge_fve_energy_today"
+                                          data-tooltip="Nabito z FVE dnes"
+                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">-- kWh</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">└ ze sítě:</span>
+                                    <span class="detail-value entity-value" id="battery-charge-grid"
+                                          data-entity="computed_batt_charge_grid_energy_today"
+                                          data-tooltip="Nabito ze sítě dnes"
+                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">-- kWh</span>
+                                </div>
+                            </div>
+                            <!-- Vybíjení (pravý sloupec) -->
+                            <div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Vybito:</span>
+                                    <span class="detail-value entity-value" id="battery-discharge-total"
+                                          data-entity="computed_batt_discharge_energy_today"
+                                          data-tooltip="Vybito dnes celkem"
+                                          onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
