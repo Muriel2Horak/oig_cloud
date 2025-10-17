@@ -314,19 +314,20 @@
         /* Desktop - wider screens, avoid overlap */
         @media (min-width: 1400px) {
             .flow-canvas {
-                margin-right: 460px; /* Make space for control panel */
+                margin-top: 0; /* Top bar doesn't need margin */
             }
         }
 
         /* Tablet - medium screens */
         @media (max-width: 1200px) and (min-width: 769px) {
             .control-panel {
-                width: 380px;
-                right: 15px;
+                width: 100%;
+                left: 0;
+                right: 0;
             }
 
             .flow-canvas {
-                margin-right: 420px;
+                margin-top: 0;
             }
         }
 
@@ -334,6 +335,7 @@
         @media (max-width: 768px) {
             .flow-canvas {
                 height: 800px;
+                margin-top: 0; /* Top bar handles spacing */
             }
 
             .solar {
@@ -367,9 +369,19 @@
             }
 
             .control-panel {
-                right: 10px;
-                left: 10px;
-                width: auto;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                max-height: 100vh;
+                border-radius: 0 0 16px 16px;
+                overflow-y: auto;
+            }
+
+            .panel-content {
+                max-height: calc(100vh - 80px);
+                overflow-y: auto;
             }
 
             .button-group {
@@ -377,19 +389,19 @@
             }
         }
 
-        /* Control Panel Styles */
+        /* Control Panel Styles - Top Bar */
         .control-panel {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 420px;
-            max-height: 85vh;
-            background: rgba(10, 14, 39, 0.95);
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px;
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            max-height: 90vh;
+            background: rgba(10, 14, 39, 0.98);
+            border-bottom: 2px solid rgba(66, 165, 245, 0.3);
             backdrop-filter: blur(10px);
             z-index: 1000;
-            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             overflow: hidden;
             transition: all 0.3s ease;
         }
@@ -406,7 +418,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 16px 20px;
+            padding: 12px 20px;
             background: rgba(66, 165, 245, 0.1);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             cursor: pointer;
@@ -438,9 +450,37 @@
         }
 
         .panel-content {
-            max-height: calc(85vh - 60px);
+            max-height: calc(90vh - 60px);
             overflow-y: auto;
-            padding: 20px;
+            overflow-x: hidden;
+            padding: 16px 20px;
+        }
+
+        /* Desktop - horizontal layout */
+        @media (min-width: 1200px) {
+            .panel-content {
+                display: flex;
+                flex-direction: row;
+                gap: 20px;
+                flex-wrap: wrap;
+                justify-content: space-around;
+                max-height: 50vh; /* Limit height on desktop */
+            }
+
+            .control-section {
+                flex: 1;
+                min-width: 300px;
+                margin-bottom: 0;
+                padding-bottom: 0;
+                border-bottom: none;
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-right: 20px;
+            }
+
+            .control-section:last-child {
+                border-right: none;
+                padding-right: 0;
+            }
         }
 
         .panel-content::-webkit-scrollbar {
