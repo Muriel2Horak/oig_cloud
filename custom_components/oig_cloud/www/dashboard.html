@@ -2895,7 +2895,20 @@
                     const modeRequest = [...runningRequests, ...queuedRequests].find(req =>
                         req && req.service && req.service.includes('set_box_mode')
                     );
-                    const targetMode = modeRequest?.data?.mode || null;
+                    
+                    // Parse target mode from changes array
+                    let targetMode = null;
+                    if (modeRequest?.changes && Array.isArray(modeRequest.changes)) {
+                        // Format: "prms_mode: 'Home 2' → 'Home 3' (nyní: 'Home 2')"
+                        const changeStr = modeRequest.changes[0];
+                        if (changeStr) {
+                            const match = changeStr.match(/→\s*'([^']+)'/);
+                            if (match) {
+                                targetMode = match[1];
+                            }
+                        }
+                    }
+                    
                     const targetButtonId = targetMode ? modeButtonMap[targetMode] : null;
 
                     // Disable all buttons, but only animate the one being changed
