@@ -3449,7 +3449,8 @@
                     
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         limit: result.limit,
-                        acknowledgement: true
+                        acknowledgement: true,
+                        warning: true
                     });
 
                     if (!success) {
@@ -3478,7 +3479,8 @@
                     // Step 1: Set limit
                     const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
                         limit: result.limit,
-                        acknowledgement: true
+                        acknowledgement: true,
+                        warning: true
                     });
 
                     if (!limitSuccess) {
@@ -3492,7 +3494,8 @@
                     // Step 2: Set mode
                     const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
-                        acknowledgement: true
+                        acknowledgement: true,
+                        warning: true
                     });
 
                     if (!modeSuccess) {
@@ -3509,7 +3512,8 @@
                     
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
-                        acknowledgement: true
+                        acknowledgement: true,
+                        warning: true
                     });
 
                     if (!success) {
