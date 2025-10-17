@@ -247,8 +247,11 @@ class ServiceShield:
         val = str(val or "").strip().lower().replace(" ", "").replace("/", "")
         mapping = {
             "vypnutoon": "vypnuto",
+            "vypnuto": "vypnuto",
             "zapnutoon": "zapnuto",
-            "somezenimlimited": "somezenim",
+            "zapnuto": "zapnuto",
+            "somezenimlimited": "omezeno",
+            "omezeno": "omezeno",
             "manuální": "manualni",
             "manual": "manualni",
             "cbb": "cbb",

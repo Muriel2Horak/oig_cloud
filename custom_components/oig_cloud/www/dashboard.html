@@ -11,7 +11,8 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
             color: white;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
             min-height: 100vh;
         }
 
@@ -19,6 +20,7 @@
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
+            padding-bottom: 40px;
             position: relative;
         }
 
@@ -2028,6 +2030,51 @@
             margin-left: 8px;
             color: #ffc107;
         }
+
+        /* Shield Queue Table */
+        .shield-queue-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .shield-queue-table th {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .shield-queue-table td {
+            padding: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .shield-queue-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .queue-status-running {
+            color: #42a5f5;
+            font-weight: 600;
+        }
+
+        .queue-status-queued {
+            color: #ffc107;
+        }
+
+        .queue-time {
+            opacity: 0.7;
+            font-size: 11px;
+        }
+
+        .queue-empty {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -2063,9 +2110,9 @@
             <div class="control-section">
                 <h4>Dodávka do sítě</h4>
                 <div class="button-group">
-                    <button onclick="showGridDeliveryDialog('Vypnuto / Off')" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">🚫 Vypnuto</button>
-                    <button onclick="showGridDeliveryDialog('Zapnuto / On')" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">💧 Zapnuto</button>
-                    <button onclick="showGridDeliveryDialog('S omezením / Limited')" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">🚰 S omezením</button>
+                    <button onclick="setGridDelivery('Vypnuto / Off')" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">🚫 Vypnuto</button>
+                    <button onclick="setGridDelivery('Zapnuto / On')" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">💧 Zapnuto</button>
+                    <button onclick="setGridDelivery('S omezením / Limited')" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">🚰 S omezením</button>
                 </div>
             </div>
 
@@ -2089,6 +2136,18 @@
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
                     <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
+                </div>
+            </div>
+
+            <!-- Shield Queue -->
+            <div class="control-section" id="shield-queue-section" style="text-align: center;">
+                <h4 onclick="toggleQueueSection()" style="cursor: pointer; user-select: none; display: inline-block;">
+                    📋 Fronta požadavků <span id="queue-toggle-icon">▶</span>
+                </h4>
+                <div id="shield-queue-container" style="display: none; text-align: left;">
+                    <div style="text-align: center; opacity: 0.5; padding: 20px;">
+                        Načítání...
+                    </div>
                 </div>
             </div>
         </div>
@@ -2515,6 +2574,19 @@
             icon.textContent = panel.classList.contains('minimized') ? '+' : '−';
         }
 
+        // Toggle queue section
+        function toggleQueueSection() {
+            const container = document.getElementById('shield-queue-container');
+            const icon = document.getElementById('queue-toggle-icon');
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                icon.textContent = '▼';
+            } else {
+                container.style.display = 'none';
+                icon.textContent = '▶';
+            }
+        }
+
         // === SHIELD INTEGRATION FUNCTIONS ===
 
         // Debouncing timers
@@ -2801,16 +2873,17 @@
 
                 const currentMode = gridModeData.value || '';
                 const currentLimit = gridLimitData.value || 0;
+                const isChanging = currentMode === 'Probíhá změna';
 
-                console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit);
+                console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit, 'isChanging:', isChanging);
 
                 // Update mode buttons
-                // Sensor vrací: "Vypnuto", "Zapnuto", "S omezením"
+                // Sensor vrací: "Vypnuto", "Zapnuto", "Omezeno" (nebo "Probíhá změna")
                 // Mapování sensor hodnota -> button label
                 const modeMapping = {
                     'Vypnuto': 'Vypnuto / Off',
                     'Zapnuto': 'Zapnuto / On',
-                    'S omezením': 'S omezením / Limited'
+                    'Omezeno': 'S omezením / Limited'
                 };
 
                 const modeButtons = {
@@ -2828,7 +2901,18 @@
 
                     btn.classList.remove('active', 'pending', 'processing');
 
-                    // Check if pending (mode change)
+                    // If "Probíhá změna", disable all buttons and show processing on all
+                    if (isChanging) {
+                        btn.disabled = true;
+                        btn.classList.add('processing');
+                        console.log(`[Shield] Grid ${mode} -> disabled (změna probíhá)`);
+                        return;
+                    }
+
+                    // Re-enable button when not changing
+                    btn.disabled = false;
+
+                    // Check if pending (mode change from shield queue)
                     if (pending && pending.service === 'set_grid_delivery') {
                         // Pokud pending target obsahuje "Vypnuto", "Zapnuto", "Limited"
                         if (pending.target && pending.target.includes(mode.split(' ')[0])) {
@@ -2956,6 +3040,12 @@
                 console.log(`[Service] Executing ${domain}.${service}...`);
                 await hass.callService(domain, service, data);
                 console.log(`[Service] ✅ Success: ${domain}.${service}`);
+
+                // Immediately update shield queue after service call
+                setTimeout(() => {
+                    updateShieldQueue();
+                }, 500); // Small delay to let backend process the request
+
                 return true;
             } catch (e) {
                 console.error(`[Service] ❌ Error calling ${domain}.${service}:`, e);
@@ -2991,10 +3081,133 @@
         let modeChangeInProgress = false;
         let lastModeChangeNotified = false;
 
+        // Update Shield Queue display
+        function updateShieldQueue() {
+            try {
+                // Use Hass states directly (instant, no API call needed!)
+                const hass = getHass();
+                if (!hass || !hass.states) return;
+
+                // Find service_shield_activity sensor dynamically (may end with _2, _3, etc.)
+                const sensorPrefix = `sensor.oig_${INVERTER_SN}_service_shield_activity`;
+                const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
+
+                if (!entityId) {
+                    console.warn('[Shield Queue] service_shield_activity sensor not found');
+                    return;
+                }
+
+                const activitySensor = hass.states[entityId];
+                const container = document.getElementById('shield-queue-container');
+
+                if (!activitySensor || !activitySensor.attributes || !container) return;
+
+                const attrs = activitySensor.attributes;
+                const runningRequests = attrs.running_requests || [];
+                const queuedRequests = attrs.queued_requests || [];
+                const allRequests = [...runningRequests, ...queuedRequests];
+
+                if (allRequests.length === 0) {
+                    container.innerHTML = '<div class="queue-empty">✅ Fronta je prázdná</div>';
+                    return;
+                }
+
+                // Build table
+                let html = '<table class="shield-queue-table">';
+                html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Čas</th></tr></thead>';
+                html += '<tbody>';
+
+                allRequests.forEach((req, index) => {
+                    const isRunning = index === 0 && runningRequests.length > 0;
+                    const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
+                    const statusIcon = isRunning ? '🔄' : '⏳';
+                    const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
+
+                    // Format service name to human-readable Czech
+                    const serviceMap = {
+                        'set_box_mode': '🏠 Změna režimu boxu',
+                        'set_grid_delivery': '💧 Změna nastavení přetoků',
+                        'set_grid_delivery_limit': '🔢 Změna limitu přetoků',
+                        'set_boiler_mode': '🔥 Změna nastavení bojleru',
+                        'set_formating_mode': '🔋 Změna nabíjení baterie',
+                        'set_battery_capacity': '⚡ Změna kapacity baterie'
+                    };
+                    let serviceName = serviceMap[req.service] || req.service || 'N/A';
+
+                    // Format changes
+                    let changes = 'N/A';
+                    if (req.changes && Array.isArray(req.changes) && req.changes.length > 0) {
+                        changes = req.changes.map(ch => {
+                            // Try to extract just the important part
+                            const match = ch.match(/:\s*'?([^'→]+)'?\s*→\s*'?([^'(]+)'?/);
+                            if (match) {
+                                return `${match[1].trim()} → ${match[2].trim()}`;
+                            }
+                            return ch;
+                        }).join('<br>');
+                    }
+
+                    // Format time with date if older than today
+                    let timeText = '';
+                    if (req.created_at) {
+                        const createdDate = new Date(req.created_at);
+                        const now = new Date();
+                        const diffSec = Math.floor((now - createdDate) / 1000);
+
+                        // Check if same day
+                        const isToday = createdDate.toDateString() === now.toDateString();
+
+                        if (diffSec < 60) {
+                            timeText = `${diffSec}s`;
+                        } else if (diffSec < 3600) {
+                            const diffMin = Math.floor(diffSec / 60);
+                            timeText = `${diffMin}m ${diffSec % 60}s`;
+                        } else {
+                            const diffHours = Math.floor(diffSec / 3600);
+                            const diffMin = Math.floor((diffSec % 3600) / 60);
+                            timeText = `${diffHours}h ${diffMin}m`;
+                        }
+
+                        // Add date if not today
+                        if (!isToday) {
+                            const day = createdDate.getDate();
+                            const month = createdDate.getMonth() + 1;
+                            timeText = `${day}.${month}.<br>${timeText}`;
+                        }
+                    }
+
+                    html += `
+                        <tr>
+                            <td class="${statusClass}">${statusIcon} ${statusText}</td>
+                            <td>${serviceName}</td>
+                            <td style="font-size: 11px;">${changes}</td>
+                            <td class="queue-time">${timeText}</td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+
+            } catch (e) {
+                console.error('[Queue] Error updating queue display:', e);
+            }
+        }
+
         // Monitor ServiceShield activity
         async function monitorShieldActivity() {
             try {
-                const activitySensor = await getSensor(getSensorId('service_shield_activity_3'));
+                // Use Hass states directly for activity sensor (instant, no API call needed!)
+                const hass = getHass();
+                if (!hass || !hass.states) return;
+
+                // Find service_shield_activity sensor dynamically (may end with _2, _3, etc.)
+                const sensorPrefix = `sensor.oig_${INVERTER_SN}_service_shield_activity`;
+                const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
+
+                if (!entityId) return;
+
+                const activitySensor = hass.states[entityId];
                 if (!activitySensor || !activitySensor.attributes) return;
 
                 const attrs = activitySensor.attributes;
@@ -3094,9 +3307,19 @@
                 }
 
                 // === CHECK FOR GRID DELIVERY CHANGES ===
-                const hasGridChange = [...runningRequests, ...queuedRequests].some(req =>
+                // Check for grid changes from shield queue OR from sensor state "Probíhá změna"
+                let hasGridChange = [...runningRequests, ...queuedRequests].some(req =>
                     req && req.service && req.service.includes('set_grid_delivery')
                 );
+
+                // Also check sensor state
+                const gridModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
+                const isGridChanging = gridModeData.value === 'Probíhá změna';
+
+                if (isGridChanging) {
+                    hasGridChange = true;
+                    console.log('[Shield] Detected Grid Delivery change from sensor state');
+                }
 
                 const gridChangeIndicator = document.getElementById('grid-change-indicator');
                 const gridChangeText = document.getElementById('grid-change-text');
@@ -3113,6 +3336,12 @@
                     let hasLimitRequest = false;
                     let targetMode = null;
                     let targetLimit = null;
+
+                    // If sensor shows "Probíhá změna" but no queue items, show generic badge
+                    if (isGridChanging && gridRequests.length === 0) {
+                        hasModeRequest = true;
+                        targetMode = '? (změna probíhá)';
+                    }
 
                     gridRequests.forEach(req => {
                         if (req.changes && Array.isArray(req.changes)) {
@@ -3137,9 +3366,11 @@
                     // Show mode badge
                     if (hasModeRequest && gridChangeIndicator && gridChangeText) {
                         const modeIcon = targetMode?.includes('Off') ? '🚫' :
-                                        targetMode?.includes('On') ? '💧' : '🚰';
+                                        targetMode?.includes('On') ? '💧' :
+                                        targetMode?.includes('?') ? '🔄' : '🚰';
                         const modeName = targetMode?.includes('Off') ? 'Vypnuto' :
-                                        targetMode?.includes('On') ? 'Zapnuto' : 'Omezeno';
+                                        targetMode?.includes('On') ? 'Zapnuto' :
+                                        targetMode?.includes('?') ? 'Změna...' : 'Omezeno';
                         gridChangeText.textContent = `${modeIcon} ${modeName}`;
                         gridChangeIndicator.style.display = 'flex';
                     }
@@ -3425,7 +3656,7 @@
             console.log('═══════════════════════════════════════════════');
             console.log('[Grid] setGridDelivery() called with mode:', mode);
             console.log('═══════════════════════════════════════════════');
-            
+
             try {
                 // Get current mode and limit
                 const currentModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
@@ -3438,19 +3669,30 @@
                     currentLimit: currentLimit
                 });
 
+                // Check if change is already in progress
+                if (currentMode === 'Probíhá změna') {
+                    console.log('[Grid] ⏸️ Change already in progress, skipping');
+                    showNotification('Info', 'Změna režimu dodávky do sítě již probíhá, počkejte na dokončení', 'warning');
+                    return;
+                }
+
                 // Check if already active (except for Limited - can change limit)
+                // Sensor returns: "Vypnuto", "Zapnuto", "Omezeno" (without English translation)
                 const isAlreadyActive =
-                    (mode === 'Vypnuto / Off' && currentMode.includes('Off')) ||
-                    (mode === 'Zapnuto / On' && currentMode.includes('On'));
+                    (mode === 'Vypnuto / Off' && currentMode === 'Vypnuto') ||
+                    (mode === 'Zapnuto / On' && currentMode === 'Zapnuto');
 
                 if (isAlreadyActive) {
-                    // Tiše ignorovat - režim už je aktivní
+                    // Režim už je aktivní - zobraz notifikaci a ukonči
                     console.log('[Grid] ⏸️ Mode already active, skipping:', mode);
+                    const modeName = mode === 'Vypnuto / Off' ? 'Vypnuto' : 'Zapnuto';
+                    showNotification('Info', `Režim "${modeName}" je již aktivní`, 'info');
                     return;
                 }
 
                 // Check if Limited is already active
-                const isLimitedActive = currentMode.includes('Limited') || currentMode.includes('omezením');
+                // Sensor returns: "Omezeno" (without English translation)
+                const isLimitedActive = currentMode === 'Omezeno';
                 const isChangingToLimited = mode === 'S omezením / Limited';
 
                 console.log('[Grid] Decision flags:', {
@@ -3461,12 +3703,12 @@
                 // Show dialog
                 console.log('[Grid] 📋 Opening dialog...');
                 const result = await showGridDeliveryDialog(mode, currentLimit);
-                
+
                 if (!result.confirmed) {
                     console.log('[Grid] ❌ Dialog cancelled by user');
                     return;
                 }
-                
+
                 console.log('[Grid] ✅ Dialog confirmed with:', result);
 
                 // Special case: Limited is already active, just change limit
@@ -3537,7 +3779,7 @@
                         acknowledgement: true,
                         warning: true
                     });
-                    
+
                     const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
                         acknowledgement: true,
@@ -4161,7 +4403,7 @@
             const solarIcon = document.getElementById('solar-icon-dynamic');
             let solarIconEmoji;
             if (solarPerc <= 5) {
-                solarIconEmoji = '�'; // Úplněk v noci - výrazný
+                solarIconEmoji = '🌙'; // Měsíc v noci - výrazný
                 solarIcon.className = 'node-icon solar-icon-dynamic solar-icon-moon';
             } else if (solarPerc < 50) {
                 solarIconEmoji = '☀️'; // Normální slunce
@@ -4801,10 +5043,11 @@
                 loadControlStatus();
             }, 20000);
 
-            // Monitor ServiceShield activity every 10s (runs independently)
+            // Monitor ServiceShield activity every 2s (runs independently)
             setInterval(() => {
                 monitorShieldActivity();
-            }, 10000);
+                updateShieldQueue(); // Update queue table
+            }, 2000);
 
             // Time update every second
             setInterval(updateTime, 1000);

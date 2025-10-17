@@ -71,7 +71,7 @@ class OigCloudSessionManager:
         """Log information about API session configuration and headers."""
         try:
             # Base URL
-            base_url = getattr(self._api, '_base_url', 'https://www.oigpower.cz/cez')
+            base_url = getattr(self._api, "_base_url", "https://www.oigpower.cz/cez")
             _LOGGER.info(f"🌐 Base URL: {base_url}")
 
             # Try to get session info via get_session() method
@@ -88,20 +88,31 @@ class OigCloudSessionManager:
                     headers_found = False
 
                     # Method 1: _default_headers (internal CIMultiDict)
-                    if hasattr(session, '_default_headers') and session._default_headers:
+                    if (
+                        hasattr(session, "_default_headers")
+                        and session._default_headers
+                    ):
                         for key, value in session._default_headers.items():
                             _LOGGER.info(f"   {key}: {value}")
                             headers_found = True
 
                     # Method 2: Direct inspection via connector's headers
-                    if not headers_found and hasattr(session, '_connector') and hasattr(session._connector, '_default_headers'):
+                    if (
+                        not headers_found
+                        and hasattr(session, "_connector")
+                        and hasattr(session._connector, "_default_headers")
+                    ):
                         for key, value in session._connector._default_headers.items():
                             _LOGGER.info(f"   {key}: {value}")
                             headers_found = True
 
                     if not headers_found:
-                        _LOGGER.debug("Could not find headers in session object, checking attributes...")
-                        _LOGGER.debug(f"Session attributes: {[attr for attr in dir(session) if 'header' in attr.lower()]}")
+                        _LOGGER.debug(
+                            "Could not find headers in session object, checking attributes..."
+                        )
+                        _LOGGER.debug(
+                            f"Session attributes: {[attr for attr in dir(session) if 'header' in attr.lower()]}"
+                        )
 
                     # Close the test session
                     await session.close()
@@ -109,7 +120,9 @@ class OigCloudSessionManager:
                     _LOGGER.debug("No session object available from get_session()")
 
             except Exception as e:
-                _LOGGER.warning(f"Could not inspect session headers: {e}", exc_info=True)
+                _LOGGER.warning(
+                    f"Could not inspect session headers: {e}", exc_info=True
+                )
 
             # Log known API endpoints
             _LOGGER.info("� Known API endpoints:")
@@ -153,7 +166,7 @@ class OigCloudSessionManager:
                         _LOGGER.debug(f"📝 Old PHPSESSID: {old_session[:16]}...")
 
                     # Log authentication URL
-                    base_url = getattr(self._api, '_base_url', None)
+                    base_url = getattr(self._api, "_base_url", None)
                     if base_url:
                         _LOGGER.info(f"🌐 Auth URL: {base_url}/login")
 
@@ -232,18 +245,18 @@ class OigCloudSessionManager:
 
                 # Log URL endpoint based on method name
                 endpoint_map = {
-                    'get_stats': '/api/get_stats',
-                    'get_extended_stats': '/api/get_extended_stats',
-                    'set_battery_working_mode': '/api/set_battery_working_mode',
-                    'set_grid_delivery': '/api/set_grid_delivery',
-                    'set_boiler_mode': '/api/set_boiler_mode',
-                    'format_battery': '/api/format_battery',
-                    'set_battery_capacity': '/api/set_battery_capacity',
-                    'set_box_mode': '/api/set_box_mode',
-                    'set_grid_delivery_limit': '/api/set_grid_delivery_limit',
-                    'set_formating_mode': '/api/set_formating_mode',
+                    "get_stats": "/api/get_stats",
+                    "get_extended_stats": "/api/get_extended_stats",
+                    "set_battery_working_mode": "/api/set_battery_working_mode",
+                    "set_grid_delivery": "/api/set_grid_delivery",
+                    "set_boiler_mode": "/api/set_boiler_mode",
+                    "format_battery": "/api/format_battery",
+                    "set_battery_capacity": "/api/set_battery_capacity",
+                    "set_box_mode": "/api/set_box_mode",
+                    "set_grid_delivery_limit": "/api/set_grid_delivery_limit",
+                    "set_formating_mode": "/api/set_formating_mode",
                 }
-                endpoint = endpoint_map.get(method_name, '/api/unknown')
+                endpoint = endpoint_map.get(method_name, "/api/unknown")
 
                 _LOGGER.debug(
                     f"📡 Request #{request_num}: {method_name}() → {endpoint} (attempt {attempt + 1}/{max_retries})"
@@ -336,49 +349,41 @@ class OigCloudSessionManager:
 
     async def set_grid_delivery(
         self,
-        box_sn: str,
         delivery_mode: int,
     ) -> Dict[str, Any]:
         """Set grid delivery mode with retry logic."""
         return await self._call_with_retry(
             self._api.set_grid_delivery,
-            box_sn,
             delivery_mode,
         )
 
     async def set_boiler_mode(
         self,
-        box_sn: str,
         mode: int,
     ) -> Dict[str, Any]:
         """Set boiler mode with retry logic."""
         return await self._call_with_retry(
             self._api.set_boiler_mode,
-            box_sn,
             mode,
         )
 
     async def format_battery(
         self,
-        box_sn: str,
         command: int,
     ) -> Dict[str, Any]:
         """Format battery with retry logic."""
         return await self._call_with_retry(
             self._api.format_battery,
-            box_sn,
             command,
         )
 
     async def set_battery_capacity(
         self,
-        box_sn: str,
         capacity_ah: float,
     ) -> Dict[str, Any]:
         """Set battery capacity with retry logic."""
         return await self._call_with_retry(
             self._api.set_battery_capacity,
-            box_sn,
             capacity_ah,
         )
 

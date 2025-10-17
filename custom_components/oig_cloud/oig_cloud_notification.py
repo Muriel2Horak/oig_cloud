@@ -313,8 +313,8 @@ class OigNotificationParser:
     def detect_bypass_status(self, content: str) -> bool:
         """Detect bypass status from content."""
         try:
-            # Nejdříve hledáme bypass zprávy v notifikacích
-            bypass_messages = [
+            # OPRAVA: Najdeme VŠECHNY bypass zprávy a vrátíme POSLEDNÍ (nejnovější)
+            bypass_on_patterns = [
                 r"automatický\s+BYPASS\s*-\s*Zapnut",
                 r"automatic\s+BYPASS\s*-\s*ON",
                 r"bypass.*zapnut",
@@ -322,7 +322,7 @@ class OigNotificationParser:
                 r"bypass.*active",
             ]
 
-            bypass_off_messages = [
+            bypass_off_patterns = [
                 r"automatický\s+BYPASS\s*-\s*Vypnut",
                 r"automatic\s+BYPASS\s*-\s*OFF",
                 r"bypass.*vypnut",
@@ -330,20 +330,36 @@ class OigNotificationParser:
                 r"bypass.*inactive",
             ]
 
-            # Kontrola zpráv o bypass
-            for pattern in bypass_messages:
-                if re.search(pattern, content, re.IGNORECASE):
+            # Najdeme všechny pozice výskytů ON zpráv
+            on_positions = []
+            for pattern in bypass_on_patterns:
+                for match in re.finditer(pattern, content, re.IGNORECASE):
+                    on_positions.append((match.start(), True))
                     _LOGGER.debug(
-                        f"Bypass detected as ON from message with pattern: {pattern}"
+                        f"Found bypass ON at position {match.start()}: {match.group()}"
                     )
-                    return True
 
-            for pattern in bypass_off_messages:
-                if re.search(pattern, content, re.IGNORECASE):
+            # Najdeme všechny pozice výskytů OFF zpráv
+            off_positions = []
+            for pattern in bypass_off_patterns:
+                for match in re.finditer(pattern, content, re.IGNORECASE):
+                    off_positions.append((match.start(), False))
                     _LOGGER.debug(
-                        f"Bypass detected as OFF from message with pattern: {pattern}"
+                        f"Found bypass OFF at position {match.start()}: {match.group()}"
                     )
-                    return False
+
+            # Spojíme a seřadíme podle pozice (poslední = nejnovější)
+            all_matches = sorted(
+                on_positions + off_positions, key=lambda x: x[0], reverse=True
+            )
+
+            # Vrátíme stav z POSLEDNÍ zprávy
+            if all_matches:
+                last_status = all_matches[0][1]
+                _LOGGER.info(
+                    f"Bypass status from LATEST message: {'ON' if last_status else 'OFF'} (found {len(all_matches)} total bypass messages)"
+                )
+                return last_status
 
             # Rozšířené hledání indikátorů bypass stavu v HTML/JS obsahu
             bypass_indicators = [
