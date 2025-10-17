@@ -55,7 +55,9 @@
         .flow-canvas {
             position: relative;
             width: 100%;
-            height: 850px; /* Zvětšeno pro lepší rozložení */
+            max-width: 900px; /* Zúžení pro kompaktnější zobrazení */
+            margin: 0 auto; /* Vycentrování */
+            height: 850px; /* Původní výška zachována */
         }
 
         /* SVG for connections */
@@ -251,6 +253,21 @@
             gap: 4px;
             align-items: center;
             justify-content: center;
+        }
+
+        /* Dvousloupcový layout pro fáze v Síti */
+        .phase-col-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .phase-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 45px;
         }
 
         /* Tariff indicator in grid box */
@@ -3502,10 +3519,14 @@
             const lastUpdate = realDataUpdateSensor.value; // String value from sensor
             if (lastUpdate && lastUpdate !== '--') {
                 const lastUpdateHeader = document.getElementById('last-update-header');
-                if (previousValues['last-update'] !== lastUpdate) {
-                    // Update header with sensor value
-                    lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
-                    previousValues['last-update'] = lastUpdate;
+                // Parse timestamp and convert to relative time
+                const updateDate = new Date(lastUpdate);
+                const relativeTime = formatRelativeTime(updateDate);
+                const displayText = `Aktualizováno ${relativeTime}`;
+
+                if (previousValues['last-update'] !== displayText) {
+                    lastUpdateHeader.textContent = displayText;
+                    previousValues['last-update'] = displayText;
                 }
             }
 
@@ -3741,34 +3762,34 @@
                 // === BOILER DETAILS (as part of house) ===
                 const boilerIsUse = await getSensorStringSafe(getSensorId('boiler_is_use'));
                 const boilerDetailSection = document.getElementById('boiler-detail-section');
-                
+
                 if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
                     // Show boiler section
                     boilerDetailSection.style.display = 'block';
-                    
+
                     const boilerCurrentPower = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
                     const boilerDayEnergy = await getSensorSafe(getSensorId('boiler_day_w'));
                     const boilerManualMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
-                    
+
                     // Format power (W or kW)
                     const powerValue = boilerCurrentPower.value || 0;
-                    const powerDisplay = powerValue >= 1000 
+                    const powerDisplay = powerValue >= 1000
                         ? (powerValue / 1000).toFixed(1) + ' kW'
                         : Math.round(powerValue) + ' W';
                     updateElementIfChanged('house-boiler-power', powerDisplay);
-                    
+
                     // Format energy (Wh or kWh)
                     const energyValue = boilerDayEnergy.value || 0;
                     const energyDisplay = energyValue >= 1000
                         ? (energyValue / 1000).toFixed(2) + ' kWh'
                         : Math.round(energyValue) + ' Wh';
                     updateElementIfChanged('house-boiler-today', energyDisplay);
-                    
+
                     // Format mode with icon
                     const modeValue = boilerManualMode.value || '--';
                     const modeIcon = document.getElementById('boiler-mode-icon');
                     let modeDisplay = modeValue;
-                    
+
                     if (modeValue === 'CBB') {
                         modeDisplay = '🤖 Inteligentní';
                         if (modeIcon) modeIcon.textContent = '🤖';
