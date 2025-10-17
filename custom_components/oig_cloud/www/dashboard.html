@@ -2944,17 +2944,22 @@
 
         // Call HA service
         async function callService(domain, service, data) {
+            console.log(`[Service] Calling ${domain}.${service} with data:`, JSON.stringify(data));
             const hass = getHass();
             if (!hass) {
+                console.error('[Service] Failed to get hass object');
                 showNotification('Chyba', 'Nelze získat připojení k Home Assistant', 'error');
                 return false;
             }
 
             try {
+                console.log(`[Service] Executing ${domain}.${service}...`);
                 await hass.callService(domain, service, data);
+                console.log(`[Service] ✅ Success: ${domain}.${service}`);
                 return true;
             } catch (e) {
-                console.error(`Chyba při volání ${domain}.${service}:`, e);
+                console.error(`[Service] ❌ Error calling ${domain}.${service}:`, e);
+                console.error('[Service] Error details:', e.message, e.stack);
                 showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
                 return false;
             }
@@ -3118,7 +3123,7 @@
                                     hasModeRequest = true;
                                     targetMode = modeMatch[1];
                                 }
-                                
+
                                 // Check for limit change: "p_max_feed_grid: X → Y"
                                 const limitMatch = change.match(/p_max_feed_grid:.*→\s*(\d+)/);
                                 if (limitMatch) {
@@ -3164,10 +3169,10 @@
         function showGridDeliveryDialog(mode, currentLimit) {
             return new Promise((resolve) => {
                 const needsLimit = mode === 'S omezením / Limited';
-                const modeDisplayName = mode === 'Vypnuto / Off' ? 'Vypnuto' : 
-                                       mode === 'Zapnuto / On' ? 'Zapnuto' : 
+                const modeDisplayName = mode === 'Vypnuto / Off' ? 'Vypnuto' :
+                                       mode === 'Zapnuto / On' ? 'Zapnuto' :
                                        'S omezením';
-                const modeIcon = mode === 'Vypnuto / Off' ? '🚫' : 
+                const modeIcon = mode === 'Vypnuto / Off' ? '🚫' :
                                 mode === 'Zapnuto / On' ? '💧' : '🚰';
 
                 // Create overlay
@@ -3183,14 +3188,14 @@
                         <label for="grid-limit-input" style="display: block; margin-bottom: 8px; font-weight: 600;">
                             Zadejte limit přetoků (W):
                         </label>
-                        <input type="number" 
-                               id="grid-limit-input" 
-                               placeholder="např. 5000" 
-                               min="1" 
-                               max="20000" 
+                        <input type="number"
+                               id="grid-limit-input"
+                               placeholder="např. 5000"
+                               min="1"
+                               max="20000"
                                step="100"
                                value="${currentLimit || 5000}"
-                               style="width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.2); 
+                               style="width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.2);
                                       background: rgba(255,255,255,0.05); color: white; border-radius: 4px; font-size: 14px;">
                         <small style="display: block; margin-top: 5px; opacity: 0.7;">Rozsah: 1-20000 W</small>
                     </div>
@@ -3205,7 +3210,7 @@
                     </div>
                     ${limitInputHtml}
                     <div class="ack-dialog-warning">
-                        ⚠️ <strong>Upozornění:</strong> ${needsLimit ? 
+                        ⚠️ <strong>Upozornění:</strong> ${needsLimit ?
                             'Změna se provede ve dvou krocích: nejdřív se nastaví limit, pak režim. Každý krok může trvat až 10 minut.' :
                             'Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.'}
                     </div>
@@ -3425,7 +3430,7 @@
                 const currentLimit = currentLimitData.value || 5000;
 
                 // Check if already active (except for Limited - can change limit)
-                const isAlreadyActive = 
+                const isAlreadyActive =
                     (mode === 'Vypnuto / Off' && currentMode.includes('Off')) ||
                     (mode === 'Zapnuto / On' && currentMode.includes('On'));
 
@@ -3446,7 +3451,7 @@
                 // Special case: Limited is already active, just change limit
                 if (isLimitedActive && isChangingToLimited && result.limit) {
                     console.log('[Grid] Limited already active, just changing limit to:', result.limit);
-                    
+
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         limit: result.limit,
                         acknowledgement: true,
@@ -3460,12 +3465,12 @@
 
                     // Trigger immediate check
                     await monitorShieldActivity();
-                    
+
                     setTimeout(() => {
                         updateShieldUI();
                         updateButtonStates();
                     }, 500);
-                    
+
                     return;
                 }
 
@@ -3475,7 +3480,7 @@
                 if (needsLimit) {
                     // Two-step process: 1) Set limit, 2) Set mode
                     console.log('[Grid] Two-step change: limit=' + result.limit + ', mode=' + mode);
-                    
+
                     // Step 1: Set limit
                     const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
                         limit: result.limit,
@@ -3505,11 +3510,11 @@
 
                     // Both successful - trigger immediate check
                     await monitorShieldActivity();
-                    
+
                 } else {
                     // Single step: just mode
                     console.log('[Grid] Single-step change: mode=' + mode);
-                    
+
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
                         acknowledgement: true,
