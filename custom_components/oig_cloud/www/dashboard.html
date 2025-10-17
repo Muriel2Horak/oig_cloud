@@ -45,6 +45,12 @@
             opacity: 0.8;
         }
 
+        .last-update {
+            font-size: 12px;
+            opacity: 0.6;
+            font-style: italic;
+        }
+
         /* Energy Flow Canvas */
         .flow-canvas {
             position: relative;
@@ -96,7 +102,7 @@
 
         /* Solar - Top Center */
         .solar {
-            top: 50px;
+            top: 80px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(255, 213, 79, 0.4);
@@ -110,7 +116,7 @@
         /* Grid - Left Middle */
         .grid-node {
             top: 50%;
-            left: 50px;
+            left: 120px;
             transform: translateY(-50%);
             border-color: rgba(66, 165, 245, 0.4);
             background: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
@@ -122,7 +128,7 @@
 
         /* Battery - Bottom Center */
         .battery {
-            bottom: 50px;
+            bottom: 80px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(76, 175, 80, 0.4);
@@ -136,7 +142,7 @@
         /* House - Right Middle */
         .house {
             top: 50%;
-            right: 50px;
+            right: 120px;
             transform: translateY(-50%);
             border-color: rgba(240, 98, 146, 0.4);
             background: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
@@ -148,8 +154,8 @@
 
         /* Boiler - Right Bottom, Below House */
         .boiler {
-            top: 60%;
-            right: 50px;
+            top: 62%;
+            right: 120px;
             transform: translateY(0);
             border-color: rgba(255, 152, 0, 0.4);
             background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(245, 124, 0, 0.08) 100%);
@@ -1038,6 +1044,7 @@
         <div class="header">
             <h1>⚡ Energetické Toky</h1>
             <div class="time" id="current-time">--:--:--</div>
+            <div class="last-update" id="last-update-header">Aktualizováno: --</div>
         </div>
 
     <!-- Control Panel -->
@@ -1172,7 +1179,7 @@
 
             <!-- Inverter Center -->
             <div class="node inverter">
-                <div class="node-icon">⚙️</div>
+                <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
                 <div class="node-value" id="inverter-status">Online</div>
                 <div class="node-subvalue" id="inverter-temp">-- °C</div>
@@ -1188,6 +1195,14 @@
                     <div class="detail-row">
                         <span class="detail-label">Přetoky:</span>
                         <span class="detail-value" id="inverter-grid-mode">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Povoleno:</span>
+                        <span class="detail-value" id="inverter-allowed-power">-- kW</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Distribuce:</span>
+                        <span class="detail-value" id="inverter-distribution">--</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Aktualizace:</span>
@@ -2367,12 +2382,16 @@
             const inverterTemp = inverterTempData.value || 0;
             updateElementIfChanged('inverter-temp', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
 
-            // Show last update time (use most recent sensor update) - UPDATE ONLY IF CHANGED
+            // Show last update time (use most recent sensor update) - UPDATE TO HEADER
             const lastUpdate = solarP1Data.lastUpdated || batteryPowerData.lastUpdated || gridPowerData.lastUpdated;
             if (lastUpdate) {
                 const relativeTime = formatRelativeTime(lastUpdate);
+                const lastUpdateHeader = document.getElementById('last-update-header');
                 const inverterStatus = document.getElementById('inverter-status');
                 if (previousValues['last-update'] !== lastUpdate) {
+                    // Update header
+                    lastUpdateHeader.textContent = `Aktualizováno ${relativeTime}`;
+                    // Keep inverter status simple
                     inverterStatus.textContent = 'Online';
                     inverterStatus.title = `Poslední aktualizace: ${relativeTime}`;
                     previousValues['last-update'] = lastUpdate;
@@ -2450,7 +2469,11 @@
                 updateElementIfChanged('solar-forecast-today', forecastToday + ' kWh');
 
                 // Solar forecast - tomorrow's total (from attributes)
-                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
+                // Try multiple possible attribute names
+                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw 
+                    || solarForecast.attributes?.tomorrow_sum 
+                    || solarForecast.attributes?.tomorrow_total 
+                    || 0;
                 updateElementIfChanged('solar-forecast-tomorrow', forecastTomorrow.toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
@@ -2548,11 +2571,27 @@
                 const bypassStatus = await getSensorString(getSensorId('bypass_status')); // OPRAVENO: správný senzor
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const inverterUpdate = await getSensorString(getSensorId('real_data_update'));
+                const allowedPower = await getSensor(getSensorId('boiler_install_power')); // Povolený výkon v W
+                const distributionMode = await getSensorString(getSensorId('box_prms_crct')); // Režim distribuce
+
+                // Translate bypass status to Czech
+                let bypassText = bypassStatus.value || '--';
+                if (bypassText === 'On') bypassText = 'Zapnuto';
+                else if (bypassText === 'Off') bypassText = 'Vypnuto';
+
+                // Translate distribution mode to Czech
+                let distributionText = distributionMode.value || '--';
+                // Common values: "Smart", "Standby", "Normal" - translate as needed
+                if (distributionText === 'Smart') distributionText = 'Chytrý';
+                else if (distributionText === 'Standby') distributionText = 'Pohotovost';
+                else if (distributionText === 'Normal') distributionText = 'Normální';
 
                 // Update only if changed
                 updateElementIfChanged('inverter-mode', inverterMode.value || '--');
-                updateElementIfChanged('inverter-bypass', bypassStatus.value || '--'); // OPRAVENO: použití bypass_status
+                updateElementIfChanged('inverter-bypass', bypassText);
                 updateElementIfChanged('inverter-grid-mode', inverterGridMode.value || '--');
+                updateElementIfChanged('inverter-allowed-power', ((allowedPower.value || 0) / 1000).toFixed(1) + ' kW');
+                updateElementIfChanged('inverter-distribution', distributionText);
                 updateElementIfChanged('inverter-update', inverterUpdate.value || '--');
 
                 // === BOILER DETAILS (if available) ===
