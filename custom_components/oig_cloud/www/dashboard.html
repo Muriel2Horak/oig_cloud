@@ -177,7 +177,7 @@
             transform: translate(-50%, -50%);
             border-color: rgba(149, 117, 205, 0.4);
             background: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
-            min-width: 140px; /* Trochu širší */
+            min-width: 180px; /* Širší pro notifikace */
             max-width: 200px;
         }
 
@@ -1983,7 +1983,7 @@
                     <div class="detail-group">
                         <div class="detail-subheader">📤 Přetoky do sítě</div>
                         <div class="detail-row">
-                            <span class="detail-icon" id="grid-export-icon">🔴</span>
+                            <span class="detail-icon" id="grid-export-icon">�</span>
                             <span class="detail-value entity-value" id="inverter-grid-export-mode"
                                   data-entity="invertor_prms_to_grid"
                                   data-tooltip="Režim dodávky do sítě"
@@ -2152,13 +2152,46 @@
                                   data-entity="ac_out_aco_ps"
                                   data-tooltip="L2 spotřeba"
                                   onclick="openEntityDialog(getSensorId('ac_out_aco_ps'))">-- W</span>
-                        </div>
-                        <div class="detail-row">
                             <span class="detail-icon">L3</span>
                             <span class="detail-value entity-value" id="house-l3"
                                   data-entity="ac_out_aco_pt"
                                   data-tooltip="L3 spotřeba"
                                   onclick="openEntityDialog(getSensorId('ac_out_aco_pt'))">-- W</span>
+                        </div>
+                    </div>
+                    <div class="detail-group">
+                        <div class="detail-subheader">🔥 Bojler</div>
+                        <div class="detail-row">
+                            <span class="detail-icon">⚡</span>
+                            <span class="detail-label">Výkon:</span>
+                            <span class="detail-value entity-value" id="house-boiler-power"
+                                  data-entity="boiler_power"
+                                  data-tooltip="Výkon bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_power'))">-- W</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">🌡️</span>
+                            <span class="detail-label">Teplota:</span>
+                            <span class="detail-value entity-value" id="house-boiler-temp"
+                                  data-entity="boiler_temperature"
+                                  data-tooltip="Teplota bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_temperature'))">-- °C</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">⚙️</span>
+                            <span class="detail-label">Režim:</span>
+                            <span class="detail-value entity-value" id="house-boiler-mode"
+                                  data-entity="boiler_mode"
+                                  data-tooltip="Režim bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_mode'))">--</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">📊</span>
+                            <span class="detail-label">Status:</span>
+                            <span class="detail-value entity-value" id="house-boiler-status"
+                                  data-entity="boiler_status"
+                                  data-tooltip="Status bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_status'))">--</span>
                         </div>
                     </div>
                 </div>
@@ -3170,7 +3203,7 @@
             if (!cacheKey) cacheKey = elementId;
             const element = document.getElementById(elementId);
             if (!element) return false;
-            
+
             // Always update on first load (when previousValues[cacheKey] is undefined)
             // or when value actually changed
             if (previousValues[cacheKey] === undefined || previousValues[cacheKey] !== newValue) {
@@ -3398,15 +3431,15 @@
             }
             updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
 
-            // Show last update time - use lastUpdated timestamp from any main sensor
-            const realDataUpdateSensor = await getSensor(getSensorId('actual_aci_wtotal')); // Grid power sensor
-            if (realDataUpdateSensor.lastUpdated) {
+            // Show last update time from real_data_update sensor - UPDATE TO HEADER
+            const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
+            const lastUpdate = realDataUpdateSensor.value; // String value from sensor
+            if (lastUpdate && lastUpdate !== '--') {
                 const lastUpdateHeader = document.getElementById('last-update-header');
-                const relativeTime = formatRelativeTime(realDataUpdateSensor.lastUpdated);
-                const newUpdateText = `Aktualizováno: ${relativeTime}`;
-                if (previousValues['last-update'] !== newUpdateText) {
-                    lastUpdateHeader.textContent = newUpdateText;
-                    previousValues['last-update'] = newUpdateText;
+                if (previousValues['last-update'] !== lastUpdate) {
+                    // Update header with sensor value
+                    lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
+                    previousValues['last-update'] = lastUpdate;
                 }
             }
 
@@ -3453,7 +3486,9 @@
 
             // Warning border around entire inverter (when bypass ON OR temp >35°C)
             const inverterBox = document.getElementById('inverter-box');
-            const hasWarning = (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1') || inverterTemp > 35;
+            const bypassIsOn = bypassStatus && (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1' || bypassStatus.toLowerCase().includes('on'));
+            const tempIsHigh = inverterTemp > 35;
+            const hasWarning = bypassIsOn || tempIsHigh;
             if (previousValues['inverter-warning'] !== hasWarning) {
                 if (hasWarning) {
                     inverterBox.classList.add('warning-active');
@@ -3491,7 +3526,7 @@
 
             // Load details for all nodes (only on first load or explicit refresh)
             if (!previousValues['node-details-loaded']) {
-                loadNodeDetails();
+                await loadNodeDetails(); // Wait for details on first load
                 previousValues['node-details-loaded'] = true;
             }
         }
@@ -3625,6 +3660,21 @@
                 updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
                 updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
                 updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
+
+                // === BOILER DETAILS (as part of house) ===
+                try {
+                    const boilerPower = await getSensor(getSensorId('boiler_power'));
+                    const boilerMode = await getSensorString(getSensorId('boiler_mode'));
+                    const boilerTemp = await getSensor(getSensorId('boiler_temperature'));
+                    const boilerStatus = await getSensorString(getSensorId('boiler_status'));
+
+                    updateElementIfChanged('house-boiler-power', Math.round(boilerPower.value || 0) + ' W');
+                    updateElementIfChanged('house-boiler-mode', boilerMode.value || '--');
+                    updateElementIfChanged('house-boiler-temp', Math.round(boilerTemp.value || 0) + ' °C');
+                    updateElementIfChanged('house-boiler-status', boilerStatus.value || '--');
+                } catch (e) {
+                    console.log('Boiler sensors not available');
+                }
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
