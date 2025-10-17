@@ -100,9 +100,9 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
         }
 
-        /* Solar - Top Center - VĚTŠÍ ODSTUP */
+        /* Solar - Top Center - CO NEJBLÍŽE K OVLÁDACÍMU PANELU */
         .solar {
-            top: 100px;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(255, 213, 79, 0.4);
@@ -126,9 +126,9 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Battery - Bottom Center - VĚTŠÍ ODSTUP */
+        /* Battery - Bottom Center - POSUNUTÁ DÍŽ */
         .battery {
-            bottom: 100px;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(76, 175, 80, 0.4);
@@ -463,7 +463,7 @@
 
             /* Přizpůsobení pozic - NOVÝ LAYOUT */
             .solar {
-                top: 50px;
+                top: 10px;
             }
 
             .grid-node {
@@ -473,7 +473,7 @@
             }
 
             .battery {
-                bottom: 50px;
+                bottom: 10px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -551,7 +551,7 @@
 
             /* Pozice boxů pro mobil - NOVÝ LAYOUT */
             .solar {
-                top: 30px;
+                top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -569,7 +569,7 @@
             }
 
             .battery {
-                top: 300px;
+                top: 350px;
                 left: 10px;
                 transform: none;
             }
@@ -2089,22 +2089,23 @@
             }
         }
 
-        // Fetch sensor data (returns { value, lastUpdated })
+        // Fetch sensor data (returns { value, lastUpdated, attributes })
         async function getSensor(entityId) {
             const token = getHAToken();
-            if (!token) return { value: 0, lastUpdated: null };
+            if (!token) return { value: 0, lastUpdated: null, attributes: {} };
 
             try {
                 const response = await fetch(`/api/states/${entityId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (!response.ok) return { value: 0, lastUpdated: null };
+                if (!response.ok) return { value: 0, lastUpdated: null, attributes: {} };
                 const data = await response.json();
                 const value = data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
                 const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
-                return { value, lastUpdated };
+                const attributes = data.attributes || {};
+                return { value, lastUpdated, attributes };
             } catch (e) {
-                return { value: 0, lastUpdated: null };
+                return { value: 0, lastUpdated: null, attributes: {} };
             }
         }
 
@@ -2506,18 +2507,18 @@
             const inverterTemp = inverterTempData.value || 0;
             updateElementIfChanged('inverter-temp', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
 
-            // Show last update time (use most recent sensor update) - UPDATE TO HEADER
-            const lastUpdate = solarP1Data.lastUpdated || batteryPowerData.lastUpdated || gridPowerData.lastUpdated;
-            if (lastUpdate) {
-                const relativeTime = formatRelativeTime(lastUpdate);
+            // Show last update time from real_data_update sensor - UPDATE TO HEADER
+            const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
+            const lastUpdate = realDataUpdateSensor.value; // String value from sensor
+            if (lastUpdate && lastUpdate !== '--') {
                 const lastUpdateHeader = document.getElementById('last-update-header');
                 const inverterStatus = document.getElementById('inverter-status');
                 if (previousValues['last-update'] !== lastUpdate) {
-                    // Update header
-                    lastUpdateHeader.textContent = `Aktualizováno ${relativeTime}`;
+                    // Update header with sensor value
+                    lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
                     // Keep inverter status simple
                     inverterStatus.textContent = 'Online';
-                    inverterStatus.title = `Poslední aktualizace: ${relativeTime}`;
+                    inverterStatus.title = `Poslední aktualizace: ${lastUpdate}`;
                     previousValues['last-update'] = lastUpdate;
                 }
             }
@@ -2593,12 +2594,10 @@
                 updateElementIfChanged('solar-forecast-today', forecastToday + ' kWh');
 
                 // Solar forecast - tomorrow's total (from attributes)
-                // Try multiple possible attribute names
-                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw
-                    || solarForecast.attributes?.tomorrow_sum
-                    || solarForecast.attributes?.tomorrow_total
-                    || 0;
-                updateElementIfChanged('solar-forecast-tomorrow', forecastTomorrow.toFixed(2) + ' kWh');
+                // Sensor: sensor.oig_2206237016_solar_forecast
+                // Atribut: tomorrow (value in kWh)
+                const forecastTomorrow = solarForecast.attributes?.tomorrow || 0;
+                updateElementIfChanged('solar-forecast-tomorrow', parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
                 const battVoltage = await getSensor(getSensorId('extended_battery_voltage'));
@@ -2732,13 +2731,15 @@
                 }
 
                 if (distributionEl) {
-                    // Distribution: GREEN when Standby, RED when Smart/Normal/active
-                    if (distributionMode.value && distributionMode.value !== 'Standby' && distributionMode.value !== '--') {
-                        distributionEl.classList.remove('status-ok');
-                        distributionEl.classList.add('warning-active');
-                    } else {
+                    // Distribution: GREEN when Standby (OFF), RED when Smart/Normal (ON/active)
+                    if (distributionMode.value === 'Standby' || distributionMode.value === '--') {
+                        // Vypnutá (Standby) = ZELENÁ
                         distributionEl.classList.remove('warning-active');
                         distributionEl.classList.add('status-ok');
+                    } else {
+                        // Zapnutá (Smart/Normal) = ČERVENÁ
+                        distributionEl.classList.remove('status-ok');
+                        distributionEl.classList.add('warning-active');
                     }
                 }
 
