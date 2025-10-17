@@ -2878,20 +2878,20 @@
                         const modeRequest = [...runningRequests, ...queuedRequests].find(req =>
                             req && req.service && req.service.includes('set_box_mode')
                         );
-                        
+
                         const targetMode = modeRequest?.data?.mode || 'neznámý režim';
                         const isQueued = queuedRequests.some(req => req?.service?.includes('set_box_mode'));
-                        
+
                         showNotification(
                             '⏳ Probíhá změna režimu',
-                            isQueued 
+                            isQueued
                                 ? `Režim "${targetMode}" čeká ve frontě. Tlačítka budou zamčena do dokončení.`
                                 : `Nastavuji režim "${targetMode}". Může to trvat až 10 minut.`,
                             'warning'
                         );
                         lastModeChangeNotified = true;
                     }
-                    
+
                     modeChangeInProgress = true;
                 } else {
                     // Re-enable buttons and remove animation
@@ -2993,6 +2993,19 @@
         // Set box mode
         async function setBoxMode(mode) {
             try {
+                // Check if mode is already active
+                const currentModeData = await getSensorString(getSensorId('box_prms_mode'));
+                const currentMode = currentModeData.value || '';
+                
+                if (currentMode.includes(mode)) {
+                    showNotification(
+                        '✓ Režim již aktivní',
+                        `Režim "${mode}" je již nastaven. Není potřeba měnit.`,
+                        'success'
+                    );
+                    return;
+                }
+
                 // Check shield queue before adding task
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
