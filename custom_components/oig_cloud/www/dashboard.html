@@ -1803,8 +1803,8 @@
             <div class="control-section">
                 <h4>Režim bojleru</h4>
                 <div class="button-group">
-                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">Inteligentní (CBB)</button>
-                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">Manuální</button>
+                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
+                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
                 </div>
             </div>
         </div>
@@ -2137,60 +2137,32 @@
                     <span class="phase-separator">|</span>
                     <span class="phase-value" id="house-l3-main">--W</span>
                 </div>
-                <div class="node-details">
-                    <div class="detail-group">
-                        <div class="detail-subheader">⚡ Zátěž fází</div>
-                        <div class="detail-row">
-                            <span class="detail-icon">L1</span>
-                            <span class="detail-value entity-value" id="house-l1"
-                                  data-entity="ac_out_aco_pr"
-                                  data-tooltip="L1 spotřeba"
-                                  onclick="openEntityDialog(getSensorId('ac_out_aco_pr'))">-- W</span>
-                            <span class="detail-icon">L2</span>
-                            <span class="detail-value entity-value" id="house-l2"
-                                  data-entity="ac_out_aco_ps"
-                                  data-tooltip="L2 spotřeba"
-                                  onclick="openEntityDialog(getSensorId('ac_out_aco_ps'))">-- W</span>
-                            <span class="detail-icon">L3</span>
-                            <span class="detail-value entity-value" id="house-l3"
-                                  data-entity="ac_out_aco_pt"
-                                  data-tooltip="L3 spotřeba"
-                                  onclick="openEntityDialog(getSensorId('ac_out_aco_pt'))">-- W</span>
-                        </div>
-                    </div>
-                    <div class="detail-group">
+                <div class="node-details" id="house-details">
+                    <div class="detail-group" id="boiler-detail-section" style="display: none;">
                         <div class="detail-subheader">🔥 Bojler</div>
                         <div class="detail-row">
                             <span class="detail-icon">⚡</span>
                             <span class="detail-label">Výkon:</span>
                             <span class="detail-value entity-value" id="house-boiler-power"
-                                  data-entity="boiler_power"
-                                  data-tooltip="Výkon bojleru"
-                                  onclick="openEntityDialog(getSensorId('boiler_power'))">-- W</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-icon">🌡️</span>
-                            <span class="detail-label">Teplota:</span>
-                            <span class="detail-value entity-value" id="house-boiler-temp"
-                                  data-entity="boiler_temperature"
-                                  data-tooltip="Teplota bojleru"
-                                  onclick="openEntityDialog(getSensorId('boiler_temperature'))">-- °C</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-icon">⚙️</span>
-                            <span class="detail-label">Režim:</span>
-                            <span class="detail-value entity-value" id="house-boiler-mode"
-                                  data-entity="boiler_mode"
-                                  data-tooltip="Režim bojleru"
-                                  onclick="openEntityDialog(getSensorId('boiler_mode'))">--</span>
+                                  data-entity="boiler_current_cbb_w"
+                                  data-tooltip="Aktuální výkon bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))">-- W</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-icon">📊</span>
-                            <span class="detail-label">Status:</span>
-                            <span class="detail-value entity-value" id="house-boiler-status"
-                                  data-entity="boiler_status"
-                                  data-tooltip="Status bojleru"
-                                  onclick="openEntityDialog(getSensorId('boiler_status'))">--</span>
+                            <span class="detail-label">Dnes:</span>
+                            <span class="detail-value entity-value" id="house-boiler-today"
+                                  data-entity="boiler_day_w"
+                                  data-tooltip="Spotřeba bojleru dnes"
+                                  onclick="openEntityDialog(getSensorId('boiler_day_w'))">-- Wh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon" id="boiler-mode-icon">🤖</span>
+                            <span class="detail-label">Režim:</span>
+                            <span class="detail-value entity-value" id="house-boiler-mode"
+                                  data-entity="boiler_manual_mode"
+                                  data-tooltip="Režim bojleru"
+                                  onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</span>
                         </div>
                     </div>
                 </div>
@@ -3761,27 +3733,55 @@
                 const houseL2 = await getSensor(getSensorId('ac_out_aco_ps'));
                 const houseL3 = await getSensor(getSensorId('ac_out_aco_pt'));
 
-                // Update only if changed
-                updateElementIfChanged('house-l1', Math.round(houseL1.value || 0) + ' W');
-                updateElementIfChanged('house-l2', Math.round(houseL2.value || 0) + ' W');
-                updateElementIfChanged('house-l3', Math.round(houseL3.value || 0) + ' W');
-
-                // Update main box phases (new elements)
+                // Update main box phases
                 updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
                 updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
                 updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
 
                 // === BOILER DETAILS (as part of house) ===
-                const boilerPower = await getSensorSafe(getSensorId('boiler_power'));
-                const boilerMode = await getSensorStringSafe(getSensorId('boiler_mode'));
-                const boilerTemp = await getSensorSafe(getSensorId('boiler_temperature'));
-                const boilerStatus = await getSensorStringSafe(getSensorId('boiler_status'));
-
-                if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
-                    updateElementIfChanged('house-boiler-power', Math.round(boilerPower.value || 0) + ' W');
-                    updateElementIfChanged('house-boiler-mode', boilerMode.value || '--');
-                    updateElementIfChanged('house-boiler-temp', Math.round(boilerTemp.value || 0) + ' °C');
-                    updateElementIfChanged('house-boiler-status', boilerStatus.value || '--');
+                const boilerIsUse = await getSensorSafe(getSensorId('boiler_is_use'));
+                const boilerDetailSection = document.getElementById('boiler-detail-section');
+                
+                if (boilerIsUse.exists && boilerIsUse.value === 1) {
+                    // Show boiler section
+                    boilerDetailSection.style.display = 'block';
+                    
+                    const boilerCurrentPower = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
+                    const boilerDayEnergy = await getSensorSafe(getSensorId('boiler_day_w'));
+                    const boilerManualMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
+                    
+                    // Format power (W or kW)
+                    const powerValue = boilerCurrentPower.value || 0;
+                    const powerDisplay = powerValue >= 1000 
+                        ? (powerValue / 1000).toFixed(1) + ' kW'
+                        : Math.round(powerValue) + ' W';
+                    updateElementIfChanged('house-boiler-power', powerDisplay);
+                    
+                    // Format energy (Wh or kWh)
+                    const energyValue = boilerDayEnergy.value || 0;
+                    const energyDisplay = energyValue >= 1000
+                        ? (energyValue / 1000).toFixed(2) + ' kWh'
+                        : Math.round(energyValue) + ' Wh';
+                    updateElementIfChanged('house-boiler-today', energyDisplay);
+                    
+                    // Format mode with icon
+                    const modeValue = boilerManualMode.value || '--';
+                    const modeIcon = document.getElementById('boiler-mode-icon');
+                    let modeDisplay = modeValue;
+                    
+                    if (modeValue === 'CBB') {
+                        modeDisplay = '🤖 Inteligentní';
+                        if (modeIcon) modeIcon.textContent = '🤖';
+                    } else if (modeValue === 'Manual') {
+                        modeDisplay = '👤 Manuální';
+                        if (modeIcon) modeIcon.textContent = '👤';
+                    } else {
+                        if (modeIcon) modeIcon.textContent = '⚙️';
+                    }
+                    updateElementIfChanged('house-boiler-mode', modeDisplay);
+                } else {
+                    // Hide boiler section
+                    boilerDetailSection.style.display = 'none';
                 }
 
                 // === INVERTER DETAILS ===
