@@ -2140,7 +2140,7 @@
                 <div class="node-details" id="house-details">
                     <div class="detail-group" id="boiler-detail-section" style="display: none;">
                         <div class="detail-subheader">🔥 Bojler</div>
-                        <div class="detail-row">
+                        <div class="detail-row" style="justify-content: flex-start;">
                             <span class="detail-icon">⚡</span>
                             <span class="detail-label">Výkon:</span>
                             <span class="detail-value entity-value" id="house-boiler-power"
@@ -2148,15 +2148,15 @@
                                   data-tooltip="Aktuální výkon bojleru"
                                   onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))">-- W</span>
                         </div>
-                        <div class="detail-row">
+                        <div class="detail-row" style="justify-content: flex-start;">
                             <span class="detail-icon">📊</span>
-                            <span class="detail-label">Dnes:</span>
+                            <span class="detail-label">Nabito:</span>
                             <span class="detail-value entity-value" id="house-boiler-today"
                                   data-entity="boiler_day_w"
-                                  data-tooltip="Spotřeba bojleru dnes"
+                                  data-tooltip="Energie nabita do bojleru dnes"
                                   onclick="openEntityDialog(getSensorId('boiler_day_w'))">-- Wh</span>
                         </div>
-                        <div class="detail-row">
+                        <div class="detail-row" style="justify-content: flex-start;">
                             <span class="detail-icon" id="boiler-mode-icon">🤖</span>
                             <span class="detail-label">Režim:</span>
                             <span class="detail-value entity-value" id="house-boiler-mode"
