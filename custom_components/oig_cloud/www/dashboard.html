@@ -188,6 +188,55 @@
             opacity: 0.6;
         }
 
+        /* Node Details - Compact info */
+        .node-details {
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 10px;
+            line-height: 1.4;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            gap: 4px;
+        }
+
+        .detail-label {
+            opacity: 0.5;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        .detail-extra {
+            font-size: 9px;
+            opacity: 0.7;
+            margin-left: 4px;
+        }
+
+        .detail-group {
+            margin-top: 8px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .detail-subheader {
+            font-size: 9px;
+            text-transform: uppercase;
+            opacity: 0.4;
+            margin-bottom: 4px;
+            letter-spacing: 0.5px;
+        }
+
         .node-status {
             margin-top: 8px;
             font-size: 11px;
@@ -858,6 +907,20 @@
                 <div class="node-label">Solár</div>
                 <div class="node-value" id="solar-power">-- W</div>
                 <div class="node-subvalue" id="solar-today">Dnes: -- kWh</div>
+                <div class="node-details">
+                    <div class="detail-row">
+                        <span class="detail-label">S1:</span>
+                        <span class="detail-value" id="solar-s1">-- W</span>
+                        <span class="detail-extra" id="solar-s1-volt">--V</span>
+                        <span class="detail-extra" id="solar-s1-amp">--A</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">S2:</span>
+                        <span class="detail-value" id="solar-s2">-- W</span>
+                        <span class="detail-extra" id="solar-s2-volt">--V</span>
+                        <span class="detail-extra" id="solar-s2-amp">--A</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Battery -->
@@ -870,6 +933,33 @@
                     <div class="battery-gauge-fill" id="battery-gauge"></div>
                 </div>
                 <div class="node-status" id="battery-status">--</div>
+                <div class="node-details">
+                    <div class="detail-row">
+                        <span class="detail-label">U:</span>
+                        <span class="detail-value" id="battery-voltage">-- V</span>
+                        <span class="detail-label">I:</span>
+                        <span class="detail-value" id="battery-current">-- A</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Temp:</span>
+                        <span class="detail-value" id="battery-temp">-- °C</span>
+                        <span class="detail-label" id="battery-time-label">--</span>
+                        <span class="detail-value" id="battery-time">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Zbývá:</span>
+                        <span class="detail-value" id="battery-remain">-- Wh</span>
+                    </div>
+                    <div class="detail-group">
+                        <div class="detail-subheader">Nabití dnes</div>
+                        <div class="detail-row">
+                            <span class="detail-label">FVE:</span>
+                            <span class="detail-value" id="battery-charge-fve">-- kWh</span>
+                            <span class="detail-label">Síť:</span>
+                            <span class="detail-value" id="battery-charge-grid">-- kWh</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Inverter Center -->
@@ -878,6 +968,24 @@
                 <div class="node-label">Střídač</div>
                 <div class="node-value" id="inverter-status">Online</div>
                 <div class="node-subvalue" id="inverter-temp">-- °C</div>
+                <div class="node-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Režim:</span>
+                        <span class="detail-value" id="inverter-mode">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Bypass:</span>
+                        <span class="detail-value" id="inverter-bypass">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Přetoky:</span>
+                        <span class="detail-value" id="inverter-grid-mode">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Aktualizace:</span>
+                        <span class="detail-value" id="inverter-update">--</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Grid -->
@@ -887,6 +995,36 @@
                 <div class="node-value" id="grid-power">-- W</div>
                 <div class="node-subvalue" id="grid-today">Dnes: -- kWh</div>
                 <div class="node-status" id="grid-status">--</div>
+                <div class="node-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Import:</span>
+                        <span class="detail-value" id="grid-import">-- kWh</span>
+                        <span class="detail-label">Export:</span>
+                        <span class="detail-value" id="grid-export">-- kWh</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Frekvence:</span>
+                        <span class="detail-value" id="grid-freq">-- Hz</span>
+                    </div>
+                    <div class="detail-group">
+                        <div class="detail-subheader">Fáze</div>
+                        <div class="detail-row">
+                            <span class="detail-label">L1:</span>
+                            <span class="detail-value" id="grid-l1-volt">--V</span>
+                            <span class="detail-value" id="grid-l1-power">--W</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">L2:</span>
+                            <span class="detail-value" id="grid-l2-volt">--V</span>
+                            <span class="detail-value" id="grid-l2-power">--W</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">L3:</span>
+                            <span class="detail-value" id="grid-l3-volt">--V</span>
+                            <span class="detail-value" id="grid-l3-power">--W</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- House -->
@@ -895,6 +1033,23 @@
                 <div class="node-label">Spotřeba</div>
                 <div class="node-value" id="house-power">-- W</div>
                 <div class="node-subvalue" id="house-today">Dnes: -- kWh</div>
+                <div class="node-details">
+                    <div class="detail-group">
+                        <div class="detail-subheader">Zátěž fází</div>
+                        <div class="detail-row">
+                            <span class="detail-label">L1:</span>
+                            <span class="detail-value" id="house-l1">-- W</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">L2:</span>
+                            <span class="detail-value" id="house-l2">-- W</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">L3:</span>
+                            <span class="detail-value" id="house-l3">-- W</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Particles container -->
@@ -1957,6 +2112,106 @@
 
             // Load control panel status
             loadControlStatus();
+
+            // Load details for all nodes
+            loadNodeDetails();
+        }
+
+        // Load detailed information for all nodes
+        async function loadNodeDetails() {
+            try {
+                // === SOLAR DETAILS ===
+                const solarP1 = await getSensor(getSensorId('dc_in_fv_p1'));
+                const solarP2 = await getSensor(getSensorId('dc_in_fv_p2'));
+                const solarV1 = await getSensor(getSensorId('extended_fve_voltage_1'));
+                const solarV2 = await getSensor(getSensorId('extended_fve_voltage_2'));
+                const solarI1 = await getSensor(getSensorId('extended_fve_current_1'));
+                const solarI2 = await getSensor(getSensorId('extended_fve_current_2'));
+
+                document.getElementById('solar-s1').textContent = Math.round(solarP1.value || 0) + ' W';
+                document.getElementById('solar-s2').textContent = Math.round(solarP2.value || 0) + ' W';
+                document.getElementById('solar-s1-volt').textContent = Math.round(solarV1.value || 0) + 'V';
+                document.getElementById('solar-s2-volt').textContent = Math.round(solarV2.value || 0) + 'V';
+                document.getElementById('solar-s1-amp').textContent = (solarI1.value || 0).toFixed(1) + 'A';
+                document.getElementById('solar-s2-amp').textContent = (solarI2.value || 0).toFixed(1) + 'A';
+
+                // === BATTERY DETAILS ===
+                const battVoltage = await getSensor(getSensorId('extended_battery_voltage'));
+                const battCurrent = await getSensor(getSensorId('extended_battery_current'));
+                const battTemp = await getSensor(getSensorId('extended_battery_temperature'));
+                const battRemain = await getSensor(getSensorId('batt_batcap_remain'));
+                const battPower = await getSensor(getSensorId('batt_batt_comp_p'));
+                const timeToEmpty = await getSensorString(getSensorId('time_to_empty'));
+                const timeToFull = await getSensorString(getSensorId('time_to_full'));
+                const battChargeFve = await getSensor(getSensorId('computed_batt_charge_fve_energy_today'));
+                const battChargeGrid = await getSensor(getSensorId('computed_batt_charge_grid_energy_today'));
+
+                document.getElementById('battery-voltage').textContent = (battVoltage.value || 0).toFixed(1) + ' V';
+                document.getElementById('battery-current').textContent = (battCurrent.value || 0).toFixed(1) + ' A';
+                document.getElementById('battery-temp').textContent = (battTemp.value || 0).toFixed(1) + ' °C';
+                document.getElementById('battery-remain').textContent = Math.round(battRemain.value || 0) + ' Wh';
+
+                // Time to empty/full based on battery power direction
+                const timeLabel = document.getElementById('battery-time-label');
+                const timeValue = document.getElementById('battery-time');
+                if (battPower.value < -10) {
+                    timeLabel.textContent = 'Do vybití:';
+                    timeValue.textContent = timeToEmpty.value || '--';
+                } else if (battPower.value > 10) {
+                    timeLabel.textContent = 'Do nabití:';
+                    timeValue.textContent = timeToFull.value || '--';
+                } else {
+                    timeLabel.textContent = '';
+                    timeValue.textContent = '';
+                }
+
+                document.getElementById('battery-charge-fve').textContent = (battChargeFve.value || 0).toFixed(2) + ' kWh';
+                document.getElementById('battery-charge-grid').textContent = (battChargeGrid.value || 0).toFixed(2) + ' kWh';
+
+                // === GRID DETAILS ===
+                const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
+                const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
+                const gridFreq = await getSensor(getSensorId('extended_grid_frequency'));
+                const gridL1V = await getSensor(getSensorId('extended_grid_voltage_l1'));
+                const gridL2V = await getSensor(getSensorId('extended_grid_voltage_l2'));
+                const gridL3V = await getSensor(getSensorId('extended_grid_voltage_l3'));
+                const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
+                const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
+                const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
+
+                document.getElementById('grid-import').textContent = ((gridImport.value || 0) / 1000).toFixed(2) + ' kWh';
+                document.getElementById('grid-export').textContent = ((gridExport.value || 0) / 1000).toFixed(2) + ' kWh';
+                document.getElementById('grid-freq').textContent = (gridFreq.value || 0).toFixed(2) + ' Hz';
+                document.getElementById('grid-l1-volt').textContent = Math.round(gridL1V.value || 0) + 'V';
+                document.getElementById('grid-l2-volt').textContent = Math.round(gridL2V.value || 0) + 'V';
+                document.getElementById('grid-l3-volt').textContent = Math.round(gridL3V.value || 0) + 'V';
+                document.getElementById('grid-l1-power').textContent = Math.round(gridL1P.value || 0) + 'W';
+                document.getElementById('grid-l2-power').textContent = Math.round(gridL2P.value || 0) + 'W';
+                document.getElementById('grid-l3-power').textContent = Math.round(gridL3P.value || 0) + 'W';
+
+                // === HOUSE DETAILS ===
+                const houseL1 = await getSensor(getSensorId('ac_out_aco_pr'));
+                const houseL2 = await getSensor(getSensorId('ac_out_aco_ps'));
+                const houseL3 = await getSensor(getSensorId('ac_out_aco_pt'));
+
+                document.getElementById('house-l1').textContent = Math.round(houseL1.value || 0) + ' W';
+                document.getElementById('house-l2').textContent = Math.round(houseL2.value || 0) + ' W';
+                document.getElementById('house-l3').textContent = Math.round(houseL3.value || 0) + ' W';
+
+                // === INVERTER DETAILS ===
+                const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
+                const inverterBypass = await getSensorString(getSensorId('box_prms_bypass'));
+                const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
+                const inverterUpdate = await getSensorString(getSensorId('real_data_update'));
+
+                document.getElementById('inverter-mode').textContent = inverterMode.value || '--';
+                document.getElementById('inverter-bypass').textContent = inverterBypass.value || '--';
+                document.getElementById('inverter-grid-mode').textContent = inverterGridMode.value || '--';
+                document.getElementById('inverter-update').textContent = inverterUpdate.value || '--';
+
+            } catch (e) {
+                console.error('[Details] Error loading node details:', e);
+            }
         }
 
         // Initialize
