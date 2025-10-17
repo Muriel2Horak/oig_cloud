@@ -107,23 +107,10 @@
             transform: translateX(-50%) scale(1.05);
         }
 
-        /* Battery - Left Middle */
-        .battery {
-            top: 50%;
-            left: 50px;
-            transform: translateY(-50%);
-            border-color: rgba(76, 175, 80, 0.4);
-            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
-        }
-
-        .battery:hover {
-            transform: translateY(-50%) scale(1.05);
-        }
-
-        /* Grid - Right Middle */
+        /* Grid - Left Middle (SWAPPED!) */
         .grid-node {
             top: 50%;
-            right: 50px;
+            left: 50px;
             transform: translateY(-50%);
             border-color: rgba(66, 165, 245, 0.4);
             background: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
@@ -133,17 +120,47 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* House - Bottom Center */
+        /* Battery - Left Side, Below Grid */
+        .battery {
+            top: 60%;
+            left: 50px;
+            transform: translateY(30px);
+            border-color: rgba(76, 175, 80, 0.4);
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
+        }
+
+        .battery:hover {
+            transform: translateY(30px) scale(1.05);
+        }
+
+        /* House - Right Middle (SWAPPED!) */
         .house {
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 50%;
+            right: 50px;
+            transform: translateY(-50%);
             border-color: rgba(240, 98, 146, 0.4);
             background: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
         }
 
         .house:hover {
-            transform: translateX(-50%) scale(1.05);
+            transform: translateY(-50%) scale(1.05);
+        }
+
+        /* Boiler - Right Side, Below House (NEW!) */
+        .boiler {
+            top: 60%;
+            right: 50px;
+            transform: translateY(30px);
+            border-color: rgba(255, 152, 0, 0.4);
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(245, 124, 0, 0.08) 100%);
+        }
+
+        .boiler:hover {
+            transform: translateY(30px) scale(1.05);
+        }
+
+        .boiler.hidden {
+            display: none;
         }
 
         /* Center Hub - Inverter */
@@ -406,23 +423,31 @@
                 min-width: 140px;
             }
 
-            /* Přizpůsobení pozic */
+            /* Přizpůsobení pozic - NOVÝ LAYOUT */
             .solar {
                 top: 30px;
             }
 
-            .battery {
-                top: 50%;
-                left: 40px;
+            .grid-node {
+                top: 45%;
+                left: 30px;
             }
 
-            .grid-node {
-                top: 50%;
-                right: 40px;
+            .battery {
+                top: 65%;
+                left: 30px;
+                transform: translateY(20px);
             }
 
             .house {
-                bottom: 50px;
+                top: 45%;
+                right: 30px;
+            }
+
+            .boiler {
+                top: 65%;
+                right: 30px;
+                transform: translateY(20px);
             }
         }
 
@@ -484,33 +509,39 @@
                 min-width: 120px;
             }
 
-            /* Pozice boxů pro mobil */
+            /* Pozice boxů pro mobil - NOVÝ LAYOUT */
             .solar {
                 top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
             }
 
-            .battery {
-                top: 180px;
-                left: 15px;
+            .grid-node {
+                top: 150px;
+                left: 10px;
                 transform: none;
             }
 
-            .grid-node {
-                top: 180px;
-                right: 15px;
+            .house {
+                top: 150px;
+                right: 10px;
+                transform: none;
+            }
+
+            .battery {
+                top: 280px;
+                left: 10px;
+                transform: none;
+            }
+
+            .boiler {
+                top: 280px;
+                right: 10px;
                 transform: none;
             }
 
             .inverter {
-                top: 360px;
-                left: 50%;
-                transform: translate(-50%, -50%);
-            }
-
-            .house {
-                bottom: 80px;
+                top: 420px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -548,14 +579,14 @@
             }
         }
 
-        /* Control Panel Styles - Top Bar */
+        /* Control Panel Styles - Top Bar - VELMI MALÝ! */
         .control-panel {
             position: sticky;
             top: 0;
             left: 0;
             right: 0;
             width: 100%;
-            max-height: 35vh; /* Razantně zmenšeno z 90vh */
+            max-height: 80px; /* Max 2 řádky - velmi malý! */
             background: rgba(10, 14, 39, 0.98);
             border-bottom: 2px solid rgba(66, 165, 245, 0.3);
             backdrop-filter: blur(10px);
@@ -566,7 +597,7 @@
         }
 
         .control-panel.minimized {
-            max-height: 40px; /* Zmenšeno z 60px */
+            max-height: 28px; /* Ještě menší */
         }
 
         .control-panel.minimized .panel-content {
@@ -577,7 +608,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 16px; /* Zmenšeno z 12px 20px */
+            padding: 4px 12px; /* Ještě menší */
             background: rgba(66, 165, 245, 0.1);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             cursor: pointer;
@@ -585,7 +616,7 @@
 
         .panel-header h3 {
             margin: 0;
-            font-size: 14px; /* Zmenšeno z 18px */
+            font-size: 12px; /* Velmi malé */
             font-weight: 600;
         }
 
@@ -593,11 +624,11 @@
             background: rgba(255, 255, 255, 0.1);
             border: none;
             color: white;
-            width: 28px; /* Zmenšeno z 32px */
-            height: 28px;
-            border-radius: 6px;
+            width: 20px; /* Velmi malé */
+            height: 20px;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 18px; /* Zmenšeno z 20px */
+            font-size: 14px; /* Menší */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -609,36 +640,38 @@
         }
 
         .panel-content {
-            max-height: calc(35vh - 40px); /* Zmenšeno podle nové výšky panelu */
+            max-height: 52px; /* Max 2 řádky content */
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 10px 16px; /* Zmenšeno z 16px 20px */
+            padding: 4px 12px; /* Velmi malý padding */
         }
 
-        /* Desktop - horizontal layout */
+        /* Desktop - horizontal layout - max 2 rows! */
         @media (min-width: 1200px) {
             .panel-content {
                 display: flex;
                 flex-direction: row;
-                gap: 16px; /* Zmenšeno z 20px */
+                gap: 8px; /* Malé mezery */
                 flex-wrap: wrap;
-                justify-content: space-around;
-                max-height: 30vh; /* Zmenšeno z 50vh */
+                justify-content: flex-start;
+                max-height: 52px; /* Max 2 řádky */
             }
 
             .control-section {
-                flex: 1;
-                min-width: 250px; /* Zmenšeno z 300px */
+                flex: 0 0 auto; /* Žádné roztahování */
+                min-width: auto;
                 margin-bottom: 0;
                 padding-bottom: 0;
                 border-bottom: none;
                 border-right: 1px solid rgba(255, 255, 255, 0.1);
-                padding-right: 16px; /* Zmenšeno z 20px */
+                padding-right: 8px;
+                margin-right: 8px;
             }
 
             .control-section:last-child {
                 border-right: none;
                 padding-right: 0;
+                margin-right: 0;
             }
         }
 
@@ -661,9 +694,9 @@
         }
 
         .control-section {
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 0; /* Žádné mezery */
+            padding-bottom: 0;
+            border-bottom: none;
         }
 
         .control-section:last-child {
@@ -673,29 +706,24 @@
         }
 
         .control-section h4 {
-            margin: 0 0 8px 0; /* Zmenšeno z 12px */
-            font-size: 11px; /* Zmenšeno z 13px */
-            text-transform: uppercase;
-            letter-spacing: 0.5px; /* Zmenšeno z 1px */
-            opacity: 0.8;
-            font-weight: 600;
+            display: none; /* Žádné nadpisy - šetříme místo */
         }
 
         .button-group {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 6px; /* Zmenšeno z 8px */
-            margin-bottom: 8px; /* Zmenšeno z 12px */
+            display: flex; /* Změna z grid na flex pro horizontal layout */
+            flex-wrap: nowrap;
+            gap: 3px; /* Velmi malé mezery */
+            margin-bottom: 0;
         }
 
         .button-group button {
-            padding: 6px 8px; /* Zmenšeno z 10px */
+            padding: 3px 6px; /* Velmi malé */
             background: rgba(66, 165, 245, 0.2);
             border: 1px solid rgba(66, 165, 245, 0.4);
-            border-radius: 6px; /* Zmenšeno z 8px */
+            border-radius: 4px;
             color: white;
             cursor: pointer;
-            font-size: 11px; /* Zmenšeno z 12px */
+            font-size: 9px; /* Velmi malé */
             font-weight: 500;
             transition: all 0.2s;
             white-space: nowrap;
@@ -722,32 +750,34 @@
         }
 
         .input-group {
-            display: flex;
-            gap: 6px; /* Zmenšeno z 8px */
-            align-items: center;
-            margin-top: 6px; /* Zmenšeno z 8px */
+            display: none; /* Skryté - šetříme místo */
         }
 
         .input-group label {
-            font-size: 10px; /* Zmenšeno z 11px */
+            font-size: 8px;
             opacity: 0.7;
             white-space: nowrap;
         }
 
         .input-group input {
             flex: 1;
-            padding: 6px; /* Zmenšeno z 8px */
+            padding: 2px 4px;
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px; /* Zmenšeno z 6px */
+            border-radius: 3px;
             color: white;
-            font-size: 12px; /* Zmenšeno z 13px */
+            font-size: 9px;
         }
 
         .input-group input:focus {
             outline: none;
             border-color: rgba(66, 165, 245, 0.6);
             background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Status texty - skryté */
+        .control-section .status {
+            display: none;
         }
 
         .input-group button,
@@ -1015,72 +1045,41 @@
         </div>
 
         <div class="panel-content">
-            <!-- Global Shield Status -->
-            <div id="shield-global-status" class="shield-status idle">
-                ✓ Připraveno
-            </div>
-
             <!-- Box Mode -->
             <div class="control-section">
-                <h4>📦 Režim Boxu</h4>
                 <div class="button-group">
-                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1">Home 1</button>
-                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2">Home 2</button>
-                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3">Home 3</button>
+                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1">H1</button>
+                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2">H2</button>
+                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3">H3</button>
                     <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups">UPS</button>
-                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5">Home 5</button>
-                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6">Home 6</button>
-                </div>
-                <div class="status">
-                    Aktuální: <span id="box-mode-status">--</span>
+                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5">H5</button>
+                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6">H6</button>
                 </div>
             </div>
 
             <!-- Grid Delivery -->
             <div class="control-section">
-                <h4>🔌 Dodávka do sítě</h4>
                 <div class="button-group">
-                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off">Vypnuto</button>
-                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on">Zapnuto</button>
-                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited">Omezeno</button>
-                </div>
-                <div class="input-group">
-                    <label>Limit (W):</label>
-                    <input type="number" id="grid-limit" min="1" max="9999" placeholder="1-9999">
-                    <button onclick="setGridDeliveryLimit()">Nastavit</button>
+                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off">⚡Off</button>
+                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on">⚡On</button>
+                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited">⚡Lim</button>
                 </div>
             </div>
 
             <!-- Battery Formating -->
             <div class="control-section">
-                <h4>🔋 Nabíjení baterie</h4>
                 <div class="button-group">
-                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off">Nenabíjet</button>
-                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on">Nabíjet</button>
-                </div>
-                <div class="input-group">
-                    <label>Limit (%):</label>
-                    <input type="number" id="battery-limit" min="0" max="100" placeholder="0-100">
-                    <button onclick="setBatteryFormatatingLimit()">Nastavit s limitem</button>
+                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off">🔋Off</button>
+                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on">🔋On</button>
                 </div>
             </div>
 
             <!-- Boiler -->
             <div class="control-section">
-                <h4>🌡️ Bojler</h4>
                 <div class="button-group">
-                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb">CBB</button>
-                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual">Manual</button>
+                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb">🌡️CBB</button>
+                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual">🌡️Man</button>
                 </div>
-                <div class="status">
-                    Režim: <span id="boiler-mode-status">--</span>
-                </div>
-            </div>
-
-            <!-- Other -->
-            <div class="control-section">
-                <h4>🔄 Ostatní</h4>
-                <button onclick="updateSolarForecast()" class="btn-secondary">🌞 Aktualizovat FV Forecast</button>
             </div>
         </div>
     </div>
@@ -1261,6 +1260,28 @@
                             <span class="detail-label">L3:</span>
                             <span class="detail-value" id="house-l3">-- W</span>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boiler (hidden if not in use) -->
+            <div class="node boiler hidden" id="boiler-node">
+                <div class="node-icon">🌡️</div>
+                <div class="node-label">Bojler</div>
+                <div class="node-value" id="boiler-power">-- W</div>
+                <div class="node-subvalue" id="boiler-mode">--</div>
+                <div class="node-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Režim:</span>
+                        <span class="detail-value" id="boiler-mode-detail">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Teplota:</span>
+                        <span class="detail-value" id="boiler-temp">-- °C</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Stav:</span>
+                        <span class="detail-value" id="boiler-status">--</span>
                     </div>
                 </div>
             </div>
