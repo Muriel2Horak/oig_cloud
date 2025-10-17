@@ -1000,6 +1000,14 @@
                         <span class="detail-extra" id="solar-s2-volt">--V</span>
                         <span class="detail-extra" id="solar-s2-amp">--A</span>
                     </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Předpověď dnes:</span>
+                        <span class="detail-value" id="solar-forecast-today">-- kWh</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Předpověď zítřek:</span>
+                        <span class="detail-value" id="solar-forecast-tomorrow">-- kWh</span>
+                    </div>
                 </div>
             </div>
 
@@ -2129,6 +2137,11 @@
                 const solarV2 = await getSensor(getSensorId('extended_fve_voltage_2'));
                 const solarI1 = await getSensor(getSensorId('extended_fve_current_1'));
                 const solarI2 = await getSensor(getSensorId('extended_fve_current_2'));
+                
+                // Solar forecast sensors
+                const solarForecast = await getSensor(getSensorId('solar_forecast'));
+                const solarForecastS1 = await getSensor(getSensorId('solar_forecast_string1'));
+                const solarForecastS2 = await getSensor(getSensorId('solar_forecast_string2'));
 
                 document.getElementById('solar-s1').textContent = Math.round(solarP1.value || 0) + ' W';
                 document.getElementById('solar-s2').textContent = Math.round(solarP2.value || 0) + ' W';
@@ -2136,6 +2149,14 @@
                 document.getElementById('solar-s2-volt').textContent = Math.round(solarV2.value || 0) + 'V';
                 document.getElementById('solar-s1-amp').textContent = (solarI1.value || 0).toFixed(1) + 'A';
                 document.getElementById('solar-s2-amp').textContent = (solarI2.value || 0).toFixed(1) + 'A';
+                
+                // Solar forecast - today's total
+                const forecastToday = (solarForecast.value || 0).toFixed(2);
+                document.getElementById('solar-forecast-today').textContent = forecastToday + ' kWh';
+                
+                // Solar forecast - tomorrow's total (from attributes)
+                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
+                document.getElementById('solar-forecast-tomorrow').textContent = forecastTomorrow.toFixed(2) + ' kWh';
 
                 // === BATTERY DETAILS ===
                 const battVoltage = await getSensor(getSensorId('extended_battery_voltage'));
