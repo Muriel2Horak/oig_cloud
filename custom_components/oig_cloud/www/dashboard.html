@@ -779,6 +779,21 @@
             border-color: rgba(76, 175, 80, 0.6);
         }
 
+        .button-group button:disabled,
+        .button-group button.disabled {
+            background: rgba(128, 128, 128, 0.2);
+            border-color: rgba(128, 128, 128, 0.3);
+            color: rgba(255, 255, 255, 0.4);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .button-group button:disabled:hover,
+        .button-group button.disabled:hover {
+            transform: none;
+            background: rgba(128, 128, 128, 0.2);
+        }
+
         .button-group button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
@@ -1137,8 +1152,8 @@
                     <button onclick="setBoxMode('Home 2')" id="btn-mode-home2" title="Home 2: Optimalizovaný režim pro úsporu energie">Home 2</button>
                     <button onclick="setBoxMode('Home 3')" id="btn-mode-home3" title="Home 3: Preferuje nabíjení baterie z FVE">Home 3</button>
                     <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups" title="Home UPS: Záložní režim s nepřerušitelným napájením">Home UPS</button>
-                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5" title="Home 5: Maximální využití solární energie">Home 5</button>
-                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6" title="Home 6: Pokročilý režim s inteligentním řízením">Home 6</button>
+                    <button disabled id="btn-mode-home5" title="Home 5: Prozatím nepodporováno zařízením">Home 5</button>
+                    <button disabled id="btn-mode-home6" title="Home 6: Prozatím nepodporováno zařízením">Home 6</button>
                 </div>
             </div>
 
@@ -2317,6 +2332,28 @@
         // Cache for previous values to detect changes
         const previousValues = {};
 
+        // Helper to format power: < 1000 → W, >= 1000 → kW
+        function formatPower(watts) {
+            if (watts === null || watts === undefined || isNaN(watts)) return '-- W';
+            const absWatts = Math.abs(watts);
+            if (absWatts >= 1000) {
+                return (watts / 1000).toFixed(2) + ' kW';
+            } else {
+                return Math.round(watts) + ' W';
+            }
+        }
+
+        // Helper to format energy: < 1000 → Wh, >= 1000 → kWh  
+        function formatEnergy(wattHours) {
+            if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
+            const absWh = Math.abs(wattHours);
+            if (absWh >= 1000) {
+                return (wattHours / 1000).toFixed(2) + ' kWh';
+            } else {
+                return Math.round(wattHours) + ' Wh';
+            }
+        }
+
         // Helper to update element only if value changed
         function updateElementIfChanged(elementId, newValue, cacheKey) {
             if (!cacheKey) cacheKey = elementId;
@@ -2356,11 +2393,8 @@
             const solarTodayWh = solarTodayData.value || 0;
             const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
 
-            // Display solar power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const solarPowerText = solarPower >= 1000
-                ? (solarPower / 1000).toFixed(2) + ' kW'
-                : Math.round(solarPower) + ' W';
-            updateElementIfChanged('solar-power', solarPowerText, 'solar-power');
+            // Display solar power using formatPower helper - UPDATE ONLY IF CHANGED
+            updateElementIfChanged('solar-power', formatPower(solarPower), 'solar-power');
             updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(1) + ' kWh', 'solar-today');
 
             // Update active class only if changed
@@ -2376,11 +2410,8 @@
             // Update battery SoC only if changed
             updateElementIfChanged('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
 
-            // Display battery power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const batteryPowerText = Math.abs(batteryPower) >= 1000
-                ? (batteryPower / 1000).toFixed(2) + ' kW'
-                : Math.round(batteryPower) + ' W';
-            updateElementIfChanged('battery-power', batteryPowerText, 'battery-power');
+            // Display battery power using formatPower helper - UPDATE ONLY IF CHANGED
+            updateElementIfChanged('battery-power', formatPower(batteryPower), 'battery-power');
 
             // Update gauge only if SoC changed significantly (save DOM updates)
             const previousSoC = previousValues['battery-gauge-width'];
@@ -2425,11 +2456,8 @@
             const gridConsumptionKWh = gridConsumptionWh / 1000; // Convert Wh to kWh
             const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
 
-            // Display grid power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const gridPowerText = Math.abs(gridPower) >= 1000
-                ? (Math.abs(gridPower) / 1000).toFixed(2) + ' kW'
-                : Math.round(Math.abs(gridPower)) + ' W';
-            updateElementIfChanged('grid-power', gridPowerText, 'grid-power');
+            // Display grid power using formatPower helper (absolute value) - UPDATE ONLY IF CHANGED
+            updateElementIfChanged('grid-power', formatPower(Math.abs(gridPower)), 'grid-power');
             updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
 
             // Update grid status only if state changed
@@ -2461,11 +2489,8 @@
             const houseTodayWh = houseTodayData.value || 0;
             const houseTodayKWh = houseTodayWh / 1000; // Convert Wh to kWh
 
-            // Display house power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const housePowerText = housePower >= 1000
-                ? (housePower / 1000).toFixed(2) + ' kW'
-                : Math.round(housePower) + ' W';
-            updateElementIfChanged('house-power', housePowerText, 'house-power');
+            // Display house power using formatPower helper - UPDATE ONLY IF CHANGED
+            updateElementIfChanged('house-power', formatPower(housePower), 'house-power');
             updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
             // Inverter
@@ -2582,7 +2607,7 @@
                 updateElementIfChanged('battery-voltage', (battVoltage.value || 0).toFixed(1) + ' V');
                 updateElementIfChanged('battery-current', (battCurrent.value || 0).toFixed(1) + ' A');
                 updateElementIfChanged('battery-temp', (battTemp.value || 0).toFixed(1) + ' °C');
-                updateElementIfChanged('battery-remain', Math.round(battRemain.value || 0) + ' Wh');
+                updateElementIfChanged('battery-remain', formatEnergy(battRemain.value || 0));
 
                 // Time to empty/full based on battery power direction - update only if state changed
                 const timeLabel = document.getElementById('battery-time-label');
@@ -2610,9 +2635,9 @@
                     updateElementIfChanged('battery-time', newTimeValue);
                 }
 
-                // Battery totals today - OPRAVENO
-                updateElementIfChanged('battery-charge-total', (battChargeTotal.value || 0).toFixed(2) + ' kWh');
-                updateElementIfChanged('battery-discharge-total', (battDischargeTotal.value || 0).toFixed(2) + ' kWh');
+                // Battery totals today - use formatEnergy (Wh from sensors)
+                updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
+                updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
 
                 // === GRID DETAILS ===
                 const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
@@ -2630,9 +2655,9 @@
                 const exportPrice = await getSensor(getSensorId('export_price_current_15min'));
                 const currentTariff = await getSensorString(getSensorId('current_tariff'));
 
-                // Update only if changed
-                updateElementIfChanged('grid-import', ((gridImport.value || 0) / 1000).toFixed(2) + ' kWh');
-                updateElementIfChanged('grid-export', ((gridExport.value || 0) / 1000).toFixed(2) + ' kWh');
+                // Update only if changed - use formatEnergy (Wh from sensors)
+                updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
+                updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
                 updateElementIfChanged('grid-freq', (gridFreq.value || 0).toFixed(2) + ' Hz');
 
                 // Grid prices and tariff
