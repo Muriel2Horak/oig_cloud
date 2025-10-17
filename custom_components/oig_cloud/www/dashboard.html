@@ -2248,6 +2248,26 @@
 
         // === SHIELD INTEGRATION FUNCTIONS ===
 
+        // Debouncing timers
+        let loadDataTimer = null;
+        let loadDetailsTimer = null;
+
+        // Debounced loadData() - prevents excessive calls
+        function debouncedLoadData() {
+            if (loadDataTimer) clearTimeout(loadDataTimer);
+            loadDataTimer = setTimeout(() => {
+                loadData();
+            }, 200); // Wait 200ms before executing
+        }
+
+        // Debounced loadNodeDetails() - prevents excessive calls
+        function debouncedLoadNodeDetails() {
+            if (loadDetailsTimer) clearTimeout(loadDetailsTimer);
+            loadDetailsTimer = setTimeout(() => {
+                loadNodeDetails();
+            }, 500); // Wait 500ms before executing
+        }
+
         // Subscribe to shield status changes
         function subscribeToShield() {
             const hass = getHass();
@@ -2278,6 +2298,34 @@
                             entityId.includes('invertor_prm1_p_max_feed_grid')) {
                             console.log(`[Shield] Target sensor changed: ${entityId}`, event.data.new_state);
                             updateButtonStates();
+                        }
+
+                        // Data sensors - trigger loadData() on changes
+                        if (entityId.includes('actual_pv') ||           // Solar power
+                            entityId.includes('actual_batt') ||         // Battery power
+                            entityId.includes('actual_aci_wtotal') ||   // Grid power
+                            entityId.includes('actual_aco_p') ||        // House power
+                            entityId.includes('boiler_power') ||        // Boiler power
+                            entityId.includes('extended_battery_soc') || // Battery SOC
+                            entityId.includes('extended_battery_voltage') || // Battery voltage
+                            entityId.includes('box_temp') ||            // Inverter temp
+                            entityId.includes('bypass_status') ||       // Bypass status
+                            entityId.includes('real_data_update')) {    // Real data update
+                            console.log(`[Data] Sensor changed: ${entityId}`, event.data.new_state?.state);
+                            debouncedLoadData(); // Trigger data update immediately (debounced)
+                        }
+
+                        // Detail sensors - trigger loadNodeDetails() on changes
+                        if (entityId.includes('dc_in_fv_p') ||         // Solar strings
+                            entityId.includes('extended_fve_') ||       // Solar voltage/current
+                            entityId.includes('computed_batt_') ||      // Battery energy
+                            entityId.includes('ac_in_') ||              // Grid details
+                            entityId.includes('ac_out_') ||             // House phases
+                            entityId.includes('spot_price') ||          // Grid pricing
+                            entityId.includes('current_tariff') ||      // Tariff
+                            entityId.includes('notification_count')) {  // Notifications
+                            console.log(`[Details] Sensor changed: ${entityId}`);
+                            debouncedLoadNodeDetails(); // Trigger details update (debounced)
                         }
                     }
                 }, 'state_changed');
