@@ -405,6 +405,56 @@
             }
         }
 
+        /* Mode change in flow diagram */
+        @keyframes pulse-mode-changing {
+            0%, 100% {
+                opacity: 0.7;
+                text-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+            }
+            50% {
+                opacity: 1;
+                text-shadow: 0 0 16px rgba(255, 193, 7, 0.9);
+            }
+        }
+
+        .mode-changing {
+            animation: pulse-mode-changing 2s ease-in-out infinite;
+        }
+
+        /* Mode change indicator badge */
+        .mode-change-indicator {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+            border: 1px solid rgba(255, 193, 7, 0.8);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: #1a1a2e;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+        }
+
+        .mode-change-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid rgba(26, 26, 46, 0.3);
+            border-top-color: #1a1a2e;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .temp-hot {
             animation: pulse-hot 1s ease-in-out infinite;
             filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
@@ -2157,6 +2207,11 @@
                     <span class="inverter-temp-icon" id="inverter-temp-icon">🌡️</span>
                     <span id="inverter-temp-value">-- °C</span>
                 </div>
+                <!-- Mode change indicator -->
+                <div class="mode-change-indicator" id="mode-change-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="mode-change-text">→ --</span>
+                </div>
                 <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
                 <div class="node-value entity-value" id="inverter-mode"
@@ -2895,7 +2950,7 @@
                     const modeRequest = [...runningRequests, ...queuedRequests].find(req =>
                         req && req.service && req.service.includes('set_box_mode')
                     );
-                    
+
                     // Parse target mode from changes array
                     let targetMode = null;
                     if (modeRequest?.changes && Array.isArray(modeRequest.changes)) {
@@ -2908,8 +2963,24 @@
                             }
                         }
                     }
-                    
+
                     const targetButtonId = targetMode ? modeButtonMap[targetMode] : null;
+
+                    // Visual feedback in flow diagram
+                    const inverterModeElement = document.getElementById('inverter-mode');
+                    const modeChangeIndicator = document.getElementById('mode-change-indicator');
+                    const modeChangeText = document.getElementById('mode-change-text');
+
+                    if (inverterModeElement && targetMode) {
+                        // Add blinking animation to current mode
+                        inverterModeElement.classList.add('mode-changing');
+                        
+                        // Show indicator badge with target mode
+                        if (modeChangeIndicator && modeChangeText) {
+                            modeChangeText.textContent = `→ ${targetMode}`;
+                            modeChangeIndicator.style.display = 'flex';
+                        }
+                    }
 
                     // Disable all buttons, but only animate the one being changed
                     buttons.forEach(btn => {
@@ -2942,6 +3013,18 @@
 
                     modeChangeInProgress = true;
                 } else {
+                    // Remove visual feedback from flow diagram
+                    const inverterModeElement = document.getElementById('inverter-mode');
+                    const modeChangeIndicator = document.getElementById('mode-change-indicator');
+
+                    if (inverterModeElement) {
+                        inverterModeElement.classList.remove('mode-changing');
+                    }
+                    
+                    if (modeChangeIndicator) {
+                        modeChangeIndicator.style.display = 'none';
+                    }
+
                     // Re-enable buttons and remove animation
                     buttons.forEach(btn => {
                         btn.disabled = false;
