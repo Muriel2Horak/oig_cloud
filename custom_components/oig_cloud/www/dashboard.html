@@ -395,11 +395,11 @@
 
         /* Pending mode change animation */
         @keyframes pulse-pending {
-            0%, 100% { 
+            0%, 100% {
                 opacity: 0.6;
                 box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
             }
-            50% { 
+            50% {
                 opacity: 0.8;
                 box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.4);
             }
@@ -2841,25 +2841,29 @@
             }, 5000);
         }
 
+        // Track mode change state
+        let modeChangeInProgress = false;
+        let lastModeChangeNotified = false;
+
         // Monitor ServiceShield activity
         async function monitorShieldActivity() {
             try {
                 const activitySensor = await getSensor(getSensorId('service_shield_activity_3'));
                 if (!activitySensor || !activitySensor.attributes) return;
-                
+
                 const attrs = activitySensor.attributes;
                 const runningRequests = attrs.running_requests || [];
                 const queuedRequests = attrs.queued_requests || [];
-                
+
                 // Check if there's a box mode change in progress
-                const hasModeChange = [...runningRequests, ...queuedRequests].some(req => 
+                const hasModeChange = [...runningRequests, ...queuedRequests].some(req =>
                     req && req.service && req.service.includes('set_box_mode')
                 );
-                
+
                 // Get all mode buttons
                 const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
                 const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
-                
+
                 if (hasModeChange) {
                     // Disable all buttons and add blinking animation
                     buttons.forEach(btn => {
@@ -2867,6 +2871,28 @@
                         btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
                         btn.style.opacity = '0.6';
                     });
+
+                    // Show notification only once when mode change starts
+                    if (!modeChangeInProgress && !lastModeChangeNotified) {
+                        // Find the mode being changed (from running or queued)
+                        const modeRequest = [...runningRequests, ...queuedRequests].find(req =>
+                            req && req.service && req.service.includes('set_box_mode')
+                        );
+                        
+                        const targetMode = modeRequest?.data?.mode || 'neznámý režim';
+                        const isQueued = queuedRequests.some(req => req?.service?.includes('set_box_mode'));
+                        
+                        showNotification(
+                            '⏳ Probíhá změna režimu',
+                            isQueued 
+                                ? `Režim "${targetMode}" čeká ve frontě. Tlačítka budou zamčena do dokončení.`
+                                : `Nastavuji režim "${targetMode}". Může to trvat až 10 minut.`,
+                            'warning'
+                        );
+                        lastModeChangeNotified = true;
+                    }
+                    
+                    modeChangeInProgress = true;
                 } else {
                     // Re-enable buttons and remove animation
                     buttons.forEach(btn => {
@@ -2874,6 +2900,18 @@
                         btn.style.animation = '';
                         btn.style.opacity = '';
                     });
+
+                    // Show completion notification if mode change just finished
+                    if (modeChangeInProgress && lastModeChangeNotified) {
+                        showNotification(
+                            '✅ Změna režimu dokončena',
+                            'Tlačítka jsou opět aktivní.',
+                            'success'
+                        );
+                    }
+
+                    modeChangeInProgress = false;
+                    lastModeChangeNotified = false;
                 }
             } catch (e) {
                 console.error('[Shield] Error monitoring activity:', e);
@@ -2886,11 +2924,11 @@
                 // Create overlay
                 const overlay = document.createElement('div');
                 overlay.className = 'ack-dialog-overlay';
-                
+
                 // Create dialog
                 const dialog = document.createElement('div');
                 dialog.className = 'ack-dialog';
-                
+
                 dialog.innerHTML = `
                     <div class="ack-dialog-header">
                         ⚠️ ${title}
@@ -2904,7 +2942,7 @@
                     <div class="ack-checkbox-wrapper">
                         <input type="checkbox" id="ack-checkbox">
                         <label for="ack-checkbox">
-                            <strong>Souhlasím</strong> s tím, že měním režim boxu na vlastní odpovědnost. 
+                            <strong>Souhlasím</strong> s tím, že měním režim boxu na vlastní odpovědnost.
                             Aplikace nenese odpovědnost za případné negativní důsledky této změny.
                         </label>
                     </div>
@@ -2913,19 +2951,19 @@
                         <button class="btn-confirm" disabled>Potvrdit změnu</button>
                     </div>
                 `;
-                
+
                 overlay.appendChild(dialog);
                 document.body.appendChild(overlay);
-                
+
                 const checkbox = dialog.querySelector('#ack-checkbox');
                 const confirmBtn = dialog.querySelector('.btn-confirm');
                 const cancelBtn = dialog.querySelector('.btn-cancel');
-                
+
                 // Enable confirm button only when checkbox is checked
                 checkbox.addEventListener('change', () => {
                     confirmBtn.disabled = !checkbox.checked;
                 });
-                
+
                 // Handle confirm
                 confirmBtn.addEventListener('click', () => {
                     if (checkbox.checked) {
@@ -2933,13 +2971,13 @@
                         resolve(true);
                     }
                 });
-                
+
                 // Handle cancel
                 cancelBtn.addEventListener('click', () => {
                     document.body.removeChild(overlay);
                     resolve(false);
                 });
-                
+
                 // Handle ESC key
                 const handleEsc = (e) => {
                     if (e.key === 'Escape') {
@@ -4197,6 +4235,11 @@
                 updateButtonStates();
             }, 1000); // Delay to ensure sensors are loaded
 
+            // Check shield activity immediately on start
+            setTimeout(() => {
+                monitorShieldActivity();
+            }, 2000);
+
             // OPTIMIZED: Primary values update every 5s (partial updates)
             setInterval(loadData, 5000);
 
@@ -4210,7 +4253,7 @@
                 loadControlStatus();
             }, 20000);
 
-            // Monitor ServiceShield activity every 10s
+            // Monitor ServiceShield activity every 10s (runs independently)
             setInterval(() => {
                 monitorShieldActivity();
             }, 10000);
