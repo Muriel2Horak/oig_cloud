@@ -1584,26 +1584,27 @@
 
         .notification-toast {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            min-width: 300px;
-            max-width: 400px;
-            background: rgba(10, 14, 39, 0.95);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            min-width: 400px;
+            max-width: 500px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
             border: 2px solid rgba(66, 165, 245, 0.4);
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
+            border-radius: 16px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            animation: popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
+        @keyframes popIn {
+            0% {
+                transform: translate(-50%, -50%) scale(0.7);
                 opacity: 0;
             }
-            to {
-                transform: translateX(0);
+            100% {
+                transform: translate(-50%, -50%) scale(1);
                 opacity: 1;
             }
         }
@@ -1612,48 +1613,67 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 16px;
+            padding: 20px 24px 16px 24px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .toast-header strong {
-            font-size: 14px;
+            font-size: 18px;
             font-weight: 600;
+            color: rgba(255, 255, 255, 0.95);
         }
 
         .toast-header button {
             background: none;
             border: none;
             color: white;
-            font-size: 24px;
+            font-size: 28px;
             cursor: pointer;
-            opacity: 0.6;
+            opacity: 0.5;
             line-height: 1;
             padding: 0;
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
+            transition: all 0.2s;
         }
 
         .toast-header button:hover {
             opacity: 1;
+            transform: rotate(90deg);
         }
 
         .toast-body {
-            padding: 12px 16px;
-            font-size: 13px;
-            line-height: 1.5;
+            padding: 16px 24px 20px 24px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.85);
         }
 
         .toast-success {
             border-color: rgba(76, 175, 80, 0.6);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(76, 175, 80, 0.2);
+        }
+
+        .toast-success .toast-header {
+            border-bottom-color: rgba(76, 175, 80, 0.2);
         }
 
         .toast-error {
             border-color: rgba(244, 67, 54, 0.6);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(244, 67, 54, 0.2);
+        }
+
+        .toast-error .toast-header {
+            border-bottom-color: rgba(244, 67, 54, 0.2);
         }
 
         .toast-warning {
             border-color: rgba(255, 152, 0, 0.6);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 152, 0, 0.2);
+        }
+
+        .toast-warning .toast-header {
+            border-bottom-color: rgba(255, 152, 0, 0.2);
         }
 
         /* Custom Acknowledgement Dialog */
@@ -2881,7 +2901,7 @@
                     // Disable all buttons, but only animate the one being changed
                     buttons.forEach(btn => {
                         btn.disabled = true;
-                        
+
                         if (btn.id === targetButtonId) {
                             // Blink only the target button
                             btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
@@ -3011,7 +3031,7 @@
                 // Check if mode is already active
                 const currentModeData = await getSensorString(getSensorId('box_prms_mode'));
                 const currentMode = currentModeData.value || '';
-                
+
                 if (currentMode.includes(mode)) {
                     showNotification(
                         '✓ Režim již aktivní',
