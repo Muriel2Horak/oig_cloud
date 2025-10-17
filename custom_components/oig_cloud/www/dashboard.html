@@ -2065,22 +2065,25 @@
         /* Shield Queue Table */
         .shield-queue-table {
             width: 100%;
+            max-width: 1200px;
+            margin: 10px auto 0;
             border-collapse: collapse;
             font-size: 12px;
-            margin-top: 10px;
         }
 
         .shield-queue-table th {
             background: rgba(255, 255, 255, 0.05);
-            padding: 8px;
+            padding: 10px 12px;
             text-align: left;
             font-weight: 600;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: nowrap;
         }
 
         .shield-queue-table td {
-            padding: 8px;
+            padding: 10px 12px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            vertical-align: top;
         }
 
         .shield-queue-table tr:hover {
@@ -2208,7 +2211,10 @@
                 </div>
                 <div class="node-icon solar-icon-dynamic" id="solar-icon-dynamic">☀️</div>
                 <div class="node-label">Solár</div>
-                <div class="node-value" id="solar-power">-- W</div>
+                <div class="node-value entity-value" id="solar-power"
+                     data-entity="dc_in_fv"
+                     data-tooltip="Aktuální výkon FVE"
+                     onclick="openEntityDialog(getSensorId('dc_in_fv'))">-- W</div>
                 <div class="node-subvalue entity-value" id="solar-today"
                      data-entity="dc_in_fv_ad"
                      data-tooltip="Vyrobeno dnes celkem"
@@ -2292,8 +2298,14 @@
                 </div>
                 <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
                 <div class="node-label">Baterie</div>
-                <div class="node-value" id="battery-soc">-- %</div>
-                <div class="node-subvalue" id="battery-power">-- W</div>
+                <div class="node-value entity-value" id="battery-soc"
+                     data-entity="bat_soc"
+                     data-tooltip="Stav nabití baterie"
+                     onclick="openEntityDialog(getSensorId('bat_soc'))">-- %</div>
+                <div class="node-subvalue entity-value" id="battery-power"
+                     data-entity="bat_p"
+                     data-tooltip="Aktuální výkon baterie"
+                     onclick="openEntityDialog(getSensorId('bat_p'))">-- W</div>
                 <div class="battery-gauge">
                     <div class="battery-gauge-fill" id="battery-gauge"></div>
                 </div>
@@ -2424,7 +2436,10 @@
                      data-entity="ac_in_aci_f"
                      data-tooltip="Frekvence sítě"
                      onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</div>
-                <div class="node-value" id="grid-power">-- W</div>
+                <div class="node-value entity-value" id="grid-power"
+                     data-entity="ac_in_aci_p"
+                     data-tooltip="Aktuální výkon ze sítě"
+                     onclick="openEntityDialog(getSensorId('ac_in_aci_p'))">-- W</div>
                 <div class="node-phases">
                     <div class="phase-row-group">
                         <span class="phase-value" id="grid-l1-power-main">--W</span>
@@ -2516,8 +2531,14 @@
             <div class="node house">
                 <div class="node-icon">🏠</div>
                 <div class="node-label">Spotřeba</div>
-                <div class="node-value" id="house-power">-- W</div>
-                <div class="node-subvalue" id="house-today">Dnes: -- kWh</div>
+                <div class="node-value entity-value" id="house-power"
+                     data-entity="ac_out_aco_p"
+                     data-tooltip="Aktuální spotřeba domácnosti"
+                     onclick="openEntityDialog(getSensorId('ac_out_aco_p'))">-- W</div>
+                <div class="node-subvalue entity-value" id="house-today"
+                     data-entity="ac_out_aco_ad"
+                     data-tooltip="Spotřeba dnes celkem"
+                     onclick="openEntityDialog(getSensorId('ac_out_aco_ad'))">Dnes: -- kWh</div>
                 <div class="node-phases">
                     <span class="phase-value" id="house-l1-main">--W</span>
                     <span class="phase-separator">|</span>
@@ -3177,7 +3198,20 @@
                             // Try to extract just the important part
                             const match = ch.match(/:\s*'?([^'→]+)'?\s*→\s*'?([^'(]+)'?/);
                             if (match) {
-                                return `${match[1].trim()} → ${match[2].trim()}`;
+                                let from = match[1].trim();
+                                let to = match[2].trim();
+                                
+                                // Mapování hodnot pro lepší čitelnost
+                                const valueMap = {
+                                    'CBB': 'Inteligentní',
+                                    'Manual': 'Manuální',
+                                    'Manuální': 'Manuální'
+                                };
+                                
+                                from = valueMap[from] || from;
+                                to = valueMap[to] || to;
+                                
+                                return `${from} → ${to}`;
                             }
                             return ch;
                         }).join('<br>');
@@ -3186,7 +3220,10 @@
                     // Format creation time and duration
                     let createdText = '--';
                     let durationText = '--';
-                    
+
+                    // Debug: Check what we have in req
+                    console.log('[Queue] Request data:', req);
+
                     if (req.created_at) {
                         const createdDate = new Date(req.created_at);
                         const now = new Date();
@@ -4160,7 +4197,7 @@
 
                 if (success) {
                     // NO notification popup - user already confirmed via dialog
-                    
+
                     // Trigger immediate check
                     await monitorShieldActivity();
 
