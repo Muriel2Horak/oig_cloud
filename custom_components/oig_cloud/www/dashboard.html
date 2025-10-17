@@ -4233,8 +4233,17 @@
                 const notificationsUnread = await getSensor(getSensorId('notification_count_unread'));
                 const notificationsError = await getSensor(getSensorId('notification_count_error'));
 
+                // Check if box mode changed - trigger shield activity check
+                const currentMode = inverterMode.value || '--';
+                if (previousValues['box-mode'] !== undefined && previousValues['box-mode'] !== currentMode) {
+                    console.log('[Mode Change] Detected:', previousValues['box-mode'], '→', currentMode);
+                    // Trigger immediate shield activity check
+                    setTimeout(() => monitorShieldActivity(), 500);
+                }
+                previousValues['box-mode'] = currentMode;
+
                 // Box mode with icons and descriptions
-                let modeDisplay = inverterMode.value || '--';
+                let modeDisplay = currentMode;
                 let modeDescription = '';
                 if (modeDisplay.includes('Home 1')) {
                     modeDescription = '🏠 Home 1: Max baterie + FVE pro domácnost';
