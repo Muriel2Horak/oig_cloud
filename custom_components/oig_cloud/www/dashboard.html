@@ -1422,24 +1422,39 @@
                 <div class="node-subvalue" id="inverter-temp">-- °C</div>
                 <div class="node-details">
                     <div class="detail-row">
-                        <span class="detail-label">Režim:</span>
-                        <span class="detail-value" id="inverter-mode">--</span>
+                        <span class="detail-icon">⚙️</span>
+                        <span class="detail-value entity-value" id="inverter-mode"
+                              data-entity="box_prms_mode"
+                              data-tooltip="Režim střídače"
+                              onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Bypass:</span>
-                        <span class="detail-value warning-capable" id="inverter-bypass">--</span>
+                        <span class="detail-icon">↔️</span>
+                        <span class="detail-value warning-capable entity-value" id="inverter-bypass"
+                              data-entity="bypass_status"
+                              data-tooltip="Bypass status"
+                              onclick="openEntityDialog(getSensorId('bypass_status'))">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Distribuce:</span>
-                        <span class="detail-value warning-capable" id="inverter-distribution">--</span>
+                        <span class="detail-icon">🔀</span>
+                        <span class="detail-value warning-capable entity-value" id="inverter-distribution"
+                              data-entity="box_prms_crct"
+                              data-tooltip="Režim distribuce"
+                              onclick="openEntityDialog(getSensorId('box_prms_crct'))">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Přetoky:</span>
-                        <span class="detail-value" id="inverter-grid-mode">--</span>
+                        <span class="detail-icon">📤</span>
+                        <span class="detail-value entity-value" id="inverter-grid-mode"
+                              data-entity="invertor_prms_to_grid"
+                              data-tooltip="Dodávka do sítě"
+                              onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Povoleno:</span>
-                        <span class="detail-value" id="inverter-allowed-power">-- kW</span>
+                        <span class="detail-icon">⚡</span>
+                        <span class="detail-value entity-value" id="inverter-allowed-power"
+                              data-entity="boiler_install_power"
+                              data-tooltip="Povolený výkon"
+                              onclick="openEntityDialog(getSensorId('boiler_install_power'))">-- kW</span>
                     </div>
                 </div>
             </div>
@@ -1453,46 +1468,82 @@
                 <div class="node-status" id="grid-status">--</div>
                 <div class="node-details">
                     <div class="detail-row">
-                        <span class="detail-label">Import:</span>
-                        <span class="detail-value" id="grid-import">-- kWh</span>
-                        <span class="detail-label">Export:</span>
-                        <span class="detail-value" id="grid-export">-- kWh</span>
+                        <span class="detail-icon">📥</span>
+                        <span class="detail-value entity-value" id="grid-import"
+                              data-entity="ac_in_ac_ad"
+                              data-tooltip="Import ze sítě"
+                              onclick="openEntityDialog(getSensorId('ac_in_ac_ad'))">-- kWh</span>
+                        <span class="detail-icon">📤</span>
+                        <span class="detail-value entity-value" id="grid-export"
+                              data-entity="ac_in_ac_pd"
+                              data-tooltip="Export do sítě"
+                              onclick="openEntityDialog(getSensorId('ac_in_ac_pd'))">-- kWh</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Frekvence:</span>
-                        <span class="detail-value" id="grid-freq">-- Hz</span>
+                        <span class="detail-icon">〰️</span>
+                        <span class="detail-value entity-value" id="grid-freq"
+                              data-entity="ac_in_aci_f"
+                              data-tooltip="Frekvence sítě"
+                              onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</span>
                     </div>
                     <div class="detail-group">
-                        <div class="detail-subheader">Ceny a tarif</div>
+                        <div class="detail-subheader">💰 Ceny a tarif</div>
                         <div class="detail-row">
-                            <span class="detail-label">Nákup:</span>
-                            <span class="detail-value" id="grid-spot-price">-- Kč/kWh</span>
+                            <span class="detail-icon">🛒</span>
+                            <span class="detail-value entity-value" id="grid-spot-price"
+                                  data-entity="spot_price_current_15min"
+                                  data-tooltip="Nákupní cena"
+                                  onclick="openEntityDialog(getSensorId('spot_price_current_15min'))">-- Kč/kWh</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">Prodej:</span>
-                            <span class="detail-value" id="grid-export-price">-- Kč/kWh</span>
+                            <span class="detail-icon">💵</span>
+                            <span class="detail-value entity-value" id="grid-export-price"
+                                  data-entity="export_price_current_15min"
+                                  data-tooltip="Prodejní cena"
+                                  onclick="openEntityDialog(getSensorId('export_price_current_15min'))">-- Kč/kWh</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">Tarif:</span>
-                            <span class="detail-value" id="grid-tariff">--</span>
+                            <span class="detail-icon">⏰</span>
+                            <span class="detail-value entity-value" id="grid-tariff"
+                                  data-entity="current_tariff"
+                                  data-tooltip="Aktuální tarif"
+                                  onclick="openEntityDialog(getSensorId('current_tariff'))">--</span>
                         </div>
                     </div>
                     <div class="detail-group">
-                        <div class="detail-subheader">Fáze</div>
+                        <div class="detail-subheader">⚡ Fáze</div>
                         <div class="detail-row">
-                            <span class="detail-label">L1:</span>
-                            <span class="detail-value" id="grid-l1-volt">--V</span>
-                            <span class="detail-value" id="grid-l1-power">--W</span>
+                            <span class="detail-icon">L1</span>
+                            <span class="detail-value entity-value" id="grid-l1-volt"
+                                  data-entity="ac_in_aci_vr"
+                                  data-tooltip="L1 napětí"
+                                  onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))">--V</span>
+                            <span class="detail-value entity-value" id="grid-l1-power"
+                                  data-entity="actual_aci_wr"
+                                  data-tooltip="L1 výkon"
+                                  onclick="openEntityDialog(getSensorId('actual_aci_wr'))">--W</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">L2:</span>
-                            <span class="detail-value" id="grid-l2-volt">--V</span>
-                            <span class="detail-value" id="grid-l2-power">--W</span>
+                            <span class="detail-icon">L2</span>
+                            <span class="detail-value entity-value" id="grid-l2-volt"
+                                  data-entity="ac_in_aci_vs"
+                                  data-tooltip="L2 napětí"
+                                  onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))">--V</span>
+                            <span class="detail-value entity-value" id="grid-l2-power"
+                                  data-entity="actual_aci_ws"
+                                  data-tooltip="L2 výkon"
+                                  onclick="openEntityDialog(getSensorId('actual_aci_ws'))">--W</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">L3:</span>
-                            <span class="detail-value" id="grid-l3-volt">--V</span>
-                            <span class="detail-value" id="grid-l3-power">--W</span>
+                            <span class="detail-icon">L3</span>
+                            <span class="detail-value entity-value" id="grid-l3-volt"
+                                  data-entity="ac_in_aci_vt"
+                                  data-tooltip="L3 napětí"
+                                  onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))">--V</span>
+                            <span class="detail-value entity-value" id="grid-l3-power"
+                                  data-entity="actual_aci_wt"
+                                  data-tooltip="L3 výkon"
+                                  onclick="openEntityDialog(getSensorId('actual_aci_wt'))">--W</span>
                         </div>
                     </div>
                 </div>
@@ -1506,18 +1557,27 @@
                 <div class="node-subvalue" id="house-today">Dnes: -- kWh</div>
                 <div class="node-details">
                     <div class="detail-group">
-                        <div class="detail-subheader">Zátěž fází</div>
+                        <div class="detail-subheader">⚡ Zátěž fází</div>
                         <div class="detail-row">
-                            <span class="detail-label">L1:</span>
-                            <span class="detail-value" id="house-l1">-- W</span>
+                            <span class="detail-icon">L1</span>
+                            <span class="detail-value entity-value" id="house-l1"
+                                  data-entity="ac_out_aco_pr"
+                                  data-tooltip="L1 spotřeba"
+                                  onclick="openEntityDialog(getSensorId('ac_out_aco_pr'))">-- W</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">L2:</span>
-                            <span class="detail-value" id="house-l2">-- W</span>
+                            <span class="detail-icon">L2</span>
+                            <span class="detail-value entity-value" id="house-l2"
+                                  data-entity="ac_out_aco_ps"
+                                  data-tooltip="L2 spotřeba"
+                                  onclick="openEntityDialog(getSensorId('ac_out_aco_ps'))">-- W</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">L3:</span>
-                            <span class="detail-value" id="house-l3">-- W</span>
+                            <span class="detail-icon">L3</span>
+                            <span class="detail-value entity-value" id="house-l3"
+                                  data-entity="ac_out_aco_pt"
+                                  data-tooltip="L3 spotřeba"
+                                  onclick="openEntityDialog(getSensorId('ac_out_aco_pt'))">-- W</span>
                         </div>
                     </div>
                 </div>
@@ -1531,16 +1591,25 @@
                 <div class="node-subvalue" id="boiler-mode">--</div>
                 <div class="node-details">
                     <div class="detail-row">
-                        <span class="detail-label">Režim:</span>
-                        <span class="detail-value" id="boiler-mode-detail">--</span>
+                        <span class="detail-icon">⚙️</span>
+                        <span class="detail-value entity-value" id="boiler-mode-detail"
+                              data-entity="boiler_manual_mode"
+                              data-tooltip="Režim bojleru"
+                              onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Teplota:</span>
-                        <span class="detail-value" id="boiler-temp">-- °C</span>
+                        <span class="detail-icon">🌡️</span>
+                        <span class="detail-value entity-value" id="boiler-temp"
+                              data-entity="boiler_temperature"
+                              data-tooltip="Teplota bojleru"
+                              onclick="openEntityDialog(getSensorId('boiler_temperature'))">-- °C</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Stav:</span>
-                        <span class="detail-value" id="boiler-status">--</span>
+                        <span class="detail-icon">📊</span>
+                        <span class="detail-value entity-value" id="boiler-status"
+                              data-entity="boiler_status"
+                              data-tooltip="Stav bojleru"
+                              onclick="openEntityDialog(getSensorId('boiler_status'))">--</span>
                     </div>
                 </div>
             </div>
