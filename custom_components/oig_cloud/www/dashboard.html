@@ -55,7 +55,7 @@
         .flow-canvas {
             position: relative;
             width: 100%;
-            height: 550px; /* Zmenšeno z 650px */
+            height: 700px; /* Zvýšeno kvůli většímu spacingu Solar/Battery */
         }
 
         /* SVG for connections */
@@ -371,12 +371,12 @@
         }
 
         @keyframes pulse-warning {
-            0%, 100% { 
-                opacity: 1; 
+            0%, 100% {
+                opacity: 1;
                 text-shadow: 0 0 8px rgba(255, 51, 51, 0.8);
             }
-            50% { 
-                opacity: 0.85; 
+            50% {
+                opacity: 0.85;
                 text-shadow: 0 0 12px rgba(255, 51, 51, 1);
             }
         }
@@ -2351,7 +2351,7 @@
             }
         }
 
-        // Helper to format energy: < 1000 → Wh, >= 1000 → kWh  
+        // Helper to format energy: < 1000 → Wh, >= 1000 → kWh
         function formatEnergy(wattHours) {
             if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
             const absWh = Math.abs(wattHours);
@@ -2720,7 +2720,7 @@
                 // Add color styling: GREEN when OFF/Standby, RED when ON/Active
                 const bypassEl = document.getElementById('inverter-bypass');
                 const distributionEl = document.getElementById('inverter-distribution');
-                
+
                 if (bypassEl) {
                     if (bypassStatus.value === 'On') {
                         bypassEl.classList.remove('status-ok');
@@ -2730,7 +2730,7 @@
                         bypassEl.classList.add('status-ok');
                     }
                 }
-                
+
                 if (distributionEl) {
                     // Distribution: GREEN when Standby, RED when Smart/Normal/active
                     if (distributionMode.value && distributionMode.value !== 'Standby' && distributionMode.value !== '--') {
