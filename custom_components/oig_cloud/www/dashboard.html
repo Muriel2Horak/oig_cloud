@@ -1095,6 +1095,21 @@
                         <span class="detail-value" id="grid-freq">-- Hz</span>
                     </div>
                     <div class="detail-group">
+                        <div class="detail-subheader">Ceny a tarif</div>
+                        <div class="detail-row">
+                            <span class="detail-label">Nákup:</span>
+                            <span class="detail-value" id="grid-spot-price">-- Kč/kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Prodej:</span>
+                            <span class="detail-value" id="grid-export-price">-- Kč/kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Tarif:</span>
+                            <span class="detail-value" id="grid-tariff">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-group">
                         <div class="detail-subheader">Fáze</div>
                         <div class="detail-row">
                             <span class="detail-label">L1:</span>
@@ -2201,10 +2216,21 @@
                 const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
                 const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
                 const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
+                
+                // Grid pricing sensors
+                const spotPrice = await getSensor(getSensorId('spot_price_current_15min'));
+                const exportPrice = await getSensor(getSensorId('export_price_current_15min'));
+                const currentTariff = await getSensorString(getSensorId('current_tariff'));
 
                 document.getElementById('grid-import').textContent = ((gridImport.value || 0) / 1000).toFixed(2) + ' kWh';
                 document.getElementById('grid-export').textContent = ((gridExport.value || 0) / 1000).toFixed(2) + ' kWh';
                 document.getElementById('grid-freq').textContent = (gridFreq.value || 0).toFixed(2) + ' Hz';
+                
+                // Grid prices and tariff
+                document.getElementById('grid-spot-price').textContent = (spotPrice.value || 0).toFixed(2) + ' Kč/kWh';
+                document.getElementById('grid-export-price').textContent = (exportPrice.value || 0).toFixed(2) + ' Kč/kWh';
+                document.getElementById('grid-tariff').textContent = currentTariff.value || '--';
+                
                 document.getElementById('grid-l1-volt').textContent = Math.round(gridL1V.value || 0) + 'V';
                 document.getElementById('grid-l2-volt').textContent = Math.round(gridL2V.value || 0) + 'V';
                 document.getElementById('grid-l3-volt').textContent = Math.round(gridL3V.value || 0) + 'V';
