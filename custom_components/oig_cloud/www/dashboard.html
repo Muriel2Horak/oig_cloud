@@ -1780,7 +1780,7 @@
             if (success) {
                 const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
                 showNotification('Dodávka do sítě', msg, 'success');
-                setTimeout(loadData, 2000);
+                setTimeout(forceFullRefresh, 2000);
             }
         }
 
@@ -1816,7 +1816,7 @@
             if (success) {
                 const msg = limit ? `${mode} (limit: ${limit}%)` : mode;
                 showNotification('Nabíjení baterie', msg, 'success');
-                setTimeout(loadData, 2000);
+                setTimeout(forceFullRefresh, 2000);
             }
         }
 
@@ -1896,7 +1896,7 @@
             if (success) {
                 showNotification('Solární předpověď', 'Předpověď se aktualizuje...', 'success');
                 // Delší čas pro forecast update
-                setTimeout(loadData, 5000);
+                setTimeout(forceFullRefresh, 5000);
             }
         }
 
@@ -2125,7 +2125,37 @@
             }
         }
 
-        // Load and update data
+        // Cache for previous values to detect changes
+        const previousValues = {};
+
+        // Helper to update element only if value changed
+        function updateElementIfChanged(elementId, newValue, cacheKey) {
+            if (!cacheKey) cacheKey = elementId;
+            if (previousValues[cacheKey] !== newValue) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.textContent = newValue;
+                    previousValues[cacheKey] = newValue;
+                    return true; // Changed
+                }
+            }
+            return false; // No change
+        }
+
+        // Helper to update class only if changed
+        function updateClassIfChanged(element, className, shouldAdd) {
+            const hasClass = element.classList.contains(className);
+            if (shouldAdd && !hasClass) {
+                element.classList.add(className);
+                return true;
+            } else if (!shouldAdd && hasClass) {
+                element.classList.remove(className);
+                return true;
+            }
+            return false;
+        }
+
+        // Load and update data (optimized - partial updates only)
         async function loadData() {
             // Solar
             const solarP1Data = await getSensor(getSensorId('actual_fv_p1'));
@@ -2137,19 +2167,16 @@
             const solarTodayWh = solarTodayData.value || 0;
             const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
 
-            // Display solar power in kW if > 1000W, otherwise W
-            if (solarPower >= 1000) {
-                document.getElementById('solar-power').textContent = (solarPower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('solar-power').textContent = Math.round(solarPower) + ' W';
-            }
-            document.getElementById('solar-today').textContent = 'Dnes: ' + solarTodayKWh.toFixed(1) + ' kWh';
+            // Display solar power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
+            const solarPowerText = solarPower >= 1000 
+                ? (solarPower / 1000).toFixed(2) + ' kW' 
+                : Math.round(solarPower) + ' W';
+            updateElementIfChanged('solar-power', solarPowerText, 'solar-power');
+            updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(1) + ' kWh', 'solar-today');
 
-            if (solarPower > 50) {
-                document.querySelector('.solar').classList.add('active');
-            } else {
-                document.querySelector('.solar').classList.remove('active');
-            }
+            // Update active class only if changed
+            const solarNode = document.querySelector('.solar');
+            updateClassIfChanged(solarNode, 'active', solarPower > 50);
 
             // Battery
             const batterySoCData = await getSensor(getSensorId('batt_bat_c'));
@@ -2157,31 +2184,46 @@
             const batterySoC = batterySoCData.value || 0;
             const batteryPower = batteryPowerData.value || 0;
 
-            document.getElementById('battery-soc').textContent = Math.round(batterySoC) + ' %';
+            // Update battery SoC only if changed
+            updateElementIfChanged('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
 
-            // Display battery power in kW if > 1000W, otherwise W
-            if (Math.abs(batteryPower) >= 1000) {
-                document.getElementById('battery-power').textContent = (batteryPower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('battery-power').textContent = Math.round(batteryPower) + ' W';
+            // Display battery power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
+            const batteryPowerText = Math.abs(batteryPower) >= 1000 
+                ? (batteryPower / 1000).toFixed(2) + ' kW' 
+                : Math.round(batteryPower) + ' W';
+            updateElementIfChanged('battery-power', batteryPowerText, 'battery-power');
+
+            // Update gauge only if SoC changed significantly (save DOM updates)
+            const previousSoC = previousValues['battery-gauge-width'];
+            if (previousSoC === undefined || Math.abs(previousSoC - batterySoC) > 0.5) {
+                const gauge = document.getElementById('battery-gauge');
+                gauge.style.width = batterySoC + '%';
+                gauge.className = 'battery-gauge-fill';
+                if (batterySoC < 30) gauge.classList.add('low');
+                else if (batterySoC < 70) gauge.classList.add('medium');
+                previousValues['battery-gauge-width'] = batterySoC;
             }
 
-            const gauge = document.getElementById('battery-gauge');
-            gauge.style.width = batterySoC + '%';
-            gauge.className = 'battery-gauge-fill';
-            if (batterySoC < 30) gauge.classList.add('low');
-            else if (batterySoC < 70) gauge.classList.add('medium');
-
+            // Update battery status only if state changed
             const batteryStatus = document.getElementById('battery-status');
+            let newBatteryState, newBatteryText, newBatteryClass;
             if (batteryPower > 10) {
-                batteryStatus.textContent = '⚡ Nabíjení';
-                batteryStatus.className = 'node-status status-charging pulse';
+                newBatteryState = 'charging';
+                newBatteryText = '⚡ Nabíjení';
+                newBatteryClass = 'node-status status-charging pulse';
             } else if (batteryPower < -10) {
-                batteryStatus.textContent = '⚡ Vybíjení';
-                batteryStatus.className = 'node-status status-discharging pulse';
+                newBatteryState = 'discharging';
+                newBatteryText = '⚡ Vybíjení';
+                newBatteryClass = 'node-status status-discharging pulse';
             } else {
-                batteryStatus.textContent = '◉ Klid';
-                batteryStatus.className = 'node-status status-idle';
+                newBatteryState = 'idle';
+                newBatteryText = '◉ Klid';
+                newBatteryClass = 'node-status status-idle';
+            }
+            if (previousValues['battery-state'] !== newBatteryState) {
+                batteryStatus.textContent = newBatteryText;
+                batteryStatus.className = newBatteryClass;
+                previousValues['battery-state'] = newBatteryState;
             }
 
             // Grid
@@ -2194,24 +2236,33 @@
             const gridConsumptionKWh = gridConsumptionWh / 1000; // Convert Wh to kWh
             const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
 
-            // Display grid power in kW if > 1000W, otherwise W
-            if (Math.abs(gridPower) >= 1000) {
-                document.getElementById('grid-power').textContent = (Math.abs(gridPower) / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('grid-power').textContent = Math.round(Math.abs(gridPower)) + ' W';
-            }
-            document.getElementById('grid-today').textContent = 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh';
+            // Display grid power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
+            const gridPowerText = Math.abs(gridPower) >= 1000 
+                ? (Math.abs(gridPower) / 1000).toFixed(2) + ' kW' 
+                : Math.round(Math.abs(gridPower)) + ' W';
+            updateElementIfChanged('grid-power', gridPowerText, 'grid-power');
+            updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
 
+            // Update grid status only if state changed
             const gridStatus = document.getElementById('grid-status');
+            let newGridState, newGridText, newGridClass;
             if (gridPower > 10) {
-                gridStatus.textContent = '⬇ Import';
-                gridStatus.className = 'node-status status-importing pulse';
+                newGridState = 'importing';
+                newGridText = '⬇ Import';
+                newGridClass = 'node-status status-importing pulse';
             } else if (gridPower < -10) {
-                gridStatus.textContent = '⬆ Export';
-                gridStatus.className = 'node-status status-exporting pulse';
+                newGridState = 'exporting';
+                newGridText = '⬆ Export';
+                newGridClass = 'node-status status-exporting pulse';
             } else {
-                gridStatus.textContent = '◉ Žádný tok';
-                gridStatus.className = 'node-status status-idle';
+                newGridState = 'idle';
+                newGridText = '◉ Žádný tok';
+                newGridClass = 'node-status status-idle';
+            }
+            if (previousValues['grid-state'] !== newGridState) {
+                gridStatus.textContent = newGridText;
+                gridStatus.className = newGridClass;
+                previousValues['grid-state'] = newGridState;
             }
 
             // House
@@ -2221,38 +2272,54 @@
             const houseTodayWh = houseTodayData.value || 0;
             const houseTodayKWh = houseTodayWh / 1000; // Convert Wh to kWh
 
-            // Display house power in kW if > 1000W, otherwise W
-            if (housePower >= 1000) {
-                document.getElementById('house-power').textContent = (housePower / 1000).toFixed(2) + ' kW';
-            } else {
-                document.getElementById('house-power').textContent = Math.round(housePower) + ' W';
-            }
-            document.getElementById('house-today').textContent = 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh';
+            // Display house power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
+            const housePowerText = housePower >= 1000 
+                ? (housePower / 1000).toFixed(2) + ' kW' 
+                : Math.round(housePower) + ' W';
+            updateElementIfChanged('house-power', housePowerText, 'house-power');
+            updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
             // Inverter
             const inverterTempData = await getSensor(getSensorId('extended_battery_temperature'));
             const inverterTemp = inverterTempData.value || 0;
-            document.getElementById('inverter-temp').textContent = inverterTemp.toFixed(1) + ' °C';
+            updateElementIfChanged('inverter-temp', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
 
-            // Show last update time (use most recent sensor update)
+            // Show last update time (use most recent sensor update) - UPDATE ONLY IF CHANGED
             const lastUpdate = solarP1Data.lastUpdated || batteryPowerData.lastUpdated || gridPowerData.lastUpdated;
             if (lastUpdate) {
                 const relativeTime = formatRelativeTime(lastUpdate);
-                document.getElementById('inverter-status').textContent = 'Online';
-                document.getElementById('inverter-status').title = `Poslední aktualizace: ${relativeTime}`;
+                const inverterStatus = document.getElementById('inverter-status');
+                if (previousValues['last-update'] !== lastUpdate) {
+                    inverterStatus.textContent = 'Online';
+                    inverterStatus.title = `Poslední aktualizace: ${relativeTime}`;
+                    previousValues['last-update'] = lastUpdate;
+                }
             }
 
-            // Animate particles
+            // Animate particles (always run - independent of data changes)
             animateFlow(solarPower, batteryPower, gridPower);
 
-            // Load control panel status
-            loadControlStatus();
+            // Load control panel status (only on first load or explicit refresh)
+            if (!previousValues['control-status-loaded']) {
+                loadControlStatus();
+                previousValues['control-status-loaded'] = true;
+            }
 
-            // Load details for all nodes
-            loadNodeDetails();
+            // Load details for all nodes (only on first load or explicit refresh)
+            if (!previousValues['node-details-loaded']) {
+                loadNodeDetails();
+                previousValues['node-details-loaded'] = true;
+            }
         }
 
-        // Load detailed information for all nodes
+        // Force full refresh (for manual reload or after service calls)
+        function forceFullRefresh() {
+            previousValues['control-status-loaded'] = false;
+            previousValues['node-details-loaded'] = false;
+            loadData();
+        }
+
+        // Load detailed information for all nodes (optimized - partial updates)
         async function loadNodeDetails() {
             try {
                 // === SOLAR DETAILS ===
@@ -2268,20 +2335,21 @@
                 const solarForecastS1 = await getSensor(getSensorId('solar_forecast_string1'));
                 const solarForecastS2 = await getSensor(getSensorId('solar_forecast_string2'));
 
-                document.getElementById('solar-s1').textContent = Math.round(solarP1.value || 0) + ' W';
-                document.getElementById('solar-s2').textContent = Math.round(solarP2.value || 0) + ' W';
-                document.getElementById('solar-s1-volt').textContent = Math.round(solarV1.value || 0) + 'V';
-                document.getElementById('solar-s2-volt').textContent = Math.round(solarV2.value || 0) + 'V';
-                document.getElementById('solar-s1-amp').textContent = (solarI1.value || 0).toFixed(1) + 'A';
-                document.getElementById('solar-s2-amp').textContent = (solarI2.value || 0).toFixed(1) + 'A';
+                // Update only if changed
+                updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
+                updateElementIfChanged('solar-s2', Math.round(solarP2.value || 0) + ' W');
+                updateElementIfChanged('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
+                updateElementIfChanged('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
+                updateElementIfChanged('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
+                updateElementIfChanged('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
 
                 // Solar forecast - today's total
                 const forecastToday = (solarForecast.value || 0).toFixed(2);
-                document.getElementById('solar-forecast-today').textContent = forecastToday + ' kWh';
+                updateElementIfChanged('solar-forecast-today', forecastToday + ' kWh');
 
                 // Solar forecast - tomorrow's total (from attributes)
                 const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
-                document.getElementById('solar-forecast-tomorrow').textContent = forecastTomorrow.toFixed(2) + ' kWh';
+                updateElementIfChanged('solar-forecast-tomorrow', forecastTomorrow.toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
                 const battVoltage = await getSensor(getSensorId('extended_battery_voltage'));
@@ -2294,27 +2362,40 @@
                 const battChargeFve = await getSensor(getSensorId('computed_batt_charge_fve_energy_today'));
                 const battChargeGrid = await getSensor(getSensorId('computed_batt_charge_grid_energy_today'));
 
-                document.getElementById('battery-voltage').textContent = (battVoltage.value || 0).toFixed(1) + ' V';
-                document.getElementById('battery-current').textContent = (battCurrent.value || 0).toFixed(1) + ' A';
-                document.getElementById('battery-temp').textContent = (battTemp.value || 0).toFixed(1) + ' °C';
-                document.getElementById('battery-remain').textContent = Math.round(battRemain.value || 0) + ' Wh';
+                // Update only if changed
+                updateElementIfChanged('battery-voltage', (battVoltage.value || 0).toFixed(1) + ' V');
+                updateElementIfChanged('battery-current', (battCurrent.value || 0).toFixed(1) + ' A');
+                updateElementIfChanged('battery-temp', (battTemp.value || 0).toFixed(1) + ' °C');
+                updateElementIfChanged('battery-remain', Math.round(battRemain.value || 0) + ' Wh');
 
-                // Time to empty/full based on battery power direction
+                // Time to empty/full based on battery power direction - update only if state changed
                 const timeLabel = document.getElementById('battery-time-label');
                 const timeValue = document.getElementById('battery-time');
+                let newTimeState, newTimeLabel, newTimeValue;
                 if (battPower.value < -10) {
-                    timeLabel.textContent = 'Do vybití:';
-                    timeValue.textContent = timeToEmpty.value || '--';
+                    newTimeState = 'emptying';
+                    newTimeLabel = 'Do vybití:';
+                    newTimeValue = timeToEmpty.value || '--';
                 } else if (battPower.value > 10) {
-                    timeLabel.textContent = 'Do nabití:';
-                    timeValue.textContent = timeToFull.value || '--';
+                    newTimeState = 'filling';
+                    newTimeLabel = 'Do nabití:';
+                    newTimeValue = timeToFull.value || '--';
                 } else {
-                    timeLabel.textContent = '';
-                    timeValue.textContent = '';
+                    newTimeState = 'idle';
+                    newTimeLabel = '';
+                    newTimeValue = '';
+                }
+                if (previousValues['battery-time-state'] !== newTimeState) {
+                    timeLabel.textContent = newTimeLabel;
+                    timeValue.textContent = newTimeValue;
+                    previousValues['battery-time-state'] = newTimeState;
+                } else if (newTimeState !== 'idle') {
+                    // If state same but not idle, update value (time changes)
+                    updateElementIfChanged('battery-time', newTimeValue);
                 }
 
-                document.getElementById('battery-charge-fve').textContent = (battChargeFve.value || 0).toFixed(2) + ' kWh';
-                document.getElementById('battery-charge-grid').textContent = (battChargeGrid.value || 0).toFixed(2) + ' kWh';
+                updateElementIfChanged('battery-charge-fve', (battChargeFve.value || 0).toFixed(2) + ' kWh');
+                updateElementIfChanged('battery-charge-grid', (battChargeGrid.value || 0).toFixed(2) + ' kWh');
 
                 // === GRID DETAILS ===
                 const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
@@ -2332,30 +2413,32 @@
                 const exportPrice = await getSensor(getSensorId('export_price_current_15min'));
                 const currentTariff = await getSensorString(getSensorId('current_tariff'));
 
-                document.getElementById('grid-import').textContent = ((gridImport.value || 0) / 1000).toFixed(2) + ' kWh';
-                document.getElementById('grid-export').textContent = ((gridExport.value || 0) / 1000).toFixed(2) + ' kWh';
-                document.getElementById('grid-freq').textContent = (gridFreq.value || 0).toFixed(2) + ' Hz';
+                // Update only if changed
+                updateElementIfChanged('grid-import', ((gridImport.value || 0) / 1000).toFixed(2) + ' kWh');
+                updateElementIfChanged('grid-export', ((gridExport.value || 0) / 1000).toFixed(2) + ' kWh');
+                updateElementIfChanged('grid-freq', (gridFreq.value || 0).toFixed(2) + ' Hz');
 
                 // Grid prices and tariff
-                document.getElementById('grid-spot-price').textContent = (spotPrice.value || 0).toFixed(2) + ' Kč/kWh';
-                document.getElementById('grid-export-price').textContent = (exportPrice.value || 0).toFixed(2) + ' Kč/kWh';
-                document.getElementById('grid-tariff').textContent = currentTariff.value || '--';
+                updateElementIfChanged('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
+                updateElementIfChanged('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
+                updateElementIfChanged('grid-tariff', currentTariff.value || '--');
 
-                document.getElementById('grid-l1-volt').textContent = Math.round(gridL1V.value || 0) + 'V';
-                document.getElementById('grid-l2-volt').textContent = Math.round(gridL2V.value || 0) + 'V';
-                document.getElementById('grid-l3-volt').textContent = Math.round(gridL3V.value || 0) + 'V';
-                document.getElementById('grid-l1-power').textContent = Math.round(gridL1P.value || 0) + 'W';
-                document.getElementById('grid-l2-power').textContent = Math.round(gridL2P.value || 0) + 'W';
-                document.getElementById('grid-l3-power').textContent = Math.round(gridL3P.value || 0) + 'W';
+                updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
+                updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
+                updateElementIfChanged('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
+                updateElementIfChanged('grid-l1-power', Math.round(gridL1P.value || 0) + 'W');
+                updateElementIfChanged('grid-l2-power', Math.round(gridL2P.value || 0) + 'W');
+                updateElementIfChanged('grid-l3-power', Math.round(gridL3P.value || 0) + 'W');
 
                 // === HOUSE DETAILS ===
                 const houseL1 = await getSensor(getSensorId('ac_out_aco_pr'));
                 const houseL2 = await getSensor(getSensorId('ac_out_aco_ps'));
                 const houseL3 = await getSensor(getSensorId('ac_out_aco_pt'));
 
-                document.getElementById('house-l1').textContent = Math.round(houseL1.value || 0) + ' W';
-                document.getElementById('house-l2').textContent = Math.round(houseL2.value || 0) + ' W';
-                document.getElementById('house-l3').textContent = Math.round(houseL3.value || 0) + ' W';
+                // Update only if changed
+                updateElementIfChanged('house-l1', Math.round(houseL1.value || 0) + ' W');
+                updateElementIfChanged('house-l2', Math.round(houseL2.value || 0) + ' W');
+                updateElementIfChanged('house-l3', Math.round(houseL3.value || 0) + ' W');
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
@@ -2363,10 +2446,11 @@
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const inverterUpdate = await getSensorString(getSensorId('real_data_update'));
 
-                document.getElementById('inverter-mode').textContent = inverterMode.value || '--';
-                document.getElementById('inverter-bypass').textContent = inverterBypass.value || '--';
-                document.getElementById('inverter-grid-mode').textContent = inverterGridMode.value || '--';
-                document.getElementById('inverter-update').textContent = inverterUpdate.value || '--';
+                // Update only if changed
+                updateElementIfChanged('inverter-mode', inverterMode.value || '--');
+                updateElementIfChanged('inverter-bypass', inverterBypass.value || '--');
+                updateElementIfChanged('inverter-grid-mode', inverterGridMode.value || '--');
+                updateElementIfChanged('inverter-update', inverterUpdate.value || '--');
 
             } catch (e) {
                 console.error('[Details] Error loading node details:', e);
@@ -2376,7 +2460,9 @@
         // Initialize
         function init() {
             drawConnections();
-            loadData();
+            
+            // Initial full load
+            forceFullRefresh();
             updateTime();
 
             // Subscribe to shield state changes for real-time updates
@@ -2387,8 +2473,21 @@
                 updateButtonStates();
             }, 1000); // Delay to ensure sensors are loaded
 
-            setInterval(loadData, 5000);  // Update data every 5s
-            setInterval(updateTime, 1000); // Update time every 1s
+            // OPTIMIZED: Primary values update every 5s (partial updates)
+            setInterval(loadData, 5000);
+            
+            // OPTIMIZED: Details update every 30s (less frequent, full refresh)
+            setInterval(() => {
+                loadNodeDetails();
+            }, 30000);
+            
+            // OPTIMIZED: Control status update every 20s
+            setInterval(() => {
+                loadControlStatus();
+            }, 20000);
+            
+            // Time update every second
+            setInterval(updateTime, 1000);
 
             // Redraw lines on resize
             window.addEventListener('resize', drawConnections);
