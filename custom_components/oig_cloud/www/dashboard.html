@@ -3000,6 +3000,53 @@
             }
         }
 
+        // Safe sensor fetch with optional logging
+        async function getSensorSafe(entityId, silent = true) {
+            const token = getHAToken();
+            if (!token) return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+
+            try {
+                const response = await fetch(`/api/states/${entityId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    if (!silent) console.log(`Sensor ${entityId} not available (${response.status})`);
+                    return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+                }
+                const data = await response.json();
+                const value = data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
+                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
+                const attributes = data.attributes || {};
+                return { value, lastUpdated, attributes, exists: true };
+            } catch (e) {
+                if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
+                return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+            }
+        }
+
+        // Safe string sensor fetch with optional logging
+        async function getSensorStringSafe(entityId, silent = true) {
+            const token = getHAToken();
+            if (!token) return { value: '', lastUpdated: null, exists: false };
+
+            try {
+                const response = await fetch(`/api/states/${entityId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    if (!silent) console.log(`Sensor ${entityId} not available (${response.status})`);
+                    return { value: '', lastUpdated: null, exists: false };
+                }
+                const data = await response.json();
+                const value = (data.state !== 'unavailable' && data.state !== 'unknown') ? data.state : '';
+                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
+                return { value, lastUpdated, exists: true };
+            } catch (e) {
+                if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
+                return { value: '', lastUpdated: null, exists: false };
+            }
+        }
+
         // Format relative time (like Home Assistant)
         function formatRelativeTime(date) {
             if (!date) return '';
@@ -3496,8 +3543,12 @@
                 bypassClass = 'inverter-bypass-indicator bypass-ok';
             }
             if (previousValues['inverter-bypass-icon'] !== bypassIcon) {
-                bypassIconElement.textContent = bypassIcon;
-                bypassIndicator.className = bypassClass;
+                if (bypassIconElement) {
+                    bypassIconElement.textContent = bypassIcon;
+                }
+                if (bypassIndicator) {
+                    bypassIndicator.className = bypassClass;
+                }
                 previousValues['inverter-bypass-icon'] = bypassIcon;
             }
 
@@ -3515,8 +3566,12 @@
                 inverterTempClass = 'inverter-temp-indicator';
             }
             if (previousValues['inverter-temp-icon'] !== inverterTempIcon || previousValues['inverter-temp-class'] !== inverterTempClass) {
-                inverterTempIconElement.textContent = inverterTempIcon;
-                inverterTempIndicator.className = inverterTempClass;
+                if (inverterTempIconElement) {
+                    inverterTempIconElement.textContent = inverterTempIcon;
+                }
+                if (inverterTempIndicator) {
+                    inverterTempIndicator.className = inverterTempClass;
+                }
                 previousValues['inverter-temp-icon'] = inverterTempIcon;
                 previousValues['inverter-temp-class'] = inverterTempClass;
             }
@@ -3708,24 +3763,22 @@
                 updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
 
                 // === BOILER DETAILS (as part of house) ===
-                try {
-                    const boilerPower = await getSensor(getSensorId('boiler_power'));
-                    const boilerMode = await getSensorString(getSensorId('boiler_mode'));
-                    const boilerTemp = await getSensor(getSensorId('boiler_temperature'));
-                    const boilerStatus = await getSensorString(getSensorId('boiler_status'));
+                const boilerPower = await getSensorSafe(getSensorId('boiler_power'));
+                const boilerMode = await getSensorStringSafe(getSensorId('boiler_mode'));
+                const boilerTemp = await getSensorSafe(getSensorId('boiler_temperature'));
+                const boilerStatus = await getSensorStringSafe(getSensorId('boiler_status'));
 
+                if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
                     updateElementIfChanged('house-boiler-power', Math.round(boilerPower.value || 0) + ' W');
                     updateElementIfChanged('house-boiler-mode', boilerMode.value || '--');
                     updateElementIfChanged('house-boiler-temp', Math.round(boilerTemp.value || 0) + ' °C');
                     updateElementIfChanged('house-boiler-status', boilerStatus.value || '--');
-                } catch (e) {
-                    console.log('Boiler sensors not available');
                 }
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
-                const inverterGridLimit = await getSensor(getSensorId('invertor_prms_to_grid_limit'));
+                const inverterGridLimit = await getSensorSafe(getSensorId('invertor_prms_to_grid_limit'));
                 const notificationsUnread = await getSensor(getSensorId('notification_count_unread'));
                 const notificationsError = await getSensor(getSensorId('notification_count_error'));
 
