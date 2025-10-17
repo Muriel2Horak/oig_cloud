@@ -381,6 +381,94 @@
             filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
         }
 
+        /* Inverter corner indicators */
+        .inverter-bypass-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-bypass-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .bypass-ok {
+            filter: drop-shadow(0 0 3px rgba(76, 175, 80, 0.8));
+        }
+
+        .bypass-warning {
+            animation: pulse-warning 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 5px rgba(244, 67, 54, 1));
+        }
+
+        .inverter-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .inverter-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-temp-icon {
+            font-size: 14px;
+        }
+
+        /* Warning border animation for inverter */
+        @keyframes warning-border {
+            0%, 100% {
+                border-color: rgba(244, 67, 54, 0.8);
+                box-shadow: 0 0 10px rgba(244, 67, 54, 0.4);
+            }
+            50% {
+                border-color: rgba(244, 67, 54, 1);
+                box-shadow: 0 0 20px rgba(244, 67, 54, 0.8);
+            }
+        }
+
+        .inverter.warning-active {
+            border: 3px solid rgba(244, 67, 54, 0.8);
+            animation: warning-border 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%, 100% {
+                transform: scale(1);
+                filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+            }
+            50% {
+                transform: scale(1.15);
+                filter: drop-shadow(0 0 8px rgba(244, 67, 54, 1));
+            }
+        }
+
+        /* Notification styles */
+        .notification-error {
+            color: #f44336 !important;
+            font-weight: 700 !important;
+        }
+
+        .notification-ok {
+            color: #4caf50 !important;
+        }
+
         /* Solar icon animations */
         .solar-icon-dynamic {
             font-size: 32px;
@@ -1873,22 +1961,18 @@
             </div>
 
             <!-- Inverter Center -->
-            <div class="node inverter">
+            <div class="node inverter" id="inverter-box">
                 <div class="inverter-bypass-indicator entity-value" id="inverter-bypass-indicator"
                      data-entity="bypass_status"
                      data-tooltip="Bypass"
                      onclick="openEntityDialog(getSensorId('bypass_status'))">🌉</div>
                 <div class="inverter-temp-indicator entity-value" id="inverter-temp-indicator"
-                     data-entity="extended_invertor_temperature"
+                     data-entity="box_temp"
                      data-tooltip="Teplota střídače"
-                     onclick="openEntityDialog(getSensorId('extended_invertor_temperature'))">
+                     onclick="openEntityDialog(getSensorId('box_temp'))">
                     <span class="inverter-temp-icon" id="inverter-temp-icon">🌡️</span>
                     <span id="inverter-temp-value">-- °C</span>
                 </div>
-                <div class="inverter-distribution-crisis entity-value" id="inverter-distribution-crisis"
-                     data-entity="box_prms_crct"
-                     data-tooltip="Krizové řízení distribuce"
-                     onclick="openEntityDialog(getSensorId('box_prms_crct'))">⚠️</div>
                 <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
                 <div class="node-value entity-value" id="inverter-mode"
@@ -1897,15 +1981,6 @@
                      onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</div>
                 <div class="node-details">
                     <div class="detail-group">
-                        <div class="detail-subheader">⚙️ Režim boxu</div>
-                        <div class="detail-row">
-                            <span class="detail-value entity-value" id="inverter-mode-detail"
-                                  data-entity="box_prms_mode"
-                                  data-tooltip="Režim střídače"
-                                  onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</span>
-                        </div>
-                    </div>
-                    <div class="detail-group">
                         <div class="detail-subheader">📤 Přetoky do sítě</div>
                         <div class="detail-row">
                             <span class="detail-icon" id="grid-export-icon">🔴</span>
@@ -1913,13 +1988,11 @@
                                   data-entity="invertor_prms_to_grid"
                                   data-tooltip="Režim dodávky do sítě"
                                   onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
-                        </div>
-                        <div class="detail-row">
                             <span class="detail-label">Limit:</span>
                             <span class="detail-value entity-value" id="inverter-export-limit"
-                                  data-entity="invertor_prms_to_grid_limit"
+                                  data-entity="invertor_prm1_p_max_feed_grid"
                                   data-tooltip="Limit přetoků"
-                                  onclick="openEntityDialog(getSensorId('invertor_prms_to_grid_limit'))">-- W</span>
+                                  onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- W</span>
                         </div>
                     </div>
                     <div class="detail-group">
