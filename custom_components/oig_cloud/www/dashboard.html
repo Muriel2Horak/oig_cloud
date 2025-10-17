@@ -2038,11 +2038,13 @@
                 battery: document.querySelector('.battery'),
                 inverter: document.querySelector('.inverter'),
                 grid: document.querySelector('.grid-node'),
-                house: document.querySelector('.house')
+                house: document.querySelector('.house'),
+                boiler: document.querySelector('.boiler')
             };
 
             // Get center points
             function getCenter(el) {
+                if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
                 return {
@@ -2053,7 +2055,8 @@
 
             const centers = {};
             for (let key in nodes) {
-                centers[key] = getCenter(nodes[key]);
+                const center = getCenter(nodes[key]);
+                if (center) centers[key] = center;
             }
 
             // Draw lines
@@ -2064,7 +2067,14 @@
                 { from: 'inverter', to: 'house', color: '#f06292' }
             ];
 
+            // Add boiler connection if boiler exists
+            if (centers.boiler) {
+                connections.push({ from: 'house', to: 'boiler', color: '#ff9800' });
+            }
+
             connections.forEach(conn => {
+                if (!centers[conn.from] || !centers[conn.to]) return; // Skip if node missing
+                
                 const from = centers[conn.from];
                 const to = centers[conn.to];
 
@@ -2105,17 +2115,21 @@
         }
 
         // Animate particles
-        function animateFlow(solarPower, batteryPower, gridPower) {
+        function animateFlow(data) {
+            const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
+            
             const canvas = document.querySelector('.flow-canvas');
             const nodes = {
                 solar: document.querySelector('.solar'),
                 battery: document.querySelector('.battery'),
                 inverter: document.querySelector('.inverter'),
                 grid: document.querySelector('.grid-node'),
-                house: document.querySelector('.house')
+                house: document.querySelector('.house'),
+                boiler: document.querySelector('.boiler')
             };
 
             function getCenter(el) {
+                if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
                 return {
@@ -2129,31 +2143,68 @@
                 battery: getCenter(nodes.battery),
                 inverter: getCenter(nodes.inverter),
                 grid: getCenter(nodes.grid),
-                house: getCenter(nodes.house)
+                house: getCenter(nodes.house),
+                boiler: getCenter(nodes.boiler)
             };
 
-            // Solar to inverter
-            if (solarPower > 50) {
-                createParticle(centers.solar, centers.inverter, '#ffd54f', 2000);
+            // 1. SOLAR → INVERTER
+            // Speed based on solarPerc (0-100%)
+            // 100% = fast (1000ms), 0% = no animation
+            if (solarPerc > 0 && solarPower > 10) {
+                const speedMs = 3000 - (solarPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+                createParticle(centers.solar, centers.inverter, '#ffd54f', speedMs);
             }
 
-            // Battery flow
-            if (batteryPower > 50) {
-                createParticle(centers.battery, centers.inverter, '#4caf50', 2000);
-            } else if (batteryPower < -50) {
-                createParticle(centers.inverter, centers.battery, '#ff9800', 2000);
+            // 2. BATTERY ↔ INVERTER
+            // Max ±9000W
+            // Positive = charging (Inverter → Battery)
+            // Negative = discharging (Battery → Inverter)
+            const batteryAbsPower = Math.abs(batteryPower);
+            if (batteryAbsPower > 10) {
+                const batteryPerc = Math.min(batteryAbsPower / 9000, 1) * 100; // 0-100%
+                const speedMs = 3000 - (batteryPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+                
+                if (batteryPower > 0) {
+                    // Charging: Inverter → Battery
+                    createParticle(centers.inverter, centers.battery, '#4caf50', speedMs);
+                } else {
+                    // Discharging: Battery → Inverter
+                    createParticle(centers.battery, centers.inverter, '#ff9800', speedMs);
+                }
             }
 
-            // Grid flow
-            if (gridPower > 50) {
-                createParticle(centers.grid, centers.inverter, '#f44336', 2000);
-            } else if (gridPower < -50) {
-                createParticle(centers.inverter, centers.grid, '#4caf50', 2000);
+            // 3. GRID ↔ INVERTER
+            // Max ±17000W
+            // Positive = from grid (Grid → Inverter), RED
+            // Negative = to grid (Inverter → Grid), GREEN
+            const gridAbsPower = Math.abs(gridPower);
+            if (gridAbsPower > 10) {
+                const gridPerc = Math.min(gridAbsPower / 17000, 1) * 100; // 0-100%
+                const speedMs = 3000 - (gridPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+                
+                if (gridPower > 0) {
+                    // From grid: Grid → Inverter (RED)
+                    createParticle(centers.grid, centers.inverter, '#f44336', speedMs);
+                } else {
+                    // To grid: Inverter → Grid (GREEN)
+                    createParticle(centers.inverter, centers.grid, '#4caf50', speedMs);
+                }
             }
 
-            // House consumption
-            if (solarPower > 50 || batteryPower > 50 || gridPower > 50) {
-                createParticle(centers.inverter, centers.house, '#f06292', 2000);
+            // 4. INVERTER → HOUSE
+            // Max 17000W, always one direction
+            if (housePower > 10) {
+                const housePerc = Math.min(housePower / 17000, 1) * 100; // 0-100%
+                const speedMs = 3000 - (housePerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+                createParticle(centers.inverter, centers.house, '#f06292', speedMs);
+            }
+
+            // 5. HOUSE → BOILER (if boiler exists)
+            // Max: boilerMaxPower, always one direction
+            if (centers.boiler && boilerPower > 10) {
+                const boilerPerc = Math.min(boilerPower / boilerMaxPower, 1) * 100; // 0-100%
+                const speedMs = 3000 - (boilerPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+                createParticle(centers.house, centers.boiler, '#ff9800', speedMs);
             }
         }
 
@@ -2328,8 +2379,27 @@
                 }
             }
 
-            // Animate particles (always run - independent of data changes)
-            animateFlow(solarPower, batteryPower, gridPower);
+            // ===== ANIMATION DATA LOADING =====
+            // Load sensors needed for proper animation logic
+            const solarPercData = await getSensor(getSensorId('dc_in_fv_proc'));
+            const solarPerc = solarPercData.value || 0; // 0-100%
+
+            const boilerPowerData = await getSensor(getSensorId('boiler_power'));
+            const boilerPower = boilerPowerData.value || 0;
+
+            const boilerInstallPowerData = await getSensor(getSensorId('boiler_install_power'));
+            const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
+
+            // Animate particles (always run - with proper flow logic)
+            animateFlow({
+                solarPower,
+                solarPerc,
+                batteryPower,
+                gridPower,
+                housePower,
+                boilerPower,
+                boilerMaxPower
+            });
 
             // Load control panel status (only on first load or explicit refresh)
             if (!previousValues['control-status-loaded']) {
