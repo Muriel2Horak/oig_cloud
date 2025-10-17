@@ -1982,7 +1982,7 @@
                 <div class="node-details">
                     <div class="detail-group">
                         <div class="detail-subheader">🌊 Přetoky do sítě</div>
-                        <div class="detail-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center;">
+                        <div class="detail-row" style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 15px; align-items: center;">
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span class="detail-icon" id="grid-export-icon">💧</span>
                                 <span class="detail-value entity-value" id="inverter-grid-export-mode"
@@ -1991,11 +1991,11 @@
                                       onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 5px;">
-                                <span class="detail-label">Limit:</span>
+                                <span class="detail-label">LIMIT:</span>
                                 <span class="detail-value entity-value" id="inverter-export-limit"
                                       data-entity="invertor_prm1_p_max_feed_grid"
                                       data-tooltip="Limit přetoků"
-                                      onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- W</span>
+                                      onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- kW</span>
                             </div>
                         </div>
                     </div>
@@ -3816,8 +3816,9 @@
                 updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
                 document.getElementById('grid-export-icon').textContent = gridExportIcon;
 
-                // Grid export limit
-                updateElementIfChanged('inverter-export-limit', Math.round(inverterGridLimit.value || 0) + ' W');
+                // Grid export limit (convert W to kW)
+                const limitKw = (inverterGridLimit.value || 0) / 1000;
+                updateElementIfChanged('inverter-export-limit', limitKw.toFixed(1) + ' kW');
 
                 // Notifications with badges (zobrazení jen čísel)
                 const unreadCount = notificationsUnread.value || 0;
