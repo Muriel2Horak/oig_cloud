@@ -3418,15 +3418,58 @@
         // Set grid delivery - main entry point
         async function setGridDelivery(mode) {
             try {
-                // Get current limit for default value
+                // Get current mode and limit
+                const currentModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
+                const currentMode = currentModeData.value || '';
                 const currentLimitData = await getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid'));
                 const currentLimit = currentLimitData.value || 5000;
+
+                // Check if already active (except for Limited - can change limit)
+                const isAlreadyActive = 
+                    (mode === 'Vypnuto / Off' && currentMode.includes('Off')) ||
+                    (mode === 'Zapnuto / On' && currentMode.includes('On'));
+
+                if (isAlreadyActive) {
+                    // Tiše ignorovat - režim už je aktivní
+                    console.log('[Grid] Mode already active:', mode);
+                    return;
+                }
+
+                // Check if Limited is already active
+                const isLimitedActive = currentMode.includes('Limited') || currentMode.includes('omezením');
+                const isChangingToLimited = mode === 'S omezením / Limited';
 
                 // Show dialog
                 const result = await showGridDeliveryDialog(mode, currentLimit);
                 if (!result.confirmed) return;
 
-                const needsLimit = mode === 'S omezením / Limited' && result.limit;
+                // Special case: Limited is already active, just change limit
+                if (isLimitedActive && isChangingToLimited && result.limit) {
+                    console.log('[Grid] Limited already active, just changing limit to:', result.limit);
+                    
+                    const success = await callService('oig_cloud', 'set_grid_delivery', {
+                        limit: result.limit,
+                        acknowledgement: true
+                    });
+
+                    if (!success) {
+                        showNotification('Chyba', 'Nepodařilo se změnit limit přetoků', 'error');
+                        return;
+                    }
+
+                    // Trigger immediate check
+                    await monitorShieldActivity();
+                    
+                    setTimeout(() => {
+                        updateShieldUI();
+                        updateButtonStates();
+                    }, 500);
+                    
+                    return;
+                }
+
+                // Normal case: changing to Limited from Off/On (two steps)
+                const needsLimit = isChangingToLimited && result.limit;
 
                 if (needsLimit) {
                     // Two-step process: 1) Set limit, 2) Set mode
