@@ -349,6 +349,30 @@
             background: linear-gradient(90deg, #ff9800, #ffb74d);
         }
 
+        /* Warning-capable values (Bypass, Distribution) */
+        .warning-capable {
+            transition: all 0.3s ease;
+        }
+
+        .warning-capable.warning-active {
+            color: #ff3333 !important;
+            font-weight: 700 !important;
+            font-size: 11px !important;
+            text-shadow: 0 0 8px rgba(255, 51, 51, 0.8);
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%, 100% { 
+                opacity: 1; 
+                text-shadow: 0 0 8px rgba(255, 51, 51, 0.8);
+            }
+            50% { 
+                opacity: 0.85; 
+                text-shadow: 0 0 12px rgba(255, 51, 51, 1);
+            }
+        }
+
         /* Info Panel */
         .info-panel {
             position: absolute;
@@ -1247,8 +1271,12 @@
                         <span class="detail-value" id="inverter-mode">--</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Bypass:</span>
-                        <span class="detail-value" id="inverter-bypass">--</span>
+                        <span class="detail-label">Přemostění:</span>
+                        <span class="detail-value warning-capable" id="inverter-bypass">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Distribuce:</span>
+                        <span class="detail-value warning-capable" id="inverter-distribution">--</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Přetoky:</span>
@@ -1257,14 +1285,6 @@
                     <div class="detail-row">
                         <span class="detail-label">Povoleno:</span>
                         <span class="detail-value" id="inverter-allowed-power">-- kW</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Distribuce:</span>
-                        <span class="detail-value" id="inverter-distribution">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Aktualizace:</span>
-                        <span class="detail-value" id="inverter-update">--</span>
                     </div>
                 </div>
             </div>
@@ -2663,7 +2683,27 @@
                 updateElementIfChanged('inverter-grid-mode', inverterGridMode.value || '--');
                 updateElementIfChanged('inverter-allowed-power', ((allowedPower.value || 0) / 1000).toFixed(1) + ' kW');
                 updateElementIfChanged('inverter-distribution', distributionText);
-                updateElementIfChanged('inverter-update', inverterUpdate.value || '--');
+
+                // Add warning styling for bypass and distribution when ON/active
+                const bypassEl = document.getElementById('inverter-bypass');
+                const distributionEl = document.getElementById('inverter-distribution');
+                
+                if (bypassEl) {
+                    if (bypassStatus.value === 'On') {
+                        bypassEl.classList.add('warning-active');
+                    } else {
+                        bypassEl.classList.remove('warning-active');
+                    }
+                }
+                
+                if (distributionEl) {
+                    // Distribution is active when NOT in Standby mode
+                    if (distributionMode.value && distributionMode.value !== 'Standby' && distributionMode.value !== '--') {
+                        distributionEl.classList.add('warning-active');
+                    } else {
+                        distributionEl.classList.remove('warning-active');
+                    }
+                }
 
                 // === BOILER DETAILS (if available) ===
                 if (!document.getElementById('boiler-node').classList.contains('hidden')) {
