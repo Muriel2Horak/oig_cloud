@@ -2392,7 +2392,7 @@
 
                 // Get current states (string values)
                 const boxMode = await getSensorString(getSensorId('box_prms_mode'));
-                const boilerMode = await getSensorString(getSensorId('boiler_manual_mode'));
+                const boilerMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
 
                 // Parse shield activity
                 const pending = parseShieldActivity(shieldActivity.value);
@@ -3602,10 +3602,10 @@
             // ===== ANIMATION DATA LOADING =====
             // Load sensors needed for proper animation logic (solarPerc already loaded above)
 
-            const boilerPowerData = await getSensor(getSensorId('boiler_power'));
+            const boilerPowerData = await getSensorSafe(getSensorId('boiler_power'));
             const boilerPower = boilerPowerData.value || 0;
 
-            const boilerInstallPowerData = await getSensor(getSensorId('boiler_install_power'));
+            const boilerInstallPowerData = await getSensorSafe(getSensorId('boiler_install_power'));
             const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
 
             // Animate particles (always run - with proper flow logic)
@@ -3841,19 +3841,17 @@
 
                 // === BOILER DETAILS (if available) ===
                 if (!document.getElementById('boiler-node').classList.contains('hidden')) {
-                    try {
-                        const boilerPower = await getSensor(getSensorId('boiler_power'));
-                        const boilerMode = await getSensorString(getSensorId('boiler_mode'));
-                        const boilerTemp = await getSensor(getSensorId('boiler_temperature'));
-                        const boilerStatus = await getSensorString(getSensorId('boiler_status'));
+                    const boilerPower = await getSensorSafe(getSensorId('boiler_power'));
+                    const boilerMode = await getSensorStringSafe(getSensorId('boiler_mode'));
+                    const boilerTemp = await getSensorSafe(getSensorId('boiler_temperature'));
+                    const boilerStatus = await getSensorStringSafe(getSensorId('boiler_status'));
 
+                    if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
                         updateElementIfChanged('boiler-power', Math.round(boilerPower.value || 0) + ' W');
                         updateElementIfChanged('boiler-mode', boilerMode.value || '--');
                         updateElementIfChanged('boiler-mode-detail', boilerMode.value || '--');
                         updateElementIfChanged('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
                         updateElementIfChanged('boiler-status', boilerStatus.value || '--');
-                    } catch (e) {
-                        console.log('[Boiler] Sensors not available:', e);
                     }
                 }
 
@@ -3865,10 +3863,10 @@
         // Check if boiler is in use and show/hide box
         async function checkBoilerAvailability() {
             try {
-                const boilerInUse = await getSensor(getSensorId('boiler_is_use'));
+                const boilerInUse = await getSensorSafe(getSensorId('boiler_is_use'));
                 const boilerNode = document.getElementById('boiler-node');
 
-                if (boilerInUse && boilerInUse.value === true) {
+                if (boilerInUse && boilerInUse.exists && boilerInUse.value === true) {
                     boilerNode.classList.remove('hidden');
                     console.log('[Boiler] Boiler detected and enabled');
                 } else {
