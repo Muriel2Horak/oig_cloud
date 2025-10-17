@@ -425,7 +425,7 @@
         .mode-change-indicator {
             position: absolute;
             top: 50px;
-            right: -20px;
+            right: -80px;
             background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
             border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
@@ -439,6 +439,7 @@
             box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 10;
+            white-space: nowrap;
         }
 
         .mode-change-indicator .spinner {
@@ -3153,7 +3154,7 @@
                 if (success) {
                     // Immediately check shield activity (don't wait 10s)
                     await monitorShieldActivity();
-                    
+
                     // Update shield UI immediately
                     setTimeout(() => {
                         updateShieldUI();
