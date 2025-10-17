@@ -213,6 +213,32 @@
             opacity: 0.6;
         }
 
+        /* Phase values in main box */
+        .node-phases {
+            margin-top: 4px;
+            font-size: 9px;
+            opacity: 0.8;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .phase-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .phase-label {
+            font-weight: 600;
+            min-width: 20px;
+        }
+
+        .phase-value {
+            font-size: 9px;
+            opacity: 0.9;
+        }
+
         /* Node Details - Čitelné písmo */
         .node-details {
             margin-top: 6px;
@@ -1476,6 +1502,23 @@
                 <div class="node-label">Síť</div>
                 <div class="node-value" id="grid-power">-- W</div>
                 <div class="node-subvalue" id="grid-today">Dnes: -- kWh</div>
+                <div class="node-phases">
+                    <div class="phase-row">
+                        <span class="phase-label">L1:</span>
+                        <span class="phase-value" id="grid-l1-volt-main">--V</span>
+                        <span class="phase-value" id="grid-l1-power-main">--W</span>
+                    </div>
+                    <div class="phase-row">
+                        <span class="phase-label">L2:</span>
+                        <span class="phase-value" id="grid-l2-volt-main">--V</span>
+                        <span class="phase-value" id="grid-l2-power-main">--W</span>
+                    </div>
+                    <div class="phase-row">
+                        <span class="phase-label">L3:</span>
+                        <span class="phase-value" id="grid-l3-volt-main">--V</span>
+                        <span class="phase-value" id="grid-l3-power-main">--W</span>
+                    </div>
+                </div>
                 <div class="node-status" id="grid-status">--</div>
                 <div class="node-details">
                     <div class="detail-row">
@@ -1564,6 +1607,20 @@
                 <div class="node-label">Spotřeba</div>
                 <div class="node-value" id="house-power">-- W</div>
                 <div class="node-subvalue" id="house-today">Dnes: -- kWh</div>
+                <div class="node-phases">
+                    <div class="phase-row">
+                        <span class="phase-label">L1:</span>
+                        <span class="phase-value" id="house-l1-main">--W</span>
+                    </div>
+                    <div class="phase-row">
+                        <span class="phase-label">L2:</span>
+                        <span class="phase-value" id="house-l2-main">--W</span>
+                    </div>
+                    <div class="phase-row">
+                        <span class="phase-label">L3:</span>
+                        <span class="phase-value" id="house-l3-main">--W</span>
+                    </div>
+                </div>
                 <div class="node-details">
                     <div class="detail-group">
                         <div class="detail-subheader">⚡ Zátěž fází</div>
@@ -2893,6 +2950,14 @@
                 updateElementIfChanged('grid-l2-power', Math.round(gridL2P.value || 0) + 'W');
                 updateElementIfChanged('grid-l3-power', Math.round(gridL3P.value || 0) + 'W');
 
+                // Update main box phases (new elements)
+                updateElementIfChanged('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
+                updateElementIfChanged('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
+                updateElementIfChanged('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
+                updateElementIfChanged('grid-l1-power-main', Math.round(gridL1P.value || 0) + 'W');
+                updateElementIfChanged('grid-l2-power-main', Math.round(gridL2P.value || 0) + 'W');
+                updateElementIfChanged('grid-l3-power-main', Math.round(gridL3P.value || 0) + 'W');
+
                 // === HOUSE DETAILS ===
                 const houseL1 = await getSensor(getSensorId('ac_out_aco_pr'));
                 const houseL2 = await getSensor(getSensorId('ac_out_aco_ps'));
@@ -2902,6 +2967,11 @@
                 updateElementIfChanged('house-l1', Math.round(houseL1.value || 0) + ' W');
                 updateElementIfChanged('house-l2', Math.round(houseL2.value || 0) + ' W');
                 updateElementIfChanged('house-l3', Math.round(houseL3.value || 0) + ' W');
+
+                // Update main box phases (new elements)
+                updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
+                updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
+                updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
