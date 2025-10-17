@@ -395,22 +395,39 @@
             animation: pulse 3s ease-in-out infinite;
         }
 
-        /* Battery - Kompaktnější layout */
+        /* Battery - Kompaktnější layout - ŠIROKÝ */
         .battery {
-            min-width: 180px !important;
-            max-width: 220px !important;
+            min-width: 220px !important;
+            max-width: 280px !important;
         }
 
         .battery .node-details {
             width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* 2 sloupce */
+            gap: 4px 8px;
+        }
+
+        .battery .detail-row {
+            grid-column: span 1;
+            display: flex;
+            align-items: center;
+            gap: 3px;
         }
 
         .battery .detail-group {
+            grid-column: span 2; /* Celá šířka */
             margin-top: 4px;
             padding-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .battery .detail-group .detail-row {
+            grid-column: span 1;
         }
 
         .battery .detail-subheader {
+            grid-column: span 2;
             margin-bottom: 2px;
             font-size: 9px;
         }
@@ -1369,10 +1386,12 @@
                 <div class="node-details">
                     <div class="detail-row">
                         <span class="detail-icon">⚡</span>
-                        <span class="detail-value entity-value" id="battery-voltage" 
-                              data-entity="batt_bat_v" 
+                        <span class="detail-value entity-value" id="battery-voltage"
+                              data-entity="batt_bat_v"
                               data-tooltip="Napětí baterie"
                               onclick="openEntityDialog(getSensorId('batt_bat_v'))">-- V</span>
+                    </div>
+                    <div class="detail-row">
                         <span class="detail-icon">🔋</span>
                         <span class="detail-value entity-value" id="battery-current"
                               data-entity="extended_battery_current"
@@ -1390,6 +1409,8 @@
                         <span class="detail-icon">⏱️</span>
                         <span class="detail-value entity-value" id="battery-time"
                               data-tooltip="Čas do naplnění/vyprázdnění">--</span>
+                    </div>
+                    <div class="detail-row">
                         <span class="detail-icon">📊</span>
                         <span class="detail-value entity-value" id="battery-remain"
                               data-entity="batt_batcap_remain"
@@ -1404,6 +1425,8 @@
                                   data-entity="computed_batt_charge_energy_today"
                                   data-tooltip="Nabito dnes"
                                   onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
                             <span class="detail-icon">⬇️</span>
                             <span class="detail-value entity-value" id="battery-discharge-total"
                                   data-entity="computed_batt_discharge_energy_today"
@@ -2839,31 +2862,17 @@
                 updateElementIfChanged('battery-temp', (battTemp.value || 0).toFixed(1) + ' °C');
                 updateElementIfChanged('battery-remain', formatEnergy(battRemain.value || 0));
 
-                // Time to empty/full based on battery power direction - update only if state changed
-                const timeLabel = document.getElementById('battery-time-label');
+                // Time to empty/full based on battery power direction
                 const timeValue = document.getElementById('battery-time');
-                let newTimeState, newTimeLabel, newTimeValue;
+                let newTimeValue;
                 if (battPower.value < -10) {
-                    newTimeState = 'emptying';
-                    newTimeLabel = 'Do vybití:';
-                    newTimeValue = timeToEmpty.value || '--';
+                    newTimeValue = 'Do vybití: ' + (timeToEmpty.value || '--');
                 } else if (battPower.value > 10) {
-                    newTimeState = 'filling';
-                    newTimeLabel = 'Do nabití:';
-                    newTimeValue = timeToFull.value || '--';
+                    newTimeValue = 'Do nabití: ' + (timeToFull.value || '--');
                 } else {
-                    newTimeState = 'idle';
-                    newTimeLabel = '';
-                    newTimeValue = '';
+                    newTimeValue = '--';
                 }
-                if (previousValues['battery-time-state'] !== newTimeState) {
-                    timeLabel.textContent = newTimeLabel;
-                    timeValue.textContent = newTimeValue;
-                    previousValues['battery-time-state'] = newTimeState;
-                } else if (newTimeState !== 'idle') {
-                    // If state same but not idle, update value (time changes)
-                    updateElementIfChanged('battery-time', newTimeValue);
-                }
+                updateElementIfChanged('battery-time', newTimeValue);
 
                 // Battery totals today - use formatEnergy (Wh from sensors)
                 updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
