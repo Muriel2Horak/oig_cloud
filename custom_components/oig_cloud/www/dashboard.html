@@ -519,6 +519,37 @@
             animation: spin 0.8s linear infinite;
         }
 
+        .boiler-change-indicator {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.95), rgba(245, 124, 0, 0.95));
+            border: 1px solid rgba(255, 152, 0, 0.8);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: #1a1a2e;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px rgba(255, 152, 0, 0.4);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .boiler-change-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid rgba(26, 26, 46, 0.3);
+            border-top-color: #1a1a2e;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
         .temp-hot {
             animation: pulse-hot 1s ease-in-out infinite;
             filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
@@ -2527,6 +2558,11 @@
 
             <!-- Boiler (hidden if not in use) -->
             <div class="node boiler hidden" id="boiler-node">
+                <!-- Boiler mode change indicator -->
+                <div class="boiler-change-indicator" id="boiler-change-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="boiler-change-text">🌡️ --</span>
+                </div>
                 <div class="node-icon">🌡️</div>
                 <div class="node-label">Bojler</div>
                 <div class="node-value" id="boiler-power">-- W</div>
@@ -3114,7 +3150,7 @@
 
                 // Build table
                 let html = '<table class="shield-queue-table">';
-                html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Čas</th></tr></thead>';
+                html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Vytvořeno</th><th>Trvání</th></tr></thead>';
                 html += '<tbody>';
 
                 allRequests.forEach((req, index) => {
@@ -3147,32 +3183,39 @@
                         }).join('<br>');
                     }
 
-                    // Format time with date if older than today
-                    let timeText = '';
+                    // Format creation time and duration
+                    let createdText = '--';
+                    let durationText = '--';
+                    
                     if (req.created_at) {
                         const createdDate = new Date(req.created_at);
                         const now = new Date();
                         const diffSec = Math.floor((now - createdDate) / 1000);
 
-                        // Check if same day
-                        const isToday = createdDate.toDateString() === now.toDateString();
-
-                        if (diffSec < 60) {
-                            timeText = `${diffSec}s`;
-                        } else if (diffSec < 3600) {
-                            const diffMin = Math.floor(diffSec / 60);
-                            timeText = `${diffMin}m ${diffSec % 60}s`;
-                        } else {
-                            const diffHours = Math.floor(diffSec / 3600);
-                            const diffMin = Math.floor((diffSec % 3600) / 60);
-                            timeText = `${diffHours}h ${diffMin}m`;
-                        }
+                        // Format creation time (HH:MM)
+                        const hours = String(createdDate.getHours()).padStart(2, '0');
+                        const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+                        createdText = `${hours}:${minutes}`;
 
                         // Add date if not today
+                        const isToday = createdDate.toDateString() === now.toDateString();
                         if (!isToday) {
                             const day = createdDate.getDate();
                             const month = createdDate.getMonth() + 1;
-                            timeText = `${day}.${month}.<br>${timeText}`;
+                            createdText = `${day}.${month}. ${createdText}`;
+                        }
+
+                        // Format duration (how long in queue)
+                        if (diffSec < 60) {
+                            durationText = `${diffSec}s`;
+                        } else if (diffSec < 3600) {
+                            const diffMin = Math.floor(diffSec / 60);
+                            const diffSecRem = diffSec % 60;
+                            durationText = `${diffMin}m ${diffSecRem}s`;
+                        } else {
+                            const diffHours = Math.floor(diffSec / 3600);
+                            const diffMin = Math.floor((diffSec % 3600) / 60);
+                            durationText = `${diffHours}h ${diffMin}m`;
                         }
                     }
 
@@ -3181,7 +3224,8 @@
                             <td class="${statusClass}">${statusIcon} ${statusText}</td>
                             <td>${serviceName}</td>
                             <td style="font-size: 11px;">${changes}</td>
-                            <td class="queue-time">${timeText}</td>
+                            <td class="queue-time">${createdText}</td>
+                            <td class="queue-time" style="font-weight: 600;">${durationText}</td>
                         </tr>
                     `;
                 });
@@ -3308,8 +3352,9 @@
 
                 // === CHECK FOR GRID DELIVERY CHANGES ===
                 // Check for grid changes from shield queue OR from sensor state "Probíhá změna"
+                // OPRAVA: Zahrnout jak set_grid_delivery tak set_grid_delivery_limit
                 let hasGridChange = [...runningRequests, ...queuedRequests].some(req =>
-                    req && req.service && req.service.includes('set_grid_delivery')
+                    req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
                 );
 
                 // Also check sensor state
@@ -3326,10 +3371,17 @@
                 const gridLimitIndicator = document.getElementById('grid-limit-indicator');
                 const gridLimitText = document.getElementById('grid-limit-text');
 
+                // Get grid delivery buttons
+                const gridButtons = [
+                    document.getElementById('btn-grid-off'),
+                    document.getElementById('btn-grid-on'),
+                    document.getElementById('btn-grid-limited')
+                ].filter(b => b);
+
                 if (hasGridChange) {
-                    // Find all grid delivery requests
+                    // Find all grid delivery requests (including limit changes)
                     const gridRequests = [...runningRequests, ...queuedRequests].filter(req =>
-                        req && req.service && req.service.includes('set_grid_delivery')
+                        req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
                     );
 
                     let hasModeRequest = false;
@@ -3363,6 +3415,37 @@
                         }
                     });
 
+                    // Determine target button based on mode
+                    let targetButtonId = null;
+                    if (targetMode) {
+                        // targetMode může být: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
+                        if (targetMode.includes('Off') || targetMode.includes('Vypnuto')) {
+                            targetButtonId = 'btn-grid-off';
+                        } else if (targetMode.includes('On') || targetMode.includes('Zapnuto')) {
+                            targetButtonId = 'btn-grid-on';
+                        } else if (targetMode.includes('Limited') || targetMode.includes('omezení') || targetMode.includes('Omezeno')) {
+                            targetButtonId = 'btn-grid-limited';
+                        }
+                    } else if (hasLimitRequest && !hasModeRequest) {
+                        // If only changing limit (not mode), target is Limited button
+                        targetButtonId = 'btn-grid-limited';
+                    }
+
+                    // Disable all buttons with animation on target (same as box mode)
+                    gridButtons.forEach(btn => {
+                        btn.disabled = true;
+
+                        if (btn.id === targetButtonId) {
+                            // Blink only the target button
+                            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                            btn.style.opacity = '0.8';
+                        } else {
+                            // Other buttons just disabled, no animation
+                            btn.style.animation = '';
+                            btn.style.opacity = '0.5';
+                        }
+                    });
+
                     // Show mode badge
                     if (hasModeRequest && gridChangeIndicator && gridChangeText) {
                         const modeIcon = targetMode?.includes('Off') ? '🚫' :
@@ -3382,6 +3465,13 @@
                     }
 
                 } else {
+                    // Re-enable grid buttons
+                    gridButtons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.style.animation = '';
+                        btn.style.opacity = '';
+                    });
+
                     // Hide badges when no grid changes
                     if (gridChangeIndicator) {
                         gridChangeIndicator.style.display = 'none';
@@ -3389,6 +3479,88 @@
                     if (gridLimitIndicator) {
                         gridLimitIndicator.style.display = 'none';
                     }
+                }
+
+                // === CHECK FOR BOILER MODE CHANGES ===
+                const hasBoilerChange = [...runningRequests, ...queuedRequests].some(req =>
+                    req && req.service && req.service.includes('set_boiler_mode')
+                );
+
+                const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
+                const boilerChangeText = document.getElementById('boiler-change-text');
+                const boilerModeElement = document.getElementById('boiler-mode');
+
+                // Get boiler mode buttons
+                const boilerButtons = [
+                    document.getElementById('btn-boiler-cbb'),
+                    document.getElementById('btn-boiler-manual')
+                ].filter(b => b);
+
+                if (hasBoilerChange) {
+                    // Find boiler mode request
+                    const boilerRequest = [...runningRequests, ...queuedRequests].find(req =>
+                        req && req.service && req.service.includes('set_boiler_mode')
+                    );
+
+                    let targetMode = null;
+
+                    if (boilerRequest?.changes && Array.isArray(boilerRequest.changes)) {
+                        // Format: "mode: 'CBB' → 'Manual'"
+                        const changeStr = boilerRequest.changes[0];
+                        if (changeStr) {
+                            const match = changeStr.match(/→\s*'([^']+)'/);
+                            if (match) {
+                                targetMode = match[1];
+                            }
+                        }
+                    }
+
+                    // Visual feedback in flow diagram - blikající režim
+                    if (boilerModeElement && targetMode) {
+                        boilerModeElement.classList.add('mode-changing');
+                    }
+
+                    // Show badge
+                    if (boilerChangeIndicator && boilerChangeText) {
+                        const modeIcon = targetMode === 'CBB' ? '🤖' :
+                                        targetMode === 'Manual' ? '👤' : '🌡️';
+                        const modeName = targetMode === 'CBB' ? 'Inteligentní' :
+                                        targetMode === 'Manual' ? 'Manuální' : 'Změna...';
+                        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
+                        boilerChangeIndicator.style.display = 'flex';
+                    }
+
+                    // Disable buttons with animation on target
+                    const targetButtonId = targetMode ? `btn-boiler-${targetMode.toLowerCase()}` : null;
+                    boilerButtons.forEach(btn => {
+                        btn.disabled = true;
+
+                        if (btn.id === targetButtonId) {
+                            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                            btn.style.opacity = '0.8';
+                        } else {
+                            btn.style.animation = '';
+                            btn.style.opacity = '0.5';
+                        }
+                    });
+
+                } else {
+                    // Remove visual feedback
+                    if (boilerModeElement) {
+                        boilerModeElement.classList.remove('mode-changing');
+                    }
+
+                    // Hide badge when no boiler changes
+                    if (boilerChangeIndicator) {
+                        boilerChangeIndicator.style.display = 'none';
+                    }
+
+                    // Re-enable buttons
+                    boilerButtons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.style.animation = '';
+                        btn.style.opacity = '';
+                    });
                 }
 
             } catch (e) {
@@ -3671,8 +3843,7 @@
 
                 // Check if change is already in progress
                 if (currentMode === 'Probíhá změna') {
-                    console.log('[Grid] ⏸️ Change already in progress, skipping');
-                    showNotification('Info', 'Změna režimu dodávky do sítě již probíhá, počkejte na dokončení', 'warning');
+                    console.log('[Grid] ⏸️ Change already in progress, skipping silently');
                     return;
                 }
 
@@ -3683,10 +3854,8 @@
                     (mode === 'Zapnuto / On' && currentMode === 'Zapnuto');
 
                 if (isAlreadyActive) {
-                    // Režim už je aktivní - zobraz notifikaci a ukonči
-                    console.log('[Grid] ⏸️ Mode already active, skipping:', mode);
-                    const modeName = mode === 'Vypnuto / Off' ? 'Vypnuto' : 'Zapnuto';
-                    showNotification('Info', `Režim "${modeName}" je již aktivní`, 'info');
+                    // Režim už je aktivní - tiše ignorovat (bez notifikace)
+                    console.log('[Grid] ⏸️ Mode already active, skipping silently');
                     return;
                 }
 
@@ -3938,6 +4107,19 @@
         // Set boiler mode
         async function setBoilerMode(mode) {
             try {
+                // Get current mode
+                const currentModeData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
+                const currentModeRaw = currentModeData.value || '';
+                const currentMode = currentModeRaw === 'Manuální' ? 'Manual' : currentModeRaw;
+
+                console.log('[Boiler] setBoilerMode called:', { mode, currentMode, currentModeRaw });
+
+                // Check if already active - tiše ignorovat (bez notifikace)
+                if (currentMode === mode) {
+                    console.log('[Boiler] ⏸️ Mode already active, skipping silently');
+                    return;
+                }
+
                 // Check shield queue before adding task
                 const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
@@ -3952,7 +4134,15 @@
                     if (!proceed) return;
                 }
 
-                const confirmed = confirm(`Opravdu chcete změnit režim bojleru na "${mode}"?`);
+                const modeName = mode === 'CBB' ? 'Inteligentní' : 'Manuální';
+                const modeIcon = mode === 'CBB' ? '🤖' : '👤';
+
+                // Show acknowledgement dialog (same as box mode)
+                const confirmed = await showAcknowledgementDialog(
+                    'Změna režimu bojleru',
+                    `Chystáte se změnit režim bojleru na <strong>"${modeIcon} ${modeName}"</strong>.<br><br>` +
+                    `Tato změna ovlivní chování ohřevu vody a může trvat až 10 minut.`
+                );
                 if (!confirmed) return;
 
                 // Show pending state immediately
@@ -3969,12 +4159,16 @@
                 });
 
                 if (success) {
-                    showNotification('Režim bojleru', `Úkol přidán do fronty: "${mode}"`, 'success');
+                    // NO notification popup - user already confirmed via dialog
+                    
+                    // Trigger immediate check
+                    await monitorShieldActivity();
+
                     // Update shield UI immediately
                     setTimeout(() => {
                         updateShieldUI();
                         updateButtonStates();
-                    }, 1000);
+                    }, 500);
                 } else {
                     // Re-enable on error
                     if (btn) {

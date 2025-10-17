@@ -838,6 +838,8 @@ class ServiceShield:
                     )
 
                     if current_value != expected_value:
+                        # OPRAVA: Vrátit limit entitu jako primární pro logbook
+                        # Mode entita se používá jen pro kontrolu, ne pro logování
                         return {
                             entity_id: str(expected_value)
                         }  # hodnotu zpět převedeme na string kvůli entitě
