@@ -586,7 +586,7 @@
             left: 0;
             right: 0;
             width: 100%;
-            max-height: 80px; /* Max 2 řádky - velmi malý! */
+            max-height: auto; /* Auto - přizpůsobí se obsahu */
             background: rgba(10, 14, 39, 0.98);
             border-bottom: 2px solid rgba(66, 165, 245, 0.3);
             backdrop-filter: blur(10px);
@@ -597,7 +597,7 @@
         }
 
         .control-panel.minimized {
-            max-height: 28px; /* Ještě menší */
+            max-height: 32px; /* Minimalizovaný stav */
         }
 
         .control-panel.minimized .panel-content {
@@ -640,32 +640,30 @@
         }
 
         .panel-content {
-            max-height: 52px; /* Max 2 řádky content */
-            overflow-y: auto;
+            max-height: none; /* Není omezení - přizpůsobí se obsahu */
+            overflow-y: visible;
             overflow-x: hidden;
             padding: 4px 12px; /* Velmi malý padding */
         }
 
-        /* Desktop - horizontal layout - max 2 rows! */
+        /* Desktop - vertical layout with sections */
         @media (min-width: 1200px) {
             .panel-content {
-                display: flex;
-                flex-direction: row;
-                gap: 8px; /* Malé mezery */
-                flex-wrap: wrap;
-                justify-content: flex-start;
-                max-height: 52px; /* Max 2 řádky */
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+                padding: 12px 16px;
             }
 
             .control-section {
-                flex: 0 0 auto; /* Žádné roztahování */
+                flex: 1;
                 min-width: auto;
                 margin-bottom: 0;
                 padding-bottom: 0;
                 border-bottom: none;
-                border-right: 1px solid rgba(255, 255, 255, 0.1);
-                padding-right: 8px;
-                margin-right: 8px;
+                border-right: none;
+                padding-right: 0;
+                margin-right: 0;
             }
 
             .control-section:last-child {
@@ -706,24 +704,29 @@
         }
 
         .control-section h4 {
-            display: none; /* Žádné nadpisy - šetříme místo */
+            font-size: 10px;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .button-group {
-            display: flex; /* Změna z grid na flex pro horizontal layout */
-            flex-wrap: nowrap;
-            gap: 3px; /* Velmi malé mezery */
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
             margin-bottom: 0;
         }
 
         .button-group button {
-            padding: 3px 6px; /* Velmi malé */
+            padding: 6px 12px;
             background: rgba(66, 165, 245, 0.2);
             border: 1px solid rgba(66, 165, 245, 0.4);
-            border-radius: 4px;
+            border-radius: 6px;
             color: white;
             cursor: pointer;
-            font-size: 9px; /* Velmi malé */
+            font-size: 11px;
             font-weight: 500;
             transition: all 0.2s;
             white-space: nowrap;
@@ -1047,38 +1050,42 @@
         <div class="panel-content">
             <!-- Box Mode -->
             <div class="control-section">
+                <h4>Režim střídače</h4>
                 <div class="button-group">
-                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1">H1</button>
-                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2">H2</button>
-                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3">H3</button>
-                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups">UPS</button>
-                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5">H5</button>
-                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6">H6</button>
+                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1" title="Home 1: Standardní režim pro běžný provoz">Home 1</button>
+                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2" title="Home 2: Optimalizovaný režim pro úsporu energie">Home 2</button>
+                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3" title="Home 3: Preferuje nabíjení baterie z FVE">Home 3</button>
+                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups" title="Home UPS: Záložní režim s nepřerušitelným napájením">Home UPS</button>
+                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5" title="Home 5: Maximální využití solární energie">Home 5</button>
+                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6" title="Home 6: Pokročilý režim s inteligentním řízením">Home 6</button>
                 </div>
             </div>
 
             <!-- Grid Delivery -->
             <div class="control-section">
+                <h4>Dodávka do sítě</h4>
                 <div class="button-group">
-                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off">⚡Off</button>
-                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on">⚡On</button>
-                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited">⚡Lim</button>
+                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">Vypnuto</button>
+                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">Zapnuto</button>
+                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">S omezením</button>
                 </div>
             </div>
 
             <!-- Battery Formating -->
             <div class="control-section">
+                <h4>Nabíjení baterie ze sítě</h4>
                 <div class="button-group">
-                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off">🔋Off</button>
-                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on">🔋On</button>
+                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off" title="Nenabíjet: Baterie se nenabíjí ze sítě, pouze z FVE">Nenabíjet</button>
+                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on" title="Nabíjet: Povoleno nabíjení baterie i ze sítě (např. v levné tarify)">Nabíjet</button>
                 </div>
             </div>
 
             <!-- Boiler -->
             <div class="control-section">
+                <h4>Režim bojleru</h4>
                 <div class="button-group">
-                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb">🌡️CBB</button>
-                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual">🌡️Man</button>
+                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">Inteligentní (CBB)</button>
+                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">Manuální</button>
                 </div>
             </div>
         </div>
