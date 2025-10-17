@@ -1982,19 +1982,21 @@
                 <div class="node-details">
                     <div class="detail-group">
                         <div class="detail-subheader">🌊 Přetoky do sítě</div>
-                        <div class="detail-row">
-                            <span class="detail-icon" id="grid-export-icon">💧</span>
-                            <span class="detail-value entity-value" id="inverter-grid-export-mode"
-                                  data-entity="invertor_prms_to_grid"
-                                  data-tooltip="Režim dodávky do sítě"
-                                  onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Limit:</span>
-                            <span class="detail-value entity-value" id="inverter-export-limit"
-                                  data-entity="invertor_prm1_p_max_feed_grid"
-                                  data-tooltip="Limit přetoků"
-                                  onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- W</span>
+                        <div class="detail-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <span class="detail-icon" id="grid-export-icon">💧</span>
+                                <span class="detail-value entity-value" id="inverter-grid-export-mode"
+                                      data-entity="invertor_prms_to_grid"
+                                      data-tooltip="Režim dodávky do sítě"
+                                      onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <span class="detail-label">Limit:</span>
+                                <span class="detail-value entity-value" id="inverter-export-limit"
+                                      data-entity="invertor_prm1_p_max_feed_grid"
+                                      data-tooltip="Limit přetoků"
+                                      onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- W</span>
+                            </div>
                         </div>
                     </div>
                     <div class="detail-group">
@@ -3778,7 +3780,7 @@
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
-                const inverterGridLimit = await getSensorSafe(getSensorId('invertor_prms_to_grid_limit'));
+                const inverterGridLimit = await getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid'));
                 const notificationsUnread = await getSensor(getSensorId('notification_count_unread'));
                 const notificationsError = await getSensor(getSensorId('notification_count_error'));
 
