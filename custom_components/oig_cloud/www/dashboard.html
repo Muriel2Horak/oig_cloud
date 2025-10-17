@@ -246,14 +246,44 @@
             margin: 0 2px;
         }
 
+        .phase-row-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+        }
+
         /* Tariff indicator in grid box */
         .node-tariff {
             position: absolute;
             top: 8px;
             left: 8px;
-            font-size: 18px;
+            font-size: 12px;
             line-height: 1;
             z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .node-tariff:hover {
+            transform: scale(1.1);
+        }
+
+        /* Frequency indicator in grid box */
+        .node-frequency {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 9px;
+            line-height: 1;
+            z-index: 10;
+            opacity: 0.7;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .node-frequency:hover {
+            opacity: 1;
         }
 
         /* Grid box price coloring */
@@ -1532,18 +1562,30 @@
             <div class="node grid-node" id="grid-box">
                 <div class="node-icon">🔌</div>
                 <div class="node-label">Síť</div>
-                <div class="node-tariff" id="grid-tariff-indicator">--</div>
+                <div class="node-tariff entity-value" id="grid-tariff-indicator"
+                     data-entity="current_tariff"
+                     data-tooltip="Aktuální tarif"
+                     onclick="openEntityDialog(getSensorId('current_tariff'))">--</div>
+                <div class="node-frequency entity-value" id="grid-freq-indicator"
+                     data-entity="ac_in_aci_f"
+                     data-tooltip="Frekvence sítě"
+                     onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</div>
                 <div class="node-value" id="grid-power">-- W</div>
-                <div class="node-subvalue" id="grid-today">Dnes: -- kWh</div>
                 <div class="node-phases">
-                    <span class="phase-value" id="grid-l1-volt-main">--V</span>
-                    <span class="phase-value" id="grid-l1-power-main">--W</span>
-                    <span class="phase-separator">|</span>
-                    <span class="phase-value" id="grid-l2-volt-main">--V</span>
-                    <span class="phase-value" id="grid-l2-power-main">--W</span>
-                    <span class="phase-separator">|</span>
-                    <span class="phase-value" id="grid-l3-volt-main">--V</span>
-                    <span class="phase-value" id="grid-l3-power-main">--W</span>
+                    <div class="phase-row-group">
+                        <span class="phase-value" id="grid-l1-power-main">--W</span>
+                        <span class="phase-separator">|</span>
+                        <span class="phase-value" id="grid-l2-power-main">--W</span>
+                        <span class="phase-separator">|</span>
+                        <span class="phase-value" id="grid-l3-power-main">--W</span>
+                    </div>
+                    <div class="phase-row-group">
+                        <span class="phase-value" id="grid-l1-volt-main">--V</span>
+                        <span class="phase-separator">|</span>
+                        <span class="phase-value" id="grid-l2-volt-main">--V</span>
+                        <span class="phase-separator">|</span>
+                        <span class="phase-value" id="grid-l3-volt-main">--V</span>
+                    </div>
                 </div>
                 <div class="node-status" id="grid-status">--</div>
                 <div class="node-details">
@@ -1558,13 +1600,6 @@
                               data-entity="ac_in_ac_pd"
                               data-tooltip="Export do sítě"
                               onclick="openEntityDialog(getSensorId('ac_in_ac_pd'))">-- kWh</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">〰️</span>
-                        <span class="detail-value entity-value" id="grid-freq"
-                              data-entity="ac_in_aci_f"
-                              data-tooltip="Frekvence sítě"
-                              onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</span>
                     </div>
                     <div class="detail-group">
                         <div class="detail-subheader">💰 Ceny</div>
@@ -1581,7 +1616,7 @@
                                   onclick="openEntityDialog(getSensorId('export_price_current_15min'))">-- Kč/kWh</span>
                         </div>
                     </div>
-                    <div class="detail-group">
+                    <div class="detail-group" style="display: none;">
                         <div class="detail-subheader">⚡ Fáze</div>
                         <div class="detail-row">
                             <span class="detail-icon">L1</span>
@@ -2948,27 +2983,29 @@
                 // Update only if changed - use formatEnergy (Wh from sensors)
                 updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
                 updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
-                updateElementIfChanged('grid-freq', (gridFreq.value || 0).toFixed(2) + ' Hz');
+                
+                // Update frequency indicator in top right corner
+                updateElementIfChanged('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
 
                 // Grid prices and tariff
                 updateElementIfChanged('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
                 updateElementIfChanged('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
-                
-                // Update tariff indicator with icon
+
+                // Update tariff indicator with better icons
                 const tariffValue = currentTariff.value || '--';
-                let tariffIcon = '⏰';
+                let tariffDisplay = '⏰ ' + tariffValue;
                 if (tariffValue === 'VT' || tariffValue.includes('vysoký')) {
-                    tariffIcon = '🔴'; // Vysoký tarif - červená
+                    tariffDisplay = '⚡ VT'; // Vysoký tarif - blesk
                 } else if (tariffValue === 'NT' || tariffValue.includes('nízký')) {
-                    tariffIcon = '🟢'; // Nízký tarif - zelená
+                    tariffDisplay = '🌙 NT'; // Nízký tarif - měsíc
                 }
-                updateElementIfChanged('grid-tariff-indicator', tariffIcon);
+                updateElementIfChanged('grid-tariff-indicator', tariffDisplay);
 
                 // Update grid box color based on spot price
                 const gridBox = document.getElementById('grid-box');
                 const price = spotPrice.value || 0;
                 gridBox.classList.remove('price-cheap', 'price-normal', 'price-expensive');
-                
+
                 if (price < 3) {
                     gridBox.classList.add('price-cheap'); // 0-3 Kč - zelená
                 } else if (price >= 3 && price <= 5) {
