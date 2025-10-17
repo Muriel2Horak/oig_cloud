@@ -177,7 +177,7 @@
             transform: translate(-50%, -50%);
             border-color: rgba(149, 117, 205, 0.4);
             background: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
-            min-width: 180px; /* Širší pro notifikace */
+            min-width: 200px; /* Rozšířeno pro lepší zobrazení notifikací a přetoků */
             max-width: 200px;
         }
 
@@ -1981,13 +1981,15 @@
                      onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</div>
                 <div class="node-details">
                     <div class="detail-group">
-                        <div class="detail-subheader">📤 Přetoky do sítě</div>
+                        <div class="detail-subheader">🌊 Přetoky do sítě</div>
                         <div class="detail-row">
-                            <span class="detail-icon" id="grid-export-icon">�</span>
+                            <span class="detail-icon" id="grid-export-icon">💧</span>
                             <span class="detail-value entity-value" id="inverter-grid-export-mode"
                                   data-entity="invertor_prms_to_grid"
                                   data-tooltip="Režim dodávky do sítě"
                                   onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
+                        </div>
+                        <div class="detail-row">
                             <span class="detail-label">Limit:</span>
                             <span class="detail-value entity-value" id="inverter-export-limit"
                                   data-entity="invertor_prm1_p_max_feed_grid"
@@ -1997,29 +1999,17 @@
                     </div>
                     <div class="detail-group">
                         <div class="detail-subheader">🔔 Notifikace</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 8px; align-items: center;">
-                            <div style="text-align: center;">
-                                <span class="detail-icon">📨</span>
-                                <span class="detail-value entity-value notification-badge" id="inverter-notifications-unread"
-                                      data-entity="notification_count_unread"
-                                      data-tooltip="Nepřečtené notifikace"
-                                      onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</span>
-                            </div>
-                            <div style="text-align: center;">
-                                <span class="detail-icon">❌</span>
-                                <span class="detail-value entity-value notification-badge" id="inverter-notifications-error"
-                                      data-entity="notification_count_error"
-                                      data-tooltip="Chybové notifikace"
-                                      onclick="openEntityDialog(getSensorId('notification_count_error'))">--</span>
-                            </div>
-                            <div style="text-align: left; padding-left: 4px;">
-                                <span class="detail-icon">📧</span>
-                                <span class="detail-value entity-value" id="inverter-latest-notification"
-                                      data-entity="latest_notification"
-                                      data-tooltip="Klikněte pro detail poslední notifikace"
-                                      onclick="openEntityDialog(getSensorId('latest_notification'))"
-                                      style="font-size: 11px; cursor: pointer;">...</span>
-                            </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">📨</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-unread"
+                                  data-entity="notification_count_unread"
+                                  data-tooltip="Nepřečtené notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</span>
+                            <span class="detail-icon">❌</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-error"
+                                  data-entity="notification_count_error"
+                                  data-tooltip="Chybové notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_error'))">--</span>
                         </div>
                     </div>
                 </div>
@@ -3530,6 +3520,7 @@
                 previousValues['inverter-temp-icon'] = inverterTempIcon;
                 previousValues['inverter-temp-class'] = inverterTempClass;
             }
+            // Always update temperature value (force update)
             updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
 
             // Warning border around entire inverter (when bypass ON OR temp >35°C)
@@ -3537,11 +3528,18 @@
             const bypassIsOn = bypassStatus && (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1' || bypassStatus.toLowerCase().includes('on'));
             const tempIsHigh = inverterTemp > 35;
             const hasWarning = bypassIsOn || tempIsHigh;
-            if (previousValues['inverter-warning'] !== hasWarning) {
+            
+            // Debug log for bypass status
+            console.log('[Inverter] Bypass status:', bypassStatus, 'isOn:', bypassIsOn, 'tempIsHigh:', tempIsHigh, 'hasWarning:', hasWarning);
+            
+            // Force update on first load or when changed
+            if (previousValues['inverter-warning'] === undefined || previousValues['inverter-warning'] !== hasWarning) {
                 if (hasWarning) {
                     inverterBox.classList.add('warning-active');
+                    console.log('[Inverter] Warning ACTIVATED');
                 } else {
                     inverterBox.classList.remove('warning-active');
+                    console.log('[Inverter] Warning DEACTIVATED');
                 }
                 previousValues['inverter-warning'] = hasWarning;
             }
@@ -3747,17 +3745,17 @@
                 }
                 updateElementIfChanged('inverter-mode-detail', modeDescription);
 
-                // Grid export mode with icons (water theme: free river / pipe / dam)
+                // Grid export mode with icons (water theme: waterfall / river / dam)
                 let gridExportDisplay = inverterGridMode.value || '--';
-                let gridExportIcon = '�';
+                let gridExportIcon = '💧';
                 if (gridExportDisplay === 'Vypnuto / Off') {
-                    gridExportIcon = '�'; // Přehrada/zákaz
+                    gridExportIcon = '🚫'; // Zákaz - odpovídá ovládacímu panelu
                     gridExportDisplay = 'Vypnuto';
                 } else if (gridExportDisplay === 'Zapnuto / On') {
-                    gridExportIcon = '�'; // Volná řeka/kapka
+                    gridExportIcon = '💧'; // Zapnuto - odpovídá ovládacímu panelu
                     gridExportDisplay = 'Zapnuto';
                 } else if (gridExportDisplay.includes('Limited') || gridExportDisplay.includes('omezením')) {
-                    gridExportIcon = '�'; // Kohoutek/trubka
+                    gridExportIcon = '🚰'; // S omezením - odpovídá ovládacímu panelu
                     gridExportDisplay = 'Omezeno';
                 }
                 updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
@@ -3766,12 +3764,12 @@
                 // Grid export limit
                 updateElementIfChanged('inverter-export-limit', Math.round(inverterGridLimit.value || 0) + ' W');
 
-                // Notifications with badges
+                // Notifications with badges (zobrazení jen čísel)
                 const unreadCount = notificationsUnread.value || 0;
                 const errorCount = notificationsError.value || 0;
 
                 const unreadEl = document.getElementById('inverter-notifications-unread');
-                unreadEl.textContent = '📬 ' + unreadCount;
+                unreadEl.textContent = unreadCount;
                 if (unreadCount > 0) {
                     unreadEl.classList.add('has-unread');
                     unreadEl.classList.remove('has-error');
@@ -3780,7 +3778,7 @@
                 }
 
                 const errorEl = document.getElementById('inverter-notifications-error');
-                errorEl.textContent = '❌ ' + errorCount;
+                errorEl.textContent = errorCount;
                 if (errorCount > 0) {
                     errorEl.classList.add('has-error');
                     errorEl.classList.remove('has-unread');
