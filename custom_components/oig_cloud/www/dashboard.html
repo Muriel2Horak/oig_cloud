@@ -288,6 +288,85 @@
             opacity: 1;
         }
 
+        /* Battery corner indicators */
+        .battery-voltage-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .battery-current-indicator {
+            position: absolute !important;
+            top: 50% !important;
+            left: 8px !important;
+            transform: translateY(-50%);
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .battery-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .battery-temp-indicator:hover,
+        .battery-voltage-indicator:hover,
+        .battery-current-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        /* Dynamic battery icon */
+        .battery-icon-dynamic {
+            font-size: 32px;
+            transition: all 0.3s ease;
+        }
+
+        /* Temperature animations */
+        @keyframes pulse-hot {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
+        @keyframes pulse-cold {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
+        .temp-hot {
+            animation: pulse-hot 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+        }
+
+        .temp-cold {
+            animation: pulse-cold 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+        }
+
         /* Solar strings layout */
         .node-strings {
             display: flex;
@@ -596,17 +675,9 @@
 
         .battery-gauge-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4caf50, #81c784);
+            background: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
             border-radius: 4px;
-            transition: width 0.5s ease;
-        }
-
-        .battery-gauge-fill.low {
-            background: linear-gradient(90deg, #f44336, #e57373);
-        }
-
-        .battery-gauge-fill.medium {
-            background: linear-gradient(90deg, #ff9800, #ffb74d);
+            transition: width 0.5s ease, background 0.5s ease;
         }
 
         /* Warning-capable values (Bypass, Distribution) */
@@ -1569,7 +1640,25 @@
 
             <!-- Battery -->
             <div class="node battery">
-                <div class="node-icon">🔋</div>
+                <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
+                     data-entity="batt_bat_v"
+                     data-tooltip="Napětí baterie"
+                     onclick="openEntityDialog(getSensorId('batt_bat_v'))">
+                    <span style="font-size: 10px;">⚡</span>
+                    <span id="battery-voltage-value">-- V</span>
+                </div>
+                <div class="battery-current-indicator entity-value" id="battery-current-indicator"
+                     data-entity="extended_battery_current"
+                     data-tooltip="Proud baterie"
+                     onclick="openEntityDialog(getSensorId('extended_battery_current'))">
+                    <span style="font-size: 10px;">〰️</span>
+                    <span id="battery-current-value">-- A</span>
+                </div>
+                <div class="battery-temp-indicator entity-value" id="battery-temp-indicator"
+                     data-entity="extended_battery_temperature"
+                     data-tooltip="Teplota baterie"
+                     onclick="openEntityDialog(getSensorId('extended_battery_temperature'))">🌡️</div>
+                <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
                 <div class="node-label">Baterie</div>
                 <div class="node-value" id="battery-soc">-- %</div>
                 <div class="node-subvalue" id="battery-power">-- W</div>
@@ -1578,47 +1667,30 @@
                 </div>
                 <div class="node-status" id="battery-status">--</div>
                 <div class="node-details">
-                    <div class="detail-row">
-                        <span class="detail-icon">⚡</span>
-                        <span class="detail-value entity-value" id="battery-voltage"
-                              data-entity="batt_bat_v"
-                              data-tooltip="Napětí baterie"
-                              onclick="openEntityDialog(getSensorId('batt_bat_v'))">-- V</span>
-                        <span class="detail-icon">🔋</span>
-                        <span class="detail-value entity-value" id="battery-current"
-                              data-entity="extended_battery_current"
-                              data-tooltip="Proud baterie"
-                              onclick="openEntityDialog(getSensorId('extended_battery_current'))">-- A</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">🌡️</span>
-                        <span class="detail-value entity-value" id="battery-temp"
-                              data-entity="extended_battery_temperature"
-                              data-tooltip="Teplota baterie"
-                              onclick="openEntityDialog(getSensorId('extended_battery_temperature'))">-- °C</span>
-                        <span class="detail-icon">⏱️</span>
-                        <span class="detail-value entity-value" id="battery-time"
-                              data-tooltip="Čas do naplnění/vyprázdnění">--</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">📊</span>
-                        <span class="detail-value entity-value" id="battery-remain"
-                              data-entity="batt_batcap_remain"
-                              data-tooltip="Zbývající kapacita"
-                              onclick="openEntityDialog(getSensorId('batt_batcap_remain'))">-- Wh</span>
-                    </div>
                     <div class="detail-group">
-                        <div class="detail-subheader">Dnes</div>
+                        <div class="detail-subheader">⚡ Energie</div>
                         <div class="detail-row">
-                            <span class="detail-icon">⬆️</span>
+                            <span class="detail-label">Nabito:</span>
                             <span class="detail-value entity-value" id="battery-charge-total"
                                   data-entity="computed_batt_charge_energy_today"
-                                  data-tooltip="Nabito dnes"
+                                  data-tooltip="Nabito dnes celkem"
                                   onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
-                            <span class="detail-icon">⬇️</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">└ z FVE:</span>
+                            <span class="detail-value entity-value" id="battery-charge-solar"
+                                  data-tooltip="Nabito z FVE dnes">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">└ ze sítě:</span>
+                            <span class="detail-value entity-value" id="battery-charge-grid"
+                                  data-tooltip="Nabito ze sítě dnes">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Vybito:</span>
                             <span class="detail-value entity-value" id="battery-discharge-total"
                                   data-entity="computed_batt_discharge_energy_today"
-                                  data-tooltip="Vybito dnes"
+                                  data-tooltip="Vybito dnes celkem"
                                   onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
                         </div>
                     </div>
@@ -2871,31 +2943,79 @@
                 const gauge = document.getElementById('battery-gauge');
                 gauge.style.width = batterySoC + '%';
                 gauge.className = 'battery-gauge-fill';
-                if (batterySoC < 30) gauge.classList.add('low');
-                else if (batterySoC < 70) gauge.classList.add('medium');
                 previousValues['battery-gauge-width'] = batterySoC;
             }
 
-            // Update battery status only if state changed
+            // Update battery icon based on SoC (dynamic icon)
+            const batteryIcon = document.getElementById('battery-icon-dynamic');
+            let batteryIconEmoji;
+            if (batterySoC >= 90) batteryIconEmoji = '🔋';
+            else if (batterySoC >= 75) batteryIconEmoji = '🔋';
+            else if (batterySoC >= 50) batteryIconEmoji = '🔋';
+            else if (batterySoC >= 25) batteryIconEmoji = '🪫';
+            else batteryIconEmoji = '🪫';
+            
+            if (previousValues['battery-icon'] !== batteryIconEmoji) {
+                batteryIcon.textContent = batteryIconEmoji;
+                previousValues['battery-icon'] = batteryIconEmoji;
+            }
+
+            // Get time to empty/full from sensors
+            const timeToEmptyData = await getSensorString(getSensorId('time_to_empty'));
+            const timeToFullData = await getSensorString(getSensorId('time_to_full'));
+
+            // Update battery status with time info
             const batteryStatus = document.getElementById('battery-status');
             let newBatteryState, newBatteryText, newBatteryClass;
             if (batteryPower > 10) {
                 newBatteryState = 'charging';
-                newBatteryText = '⚡ Nabíjení';
+                const timeInfo = timeToFullData.value ? ` (${timeToFullData.value})` : '';
+                newBatteryText = '⚡ Nabíjení' + timeInfo;
                 newBatteryClass = 'node-status status-charging pulse';
             } else if (batteryPower < -10) {
                 newBatteryState = 'discharging';
-                newBatteryText = '⚡ Vybíjení';
+                const timeInfo = timeToEmptyData.value ? ` (${timeToEmptyData.value})` : '';
+                newBatteryText = '⚡ Vybíjení' + timeInfo;
                 newBatteryClass = 'node-status status-discharging pulse';
             } else {
                 newBatteryState = 'idle';
                 newBatteryText = '◉ Klid';
                 newBatteryClass = 'node-status status-idle';
             }
-            if (previousValues['battery-state'] !== newBatteryState) {
+            if (previousValues['battery-state'] !== newBatteryState || previousValues['battery-status-text'] !== newBatteryText) {
                 batteryStatus.textContent = newBatteryText;
                 batteryStatus.className = newBatteryClass;
                 previousValues['battery-state'] = newBatteryState;
+                previousValues['battery-status-text'] = newBatteryText;
+            }
+
+            // Update battery corner indicators
+            const batteryVoltageData = await getSensor(getSensorId('extended_battery_voltage'));
+            const batteryCurrentData = await getSensor(getSensorId('extended_battery_current'));
+            const batteryTempData = await getSensor(getSensorId('extended_battery_temperature'));
+            
+            updateElementIfChanged('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
+            updateElementIfChanged('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
+            
+            // Update temperature indicator with animation
+            const batteryTemp = batteryTempData.value || 0;
+            const tempIndicator = document.getElementById('battery-temp-indicator');
+            let tempIcon, tempClass;
+            if (batteryTemp > 25) {
+                tempIcon = '🌡️';
+                tempClass = 'battery-temp-indicator temp-hot';
+            } else if (batteryTemp < 15) {
+                tempIcon = '🧊';
+                tempClass = 'battery-temp-indicator temp-cold';
+            } else {
+                tempIcon = '🌡️';
+                tempClass = 'battery-temp-indicator';
+            }
+            
+            if (previousValues['battery-temp-icon'] !== tempIcon) {
+                tempIndicator.textContent = tempIcon;
+                tempIndicator.className = tempClass;
+                previousValues['battery-temp-icon'] = tempIcon;
             }
 
             // Grid
@@ -3055,36 +3175,18 @@
                 updateElementIfChanged('solar-forecast-s2-tomorrow', parseFloat(forecastS2Tomorrow).toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
-                const battVoltage = await getSensor(getSensorId('extended_battery_voltage'));
-                const battCurrent = await getSensor(getSensorId('extended_battery_current'));
-                const battTemp = await getSensor(getSensorId('extended_battery_temperature'));
-                const battRemain = await getSensor(getSensorId('batt_batcap_remain'));
-                const battPower = await getSensor(getSensorId('batt_batt_comp_p'));
-                const timeToEmpty = await getSensorString(getSensorId('time_to_empty'));
-                const timeToFull = await getSensorString(getSensorId('time_to_full'));
-                const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today')); // OPRAVENO: celkové nabíjení
-                const battDischargeTotal = await getSensor(getSensorId('computed_batt_discharge_energy_today')); // NOVÝ: celkové vybíjení
-
-                // Update only if changed
-                updateElementIfChanged('battery-voltage', (battVoltage.value || 0).toFixed(1) + ' V');
-                updateElementIfChanged('battery-current', (battCurrent.value || 0).toFixed(1) + ' A');
-                updateElementIfChanged('battery-temp', (battTemp.value || 0).toFixed(1) + ' °C');
-                updateElementIfChanged('battery-remain', formatEnergy(battRemain.value || 0));
-
-                // Time to empty/full based on battery power direction
-                const timeValue = document.getElementById('battery-time');
-                let newTimeValue;
-                if (battPower.value < -10) {
-                    newTimeValue = 'Do vybití: ' + (timeToEmpty.value || '--');
-                } else if (battPower.value > 10) {
-                    newTimeValue = 'Do nabití: ' + (timeToFull.value || '--');
-                } else {
-                    newTimeValue = '--';
-                }
-                updateElementIfChanged('battery-time', newTimeValue);
+                const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today'));
+                const battDischargeTotal = await getSensor(getSensorId('computed_batt_discharge_energy_today'));
+                
+                // TODO: Přidat senzory pro nabíjení z FVE a ze sítě
+                // Zatím použijeme placeholder hodnoty
+                const battChargeSolar = { value: 0 }; // await getSensor(getSensorId('computed_batt_charge_solar_today'));
+                const battChargeGrid = { value: 0 }; // await getSensor(getSensorId('computed_batt_charge_grid_today'));
 
                 // Battery totals today - use formatEnergy (Wh from sensors)
                 updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
+                updateElementIfChanged('battery-charge-solar', formatEnergy(battChargeSolar.value || 0));
+                updateElementIfChanged('battery-charge-grid', formatEnergy(battChargeGrid.value || 0));
                 updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
 
                 // === GRID DETAILS ===
