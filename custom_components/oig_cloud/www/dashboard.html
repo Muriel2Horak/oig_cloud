@@ -307,7 +307,7 @@
 
         .battery-current-indicator {
             position: absolute !important;
-            top: 50% !important;
+            top: 75% !important;
             left: 15px !important;
             transform: translateY(-50%);
             font-size: 13px;
@@ -447,6 +447,111 @@
             font-size: 10px;
             font-weight: 600;
             opacity: 0.9;
+        }
+
+        /* Inverter corner indicators */
+        .inverter-bypass-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-bypass-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-bypass-indicator.status-ok {
+            color: #4caf50;
+        }
+
+        .inverter-bypass-indicator.warning-active {
+            color: #ff3333;
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        .inverter-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .inverter-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-temp-icon {
+            font-size: 14px;
+        }
+
+        /* Inverter temperature hot threshold at 35°C */
+        .inverter-temp-hot {
+            animation: pulse-hot 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+        }
+
+        .inverter-temp-cold {
+            animation: pulse-cold 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+        }
+
+        /* Distribution crisis indicator */
+        .inverter-distribution-crisis {
+            position: absolute !important;
+            top: 50% !important;
+            left: 15px !important;
+            transform: translateY(-50%);
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-distribution-crisis:hover {
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .inverter-distribution-crisis.status-ok {
+            color: #4caf50;
+        }
+
+        .inverter-distribution-crisis.warning-active {
+            color: #ff3333;
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        /* Notification indicator */
+        .notification-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .notification-badge.has-error {
+            color: #ff3333;
+            font-weight: 700;
+        }
+
+        .notification-badge.has-unread {
+            color: #ffc107;
+            font-weight: 600;
         }
 
         /* Solar strings layout */
@@ -1769,41 +1874,70 @@
 
             <!-- Inverter Center -->
             <div class="node inverter">
+                <div class="inverter-bypass-indicator entity-value" id="inverter-bypass-indicator"
+                     data-entity="bypass_status"
+                     data-tooltip="Bypass"
+                     onclick="openEntityDialog(getSensorId('bypass_status'))">🌉</div>
+                <div class="inverter-temp-indicator entity-value" id="inverter-temp-indicator"
+                     data-entity="extended_invertor_temperature"
+                     data-tooltip="Teplota střídače"
+                     onclick="openEntityDialog(getSensorId('extended_invertor_temperature'))">
+                    <span class="inverter-temp-icon" id="inverter-temp-icon">🌡️</span>
+                    <span id="inverter-temp-value">-- °C</span>
+                </div>
+                <div class="inverter-distribution-crisis entity-value" id="inverter-distribution-crisis"
+                     data-entity="box_prms_crct"
+                     data-tooltip="Krizové řízení distribuce"
+                     onclick="openEntityDialog(getSensorId('box_prms_crct'))">⚠️</div>
                 <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
-                <div class="node-value" id="inverter-status">Online</div>
-                <div class="node-subvalue" id="inverter-temp">-- °C</div>
+                <div class="node-value entity-value" id="inverter-mode"
+                     data-entity="box_prms_mode"
+                     data-tooltip="Režim střídače"
+                     onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</div>
                 <div class="node-details">
-                    <div class="detail-row">
-                        <span class="detail-icon">⚙️</span>
-                        <span class="detail-value entity-value" id="inverter-mode"
-                              data-entity="box_prms_mode"
-                              data-tooltip="Režim střídače"
-                              onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</span>
-                        <span class="detail-icon">↔️</span>
-                        <span class="detail-value warning-capable entity-value" id="inverter-bypass"
-                              data-entity="bypass_status"
-                              data-tooltip="Bypass status"
-                              onclick="openEntityDialog(getSensorId('bypass_status'))">--</span>
+                    <div class="detail-group">
+                        <div class="detail-subheader">⚙️ Režim boxu</div>
+                        <div class="detail-row">
+                            <span class="detail-value entity-value" id="inverter-mode-detail"
+                                  data-entity="box_prms_mode"
+                                  data-tooltip="Režim střídače"
+                                  onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</span>
+                        </div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">🔀</span>
-                        <span class="detail-value warning-capable entity-value" id="inverter-distribution"
-                              data-entity="box_prms_crct"
-                              data-tooltip="Režim distribuce"
-                              onclick="openEntityDialog(getSensorId('box_prms_crct'))">--</span>
-                        <span class="detail-icon">📤</span>
-                        <span class="detail-value entity-value" id="inverter-grid-mode"
-                              data-entity="invertor_prms_to_grid"
-                              data-tooltip="Dodávka do sítě"
-                              onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
+                    <div class="detail-group">
+                        <div class="detail-subheader">📤 Přetoky do sítě</div>
+                        <div class="detail-row">
+                            <span class="detail-icon" id="grid-export-icon">🔴</span>
+                            <span class="detail-value entity-value" id="inverter-grid-export-mode"
+                                  data-entity="invertor_prms_to_grid"
+                                  data-tooltip="Režim dodávky do sítě"
+                                  onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Limit:</span>
+                            <span class="detail-value entity-value" id="inverter-export-limit"
+                                  data-entity="invertor_prms_to_grid_limit"
+                                  data-tooltip="Limit přetoků"
+                                  onclick="openEntityDialog(getSensorId('invertor_prms_to_grid_limit'))">-- W</span>
+                        </div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">⚡</span>
-                        <span class="detail-value entity-value" id="inverter-allowed-power"
-                              data-entity="boiler_install_power"
-                              data-tooltip="Povolený výkon"
-                              onclick="openEntityDialog(getSensorId('boiler_install_power'))">-- kW</span>
+                    <div class="detail-group">
+                        <div class="detail-subheader">🔔 Notifikace</div>
+                        <div class="detail-row">
+                            <span class="detail-icon">�</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-unread"
+                                  data-entity="notification_count_unread"
+                                  data-tooltip="Nepřečtené notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-icon">❌</span>
+                            <span class="detail-value entity-value notification-badge" id="inverter-notifications-error"
+                                  data-entity="notification_count_error"
+                                  data-tooltip="Chybové notifikace"
+                                  onclick="openEntityDialog(getSensorId('notification_count_error'))">--</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3160,22 +3294,75 @@
             updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
             // Inverter
-            const inverterTempData = await getSensor(getSensorId('extended_battery_temperature'));
+            const inverterTempData = await getSensor(getSensorId('extended_invertor_temperature'));
             const inverterTemp = inverterTempData.value || 0;
-            updateElementIfChanged('inverter-temp', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
+            updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C', 'inverter-temp');
+
+            // Update inverter temperature icon and animation
+            const inverterTempIcon = document.getElementById('inverter-temp-icon');
+            let inverterTempIconEmoji;
+            let inverterTempClass = '';
+            if (inverterTemp > 35) {
+                inverterTempIconEmoji = '🌡️';
+                inverterTempClass = 'inverter-temp-hot';
+            } else if (inverterTemp < 15) {
+                inverterTempIconEmoji = '🧊';
+                inverterTempClass = 'inverter-temp-cold';
+            } else {
+                inverterTempIconEmoji = '🌡️';
+                inverterTempClass = '';
+            }
+            updateElementIfChanged('inverter-temp-icon', inverterTempIconEmoji, 'inverter-temp-icon');
+            inverterTempIcon.className = 'inverter-temp-icon ' + inverterTempClass;
+
+            // Update bypass indicator
+            const bypassData = await getSensorString(getSensorId('bypass_status'));
+            const bypassStatus = (bypassData.value || 'Off').toLowerCase();
+            const bypassIndicator = document.getElementById('inverter-bypass-indicator');
+            if (bypassStatus === 'on' || bypassStatus === 'active') {
+                bypassIndicator.className = 'inverter-bypass-indicator entity-value warning-active';
+            } else {
+                bypassIndicator.className = 'inverter-bypass-indicator entity-value status-ok';
+            }
+
+            // Update distribution crisis indicator
+            const distributionData = await getSensorString(getSensorId('box_prms_crct'));
+            const distributionStatus = (distributionData.value || 'Off').toLowerCase();
+            const distributionIndicator = document.getElementById('inverter-distribution-crisis');
+            if (distributionStatus === 'on' || distributionStatus === 'active') {
+                distributionIndicator.className = 'inverter-distribution-crisis entity-value warning-active';
+            } else {
+                distributionIndicator.className = 'inverter-distribution-crisis entity-value status-ok';
+            }
+
+            // Update box mode with icons
+            const boxModeData = await getSensorString(getSensorId('box_prms_mode'));
+            const boxMode = boxModeData.value || '--';
+            let modeIcon = '⚙️';
+            let modeText = boxMode;
+            if (boxMode.includes('Home 1')) {
+                modeIcon = '🏠';
+                modeText = 'Home 1';
+            } else if (boxMode.includes('Home 2')) {
+                modeIcon = '🔋';
+                modeText = 'Home 2';
+            } else if (boxMode.includes('Home 3')) {
+                modeIcon = '☀️';
+                modeText = 'Home 3';
+            } else if (boxMode.includes('UPS')) {
+                modeIcon = '⚡';
+                modeText = 'Home UPS';
+            }
+            updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
 
             // Show last update time from real_data_update sensor - UPDATE TO HEADER
             const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
             const lastUpdate = realDataUpdateSensor.value; // String value from sensor
             if (lastUpdate && lastUpdate !== '--') {
                 const lastUpdateHeader = document.getElementById('last-update-header');
-                const inverterStatus = document.getElementById('inverter-status');
                 if (previousValues['last-update'] !== lastUpdate) {
                     // Update header with sensor value
                     lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
-                    // Keep inverter status simple
-                    inverterStatus.textContent = 'Online';
-                    inverterStatus.title = `Poslední aktualizace: ${lastUpdate}`;
                     previousValues['last-update'] = lastUpdate;
                 }
             }
@@ -3345,56 +3532,66 @@
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
-                const bypassStatus = await getSensorString(getSensorId('bypass_status')); // OPRAVENO: správný senzor
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
-                const inverterUpdate = await getSensorString(getSensorId('real_data_update'));
-                const allowedPower = await getSensor(getSensorId('boiler_install_power')); // Povolený výkon v W
-                const distributionMode = await getSensorString(getSensorId('box_prms_crct')); // Režim distribuce
+                const inverterGridLimit = await getSensor(getSensorId('invertor_prms_to_grid_limit'));
+                const notificationsUnread = await getSensor(getSensorId('notification_count_unread'));
+                const notificationsError = await getSensor(getSensorId('notification_count_error'));
 
-                // Translate bypass status to Czech
-                let bypassText = bypassStatus.value || '--';
-                if (bypassText === 'On') bypassText = 'Zapnuto';
-                else if (bypassText === 'Off') bypassText = 'Vypnuto';
+                // Box mode with icons and descriptions
+                let modeDisplay = inverterMode.value || '--';
+                let modeDescription = '';
+                if (modeDisplay.includes('Home 1')) {
+                    modeDescription = '🏠 Home 1: Max baterie + FVE pro domácnost';
+                } else if (modeDisplay.includes('Home 2')) {
+                    modeDescription = '🔋 Home 2: Šetří baterii během výroby';
+                } else if (modeDisplay.includes('Home 3')) {
+                    modeDescription = '☀️ Home 3: Priorita nabíjení baterie z FVE';
+                } else if (modeDisplay.includes('UPS')) {
+                    modeDescription = '⚡ Home UPS: Vše ze sítě, baterie na 100%';
+                } else {
+                    modeDescription = '⚙️ ' + modeDisplay;
+                }
+                updateElementIfChanged('inverter-mode-detail', modeDescription);
 
-                // Translate distribution mode to Czech
-                let distributionText = distributionMode.value || '--';
-                // Common values: "Smart", "Standby", "Normal" - translate as needed
-                if (distributionText === 'Smart') distributionText = 'Chytrý';
-                else if (distributionText === 'Standby') distributionText = 'Pohotovost';
-                else if (distributionText === 'Normal') distributionText = 'Normální';
+                // Grid export mode with icons
+                let gridExportDisplay = inverterGridMode.value || '--';
+                let gridExportIcon = '🔴';
+                if (gridExportDisplay === 'Vypnuto / Off') {
+                    gridExportIcon = '🔴';
+                    gridExportDisplay = 'Vypnuto';
+                } else if (gridExportDisplay === 'Zapnuto / On') {
+                    gridExportIcon = '🟢';
+                    gridExportDisplay = 'Zapnuto';
+                } else if (gridExportDisplay.includes('Limited') || gridExportDisplay.includes('omezením')) {
+                    gridExportIcon = '🟡';
+                    gridExportDisplay = 'Omezeno';
+                }
+                updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
+                document.getElementById('grid-export-icon').textContent = gridExportIcon;
 
-                // Update only if changed
-                updateElementIfChanged('inverter-mode', inverterMode.value || '--');
-                updateElementIfChanged('inverter-bypass', bypassText);
-                updateElementIfChanged('inverter-grid-mode', inverterGridMode.value || '--');
-                updateElementIfChanged('inverter-allowed-power', ((allowedPower.value || 0) / 1000).toFixed(1) + ' kW');
-                updateElementIfChanged('inverter-distribution', distributionText);
+                // Grid export limit
+                updateElementIfChanged('inverter-export-limit', Math.round(inverterGridLimit.value || 0) + ' W');
 
-                // Add color styling: GREEN when OFF/Standby, RED when ON/Active
-                const bypassEl = document.getElementById('inverter-bypass');
-                const distributionEl = document.getElementById('inverter-distribution');
+                // Notifications with badges
+                const unreadCount = notificationsUnread.value || 0;
+                const errorCount = notificationsError.value || 0;
 
-                if (bypassEl) {
-                    if (bypassStatus.value === 'On') {
-                        bypassEl.classList.remove('status-ok');
-                        bypassEl.classList.add('warning-active');
-                    } else {
-                        bypassEl.classList.remove('warning-active');
-                        bypassEl.classList.add('status-ok');
-                    }
+                const unreadEl = document.getElementById('inverter-notifications-unread');
+                unreadEl.textContent = '📬 ' + unreadCount;
+                if (unreadCount > 0) {
+                    unreadEl.classList.add('has-unread');
+                    unreadEl.classList.remove('has-error');
+                } else {
+                    unreadEl.classList.remove('has-unread', 'has-error');
                 }
 
-                if (distributionEl) {
-                    // Distribution: GREEN when Standby (OFF), RED when Smart/Normal (ON/active)
-                    if (distributionMode.value === 'Standby' || distributionMode.value === '--') {
-                        // Vypnutá (Standby) = ZELENÁ
-                        distributionEl.classList.remove('warning-active');
-                        distributionEl.classList.add('status-ok');
-                    } else {
-                        // Zapnutá (Smart/Normal) = ČERVENÁ
-                        distributionEl.classList.remove('status-ok');
-                        distributionEl.classList.add('warning-active');
-                    }
+                const errorEl = document.getElementById('inverter-notifications-error');
+                errorEl.textContent = '❌ ' + errorCount;
+                if (errorCount > 0) {
+                    errorEl.classList.add('has-error');
+                    errorEl.classList.remove('has-unread');
+                } else {
+                    errorEl.classList.remove('has-error', 'has-unread');
                 }
 
                 // === BOILER DETAILS (if available) ===
