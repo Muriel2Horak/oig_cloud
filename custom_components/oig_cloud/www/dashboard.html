@@ -3422,12 +3422,21 @@
 
         // Set grid delivery - main entry point
         async function setGridDelivery(mode) {
+            console.log('═══════════════════════════════════════════════');
+            console.log('[Grid] setGridDelivery() called with mode:', mode);
+            console.log('═══════════════════════════════════════════════');
+            
             try {
                 // Get current mode and limit
                 const currentModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const currentMode = currentModeData.value || '';
                 const currentLimitData = await getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid'));
                 const currentLimit = currentLimitData.value || 5000;
+
+                console.log('[Grid] Current state:', {
+                    currentMode: currentMode,
+                    currentLimit: currentLimit
+                });
 
                 // Check if already active (except for Limited - can change limit)
                 const isAlreadyActive =
@@ -3436,7 +3445,7 @@
 
                 if (isAlreadyActive) {
                     // Tiše ignorovat - režim už je aktivní
-                    console.log('[Grid] Mode already active:', mode);
+                    console.log('[Grid] ⏸️ Mode already active, skipping:', mode);
                     return;
                 }
 
@@ -3444,13 +3453,30 @@
                 const isLimitedActive = currentMode.includes('Limited') || currentMode.includes('omezením');
                 const isChangingToLimited = mode === 'S omezením / Limited';
 
+                console.log('[Grid] Decision flags:', {
+                    isLimitedActive: isLimitedActive,
+                    isChangingToLimited: isChangingToLimited
+                });
+
                 // Show dialog
+                console.log('[Grid] 📋 Opening dialog...');
                 const result = await showGridDeliveryDialog(mode, currentLimit);
-                if (!result.confirmed) return;
+                
+                if (!result.confirmed) {
+                    console.log('[Grid] ❌ Dialog cancelled by user');
+                    return;
+                }
+                
+                console.log('[Grid] ✅ Dialog confirmed with:', result);
 
                 // Special case: Limited is already active, just change limit
                 if (isLimitedActive && isChangingToLimited && result.limit) {
-                    console.log('[Grid] Limited already active, just changing limit to:', result.limit);
+                    console.log('[Grid] 🔧 Case: Limited already active, just changing limit');
+                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
+                        limit: result.limit,
+                        acknowledgement: true,
+                        warning: true
+                    });
 
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         limit: result.limit,
@@ -3479,7 +3505,13 @@
 
                 if (needsLimit) {
                     // Two-step process: 1) Set limit, 2) Set mode
-                    console.log('[Grid] Two-step change: limit=' + result.limit + ', mode=' + mode);
+                    console.log('[Grid] 🔧 Case: Two-step change (Limited from Off/On)');
+                    console.log('[Grid] Step 1/2: Setting limit =', result.limit);
+                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
+                        limit: result.limit,
+                        acknowledgement: true,
+                        warning: true
+                    });
 
                     // Step 1: Set limit
                     const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
@@ -3489,14 +3521,23 @@
                     });
 
                     if (!limitSuccess) {
+                        console.log('[Grid] ❌ Step 1 failed');
                         showNotification('Chyba', 'Nepodařilo se nastavit limit přetoků', 'error');
                         return;
                     }
 
+                    console.log('[Grid] ✅ Step 1 done, waiting 1s...');
                     // Wait a bit before second call
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                     // Step 2: Set mode
+                    console.log('[Grid] Step 2/2: Setting mode =', mode);
+                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
+                        mode: mode,
+                        acknowledgement: true,
+                        warning: true
+                    });
+                    
                     const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
                         acknowledgement: true,
@@ -3504,16 +3545,23 @@
                     });
 
                     if (!modeSuccess) {
+                        console.log('[Grid] ❌ Step 2 failed');
                         showNotification('Chyba', 'Limit nastaven, ale režim se nepodařilo změnit', 'error');
                         return;
                     }
 
+                    console.log('[Grid] ✅ Both steps done!');
                     // Both successful - trigger immediate check
                     await monitorShieldActivity();
 
                 } else {
                     // Single step: just mode
-                    console.log('[Grid] Single-step change: mode=' + mode);
+                    console.log('[Grid] 🔧 Case: Single-step change (just mode)');
+                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
+                        mode: mode,
+                        acknowledgement: true,
+                        warning: true
+                    });
 
                     const success = await callService('oig_cloud', 'set_grid_delivery', {
                         mode: mode,
@@ -3522,10 +3570,12 @@
                     });
 
                     if (!success) {
+                        console.log('[Grid] ❌ Single-step failed');
                         showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
                         return;
                     }
 
+                    console.log('[Grid] ✅ Single-step done!');
                     // Trigger immediate check
                     await monitorShieldActivity();
                 }
