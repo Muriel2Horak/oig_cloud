@@ -1762,12 +1762,12 @@
             <div class="control-section">
                 <h4>Režim střídače</h4>
                 <div class="button-group">
-                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1" title="Home 1: Standardní režim pro běžný provoz">Home 1</button>
-                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2" title="Home 2: Optimalizovaný režim pro úsporu energie">Home 2</button>
-                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3" title="Home 3: Preferuje nabíjení baterie z FVE">Home 3</button>
-                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups" title="Home UPS: Záložní režim s nepřerušitelným napájením">Home UPS</button>
-                    <button disabled id="btn-mode-home5" title="Home 5: Prozatím nepodporováno zařízením">Home 5</button>
-                    <button disabled id="btn-mode-home6" title="Home 6: Prozatím nepodporováno zařízením">Home 6</button>
+                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1" title="Home 1: Standardní režim pro běžný provoz">🏠 Home 1</button>
+                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2" title="Home 2: Optimalizovaný režim pro úsporu energie">🔋 Home 2</button>
+                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3" title="Home 3: Preferuje nabíjení baterie z FVE">☀️ Home 3</button>
+                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups" title="Home UPS: Záložní režim s nepřerušitelným napájením">⚡ Home UPS</button>
+                    <button disabled id="btn-mode-home5" title="Home 5: Prozatím nepodporováno zařízením">⚙️ Home 5</button>
+                    <button disabled id="btn-mode-home6" title="Home 6: Prozatím nepodporováno zařízením">⚙️ Home 6</button>
                 </div>
             </div>
 
@@ -1775,9 +1775,9 @@
             <div class="control-section">
                 <h4>Dodávka do sítě</h4>
                 <div class="button-group">
-                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">Vypnuto</button>
-                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">Zapnuto</button>
-                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">S omezením</button>
+                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">🚫 Vypnuto</button>
+                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">💧 Zapnuto</button>
+                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">🚰 S omezením</button>
                 </div>
                 <div class="input-group">
                     <label>Limit (W):</label>
@@ -2016,9 +2016,9 @@
                                 <span class="detail-icon">📧</span>
                                 <span class="detail-value entity-value" id="inverter-latest-notification"
                                       data-entity="latest_notification"
-                                      data-tooltip="Poslední notifikace"
+                                      data-tooltip="Klikněte pro detail poslední notifikace"
                                       onclick="openEntityDialog(getSensorId('latest_notification'))"
-                                      style="font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px;">--</span>
+                                      style="font-size: 11px; cursor: pointer;">...</span>
                             </div>
                         </div>
                     </div>
@@ -3165,16 +3165,18 @@
             }
         }
 
-        // Helper to update element only if value changed
+        // Helper to update element only if value changed (or first load)
         function updateElementIfChanged(elementId, newValue, cacheKey) {
             if (!cacheKey) cacheKey = elementId;
-            if (previousValues[cacheKey] !== newValue) {
-                const element = document.getElementById(elementId);
-                if (element) {
-                    element.textContent = newValue;
-                    previousValues[cacheKey] = newValue;
-                    return true; // Changed
-                }
+            const element = document.getElementById(elementId);
+            if (!element) return false;
+            
+            // Always update on first load (when previousValues[cacheKey] is undefined)
+            // or when value actually changed
+            if (previousValues[cacheKey] === undefined || previousValues[cacheKey] !== newValue) {
+                element.textContent = newValue;
+                previousValues[cacheKey] = newValue;
+                return true; // Changed
             }
             return false; // No change
         }
@@ -3396,15 +3398,15 @@
             }
             updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
 
-            // Show last update time from real_data_update sensor - UPDATE TO HEADER
-            const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
-            const lastUpdate = realDataUpdateSensor.value; // String value from sensor
-            if (lastUpdate && lastUpdate !== '--') {
+            // Show last update time - use lastUpdated timestamp from any main sensor
+            const realDataUpdateSensor = await getSensor(getSensorId('actual_aci_wtotal')); // Grid power sensor
+            if (realDataUpdateSensor.lastUpdated) {
                 const lastUpdateHeader = document.getElementById('last-update-header');
-                if (previousValues['last-update'] !== lastUpdate) {
-                    // Update header with sensor value
-                    lastUpdateHeader.textContent = `Aktualizováno: ${lastUpdate}`;
-                    previousValues['last-update'] = lastUpdate;
+                const relativeTime = formatRelativeTime(realDataUpdateSensor.lastUpdated);
+                const newUpdateText = `Aktualizováno: ${relativeTime}`;
+                if (previousValues['last-update'] !== newUpdateText) {
+                    lastUpdateHeader.textContent = newUpdateText;
+                    previousValues['last-update'] = newUpdateText;
                 }
             }
 
@@ -3647,17 +3649,17 @@
                 }
                 updateElementIfChanged('inverter-mode-detail', modeDescription);
 
-                // Grid export mode with icons
+                // Grid export mode with icons (water theme: free river / pipe / dam)
                 let gridExportDisplay = inverterGridMode.value || '--';
-                let gridExportIcon = '🔴';
+                let gridExportIcon = '�';
                 if (gridExportDisplay === 'Vypnuto / Off') {
-                    gridExportIcon = '🔴';
+                    gridExportIcon = '�'; // Přehrada/zákaz
                     gridExportDisplay = 'Vypnuto';
                 } else if (gridExportDisplay === 'Zapnuto / On') {
-                    gridExportIcon = '🟢';
+                    gridExportIcon = '�'; // Volná řeka/kapka
                     gridExportDisplay = 'Zapnuto';
                 } else if (gridExportDisplay.includes('Limited') || gridExportDisplay.includes('omezením')) {
-                    gridExportIcon = '🟡';
+                    gridExportIcon = '�'; // Kohoutek/trubka
                     gridExportDisplay = 'Omezeno';
                 }
                 updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
@@ -3687,11 +3689,6 @@
                 } else {
                     errorEl.classList.remove('has-error', 'has-unread');
                 }
-
-                // Latest notification text
-                const latestNotification = await getSensorString(getSensorId('latest_notification'));
-                const latestNotificationText = latestNotification.value || '--';
-                updateElementIfChanged('inverter-latest-notification', latestNotificationText);
 
                 // === BOILER DETAILS (if available) ===
                 if (!document.getElementById('boiler-node').classList.contains('hidden')) {
