@@ -1148,12 +1148,14 @@
                         <span class="detail-value" id="battery-remain">-- Wh</span>
                     </div>
                     <div class="detail-group">
-                        <div class="detail-subheader">Nabití dnes</div>
+                        <div class="detail-subheader">Dnes</div>
                         <div class="detail-row">
-                            <span class="detail-label">FVE:</span>
-                            <span class="detail-value" id="battery-charge-fve">-- kWh</span>
-                            <span class="detail-label">Síť:</span>
-                            <span class="detail-value" id="battery-charge-grid">-- kWh</span>
+                            <span class="detail-label">Nabito:</span>
+                            <span class="detail-value" id="battery-charge-total">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Vybito:</span>
+                            <span class="detail-value" id="battery-discharge-total">-- kWh</span>
                         </div>
                     </div>
                 </div>
@@ -2380,8 +2382,8 @@
                 const battPower = await getSensor(getSensorId('batt_batt_comp_p'));
                 const timeToEmpty = await getSensorString(getSensorId('time_to_empty'));
                 const timeToFull = await getSensorString(getSensorId('time_to_full'));
-                const battChargeFve = await getSensor(getSensorId('computed_batt_charge_fve_energy_today'));
-                const battChargeGrid = await getSensor(getSensorId('computed_batt_charge_grid_energy_today'));
+                const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today')); // OPRAVENO: celkové nabíjení
+                const battDischargeTotal = await getSensor(getSensorId('computed_batt_discharge_energy_today')); // NOVÝ: celkové vybíjení
 
                 // Update only if changed
                 updateElementIfChanged('battery-voltage', (battVoltage.value || 0).toFixed(1) + ' V');
@@ -2415,16 +2417,17 @@
                     updateElementIfChanged('battery-time', newTimeValue);
                 }
 
-                updateElementIfChanged('battery-charge-fve', (battChargeFve.value || 0).toFixed(2) + ' kWh');
-                updateElementIfChanged('battery-charge-grid', (battChargeGrid.value || 0).toFixed(2) + ' kWh');
+                // Battery totals today - OPRAVENO
+                updateElementIfChanged('battery-charge-total', (battChargeTotal.value || 0).toFixed(2) + ' kWh');
+                updateElementIfChanged('battery-discharge-total', (battDischargeTotal.value || 0).toFixed(2) + ' kWh');
 
                 // === GRID DETAILS ===
                 const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
                 const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
-                const gridFreq = await getSensor(getSensorId('extended_grid_frequency'));
-                const gridL1V = await getSensor(getSensorId('extended_grid_voltage_l1'));
-                const gridL2V = await getSensor(getSensorId('extended_grid_voltage_l2'));
-                const gridL3V = await getSensor(getSensorId('extended_grid_voltage_l3'));
+                const gridFreq = await getSensor(getSensorId('ac_in_aci_f')); // OPRAVENO: správný senzor
+                const gridL1V = await getSensor(getSensorId('ac_in_aci_vr')); // OPRAVENO: L1 napětí
+                const gridL2V = await getSensor(getSensorId('ac_in_aci_vs')); // OPRAVENO: L2 napětí
+                const gridL3V = await getSensor(getSensorId('ac_in_aci_vt')); // OPRAVENO: L3 napětí
                 const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
                 const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
                 const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
@@ -2463,13 +2466,13 @@
 
                 // === INVERTER DETAILS ===
                 const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
-                const inverterBypass = await getSensorString(getSensorId('box_prms_bypass'));
+                const bypassStatus = await getSensorString(getSensorId('bypass_status')); // OPRAVENO: správný senzor
                 const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const inverterUpdate = await getSensorString(getSensorId('real_data_update'));
 
                 // Update only if changed
                 updateElementIfChanged('inverter-mode', inverterMode.value || '--');
-                updateElementIfChanged('inverter-bypass', inverterBypass.value || '--');
+                updateElementIfChanged('inverter-bypass', bypassStatus.value || '--'); // OPRAVENO: použití bypass_status
                 updateElementIfChanged('inverter-grid-mode', inverterGridMode.value || '--');
                 updateElementIfChanged('inverter-update', inverterUpdate.value || '--');
 
