@@ -1519,49 +1519,69 @@
                             </div>
                         </div>
                         <div class="solar-column">
-                            <div class="detail-group">
-                                <div class="detail-subheader">⚡ Energie</div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">📊</span>
-                                    <span class="detail-value entity-value" id="solar-today"
-                                          data-entity="dc_in_fv_ad"
-                                          data-tooltip="Vyrobeno dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">-- kWh</span>
-                                </div>
+                            <div class="detail-subheader">🏭 String 2</div>
+                            <div class="detail-row">
+                                <span class="detail-icon">⚡</span>
+                                <span class="detail-value entity-value" id="solar-s2-volt"
+                                      data-entity="extended_fve_voltage_2"
+                                      data-tooltip="String 2 - Napětí"
+                                      onclick="openEntityDialog(getSensorId('extended_fve_voltage_2'))">--V</span>
                             </div>
-                            <div class="detail-group">
-                                <div class="detail-subheader">🔮 Předpověď</div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">📅</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-today"
-                                          data-entity="solar_forecast"
-                                          data-tooltip="Dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast'))">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">🔮</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-tomorrow"
-                                          data-tooltip="Zítra celkem">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">S1:</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s1-today"
-                                          data-entity="solar_forecast_string1"
-                                          data-tooltip="String 1 - dnes"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast_string1'))">-- kWh</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s1-tomorrow"
-                                          data-tooltip="String 1 - zítra">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">S2:</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s2-today"
-                                          data-entity="solar_forecast_string2"
-                                          data-tooltip="String 2 - dnes"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast_string2'))">-- kWh</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s2-tomorrow"
-                                          data-tooltip="String 2 - zítra">-- kWh</span>
-                                </div>
+                            <div class="detail-row">
+                                <span class="detail-icon">〰️</span>
+                                <span class="detail-value entity-value" id="solar-s2-amp"
+                                      data-entity="extended_fve_current_2"
+                                      data-tooltip="String 2 - Proud"
+                                      onclick="openEntityDialog(getSensorId('extended_fve_current_2'))">--A</span>
                             </div>
+                            <div class="detail-row">
+                                <span class="detail-icon">⚡</span>
+                                <span class="detail-value entity-value" id="solar-s2"
+                                      data-entity="dc_in_fv_p2"
+                                      data-tooltip="String 2 - Výkon"
+                                      onclick="openEntityDialog(getSensorId('dc_in_fv_p2'))">-- W</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-group">
+                        <div class="detail-subheader">⚡ Energie</div>
+                        <div class="detail-row">
+                            <span class="detail-icon">�</span>
+                            <span class="detail-value entity-value" id="solar-today"
+                                  data-entity="dc_in_fv_ad"
+                                  data-tooltip="Vyrobeno dnes celkem"
+                                  onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">-- kWh</span>
+                        </div>
+                    </div>
+                    <div class="detail-group">
+                        <div class="detail-subheader">🔮 Předpověď</div>
+                        <div class="detail-row">
+                            <span class="detail-icon">�📅</span>
+                            <span class="detail-value entity-value" id="solar-forecast-today"
+                                  data-entity="solar_forecast"
+                                  data-tooltip="Předpověď výroby dnes celkem"
+                                  onclick="openEntityDialog(getSensorId('solar_forecast'))">-- kWh</span>
+                            <span class="detail-icon">🔮</span>
+                            <span class="detail-value entity-value" id="solar-forecast-tomorrow"
+                                  data-tooltip="Předpověď výroby zítra celkem">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">String 1:</span>
+                            <span class="detail-value entity-value" id="solar-forecast-s1-today"
+                                  data-entity="solar_forecast_string1"
+                                  data-tooltip="String 1 - Předpověď dnes"
+                                  onclick="openEntityDialog(getSensorId('solar_forecast_string1'))">-- kWh</span>
+                            <span class="detail-value entity-value" id="solar-forecast-s1-tomorrow"
+                                  data-tooltip="String 1 - Předpověď zítra">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">String 2:</span>
+                            <span class="detail-value entity-value" id="solar-forecast-s2-today"
+                                  data-entity="solar_forecast_string2"
+                                  data-tooltip="String 2 - Předpověď dnes"
+                                  onclick="openEntityDialog(getSensorId('solar_forecast_string2'))">-- kWh</span>
+                            <span class="detail-value entity-value" id="solar-forecast-s2-tomorrow"
+                                  data-tooltip="String 2 - Předpověď zítra">-- kWh</span>
                         </div>
                     </div>
                 </div>
