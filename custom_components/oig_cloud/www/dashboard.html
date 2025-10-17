@@ -219,7 +219,7 @@
             font-size: 9px;
             opacity: 0.8;
             display: flex;
-            flex-direction: row;
+            flex-direction: column;
             gap: 4px;
             align-items: center;
             justify-content: center;
@@ -308,8 +308,28 @@
         .battery-current-indicator {
             position: absolute !important;
             top: 50% !important;
-            left: 8px !important;
-            transform: translateY(-50%);
+            left: 50% !important;
+            transform: translate(-50%, -50%);
+            font-size: 13px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .battery-current-indicator:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+
+        .battery-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
             font-size: 11px;
             line-height: 1;
             z-index: 10;
@@ -318,25 +338,19 @@
             margin: 0 !important;
             display: flex;
             flex-direction: column;
-            align-items: flex-start;
+            align-items: flex-end;
             gap: 2px;
         }
 
-        .battery-temp-indicator {
-            position: absolute !important;
-            top: 8px !important;
-            right: 8px !important;
+        .battery-temp-icon {
             font-size: 14px;
-            line-height: 1;
-            z-index: 10;
-            cursor: pointer;
-            transition: transform 0.2s;
-            margin: 0 !important;
         }
 
-        .battery-temp-indicator:hover,
-        .battery-voltage-indicator:hover,
-        .battery-current-indicator:hover {
+        .battery-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .battery-voltage-indicator:hover {
             transform: scale(1.1);
         }
 
@@ -365,6 +379,74 @@
         .temp-cold {
             animation: pulse-cold 1s ease-in-out infinite;
             filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+        }
+
+        /* Solar icon animations */
+        .solar-icon-dynamic {
+            font-size: 32px;
+            transition: all 0.3s ease;
+        }
+
+        @keyframes solar-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        @keyframes solar-glow {
+            0%, 100% { filter: drop-shadow(0 0 5px rgba(255, 213, 79, 0.6)); }
+            50% { filter: drop-shadow(0 0 15px rgba(255, 213, 79, 1)); }
+        }
+
+        .solar-active {
+            animation: solar-pulse 2s ease-in-out infinite, solar-glow 2s ease-in-out infinite;
+        }
+
+        /* Solar forecast indicators */
+        .solar-forecast-today {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .solar-forecast-tomorrow {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .solar-forecast-today:hover,
+        .solar-forecast-tomorrow:hover {
+            transform: scale(1.1);
+        }
+
+        .forecast-icon {
+            font-size: 12px;
+        }
+
+        .forecast-value {
+            font-size: 10px;
+            font-weight: 600;
+            opacity: 0.9;
         }
 
         /* Solar strings layout */
@@ -408,7 +490,7 @@
         /* Solar columns in details */
         .solar-columns {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 8px;
             margin-bottom: 0;
         }
@@ -418,11 +500,11 @@
             flex-direction: column;
             gap: 3px;
         }
-        
+
         .solar-column .detail-group {
             margin-bottom: 6px;
         }
-        
+
         .solar-column .detail-group:last-child {
             margin-bottom: 0;
         }
@@ -1544,25 +1626,27 @@
 
             <!-- Solar -->
             <div class="node solar">
-                <div class="node-icon">☀️</div>
+                <div class="solar-forecast-today entity-value" id="solar-forecast-today-corner"
+                     data-entity="solar_forecast"
+                     data-tooltip="Dnešní předpověď"
+                     onclick="openEntityDialog(getSensorId('solar_forecast'))">
+                    <span class="forecast-icon">🔮</span>
+                    <span class="forecast-value" id="solar-forecast-today-value">-- kWh</span>
+                </div>
+                <div class="solar-forecast-tomorrow entity-value" id="solar-forecast-tomorrow-corner"
+                     data-entity="solar_forecast_tomorrow"
+                     data-tooltip="Zítřejší předpověď"
+                     onclick="openEntityDialog(getSensorId('solar_forecast_tomorrow'))">
+                    <span class="forecast-icon">🌅</span>
+                    <span class="forecast-value" id="solar-forecast-tomorrow-value">-- kWh</span>
+                </div>
+                <div class="node-icon solar-icon-dynamic" id="solar-icon-dynamic">☀️</div>
                 <div class="node-label">Solár</div>
                 <div class="node-value" id="solar-power">-- W</div>
-                <div class="node-strings">
-                    <div class="string-item">
-                        <span class="string-icon">🏭</span>
-                        <span class="string-value entity-value" id="solar-s1-main"
-                              data-entity="dc_in_fv_p1"
-                              data-tooltip="String 1 - Výkon"
-                              onclick="openEntityDialog(getSensorId('dc_in_fv_p1'))">-- W</span>
-                    </div>
-                    <div class="string-item">
-                        <span class="string-icon">🏭</span>
-                        <span class="string-value entity-value" id="solar-s2-main"
-                              data-entity="dc_in_fv_p2"
-                              data-tooltip="String 2 - Výkon"
-                              onclick="openEntityDialog(getSensorId('dc_in_fv_p2'))">-- W</span>
-                    </div>
-                </div>
+                <div class="node-subvalue entity-value" id="solar-today"
+                     data-entity="dc_in_fv_ad"
+                     data-tooltip="Vyrobeno dnes celkem"
+                     onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">Dnes: -- kWh</div>
                 <div class="node-details">
                     <div class="solar-columns">
                         <div class="solar-column">
@@ -1613,51 +1697,6 @@
                                       onclick="openEntityDialog(getSensorId('dc_in_fv_p2'))">-- W</span>
                             </div>
                         </div>
-                        <div class="solar-column">
-                            <div class="detail-group">
-                                <div class="detail-subheader">⚡ Energie</div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">📊</span>
-                                    <span class="detail-value entity-value" id="solar-today"
-                                          data-entity="dc_in_fv_ad"
-                                          data-tooltip="Vyrobeno dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">-- kWh</span>
-                                </div>
-                            </div>
-                            <div class="detail-group">
-                                <div class="detail-subheader">🔮 Předpověď</div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">📅</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-today"
-                                          data-entity="solar_forecast"
-                                          data-tooltip="Dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast'))">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-icon">🔮</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-tomorrow"
-                                          data-tooltip="Zítra celkem">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">S1:</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s1-today"
-                                          data-entity="solar_forecast_string1"
-                                          data-tooltip="String 1 - dnes"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast_string1'))">-- kWh</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s1-tomorrow"
-                                          data-tooltip="String 1 - zítra">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">S2:</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s2-today"
-                                          data-entity="solar_forecast_string2"
-                                          data-tooltip="String 2 - dnes"
-                                          onclick="openEntityDialog(getSensorId('solar_forecast_string2'))">-- kWh</span>
-                                    <span class="detail-value entity-value" id="solar-forecast-s2-tomorrow"
-                                          data-tooltip="String 2 - zítra">-- kWh</span>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1675,13 +1714,16 @@
                      data-entity="extended_battery_current"
                      data-tooltip="Proud baterie"
                      onclick="openEntityDialog(getSensorId('extended_battery_current'))">
-                    <span style="font-size: 10px;">〰️</span>
+                    <span style="font-size: 12px;">〰️</span>
                     <span id="battery-current-value">-- A</span>
                 </div>
                 <div class="battery-temp-indicator entity-value" id="battery-temp-indicator"
                      data-entity="extended_battery_temperature"
                      data-tooltip="Teplota baterie"
-                     onclick="openEntityDialog(getSensorId('extended_battery_temperature'))">🌡️</div>
+                     onclick="openEntityDialog(getSensorId('extended_battery_temperature'))">
+                    <span class="battery-temp-icon" id="battery-temp-icon">🌡️</span>
+                    <span id="battery-temp-value">-- °C</span>
+                </div>
                 <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
                 <div class="node-label">Baterie</div>
                 <div class="node-value" id="battery-soc">-- %</div>
@@ -1703,12 +1745,16 @@
                         <div class="detail-row">
                             <span class="detail-label">└ z FVE:</span>
                             <span class="detail-value entity-value" id="battery-charge-solar"
-                                  data-tooltip="Nabito z FVE dnes">-- kWh</span>
+                                  data-entity="computed_batt_charge_fve_energy_today"
+                                  data-tooltip="Nabito z FVE dnes"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">-- kWh</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">└ ze sítě:</span>
                             <span class="detail-value entity-value" id="battery-charge-grid"
-                                  data-tooltip="Nabito ze sítě dnes">-- kWh</span>
+                                  data-entity="computed_batt_charge_grid_energy_today"
+                                  data-tooltip="Nabito ze sítě dnes"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">-- kWh</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Vybito:</span>
@@ -2934,16 +2980,36 @@
             // Solar
             const solarP1Data = await getSensor(getSensorId('actual_fv_p1'));
             const solarP2Data = await getSensor(getSensorId('actual_fv_p2'));
+            const solarPercData = await getSensor(getSensorId('dc_in_fv_proc'));
             const solarP1 = solarP1Data.value || 0;
             const solarP2 = solarP2Data.value || 0;
             const solarPower = solarP1 + solarP2;
+            const solarPerc = solarPercData.value || 0;
             const solarTodayData = await getSensor(getSensorId('dc_in_fv_ad'));
             const solarTodayWh = solarTodayData.value || 0;
             const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
 
             // Display solar power using formatPower helper - UPDATE ONLY IF CHANGED
             updateElementIfChanged('solar-power', formatPower(solarPower), 'solar-power');
-            updateElementIfChanged('solar-today', solarTodayKWh.toFixed(2) + ' kWh', 'solar-today');
+            updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(2) + ' kWh', 'solar-today');
+
+            // Update solar icon based on percentage (dynamic icon with animation)
+            const solarIcon = document.getElementById('solar-icon-dynamic');
+            let solarIconEmoji;
+            if (solarPerc <= 5) {
+                solarIconEmoji = '🌑'; // Měsíc/noc
+                solarIcon.className = 'node-icon solar-icon-dynamic';
+            } else if (solarPerc < 50) {
+                solarIconEmoji = '☀️'; // Normální slunce
+                solarIcon.className = 'node-icon solar-icon-dynamic';
+            } else {
+                solarIconEmoji = '☀️'; // Aktivní slunce s animací
+                solarIcon.className = 'node-icon solar-icon-dynamic solar-active';
+                // Scale based on percentage (50% = 1.0, 100% = 1.3)
+                const scale = 1.0 + ((solarPerc - 50) / 50) * 0.3;
+                solarIcon.style.fontSize = (32 * scale) + 'px';
+            }
+            updateElementIfChanged('solar-icon-dynamic', solarIconEmoji, 'solar-icon');
 
             // Update active class only if changed
             const solarNode = document.querySelector('.solar');
@@ -2978,7 +3044,7 @@
             else if (batterySoC >= 50) batteryIconEmoji = '🔋';
             else if (batterySoC >= 25) batteryIconEmoji = '🪫';
             else batteryIconEmoji = '🪫';
-            
+
             if (previousValues['battery-icon'] !== batteryIconEmoji) {
                 batteryIcon.textContent = batteryIconEmoji;
                 previousValues['battery-icon'] = batteryIconEmoji;
@@ -3017,13 +3083,14 @@
             const batteryVoltageData = await getSensor(getSensorId('extended_battery_voltage'));
             const batteryCurrentData = await getSensor(getSensorId('extended_battery_current'));
             const batteryTempData = await getSensor(getSensorId('extended_battery_temperature'));
-            
+
             updateElementIfChanged('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
             updateElementIfChanged('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
-            
+
             // Update temperature indicator with animation
             const batteryTemp = batteryTempData.value || 0;
             const tempIndicator = document.getElementById('battery-temp-indicator');
+            const tempIconElement = document.getElementById('battery-temp-icon');
             let tempIcon, tempClass;
             if (batteryTemp > 25) {
                 tempIcon = '🌡️';
@@ -3035,12 +3102,15 @@
                 tempIcon = '🌡️';
                 tempClass = 'battery-temp-indicator';
             }
-            
+
             if (previousValues['battery-temp-icon'] !== tempIcon) {
-                tempIndicator.textContent = tempIcon;
+                tempIconElement.textContent = tempIcon;
                 tempIndicator.className = tempClass;
                 previousValues['battery-temp-icon'] = tempIcon;
             }
+
+            // Update temperature value
+            updateElementIfChanged('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
 
             // Grid
             const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
@@ -3111,9 +3181,7 @@
             }
 
             // ===== ANIMATION DATA LOADING =====
-            // Load sensors needed for proper animation logic
-            const solarPercData = await getSensor(getSensorId('dc_in_fv_proc'));
-            const solarPerc = solarPercData.value || 0; // 0-100%
+            // Load sensors needed for proper animation logic (solarPerc already loaded above)
 
             const boilerPowerData = await getSensor(getSensorId('boiler_power'));
             const boilerPower = boilerPowerData.value || 0;
@@ -3171,41 +3239,23 @@
                 // Update only if changed
                 updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
                 updateElementIfChanged('solar-s2', Math.round(solarP2.value || 0) + ' W');
-                updateElementIfChanged('solar-s1-main', Math.round(solarP1.value || 0) + ' W');
-                updateElementIfChanged('solar-s2-main', Math.round(solarP2.value || 0) + ' W');
                 updateElementIfChanged('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
                 updateElementIfChanged('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
                 updateElementIfChanged('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
                 updateElementIfChanged('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
 
-                // Solar forecast - today's total
+                // Solar forecast - corner indicators (today and tomorrow)
                 const forecastToday = (solarForecast.value || 0).toFixed(2);
-                updateElementIfChanged('solar-forecast-today', forecastToday + ' kWh');
+                updateElementIfChanged('solar-forecast-today-value', forecastToday + ' kWh');
 
-                // Solar forecast - tomorrow's total (from attributes)
                 const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
-                updateElementIfChanged('solar-forecast-tomorrow', parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
-
-                // Solar forecast - String 1 today and tomorrow
-                const forecastS1Today = (solarForecastS1.value || 0).toFixed(2);
-                const forecastS1Tomorrow = solarForecastS1.attributes?.tomorrow_total_sum_kw || 0;
-                updateElementIfChanged('solar-forecast-s1-today', forecastS1Today + ' kWh');
-                updateElementIfChanged('solar-forecast-s1-tomorrow', parseFloat(forecastS1Tomorrow).toFixed(2) + ' kWh');
-
-                // Solar forecast - String 2 today and tomorrow
-                const forecastS2Today = (solarForecastS2.value || 0).toFixed(2);
-                const forecastS2Tomorrow = solarForecastS2.attributes?.tomorrow_total_sum_kw || 0;
-                updateElementIfChanged('solar-forecast-s2-today', forecastS2Today + ' kWh');
-                updateElementIfChanged('solar-forecast-s2-tomorrow', parseFloat(forecastS2Tomorrow).toFixed(2) + ' kWh');
+                updateElementIfChanged('solar-forecast-tomorrow-value', parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
 
                 // === BATTERY DETAILS ===
                 const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today'));
                 const battDischargeTotal = await getSensor(getSensorId('computed_batt_discharge_energy_today'));
-                
-                // TODO: Přidat senzory pro nabíjení z FVE a ze sítě
-                // Zatím použijeme placeholder hodnoty
-                const battChargeSolar = { value: 0 }; // await getSensor(getSensorId('computed_batt_charge_solar_today'));
-                const battChargeGrid = { value: 0 }; // await getSensor(getSensorId('computed_batt_charge_grid_today'));
+                const battChargeSolar = await getSensor(getSensorId('computed_batt_charge_fve_energy_today'));
+                const battChargeGrid = await getSensor(getSensorId('computed_batt_charge_grid_energy_today'));
 
                 // Battery totals today - use formatEnergy (Wh from sensors)
                 updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
@@ -3232,7 +3282,7 @@
                 // Update only if changed - use formatEnergy (Wh from sensors)
                 updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
                 updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
-                
+
                 // Update frequency indicator in top right corner
                 updateElementIfChanged('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
 
