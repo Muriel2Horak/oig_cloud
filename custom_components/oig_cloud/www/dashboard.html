@@ -424,8 +424,8 @@
         /* Mode change indicator badge */
         .mode-change-indicator {
             position: absolute;
-            top: 8px;
-            right: 8px;
+            top: 50px;
+            right: -20px;
             background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
             border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
@@ -2974,7 +2974,7 @@
                     if (inverterModeElement && targetMode) {
                         // Add blinking animation to current mode
                         inverterModeElement.classList.add('mode-changing');
-                        
+
                         // Show indicator badge with target mode
                         if (modeChangeIndicator && modeChangeText) {
                             modeChangeText.textContent = `→ ${targetMode}`;
@@ -2997,20 +2997,6 @@
                         }
                     });
 
-                    // Show notification only once when mode change starts
-                    if (!modeChangeInProgress && !lastModeChangeNotified) {
-                        const isQueued = queuedRequests.some(req => req?.service?.includes('set_box_mode'));
-
-                        showNotification(
-                            '⏳ Probíhá změna režimu',
-                            isQueued
-                                ? `Režim "${targetMode}" čeká ve frontě. Ostatní tlačítka jsou zamčena.`
-                                : `Nastavuji režim "${targetMode}". Může to trvat až 10 minut.`,
-                            'warning'
-                        );
-                        lastModeChangeNotified = true;
-                    }
-
                     modeChangeInProgress = true;
                 } else {
                     // Remove visual feedback from flow diagram
@@ -3020,7 +3006,7 @@
                     if (inverterModeElement) {
                         inverterModeElement.classList.remove('mode-changing');
                     }
-                    
+
                     if (modeChangeIndicator) {
                         modeChangeIndicator.style.display = 'none';
                     }
@@ -3031,15 +3017,6 @@
                         btn.style.animation = '';
                         btn.style.opacity = '';
                     });
-
-                    // Show completion notification if mode change just finished
-                    if (modeChangeInProgress && lastModeChangeNotified) {
-                        showNotification(
-                            '✅ Změna režimu dokončena',
-                            'Všechna tlačítka jsou opět aktivní.',
-                            'success'
-                        );
-                    }
 
                     modeChangeInProgress = false;
                     lastModeChangeNotified = false;
@@ -3129,11 +3106,7 @@
                 const currentMode = currentModeData.value || '';
 
                 if (currentMode.includes(mode)) {
-                    showNotification(
-                        '✓ Režim již aktivní',
-                        `Režim "${mode}" je již nastaven. Není potřeba měnit.`,
-                        'success'
-                    );
+                    // Режим už je aktivní - tiše ignorovat
                     return;
                 }
 
@@ -3178,12 +3151,14 @@
                 });
 
                 if (success) {
-                    showNotification('Režim boxu', `Úkol přidán do fronty: "${mode}"`, 'success');
+                    // Immediately check shield activity (don't wait 10s)
+                    await monitorShieldActivity();
+                    
                     // Update shield UI immediately
                     setTimeout(() => {
                         updateShieldUI();
                         updateButtonStates();
-                    }, 1000);
+                    }, 500);
                 } else {
                     // Re-enable on error
                     if (btn) {
