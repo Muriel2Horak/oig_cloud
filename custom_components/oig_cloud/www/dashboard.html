@@ -895,7 +895,87 @@
             <div class="time" id="current-time">--:--:--</div>
         </div>
 
-        <div class="flow-canvas">
+    <!-- Control Panel -->
+    <div class="control-panel" id="control-panel">
+        <div class="panel-header" onclick="toggleControlPanel()">
+            <h3>⚙️ Ovládání</h3>
+            <button class="btn-minimize" onclick="event.stopPropagation(); toggleControlPanel()">
+                <span id="panel-toggle-icon">−</span>
+            </button>
+        </div>
+
+        <div class="panel-content">
+            <!-- Global Shield Status -->
+            <div id="shield-global-status" class="shield-status idle">
+                ✓ Připraveno
+            </div>
+
+            <!-- Box Mode -->
+            <div class="control-section">
+                <h4>📦 Režim Boxu</h4>
+                <div class="button-group">
+                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1">Home 1</button>
+                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2">Home 2</button>
+                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3">Home 3</button>
+                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups">UPS</button>
+                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5">Home 5</button>
+                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6">Home 6</button>
+                </div>
+                <div class="status">
+                    Aktuální: <span id="box-mode-status">--</span>
+                </div>
+            </div>
+
+            <!-- Grid Delivery -->
+            <div class="control-section">
+                <h4>🔌 Dodávka do sítě</h4>
+                <div class="button-group">
+                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off">Vypnuto</button>
+                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on">Zapnuto</button>
+                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited">Omezeno</button>
+                </div>
+                <div class="input-group">
+                    <label>Limit (W):</label>
+                    <input type="number" id="grid-limit" min="1" max="9999" placeholder="1-9999">
+                    <button onclick="setGridDeliveryLimit()">Nastavit</button>
+                </div>
+            </div>
+
+            <!-- Battery Formating -->
+            <div class="control-section">
+                <h4>🔋 Nabíjení baterie</h4>
+                <div class="button-group">
+                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off">Nenabíjet</button>
+                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on">Nabíjet</button>
+                </div>
+                <div class="input-group">
+                    <label>Limit (%):</label>
+                    <input type="number" id="battery-limit" min="0" max="100" placeholder="0-100">
+                    <button onclick="setBatteryFormatatingLimit()">Nastavit s limitem</button>
+                </div>
+            </div>
+
+            <!-- Boiler -->
+            <div class="control-section">
+                <h4>🌡️ Bojler</h4>
+                <div class="button-group">
+                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb">CBB</button>
+                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual">Manual</button>
+                </div>
+                <div class="status">
+                    Režim: <span id="boiler-mode-status">--</span>
+                </div>
+            </div>
+
+            <!-- Other -->
+            <div class="control-section">
+                <h4>🔄 Ostatní</h4>
+                <button onclick="updateSolarForecast()" class="btn-secondary">🌞 Aktualizovat FV Forecast</button>
+            </div>
+        </div>
+    </div>
+
+                <div class="flow-canvas">
             <!-- SVG for connection lines -->
             <svg class="connections" id="connections">
                 <!-- Lines will be drawn dynamically -->
@@ -1057,85 +1137,7 @@
         </div>
     </div>
 
-    <!-- Control Panel -->
-    <div class="control-panel" id="control-panel">
-        <div class="panel-header" onclick="toggleControlPanel()">
-            <h3>⚙️ Ovládání</h3>
-            <button class="btn-minimize" onclick="event.stopPropagation(); toggleControlPanel()">
-                <span id="panel-toggle-icon">−</span>
-            </button>
-        </div>
 
-        <div class="panel-content">
-            <!-- Global Shield Status -->
-            <div id="shield-global-status" class="shield-status idle">
-                ✓ Připraveno
-            </div>
-
-            <!-- Box Mode -->
-            <div class="control-section">
-                <h4>📦 Režim Boxu</h4>
-                <div class="button-group">
-                    <button onclick="setBoxMode('Home 1')" id="btn-mode-home1">Home 1</button>
-                    <button onclick="setBoxMode('Home 2')" id="btn-mode-home2">Home 2</button>
-                    <button onclick="setBoxMode('Home 3')" id="btn-mode-home3">Home 3</button>
-                    <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups">UPS</button>
-                    <button onclick="setBoxMode('Home 5')" id="btn-mode-home5">Home 5</button>
-                    <button onclick="setBoxMode('Home 6')" id="btn-mode-home6">Home 6</button>
-                </div>
-                <div class="status">
-                    Aktuální: <span id="box-mode-status">--</span>
-                </div>
-            </div>
-
-            <!-- Grid Delivery -->
-            <div class="control-section">
-                <h4>🔌 Dodávka do sítě</h4>
-                <div class="button-group">
-                    <button onclick="setGridDelivery('Vypnuto / Off', null)" id="btn-grid-off">Vypnuto</button>
-                    <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on">Zapnuto</button>
-                    <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited">Omezeno</button>
-                </div>
-                <div class="input-group">
-                    <label>Limit (W):</label>
-                    <input type="number" id="grid-limit" min="1" max="9999" placeholder="1-9999">
-                    <button onclick="setGridDeliveryLimit()">Nastavit</button>
-                </div>
-            </div>
-
-            <!-- Battery Formating -->
-            <div class="control-section">
-                <h4>🔋 Nabíjení baterie</h4>
-                <div class="button-group">
-                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off">Nenabíjet</button>
-                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on">Nabíjet</button>
-                </div>
-                <div class="input-group">
-                    <label>Limit (%):</label>
-                    <input type="number" id="battery-limit" min="0" max="100" placeholder="0-100">
-                    <button onclick="setBatteryFormatatingLimit()">Nastavit s limitem</button>
-                </div>
-            </div>
-
-            <!-- Boiler -->
-            <div class="control-section">
-                <h4>🌡️ Bojler</h4>
-                <div class="button-group">
-                    <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb">CBB</button>
-                    <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual">Manual</button>
-                </div>
-                <div class="status">
-                    Režim: <span id="boiler-mode-status">--</span>
-                </div>
-            </div>
-
-            <!-- Other -->
-            <div class="control-section">
-                <h4>🔄 Ostatní</h4>
-                <button onclick="updateSolarForecast()" class="btn-secondary">🌞 Aktualizovat FV Forecast</button>
-            </div>
-        </div>
-    </div>
 
     <script>
         const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
