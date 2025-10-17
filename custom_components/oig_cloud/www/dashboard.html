@@ -102,7 +102,7 @@
 
         /* Solar - Top Center */
         .solar {
-            top: 80px;
+            top: 120px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(255, 213, 79, 0.4);
@@ -128,7 +128,7 @@
 
         /* Battery - Bottom Center */
         .battery {
-            bottom: 80px;
+            bottom: 120px;
             left: 50%;
             transform: translateX(-50%);
             border-color: rgba(76, 175, 80, 0.4);
@@ -761,6 +761,54 @@
         }
 
         .input-group {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .input-group label {
+            font-size: 10px;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            color: white;
+            font-size: 11px;
+            min-width: 80px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: rgba(66, 165, 245, 0.6);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .input-group button {
+            padding: 6px 12px;
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-group button:hover {
+            background: rgba(76, 175, 80, 0.5);
+            border-color: rgba(76, 175, 80, 0.7);
+        }
+
+        .input-group {
             display: none; /* Skryté - šetříme místo */
         }
 
@@ -1078,6 +1126,11 @@
                     <button onclick="setGridDelivery('Zapnuto / On', null)" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">Zapnuto</button>
                     <button onclick="setGridDelivery('S omezením / Limited', null)" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">S omezením</button>
                 </div>
+                <div class="input-group">
+                    <label>Limit (W):</label>
+                    <input type="number" id="grid-limit" placeholder="např. 5000" min="0" max="20000" step="100">
+                    <button onclick="setGridDeliveryLimit()">Nastavit</button>
+                </div>
             </div>
 
             <!-- Battery Formating -->
@@ -1086,6 +1139,11 @@
                 <div class="button-group">
                     <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off" title="Nenabíjet: Baterie se nenabíjí ze sítě, pouze z FVE">Nenabíjet</button>
                     <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on" title="Nabíjet: Povoleno nabíjení baterie i ze sítě (např. v levné tarify)">Nabíjet</button>
+                </div>
+                <div class="input-group">
+                    <label>Nabít na (%):</label>
+                    <input type="number" id="battery-target" placeholder="např. 80" min="0" max="100" step="5">
+                    <button onclick="setBatteryTarget()">Nastavit</button>
                 </div>
             </div>
 
@@ -1880,6 +1938,19 @@
             setBatteryFormating('Nabíjet', limit);
         }
 
+        // Set battery target SOC from input
+        function setBatteryTarget() {
+            const input = document.getElementById('battery-target');
+            const limit = parseInt(input.value);
+
+            if (!limit || limit < 0 || limit > 100) {
+                showNotification('Chyba', 'Zadejte cíl 0-100 %', 'error');
+                return;
+            }
+
+            setBatteryFormating('Nabíjet', limit);
+        }
+
         // Set boiler mode
         async function setBoilerMode(mode) {
             try {
@@ -2089,7 +2160,7 @@
 
             connections.forEach(conn => {
                 if (!centers[conn.from] || !centers[conn.to]) return; // Skip if node missing
-                
+
                 const from = centers[conn.from];
                 const to = centers[conn.to];
 
@@ -2132,7 +2203,7 @@
         // Animate particles
         function animateFlow(data) {
             const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
-            
+
             const canvas = document.querySelector('.flow-canvas');
             const nodes = {
                 solar: document.querySelector('.solar'),
@@ -2178,7 +2249,7 @@
             if (batteryAbsPower > 10) {
                 const batteryPerc = Math.min(batteryAbsPower / 9000, 1) * 100; // 0-100%
                 const speedMs = 3000 - (batteryPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                
+
                 if (batteryPower > 0) {
                     // Charging: Inverter → Battery
                     createParticle(centers.inverter, centers.battery, '#4caf50', speedMs);
@@ -2196,7 +2267,7 @@
             if (gridAbsPower > 10) {
                 const gridPerc = Math.min(gridAbsPower / 17000, 1) * 100; // 0-100%
                 const speedMs = 3000 - (gridPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                
+
                 if (gridPower > 0) {
                     // From grid: Grid → Inverter (RED)
                     createParticle(centers.grid, centers.inverter, '#f44336', speedMs);
@@ -2266,8 +2337,8 @@
             const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
 
             // Display solar power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const solarPowerText = solarPower >= 1000 
-                ? (solarPower / 1000).toFixed(2) + ' kW' 
+            const solarPowerText = solarPower >= 1000
+                ? (solarPower / 1000).toFixed(2) + ' kW'
                 : Math.round(solarPower) + ' W';
             updateElementIfChanged('solar-power', solarPowerText, 'solar-power');
             updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(1) + ' kWh', 'solar-today');
@@ -2286,8 +2357,8 @@
             updateElementIfChanged('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
 
             // Display battery power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const batteryPowerText = Math.abs(batteryPower) >= 1000 
-                ? (batteryPower / 1000).toFixed(2) + ' kW' 
+            const batteryPowerText = Math.abs(batteryPower) >= 1000
+                ? (batteryPower / 1000).toFixed(2) + ' kW'
                 : Math.round(batteryPower) + ' W';
             updateElementIfChanged('battery-power', batteryPowerText, 'battery-power');
 
@@ -2335,8 +2406,8 @@
             const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
 
             // Display grid power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const gridPowerText = Math.abs(gridPower) >= 1000 
-                ? (Math.abs(gridPower) / 1000).toFixed(2) + ' kW' 
+            const gridPowerText = Math.abs(gridPower) >= 1000
+                ? (Math.abs(gridPower) / 1000).toFixed(2) + ' kW'
                 : Math.round(Math.abs(gridPower)) + ' W';
             updateElementIfChanged('grid-power', gridPowerText, 'grid-power');
             updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
@@ -2371,8 +2442,8 @@
             const houseTodayKWh = houseTodayWh / 1000; // Convert Wh to kWh
 
             // Display house power in kW if > 1000W, otherwise W - UPDATE ONLY IF CHANGED
-            const housePowerText = housePower >= 1000 
-                ? (housePower / 1000).toFixed(2) + ' kW' 
+            const housePowerText = housePower >= 1000
+                ? (housePower / 1000).toFixed(2) + ' kW'
                 : Math.round(housePower) + ' W';
             updateElementIfChanged('house-power', housePowerText, 'house-power');
             updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
@@ -2470,9 +2541,9 @@
 
                 // Solar forecast - tomorrow's total (from attributes)
                 // Try multiple possible attribute names
-                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw 
-                    || solarForecast.attributes?.tomorrow_sum 
-                    || solarForecast.attributes?.tomorrow_total 
+                const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw
+                    || solarForecast.attributes?.tomorrow_sum
+                    || solarForecast.attributes?.tomorrow_total
                     || 0;
                 updateElementIfChanged('solar-forecast-tomorrow', forecastTomorrow.toFixed(2) + ' kWh');
 
@@ -2622,7 +2693,7 @@
             try {
                 const boilerInUse = await getSensor(getSensorId('boiler_is_use'));
                 const boilerNode = document.getElementById('boiler-node');
-                
+
                 if (boilerInUse && boilerInUse.value === true) {
                     boilerNode.classList.remove('hidden');
                     console.log('[Boiler] Boiler detected and enabled');
@@ -2639,10 +2710,10 @@
         // Initialize
         function init() {
             drawConnections();
-            
+
             // Check boiler availability
             checkBoilerAvailability();
-            
+
             // Initial full load
             forceFullRefresh();
             updateTime();
@@ -2657,17 +2728,17 @@
 
             // OPTIMIZED: Primary values update every 5s (partial updates)
             setInterval(loadData, 5000);
-            
+
             // OPTIMIZED: Details update every 30s (less frequent, full refresh)
             setInterval(() => {
                 loadNodeDetails();
             }, 30000);
-            
+
             // OPTIMIZED: Control status update every 20s
             setInterval(() => {
                 loadControlStatus();
             }, 20000);
-            
+
             // Time update every second
             setInterval(updateTime, 1000);
 
