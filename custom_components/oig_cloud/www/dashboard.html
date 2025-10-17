@@ -1800,7 +1800,7 @@
             </div>
 
             <!-- Boiler -->
-            <div class="control-section">
+            <div class="control-section" id="boiler-control-section">
                 <h4>Režim bojleru</h4>
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
@@ -3739,10 +3739,10 @@
                 updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
 
                 // === BOILER DETAILS (as part of house) ===
-                const boilerIsUse = await getSensorSafe(getSensorId('boiler_is_use'));
+                const boilerIsUse = await getSensorStringSafe(getSensorId('boiler_is_use'));
                 const boilerDetailSection = document.getElementById('boiler-detail-section');
                 
-                if (boilerIsUse.exists && boilerIsUse.value === 1) {
+                if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
                     // Show boiler section
                     boilerDetailSection.style.display = 'block';
                     
@@ -3782,6 +3782,18 @@
                 } else {
                     // Hide boiler section
                     boilerDetailSection.style.display = 'none';
+                }
+
+                // Update boiler control panel visibility/state
+                const boilerControlSection = document.getElementById('boiler-control-section');
+                if (boilerControlSection) {
+                    if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
+                        boilerControlSection.style.opacity = '1';
+                        boilerControlSection.style.pointerEvents = 'auto';
+                    } else {
+                        boilerControlSection.style.opacity = '0.3';
+                        boilerControlSection.style.pointerEvents = 'none';
+                    }
                 }
 
                 // === INVERTER DETAILS ===
