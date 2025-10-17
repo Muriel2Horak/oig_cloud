@@ -218,13 +218,19 @@
         /* Phase values in main box */
         .node-phases {
             margin-top: 4px;
-            font-size: 9px;
+            font-size: 10px; /* Zvětšeno z 9px */
             opacity: 0.8;
             display: flex;
-            flex-direction: column;
-            gap: 2px;
+            flex-direction: row; /* Výchozí pro Spotřebu - 1 řádek */
+            gap: 4px;
             align-items: center;
             justify-content: center;
+        }
+
+        /* Síť - 2 řádky (výkony nad napětími) */
+        .grid-node .node-phases {
+            flex-direction: column;
+            gap: 2px;
         }
 
         .phase-row {
@@ -239,7 +245,7 @@
         }
 
         .phase-value {
-            font-size: 9px;
+            font-size: 10px; /* Zvětšeno z 9px */
             opacity: 0.9;
         }
 
@@ -489,6 +495,12 @@
         .solar-icon-dynamic {
             font-size: 32px;
             transition: all 0.3s ease;
+        }
+
+        /* Měsíc v noci - zvětšený a výraznější */
+        .solar-icon-moon {
+            font-size: 36px !important;
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
         }
 
         @keyframes solar-pulse {
@@ -3332,8 +3344,8 @@
             const solarIcon = document.getElementById('solar-icon-dynamic');
             let solarIconEmoji;
             if (solarPerc <= 5) {
-                solarIconEmoji = '🌑'; // Měsíc/noc
-                solarIcon.className = 'node-icon solar-icon-dynamic';
+                solarIconEmoji = '�'; // Úplněk v noci - výrazný
+                solarIcon.className = 'node-icon solar-icon-dynamic solar-icon-moon';
             } else if (solarPerc < 50) {
                 solarIconEmoji = '☀️'; // Normální slunce
                 solarIcon.className = 'node-icon solar-icon-dynamic';
