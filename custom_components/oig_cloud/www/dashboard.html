@@ -377,44 +377,149 @@
 
             .flow-canvas {
                 margin-top: 0;
+                height: 700px;
+            }
+
+            /* Mírné zmenšení boxů pro tablet */
+            .node {
+                min-width: 130px;
+                padding: 16px;
+            }
+
+            .node-icon {
+                font-size: 40px;
+            }
+
+            .node-value {
+                font-size: 28px;
+            }
+
+            .node-subvalue {
+                font-size: 12px;
+            }
+
+            .node-details {
+                font-size: 10px;
+            }
+
+            .inverter {
+                min-width: 140px;
+            }
+
+            /* Přizpůsobení pozic */
+            .solar {
+                top: 30px;
+            }
+
+            .battery {
+                top: 50%;
+                left: 40px;
+            }
+
+            .grid-node {
+                top: 50%;
+                right: 40px;
+            }
+
+            .house {
+                bottom: 50px;
             }
         }
 
         /* Mobile - small screens */
         @media (max-width: 768px) {
             .flow-canvas {
-                height: 800px;
+                height: 900px;
                 margin-top: 0; /* Top bar handles spacing */
             }
 
+            /* Zmenšení všech boxů pro mobil */
+            .node {
+                min-width: 110px;
+                padding: 12px;
+            }
+
+            .node-icon {
+                font-size: 32px;
+                margin-bottom: 6px;
+            }
+
+            .node-label {
+                font-size: 10px;
+                margin-bottom: 4px;
+            }
+
+            .node-value {
+                font-size: 24px;
+                margin-bottom: 3px;
+            }
+
+            .node-subvalue {
+                font-size: 11px;
+            }
+
+            .node-details {
+                font-size: 9px;
+                margin-top: 8px;
+                padding-top: 6px;
+            }
+
+            .detail-label {
+                font-size: 8px;
+            }
+
+            .detail-value {
+                font-size: 9px;
+            }
+
+            .detail-extra {
+                font-size: 8px;
+            }
+
+            .detail-subheader {
+                font-size: 8px;
+            }
+
+            .inverter {
+                min-width: 120px;
+            }
+
+            /* Pozice boxů pro mobil */
             .solar {
                 top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
             }
 
             .battery {
-                top: 200px;
-                left: 10px;
+                top: 180px;
+                left: 15px;
                 transform: none;
             }
 
             .grid-node {
-                top: 200px;
-                right: 10px;
+                top: 180px;
+                right: 15px;
                 transform: none;
             }
 
             .inverter {
-                top: 400px;
+                top: 360px;
+                left: 50%;
+                transform: translate(-50%, -50%);
             }
 
             .house {
-                bottom: 100px;
+                bottom: 80px;
+                left: 50%;
+                transform: translateX(-50%);
             }
 
             .info-panel {
                 bottom: 10px;
                 flex-direction: column;
                 gap: 10px;
+                font-size: 10px;
             }
 
             .control-panel {
@@ -435,6 +540,11 @@
 
             .button-group {
                 grid-template-columns: repeat(2, 1fr);
+            }
+
+            /* Menší battery gauge */
+            .battery-gauge {
+                height: 6px;
             }
         }
 
