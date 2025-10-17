@@ -393,6 +393,18 @@
             50% { transform: scale(1.15); }
         }
 
+        /* Pending mode change animation */
+        @keyframes pulse-pending {
+            0%, 100% { 
+                opacity: 0.6;
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            50% { 
+                opacity: 0.8;
+                box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.4);
+            }
+        }
+
         .temp-hot {
             animation: pulse-hot 1s ease-in-out infinite;
             filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
@@ -1644,6 +1656,124 @@
             border-color: rgba(255, 152, 0, 0.6);
         }
 
+        /* Custom Acknowledgement Dialog */
+        .ack-dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+
+        .ack-dialog {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+            border: 1px solid rgba(100, 116, 139, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .ack-dialog-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: rgba(255, 255, 255, 0.95);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .ack-dialog-body {
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .ack-dialog-warning {
+            background: rgba(255, 152, 0, 0.1);
+            border: 1px solid rgba(255, 152, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: rgba(255, 193, 7, 0.95);
+        }
+
+        .ack-checkbox-wrapper {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 12px;
+            background: rgba(100, 116, 139, 0.1);
+            border-radius: 8px;
+        }
+
+        .ack-checkbox-wrapper input[type="checkbox"] {
+            margin-top: 3px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .ack-checkbox-wrapper label {
+            flex: 1;
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.9);
+            cursor: pointer;
+        }
+
+        .ack-dialog-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .ack-dialog-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .ack-dialog-buttons .btn-cancel {
+            background: rgba(100, 116, 139, 0.2);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .ack-dialog-buttons .btn-cancel:hover {
+            background: rgba(100, 116, 139, 0.3);
+        }
+
+        .ack-dialog-buttons .btn-confirm {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(29, 78, 216, 0.8) 100%);
+            color: white;
+        }
+
+        .ack-dialog-buttons .btn-confirm:hover:not(:disabled) {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 1) 0%, rgba(29, 78, 216, 1) 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .ack-dialog-buttons .btn-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         /* === SHIELD INTEGRATION STYLES === */
 
         /* Global shield status bar */
@@ -1794,8 +1924,6 @@
                     <button onclick="setBoxMode('Home 2')" id="btn-mode-home2" title="Home 2: Optimalizovaný režim pro úsporu energie">🔋 Home 2</button>
                     <button onclick="setBoxMode('Home 3')" id="btn-mode-home3" title="Home 3: Preferuje nabíjení baterie z FVE">☀️ Home 3</button>
                     <button onclick="setBoxMode('Home UPS')" id="btn-mode-ups" title="Home UPS: Záložní režim s nepřerušitelným napájením">⚡ Home UPS</button>
-                    <button disabled id="btn-mode-home5" title="Home 5: Prozatím nepodporováno zařízením">⚙️ Home 5</button>
-                    <button disabled id="btn-mode-home6" title="Home 6: Prozatím nepodporováno zařízením">⚙️ Home 6</button>
                 </div>
             </div>
 
@@ -2436,14 +2564,12 @@
 
         // Update Box Mode buttons
         function updateBoxModeButtons(currentMode, pending, isRunning) {
-            const modes = ['Home 1', 'Home 2', 'Home 3', 'Home UPS', 'Home 5', 'Home 6'];
+            const modes = ['Home 1', 'Home 2', 'Home 3', 'Home UPS'];
             const buttonIds = {
                 'Home 1': 'btn-mode-home1',
                 'Home 2': 'btn-mode-home2',
                 'Home 3': 'btn-mode-home3',
-                'Home UPS': 'btn-mode-ups',
-                'Home 5': 'btn-mode-home5',
-                'Home 6': 'btn-mode-home6'
+                'Home UPS': 'btn-mode-ups'
             };
 
             modes.forEach(mode => {
@@ -2715,6 +2841,117 @@
             }, 5000);
         }
 
+        // Monitor ServiceShield activity
+        async function monitorShieldActivity() {
+            try {
+                const activitySensor = await getSensor(getSensorId('service_shield_activity_3'));
+                if (!activitySensor || !activitySensor.attributes) return;
+                
+                const attrs = activitySensor.attributes;
+                const runningRequests = attrs.running_requests || [];
+                const queuedRequests = attrs.queued_requests || [];
+                
+                // Check if there's a box mode change in progress
+                const hasModeChange = [...runningRequests, ...queuedRequests].some(req => 
+                    req && req.service && req.service.includes('set_box_mode')
+                );
+                
+                // Get all mode buttons
+                const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
+                const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
+                
+                if (hasModeChange) {
+                    // Disable all buttons and add blinking animation
+                    buttons.forEach(btn => {
+                        btn.disabled = true;
+                        btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                        btn.style.opacity = '0.6';
+                    });
+                } else {
+                    // Re-enable buttons and remove animation
+                    buttons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.style.animation = '';
+                        btn.style.opacity = '';
+                    });
+                }
+            } catch (e) {
+                console.error('[Shield] Error monitoring activity:', e);
+            }
+        }
+
+        // Show acknowledgement dialog
+        function showAcknowledgementDialog(title, message, onConfirm) {
+            return new Promise((resolve) => {
+                // Create overlay
+                const overlay = document.createElement('div');
+                overlay.className = 'ack-dialog-overlay';
+                
+                // Create dialog
+                const dialog = document.createElement('div');
+                dialog.className = 'ack-dialog';
+                
+                dialog.innerHTML = `
+                    <div class="ack-dialog-header">
+                        ⚠️ ${title}
+                    </div>
+                    <div class="ack-dialog-body">
+                        ${message}
+                    </div>
+                    <div class="ack-dialog-warning">
+                        ⚠️ <strong>Upozornění:</strong> Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.
+                    </div>
+                    <div class="ack-checkbox-wrapper">
+                        <input type="checkbox" id="ack-checkbox">
+                        <label for="ack-checkbox">
+                            <strong>Souhlasím</strong> s tím, že měním režim boxu na vlastní odpovědnost. 
+                            Aplikace nenese odpovědnost za případné negativní důsledky této změny.
+                        </label>
+                    </div>
+                    <div class="ack-dialog-buttons">
+                        <button class="btn-cancel">Zrušit</button>
+                        <button class="btn-confirm" disabled>Potvrdit změnu</button>
+                    </div>
+                `;
+                
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+                
+                const checkbox = dialog.querySelector('#ack-checkbox');
+                const confirmBtn = dialog.querySelector('.btn-confirm');
+                const cancelBtn = dialog.querySelector('.btn-cancel');
+                
+                // Enable confirm button only when checkbox is checked
+                checkbox.addEventListener('change', () => {
+                    confirmBtn.disabled = !checkbox.checked;
+                });
+                
+                // Handle confirm
+                confirmBtn.addEventListener('click', () => {
+                    if (checkbox.checked) {
+                        document.body.removeChild(overlay);
+                        resolve(true);
+                    }
+                });
+                
+                // Handle cancel
+                cancelBtn.addEventListener('click', () => {
+                    document.body.removeChild(overlay);
+                    resolve(false);
+                });
+                
+                // Handle ESC key
+                const handleEsc = (e) => {
+                    if (e.key === 'Escape') {
+                        document.body.removeChild(overlay);
+                        document.removeEventListener('keydown', handleEsc);
+                        resolve(false);
+                    }
+                };
+                document.addEventListener('keydown', handleEsc);
+            });
+        }
+
         // Set box mode
         async function setBoxMode(mode) {
             try {
@@ -2732,7 +2969,12 @@
                     if (!proceed) return;
                 }
 
-                const confirmed = confirm(`Opravdu chcete změnit režim boxu na "${mode}"?`);
+                // Show acknowledgement dialog
+                const confirmed = await showAcknowledgementDialog(
+                    'Změna režimu střídače',
+                    `Chystáte se změnit režim boxu na <strong>"${mode}"</strong>.<br><br>` +
+                    `Tato změna ovlivní chování celého systému a může trvat až 10 minut.`
+                );
                 if (!confirmed) return;
 
                 // Show pending state immediately
@@ -2740,9 +2982,7 @@
                     'Home 1': 'btn-mode-home1',
                     'Home 2': 'btn-mode-home2',
                     'Home 3': 'btn-mode-home3',
-                    'Home UPS': 'btn-mode-ups',
-                    'Home 5': 'btn-mode-home5',
-                    'Home 6': 'btn-mode-home6'
+                    'Home UPS': 'btn-mode-ups'
                 };
                 const btn = document.getElementById(buttonIds[mode]);
                 if (btn) {
@@ -3969,6 +4209,11 @@
             setInterval(() => {
                 loadControlStatus();
             }, 20000);
+
+            // Monitor ServiceShield activity every 10s
+            setInterval(() => {
+                monitorShieldActivity();
+            }, 10000);
 
             // Time update every second
             setInterval(updateTime, 1000);
