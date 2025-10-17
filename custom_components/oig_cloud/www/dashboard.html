@@ -126,7 +126,7 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Battery - Bottom Center - S VELKÝM ODSTUPEM OD STŘÍDAČE */
+        /* Battery - Bottom Center - BLÍŽ K STŘÍDAČI */
         .battery {
             bottom: 80px;
             left: 50%;
@@ -191,7 +191,7 @@
         }
 
         .node-label {
-            font-size: 9px; /* Ještě menší */
+            font-size: 10px; /* Zvětšeno z 9px */
             text-transform: uppercase;
             letter-spacing: 0.4px;
             opacity: 0.7;
@@ -200,63 +200,63 @@
         }
 
         .node-value {
-            font-size: 20px; /* Ještě menší */
+            font-size: 22px; /* Zvětšeno z 20px */
             font-weight: 700;
             line-height: 1;
             margin-bottom: 2px;
         }
 
         .node-subvalue {
-            font-size: 9px; /* Ještě menší */
+            font-size: 10px; /* Zvětšeno z 9px */
             opacity: 0.6;
         }
 
-        /* Node Details - VELMI HUSTÉ! */
+        /* Node Details - Čitelné písmo */
         .node-details {
-            margin-top: 5px; /* Ještě menší */
-            padding-top: 4px;
+            margin-top: 6px;
+            padding-top: 6px;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 8px; /* Ještě menší */
-            line-height: 1.2;
+            font-size: 11px; /* Zvětšeno z 8px */
+            line-height: 1.4;
         }
 
         .detail-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2px; /* Ještě menší mezery */
-            gap: 3px;
+            margin-bottom: 3px;
+            gap: 5px;
         }
 
         .detail-label {
-            opacity: 0.5;
-            font-size: 8px; /* Menší */
+            opacity: 0.6;
+            font-size: 10px; /* Zvětšeno z 8px */
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
 
         .detail-value {
             font-weight: 600;
-            font-size: 9px; /* Menší */
+            font-size: 11px; /* Zvětšeno z 9px */
         }
 
         .detail-extra {
-            font-size: 8px;
+            font-size: 10px; /* Zvětšeno z 8px */
             opacity: 0.7;
-            margin-left: 3px;
+            margin-left: 4px;
         }
 
         .detail-group {
-            margin-top: 5px; /* Menší mezery */
-            padding-top: 4px;
+            margin-top: 6px;
+            padding-top: 5px;
             border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .detail-subheader {
-            font-size: 8px; /* Menší */
+            font-size: 10px; /* Zvětšeno z 8px */
             text-transform: uppercase;
-            opacity: 0.4;
-            margin-bottom: 4px;
+            opacity: 0.5;
+            margin-bottom: 5px;
             letter-spacing: 0.5px;
         }
 
@@ -2197,8 +2197,8 @@
                 { from: 'inverter', to: 'house', color: '#f06292' }
             ];
 
-            // Add boiler connection if boiler exists
-            if (centers.boiler) {
+            // Add boiler connection if boiler exists AND is visible (not hidden)
+            if (centers.boiler && nodes.boiler && !nodes.boiler.classList.contains('hidden')) {
                 connections.push({ from: 'house', to: 'boiler', color: '#ff9800' });
             }
 
@@ -2329,9 +2329,10 @@
                 createParticle(centers.inverter, centers.house, '#f06292', speedMs);
             }
 
-            // 5. HOUSE → BOILER (if boiler exists)
+            // 5. HOUSE → BOILER (if boiler exists AND is visible)
             // Max: boilerMaxPower, always one direction
-            if (centers.boiler && boilerPower > 10) {
+            const boilerNode = document.querySelector('.boiler');
+            if (centers.boiler && boilerNode && !boilerNode.classList.contains('hidden') && boilerPower > 10) {
                 const boilerPerc = Math.min(boilerPower / boilerMaxPower, 1) * 100; // 0-100%
                 const speedMs = 3000 - (boilerPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
                 createParticle(centers.house, centers.boiler, '#ff9800', speedMs);
@@ -2779,9 +2780,13 @@
                     boilerNode.classList.add('hidden');
                     console.log('[Boiler] Boiler not in use, hidden');
                 }
+                // Redraw connections after visibility change
+                drawConnections();
             } catch (e) {
                 console.log('[Boiler] Sensor not found, hiding boiler node');
                 document.getElementById('boiler-node').classList.add('hidden');
+                // Redraw connections after visibility change
+                drawConnections();
             }
         }
 
