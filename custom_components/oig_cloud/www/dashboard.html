@@ -307,23 +307,22 @@
 
         .battery-current-indicator {
             position: absolute !important;
-            top: 50% !important;
-            left: 15px !important;
-            transform: translateY(-50%);
-            font-size: 13px;
+            top: 30px !important;
+            left: 8px !important;
+            font-size: 11px;
             line-height: 1;
             z-index: 10;
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
             display: flex;
-            flex-direction: row;
-            align-items: center;
-            gap: 4px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
         }
 
         .battery-current-indicator:hover {
-            transform: translateY(-50%) scale(1.1);
+            transform: scale(1.1);
         }
 
         .battery-temp-indicator {
@@ -1932,7 +1931,7 @@
                             <!-- Nabíjení (levý sloupec) -->
                             <div>
                                 <div class="detail-row">
-                                    <span class="detail-label">Nabito:</span>
+                                    <span class="detail-label">Nabíjení:</span>
                                     <span class="detail-value entity-value" id="battery-charge-total"
                                           data-entity="computed_batt_charge_energy_today"
                                           data-tooltip="Nabito dnes celkem"
@@ -1956,7 +1955,7 @@
                             <!-- Vybíjení (pravý sloupec) -->
                             <div>
                                 <div class="detail-row">
-                                    <span class="detail-label">Vybito:</span>
+                                    <span class="detail-label">Vybíjení:</span>
                                     <span class="detail-value entity-value" id="battery-discharge-total"
                                           data-entity="computed_batt_discharge_energy_today"
                                           data-tooltip="Vybito dnes celkem"
@@ -2027,7 +2026,7 @@
 
             <!-- Grid -->
             <div class="node grid-node" id="grid-box">
-                <div class="node-icon">🔌</div>
+                <div class="node-icon" style="filter: brightness(1.5) contrast(1.2);">🔌</div>
                 <div class="node-label">Síť</div>
                 <div class="node-tariff entity-value" id="grid-tariff-indicator"
                      data-entity="current_tariff"
