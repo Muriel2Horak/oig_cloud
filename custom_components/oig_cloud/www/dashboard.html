@@ -3351,7 +3351,7 @@
 
                 // Use helper function to find sensor (handles _2, _3 suffixes)
                 const entityId = findShieldSensorId('service_shield_activity');
-                
+
                 if (!entityId) {
                     console.warn('[Queue] service_shield_activity sensor not found');
                     return;
@@ -5801,12 +5801,15 @@
             // Subscribe to shield state changes for real-time updates
             subscribeToShield();
 
-            // Initial button state update after sensors are loaded
+            // Initial shield UI update (load current state from sensors)
             setTimeout(() => {
                 updateButtonStates(); // Set initial active states (green highlighting)
+                updateShieldQueue();  // Load initial queue state
+                updateShieldUI();     // Load initial shield status
+                monitorShieldActivity(); // Start activity monitoring
             }, 1000);
 
-            // REMOVED: Initial shield activity check - WebSocket events will handle this
+            // REMOVED: Old polling-based approach - now using WebSocket + initial load
             // setTimeout(() => {
             //     monitorShieldActivity();
             // }, 2000);
