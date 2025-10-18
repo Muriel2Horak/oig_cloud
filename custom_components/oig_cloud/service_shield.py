@@ -54,6 +54,9 @@ class ServiceShield:
         self._state_listener_unsub: Optional[Callable] = None
         self._is_checking: bool = False  # Lock pro prevenci concurrent execution
 
+        # Callbacks pro okamžitou aktualizaci senzorů
+        self._state_change_callbacks: List[Callable[[], None]] = []
+
         # Atributy pro telemetrii (pro zpětnou kompatibilitu)
         self.telemetry_handler: Optional[Any] = None
         self.telemetry_logger: Optional[Any] = None
@@ -148,6 +151,29 @@ class ServiceShield:
             _LOGGER.error(
                 f"[TELEMETRY DEBUG ERROR] Failed to log telemetry: {e}", exc_info=True
             )
+
+    def register_state_change_callback(self, callback: Callable[[], None]) -> None:
+        """Registruje callback, který se zavolá při změně shield stavu."""
+        if callback not in self._state_change_callbacks:
+            self._state_change_callbacks.append(callback)
+            _LOGGER.debug(f"[OIG Shield] Registrován callback pro aktualizaci senzoru")
+
+    def unregister_state_change_callback(self, callback: Callable[[], None]) -> None:
+        """Odregistruje callback."""
+        if callback in self._state_change_callbacks:
+            self._state_change_callbacks.remove(callback)
+            _LOGGER.debug(f"[OIG Shield] Odregistrován callback")
+
+    def _notify_state_change(self) -> None:
+        """Zavolá všechny registrované callbacky při změně stavu."""
+        _LOGGER.debug(
+            f"[OIG Shield] Notifikuji {len(self._state_change_callbacks)} callbacků o změně stavu"
+        )
+        for callback in self._state_change_callbacks:
+            try:
+                self.hass.async_add_job(callback)
+            except Exception as e:
+                _LOGGER.error(f"[OIG Shield] Chyba při volání callback: {e}")
 
     def _values_match(self, current_value: Any, expected_value: Any) -> bool:
         """Porovná dvě hodnoty s normalizací."""
@@ -250,6 +276,18 @@ class ServiceShield:
                 schema=vol.Schema({}),
             )
 
+            # Registrace služby pro smazání z fronty
+            self.hass.services.async_register(
+                "oig_cloud",
+                "shield_remove_from_queue",
+                self._handle_remove_from_queue,
+                schema=vol.Schema(
+                    {
+                        vol.Required("position"): int,
+                    }
+                ),
+            )
+
             _LOGGER.info("[OIG Shield] ServiceShield services registered successfully")
 
         except Exception as e:
@@ -278,6 +316,46 @@ class ServiceShield:
         self.hass.bus.async_fire(
             "oig_cloud_shield_queue_info",
             {**queue_info, "timestamp": dt_now().isoformat()},
+        )
+
+    async def _handle_remove_from_queue(self, call: Any) -> None:
+        """Handle remove from queue service call."""
+        position = call.data.get("position")
+
+        if position < 1 or position > len(self.queue):
+            _LOGGER.error(
+                f"[OIG Shield] Neplatná pozice ve frontě: {position} (fronta má {len(self.queue)} položek)"
+            )
+            return
+
+        # Pozice je 1-based, ale queue je 0-based
+        queue_index = position - 1
+        removed_item = self.queue[queue_index]
+        service_name = removed_item[0]
+
+        # Smažeme položku z fronty
+        del self.queue[queue_index]
+
+        # Smažeme i metadata
+        params = removed_item[1]
+        self.queue_metadata.pop((service_name, str(params)), None)
+
+        _LOGGER.info(
+            f"[OIG Shield] Odstraněna položka z fronty na pozici {position}: {service_name}"
+        )
+
+        # Notifikuj senzory o změně
+        self._notify_state_change()
+
+        # Fire event
+        self.hass.bus.async_fire(
+            "oig_cloud_shield_queue_removed",
+            {
+                "position": position,
+                "service": service_name,
+                "remaining": len(self.queue),
+                "timestamp": dt_now().isoformat(),
+            },
         )
 
     def get_shield_status(self) -> str:
@@ -538,6 +616,9 @@ class ServiceShield:
             },
         )
 
+        # Notifikuj senzory o změně stavu
+        self._notify_state_change()
+
         await self._log_event(
             "change_requested",
             service_name,
@@ -718,6 +799,10 @@ class ServiceShield:
                 if svc == self.running:
                     _LOGGER.info(f"[OIG Shield] Uvolňuji running slot: {svc}")
                     self.running = None
+
+            # Notifikuj senzory o změně stavu (dokončení služby)
+            if finished:
+                self._notify_state_change()
 
             # OPRAVA: Explicitní logování při spouštění dalších služeb z fronty
             if self.running is None and self.queue:

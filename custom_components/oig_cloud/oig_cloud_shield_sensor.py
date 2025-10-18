@@ -48,6 +48,7 @@ class OigCloudShieldSensor(OigCloudSensor):
 
         self.coordinator = coordinator
         self._sensor_type = sensor_type
+        self._shield_callback_registered = False
 
         # Nastavíme potřebné atributy pro entity
         sensor_def = _get_sensor_definition(sensor_type)
@@ -70,6 +71,35 @@ class OigCloudShieldSensor(OigCloudSensor):
         _LOGGER.debug(
             f"✅ Properly initialized ServiceShield sensor: {sensor_type} with entity_id: {self.entity_id}"
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Když je senzor přidán do Home Assistant."""
+        await super().async_added_to_hass()
+
+        # Registrujeme callback pro okamžitou aktualizaci při změně shield stavu
+        shield = self.hass.data.get(DOMAIN, {}).get("shield")
+        if shield and not self._shield_callback_registered:
+            shield.register_state_change_callback(self._on_shield_state_changed)
+            self._shield_callback_registered = True
+            _LOGGER.info(f"[Shield Sensor] Registrován callback pro {self.entity_id}")
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Když je senzor odstraněn z Home Assistant."""
+        # Odregistrujeme callback
+        shield = self.hass.data.get(DOMAIN, {}).get("shield")
+        if shield and self._shield_callback_registered:
+            shield.unregister_state_change_callback(self._on_shield_state_changed)
+            self._shield_callback_registered = False
+            _LOGGER.info(f"[Shield Sensor] Odregistrován callback pro {self.entity_id}")
+
+        await super().async_will_remove_from_hass()
+
+    def _on_shield_state_changed(self) -> None:
+        """Callback volaný při změně shield stavu."""
+        _LOGGER.debug(
+            f"[Shield Sensor] Shield stav změněn - aktualizuji {self.entity_id}"
+        )
+        self.async_write_ha_state()
 
     @property
     def name(self) -> str:

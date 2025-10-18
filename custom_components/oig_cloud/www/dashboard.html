@@ -3062,6 +3062,7 @@
         // Debouncing timers
         let loadDataTimer = null;
         let loadDetailsTimer = null;
+        let shieldMonitorTimer = null;
 
         // Debounced loadData() - prevents excessive calls
         function debouncedLoadData() {
@@ -3077,6 +3078,17 @@
             loadDetailsTimer = setTimeout(() => {
                 loadNodeDetails();
             }, 500); // Wait 500ms before executing
+        }
+
+        // Debounced shield monitor - prevents excessive calls when shield sensors change rapidly
+        function debouncedShieldMonitor() {
+            if (shieldMonitorTimer) clearTimeout(shieldMonitorTimer);
+            shieldMonitorTimer = setTimeout(() => {
+                monitorShieldActivity();
+                updateShieldQueue();
+                updateShieldUI();
+                updateButtonStates();
+            }, 100); // Wait 100ms before executing (shorter delay for responsive UI)
         }
 
         // Subscribe to shield status changes
@@ -3098,20 +3110,19 @@
                         // Shield status sensors
                         if (entityId.includes('service_shield_')) {
                             console.log(`[Shield] Shield sensor changed: ${entityId}`, event.data.new_state);
-                            // Trigger shield activity monitoring on any shield sensor change
-                            monitorShieldActivity();
-                            updateShieldQueue(); // Update queue display
-                            updateShieldUI();
-                            updateButtonStates();
+                            // Use debounced monitor to prevent excessive updates
+                            debouncedShieldMonitor();
                         }
 
                         // Target state sensors (box mode, boiler mode, grid delivery)
+                        // Note: updateButtonStates() is already called by debouncedShieldMonitor()
+                        // We only need to trigger debounce when target sensors change
                         if (entityId.includes('box_prms_mode') ||
                             entityId.includes('boiler_manual_mode') ||
                             entityId.includes('invertor_prms_to_grid') ||
                             entityId.includes('invertor_prm1_p_max_feed_grid')) {
                             console.log(`[Shield] Target sensor changed: ${entityId}`, event.data.new_state);
-                            updateButtonStates();
+                            debouncedShieldMonitor(); // This will call updateButtonStates() after debounce
                         }
 
                         // Data sensors - trigger loadData() on changes
@@ -3152,15 +3163,22 @@
 
         // Parse shield activity to get pending tasks
         function parseShieldActivity(activity) {
-            // activity = "set_box_mode: Home 5" or "Idle" or null
-            if (!activity || activity === 'Idle' || activity === 'idle') {
+            // activity = "set_box_mode: Home 5" or "Idle" or "nečinný" or null
+            if (!activity ||
+                activity === 'Idle' ||
+                activity === 'idle' ||
+                activity === 'nečinný' ||
+                activity === 'Nečinný') {
                 return null;
             }
 
             // Try to match pattern: "service_name: target_value"
             const match = activity.match(/^(\w+):\s*(.+)$/);
             if (!match) {
-                console.warn('[Shield] Cannot parse activity:', activity);
+                // Don't warn for known idle states
+                if (!['idle', 'Idle', 'nečinný', 'Nečinný'].includes(activity)) {
+                    console.warn('[Shield] Cannot parse activity:', activity);
+                }
                 return null;
             }
 
@@ -3486,10 +3504,8 @@
                 await hass.callService(domain, service, data);
                 console.log(`[Service] ✅ Success: ${domain}.${service}`);
 
-                // Immediately update shield queue after service call
-                setTimeout(() => {
-                    updateShieldQueue();
-                }, 500); // Small delay to let backend process the request
+                // Shield queue will be updated automatically via WebSocket event (sensor state change)
+                // No need to manually trigger update here - backend callback handles it instantly
 
                 return true;
             } catch (e) {
@@ -3567,7 +3583,7 @@
 
                 // Build table
                 let html = '<table class="shield-queue-table">';
-                html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Vytvořeno</th><th>Trvání</th></tr></thead>';
+                html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Vytvořeno</th><th>Trvání</th><th>Akce</th></tr></thead>';
                 html += '<tbody>';
 
                 allRequests.forEach((req, index) => {
@@ -3665,6 +3681,25 @@
                             <td style="font-size: 11px;">${changes}</td>
                             <td class="queue-time">${createdText}</td>
                             <td class="queue-time" style="font-weight: 600;">${durationText}</td>
+                            <td style="text-align: center;">
+                                ${req.status === 'queued' ? `
+                                    <button
+                                        onclick="removeFromQueue(${req.position})"
+                                        style="
+                                            background: none;
+                                            border: none;
+                                            cursor: pointer;
+                                            font-size: 18px;
+                                            opacity: 0.6;
+                                            padding: 4px 8px;
+                                            transition: all 0.2s;
+                                        "
+                                        onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)'"
+                                        onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)'"
+                                        title="Odstranit z fronty"
+                                    >🗑️</button>
+                                ` : '<span style="opacity: 0.3;">—</span>'}
+                            </td>
                         </tr>
                     `;
                 });
@@ -3680,7 +3715,7 @@
         // ============================================================================
         // SHIELD MONITORING - Simplified universal approach
         // ============================================================================
-        
+
         // Helper: Parse service request to get type and target value
         function parseServiceRequest(request) {
             if (!request || !request.service || !request.changes || !Array.isArray(request.changes)) {
@@ -4276,6 +4311,34 @@
             });
         }
 
+        // Remove item from shield queue
+        async function removeFromQueue(position) {
+            try {
+                const confirmed = confirm(
+                    `Opravdu chcete odstranit položku #${position} z fronty?\n\n` +
+                    `Tato akce je nevratná.`
+                );
+
+                if (!confirmed) return;
+
+                console.log(`[Queue] Removing position ${position} from queue`);
+
+                const success = await callService('oig_cloud', 'shield_remove_from_queue', {
+                    position: position
+                });
+
+                if (success) {
+                    showNotification('Hotovo', `Položka #${position} byla odstraněna z fronty`, 'success');
+                    // UI will be updated automatically via WebSocket events
+                } else {
+                    showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
+                }
+            } catch (e) {
+                console.error('[Queue] Error removing from queue:', e);
+                showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
+            }
+        }
+
         // Set box mode
         async function setBoxMode(mode) {
             try {
@@ -4330,13 +4393,8 @@
 
                 if (success) {
                     // Shield activity will be monitored automatically via subscribeToShield event listener
-                    // No need to call monitorShieldActivity() here - it will be triggered by sensor state change
-
-                    // Update shield UI immediately
-                    setTimeout(() => {
-                        updateShieldUI();
-                        updateButtonStates();
-                    }, 500);
+                    // WebSocket events will trigger debouncedShieldMonitor() which updates everything
+                    // No need for manual updates here!
                 } else {
                     // Re-enable on error
                     if (btn) {
@@ -4427,19 +4485,9 @@
                     return;
                 }
 
-                // Wait for ServiceShield to register the request
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                // Trigger immediate check (3x with delays to catch the update)
-                await monitorShieldActivity();
-                setTimeout(async () => {
-                    await monitorShieldActivity();
-                    updateShieldUI();
-                    updateButtonStates();
-                }, 1000);
-                setTimeout(async () => {
-                    await monitorShieldActivity();
-                }, 2000);                    return;
+                // Shield activity will be monitored automatically via WebSocket events
+                // No need for manual polling here!
+                return;
                 }
 
                 // Normal case: changing to Limited from Off/On (two steps)
@@ -4493,18 +4541,7 @@
                     }
 
                     console.log('[Grid] ✅ Both steps done!');
-
-                    // Wait for ServiceShield to register the request
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Trigger immediate check (3x with delays)
-                    await monitorShieldActivity();
-                    setTimeout(async () => {
-                        await monitorShieldActivity();
-                    }, 1000);
-                    setTimeout(async () => {
-                        await monitorShieldActivity();
-                    }, 2000);
+                    // UI will be updated automatically via WebSocket events
 
                 } else {
                     // Single step: just mode
@@ -4528,27 +4565,10 @@
                     }
 
                     console.log('[Grid] ✅ Single-step done!');
-
-                    // Wait for ServiceShield to register the request
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Trigger immediate check (3x with delays)
-                    await monitorShieldActivity();
-                    setTimeout(async () => {
-                        await monitorShieldActivity();
-                        updateShieldUI();
-                        updateButtonStates();
-                    }, 1000);
-                    setTimeout(async () => {
-                        await monitorShieldActivity();
-                    }, 2000);
+                    // UI will be updated automatically via WebSocket events
                 }
 
-                // Final UI update after all checks
-                setTimeout(() => {
-                    updateShieldUI();
-                    updateButtonStates();
-                }, 3000);
+                // All done - WebSocket events will handle UI updates automatically
 
             } catch (e) {
                 console.error('[Grid] Error in setGridDelivery:', e);
@@ -4669,17 +4689,7 @@
 
                 if (success) {
                     // NO notification popup - user already confirmed via dialog
-
-                    // Wait for ServiceShield to register the request
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Trigger immediate check (3x with delays to catch the update)
-                    await monitorShieldActivity();
-                    setTimeout(async () => {
-                        await monitorShieldActivity();
-                        updateShieldUI();
-                        updateButtonStates();
-                    }, 500);
+                    // UI will be updated automatically via WebSocket events
                 } else {
                     // Re-enable on error
                     if (btn) {
@@ -5479,11 +5489,11 @@
                 boilerMaxPower
             });
 
-            // Load control panel status (only on first load or explicit refresh)
-            if (!previousValues['control-status-loaded']) {
-                loadControlStatus();
-                previousValues['control-status-loaded'] = true;
-            }
+            // REMOVED: Control panel status now handled by WebSocket events
+            // if (!previousValues['control-status-loaded']) {
+            //     loadControlStatus();
+            //     previousValues['control-status-loaded'] = true;
+            // }
 
             // Load details for all nodes (only on first load or explicit refresh)
             if (!previousValues['node-details-loaded']) {
@@ -5990,15 +6000,15 @@
             // Subscribe to shield state changes for real-time updates
             subscribeToShield();
 
-            // Initial button state update
-            setTimeout(() => {
-                updateButtonStates();
-            }, 1000); // Delay to ensure sensors are loaded
+            // REMOVED: Initial button state update - WebSocket events will handle this
+            // setTimeout(() => {
+            //     updateButtonStates();
+            // }, 1000);
 
-            // Check shield activity immediately on start
-            setTimeout(() => {
-                monitorShieldActivity();
-            }, 2000);
+            // REMOVED: Initial shield activity check - WebSocket events will handle this
+            // setTimeout(() => {
+            //     monitorShieldActivity();
+            // }, 2000);
 
             // OPTIMIZED: Primary values update every 5s (partial updates)
             setInterval(loadData, 5000);
@@ -6008,17 +6018,11 @@
                 loadNodeDetails();
             }, 30000);
 
-            // OPTIMIZED: Control status update every 20s
-            setInterval(() => {
-                loadControlStatus();
-            }, 20000);
-
-            // Monitor ServiceShield activity every 10s as backup (primary updates via subscribeToShield)
-            // This is just a safety net in case sensor updates are missed
-            setInterval(() => {
-                monitorShieldActivity();
-                updateShieldQueue(); // Update queue table
-            }, 10000);
+            // REMOVED: Backup shield monitoring - WebSocket events handle all updates in real-time
+            // setInterval(() => {
+            //     monitorShieldActivity();
+            //     updateShieldQueue();
+            // }, 10000);
 
             // Time update every second
             setInterval(updateTime, 1000);
