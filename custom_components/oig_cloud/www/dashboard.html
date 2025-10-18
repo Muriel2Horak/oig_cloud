@@ -3344,28 +3344,38 @@
             try {
                 // Use Hass states directly (instant, no API call needed!)
                 const hass = getHass();
-                if (!hass || !hass.states) return;
+                if (!hass || !hass.states) {
+                    console.warn('[Queue] Hass not available');
+                    return;
+                }
 
-                // Find service_shield_activity sensor dynamically (may end with _2, _3, etc.)
-                const sensorPrefix = `sensor.oig_${INVERTER_SN}_service_shield_activity`;
-                const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
-
+                // Use helper function to find sensor (handles _2, _3 suffixes)
+                const entityId = findShieldSensorId('service_shield_activity');
+                
                 if (!entityId) {
-                    console.warn('[Shield Queue] service_shield_activity sensor not found');
+                    console.warn('[Queue] service_shield_activity sensor not found');
                     return;
                 }
 
                 const activitySensor = hass.states[entityId];
                 const container = document.getElementById('shield-queue-container');
 
-                if (!activitySensor || !activitySensor.attributes || !container) return;
+                if (!activitySensor || !activitySensor.attributes || !container) {
+                    console.warn('[Queue] Missing data:', {
+                        sensor: entityId,
+                        hasState: !!activitySensor,
+                        hasAttrs: !!activitySensor?.attributes,
+                        hasContainer: !!container
+                    });
+                    return;
+                }
 
                 const attrs = activitySensor.attributes;
                 const runningRequests = attrs.running_requests || [];
                 const queuedRequests = attrs.queued_requests || [];
                 const allRequests = [...runningRequests, ...queuedRequests];
 
-                // Update queue count badge (always, even if empty or collapsed)
+                // Update queue count badge
                 const badge = document.getElementById('queue-count-badge');
                 if (badge) {
                     badge.textContent = `(${allRequests.length})`;
@@ -4150,7 +4160,7 @@
          */
         async function executeServiceWithPendingUI(config) {
             const { serviceName, buttonId, serviceCall, skipQueueWarning = false } = config;
-            
+
             try {
                 // Check shield queue before adding task
                 if (!skipQueueWarning) {
@@ -4195,7 +4205,7 @@
             } catch (e) {
                 console.error(`[Shield] Error in ${serviceName}:`, e);
                 showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
-                
+
                 // Re-enable button on error
                 const btn = buttonId ? document.getElementById(buttonId) : null;
                 if (btn) {
@@ -4310,7 +4320,7 @@
                 // CASE 1: Limited is active, just change limit
                 if (isLimitedActive && isChangingToLimited && result.limit) {
                     console.log('[Grid] 🔧 Case 1: Changing limit only');
-                    
+
                     await executeServiceWithPendingUI({
                         serviceName: 'Změna limitu přetoků',
                         buttonId: buttonId,
@@ -4328,7 +4338,7 @@
                 // CASE 2: Two-step change (Limited from Off/On)
                 if (isChangingToLimited && result.limit) {
                     console.log('[Grid] 🔧 Case 2: Two-step change (limit + mode)');
-                    
+
                     const success = await executeServiceWithPendingUI({
                         serviceName: 'Nastavení přetoků s omezením',
                         buttonId: buttonId,
@@ -4373,7 +4383,7 @@
 
                 // CASE 3: Single-step change (just mode)
                 console.log('[Grid] 🔧 Case 3: Single-step change (mode only)');
-                
+
                 await executeServiceWithPendingUI({
                     serviceName: 'Změna dodávky do sítě',
                     buttonId: buttonId,
