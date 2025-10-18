@@ -994,27 +994,26 @@
             transform: scale(1.05);
         }
 
-        /* Tooltip */
+        /* Tooltip pro entity-value */
         .entity-value::before {
             content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
+            position: fixed;
+            top: var(--tooltip-top, -9999px);
+            left: var(--tooltip-left, -9999px);
             background: rgba(0, 0, 0, 0.95);
             color: white;
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 11px;
             white-space: normal;
-            max-width: 250px;
+            max-width: min(250px, calc(100vw - 20px));
+            width: max-content;
             word-wrap: break-word;
             text-align: center;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
             z-index: 10000;
-            margin-bottom: 5px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         }
 
@@ -1022,27 +1021,29 @@
             opacity: 1;
         }
 
-        /* Šipka tooltipu */
+        /* Šipka tooltipu pro entity-value - výchozí (nahoře, směrem dolů) */
         .entity-value::after {
             content: '';
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
+            position: fixed;
+            top: var(--tooltip-arrow-top, -9999px);
+            left: var(--tooltip-arrow-left, -9999px);
             transform: translateX(-50%);
             border: 4px solid transparent;
             border-top-color: rgba(0, 0, 0, 0.9);
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-            margin-bottom: 1px;
+            z-index: 10000;
         }
 
         .entity-value:hover::after {
             opacity: 1;
-            z-index: 10000; /* Zajistit, že tooltip je vždy navrchu */
-            max-width: 300px;
-            white-space: normal;
-            word-wrap: break-word;
+        }
+
+        /* Šipka tooltipu pro entity-value - když je tooltip dole */
+        .entity-value.tooltip-below::after {
+            border-top-color: transparent;
+            border-bottom-color: rgba(0, 0, 0, 0.9);
         }
 
         /* Info bubble system */
@@ -1068,10 +1069,7 @@
         }
 
         .info-bubble-tooltip {
-            position: absolute;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
+            position: fixed; /* Změna z absolute na fixed pro lepší kontrolu */
             background: rgba(0, 0, 0, 0.95);
             color: white;
             padding: 12px 16px;
@@ -1079,27 +1077,42 @@
             font-size: 11px;
             line-height: 1.5;
             white-space: normal;
-            width: 280px;
+            max-width: 280px; /* Změna z width na max-width pro lepší responzivitu */
+            width: max-content; /* Přizpůsobení šířky obsahu */
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s ease;
             z-index: 10000;
             text-align: left;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            /* Pozice bude nastavena dynamicky pomocí JS */
         }
 
         .info-bubble:hover .info-bubble-tooltip {
             opacity: 1;
+            pointer-events: auto; /* Umožnění interakce s tooltipem */
         }
 
         .info-bubble-tooltip::after {
             content: '';
             position: absolute;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
             border: 6px solid transparent;
+            left: var(--arrow-left, 50%);
+            transform: translateX(-50%);
+        }
+
+        /* Šipka směřující dolů (tooltip nad prvkem) */
+        .info-bubble-tooltip.tooltip-above::after {
+            top: 100%;
             border-top-color: rgba(0, 0, 0, 0.95);
+            border-bottom-color: transparent;
+        }
+
+        /* Šipka směřující nahoru (tooltip pod prvkem) */
+        .info-bubble-tooltip.tooltip-below::after {
+            bottom: 100%;
+            border-bottom-color: rgba(0, 0, 0, 0.95);
+            border-top-color: transparent;
         }
 
         .info-bubble-tooltip strong {
@@ -2344,11 +2357,7 @@
             <!-- Boiler -->
             <div class="control-section" id="boiler-control-section">
                 <h4>Režim bojleru</h4>
-                <!-- Boiler mode change indicator (in control panel) -->
-                <div class="boiler-change-indicator-panel" id="boiler-change-indicator-panel" style="display: none; margin-bottom: 10px;">
-                    <span class="spinner" style="display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255, 152, 0, 0.3); border-top-color: rgba(255, 152, 0, 1); border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
-                    <span id="boiler-change-text-panel" style="margin-left: 8px; color: rgba(255, 152, 0, 1); font-weight: 600;">🌡️ Změna režimu...</span>
-                </div>
+                <!-- Boiler mode change indicator is shown in flow diagram, not here -->
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
                     <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
@@ -2569,15 +2578,7 @@
                     <span class="spinner"></span>
                     <span id="mode-change-text">→ --</span>
                 </div>
-                <!-- Grid delivery change indicators -->
-                <div class="grid-change-indicator" id="grid-change-indicator" style="display: none;">
-                    <span class="spinner"></span>
-                    <span id="grid-change-text">💧 --</span>
-                </div>
-                <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
-                    <span class="spinner"></span>
-                    <span id="grid-limit-text">🔢 --</span>
-                </div>
+                <!-- Grid delivery change indicator moved to "Přetoky do sítě" section -->
                 <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
                 <div class="node-value entity-value" id="inverter-mode"
@@ -2586,7 +2587,14 @@
                      onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</div>
                 <div class="node-details">
                     <div class="detail-group">
-                        <div class="detail-subheader">🌊 Přetoky do sítě</div>
+                        <div class="detail-subheader" style="display: flex; align-items: center; gap: 8px;">
+                            <span>🌊 Přetoky do sítě</span>
+                            <!-- Grid delivery change indicator -->
+                            <div class="grid-change-indicator" id="grid-change-indicator" style="display: none;">
+                                <span class="spinner"></span>
+                                <span id="grid-change-text">💧 --</span>
+                            </div>
+                        </div>
                         <div class="detail-row" style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; align-items: center;">
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span class="detail-icon" id="grid-export-icon">💧</span>
@@ -2843,6 +2851,189 @@
     <script>
         const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
 
+        // === TOOLTIP POSITIONING ===
+
+        // Dynamické pozicionování tooltipů při hover
+        function initTooltipPositioning() {
+            // Info bubble tooltips
+            const infoBubbles = document.querySelectorAll('.info-bubble');
+
+            infoBubbles.forEach(bubble => {
+                let isHovering = false;
+                let positionUpdateInterval = null;
+
+                // Funkce pro výpočet optimální pozice tooltipu
+                function updateTooltipPosition() {
+                    if (!isHovering) return;
+
+                    const tooltip = bubble.querySelector('.info-bubble-tooltip');
+                    if (!tooltip) return;
+
+                    const bubbleRect = bubble.getBoundingClientRect();
+                    const tooltipRect = tooltip.getBoundingClientRect();
+
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+
+                    const spacing = 10; // Mezera od okraje viewportu
+                    const arrowSize = 6;
+
+                    // Výchozí pozice - nad bublinkou, centrovaně
+                    let top = bubbleRect.top - tooltipRect.height - arrowSize - 5;
+                    let left = bubbleRect.left + (bubbleRect.width / 2) - (tooltipRect.width / 2);
+
+                    // Kontrola přetečení vlevo
+                    if (left < spacing) {
+                        left = spacing;
+                    }
+
+                    // Kontrola přetečení vpravo
+                    if (left + tooltipRect.width > viewportWidth - spacing) {
+                        left = viewportWidth - tooltipRect.width - spacing;
+                    }
+
+                    // Kontrola přetečení nahoře - pokud není místo nad bublinkou, zobraz pod ní
+                    let showBelow = false;
+                    if (top < spacing) {
+                        top = bubbleRect.bottom + arrowSize + 5;
+                        showBelow = true;
+                    }
+
+                    // Kontrola přetečení dole (když je tooltip zobrazený pod bublinkou)
+                    if (showBelow && top + tooltipRect.height > viewportHeight - spacing) {
+                        // Pokud ani dole není dost místa, zobraz alespoň tam, kde je více prostoru
+                        const spaceAbove = bubbleRect.top;
+                        const spaceBelow = viewportHeight - bubbleRect.bottom;
+
+                        if (spaceAbove > spaceBelow) {
+                            top = spacing;
+                            showBelow = false;
+                        } else {
+                            top = viewportHeight - tooltipRect.height - spacing;
+                            showBelow = true;
+                        }
+                    }
+
+                    // Nastavení pozice
+                    tooltip.style.top = `${top}px`;
+                    tooltip.style.left = `${left}px`;
+                    tooltip.style.transform = 'none'; // Vypnout původní transform
+
+                    // Nastavení pozice šipky
+                    const arrowLeft = bubbleRect.left + (bubbleRect.width / 2) - left;
+
+                    // Nastavit vlastní CSS proměnné pro pozici šipky
+                    tooltip.style.setProperty('--arrow-left', `${arrowLeft}px`);
+                    tooltip.style.setProperty('--arrow-direction', showBelow ? 'up' : 'down');
+
+                    // Přidat třídu podle směru šipky
+                    tooltip.classList.toggle('tooltip-below', showBelow);
+                    tooltip.classList.toggle('tooltip-above', !showBelow);
+                }
+
+                // Event listenery pro hover
+                bubble.addEventListener('mouseenter', () => {
+                    isHovering = true;
+                    // Počkat chvíli, než se tooltip zobrazí (kvůli transition)
+                    setTimeout(() => {
+                        updateTooltipPosition();
+                        // Aktualizovat pozici periodicky během hoveru (pro případ scrollování)
+                        positionUpdateInterval = setInterval(updateTooltipPosition, 100);
+                    }, 10);
+                });
+
+                bubble.addEventListener('mouseleave', () => {
+                    isHovering = false;
+                    if (positionUpdateInterval) {
+                        clearInterval(positionUpdateInterval);
+                        positionUpdateInterval = null;
+                    }
+                });
+            });
+
+            // Entity-value tooltips
+            const entityValues = document.querySelectorAll('.entity-value[data-tooltip]');
+
+            entityValues.forEach(element => {
+                let updateTimer = null;
+
+                function updateEntityTooltipPosition() {
+                    const rect = element.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+
+                    const spacing = 10;
+                    const arrowSize = 4;
+
+                    // Odhadovaná šířka tooltipu
+                    const estimatedWidth = Math.min(250, viewportWidth - 20);
+                    const estimatedHeight = 60;
+
+                    // Výchozí pozice - nad elementem
+                    let top = rect.top - estimatedHeight - arrowSize - 5;
+                    let left = rect.left + (rect.width / 2) - (estimatedWidth / 2);
+
+                    // Kontrola přetečení vlevo
+                    if (left < spacing) {
+                        left = spacing;
+                    }
+
+                    // Kontrola přetečení vpravo
+                    if (left + estimatedWidth > viewportWidth - spacing) {
+                        left = viewportWidth - estimatedWidth - spacing;
+                    }
+
+                    // Kontrola přetečení nahoře
+                    let showBelow = false;
+                    if (top < spacing) {
+                        top = rect.bottom + arrowSize + 5;
+                        showBelow = true;
+                    }
+
+                    // Nastavení CSS proměnných
+                    element.style.setProperty('--tooltip-top', `${top}px`);
+                    element.style.setProperty('--tooltip-left', `${left}px`);
+
+                    // Pozice šipky
+                    const arrowLeft = rect.left + (rect.width / 2);
+                    let arrowTop;
+
+                    if (showBelow) {
+                        // Tooltip je pod elementem, šipka směřuje nahoru
+                        arrowTop = top - arrowSize;
+                        element.classList.add('tooltip-below');
+                    } else {
+                        // Tooltip je nad elementem, šipka směřuje dolů
+                        arrowTop = top + estimatedHeight;
+                        element.classList.remove('tooltip-below');
+                    }
+
+                    element.style.setProperty('--tooltip-arrow-left', `${arrowLeft}px`);
+                    element.style.setProperty('--tooltip-arrow-top', `${arrowTop}px`);
+                }
+
+                element.addEventListener('mouseenter', () => {
+                    updateEntityTooltipPosition();
+                    updateTimer = setInterval(updateEntityTooltipPosition, 100);
+                });
+
+                element.addEventListener('mouseleave', () => {
+                    if (updateTimer) {
+                        clearInterval(updateTimer);
+                        updateTimer = null;
+                    }
+                    // Odstranit třídu při opuštění
+                    element.classList.remove('tooltip-below');
+                });
+            });
+        }
+
+        // Inicializovat při načtení stránky
+        document.addEventListener('DOMContentLoaded', initTooltipPositioning);
+
+        // Reinicializovat při změně velikosti okna
+        window.addEventListener('resize', initTooltipPositioning);
+
         // === CONTROL PANEL FUNCTIONS ===
 
         // Toggle control panel
@@ -2907,6 +3098,9 @@
                         // Shield status sensors
                         if (entityId.includes('service_shield_')) {
                             console.log(`[Shield] Shield sensor changed: ${entityId}`, event.data.new_state);
+                            // Trigger shield activity monitoring on any shield sensor change
+                            monitorShieldActivity();
+                            updateShieldQueue(); // Update queue display
                             updateShieldUI();
                             updateButtonStates();
                         }
@@ -3484,7 +3678,17 @@
         }
 
         // Monitor ServiceShield activity
+        let isMonitoringShieldActivity = false; // Lock to prevent concurrent execution
+        
         async function monitorShieldActivity() {
+            // Prevent concurrent execution
+            if (isMonitoringShieldActivity) {
+                console.log('[Shield] Skipping monitorShieldActivity - already running');
+                return;
+            }
+            
+            isMonitoringShieldActivity = true;
+            
             try {
                 // Use Hass states directly for activity sensor (instant, no API call needed!)
                 const hass = getHass();
@@ -3602,6 +3806,13 @@
                     req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
                 );
 
+                console.log('[Shield] Grid delivery check:', {
+                    hasGridChange,
+                    runningRequests: runningRequests.length,
+                    queuedRequests: queuedRequests.length,
+                    allRequests: [...runningRequests, ...queuedRequests].map(r => r?.service)
+                });
+
                 // Also check sensor state
                 const gridModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
                 const isGridChanging = gridModeData.value === 'Probíhá změna';
@@ -3628,6 +3839,11 @@
                     const gridRequests = [...runningRequests, ...queuedRequests].filter(req =>
                         req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
                     );
+
+                    console.log('[Shield] Grid requests found:', gridRequests.length, gridRequests.map(r => ({
+                        service: r.service,
+                        changes: r.changes
+                    })));
 
                     let hasModeRequest = false;
                     let hasLimitRequest = false;
@@ -3691,8 +3907,14 @@
                         }
                     });
 
-                    // Show mode badge ONLY if mode is changing (not just limit)
-                    if (hasModeRequest && !hasLimitRequest && gridChangeIndicator && gridChangeText) {
+                    // Visual feedback in inverter details - blikající režim přetoků
+                    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+                    if (gridExportModeElement && hasModeRequest) {
+                        gridExportModeElement.classList.add('mode-changing');
+                    }
+
+                    // Show badge in "Přetoky do sítě" section if mode OR limit is changing
+                    if ((hasModeRequest || hasLimitRequest) && gridChangeIndicator && gridChangeText) {
                         const modeIcon = targetMode?.includes('Off') ? '🚫' :
                                         targetMode?.includes('On') ? '💧' :
                                         targetMode?.includes('?') ? '🔄' : '🚰';
@@ -3701,17 +3923,19 @@
                                         targetMode?.includes('?') ? 'Změna...' : 'Omezeno';
                         gridChangeText.textContent = `${modeIcon} ${modeName}`;
                         gridChangeIndicator.style.display = 'flex';
+                        console.log('[Shield] Grid badge shown in Přetoky section:', modeName, 'hasModeRequest:', hasModeRequest, 'hasLimitRequest:', hasLimitRequest);
                     } else if (gridChangeIndicator) {
-                        // Hide mode badge if only changing limit
+                        // Hide badge if no changes
                         gridChangeIndicator.style.display = 'none';
                     }
 
-                    // NEVER show limit badge - just pulse the Limited button
-                    if (gridLimitIndicator) {
-                        gridLimitIndicator.style.display = 'none';
+                } else {
+                    // Remove visual feedback from grid export mode
+                    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+                    if (gridExportModeElement) {
+                        gridExportModeElement.classList.remove('mode-changing');
                     }
 
-                } else {
                     // Re-enable grid buttons
                     gridButtons.forEach(btn => {
                         btn.disabled = false;
@@ -3719,12 +3943,9 @@
                         btn.style.opacity = '';
                     });
 
-                    // Hide badges when no grid changes
+                    // Hide badge when no grid changes
                     if (gridChangeIndicator) {
                         gridChangeIndicator.style.display = 'none';
-                    }
-                    if (gridLimitIndicator) {
-                        gridLimitIndicator.style.display = 'none';
                     }
                 }
 
@@ -3733,8 +3954,9 @@
                     req && req.service && req.service.includes('set_boiler_mode')
                 );
 
-                const boilerChangeIndicatorPanel = document.getElementById('boiler-change-indicator-panel');
-                const boilerChangeTextPanel = document.getElementById('boiler-change-text-panel');
+                // Flow diagram elements (badge shown next to boiler icon)
+                const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
+                const boilerChangeText = document.getElementById('boiler-change-text');
                 const boilerModeElement = document.getElementById('boiler-mode');
 
                 // Get boiler mode buttons
@@ -3769,15 +3991,15 @@
                         boilerModeElement.classList.add('mode-changing');
                     }
 
-                    // Show badge in control panel
-                    if (boilerChangeIndicatorPanel && boilerChangeTextPanel && targetMode) {
+                    // Show badge in flow diagram (bucket indicator) - ONLY in flow, not in control panel
+                    if (boilerChangeIndicator && boilerChangeText && targetMode) {
                         const modeIcon = targetMode === 'CBB' ? '🤖' :
                                         targetMode === 'Manual' ? '👤' : '🌡️';
                         const modeName = targetMode === 'CBB' ? 'Inteligentní' :
                                         targetMode === 'Manual' ? 'Manuální' : 'Změna...';
-                        boilerChangeTextPanel.textContent = `${modeIcon} → ${modeName}`;
-                        boilerChangeIndicatorPanel.style.display = 'block';
-                        console.log('[Shield] Boiler badge shown:', modeName);
+                        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
+                        boilerChangeIndicator.style.display = 'flex';
+                        console.log('[Shield] Boiler flow badge shown:', modeName);
                     }
 
                     // Disable buttons with animation on target
@@ -3800,9 +4022,9 @@
                         boilerModeElement.classList.remove('mode-changing');
                     }
 
-                    // Hide badge when no boiler changes
-                    if (boilerChangeIndicatorPanel) {
-                        boilerChangeIndicatorPanel.style.display = 'none';
+                    // Hide flow diagram badge (control panel badge is not used)
+                    if (boilerChangeIndicator) {
+                        boilerChangeIndicator.style.display = 'none';
                     }
 
                     // Re-enable buttons
@@ -3815,6 +4037,9 @@
 
             } catch (e) {
                 console.error('[Shield] Error monitoring activity:', e);
+            } finally {
+                // Always release the lock
+                isMonitoringShieldActivity = false;
             }
         }
 
@@ -4052,8 +4277,8 @@
                 });
 
                 if (success) {
-                    // Immediately check shield activity (don't wait 10s)
-                    await monitorShieldActivity();
+                    // Shield activity will be monitored automatically via subscribeToShield event listener
+                    // No need to call monitorShieldActivity() here - it will be triggered by sensor state change
 
                     // Update shield UI immediately
                     setTimeout(() => {
@@ -5026,7 +5251,17 @@
                 modeIcon = '⚡';
                 modeText = 'Home UPS';
             }
-            updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
+
+            // Aktualizovat inverter mode, ale zachovat třídu mode-changing pokud existuje
+            const inverterModeElement = document.getElementById('inverter-mode');
+            if (inverterModeElement) {
+                const isModeChanging = inverterModeElement.classList.contains('mode-changing');
+                updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
+                // Obnovit třídu mode-changing, pokud byla nastavená
+                if (isModeChanging && !inverterModeElement.classList.contains('mode-changing')) {
+                    inverterModeElement.classList.add('mode-changing');
+                }
+            }
 
             // Show last update time from real_data_update sensor - UPDATE TO HEADER
             const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
@@ -5386,7 +5621,18 @@
                     gridExportIcon = '🚰'; // S omezením - odpovídá ovládacímu panelu
                     gridExportDisplay = 'Omezeno';
                 }
-                updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
+
+                // Aktualizovat grid export mode, ale zachovat třídu mode-changing pokud existuje
+                const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+                if (gridExportModeElement) {
+                    const isModeChanging = gridExportModeElement.classList.contains('mode-changing');
+                    updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
+                    // Obnovit třídu mode-changing, pokud byla nastavená
+                    if (isModeChanging && !gridExportModeElement.classList.contains('mode-changing')) {
+                        gridExportModeElement.classList.add('mode-changing');
+                    }
+                }
+
                 document.getElementById('grid-export-icon').textContent = gridExportIcon;
 
                 // Grid export limit (convert W to kW)
@@ -5424,7 +5670,18 @@
 
                     if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
                         updateElementIfChanged('boiler-power', Math.round(boilerPower.value || 0) + ' W');
-                        updateElementIfChanged('boiler-mode', boilerMode.value || '--');
+
+                        // Aktualizovat boiler-mode, ale zachovat třídu mode-changing pokud existuje
+                        const boilerModeElement = document.getElementById('boiler-mode');
+                        if (boilerModeElement) {
+                            const isModeChanging = boilerModeElement.classList.contains('mode-changing');
+                            updateElementIfChanged('boiler-mode', boilerMode.value || '--');
+                            // Obnovit třídu mode-changing, pokud byla nastavená
+                            if (isModeChanging && !boilerModeElement.classList.contains('mode-changing')) {
+                                boilerModeElement.classList.add('mode-changing');
+                            }
+                        }
+
                         updateElementIfChanged('boiler-mode-detail', boilerMode.value || '--');
                         updateElementIfChanged('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
                         updateElementIfChanged('boiler-status', boilerStatus.value || '--');
@@ -5434,6 +5691,9 @@
             } catch (e) {
                 console.error('[Details] Error loading node details:', e);
             }
+
+            // Reinicializovat tooltips po načtení detailů
+            initTooltipPositioning();
         }
 
         // Check if boiler is in use and show/hide box
@@ -5644,11 +5904,12 @@
                 loadControlStatus();
             }, 20000);
 
-            // Monitor ServiceShield activity every 2s (runs independently)
+            // Monitor ServiceShield activity every 10s as backup (primary updates via subscribeToShield)
+            // This is just a safety net in case sensor updates are missed
             setInterval(() => {
                 monitorShieldActivity();
                 updateShieldQueue(); // Update queue table
-            }, 2000);
+            }, 10000);
 
             // Time update every second
             setInterval(updateTime, 1000);
