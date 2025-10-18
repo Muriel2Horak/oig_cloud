@@ -240,8 +240,8 @@ class ServiceShield:
         )
 
     @callback
-    async def _on_entity_state_changed(self, event: Event) -> None:
-        """Callback když se změní stav sledované entity."""
+    def _on_entity_state_changed(self, event: Event) -> None:
+        """Callback když se změní stav sledované entity - SYNC verze."""
         entity_id = event.data.get("entity_id")
         new_state = event.data.get("new_state")
 
@@ -252,8 +252,9 @@ class ServiceShield:
             f"[OIG Shield] Detekována změna entity {entity_id} na '{new_state.state}' - spouštím kontrolu"
         )
 
-        # Okamžitě spustíme kontrolu
-        await self._check_loop(datetime.now())
+        # KRITICKÁ OPRAVA: @callback NESMÍ být async!
+        # Naplánujeme _check_loop() jako async job v event loop
+        self.hass.async_create_task(self._check_loop(datetime.now()))
 
     async def register_services(self) -> None:
         """Registruje služby ServiceShield."""

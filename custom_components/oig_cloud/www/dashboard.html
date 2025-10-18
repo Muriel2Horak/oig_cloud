@@ -3371,6 +3371,11 @@
                 allRequests.forEach((req, index) => {
                     const isRunning = index === 0 && runningRequests.length > 0;
                     const isQueued = !isRunning; // Anything not running is queued
+
+                    // OPRAVA: Přidat position pro delete button (1-based index pro backend)
+                    // Running má position 1, queued jsou 2, 3, 4, ...
+                    req.position = index + 1;
+
                     const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
                     const statusIcon = isRunning ? '🔄' : '⏳';
                     const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
@@ -4097,9 +4102,12 @@
         // Remove item from shield queue
         async function removeFromQueue(position) {
             try {
-                const confirmed = confirm(
-                    `Opravdu chcete odstranit položku #${position} z fronty?\n\n` +
-                    `Tato akce je nevratná.`
+                // OPRAVA: Použít showAcknowledgementDialog místo browser confirm()
+                const confirmed = await showAcknowledgementDialog(
+                    `Odstranit položku #${position} z fronty?`,
+                    `Tato akce je nevratná. Požadavek bude odstraněn z fronty a nebude zpracován.`,
+                    'Odstranit',
+                    'Zrušit'
                 );
 
                 if (!confirmed) return;
