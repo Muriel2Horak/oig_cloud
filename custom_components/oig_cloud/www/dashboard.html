@@ -3677,27 +3677,104 @@
             }
         }
 
-        // Monitor ServiceShield activity
-        let isMonitoringShieldActivity = false; // Lock to prevent concurrent execution
+        // ============================================================================
+        // SHIELD MONITORING - Simplified universal approach
+        // ============================================================================
+        
+        // Helper: Parse service request to get type and target value
+        function parseServiceRequest(request) {
+            if (!request || !request.service || !request.changes || !Array.isArray(request.changes)) {
+                return null;
+            }
+
+            const service = request.service;
+            const changeStr = request.changes[0] || '';
+
+            // Box mode: "prms_mode: 'Home 1' → 'Home 2'"
+            if (service.includes('set_box_mode')) {
+                const match = changeStr.match(/→\s*'([^']+)'/);
+                return match ? { type: 'box_mode', targetValue: match[1] } : null;
+            }
+
+            // Boiler mode: "manual_mode: 'CBB' → 'Manuální'"
+            if (service.includes('set_boiler_mode')) {
+                const match = changeStr.match(/→\s*'([^']+)'/);
+                return match ? { type: 'boiler_mode', targetValue: match[1] } : null;
+            }
+
+            // Grid mode: "prms_to_grid: 'Vypnuto' → 'Zapnuto'"
+            if (service.includes('set_grid_delivery') && changeStr.includes('prms_to_grid')) {
+                const match = changeStr.match(/→\s*'([^']+)'/);
+                return match ? { type: 'grid_mode', targetValue: match[1] } : null;
+            }
+
+            // Grid limit: "p_max_feed_grid: 5400 → 3000"
+            if (service.includes('set_grid_delivery') && changeStr.includes('p_max_feed_grid')) {
+                const match = changeStr.match(/→\s*(\d+)/);
+                return match ? { type: 'grid_limit', targetValue: match[1] } : null;
+            }
+
+            return null;
+        }
+
+        // Helper: Show changing indicator for specific service type
+        function showChangingIndicator(type, targetValue) {
+            console.log(`[Shield] Showing change indicator: ${type} → ${targetValue}`);
+
+            switch (type) {
+                case 'box_mode':
+                    showBoxModeChanging(targetValue);
+                    break;
+                case 'boiler_mode':
+                    showBoilerModeChanging(targetValue);
+                    break;
+                case 'grid_mode':
+                    showGridModeChanging(targetValue);
+                    break;
+                case 'grid_limit':
+                    showGridLimitChanging(targetValue);
+                    break;
+            }
+        }
+
+        // Helper: Hide changing indicator for specific service type
+        function hideChangingIndicator(type) {
+            console.log(`[Shield] Hiding change indicator: ${type}`);
+
+            switch (type) {
+                case 'box_mode':
+                    hideBoxModeChanging();
+                    break;
+                case 'boiler_mode':
+                    hideBoilerModeChanging();
+                    break;
+                case 'grid_mode':
+                    hideGridModeChanging();
+                    break;
+                case 'grid_limit':
+                    hideGridLimitChanging();
+                    break;
+            }
+        }
+
+        // Main monitor function - simplified
+        let isMonitoringShieldActivity = false;
 
         async function monitorShieldActivity() {
-            // Prevent concurrent execution
             if (isMonitoringShieldActivity) {
-                console.log('[Shield] Skipping monitorShieldActivity - already running');
+                console.log('[Shield] Skipping - already running');
                 return;
             }
 
             isMonitoringShieldActivity = true;
 
             try {
-                // Use Hass states directly for activity sensor (instant, no API call needed!)
                 const hass = getHass();
                 if (!hass || !hass.states) return;
 
-                // Find service_shield_activity sensor dynamically (may end with _2, _3, etc.)
+                // Find activity sensor
                 const sensorPrefix = `sensor.oig_${INVERTER_SN}_service_shield_activity`;
                 const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
-
                 if (!entityId) return;
 
                 const activitySensor = hass.states[entityId];
@@ -3706,377 +3783,317 @@
                 const attrs = activitySensor.attributes;
                 const runningRequests = attrs.running_requests || [];
                 const queuedRequests = attrs.queued_requests || [];
+                const allRequests = [...runningRequests, ...queuedRequests];
 
-                // Check if there's a box mode change in progress
-                const hasModeChange = [...runningRequests, ...queuedRequests].some(req =>
-                    req && req.service && req.service.includes('set_box_mode')
-                );
-
-                // Get all mode buttons
-                const modeButtonMap = {
-                    'Home 1': 'btn-mode-home1',
-                    'Home 2': 'btn-mode-home2',
-                    'Home 3': 'btn-mode-home3',
-                    'Home UPS': 'btn-mode-ups'
-                };
-                const buttonIds = Object.values(modeButtonMap);
-                const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
-
-                if (hasModeChange) {
-                    // Find the mode being changed (from running or queued)
-                    const modeRequest = [...runningRequests, ...queuedRequests].find(req =>
-                        req && req.service && req.service.includes('set_box_mode')
-                    );
-
-                    // Parse target mode from changes array
-                    let targetMode = null;
-                    if (modeRequest?.changes && Array.isArray(modeRequest.changes)) {
-                        // Format: "prms_mode: 'Home 2' → 'Home 3' (nyní: 'Home 2')"
-                        const changeStr = modeRequest.changes[0];
-                        if (changeStr) {
-                            const match = changeStr.match(/→\s*'([^']+)'/);
-                            if (match) {
-                                targetMode = match[1];
-                            }
-                        }
-                    }
-
-                    const targetButtonId = targetMode ? modeButtonMap[targetMode] : null;
-
-                    // Visual feedback in flow diagram
-                    const inverterModeElement = document.getElementById('inverter-mode');
-                    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-                    const modeChangeText = document.getElementById('mode-change-text');
-
-                    if (inverterModeElement && targetMode) {
-                        // Add blinking animation to current mode
-                        inverterModeElement.classList.add('mode-changing');
-
-                        // Show indicator badge with target mode
-                        if (modeChangeIndicator && modeChangeText) {
-                            modeChangeText.textContent = `→ ${targetMode}`;
-                            modeChangeIndicator.style.display = 'flex';
-                        }
-                    }
-
-                    // Disable all buttons, but only animate the one being changed
-                    buttons.forEach(btn => {
-                        btn.disabled = true;
-
-                        if (btn.id === targetButtonId) {
-                            // Blink only the target button
-                            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-                            btn.style.opacity = '0.8';
-                        } else {
-                            // Other buttons just disabled, no animation
-                            btn.style.animation = '';
-                            btn.style.opacity = '0.5';
-                        }
-                    });
-
-                    modeChangeInProgress = true;
-                } else {
-                    // Remove visual feedback from flow diagram
-                    const inverterModeElement = document.getElementById('inverter-mode');
-                    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-
-                    if (inverterModeElement) {
-                        inverterModeElement.classList.remove('mode-changing');
-                    }
-
-                    if (modeChangeIndicator) {
-                        modeChangeIndicator.style.display = 'none';
-                    }
-
-                    // Re-enable buttons and remove animation
-                    buttons.forEach(btn => {
-                        btn.disabled = false;
-                        btn.style.animation = '';
-                        btn.style.opacity = '';
-                    });
-
-                    modeChangeInProgress = false;
-                    lastModeChangeNotified = false;
-                }
-
-                // === CHECK FOR GRID DELIVERY CHANGES ===
-                // Check for grid changes from shield queue OR from sensor state "Probíhá změna"
-                // OPRAVA: Zahrnout jak set_grid_delivery tak set_grid_delivery_limit
-                let hasGridChange = [...runningRequests, ...queuedRequests].some(req =>
-                    req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
-                );
-
-                console.log('[Shield] Grid delivery check:', {
-                    hasGridChange,
-                    runningRequests: runningRequests.length,
-                    queuedRequests: queuedRequests.length,
-                    allRequests: [...runningRequests, ...queuedRequests].map(r => r?.service)
+                console.log('[Shield] Monitoring:', {
+                    running: runningRequests.length,
+                    queued: queuedRequests.length,
+                    total: allRequests.length
                 });
 
-                // Also check sensor state
-                const gridModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
-                const isGridChanging = gridModeData.value === 'Probíhá změna';
+                // Track which service types are active
+                const activeServices = new Set();
 
-                if (isGridChanging) {
-                    hasGridChange = true;
-                    console.log('[Shield] Detected Grid Delivery change from sensor state');
-                }
-
-                const gridChangeIndicator = document.getElementById('grid-change-indicator');
-                const gridChangeText = document.getElementById('grid-change-text');
-                const gridLimitIndicator = document.getElementById('grid-limit-indicator');
-                const gridLimitText = document.getElementById('grid-limit-text');
-
-                // Get grid delivery buttons
-                const gridButtons = [
-                    document.getElementById('btn-grid-off'),
-                    document.getElementById('btn-grid-on'),
-                    document.getElementById('btn-grid-limited')
-                ].filter(b => b);
-
-                if (hasGridChange) {
-                    // Find all grid delivery requests (including limit changes)
-                    const gridRequests = [...runningRequests, ...queuedRequests].filter(req =>
-                        req && req.service && (req.service.includes('set_grid_delivery') || req.service.includes('set_grid_delivery_limit'))
-                    );
-
-                    console.log('[Shield] Grid requests found:', gridRequests.length, gridRequests.map(r => ({
-                        service: r.service,
-                        changes: r.changes
-                    })));
-
-                    let hasModeRequest = false;
-                    let hasLimitRequest = false;
-                    let targetMode = null;
-                    let targetLimit = null;
-
-                    // If sensor shows "Probíhá změna" but no queue items, show generic badge
-                    if (isGridChanging && gridRequests.length === 0) {
-                        hasModeRequest = true;
-                        targetMode = '? (změna probíhá)';
+                // Parse all requests and show indicators
+                allRequests.forEach(request => {
+                    const parsed = parseServiceRequest(request);
+                    if (parsed) {
+                        activeServices.add(parsed.type);
+                        showChangingIndicator(parsed.type, parsed.targetValue);
                     }
+                });
 
-                    gridRequests.forEach(req => {
-                        if (req.changes && Array.isArray(req.changes)) {
-                            req.changes.forEach(change => {
-                                // Check for mode change: "prms_to_grid: 'X' → 'Y'"
-                                const modeMatch = change.match(/prms_to_grid:.*→\s*'([^']+)'/);
-                                if (modeMatch) {
-                                    hasModeRequest = true;
-                                    targetMode = modeMatch[1];
-                                }
-
-                                // Check for limit change: "p_max_feed_grid: X → Y"
-                                const limitMatch = change.match(/p_max_feed_grid:.*→\s*(\d+)/);
-                                if (limitMatch) {
-                                    hasLimitRequest = true;
-                                    targetLimit = limitMatch[1];
-                                }
-                            });
-                        }
-                    });
-
-                    // Map Czech/English grid mode names to button IDs
-                    const gridModeMap = {
-                        'Off': 'off',
-                        'Vypnuto': 'off',         // Czech translation
-                        'On': 'on',
-                        'Zapnuto': 'on',          // Czech translation
-                        'Limited': 'limited',
-                        'Omezeno': 'limited',     // Czech translation
-                        'S omezením': 'limited'   // Czech alternative
-                    };
-
-                    // Determine target button based on mode
-                    let targetButtonId = null;
-                    if (targetMode) {
-                        // Find exact match first
-                        const gridModeLower = gridModeMap[targetMode];
-                        if (gridModeLower) {
-                            targetButtonId = `btn-grid-${gridModeLower}`;
-                        } else {
-                            // Fallback to includes() for partial matches
-                            if (targetMode.includes('Off') || targetMode.includes('Vypnuto')) {
-                                targetButtonId = 'btn-grid-off';
-                            } else if (targetMode.includes('On') || targetMode.includes('Zapnuto')) {
-                                targetButtonId = 'btn-grid-on';
-                            } else if (targetMode.includes('Limited') || targetMode.includes('omezení') || targetMode.includes('Omezeno')) {
-                                targetButtonId = 'btn-grid-limited';
-                            }
-                        }
-                    } else if (hasLimitRequest && !hasModeRequest) {
-                        // If only changing limit (not mode), target is Limited button
-                        targetButtonId = 'btn-grid-limited';
+                // Hide indicators for service types that are no longer active
+                const allServiceTypes = ['box_mode', 'boiler_mode', 'grid_mode', 'grid_limit'];
+                allServiceTypes.forEach(type => {
+                    if (!activeServices.has(type)) {
+                        hideChangingIndicator(type);
                     }
-                    
-                    console.log('[Shield] Grid button targeting:', { targetMode, targetButtonId, hasModeRequest, hasLimitRequest });
-
-                    // Disable all buttons with animation on target (same as box mode)
-                    gridButtons.forEach(btn => {
-                        btn.disabled = true;
-
-                        if (btn.id === targetButtonId) {
-                            // Blink only the target button
-                            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-                            btn.style.opacity = '0.8';
-                        } else {
-                            // Other buttons just disabled, no animation
-                            btn.style.animation = '';
-                            btn.style.opacity = '0.5';
-                        }
-                    });
-
-                    // Visual feedback in inverter details - blikající režim přetoků
-                    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-                    if (gridExportModeElement && hasModeRequest) {
-                        gridExportModeElement.classList.add('mode-changing');
-                    }
-
-                    // Show badge in "Přetoky do sítě" section if mode OR limit is changing
-                    if ((hasModeRequest || hasLimitRequest) && gridChangeIndicator && gridChangeText) {
-                        // Normalize mode name to Czech for display
-                        const isOff = targetMode?.includes('Off') || targetMode?.includes('Vypnuto');
-                        const isOn = targetMode?.includes('On') || targetMode?.includes('Zapnuto');
-                        const isChanging = targetMode?.includes('?');
-                        
-                        const modeIcon = isOff ? '🚫' : isOn ? '💧' : isChanging ? '🔄' : '🚰';
-                        const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : isChanging ? 'Změna...' : 'Omezeno';
-                        
-                        gridChangeText.textContent = `${modeIcon} ${modeName}`;
-                        gridChangeIndicator.style.display = 'flex';
-                        console.log('[Shield] Grid badge shown in Přetoky section:', modeName, 'hasModeRequest:', hasModeRequest, 'hasLimitRequest:', hasLimitRequest);
-                    } else if (gridChangeIndicator) {
-                        // Hide badge if no changes
-                        gridChangeIndicator.style.display = 'none';
-                    }
-
-                } else {
-                    // Remove visual feedback from grid export mode
-                    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-                    if (gridExportModeElement) {
-                        gridExportModeElement.classList.remove('mode-changing');
-                    }
-
-                    // Re-enable grid buttons
-                    gridButtons.forEach(btn => {
-                        btn.disabled = false;
-                        btn.style.animation = '';
-                        btn.style.opacity = '';
-                    });
-
-                    // Hide badge when no grid changes
-                    if (gridChangeIndicator) {
-                        gridChangeIndicator.style.display = 'none';
-                    }
-                }
-
-                // === CHECK FOR BOILER MODE CHANGES ===
-                const hasBoilerChange = [...runningRequests, ...queuedRequests].some(req =>
-                    req && req.service && req.service.includes('set_boiler_mode')
-                );
-
-                // Flow diagram elements (badge shown next to boiler icon)
-                const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-                const boilerChangeText = document.getElementById('boiler-change-text');
-                const boilerModeElement = document.getElementById('boiler-mode');
-
-                // Get boiler mode buttons
-                const boilerButtons = [
-                    document.getElementById('btn-boiler-cbb'),
-                    document.getElementById('btn-boiler-manual')
-                ].filter(b => b);
-
-                if (hasBoilerChange) {
-                    // Find boiler mode request
-                    const boilerRequest = [...runningRequests, ...queuedRequests].find(req =>
-                        req && req.service && req.service.includes('set_boiler_mode')
-                    );
-
-                    let targetMode = null;
-
-                    if (boilerRequest?.changes && Array.isArray(boilerRequest.changes)) {
-                        // Format: "mode: 'CBB' → 'Manual'"
-                        const changeStr = boilerRequest.changes[0];
-                        if (changeStr) {
-                            const match = changeStr.match(/→\s*'([^']+)'/);
-                            if (match) {
-                                targetMode = match[1];
-                            }
-                        }
-                    }
-
-                    console.log('[Shield] Boiler change detected, targetMode:', targetMode);
-
-                    // Map Czech/English mode names to button IDs
-                    const boilerModeMap = {
-                        'CBB': 'cbb',
-                        'Manual': 'manual',
-                        'Manuální': 'manual',  // Czech translation
-                        'Inteligentní': 'cbb'  // Czech translation (backup)
-                    };
-
-                    // Visual feedback in flow diagram - blikající režim
-                    if (boilerModeElement && targetMode) {
-                        boilerModeElement.classList.add('mode-changing');
-                        console.log('[Shield] Boiler mode-changing class added to element:', boilerModeElement.id);
-                    } else {
-                        console.warn('[Shield] Cannot add mode-changing class:', { boilerModeElement: !!boilerModeElement, targetMode });
-                    }
-
-                    // Show badge in flow diagram (bucket indicator) - ONLY in flow, not in control panel
-                    if (boilerChangeIndicator && boilerChangeText && targetMode) {
-                        const modeIcon = (targetMode === 'CBB' || targetMode === 'Inteligentní') ? '🤖' :
-                                        (targetMode === 'Manual' || targetMode === 'Manuální') ? '👤' : '🌡️';
-                        const modeName = (targetMode === 'CBB' || targetMode === 'Inteligentní') ? 'Inteligentní' :
-                                        (targetMode === 'Manual' || targetMode === 'Manuální') ? 'Manuální' : 'Změna...';
-                        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
-                        boilerChangeIndicator.style.display = 'flex';
-                        console.log('[Shield] Boiler flow badge shown:', modeName);
-                    }
-
-                    // Disable buttons with animation on target
-                    const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
-                    const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
-                    console.log('[Shield] Boiler button targeting:', { targetMode, targetModeLower, targetButtonId });
-
-                    boilerButtons.forEach(btn => {
-                        btn.disabled = true;
-
-                        if (btn.id === targetButtonId) {
-                            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-                            btn.style.opacity = '0.8';
-                        } else {
-                            btn.style.animation = '';
-                            btn.style.opacity = '0.5';
-                        }
-                    });
-
-                } else {
-                    // Remove visual feedback
-                    if (boilerModeElement) {
-                        boilerModeElement.classList.remove('mode-changing');
-                    }
-
-                    // Hide flow diagram badge (control panel badge is not used)
-                    if (boilerChangeIndicator) {
-                        boilerChangeIndicator.style.display = 'none';
-                    }
-
-                    // Re-enable buttons
-                    boilerButtons.forEach(btn => {
-                        btn.disabled = false;
-                        btn.style.animation = '';
-                        btn.style.opacity = '';
-                    });
-                }
+                });
 
             } catch (e) {
                 console.error('[Shield] Error monitoring activity:', e);
             } finally {
-                // Always release the lock
                 isMonitoringShieldActivity = false;
             }
         }
+
+        // ============================================================================
+        // SERVICE-SPECIFIC SHOW/HIDE FUNCTIONS
+        // ============================================================================
+
+        // Box Mode
+        function showBoxModeChanging(targetMode) {
+            const modeButtonMap = {
+                'Home 1': 'btn-mode-home1',
+                'Home 2': 'btn-mode-home2',
+                'Home 3': 'btn-mode-home3',
+                'Home UPS': 'btn-mode-ups'
+            };
+
+            const buttonIds = Object.values(modeButtonMap);
+            const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
+            const targetButtonId = modeButtonMap[targetMode];
+
+            // Flow diagram: blink mode text
+            const inverterModeElement = document.getElementById('inverter-mode');
+            if (inverterModeElement) {
+                inverterModeElement.classList.add('mode-changing');
+            }
+
+            // Show badge
+            const modeChangeIndicator = document.getElementById('mode-change-indicator');
+            const modeChangeText = document.getElementById('mode-change-text');
+            if (modeChangeIndicator && modeChangeText) {
+                modeChangeText.textContent = `→ ${targetMode}`;
+                modeChangeIndicator.style.display = 'flex';
+            }
+
+            // Lock buttons, animate target
+            buttons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.id === targetButtonId) {
+                    btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                    btn.style.opacity = '0.8';
+                } else {
+                    btn.style.animation = '';
+                    btn.style.opacity = '0.5';
+                }
+            });
+        }
+
+        function hideBoxModeChanging() {
+            const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
+            const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
+
+            // Remove flow diagram animation
+            const inverterModeElement = document.getElementById('inverter-mode');
+            if (inverterModeElement) {
+                inverterModeElement.classList.remove('mode-changing');
+            }
+
+            // Hide badge
+            const modeChangeIndicator = document.getElementById('mode-change-indicator');
+            if (modeChangeIndicator) {
+                modeChangeIndicator.style.display = 'none';
+            }
+
+            // Unlock buttons
+            buttons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.animation = '';
+                btn.style.opacity = '';
+            });
+        }
+
+        // Boiler Mode
+        function showBoilerModeChanging(targetMode) {
+            const boilerModeMap = {
+                'CBB': 'cbb',
+                'Manual': 'manual',
+                'Manuální': 'manual',
+                'Inteligentní': 'cbb'
+            };
+
+            const boilerButtons = [
+                document.getElementById('btn-boiler-cbb'),
+                document.getElementById('btn-boiler-manual')
+            ].filter(b => b);
+
+            const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
+            const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
+
+            // Flow diagram: blink mode text
+            const boilerModeElement = document.getElementById('boiler-mode');
+            if (boilerModeElement) {
+                boilerModeElement.classList.add('mode-changing');
+            }
+
+            // Show badge
+            const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
+            const boilerChangeText = document.getElementById('boiler-change-text');
+            if (boilerChangeIndicator && boilerChangeText) {
+                const isIntelligent = targetMode === 'CBB' || targetMode === 'Inteligentní';
+                const modeIcon = isIntelligent ? '🤖' : '👤';
+                const modeName = isIntelligent ? 'Inteligentní' : 'Manuální';
+                boilerChangeText.textContent = `${modeIcon} ${modeName}`;
+                boilerChangeIndicator.style.display = 'flex';
+            }
+
+            // Lock buttons, animate target
+            boilerButtons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.id === targetButtonId) {
+                    btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                    btn.style.opacity = '0.8';
+                } else {
+                    btn.style.animation = '';
+                    btn.style.opacity = '0.5';
+                }
+            });
+        }
+
+        function hideBoilerModeChanging() {
+            const boilerButtons = [
+                document.getElementById('btn-boiler-cbb'),
+                document.getElementById('btn-boiler-manual')
+            ].filter(b => b);
+
+            // Remove flow diagram animation
+            const boilerModeElement = document.getElementById('boiler-mode');
+            if (boilerModeElement) {
+                boilerModeElement.classList.remove('mode-changing');
+            }
+
+            // Hide badge
+            const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
+            if (boilerChangeIndicator) {
+                boilerChangeIndicator.style.display = 'none';
+            }
+
+            // Unlock buttons
+            boilerButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.animation = '';
+                btn.style.opacity = '';
+            });
+        }
+
+        // Grid Mode
+        function showGridModeChanging(targetMode) {
+            const gridModeMap = {
+                'Off': 'off',
+                'Vypnuto': 'off',
+                'On': 'on',
+                'Zapnuto': 'on',
+                'Limited': 'limited',
+                'Omezeno': 'limited',
+                'S omezením': 'limited'
+            };
+
+            const gridButtons = [
+                document.getElementById('btn-grid-off'),
+                document.getElementById('btn-grid-on'),
+                document.getElementById('btn-grid-limited')
+            ].filter(b => b);
+
+            const gridModeLower = gridModeMap[targetMode];
+            const targetButtonId = gridModeLower ? `btn-grid-${gridModeLower}` : null;
+
+            // Flow diagram: blink mode text
+            const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+            if (gridExportModeElement) {
+                gridExportModeElement.classList.add('mode-changing');
+            }
+
+            // Show badge
+            const gridChangeIndicator = document.getElementById('grid-change-indicator');
+            const gridChangeText = document.getElementById('grid-change-text');
+            if (gridChangeIndicator && gridChangeText) {
+                const isOff = targetMode === 'Off' || targetMode === 'Vypnuto';
+                const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
+                const modeIcon = isOff ? '🚫' : isOn ? '💧' : '🚰';
+                const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : 'Omezeno';
+                gridChangeText.textContent = `${modeIcon} ${modeName}`;
+                gridChangeIndicator.style.display = 'flex';
+            }
+
+            // Lock buttons, animate target
+            gridButtons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.id === targetButtonId) {
+                    btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                    btn.style.opacity = '0.8';
+                } else {
+                    btn.style.animation = '';
+                    btn.style.opacity = '0.5';
+                }
+            });
+        }
+
+        function hideGridModeChanging() {
+            const gridButtons = [
+                document.getElementById('btn-grid-off'),
+                document.getElementById('btn-grid-on'),
+                document.getElementById('btn-grid-limited')
+            ].filter(b => b);
+
+            // Remove flow diagram animation
+            const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+            if (gridExportModeElement) {
+                gridExportModeElement.classList.remove('mode-changing');
+            }
+
+            // Hide badge
+            const gridChangeIndicator = document.getElementById('grid-change-indicator');
+            if (gridChangeIndicator) {
+                gridChangeIndicator.style.display = 'none';
+            }
+
+            // Unlock buttons
+            gridButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.animation = '';
+                btn.style.opacity = '';
+            });
+        }
+
+        // Grid Limit
+        function showGridLimitChanging(targetLimit) {
+            const gridButtons = [
+                document.getElementById('btn-grid-off'),
+                document.getElementById('btn-grid-on'),
+                document.getElementById('btn-grid-limited')
+            ].filter(b => b);
+
+            // When only limit changes, animate the Limited button
+            const targetButtonId = 'btn-grid-limited';
+
+            // Show limit badge (different from mode badge)
+            const gridLimitIndicator = document.getElementById('grid-limit-indicator');
+            const gridLimitText = document.getElementById('grid-limit-text');
+            if (gridLimitIndicator && gridLimitText) {
+                gridLimitText.textContent = `→ ${targetLimit}W`;
+                gridLimitIndicator.style.display = 'flex';
+            }
+
+            // Lock buttons, animate Limited
+            gridButtons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.id === targetButtonId) {
+                    btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
+                    btn.style.opacity = '0.8';
+                } else {
+                    btn.style.animation = '';
+                    btn.style.opacity = '0.5';
+                }
+            });
+        }
+
+        function hideGridLimitChanging() {
+            const gridButtons = [
+                document.getElementById('btn-grid-off'),
+                document.getElementById('btn-grid-on'),
+                document.getElementById('btn-grid-limited')
+            ].filter(b => b);
+
+            // Hide limit badge
+            const gridLimitIndicator = document.getElementById('grid-limit-indicator');
+            if (gridLimitIndicator) {
+                gridLimitIndicator.style.display = 'none';
+            }
+
+            // Unlock buttons (only if no mode change is active)
+            gridButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.animation = '';
+                btn.style.opacity = '';
+            });
+        }
+
+        // ============================================================================
+        // END OF SHIELD MONITORING
+        // ============================================================================
 
         // Show grid delivery dialog with optional limit input
         function showGridDeliveryDialog(mode, currentLimit) {
@@ -4639,6 +4656,11 @@
                     btn.disabled = true;
                     btn.classList.add('pending');
                 }
+
+                // Store expected mode for monitoring (convert to Czech format that sensor returns)
+                const expectedMode = mode === 'CBB' ? 'CBB' : 'Manuální';
+                window._lastRequestedBoilerMode = expectedMode;
+                console.log('[Boiler] Stored expected mode for monitoring:', expectedMode);
 
                 const success = await callService('oig_cloud', 'set_boiler_mode', {
                     mode: mode,
