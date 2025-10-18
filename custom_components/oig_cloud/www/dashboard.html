@@ -1654,7 +1654,7 @@
                 padding-right: 0;
                 margin-right: 0;
             }
-            
+
             /* Queue section full width */
             #shield-queue-section {
                 flex: 1 0 100%;
@@ -2228,6 +2228,7 @@
             margin: 10px auto 0;
             border-collapse: collapse;
             font-size: 12px;
+            table-layout: fixed;
         }
 
         .shield-queue-table th {
@@ -2239,10 +2240,20 @@
             white-space: nowrap;
         }
 
+        .shield-queue-table th:nth-child(1) { width: 140px; } /* Stav */
+        .shield-queue-table th:nth-child(2) { width: 200px; } /* Služba */
+        .shield-queue-table th:nth-child(3) { width: auto; }   /* Změny (zbytek prostoru) */
+        .shield-queue-table th:nth-child(4) { width: 90px; }   /* Vytvořeno */
+        .shield-queue-table th:nth-child(5) { width: 90px; }   /* Trvání */
+
         .shield-queue-table td {
             padding: 10px 12px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             vertical-align: top;
+        }
+
+        .shield-queue-table td:nth-child(3) {
+            word-break: break-word;
         }
 
         .shield-queue-table tr:hover {
@@ -3409,42 +3420,48 @@
                     }
 
                     // Format creation time and duration
-                    let createdText = '--';
-                    let durationText = '--';
+                    let createdText = '<span style="opacity: 0.4;">--</span>';
+                    let durationText = '<span style="opacity: 0.4;">--</span>';
 
-                    // Debug: Check what we have in req
-                    console.log('[Queue] Request data:', req);
+                    // Try multiple timestamp fields (created_at, timestamp, created)
+                    const timestamp = req.created_at || req.timestamp || req.created;
 
-                    if (req.created_at) {
-                        const createdDate = new Date(req.created_at);
-                        const now = new Date();
-                        const diffSec = Math.floor((now - createdDate) / 1000);
+                    if (timestamp) {
+                        try {
+                            const createdDate = new Date(timestamp);
+                            const now = new Date();
+                            const diffSec = Math.floor((now - createdDate) / 1000);
 
-                        // Format creation time (HH:MM)
-                        const hours = String(createdDate.getHours()).padStart(2, '0');
-                        const minutes = String(createdDate.getMinutes()).padStart(2, '0');
-                        createdText = `${hours}:${minutes}`;
+                            // Format creation time (HH:MM)
+                            const hours = String(createdDate.getHours()).padStart(2, '0');
+                            const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+                            createdText = `${hours}:${minutes}`;
 
-                        // Add date if not today
-                        const isToday = createdDate.toDateString() === now.toDateString();
-                        if (!isToday) {
-                            const day = createdDate.getDate();
-                            const month = createdDate.getMonth() + 1;
-                            createdText = `${day}.${month}. ${createdText}`;
+                            // Add date if not today
+                            const isToday = createdDate.toDateString() === now.toDateString();
+                            if (!isToday) {
+                                const day = createdDate.getDate();
+                                const month = createdDate.getMonth() + 1;
+                                createdText = `${day}.${month}. ${createdText}`;
+                            }
+
+                            // Format duration (how long in queue)
+                            if (diffSec < 60) {
+                                durationText = `${diffSec}s`;
+                            } else if (diffSec < 3600) {
+                                const diffMin = Math.floor(diffSec / 60);
+                                const diffSecRem = diffSec % 60;
+                                durationText = `${diffMin}m ${diffSecRem}s`;
+                            } else {
+                                const diffHours = Math.floor(diffSec / 3600);
+                                const diffMin = Math.floor((diffSec % 3600) / 60);
+                                durationText = `${diffHours}h ${diffMin}m`;
+                            }
+                        } catch (e) {
+                            console.warn('[Queue] Invalid timestamp format:', timestamp, e);
                         }
-
-                        // Format duration (how long in queue)
-                        if (diffSec < 60) {
-                            durationText = `${diffSec}s`;
-                        } else if (diffSec < 3600) {
-                            const diffMin = Math.floor(diffSec / 60);
-                            const diffSecRem = diffSec % 60;
-                            durationText = `${diffMin}m ${diffSecRem}s`;
-                        } else {
-                            const diffHours = Math.floor(diffSec / 3600);
-                            const diffMin = Math.floor((diffSec % 3600) / 60);
-                            durationText = `${diffHours}h ${diffMin}m`;
-                        }
+                    } else {
+                        console.warn('[Queue] No timestamp found in request:', req);
                     }
 
                     html += `
