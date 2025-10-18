@@ -1628,30 +1628,36 @@
             padding: 4px 12px; /* Velmi malý padding */
         }
 
-        /* Desktop - vertical layout with sections */
+        /* Desktop - horizontal layout with sections */
         @media (min-width: 1200px) {
             .panel-content {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 12px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0;
                 padding: 12px 16px;
+                align-items: flex-start;
             }
 
             .control-section {
-                flex: 1;
+                flex: 0 0 auto;
                 min-width: auto;
                 margin-bottom: 0;
                 padding-bottom: 0;
                 border-bottom: none;
                 border-right: none;
                 padding-right: 0;
-                margin-right: 0;
+                margin-right: 12px;
             }
 
             .control-section:last-child {
                 border-right: none;
                 padding-right: 0;
                 margin-right: 0;
+            }
+            
+            /* Queue section full width */
+            #shield-queue-section {
+                flex: 1 0 100%;
             }
         }
 
@@ -1677,9 +1683,6 @@
             margin-bottom: 0;
             padding-bottom: 0;
             border-bottom: none;
-            display: inline-block;
-            vertical-align: top;
-            margin-right: 12px;
         }
 
         .control-section:last-child {
