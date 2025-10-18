@@ -1717,7 +1717,7 @@
 
         .button-group {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             gap: 6px;
             margin-bottom: 0;
         }
@@ -4716,8 +4716,8 @@
                     return { value: 0, lastUpdated: null, attributes: {} };
                 }
 
-                const value = state.state !== 'unavailable' && state.state !== 'unknown' 
-                    ? parseFloat(state.state) || 0 
+                const value = state.state !== 'unavailable' && state.state !== 'unknown'
+                    ? parseFloat(state.state) || 0
                     : 0;
                 const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 const attributes = state.attributes || {};
@@ -4741,8 +4741,8 @@
                     return { value: '', lastUpdated: null };
                 }
 
-                const value = (state.state !== 'unavailable' && state.state !== 'unknown') 
-                    ? state.state 
+                const value = (state.state !== 'unavailable' && state.state !== 'unknown')
+                    ? state.state
                     : '';
                 const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 return { value, lastUpdated };
@@ -4766,8 +4766,8 @@
                     return { value: 0, lastUpdated: null, attributes: {}, exists: false };
                 }
 
-                const value = state.state !== 'unavailable' && state.state !== 'unknown' 
-                    ? parseFloat(state.state) || 0 
+                const value = state.state !== 'unavailable' && state.state !== 'unknown'
+                    ? parseFloat(state.state) || 0
                     : 0;
                 const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 const attributes = state.attributes || {};
@@ -4793,8 +4793,8 @@
                     return { value: '', lastUpdated: null, exists: false };
                 }
 
-                const value = (state.state !== 'unavailable' && state.state !== 'unknown') 
-                    ? state.state 
+                const value = (state.state !== 'unavailable' && state.state !== 'unknown')
+                    ? state.state
                     : '';
                 const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 return { value, lastUpdated, exists: true };
