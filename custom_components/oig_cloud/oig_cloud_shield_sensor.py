@@ -122,8 +122,8 @@ class OigCloudShieldSensor(OigCloudSensor):
         )
         # KRITICKÁ OPRAVA: Callback může být volán z jiného vlákna
         # async_write_ha_state() NESMÍ být voláno z jiného vlákna - crashuje HA
-        # Použijeme schedule_update_ha_state(), který je thread-safe
-        self.schedule_update_ha_state(force=True)
+        # schedule_update_ha_state() je thread-safe a naplánuje update v event loop
+        self.schedule_update_ha_state()
 
     @property
     def name(self) -> str:
