@@ -745,12 +745,48 @@ class ServiceShield:
             context=context,
         )
 
-        await self._log_event("started", service_name, data, context=context)
+        await self._log_event(
+            "started",
+            service_name,
+            {
+                "params": data,
+                "entities": expected_entities,
+                "original_states": original_states,
+            },
+            context=context,
+        )
 
         # OPRAVA: Volání API až NYNÍ, když už je služba v pending a UI se aktualizovalo
         await original_call(
             domain, service, service_data=data, blocking=blocking, context=context
         )
+
+        # KRITICKÁ OPRAVA: Po API volání OKAMŽITĚ refreshneme coordinator
+        # Bez toho by Shield čekal na další scheduled update (30-120s)!
+        try:
+            from .const import DOMAIN
+
+            coordinator = (
+                self.hass.data.get(DOMAIN, {})
+                .get(self.entry.entry_id, {})
+                .get("coordinator")
+            )
+            if coordinator:
+                _LOGGER.debug(
+                    f"[OIG Shield] Vynucuji okamžitou aktualizaci coordinatoru po API volání pro {service_name}"
+                )
+                await coordinator.async_request_refresh()
+                _LOGGER.debug(
+                    f"[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
+                )
+            else:
+                _LOGGER.warning(
+                    f"[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
+                )
+        except Exception as e:
+            _LOGGER.error(
+                f"[OIG Shield] Chyba při refreshu coordinatoru: {e}", exc_info=True
+            )
 
         # Po volání služby nastavíme state listener pro sledování změn
         self._setup_state_listener()
@@ -820,7 +856,15 @@ class ServiceShield:
                         _LOGGER.warning(
                             f"[OIG Shield] Timeout pro službu {service_name}"
                         )
-                        await self._log_event("timeout", service_name, info["params"])
+                        await self._log_event(
+                            "timeout",
+                            service_name,
+                            {
+                                "params": info["params"],
+                                "entities": info["entities"],
+                                "original_states": info.get("original_states", {}),
+                            },
+                        )
                         await self._log_telemetry(
                             "timeout",
                             service_name,
@@ -830,6 +874,9 @@ class ServiceShield:
                     continue
 
                 all_ok = True
+                _LOGGER.info(
+                    f"[SHIELD CHECK] Služba: {service_name}, entities: {info['entities']}"
+                )
                 for entity_id, expected_value in info["entities"].items():
                     # OPRAVA: Pro fiktivní formating entity nikdy nebudou "dokončené" před timeoutem
                     if entity_id.startswith("fake_formating_mode_"):
@@ -859,25 +906,30 @@ class ServiceShield:
                             str(current_value or "").strip().lower().replace(" ", "")
                         )
 
-                    _LOGGER.debug(
-                        "[OIG Shield] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s')",
+                    _LOGGER.info(
+                        "[SHIELD CHECK] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s') → MATCH: %s",
                         entity_id,
                         current_value,
                         expected_value,
                         norm_current,
                         norm_expected,
+                        norm_current == norm_expected,
                     )
 
                     if norm_current != norm_expected:
                         all_ok = False
-                        _LOGGER.debug(
-                            f"[OIG Shield] Entity {entity_id} ještě není v požadovaném stavu"
+                        _LOGGER.warning(
+                            f"[SHIELD CHECK] ❌ Entity {entity_id} NENÍ v požadovaném stavu! Očekáváno '{norm_expected}', je '{norm_current}'"
                         )
                         break
+                    else:
+                        _LOGGER.info(
+                            f"[SHIELD CHECK] ✅ Entity {entity_id} JE v požadovaném stavu!"
+                        )
 
                 if all_ok and not service_name == "oig_cloud.set_formating_mode":
                     _LOGGER.info(
-                        f"[OIG Shield] Služba {service_name} byla úspěšně dokončena"
+                        f"[SHIELD CHECK] ✅✅✅ Služba {service_name} byla úspěšně dokončena - ZAPISUJI DO LOGBOOKU!"
                     )
                     await self._log_event(
                         "completed",
@@ -1064,10 +1116,31 @@ class ServiceShield:
         self.last_checked_entity_id = None
 
         def find_entity(suffix: str) -> str | None:
+            _LOGGER.info(f"[FIND ENTITY] Hledám entitu se suffixem: {suffix}")
+            matching_entities = []
             for entity in self.hass.states.async_all():
                 if entity.entity_id.endswith(suffix):
-                    return entity.entity_id
-            return None
+                    matching_entities.append(entity.entity_id)
+
+            if matching_entities:
+                _LOGGER.info(
+                    f"[FIND ENTITY] Nalezeno {len(matching_entities)} entit: {matching_entities}"
+                )
+                return matching_entities[0]
+            else:
+                _LOGGER.warning(
+                    f"[FIND ENTITY] NENALEZENA žádná entita se suffixem: {suffix}"
+                )
+                # Debug: Vypíšeme všechny invertor entity
+                all_invertor = [
+                    e.entity_id
+                    for e in self.hass.states.async_all()
+                    if "invertor" in e.entity_id.lower()
+                ]
+                _LOGGER.warning(
+                    f"[FIND ENTITY] Všechny invertor entity: {all_invertor}"
+                )
+                return None
 
         # OPRAVA: Speciální handling pro set_formating_mode - nemá žádný senzor k ověření
         if service_name == "oig_cloud.set_formating_mode":
