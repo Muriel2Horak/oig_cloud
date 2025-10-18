@@ -3119,7 +3119,7 @@
                             entityId.includes('actual_batt') ||         // Battery power
                             entityId.includes('actual_aci_wtotal') ||   // Grid power
                             entityId.includes('actual_aco_p') ||        // House power
-                            entityId.includes('boiler_power') ||        // Boiler power
+                            entityId.includes('boiler_current_cbb_w') || // Boiler power
                             entityId.includes('extended_battery_soc') || // Battery SOC
                             entityId.includes('extended_battery_voltage') || // Battery voltage
                             entityId.includes('box_temp') ||            // Inverter temp
@@ -4703,19 +4703,24 @@
         }
 
         // Fetch sensor data (returns { value, lastUpdated, attributes })
+        // OPTIMIZED: Uses direct hass.states access instead of API calls
         async function getSensor(entityId) {
-            const token = getHAToken();
-            if (!token) return { value: 0, lastUpdated: null, attributes: {} };
-
             try {
-                const response = await fetch(`/api/states/${entityId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) return { value: 0, lastUpdated: null, attributes: {} };
-                const data = await response.json();
-                const value = data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
-                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
-                const attributes = data.attributes || {};
+                const hass = getHass();
+                if (!hass || !hass.states) {
+                    return { value: 0, lastUpdated: null, attributes: {} };
+                }
+
+                const state = hass.states[entityId];
+                if (!state) {
+                    return { value: 0, lastUpdated: null, attributes: {} };
+                }
+
+                const value = state.state !== 'unavailable' && state.state !== 'unknown' 
+                    ? parseFloat(state.state) || 0 
+                    : 0;
+                const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+                const attributes = state.attributes || {};
                 return { value, lastUpdated, attributes };
             } catch (e) {
                 return { value: 0, lastUpdated: null, attributes: {} };
@@ -4723,18 +4728,23 @@
         }
 
         // Fetch sensor data as string (for non-numeric sensors like box_prms_mode)
+        // OPTIMIZED: Uses direct hass.states access instead of API calls
         async function getSensorString(entityId) {
-            const token = getHAToken();
-            if (!token) return { value: '', lastUpdated: null };
-
             try {
-                const response = await fetch(`/api/states/${entityId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) return { value: '', lastUpdated: null };
-                const data = await response.json();
-                const value = (data.state !== 'unavailable' && data.state !== 'unknown') ? data.state : '';
-                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
+                const hass = getHass();
+                if (!hass || !hass.states) {
+                    return { value: '', lastUpdated: null };
+                }
+
+                const state = hass.states[entityId];
+                if (!state) {
+                    return { value: '', lastUpdated: null };
+                }
+
+                const value = (state.state !== 'unavailable' && state.state !== 'unknown') 
+                    ? state.state 
+                    : '';
+                const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 return { value, lastUpdated };
             } catch (e) {
                 return { value: '', lastUpdated: null };
@@ -4742,22 +4752,25 @@
         }
 
         // Safe sensor fetch with optional logging
+        // OPTIMIZED: Uses direct hass.states access instead of API calls
         async function getSensorSafe(entityId, silent = true) {
-            const token = getHAToken();
-            if (!token) return { value: 0, lastUpdated: null, attributes: {}, exists: false };
-
             try {
-                const response = await fetch(`/api/states/${entityId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) {
-                    if (!silent) console.log(`Sensor ${entityId} not available (${response.status})`);
+                const hass = getHass();
+                if (!hass || !hass.states) {
                     return { value: 0, lastUpdated: null, attributes: {}, exists: false };
                 }
-                const data = await response.json();
-                const value = data.state !== 'unavailable' && data.state !== 'unknown' ? parseFloat(data.state) || 0 : 0;
-                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
-                const attributes = data.attributes || {};
+
+                const state = hass.states[entityId];
+                if (!state) {
+                    if (!silent) console.log(`Sensor ${entityId} not available`);
+                    return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+                }
+
+                const value = state.state !== 'unavailable' && state.state !== 'unknown' 
+                    ? parseFloat(state.state) || 0 
+                    : 0;
+                const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+                const attributes = state.attributes || {};
                 return { value, lastUpdated, attributes, exists: true };
             } catch (e) {
                 if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
@@ -4766,21 +4779,24 @@
         }
 
         // Safe string sensor fetch with optional logging
+        // OPTIMIZED: Uses direct hass.states access instead of API calls
         async function getSensorStringSafe(entityId, silent = true) {
-            const token = getHAToken();
-            if (!token) return { value: '', lastUpdated: null, exists: false };
-
             try {
-                const response = await fetch(`/api/states/${entityId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) {
-                    if (!silent) console.log(`Sensor ${entityId} not available (${response.status})`);
+                const hass = getHass();
+                if (!hass || !hass.states) {
                     return { value: '', lastUpdated: null, exists: false };
                 }
-                const data = await response.json();
-                const value = (data.state !== 'unavailable' && data.state !== 'unknown') ? data.state : '';
-                const lastUpdated = data.last_updated ? new Date(data.last_updated) : null;
+
+                const state = hass.states[entityId];
+                if (!state) {
+                    if (!silent) console.log(`Sensor ${entityId} not available`);
+                    return { value: '', lastUpdated: null, exists: false };
+                }
+
+                const value = (state.state !== 'unavailable' && state.state !== 'unknown') 
+                    ? state.state 
+                    : '';
+                const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
                 return { value, lastUpdated, exists: true };
             } catch (e) {
                 if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
@@ -5389,7 +5405,7 @@
             // ===== ANIMATION DATA LOADING =====
             // Load sensors needed for proper animation logic (solarPerc already loaded above)
 
-            const boilerPowerData = await getSensorSafe(getSensorId('boiler_power'));
+            const boilerPowerData = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
             const boilerPower = boilerPowerData.value || 0;
 
             const boilerInstallPowerData = await getSensorSafe(getSensorId('boiler_install_power'));
