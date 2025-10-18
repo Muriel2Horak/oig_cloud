@@ -5624,15 +5624,12 @@
 
                 if (boilerInUse && boilerInUse.exists && boilerInUse.value === true) {
                     boilerNode.classList.remove('hidden');
-                    console.log('[Boiler] Boiler detected and enabled');
                 } else {
                     boilerNode.classList.add('hidden');
-                    console.log('[Boiler] Boiler not in use, hidden');
                 }
                 // Redraw connections after visibility change
                 drawConnections();
             } catch (e) {
-                console.log('[Boiler] Sensor not found, hiding boiler node');
                 document.getElementById('boiler-node').classList.add('hidden');
                 // Redraw connections after visibility change
                 drawConnections();
