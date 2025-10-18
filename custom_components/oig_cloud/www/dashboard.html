@@ -1023,6 +1023,78 @@
             opacity: 1;
         }
 
+        /* Info bubble system */
+        .info-bubble {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.4);
+            border-radius: 50%;
+            font-size: 11px;
+            cursor: help;
+            margin-left: 4px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .info-bubble:hover {
+            background: rgba(33, 150, 243, 0.4);
+            transform: scale(1.1);
+        }
+
+        .info-bubble-tooltip {
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: normal;
+            width: 280px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 2000;
+            text-align: left;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .info-bubble:hover .info-bubble-tooltip {
+            opacity: 1;
+        }
+
+        .info-bubble-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.95);
+        }
+
+        .info-bubble-tooltip strong {
+            color: #42a5f5;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .info-bubble-tooltip ul {
+            margin: 6px 0;
+            padding-left: 16px;
+        }
+
+        .info-bubble-tooltip li {
+            margin: 3px 0;
+        }
+
         /* Ikony v detailech */
         .detail-icon {
             margin-right: 2px;
@@ -2122,7 +2194,20 @@
     <!-- Control Panel -->
     <div class="control-panel" id="control-panel">
         <div class="panel-header" onclick="toggleControlPanel()">
-            <h3>⚙️ Ovládání</h3>
+            <h3>⚙️ Ovládání
+                <span class="info-bubble" onclick="event.stopPropagation()">❓
+                    <span class="info-bubble-tooltip">
+                        <strong>Ovládací panel</strong>
+                        Zde můžete měnit režimy systému v reálném čase. Všechny změny jsou chráněny ServiceShield systémem pro bezpečné API volání.
+                        <ul>
+                            <li><strong>Režim střídače:</strong> Home 1-4 režimy</li>
+                            <li><strong>Dodávka do sítě:</strong> On/Off/Limited</li>
+                            <li><strong>Bojler:</strong> Inteligentní/Manuální</li>
+                        </ul>
+                        Změny jsou vidět ve frontě požadavků níže.
+                    </span>
+                </span>
+            </h3>
             <button class="btn-minimize" onclick="event.stopPropagation(); toggleControlPanel()">
                 <span id="panel-toggle-icon">−</span>
             </button>
@@ -2182,6 +2267,19 @@
             <div class="control-section" id="shield-queue-section" style="text-align: center;">
                 <h4 onclick="toggleQueueSection()" style="cursor: pointer; user-select: none; display: inline-block;">
                     📋 Fronta požadavků <span id="queue-toggle-icon">▶</span>
+                    <span class="info-bubble" onclick="event.stopPropagation()">❓
+                        <span class="info-bubble-tooltip">
+                            <strong>ServiceShield fronta</strong>
+                            Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
+                            <ul>
+                                <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
+                                <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
+                                <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
+                                <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
+                            </ul>
+                            Chrání API před přetížením a zajišťuje spolehlivé změny.
+                        </span>
+                    </span>
                 </h4>
                 <div id="shield-queue-container" style="display: none; text-align: left;">
                     <div style="text-align: center; opacity: 0.5; padding: 20px;">
@@ -2591,8 +2689,14 @@
                 </div>
                 <div class="node-icon">🌡️</div>
                 <div class="node-label">Bojler</div>
-                <div class="node-value" id="boiler-power">-- W</div>
-                <div class="node-subvalue" id="boiler-mode">--</div>
+                <div class="node-value entity-value" id="boiler-power"
+                     data-entity="boiler_current_cbb_w"
+                     data-tooltip="Aktuální výkon bojleru"
+                     onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))">-- W</div>
+                <div class="node-subvalue entity-value" id="boiler-mode"
+                     data-entity="boiler_manual_mode"
+                     data-tooltip="Režim bojleru"
+                     onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</div>
                 <div class="node-details">
                     <div class="detail-row">
                         <span class="detail-icon">⚙️</span>
