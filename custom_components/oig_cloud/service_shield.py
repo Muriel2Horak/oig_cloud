@@ -327,7 +327,7 @@ class ServiceShield:
         # - 1 = running služba (v self.pending)
         # - 2+ = čekající služby (v self.queue)
         total_items = len(self.pending) + len(self.queue)
-        
+
         if position < 1 or position > total_items:
             _LOGGER.error(
                 f"[OIG Shield] Neplatná pozice: {position} (pending: {len(self.pending)}, queue: {len(self.queue)})"
@@ -346,7 +346,7 @@ class ServiceShield:
         # Pozice je 1-based (1=running, 2=queue[0], 3=queue[1], ...)
         # Pro queue potřebujeme position-2 (protože position 1 je running)
         queue_index = position - 1 - len(self.pending)
-        
+
         if queue_index < 0 or queue_index >= len(self.queue):
             _LOGGER.error(
                 f"[OIG Shield] Chyba výpočtu indexu: position={position}, queue_index={queue_index}, queue_len={len(self.queue)}"
@@ -585,16 +585,53 @@ class ServiceShield:
             },
         )
 
-        await self._start_call(
-            service_name,
-            params,
-            expected_entities,
-            original_call,
-            domain,
-            service,
-            blocking,
-            context,
-        )
+        # KRITICKÁ OPRAVA: Kontrola, jestli už něco běží
+        # Shield NESMÍ pouštět služby paralelně!
+        if self.running is not None:
+            # Už něco běží → přidáme do FRONTY
+            _LOGGER.info(
+                f"[OIG Shield] Služba {service_name} přidána do fronty (běží: {self.running})"
+            )
+            self.queue.append(
+                (
+                    service_name,
+                    params,
+                    expected_entities,
+                    original_call,
+                    domain,
+                    service,
+                    blocking,
+                    context,
+                )
+            )
+            # Uložíme metadata pro UI
+            self.queue_metadata[(service_name, str(params))] = trace_id
+
+            # Notifikuj senzory o nové položce ve frontě
+            self._notify_state_change()
+
+            await self._log_event(
+                "queued",
+                service_name,
+                {"params": params, "entities": expected_entities},
+                reason=f"Přidáno do fronty (běží: {self.running})",
+                context=context,
+            )
+        else:
+            # Nic neběží → spustíme HNED
+            _LOGGER.info(
+                f"[OIG Shield] Spouštím službu {service_name} (fronta prázdná)"
+            )
+            await self._start_call(
+                service_name,
+                params,
+                expected_entities,
+                original_call,
+                domain,
+                service,
+                blocking,
+                context,
+            )
 
     async def _start_call(
         self,
