@@ -244,6 +244,33 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         _LOGGER.debug(f"Panel removal handled gracefully: {e}")
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entry to new format."""
+    _LOGGER.info(
+        "Migrating OIG Cloud config entry from version %s.%s",
+        entry.version,
+        entry.minor_version,
+    )
+
+    # Migrate from version 1 to version 2
+    if entry.version == 1:
+        # Version 2 uses the new wizard-based config flow
+        # No data migration needed - just update version
+        new_data = {**entry.data}
+        new_options = {**entry.options}
+
+        # Update to version 2
+        entry.version = 2
+        entry.minor_version = 0
+        hass.config_entries.async_update_entry(
+            entry, data=new_data, options=new_options
+        )
+
+        _LOGGER.info("Migration to version %s.%s successful", entry.version, entry.minor_version)
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("[OIG SETUP] Starting OIG Cloud setup")
