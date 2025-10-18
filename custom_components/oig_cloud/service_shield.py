@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.core import callback, HomeAssistant, Context
+from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
+from homeassistant.core import callback, HomeAssistant, Context, Event
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components import logbook
 from homeassistant.util.dt import now as dt_now
@@ -16,7 +16,7 @@ from .shared.logging import setup_simple_telemetry
 _LOGGER = logging.getLogger(__name__)
 
 TIMEOUT_MINUTES = 15
-CHECK_INTERVAL_SECONDS = 15
+CHECK_INTERVAL_SECONDS = 30  # Zvýšeno z 15 na 30 sekund - slouží jen jako backup
 
 
 class ServiceShield:
@@ -46,6 +46,10 @@ class ServiceShield:
         self.queue_metadata: Dict[Tuple[str, str], str] = {}
         self.running: Optional[str] = None
         self.last_checked_entity_id: Optional[str] = None
+        
+        # Event-based monitoring
+        self._state_listener_unsub: Optional[Callable] = None
+        self._is_checking: bool = False  # Lock pro prevenci concurrent execution
 
         # Atributy pro telemetrii (pro zpětnou kompatibilitu)
         self.telemetry_handler: Optional[Any] = None
@@ -165,14 +169,60 @@ class ServiceShield:
         # Registrace shield services
         await self.register_services()
 
-        # OPRAVA: Přidání debug logování pro ověření, že se check_loop spouští
+        # Časový backup interval - slouží jako fallback, event-based monitoring je primární
         _LOGGER.info(
-            f"[OIG Shield] Spouštím check_loop každých {CHECK_INTERVAL_SECONDS} sekund"
+            f"[OIG Shield] Spouštím backup check_loop každých {CHECK_INTERVAL_SECONDS} sekund (primárně event-based)"
         )
 
         async_track_time_interval(
             self.hass, self._check_loop, timedelta(seconds=CHECK_INTERVAL_SECONDS)
         )
+
+    def _setup_state_listener(self) -> None:
+        """Nastaví posluchač změn stavů pro entity v pending."""
+        # Zrušíme starý listener, pokud existuje
+        if self._state_listener_unsub:
+            self._state_listener_unsub()
+            self._state_listener_unsub = None
+        
+        # Pokud nejsou žádné pending služby, nemusíme poslouchat
+        if not self.pending:
+            _LOGGER.debug("[OIG Shield] Žádné pending služby, state listener nepotřebný")
+            return
+        
+        # Získáme všechny entity, které sledujeme
+        entity_ids = []
+        for service_info in self.pending.values():
+            entity_ids.extend(service_info.get("entities", {}).keys())
+        
+        if not entity_ids:
+            _LOGGER.debug("[OIG Shield] Žádné entity ke sledování")
+            return
+        
+        _LOGGER.info(f"[OIG Shield] Nastavuji state listener pro {len(entity_ids)} entit: {entity_ids}")
+        
+        # Nastavíme posluchač pro všechny sledované entity
+        self._state_listener_unsub = async_track_state_change_event(
+            self.hass,
+            entity_ids,
+            self._on_entity_state_changed
+        )
+    
+    @callback
+    async def _on_entity_state_changed(self, event: Event) -> None:
+        """Callback když se změní stav sledované entity."""
+        entity_id = event.data.get("entity_id")
+        new_state = event.data.get("new_state")
+        
+        if not new_state:
+            return
+        
+        _LOGGER.debug(
+            f"[OIG Shield] Detekována změna entity {entity_id} na '{new_state.state}' - spouštím kontrolu"
+        )
+        
+        # Okamžitě spustíme kontrolu
+        await self._check_loop(datetime.now())
 
     async def register_services(self) -> None:
         """Registruje služby ServiceShield."""
@@ -501,34 +551,126 @@ class ServiceShield:
         await original_call(
             domain, service, service_data=data, blocking=blocking, context=context
         )
+        
+        # Po volání služby nastavíme state listener pro sledování změn
+        self._setup_state_listener()
 
     @callback
     async def _check_loop(self, _now: datetime) -> None:
-        # OPRAVA: Explicitní debug log na začátku každé kontroly
-        _LOGGER.debug(
-            f"[OIG Shield] Check loop tick - pending: {len(self.pending)}, queue: {len(self.queue)}, running: {self.running}"
-        )
-
-        if not self.pending and not self.queue and not self.running:
-            _LOGGER.debug("[OIG Shield] Check loop - vše prázdné, žádná akce")
+        # Lock mechanismus - prevence concurrent execution
+        if self._is_checking:
+            _LOGGER.debug("[OIG Shield] Check loop již běží, přeskakuji")
             return
-
-        finished = []
-
-        for service_name, info in self.pending.items():
-            _LOGGER.debug(f"[OIG Shield] Kontroluji pending službu: {service_name}")
-
-            # OPRAVA: Speciální timeout pro formating_mode - 2 minuty místo 15 minut
-            timeout_minutes = (
-                2 if service_name == "oig_cloud.set_formating_mode" else TIMEOUT_MINUTES
+        
+        self._is_checking = True
+        try:
+            # OPRAVA: Explicitní debug log na začátku každé kontroly
+            _LOGGER.debug(
+                f"[OIG Shield] Check loop tick - pending: {len(self.pending)}, queue: {len(self.queue)}, running: {self.running}"
             )
 
-            if datetime.now() - info["called_at"] > timedelta(minutes=timeout_minutes):
-                if service_name == "oig_cloud.set_formating_mode":
-                    _LOGGER.info(
-                        f"[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
+            if not self.pending and not self.queue and not self.running:
+                _LOGGER.debug("[OIG Shield] Check loop - vše prázdné, žádná akce")
+                # Zrušíme state listener, pokud není co sledovat
+                if self._state_listener_unsub:
+                    self._state_listener_unsub()
+                    self._state_listener_unsub = None
+                return
+
+            finished = []
+
+            for service_name, info in self.pending.items():
+                _LOGGER.debug(f"[OIG Shield] Kontroluji pending službu: {service_name}")
+
+                # OPRAVA: Speciální timeout pro formating_mode - 2 minuty místo 15 minut
+                timeout_minutes = (
+                    2 if service_name == "oig_cloud.set_formating_mode" else TIMEOUT_MINUTES
+                )
+
+                if datetime.now() - info["called_at"] > timedelta(minutes=timeout_minutes):
+                    if service_name == "oig_cloud.set_formating_mode":
+                        _LOGGER.info(
+                            f"[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
+                        )
+                        # Pro formating_mode považujeme timeout za úspěšné dokončení
+                        await self._log_event(
+                            "completed",
+                            service_name,
+                            {
+                                "params": info["params"],
+                                "entities": info["entities"],
+                                "original_states": info.get("original_states", {}),
+                            },
+                            reason="Formátování dokončeno (automaticky po 2 min)",
+                        )
+                        await self._log_telemetry(
+                            "completed",
+                            service_name,
+                            {
+                                "params": info["params"],
+                                "entities": info["entities"],
+                                "reason": "auto_timeout",
+                            },
+                        )
+                    else:
+                        _LOGGER.warning(f"[OIG Shield] Timeout pro službu {service_name}")
+                        await self._log_event("timeout", service_name, info["params"])
+                        await self._log_telemetry(
+                            "timeout",
+                            service_name,
+                            {"params": info["params"], "entities": info["entities"]},
+                        )
+                    finished.append(service_name)
+                    continue
+
+                all_ok = True
+                for entity_id, expected_value in info["entities"].items():
+                    # OPRAVA: Pro fiktivní formating entity nikdy nebudou "dokončené" před timeoutem
+                    if entity_id.startswith("fake_formating_mode_"):
+                        all_ok = False
+                        _LOGGER.debug(
+                            f"[OIG Shield] Formating mode - čekám na timeout (zbývá {timeout_minutes - (datetime.now() - info['called_at']).total_seconds()/60:.1f} min)"
+                        )
+                        break
+
+                    state = self.hass.states.get(entity_id)
+                    current_value = state.state if state else None
+
+                    if entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
+                        try:
+                            norm_expected = str(round(float(expected_value)))
+                            norm_current = str(round(float(current_value)))
+                        except (ValueError, TypeError):
+                            norm_expected = str(expected_value)
+                            norm_current = str(current_value or "")
+                    else:
+                        norm_expected = (
+                            str(expected_value or "").strip().lower().replace(" ", "")
+                        )
+                        norm_current = (
+                            str(current_value or "").strip().lower().replace(" ", "")
+                        )
+
+                    _LOGGER.debug(
+                        "[OIG Shield] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s')",
+                        entity_id,
+                        current_value,
+                        expected_value,
+                        norm_current,
+                        norm_expected,
                     )
-                    # Pro formating_mode považujeme timeout za úspěšné dokončení
+
+                    if norm_current != norm_expected:
+                        all_ok = False
+                        _LOGGER.debug(
+                            f"[OIG Shield] Entity {entity_id} ještě není v požadovaném stavu"
+                        )
+                        break
+
+                if all_ok and not service_name == "oig_cloud.set_formating_mode":
+                    _LOGGER.info(
+                        f"[OIG Shield] Služba {service_name} byla úspěšně dokončena"
+                    )
                     await self._log_event(
                         "completed",
                         service_name,
@@ -537,143 +679,72 @@ class ServiceShield:
                             "entities": info["entities"],
                             "original_states": info.get("original_states", {}),
                         },
-                        reason="Formátování dokončeno (automaticky po 2 min)",
+                        reason="Změna provedena",
                     )
                     await self._log_telemetry(
                         "completed",
                         service_name,
+                        {"params": info["params"], "entities": info["entities"]},
+                    )
+                    await self._log_event(
+                        "released",
+                        service_name,
                         {
                             "params": info["params"],
                             "entities": info["entities"],
-                            "reason": "auto_timeout",
+                            "original_states": info.get("original_states", {}),
                         },
+                        reason="Semafor uvolněn – služba dokončena",
                     )
-                else:
-                    _LOGGER.warning(f"[OIG Shield] Timeout pro službu {service_name}")
-                    await self._log_event("timeout", service_name, info["params"])
-                    await self._log_telemetry(
-                        "timeout",
-                        service_name,
-                        {"params": info["params"], "entities": info["entities"]},
-                    )
-                finished.append(service_name)
-                continue
+                    finished.append(service_name)
 
-            all_ok = True
-            for entity_id, expected_value in info["entities"].items():
-                # OPRAVA: Pro fiktivní formating entity nikdy nebudou "dokončené" před timeoutem
-                if entity_id.startswith("fake_formating_mode_"):
-                    all_ok = False
-                    _LOGGER.debug(
-                        f"[OIG Shield] Formating mode - čekám na timeout (zbývá {timeout_minutes - (datetime.now() - info['called_at']).total_seconds()/60:.1f} min)"
-                    )
-                    break
+            # OPRAVA: Explicitní logování při odstraňování dokončených služeb
+            for svc in finished:
+                _LOGGER.info(f"[OIG Shield] Odstraňuji dokončenou službu: {svc}")
+                del self.pending[svc]
+                if svc == self.running:
+                    _LOGGER.info(f"[OIG Shield] Uvolňuji running slot: {svc}")
+                    self.running = None
 
-                state = self.hass.states.get(entity_id)
-                current_value = state.state if state else None
-
-                if entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
-                    try:
-                        norm_expected = str(round(float(expected_value)))
-                        norm_current = str(round(float(current_value)))
-                    except (ValueError, TypeError):
-                        norm_expected = str(expected_value)
-                        norm_current = str(current_value or "")
-                else:
-                    norm_expected = (
-                        str(expected_value or "").strip().lower().replace(" ", "")
-                    )
-                    norm_current = (
-                        str(current_value or "").strip().lower().replace(" ", "")
-                    )
-
-                _LOGGER.debug(
-                    "[OIG Shield] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s')",
-                    entity_id,
-                    current_value,
-                    expected_value,
-                    norm_current,
-                    norm_expected,
-                )
-
-                if norm_current != norm_expected:
-                    all_ok = False
-                    _LOGGER.debug(
-                        f"[OIG Shield] Entity {entity_id} ještě není v požadovaném stavu"
-                    )
-                    break
-
-            if all_ok and not service_name == "oig_cloud.set_formating_mode":
+            # OPRAVA: Explicitní logování při spouštění dalších služeb z fronty
+            if self.running is None and self.queue:
                 _LOGGER.info(
-                    f"[OIG Shield] Služba {service_name} byla úspěšně dokončena"
+                    f"[OIG Shield] Spouštím další službu z fronty (fronta má {len(self.queue)} položek)"
                 )
-                await self._log_event(
-                    "completed",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Změna provedena",
+                (
+                    next_svc,
+                    data,
+                    expected,
+                    original_call,
+                    domain,
+                    service,
+                    blocking,
+                    context,
+                ) = self.queue.pop(0)
+                _LOGGER.debug("[OIG Shield] Spouštím další službu z fronty: %s", next_svc)
+                await self._start_call(
+                    next_svc,
+                    data,
+                    expected,
+                    original_call,
+                    domain,
+                    service,
+                    blocking,
+                    context,
                 )
-                await self._log_telemetry(
-                    "completed",
-                    service_name,
-                    {"params": info["params"], "entities": info["entities"]},
+            elif self.running is None:
+                _LOGGER.debug("[OIG Shield] Fronta prázdná, shield neaktivní.")
+            else:
+                _LOGGER.debug(
+                    f"[OIG Shield] Čekám na dokončení běžící služby: {self.running}"
                 )
-                await self._log_event(
-                    "released",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Semafor uvolněn – služba dokončena",
-                )
-                finished.append(service_name)
-
-        # OPRAVA: Explicitní logování při odstraňování dokončených služeb
-        for svc in finished:
-            _LOGGER.info(f"[OIG Shield] Odstraňuji dokončenou službu: {svc}")
-            del self.pending[svc]
-            if svc == self.running:
-                _LOGGER.info(f"[OIG Shield] Uvolňuji running slot: {svc}")
-                self.running = None
-
-        # OPRAVA: Explicitní logování při spouštění dalších služeb z fronty
-        if self.running is None and self.queue:
-            _LOGGER.info(
-                f"[OIG Shield] Spouštím další službu z fronty (fronta má {len(self.queue)} položek)"
-            )
-            (
-                next_svc,
-                data,
-                expected,
-                original_call,
-                domain,
-                service,
-                blocking,
-                context,
-            ) = self.queue.pop(0)
-            _LOGGER.debug("[OIG Shield] Spouštím další službu z fronty: %s", next_svc)
-            await self._start_call(
-                next_svc,
-                data,
-                expected,
-                original_call,
-                domain,
-                service,
-                blocking,
-                context,
-            )
-        elif self.running is None:
-            _LOGGER.debug("[OIG Shield] Fronta prázdná, shield neaktivní.")
-        else:
-            _LOGGER.debug(
-                f"[OIG Shield] Čekám na dokončení běžící služby: {self.running}"
-            )
+            
+            # Aktualizujeme state listener pro aktuální pending služby
+            self._setup_state_listener()
+        
+        finally:
+            # Vždy uvolníme lock
+            self._is_checking = False
 
     async def _log_event(
         self,
@@ -1090,6 +1161,12 @@ class ServiceShield:
 
     async def cleanup(self) -> None:
         """Vyčistí ServiceShield při ukončení."""
+        # Zrušíme state listener
+        if self._state_listener_unsub:
+            self._state_listener_unsub()
+            self._state_listener_unsub = None
+            _LOGGER.info("[OIG Shield] State listener zrušen při cleanup")
+        
         if self._telemetry_handler:
             try:
                 # Odeslat závěrečnou telemetrii
