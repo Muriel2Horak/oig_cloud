@@ -451,14 +451,13 @@ class ServiceShield:
         blocking: bool,
         context: Optional[Context],
     ) -> None:
-        self.running = service_name
-
-        # Uložíme původní stavy entit před změnou
+        # OPRAVA: Uložíme původní stavy entit před změnou
         original_states = {}
         for entity_id in expected_entities.keys():
             state = self.hass.states.get(entity_id)
             original_states[entity_id] = state.state if state else None
 
+        # OPRAVA: Přidáme do pending PŘED voláním API, aby se okamžitě zobrazilo ve frontě
         self.pending[service_name] = {
             "entities": expected_entities,
             "original_states": original_states,
@@ -466,8 +465,23 @@ class ServiceShield:
             "called_at": datetime.now(),
         }
 
-        # ߧ頖ymažeme metadata z fronty
+        # OPRAVA: Nastavíme running AŽ NYNÍ, aby se okamžitě zobrazilo
+        self.running = service_name
+
+        # Odstraňme metadata z fronty
         self.queue_metadata.pop((service_name, str(data)), None)
+
+        # OPRAVA: Fire event pro okamžitou aktualizaci UI
+        self.hass.bus.async_fire(
+            "oig_cloud_shield_queue_info",
+            {
+                "running": self.running,
+                "queue_length": len(self.queue),
+                "pending_count": len(self.pending),
+                "queue_services": [item[0] for item in self.queue],
+                "timestamp": dt_now().isoformat(),
+            },
+        )
 
         await self._log_event(
             "change_requested",
@@ -483,6 +497,7 @@ class ServiceShield:
 
         await self._log_event("started", service_name, data, context=context)
 
+        # OPRAVA: Volání API až NYNÍ, když už je služba v pending a UI se aktualizovalo
         await original_call(
             domain, service, service_data=data, blocking=blocking, context=context
         )

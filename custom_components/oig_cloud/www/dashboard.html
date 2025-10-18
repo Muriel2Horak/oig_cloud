@@ -2065,7 +2065,7 @@
         /* Shield Queue Table */
         .shield-queue-table {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1600px;
             margin: 10px auto 0;
             border-collapse: collapse;
             font-size: 12px;
@@ -2167,6 +2167,11 @@
             <!-- Boiler -->
             <div class="control-section" id="boiler-control-section">
                 <h4>Režim bojleru</h4>
+                <!-- Boiler mode change indicator (in control panel) -->
+                <div class="boiler-change-indicator-panel" id="boiler-change-indicator-panel" style="display: none; margin-bottom: 10px;">
+                    <span class="spinner" style="display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255, 152, 0, 0.3); border-top-color: rgba(255, 152, 0, 1); border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                    <span id="boiler-change-text-panel" style="margin-left: 8px; color: rgba(255, 152, 0, 1); font-weight: 600;">🌡️ Změna režimu...</span>
+                </div>
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
                     <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
@@ -2212,9 +2217,9 @@
                 <div class="node-icon solar-icon-dynamic" id="solar-icon-dynamic">☀️</div>
                 <div class="node-label">Solár</div>
                 <div class="node-value entity-value" id="solar-power"
-                     data-entity="dc_in_fv"
-                     data-tooltip="Aktuální výkon FVE"
-                     onclick="openEntityDialog(getSensorId('dc_in_fv'))">-- W</div>
+                     data-entity="actual_fv_total"
+                     data-tooltip="Aktuální výkon FVE (oba stringy)"
+                     onclick="openEntityDialog(getSensorId('actual_fv_total'))">-- W</div>
                 <div class="node-subvalue entity-value" id="solar-today"
                      data-entity="dc_in_fv_ad"
                      data-tooltip="Vyrobeno dnes celkem"
@@ -2437,9 +2442,9 @@
                      data-tooltip="Frekvence sítě"
                      onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</div>
                 <div class="node-value entity-value" id="grid-power"
-                     data-entity="ac_in_aci_p"
-                     data-tooltip="Aktuální výkon ze sítě"
-                     onclick="openEntityDialog(getSensorId('ac_in_aci_p'))">-- W</div>
+                     data-entity="actual_aci_wtotal"
+                     data-tooltip="Aktuální celkový výkon ze sítě (všechny fáze)"
+                     onclick="openEntityDialog(getSensorId('actual_aci_wtotal'))">-- W</div>
                 <div class="node-phases">
                     <div class="phase-row-group">
                         <span class="phase-value" id="grid-l1-power-main">--W</span>
@@ -2532,9 +2537,9 @@
                 <div class="node-icon">🏠</div>
                 <div class="node-label">Spotřeba</div>
                 <div class="node-value entity-value" id="house-power"
-                     data-entity="ac_out_aco_p"
-                     data-tooltip="Aktuální spotřeba domácnosti"
-                     onclick="openEntityDialog(getSensorId('ac_out_aco_p'))">-- W</div>
+                     data-entity="actual_aco_p"
+                     data-tooltip="Aktuální celková spotřeba domácnosti"
+                     onclick="openEntityDialog(getSensorId('actual_aco_p'))">-- W</div>
                 <div class="node-subvalue entity-value" id="house-today"
                      data-entity="ac_out_aco_ad"
                      data-tooltip="Spotřeba dnes celkem"
@@ -3200,17 +3205,17 @@
                             if (match) {
                                 let from = match[1].trim();
                                 let to = match[2].trim();
-                                
+
                                 // Mapování hodnot pro lepší čitelnost
                                 const valueMap = {
                                     'CBB': 'Inteligentní',
                                     'Manual': 'Manuální',
                                     'Manuální': 'Manuální'
                                 };
-                                
+
                                 from = valueMap[from] || from;
                                 to = valueMap[to] || to;
-                                
+
                                 return `${from} → ${to}`;
                             }
                             return ch;
@@ -3483,8 +3488,8 @@
                         }
                     });
 
-                    // Show mode badge
-                    if (hasModeRequest && gridChangeIndicator && gridChangeText) {
+                    // Show mode badge ONLY if mode is changing (not just limit)
+                    if (hasModeRequest && !hasLimitRequest && gridChangeIndicator && gridChangeText) {
                         const modeIcon = targetMode?.includes('Off') ? '🚫' :
                                         targetMode?.includes('On') ? '💧' :
                                         targetMode?.includes('?') ? '🔄' : '🚰';
@@ -3493,12 +3498,14 @@
                                         targetMode?.includes('?') ? 'Změna...' : 'Omezeno';
                         gridChangeText.textContent = `${modeIcon} ${modeName}`;
                         gridChangeIndicator.style.display = 'flex';
+                    } else if (gridChangeIndicator) {
+                        // Hide mode badge if only changing limit
+                        gridChangeIndicator.style.display = 'none';
                     }
 
-                    // Show limit badge
-                    if (hasLimitRequest && gridLimitIndicator && gridLimitText) {
-                        gridLimitText.textContent = `🔢 ${targetLimit} W`;
-                        gridLimitIndicator.style.display = 'flex';
+                    // NEVER show limit badge - just pulse the Limited button
+                    if (gridLimitIndicator) {
+                        gridLimitIndicator.style.display = 'none';
                     }
 
                 } else {
@@ -3523,8 +3530,8 @@
                     req && req.service && req.service.includes('set_boiler_mode')
                 );
 
-                const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-                const boilerChangeText = document.getElementById('boiler-change-text');
+                const boilerChangeIndicatorPanel = document.getElementById('boiler-change-indicator-panel');
+                const boilerChangeTextPanel = document.getElementById('boiler-change-text-panel');
                 const boilerModeElement = document.getElementById('boiler-mode');
 
                 // Get boiler mode buttons
@@ -3552,19 +3559,22 @@
                         }
                     }
 
+                    console.log('[Shield] Boiler change detected, targetMode:', targetMode);
+
                     // Visual feedback in flow diagram - blikající režim
                     if (boilerModeElement && targetMode) {
                         boilerModeElement.classList.add('mode-changing');
                     }
 
-                    // Show badge
-                    if (boilerChangeIndicator && boilerChangeText) {
+                    // Show badge in control panel
+                    if (boilerChangeIndicatorPanel && boilerChangeTextPanel && targetMode) {
                         const modeIcon = targetMode === 'CBB' ? '🤖' :
                                         targetMode === 'Manual' ? '👤' : '🌡️';
                         const modeName = targetMode === 'CBB' ? 'Inteligentní' :
                                         targetMode === 'Manual' ? 'Manuální' : 'Změna...';
-                        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
-                        boilerChangeIndicator.style.display = 'flex';
+                        boilerChangeTextPanel.textContent = `${modeIcon} → ${modeName}`;
+                        boilerChangeIndicatorPanel.style.display = 'block';
+                        console.log('[Shield] Boiler badge shown:', modeName);
                     }
 
                     // Disable buttons with animation on target
@@ -3588,8 +3598,8 @@
                     }
 
                     // Hide badge when no boiler changes
-                    if (boilerChangeIndicator) {
-                        boilerChangeIndicator.style.display = 'none';
+                    if (boilerChangeIndicatorPanel) {
+                        boilerChangeIndicatorPanel.style.display = 'none';
                     }
 
                     // Re-enable buttons
