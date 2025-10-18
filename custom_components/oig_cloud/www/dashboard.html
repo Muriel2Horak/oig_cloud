@@ -1083,7 +1083,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s ease;
-            z-index: 2000;
+            z-index: 10000;
             text-align: left;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         }
@@ -1674,15 +1674,19 @@
         }
 
         .control-section {
-            margin-bottom: 0; /* Žádné mezery */
+            margin-bottom: 0;
             padding-bottom: 0;
             border-bottom: none;
+            display: inline-block;
+            vertical-align: top;
+            margin-right: 12px;
         }
 
         .control-section:last-child {
             border-bottom: none;
             margin-bottom: 0;
             padding-bottom: 0;
+            margin-right: 0;
         }
 
         .control-section h4 {
@@ -1692,6 +1696,7 @@
             color: rgba(255, 255, 255, 0.7);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            white-space: nowrap;
         }
 
         .button-group {
@@ -2318,14 +2323,7 @@
             <div class="control-section">
                 <h4>Nabíjení baterie ze sítě</h4>
                 <div class="button-group">
-                    <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off" title="Nenabíjet: Baterie se nenabíjí ze sítě, pouze z FVE">Nenabíjet</button>
-                    <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on" title="Nabíjet: Povoleno nabíjení baterie i ze sítě (např. v levné tarify)">Nabíjet</button>
                     <button onclick="showChargeBatteryDialog()" id="charge-battery-btn" title="Nabít baterii na cílové SoC" style="background: rgba(255, 152, 0, 0.3); border-color: rgba(255, 152, 0, 0.5);">⚡ Nabít na SoC</button>
-                </div>
-                <div class="input-group">
-                    <label>Nabít na (%):</label>
-                    <input type="number" id="battery-target" placeholder="např. 80" min="0" max="100" step="5">
-                    <button onclick="setBatteryTarget()">Nastavit</button>
                 </div>
             </div>
 
@@ -2344,24 +2342,27 @@
             </div>
 
             <!-- Shield Queue -->
-            <div class="control-section" id="shield-queue-section" style="text-align: center;">
-                <h4 onclick="toggleQueueSection()" style="cursor: pointer; user-select: none; display: inline-block;">
-                    📋 Fronta požadavků <span id="queue-toggle-icon">▶</span>
-                    <span class="info-bubble" onclick="event.stopPropagation()">❓
-                        <span class="info-bubble-tooltip">
-                            <strong>ServiceShield fronta</strong>
-                            Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
-                            <ul>
-                                <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
-                                <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
-                                <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
-                                <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
-                            </ul>
-                            Chrání API před přetížením a zajišťuje spolehlivé změny.
+            <div class="control-section" id="shield-queue-section" style="width: 100%; display: block; margin-right: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" onclick="toggleQueueSection()">
+                    <h4 style="display: inline-block; margin: 0;">
+                        📋 Fronta požadavků <span id="queue-count-badge">(0)</span>
+                        <span class="info-bubble" onclick="event.stopPropagation()">❓
+                            <span class="info-bubble-tooltip">
+                                <strong>ServiceShield fronta</strong>
+                                Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
+                                <ul>
+                                    <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
+                                    <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
+                                    <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
+                                    <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
+                                </ul>
+                                Chrání API před přetížením a zajišťuje spolehlivé změny.
+                            </span>
                         </span>
-                    </span>
-                </h4>
-                <div id="shield-queue-container" style="display: none; text-align: left;">
+                    </h4>
+                    <span id="queue-toggle-icon" style="font-size: 14px;">▶</span>
+                </div>
+                <div id="shield-queue-container" style="display: none; text-align: left; width: 100%; margin-top: 8px;">
                     <div style="text-align: center; opacity: 0.5; padding: 20px;">
                         Načítání...
                     </div>
@@ -3211,47 +3212,19 @@
             }
         }
 
-        // Update Battery Formating buttons
+        // Update Battery Formating button (charge-battery-btn)
         async function updateBatteryFormatingButtons(pending, isRunning) {
             try {
-                // Battery formating nemá dedikovaný sensor
-                // Můžeme odvozovat z výkonu baterie, ale není to přesné
-                const batteryPowerData = await getSensor(getSensorId('batt_batt_comp_p'));
-                const batteryPower = batteryPowerData.value || 0;
+                const chargeBtn = document.getElementById('charge-battery-btn');
+                if (!chargeBtn) return;
 
                 // Pokud je pending task pro battery formating
                 if (pending && pending.service === 'set_formating_mode') {
-                    const isCharging = pending.target.includes('Nabíjet');
-
-                    const btnOn = document.getElementById('btn-batt-on');
-                    const btnOff = document.getElementById('btn-batt-off');
-
-                    if (btnOn) {
-                        btnOn.classList.remove('active', 'pending', 'processing');
-                        if (isCharging) {
-                            btnOn.classList.add(isRunning ? 'processing' : 'pending');
-                        }
-                    }
-
-                    if (btnOff) {
-                        btnOff.classList.remove('active', 'pending', 'processing');
-                        if (!isCharging) {
-                            btnOff.classList.add(isRunning ? 'processing' : 'pending');
-                        }
-                    }
-
-                    console.log(`[Shield] Battery formating -> ${pending.target} (${isRunning ? 'processing' : 'pending'})`);
+                    chargeBtn.classList.remove('pending', 'processing');
+                    chargeBtn.classList.add(isRunning ? 'processing' : 'pending');
+                    console.log(`[Shield] Battery charging -> ${pending.target} (${isRunning ? 'processing' : 'pending'})`);
                 } else {
-                    // Odvozujeme z aktuálního výkonu (není 100% přesné)
-                    const btnOn = document.getElementById('btn-batt-on');
-                    const btnOff = document.getElementById('btn-batt-off');
-
-                    if (btnOn) btnOn.classList.remove('active', 'pending', 'processing');
-                    if (btnOff) btnOff.classList.remove('active', 'pending', 'processing');
-
-                    // Můžeme označit aktivní podle toho, jestli baterie nabíjí
-                    // ale není to přesné, protože formating_mode může být "Nabíjet" i když zrovna nenabíjí
-                    // Ponecháme bez active stavu, pokud není pending task
+                    chargeBtn.classList.remove('pending', 'processing');
                 }
 
             } catch (e) {
@@ -3370,6 +3343,14 @@
                 const runningRequests = attrs.running_requests || [];
                 const queuedRequests = attrs.queued_requests || [];
                 const allRequests = [...runningRequests, ...queuedRequests];
+
+                // Update queue count badge (always, even if empty or collapsed)
+                const badge = document.getElementById('queue-count-badge');
+                if (badge) {
+                    badge.textContent = `(${allRequests.length})`;
+                    badge.style.color = allRequests.length > 0 ? 'rgba(255, 152, 0, 1)' : 'rgba(255, 255, 255, 0.5)';
+                    badge.style.fontWeight = allRequests.length > 0 ? '700' : '400';
+                }
 
                 if (allRequests.length === 0) {
                     container.innerHTML = '<div class="queue-empty">✅ Fronta je prázdná</div>';
@@ -4302,55 +4283,6 @@
             }
 
             setGridDelivery(null, limit);
-        }
-
-        // Set battery formating
-        async function setBatteryFormating(mode, limit) {
-            const confirmed = confirm(`Opravdu chcete ${mode === 'Nabíjet' ? 'povolit' : 'zakázat'} nabíjení baterie?`);
-            if (!confirmed) return;
-
-            const data = {
-                mode: mode,
-                acknowledgement: true
-            };
-
-            if (limit !== null && !isNaN(parseInt(limit))) {
-                data.limit = parseInt(limit);
-            }
-
-            const success = await callService('oig_cloud', 'set_formating_mode', data);
-
-            if (success) {
-                const msg = limit ? `${mode} (limit: ${limit}%)` : mode;
-                showNotification('Nabíjení baterie', msg, 'success');
-                setTimeout(forceFullRefresh, 2000);
-            }
-        }
-
-        // Set battery formating with limit from input
-        function setBatteryFormatatingLimit() {
-            const input = document.getElementById('battery-limit');
-            const limit = parseInt(input.value);
-
-            if (!limit || limit < 0 || limit > 100) {
-                showNotification('Chyba', 'Zadejte limit 0-100 %', 'error');
-                return;
-            }
-
-            setBatteryFormating('Nabíjet', limit);
-        }
-
-        // Set battery target SOC from input
-        function setBatteryTarget() {
-            const input = document.getElementById('battery-target');
-            const limit = parseInt(input.value);
-
-            if (!limit || limit < 0 || limit > 100) {
-                showNotification('Chyba', 'Zadejte cíl 0-100 %', 'error');
-                return;
-            }
-
-            setBatteryFormating('Nabíjet', limit);
         }
 
         // Set boiler mode
