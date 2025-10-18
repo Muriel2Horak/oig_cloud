@@ -180,13 +180,22 @@ blueprints/
 custom_components/oig_cloud/sensor_dump.json
 .DS_Store
 
-# Backup scripts and folders
+# Development and deployment scripts (local only)
 backup_from_ha.sh
 backup_ha_simple.sh
 create_backup.sh
 simple_backup.sh
+restore_to_ha.sh
+deploy_to_ha.sh
+deploy_single_ssh.sh
+deploy_dashboard_switcher.sh
+analyze_*.sh
+debug_*.sh
+quick_*.sh
 backups/
 *.tar.gz
 *.zip
 *BACKUP*.txt
-restore_to_ha.sh
+
+# Legacy config flow (backup)
+custom_components/oig_cloud/config_flow_legacy.py
