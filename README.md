@@ -15,9 +15,30 @@ Tato integrace umožňuje propojení ČEZ Battery Box s Home Assistantem skrze O
 
 Nejjednodušší způsob instalace je přes [HACS](https://hacs.xyz/). V nastavení HACS zvolte "Integrations" a vyhledejte "OIG Cloud". Po instalaci je nutné restartovat Home Assistant.
 
+## 🔴 DŮLEŽITÉ: Povinný Požadavek - Živá Data
+
+**Před instalací integrace MUSÍTE mít v mobilní aplikaci OIG Cloud zapnutá "Živá data"!**
+
+⚠️ Bez živých dat:
+- API vrací chybu **500 Internal Server Error**
+- Integrace se **nenainstaluje**
+- Všechny senzory budou **nedostupné**
+
+### Jak Zapnout Živá Data
+1. Otevřete mobilní aplikaci **OIG Cloud**
+2. **☰ Menu** → **⚙️ Nastavení** → **Přístup k datům**
+3. Zapněte přepínač **"Živá data"**
+4. Počkejte ~30 sekund
+
+📖 **Detailní návod:** [LIVE_DATA_REQUIREMENT.md](./docs/LIVE_DATA_REQUIREMENT.md)
+
+---
+
 ## Konfigurace
 
-Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci). Volitelně lze také zakázat odesílání anonymní telemetrie.
+Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci). 
+
+⚠️ **Nový checkpoint:** Musíte potvrdit, že máte v aplikaci zapnutá "Živá data".
 
 ![Konfigurace](./docs/login.png)
 

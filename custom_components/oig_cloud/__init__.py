@@ -342,7 +342,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "Please enable 'Živá data' in OIG Cloud mobile app (Settings → Data Access → Live Data) "
                     "and restart Home Assistant."
                 )
-            _LOGGER.info("✅ Live data check passed - 'actual' element found in API response")
+            _LOGGER.info(
+                "✅ Live data check passed - 'actual' element found in API response"
+            )
         except ConfigEntryNotReady:
             raise
         except Exception as e:

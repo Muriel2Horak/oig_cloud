@@ -43,12 +43,14 @@ async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
         stats = await api.get_stats()
         if not stats:
             raise CannotConnect
-        
+
         # CRITICAL: Check if live data (actual) is present
         if "actual" not in stats:
-            _LOGGER.error("Live data not found in API response. User must enable 'Živá data' in OIG Cloud mobile app.")
+            _LOGGER.error(
+                "Live data not found in API response. User must enable 'Živá data' in OIG Cloud mobile app."
+            )
             raise LiveDataNotEnabled
-            
+
     except LiveDataNotEnabled:
         raise
     except Exception as e:
