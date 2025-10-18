@@ -94,7 +94,8 @@ class OigCloudShieldSensor(OigCloudSensor):
 
     async def async_added_to_hass(self) -> None:
         """Když je senzor přidán do Home Assistant."""
-        await super().async_added_to_hass()
+        # OPRAVA: Nevoláme super() protože už nejsme CoordinatorEntity
+        # Shield senzory jsou event-driven a nepotřebují coordinator updates
 
         # Registrujeme callback pro okamžitou aktualizaci při změně shield stavu
         shield = self.hass.data.get(DOMAIN, {}).get("shield")
@@ -112,7 +113,7 @@ class OigCloudShieldSensor(OigCloudSensor):
             self._shield_callback_registered = False
             _LOGGER.info(f"[Shield Sensor] Odregistrován callback pro {self.entity_id}")
 
-        await super().async_will_remove_from_hass()
+        # OPRAVA: Nevoláme super() protože už nejsme CoordinatorEntity
 
     def _on_shield_state_changed(self) -> None:
         """Callback volaný při změně shield stavu."""
