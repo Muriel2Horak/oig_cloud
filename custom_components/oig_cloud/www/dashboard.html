@@ -3986,24 +3986,38 @@
 
                     console.log('[Shield] Boiler change detected, targetMode:', targetMode);
 
+                    // Map Czech/English mode names to button IDs
+                    const boilerModeMap = {
+                        'CBB': 'cbb',
+                        'Manual': 'manual',
+                        'Manuální': 'manual',  // Czech translation
+                        'Inteligentní': 'cbb'  // Czech translation (backup)
+                    };
+
                     // Visual feedback in flow diagram - blikající režim
                     if (boilerModeElement && targetMode) {
                         boilerModeElement.classList.add('mode-changing');
+                        console.log('[Shield] Boiler mode-changing class added to element:', boilerModeElement.id);
+                    } else {
+                        console.warn('[Shield] Cannot add mode-changing class:', { boilerModeElement: !!boilerModeElement, targetMode });
                     }
 
                     // Show badge in flow diagram (bucket indicator) - ONLY in flow, not in control panel
                     if (boilerChangeIndicator && boilerChangeText && targetMode) {
-                        const modeIcon = targetMode === 'CBB' ? '🤖' :
-                                        targetMode === 'Manual' ? '👤' : '🌡️';
-                        const modeName = targetMode === 'CBB' ? 'Inteligentní' :
-                                        targetMode === 'Manual' ? 'Manuální' : 'Změna...';
+                        const modeIcon = (targetMode === 'CBB' || targetMode === 'Inteligentní') ? '🤖' :
+                                        (targetMode === 'Manual' || targetMode === 'Manuální') ? '👤' : '🌡️';
+                        const modeName = (targetMode === 'CBB' || targetMode === 'Inteligentní') ? 'Inteligentní' :
+                                        (targetMode === 'Manual' || targetMode === 'Manuální') ? 'Manuální' : 'Změna...';
                         boilerChangeText.textContent = `${modeIcon} ${modeName}`;
                         boilerChangeIndicator.style.display = 'flex';
                         console.log('[Shield] Boiler flow badge shown:', modeName);
                     }
 
                     // Disable buttons with animation on target
-                    const targetButtonId = targetMode ? `btn-boiler-${targetMode.toLowerCase()}` : null;
+                    const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
+                    const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
+                    console.log('[Shield] Boiler button targeting:', { targetMode, targetModeLower, targetButtonId });
+                    
                     boilerButtons.forEach(btn => {
                         btn.disabled = true;
 
