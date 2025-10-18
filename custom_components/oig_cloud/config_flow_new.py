@@ -120,7 +120,7 @@ def _get_help_text(key: str) -> str:
 class OigCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Průvodce konfigurací OIG Cloud integrace."""
 
-    VERSION = 1
+    VERSION = 2
     MINOR_VERSION = 0
 
     def __init__(self):
@@ -582,302 +582,57 @@ class OigCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OigCloudOptionsFlow(config_entries.OptionsFlow):
-    """Options flow pro změnu nastavení existující integrace."""
+    """Options flow pro změnu nastavení."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Inicializace options flow."""
         self.config_entry = config_entry
-        self._current_step = "menu"
-
-    @staticmethod
-    def _format_help_section(title: str, items: list[str]) -> str:
-        """Formátuje sekci nápovědy."""
-        lines = [f"**{title}**"]
-        for item in items:
-            lines.append(f"  • {item}")
-        return "\n".join(lines)
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Hlavní menu pro výběr co chcete změnit."""
+        """Hlavní menu pro změnu nastavení."""
         if user_input is not None:
-            action = user_input.get("action")
-            if action == "basic":
-                return await self.async_step_basic()
-            elif action == "features":
-                return await self.async_step_features()
-            elif action == "shield":
-                return await self.async_step_shield()
-            elif action == "solar":
-                return await self.async_step_solar()
-            elif action == "pricing":
-                return await self.async_step_pricing()
+            # Uložíme změny
+            return self.async_create_entry(title="", data=user_input)
 
-        description = _format_description(
-            "⚙️ **Nastavení OIG Cloud integrace**\n\n"
-            "Co chcete změnit?\n\n"
-            "🔧 **Základní nastavení**: Interval aktualizace dat\n"
-            "✨ **Funkce**: Zapnout/vypnout Shield, Dashboard, Solární předpověď, Spot ceny\n"
-            "🛡️ **ServiceShield**: Nastavení ochrany před změnami\n"
-            "☀️ **Solární předpověď**: API klíč Forecast.solar\n"
-            "💰 **Spot ceny**: Nastavení přirážky a daně\n\n"
-            "💡 **Tip**: Pokud chcete změnit přihlašovací údaje, musíte integraci odebrat a přidat znovu."
-        )
+        current_options = self.config_entry.options
 
         data_schema = vol.Schema(
             {
-                vol.Required("action"): vol.In(
-                    {
-                        "basic": "🔧 Základní nastavení",
-                        "features": "✨ Funkce (zapnout/vypnout)",
-                        "shield": "🛡️ ServiceShield ochrana",
-                        "solar": "☀️ Solární předpověď API",
-                        "pricing": "💰 Spot ceny - přirážka a daň",
-                    }
-                ),
+                vol.Optional(
+                    "polling_interval",
+                    default=current_options.get("polling_interval", 300),
+                    description="Interval aktualizace (sekundy)",
+                ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
+                vol.Optional(
+                    "enable_shield",
+                    default=current_options.get("enable_shield", True),
+                    description="🛡️ ServiceShield",
+                ): bool,
+                vol.Optional(
+                    "enable_solar_forecast",
+                    default=current_options.get("enable_solar_forecast", False),
+                    description="☀️ Solární předpověď",
+                ): bool,
+                vol.Optional(
+                    "enable_pricing",
+                    default=current_options.get("enable_pricing", False),
+                    description="💰 Spot ceny",
+                ): bool,
+                vol.Optional(
+                    "enable_dashboard",
+                    default=current_options.get("enable_dashboard", True),
+                    description="📊 Webový dashboard",
+                ): bool,
             }
         )
 
         return self.async_show_form(
             step_id="init",
             data_schema=data_schema,
-            description_placeholders={"info": description},
-        )
-
-    async def async_step_basic(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Změna polling intervalu."""
-        if user_input is not None:
-            # Uložíme změny
-            new_options = dict(self.config_entry.options)
-            new_options["polling_interval"] = user_input["polling_interval"]
-            return self.async_create_entry(title="", data=new_options)
-
-        current_value = self.config_entry.options.get("polling_interval", 300)
-
-        description = _format_description(
-            "🔧 **Interval aktualizace dat**\n\n"
-            f"Aktuální hodnota: **{current_value} sekund** ({current_value // 60} minut)\n\n"
-            "**Co to ovlivňuje:**\n"
-            "• Jak často se stahují data z OIG cloudu\n"
-            "• Zátěž API serveru (nižší = častější dotazy)\n"
-            "• Rychlost reakce dashboardu na změny\n\n"
-            "**Doporučení:**\n"
-            "• Běžný provoz: 300 sekund (5 minut)\n"
-            "• Aktivní sledování: 120 sekund (2 minuty)\n"
-            "• Úsporný režim: 600 sekund (10 minut)\n\n"
-            "⚠️ **Upozornění**: Příliš krátký interval může způsobit problémy s API."
-        )
-
-        data_schema = vol.Schema(
-            {
-                vol.Required("polling_interval", default=current_value): vol.All(
-                    vol.Coerce(int), vol.Range(min=30, max=3600)
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="basic",
-            data_schema=data_schema,
-            description_placeholders={"info": description},
-        )
-
-    async def async_step_features(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Zapnutí/vypnutí funkcí."""
-        if user_input is not None:
-            # Uložíme změny
-            new_options = dict(self.config_entry.options)
-            new_options.update(user_input)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_options = self.config_entry.options
-
-        description = _format_description(
-            "✨ **Zapnout nebo vypnout funkce**\n\n"
-            "**ServiceShield** 🛡️\n"
-            "• Ochrana před nechtěnými změnami režimů\n"
-            "• Fronta příkazů s manuálním potvrzením\n"
-            "• Doporučeno: **ZAPNUTO**\n\n"
-            "**Webový Dashboard** 📊\n"
-            "• Grafické rozhraní s flow diagramem\n"
-            "• Grafy energie a výroby\n"
-            "• Ovládací panel režimů\n\n"
-            "**Solární předpověď** ☀️\n"
-            "• Predikce výroby FVE z Forecast.solar\n"
-            "• Potřebujete API klíč (zdarma na forecast.solar)\n\n"
-            "**Spot ceny** 💰\n"
-            "• Hodinové ceny elektřiny z burzy\n"
-            "• Užitečné pro optimalizaci nabíjení"
-        )
-
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    "enable_shield",
-                    default=current_options.get("enable_shield", True),
-                ): bool,
-                vol.Optional(
-                    "enable_dashboard",
-                    default=current_options.get("enable_dashboard", True),
-                ): bool,
-                vol.Optional(
-                    "enable_solar_forecast",
-                    default=current_options.get("enable_solar_forecast", False),
-                ): bool,
-                vol.Optional(
-                    "enable_pricing",
-                    default=current_options.get("enable_pricing", False),
-                ): bool,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="features",
-            data_schema=data_schema,
-            description_placeholders={"info": description},
-        )
-
-    async def async_step_shield(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Nastavení ServiceShield."""
-        if user_input is not None:
-            # Uložíme změny
-            new_options = dict(self.config_entry.options)
-            new_options.update(user_input)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_options = self.config_entry.options
-
-        description = _format_description(
-            "🛡️ **ServiceShield - pokročilé nastavení**\n\n"
-            "**Auto-confirmation** ⏱️\n"
-            "• Automatické potvrzení příkazů po časovém limitu\n"
-            "• Doporučeno: **VYPNUTO** (ruční kontrola)\n"
-            "• Pokud zapnuto: Příkazy se provedou samy po X sekundách\n\n"
-            "**Delay Between Requests** ⏳\n"
-            "• Pauza mezi jednotlivými API požadavky\n"
-            "• Chrání před zahltěním API serveru\n"
-            "• Doporučeno: **5-10 sekund**\n\n"
-            "**Max Batch Size** 📦\n"
-            "• Počet příkazů zpracovaných najednou\n"
-            "• Doporučeno: **3-5 příkazů**"
-        )
-
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    "shield_auto_confirm",
-                    default=current_options.get("shield_auto_confirm", False),
-                ): bool,
-                vol.Optional(
-                    "shield_delay",
-                    default=current_options.get("shield_delay", 5),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
-                vol.Optional(
-                    "shield_max_batch",
-                    default=current_options.get("shield_max_batch", 5),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="shield",
-            data_schema=data_schema,
-            description_placeholders={"info": description},
-        )
-
-    async def async_step_solar(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Nastavení Forecast.solar API."""
-        if user_input is not None:
-            # Uložíme změny
-            new_options = dict(self.config_entry.options)
-            new_options.update(user_input)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_options = self.config_entry.options
-
-        description = _format_description(
-            "☀️ **Solární předpověď - Forecast.solar**\n\n"
-            "Pro použití solární předpovědi potřebujete API klíč.\n\n"
-            "**Jak získat API klíč:**\n"
-            "1. Navštivte: https://forecast.solar\n"
-            "2. Zaregistrujte se (zdarma)\n"
-            "3. Vytvořte API klíč v účtu\n"
-            "4. Zkopírujte a vložte sem\n\n"
-            "**Co získáte:**\n"
-            "• Predikce výroby na další dny\n"
-            "• Integraci do Energy dashboardu\n"
-            "• Optimalizaci nabíjení dle předpovědi\n\n"
-            "💡 **Tip**: API klíč můžete nechat prázdný a doplnit později."
-        )
-
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    "solar_api_key",
-                    default=current_options.get("solar_api_key", ""),
-                ): str,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="solar",
-            data_schema=data_schema,
-            description_placeholders={"info": description},
-        )
-
-    async def async_step_pricing(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Nastavení spot cen."""
-        if user_input is not None:
-            # Uložíme změny
-            new_options = dict(self.config_entry.options)
-            new_options.update(user_input)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_options = self.config_entry.options
-
-        description = _format_description(
-            "💰 **Spot ceny elektřiny**\n\n"
-            "Spot ceny stahujeme z evropské burzy (Day-ahead).\n"
-            "Pro přesný výpočet vaší ceny je třeba přidat:\n\n"
-            "**Přirážka distributora** 💵\n"
-            "• Cena za distribuci od vašeho dodavatele\n"
-            "• Obvykle 800-1500 Kč/MWh\n"
-            "• Najdete na faktuře za elektřinu\n\n"
-            "**DPH sazba** 📊\n"
-            "• Standardní sazba: 21%\n"
-            "• Pro některé kategorie: 12%\n\n"
-            "**Proč to nastavit:**\n"
-            "• Přesný výpočet nákladů\n"
-            "• Optimalizace nabíjení v levných hodinách\n"
-            "• Monitorování úspor"
-        )
-
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    "pricing_markup",
-                    default=current_options.get("pricing_markup", 1000.0),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=5000)),
-                vol.Optional(
-                    "pricing_vat",
-                    default=current_options.get("pricing_vat", 21.0),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="pricing",
-            data_schema=data_schema,
-            description_placeholders={"info": description},
+            description_placeholders={
+                "info": "⚙️ Změna nastavení integrace\n\n"
+                "Po uložení se integrace restartuje."
+            },
         )

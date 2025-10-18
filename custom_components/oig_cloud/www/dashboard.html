@@ -890,16 +890,30 @@
         /* Grid box price coloring */
         .grid-node.price-cheap {
             border: 2px solid rgba(76, 175, 80, 0.6);
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+            animation: price-cheap-pulse 3s ease-in-out infinite;
         }
 
         .grid-node.price-normal {
             border: 2px solid rgba(255, 255, 255, 0.2);
+            /* Žádná animace - neutrální stav */
         }
 
         .grid-node.price-expensive {
-            border: 2px solid rgba(244, 67, 54, 0.6);
-            box-shadow: 0 0 10px rgba(244, 67, 54, 0.3);
+            border: 2px solid rgba(255, 152, 0, 0.6);
+            box-shadow: 0 0 15px rgba(255, 152, 0, 0.4);
+            animation: price-expensive-pulse 2s ease-in-out infinite;
+        }
+
+        /* Ikony pro cenové stavy - animace */
+        .price-icon-cheap {
+            animation: icon-savings 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(76, 175, 80, 0.8));
+        }
+
+        .price-icon-expensive {
+            animation: icon-expensive 1.5s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.8));
         }
 
         /* Node Details - Čitelné písmo */
@@ -1145,6 +1159,40 @@
 
         .pulse {
             animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* Price indicator animations - jemné pulzování */
+        @keyframes price-cheap-pulse {
+            0%, 100% { 
+                box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+                border-color: rgba(76, 175, 80, 0.6);
+            }
+            50% { 
+                box-shadow: 0 0 25px rgba(76, 175, 80, 0.6);
+                border-color: rgba(76, 175, 80, 0.8);
+            }
+        }
+
+        @keyframes price-expensive-pulse {
+            0%, 100% { 
+                box-shadow: 0 0 15px rgba(255, 152, 0, 0.4);
+                border-color: rgba(255, 152, 0, 0.6);
+            }
+            50% { 
+                box-shadow: 0 0 25px rgba(255, 152, 0, 0.6);
+                border-color: rgba(255, 152, 0, 0.8);
+            }
+        }
+
+        @keyframes icon-savings {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            25% { transform: scale(1.1) rotate(-5deg); }
+            75% { transform: scale(1.1) rotate(5deg); }
+        }
+
+        @keyframes icon-expensive {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
         }
 
         @keyframes shimmer {
@@ -2402,13 +2450,13 @@
                 <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
                 <div class="node-label">Baterie</div>
                 <div class="node-value entity-value" id="battery-soc"
-                     data-entity="bat_soc"
+                     data-entity="batt_bat_c"
                      data-tooltip="Stav nabití baterie"
-                     onclick="openEntityDialog(getSensorId('bat_soc'))">-- %</div>
+                     onclick="openEntityDialog(getSensorId('batt_bat_c'))">-- %</div>
                 <div class="node-subvalue entity-value" id="battery-power"
-                     data-entity="bat_p"
+                     data-entity="batt_batt_comp_p"
                      data-tooltip="Aktuální výkon baterie"
-                     onclick="openEntityDialog(getSensorId('bat_p'))">-- W</div>
+                     onclick="openEntityDialog(getSensorId('batt_batt_comp_p'))">-- W</div>
                 <div class="battery-gauge">
                     <div class="battery-gauge-fill" id="battery-gauge"></div>
                 </div>
@@ -2529,7 +2577,7 @@
 
             <!-- Grid -->
             <div class="node grid-node" id="grid-box">
-                <div class="node-icon" style="filter: brightness(1.5) contrast(1.2);">🔌</div>
+                <div class="node-icon" id="grid-icon" style="filter: brightness(1.5) contrast(1.2);">🔌</div>
                 <div class="node-label">Síť</div>
                 <div class="node-tariff entity-value" id="grid-tariff-indicator"
                      data-entity="current_tariff"
@@ -2545,18 +2593,36 @@
                      onclick="openEntityDialog(getSensorId('actual_aci_wtotal'))">-- W</div>
                 <div class="node-phases">
                     <div class="phase-row-group">
-                        <span class="phase-value" id="grid-l1-power-main">--W</span>
+                        <span class="phase-value entity-value" id="grid-l1-power-main"
+                              data-entity="actual_aci_wr"
+                              data-tooltip="L1 výkon"
+                              onclick="openEntityDialog(getSensorId('actual_aci_wr'))">--W</span>
                         <span class="phase-separator">|</span>
-                        <span class="phase-value" id="grid-l2-power-main">--W</span>
+                        <span class="phase-value entity-value" id="grid-l2-power-main"
+                              data-entity="actual_aci_ws"
+                              data-tooltip="L2 výkon"
+                              onclick="openEntityDialog(getSensorId('actual_aci_ws'))">--W</span>
                         <span class="phase-separator">|</span>
-                        <span class="phase-value" id="grid-l3-power-main">--W</span>
+                        <span class="phase-value entity-value" id="grid-l3-power-main"
+                              data-entity="actual_aci_wt"
+                              data-tooltip="L3 výkon"
+                              onclick="openEntityDialog(getSensorId('actual_aci_wt'))">--W</span>
                     </div>
                     <div class="phase-row-group">
-                        <span class="phase-value" id="grid-l1-volt-main">--V</span>
+                        <span class="phase-value entity-value" id="grid-l1-volt-main"
+                              data-entity="ac_in_aci_vr"
+                              data-tooltip="L1 napětí"
+                              onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))">--V</span>
                         <span class="phase-separator">|</span>
-                        <span class="phase-value" id="grid-l2-volt-main">--V</span>
+                        <span class="phase-value entity-value" id="grid-l2-volt-main"
+                              data-entity="ac_in_aci_vs"
+                              data-tooltip="L2 napětí"
+                              onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))">--V</span>
                         <span class="phase-separator">|</span>
-                        <span class="phase-value" id="grid-l3-volt-main">--V</span>
+                        <span class="phase-value entity-value" id="grid-l3-volt-main"
+                              data-entity="ac_in_aci_vt"
+                              data-tooltip="L3 napětí"
+                              onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))">--V</span>
                     </div>
                 </div>
                 <div class="node-status" id="grid-status">--</div>
@@ -2639,9 +2705,9 @@
                      data-tooltip="Aktuální celková spotřeba domácnosti"
                      onclick="openEntityDialog(getSensorId('actual_aco_p'))">-- W</div>
                 <div class="node-subvalue entity-value" id="house-today"
-                     data-entity="ac_out_aco_ad"
+                     data-entity="ac_out_en_day"
                      data-tooltip="Spotřeba dnes celkem"
-                     onclick="openEntityDialog(getSensorId('ac_out_aco_ad'))">Dnes: -- kWh</div>
+                     onclick="openEntityDialog(getSensorId('ac_out_en_day'))">Dnes: -- kWh</div>
                 <div class="node-phases">
                     <span class="phase-value" id="house-l1-main">--W</span>
                     <span class="phase-separator">|</span>
@@ -5137,17 +5203,27 @@
                 }
                 updateElementIfChanged('grid-tariff-indicator', tariffDisplay);
 
-                // Update grid box color based on spot price
+                // Update grid box color and icon based on spot price
                 const gridBox = document.getElementById('grid-box');
+                const gridIcon = document.getElementById('grid-icon');
                 const price = spotPrice.value || 0;
                 gridBox.classList.remove('price-cheap', 'price-normal', 'price-expensive');
+                gridIcon.classList.remove('price-icon-cheap', 'price-icon-expensive');
 
                 if (price < 3) {
                     gridBox.classList.add('price-cheap'); // 0-3 Kč - zelená
+                    gridIcon.classList.add('price-icon-cheap');
+                    gridIcon.textContent = '💚'; // Ikona úspor
+                    gridIcon.title = 'Levná elektřina - šetříme!';
                 } else if (price >= 3 && price <= 5) {
                     gridBox.classList.add('price-normal'); // 3-5 Kč - normální
+                    gridIcon.textContent = '🔌'; // Normální síť
+                    gridIcon.title = 'Běžná cena elektřiny';
                 } else {
-                    gridBox.classList.add('price-expensive'); // 5+ Kč - červená
+                    gridBox.classList.add('price-expensive'); // 5+ Kč - drahá
+                    gridIcon.classList.add('price-icon-expensive');
+                    gridIcon.textContent = '💸'; // Ikona výdajů
+                    gridIcon.title = 'Drahá elektřina - zvýšená spotřeba!';
                 }
 
                 updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
