@@ -116,11 +116,14 @@ class OigCloudShieldSensor(OigCloudSensor):
         # OPRAVA: Nevoláme super() protože už nejsme CoordinatorEntity
 
     def _on_shield_state_changed(self) -> None:
-        """Callback volaný při změně shield stavu."""
+        """Callback volaný při změně shield stavu - THREAD-SAFE verze."""
         _LOGGER.debug(
             f"[Shield Sensor] Shield stav změněn - aktualizuji {self.entity_id}"
         )
-        self.async_write_ha_state()
+        # KRITICKÁ OPRAVA: Callback může být volán z jiného vlákna
+        # async_write_ha_state() NESMÍ být voláno z jiného vlákna - crashuje HA
+        # Použijeme schedule_update_ha_state(), který je thread-safe
+        self.schedule_update_ha_state(force=True)
 
     @property
     def name(self) -> str:
