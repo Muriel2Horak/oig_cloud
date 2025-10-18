@@ -1203,18 +1203,6 @@
             50% { transform: scale(1.15); }
         }
 
-        /* Shield button blinking animation */
-        @keyframes shield-blink {
-            0%, 100% {
-                background: rgba(255, 152, 0, 0.3);
-                box-shadow: 0 0 10px rgba(255, 152, 0, 0.5);
-            }
-            50% {
-                background: rgba(255, 152, 0, 0.6);
-                box-shadow: 0 0 20px rgba(255, 152, 0, 0.8);
-            }
-        }
-
         .control-button {
             padding: 6px 12px;
             background: rgba(33, 150, 243, 0.3);
@@ -1231,49 +1219,11 @@
             transform: scale(1.05);
         }
 
-        .control-button.shield-active {
-            animation: shield-blink 2s ease-in-out infinite;
-            border-color: rgba(255, 152, 0, 0.8);
-        }
-
         .control-buttons-row {
             display: flex;
             gap: 8px;
             margin-top: 8px;
             flex-wrap: wrap;
-        }
-
-        .queue-section {
-            margin-top: 8px;
-            padding: 8px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 4px;
-        }
-
-        .queue-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .queue-count {
-            background: rgba(255, 152, 0, 0.5);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-            font-weight: bold;
-        }
-
-        .queue-content {
-            margin-top: 8px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .queue-content.collapsed {
-            display: none;
         }
 
         @keyframes shimmer {
@@ -2370,6 +2320,7 @@
                 <div class="button-group">
                     <button onclick="setBatteryFormating('Nenabíjet', null)" id="btn-batt-off" title="Nenabíjet: Baterie se nenabíjí ze sítě, pouze z FVE">Nenabíjet</button>
                     <button onclick="setBatteryFormating('Nabíjet', null)" id="btn-batt-on" title="Nabíjet: Povoleno nabíjení baterie i ze sítě (např. v levné tarify)">Nabíjet</button>
+                    <button onclick="showChargeBatteryDialog()" id="charge-battery-btn" title="Nabít baterii na cílové SoC" style="background: rgba(255, 152, 0, 0.3); border-color: rgba(255, 152, 0, 0.5);">⚡ Nabít na SoC</button>
                 </div>
                 <div class="input-group">
                     <label>Nabít na (%):</label>
@@ -2580,22 +2531,6 @@
                                           onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    <!-- Ovládání -->
-                    <div class="control-buttons-row">
-                        <button class="control-button" id="charge-battery-btn" onclick="showChargeBatteryDialog()">
-                            ⚡ Nabít baterii
-                        </button>
-                    </div>
-                    <!-- Service Shield Queue -->
-                    <div class="queue-section" id="battery-queue-section" style="display: none;">
-                        <div class="queue-header" onclick="toggleQueueVisibility()">
-                            <span>📋 Fronta požadavků</span>
-                            <span class="queue-count" id="queue-count">0</span>
-                        </div>
-                        <div class="queue-content collapsed" id="queue-content">
-                            <div id="queue-list" style="font-size: 10px; line-height: 1.6;"></div>
                         </div>
                     </div>
                 </div>
@@ -5545,167 +5480,149 @@
         }
 
         // Show charge battery dialog
-        function showChargeBatteryDialog() {
-            const overlay = document.createElement('div');
-            overlay.className = 'ack-dialog-overlay';
-            
-            const dialog = document.createElement('div');
-            dialog.className = 'ack-dialog';
-            
-            dialog.innerHTML = `
-                <div class="ack-dialog-header">
-                    ⚡ Nabíjení baterie
-                </div>
-                <div class="ack-dialog-body">
-                    <p>Nastavte cílový stav nabití baterie (SoC):</p>
-                    
-                    <div style="margin: 20px 0;">
-                        <label style="display: block; margin-bottom: 8px; font-size: 12px;">
-                            Cílové SoC: <span id="target-soc-display">80</span>%
-                        </label>
-                        <input 
-                            type="range" 
-                            id="target-soc-slider" 
-                            min="0" 
-                            max="100" 
-                            value="80" 
-                            style="width: 100%;"
-                            oninput="document.getElementById('target-soc-display').textContent = this.value"
-                        />
-                    </div>
-                </div>
-                <div class="ack-dialog-warning">
-                    ⚠️ <strong>Upozornění:</strong> Nabíjení baterie ovlivní chování systému. 
-                    Baterie bude nabíjena ze sítě až do zvoleného SoC.
-                </div>
-                <div class="ack-checkbox-wrapper">
-                    <input type="checkbox" id="charge-ack-checkbox">
-                    <label for="charge-ack-checkbox">
-                        Potvrzuji, že jsem si vědom možných dopadů na provoz systému a beru na sebe odpovědnost za tuto změnu.
-                    </label>
-                </div>
-                <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button 
-                        onclick="this.closest('.ack-dialog-overlay').remove()" 
-                        style="padding: 10px 20px; background: rgba(100, 116, 139, 0.3); border: 1px solid rgba(100, 116, 139, 0.5); border-radius: 6px; color: white; cursor: pointer;"
-                    >
-                        Zrušit
-                    </button>
-                    <button 
-                        id="charge-confirm-btn"
-                        onclick="confirmChargeBattery()" 
-                        style="padding: 10px 20px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.5); border-radius: 6px; color: white; cursor: pointer; opacity: 0.5;"
-                        disabled
-                    >
-                        ⚡ Spustit nabíjení
-                    </button>
-                </div>
-            `;
-            
-            overlay.appendChild(dialog);
-            document.body.appendChild(overlay);
-            
-            // Enable/disable confirm button based on checkbox
-            const checkbox = dialog.querySelector('#charge-ack-checkbox');
-            const confirmBtn = dialog.querySelector('#charge-confirm-btn');
-            
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    confirmBtn.disabled = false;
-                    confirmBtn.style.opacity = '1';
-                    confirmBtn.style.background = 'rgba(33, 150, 243, 0.5)';
-                } else {
-                    confirmBtn.disabled = true;
-                    confirmBtn.style.opacity = '0.5';
-                    confirmBtn.style.background = 'rgba(33, 150, 243, 0.3)';
+        async function showChargeBatteryDialog() {
+            try {
+                // Check shield queue before adding task
+                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
+                const queueCount = parseInt(shieldQueue.value) || 0;
+
+                // Warn if queue is getting full
+                if (queueCount >= 3) {
+                    const proceed = confirm(
+                        `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
+                        `Každá změna může trvat až 10 minut.\n` +
+                        `Opravdu chcete přidat další úkol?`
+                    );
+                    if (!proceed) return;
                 }
-            });
+
+                const overlay = document.createElement('div');
+                overlay.className = 'ack-dialog-overlay';
+
+                const dialog = document.createElement('div');
+                dialog.className = 'ack-dialog';
+
+                dialog.innerHTML = `
+                    <div class="ack-dialog-header">
+                        ⚡ Nabíjení baterie
+                    </div>
+                    <div class="ack-dialog-body">
+                        <p>Nastavte cílový stav nabití baterie (SoC):</p>
+
+                        <div style="margin: 20px 0;">
+                            <label style="display: block; margin-bottom: 8px; font-size: 12px;">
+                                Cílové SoC: <span id="target-soc-display">80</span>%
+                            </label>
+                            <input
+                                type="range"
+                                id="target-soc-slider"
+                                min="0"
+                                max="100"
+                                value="80"
+                                style="width: 100%;"
+                                oninput="document.getElementById('target-soc-display').textContent = this.value"
+                            />
+                        </div>
+                    </div>
+                    <div class="ack-dialog-warning">
+                        ⚠️ <strong>Upozornění:</strong> Nabíjení baterie ovlivní chování systému.
+                        Baterie bude nabíjena ze sítě až do zvoleného SoC. Změna může trvat až 10 minut.
+                    </div>
+                    <div class="ack-checkbox-wrapper">
+                        <input type="checkbox" id="charge-ack-checkbox">
+                        <label for="charge-ack-checkbox">
+                            Potvrzuji, že jsem si vědom možných dopadů na provoz systému a beru na sebe odpovědnost za tuto změnu.
+                        </label>
+                    </div>
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button
+                            onclick="this.closest('.ack-dialog-overlay').remove()"
+                            style="padding: 10px 20px; background: rgba(100, 116, 139, 0.3); border: 1px solid rgba(100, 116, 139, 0.5); border-radius: 6px; color: white; cursor: pointer;"
+                        >
+                            Zrušit
+                        </button>
+                        <button
+                            id="charge-confirm-btn"
+                            onclick="confirmChargeBattery()"
+                            style="padding: 10px 20px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.5); border-radius: 6px; color: white; cursor: pointer; opacity: 0.5;"
+                            disabled
+                        >
+                            ⚡ Spustit nabíjení
+                        </button>
+                    </div>
+                `;
+
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+
+                // Enable/disable confirm button based on checkbox
+                const checkbox = dialog.querySelector('#charge-ack-checkbox');
+                const confirmBtn = dialog.querySelector('#charge-confirm-btn');
+
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) {
+                        confirmBtn.disabled = false;
+                        confirmBtn.style.opacity = '1';
+                        confirmBtn.style.background = 'rgba(33, 150, 243, 0.5)';
+                    } else {
+                        confirmBtn.disabled = true;
+                        confirmBtn.style.opacity = '0.5';
+                        confirmBtn.style.background = 'rgba(33, 150, 243, 0.3)';
+                    }
+                });
+            } catch (e) {
+                console.error('[Battery] Error in showChargeBatteryDialog:', e);
+                showNotification('Chyba', 'Nepodařilo se zobrazit dialog', 'error');
+            }
         }
 
         // Confirm charge battery
         async function confirmChargeBattery() {
             const overlay = document.querySelector('.ack-dialog-overlay');
             const targetSoC = parseInt(document.getElementById('target-soc-slider').value);
-            
+
             // Remove dialog
             if (overlay) overlay.remove();
-            
-            // Call service
-            const success = await callService('oig_cloud', 'set_formating_mode', {
-                mode: 'Nabíjet',
-                limit: targetSoC,
-                acknowledgement: true,
-                warning: true
-            });
-            
-            if (success) {
-                showNotification('Nabíjení baterie', `Cíl nastaven na ${targetSoC}%`, 'success');
-                setTimeout(() => {
-                    forceFullRefresh();
-                    updateShieldUI();
-                }, 2000);
-            }
-        }
 
-        // Toggle queue visibility
-        function toggleQueueVisibility() {
-            const content = document.getElementById('queue-content');
-            content.classList.toggle('collapsed');
-        }
-
-        // Update shield UI (queue, blinking buttons)
-        async function updateShieldUI() {
             try {
-                // Get queue sensor - zkrácená verze bez _3
-                let queueSensor = await getSensor(getSensorId('service_shield_queue'));
-                
-                // Pokud nenalezeno, zkusit _3 verzi (pro ladění)
-                if (!queueSensor || !queueSensor.exists) {
-                    queueSensor = await getSensor(getSensorId('service_shield_queue_3'));
+                // Show pending state immediately
+                const btn = document.getElementById('charge-battery-btn');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('pending');
                 }
-                
-                if (!queueSensor || !queueSensor.exists) {
-                    console.log('[Shield] Queue sensor not found');
-                    return;
-                }
-                
-                const queueData = queueSensor.value;
-                if (!queueData || !Array.isArray(queueData)) {
-                    document.getElementById('battery-queue-section').style.display = 'none';
-                    return;
-                }
-                
-                const queueCount = queueData.length;
-                document.getElementById('queue-count').textContent = queueCount;
-                
-                if (queueCount > 0) {
-                    document.getElementById('battery-queue-section').style.display = 'block';
-                    
-                    // Update queue list
-                    const queueList = document.getElementById('queue-list');
-                    queueList.innerHTML = queueData.map((item, index) => `
-                        <div style="padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                            ${index + 1}. ${item.service || item.name || 'Unknown'} 
-                            <span style="opacity: 0.6;">(${item.status || 'pending'})</span>
-                        </div>
-                    `).join('');
-                    
-                    // Add blinking to button if queue is active
-                    const chargeBtn = document.getElementById('charge-battery-btn');
-                    if (chargeBtn) {
-                        chargeBtn.classList.add('shield-active');
-                    }
+
+                // Call service
+                const success = await callService('oig_cloud', 'set_formating_mode', {
+                    mode: 'Nabíjet',
+                    limit: targetSoC
+                });
+
+                if (success) {
+                    // Immediately check shield activity
+                    await monitorShieldActivity();
+
+                    // Update UI immediately
+                    setTimeout(() => {
+                        updateButtonStates();
+                    }, 500);
                 } else {
-                    document.getElementById('battery-queue-section').style.display = 'none';
-                    
-                    // Remove blinking
-                    const chargeBtn = document.getElementById('charge-battery-btn');
-                    if (chargeBtn) {
-                        chargeBtn.classList.remove('shield-active');
+                    // Re-enable on error
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('pending');
                     }
                 }
             } catch (e) {
-                console.error('[Shield] Error updating UI:', e);
+                console.error('[Battery] Error in confirmChargeBattery:', e);
+                showNotification('Chyba', 'Nepodařilo se spustit nabíjení', 'error');
+
+                // Re-enable button on error
+                const btn = document.getElementById('charge-battery-btn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('pending');
+                }
             }
         }
 
@@ -5750,7 +5667,6 @@
             setInterval(() => {
                 monitorShieldActivity();
                 updateShieldQueue(); // Update queue table
-                updateShieldUI(); // Update battery queue UI
             }, 2000);
 
             // Time update every second
