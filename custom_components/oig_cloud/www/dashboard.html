@@ -5798,13 +5798,67 @@
             // Subscribe to shield state changes for real-time updates
             subscribeToShield();
 
-            // Initial shield UI update (load current state from sensors)
-            setTimeout(() => {
+            // Initial shield UI update with retry logic (wait for sensors after HA restart)
+            let retryCount = 0;
+            const maxRetries = 10;
+            const retryInterval = 2000; // 2s between retries
+            
+            function tryInitialShieldLoad() {
+                console.log(`[Shield] Attempting initial load (attempt ${retryCount + 1}/${maxRetries})...`);
+                
+                // Check if shield sensors are available
+                const hass = getHass();
+                if (!hass || !hass.states) {
+                    console.warn('[Shield] HA connection not ready, will retry...');
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInitialShieldLoad, retryInterval);
+                    } else {
+                        console.error('[Shield] Failed to load after', maxRetries, 'attempts');
+                        console.warn('[Shield] Falling back to 20s polling as backup');
+                        // Fallback: Enable backup polling if initial load fails
+                        setInterval(() => {
+                            console.log('[Shield] Backup polling triggered');
+                            monitorShieldActivity();
+                            updateShieldQueue();
+                            updateShieldUI();
+                            updateButtonStates();
+                        }, 20000);
+                    }
+                    return;
+                }
+                
+                const activitySensorId = findShieldSensorId('service_shield_activity');
+                if (!activitySensorId || !hass.states[activitySensorId]) {
+                    console.warn('[Shield] Shield sensors not ready yet, will retry...');
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInitialShieldLoad, retryInterval);
+                    } else {
+                        console.error('[Shield] Shield sensors not available after', maxRetries, 'attempts');
+                        console.warn('[Shield] Falling back to 20s polling as backup');
+                        // Fallback: Enable backup polling if sensors not available
+                        setInterval(() => {
+                            console.log('[Shield] Backup polling triggered');
+                            monitorShieldActivity();
+                            updateShieldQueue();
+                            updateShieldUI();
+                            updateButtonStates();
+                        }, 20000);
+                    }
+                    return;
+                }
+                
+                // Sensors are ready, load UI
+                console.log('[Shield] Sensors ready, loading initial UI...');
                 updateButtonStates(); // Set initial active states (green highlighting)
                 updateShieldQueue();  // Load initial queue state
                 updateShieldUI();     // Load initial shield status
                 monitorShieldActivity(); // Start activity monitoring
-            }, 1000);
+            }
+            
+            // Start initial load with delay
+            setTimeout(tryInitialShieldLoad, 1000);
 
             // REMOVED: Old polling-based approach - now using WebSocket + initial load
             // setTimeout(() => {
