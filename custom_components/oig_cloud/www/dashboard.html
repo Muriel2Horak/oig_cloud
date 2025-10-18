@@ -3176,10 +3176,10 @@
                 const statusEl = document.getElementById('shield-global-status');
                 if (!statusEl) return;
 
-                // Get shield sensors
+                // Get shield sensors (use dynamic lookup for queue and activity)
                 const shieldStatus = await getSensor(getSensorId('service_shield_status'));
-                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
-                const shieldActivity = await getSensor(getSensorId('service_shield_activity'));
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+                const shieldActivity = await getSensor(findShieldSensorId('service_shield_activity'));
 
                 const status = shieldStatus.value || 'Idle';
                 const queueCount = parseInt(shieldQueue.value) || 0;
@@ -3209,10 +3209,10 @@
             try {
                 console.log('[Shield] Updating button states...');
 
-                // Get shield sensors (string values for status/activity)
+                // Get shield sensors (string values for status/activity, use dynamic lookup)
                 const shieldStatus = await getSensorString(getSensorId('service_shield_status'));
-                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
-                const shieldActivity = await getSensorString(getSensorId('service_shield_activity'));
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+                const shieldActivity = await getSensorString(findShieldSensorId('service_shield_activity'));
 
                 // Get current states (string values)
                 const boxMode = await getSensorString(getSensorId('box_prms_mode'));
@@ -3679,16 +3679,16 @@
 
         // Monitor ServiceShield activity
         let isMonitoringShieldActivity = false; // Lock to prevent concurrent execution
-        
+
         async function monitorShieldActivity() {
             // Prevent concurrent execution
             if (isMonitoringShieldActivity) {
                 console.log('[Shield] Skipping monitorShieldActivity - already running');
                 return;
             }
-            
+
             isMonitoringShieldActivity = true;
-            
+
             try {
                 // Use Hass states directly for activity sensor (instant, no API call needed!)
                 const hass = getHass();
@@ -4236,8 +4236,8 @@
                     return;
                 }
 
-                // Check shield queue before adding task
-                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
+                // Check shield queue before adding task (use dynamic lookup)
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
 
                 // Warn if queue is getting full
@@ -4572,8 +4572,8 @@
                     return;
                 }
 
-                // Check shield queue before adding task
-                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
+                // Check shield queue before adding task (use dynamic lookup)
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
 
                 // Warn if queue is getting full
@@ -4666,6 +4666,30 @@
         // Get sensor entity ID
         function getSensorId(sensor) {
             return `sensor.oig_${INVERTER_SN}_${sensor}`;
+        }
+
+        // Find shield sensor dynamically (may have suffix like _2, _3)
+        function findShieldSensorId(sensorName) {
+            try {
+                const hass = getHass();
+                if (!hass || !hass.states) {
+                    console.warn(`[Shield] Cannot find ${sensorName} - hass not available`);
+                    return getSensorId(sensorName); // Fallback to basic pattern
+                }
+
+                const sensorPrefix = `sensor.oig_${INVERTER_SN}_${sensorName}`;
+                const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
+
+                if (!entityId) {
+                    console.warn(`[Shield] Sensor not found with prefix: ${sensorPrefix}`);
+                    return getSensorId(sensorName); // Fallback to basic pattern
+                }
+
+                return entityId;
+            } catch (e) {
+                console.error(`[Shield] Error finding sensor ${sensorName}:`, e);
+                return getSensorId(sensorName); // Fallback to basic pattern
+            }
         }
 
         // Get HA token from parent
@@ -5263,6 +5287,18 @@
                 }
             }
 
+            // Aktualizovat boiler mode (ve flow diagramu), ale zachovat třídu mode-changing pokud existuje
+            const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
+            const boilerModeFlowElement = document.getElementById('boiler-mode');
+            if (boilerModeFlowElement && boilerModeFlowData.exists) {
+                const isModeChanging = boilerModeFlowElement.classList.contains('mode-changing');
+                updateElementIfChanged('boiler-mode', boilerModeFlowData.value || '--', 'boiler-mode');
+                // Obnovit třídu mode-changing, pokud byla nastavená
+                if (isModeChanging && !boilerModeFlowElement.classList.contains('mode-changing')) {
+                    boilerModeFlowElement.classList.add('mode-changing');
+                }
+            }
+
             // Show last update time from real_data_update sensor - UPDATE TO HEADER
             const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
             const lastUpdate = realDataUpdateSensor.value; // String value from sensor
@@ -5663,8 +5699,8 @@
 
                 // === BOILER DETAILS (if available) ===
                 if (!document.getElementById('boiler-node').classList.contains('hidden')) {
-                    const boilerPower = await getSensorSafe(getSensorId('boiler_power'));
-                    const boilerMode = await getSensorStringSafe(getSensorId('boiler_mode'));
+                    const boilerPower = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
+                    const boilerMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
                     const boilerTemp = await getSensorSafe(getSensorId('boiler_temperature'));
                     const boilerStatus = await getSensorStringSafe(getSensorId('boiler_status'));
 
@@ -5722,8 +5758,8 @@
         // Show charge battery dialog
         async function showChargeBatteryDialog() {
             try {
-                // Check shield queue before adding task
-                const shieldQueue = await getSensor(getSensorId('service_shield_queue'));
+                // Check shield queue before adding task (use dynamic lookup)
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
                 const queueCount = parseInt(shieldQueue.value) || 0;
 
                 // Warn if queue is getting full
