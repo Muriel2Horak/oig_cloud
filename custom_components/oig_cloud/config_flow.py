@@ -27,6 +27,10 @@ class InvalidAuth(Exception):
     """Error to indicate invalid authentication."""
 
 
+class LiveDataNotEnabled(Exception):
+    """Error to indicate live data are not enabled in OIG Cloud app."""
+
+
 async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate the user input allows us to connect."""
     api = OigCloudApi(data[CONF_USERNAME], data[CONF_PASSWORD], False)
@@ -34,12 +38,21 @@ async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
     if not await api.authenticate():
         raise InvalidAuth
 
-    # Test connection
+    # Test connection and check for live data
     try:
         stats = await api.get_stats()
         if not stats:
             raise CannotConnect
-    except Exception:
+        
+        # CRITICAL: Check if live data (actual) is present
+        if "actual" not in stats:
+            _LOGGER.error("Live data not found in API response. User must enable 'Živá data' in OIG Cloud mobile app.")
+            raise LiveDataNotEnabled
+            
+    except LiveDataNotEnabled:
+        raise
+    except Exception as e:
+        _LOGGER.error(f"Connection test failed: {e}")
         raise CannotConnect
 
     return {"title": DEFAULT_NAME}
@@ -123,6 +136,11 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME, description={"suggested_value": ""}): str,
         vol.Required(CONF_PASSWORD): str,
+        vol.Required(
+            "live_data_enabled",
+            default=False,
+            description="✅ POTVRZUJI: Mám v aplikaci OIG Cloud zapnutá 'Živá data'",
+        ): bool,
         vol.Optional(
             "enable_solar_forecast",
             default=False,
@@ -173,6 +191,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         errors = {}
 
+        # Check if user confirmed live data is enabled
+        if not user_input.get("live_data_enabled", False):
+            errors["live_data_enabled"] = "live_data_not_confirmed"
+            return self.async_show_form(
+                step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            )
+
         try:
             info = await validate_input(self.hass, user_input)
 
@@ -189,6 +214,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except Exception as e:
                     _LOGGER.warning(f"OTE API test failed: {e}")
 
+        except LiveDataNotEnabled:
+            errors["base"] = "live_data_not_enabled"
         except CannotConnect:
             errors["base"] = "cannot_connect"
         except InvalidAuth:

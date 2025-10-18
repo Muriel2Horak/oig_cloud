@@ -7,6 +7,8 @@
       "cannot_connect": "Nelze se připojit k OIG Cloud",
       "invalid_auth": "Nesprávné přihlašovací údaje",
       "unknown": "Neočekávaná chyba",
+      "live_data_not_enabled": "❌ ŽIVÁ DATA NEJSOU ZAPNUTÁ!\n\nV mobilní aplikaci OIG Cloud musíte zapnout 'Živá data' v Nastavení → Přístup k datům.\n\nBez živých dat nelze integraci používat (API vrací chybu 500).",
+      "live_data_not_confirmed": "⚠️ Musíte potvrdit, že máte v aplikaci OIG Cloud zapnutá 'Živá data'.\n\nPokud je nemáte zapnutá, otevřete mobilní aplikaci OIG Cloud → Nastavení → Přístup k datům → Živá data.",
       "invalid_coordinates": "Neplatné GPS souřadnice - zkontrolujte zeměpisnou šířku a délku",
       "api_key_required_for_frequent_updates": "Pro režimy 'Každé 4 hodiny' a 'Každou hodinu' je potřeba zadat API klíč",
       "no_strings_enabled": "Je potřeba zapnout alespoň jeden string panelů (String 1 nebo String 2)",
@@ -34,10 +36,11 @@
     "step": {
       "user": {
         "title": "OIG Cloud - Čez Battery Box",
-        "description": "Připojte svou Čez Battery Box k Home Assistant",
+        "description": "Připojte svou Čez Battery Box k Home Assistant.\n\n⚠️ DŮLEŽITÉ: Před pokračováním musíte v mobilní aplikaci OIG Cloud zapnout 'Živá data' (Nastavení → Přístup k datům → Živá data).",
         "data": {
           "username": "E-mail / Uživatelské jméno",
           "password": "Heslo",
+          "live_data_enabled": "✅ POTVRZUJI: Mám v aplikaci OIG Cloud zapnutá 'Živá data'",
           "enable_solar_forecast": "Povolit solární předpověď",
           "enable_statistics": "Povolit statistiky a analýzy",
           "enable_pricing": "Povolit cenové senzory",

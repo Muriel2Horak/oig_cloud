@@ -6,15 +6,18 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "live_data_not_enabled": "❌ LIVE DATA NOT ENABLED!\n\nYou must enable 'Live Data' in the OIG Cloud mobile app under Settings → Data Access.\n\nWithout live data, the integration cannot work (API returns 500 error).",
+      "live_data_not_confirmed": "⚠️ You must confirm that you have enabled 'Live Data' in the OIG Cloud app.\n\nIf you haven't enabled it yet, open the OIG Cloud mobile app → Settings → Data Access → Live Data."
     },
     "step": {
       "user": {
         "title": "Login to OIG",
-        "description": "Enter your login/email and password for OIG Cloud",
+        "description": "Enter your login/email and password for OIG Cloud.\n\n⚠️ IMPORTANT: Before continuing, you must enable 'Live Data' in the OIG Cloud mobile app (Settings → Data Access → Live Data).",
         "data": {
           "username": "Username or email",
           "password": "Password",
+          "live_data_enabled": "✅ I CONFIRM: I have enabled 'Live Data' in the OIG Cloud app",
           "no_telemetry": "Disable telemetry collection"
         }
       }

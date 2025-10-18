@@ -327,6 +327,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # ale provedeme to i zde pro kontrolu přihlašovacích údajů
         await session_manager._ensure_auth()
 
+        # CRITICAL: Check if live data is enabled (actual element present in API response)
+        _LOGGER.debug("Checking if live data is enabled in OIG Cloud app...")
+        try:
+            test_stats = await oig_api.get_stats()
+            if test_stats and "actual" not in test_stats:
+                _LOGGER.error(
+                    "❌ CRITICAL: Live data not enabled in OIG Cloud app! "
+                    "API response missing 'actual' element. "
+                    "User must enable 'Živá data' in mobile app: Settings → Data Access → Live Data"
+                )
+                raise ConfigEntryNotReady(
+                    "Live data not enabled in OIG Cloud app. "
+                    "Please enable 'Živá data' in OIG Cloud mobile app (Settings → Data Access → Live Data) "
+                    "and restart Home Assistant."
+                )
+            _LOGGER.info("✅ Live data check passed - 'actual' element found in API response")
+        except ConfigEntryNotReady:
+            raise
+        except Exception as e:
+            _LOGGER.warning(f"Could not verify live data status: {e}")
+            # Continue anyway - might be a temporary API issue
+
         # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
         coordinator = OigCloudCoordinator(
             hass, session_manager, standard_scan_interval, extended_scan_interval, entry
