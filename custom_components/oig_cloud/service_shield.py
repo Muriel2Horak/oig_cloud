@@ -1092,22 +1092,45 @@ class ServiceShield:
                 return {}
 
             if "mode" in data:
-                expected_value = str(data["mode"] or "").strip()
-                if not expected_value or expected_value.lower() == "none":
+                # Mode je 0 nebo 1, ale senzor vrací "Zapnuto"/"Vypnuto"/"Omezeno"
+                try:
+                    expected_mode = int(data["mode"])
+                except (ValueError, TypeError):
                     return {}
+                
                 entity_id = find_entity("_invertor_prms_to_grid")
                 if entity_id:
                     self.last_checked_entity_id = entity_id
                     state = self.hass.states.get(entity_id)
-                    current = self._normalize_value(state.state if state else None)
-                    expected = self._normalize_value(expected_value)
+                    current_text = state.state if state else None
+                    
+                    # Mapování: mode=0 → "Vypnuto", mode=1 → "Zapnuto" nebo "Omezeno"
+                    if expected_mode == 0:
+                        expected_text = "Vypnuto"
+                    elif expected_mode == 1:
+                        # Mode=1 může být "Zapnuto" (unlimited) nebo "Omezeno" (limited)
+                        # Pro účely kontroly považujeme obě hodnoty za správné
+                        expected_text = "Zapnuto nebo Omezeno"
+                    else:
+                        return {}
+                    
                     _LOGGER.debug(
-                        "[extract] grid_delivery.mode | current='%s' expected='%s'",
-                        current,
-                        expected,
+                        "[extract] grid_delivery.mode | current='%s' expected='%s' (mode=%s)",
+                        current_text,
+                        expected_text,
+                        expected_mode,
                     )
-                    if current != expected:
-                        return {entity_id: expected_value}
+                    
+                    # Kontrola podle mapy
+                    needs_change = False
+                    if expected_mode == 0 and current_text != "Vypnuto":
+                        needs_change = True
+                    elif expected_mode == 1 and current_text not in ["Zapnuto", "Omezeno"]:
+                        needs_change = True
+                    
+                    if needs_change:
+                        # Pro logbook vrátíme textovou hodnotu (ne číslo)
+                        return {entity_id: expected_text}
                 return {}
 
         elif service_name == "oig_cloud.set_formating_mode":
@@ -1157,14 +1180,27 @@ class ServiceShield:
             if current_value == mode_mapping.get(expected_value):
                 return True
         elif "invertor_prms_to_grid" in entity_id:
-            # Grid delivery: složitější logika podle typu zařízení
-            # Můžeme použít přibližnou kontrolu podle textu
-            if expected_value == 0 and "Vypnuto" in current_value:
+            # Grid delivery mode: expected_value je TEXT ("Vypnuto", "Zapnuto nebo Omezeno")
+            # current_value je TEXT ze senzoru ("Vypnuto", "Zapnuto", "Omezeno")
+            if expected_value == "Vypnuto" and current_value == "Vypnuto":
                 return True
-            elif expected_value == 1 and (
-                "Zapnuto" in current_value or "On" in current_value
-            ):
+            elif expected_value == "Zapnuto nebo Omezeno" and current_value in ["Zapnuto", "Omezeno"]:
                 return True
+            # Fallback na starou logiku (pokud je expected_value číslo)
+            elif isinstance(expected_value, int):
+                if expected_value == 0 and current_value == "Vypnuto":
+                    return True
+                elif expected_value == 1 and current_value in ["Zapnuto", "Omezeno"]:
+                    return True
+        elif "p_max_feed_grid" in entity_id:
+            # Grid delivery limit: porovnání čísel (W)
+            try:
+                current_num = round(float(current_value))
+                expected_num = round(float(expected_value))
+                if current_num == expected_num:
+                    return True
+            except (ValueError, TypeError):
+                pass
         else:
             # Pro ostatní entity porovnáme přímo
             try:
