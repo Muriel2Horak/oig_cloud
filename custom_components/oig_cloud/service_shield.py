@@ -323,14 +323,36 @@ class ServiceShield:
         """Handle remove from queue service call."""
         position = call.data.get("position")
 
-        if position < 1 or position > len(self.queue):
+        # OPRAVA: Position může být:
+        # - 1 = running služba (v self.pending)
+        # - 2+ = čekající služby (v self.queue)
+        total_items = len(self.pending) + len(self.queue)
+        
+        if position < 1 or position > total_items:
             _LOGGER.error(
-                f"[OIG Shield] Neplatná pozice ve frontě: {position} (fronta má {len(self.queue)} položek)"
+                f"[OIG Shield] Neplatná pozice: {position} (pending: {len(self.pending)}, queue: {len(self.queue)})"
             )
             return
 
-        # Pozice je 1-based, ale queue je 0-based
-        queue_index = position - 1
+        # Position 1 = running služba
+        if position == 1 and len(self.pending) > 0:
+            # Nemůžeme smazat RUNNING službu - ta už běží v API!
+            _LOGGER.warning(
+                f"[OIG Shield] Nelze smazat běžící službu na pozici 1 (running: {self.running})"
+            )
+            return
+
+        # Position 2+ = čekající ve frontě
+        # Pozice je 1-based (1=running, 2=queue[0], 3=queue[1], ...)
+        # Pro queue potřebujeme position-2 (protože position 1 je running)
+        queue_index = position - 1 - len(self.pending)
+        
+        if queue_index < 0 or queue_index >= len(self.queue):
+            _LOGGER.error(
+                f"[OIG Shield] Chyba výpočtu indexu: position={position}, queue_index={queue_index}, queue_len={len(self.queue)}"
+            )
+            return
+
         removed_item = self.queue[queue_index]
         service_name = removed_item[0]
 
@@ -345,7 +367,7 @@ class ServiceShield:
             f"[OIG Shield] Odstraněna položka z fronty na pozici {position}: {service_name}"
         )
 
-        # Notifikuj senzory o změně
+        # KRITICKÉ: Notifikuj senzory o změně
         self._notify_state_change()
 
         # Fire event
