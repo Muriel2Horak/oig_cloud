@@ -3876,21 +3876,40 @@
                         }
                     });
 
+                    // Map Czech/English grid mode names to button IDs
+                    const gridModeMap = {
+                        'Off': 'off',
+                        'Vypnuto': 'off',         // Czech translation
+                        'On': 'on',
+                        'Zapnuto': 'on',          // Czech translation
+                        'Limited': 'limited',
+                        'Omezeno': 'limited',     // Czech translation
+                        'S omezením': 'limited'   // Czech alternative
+                    };
+
                     // Determine target button based on mode
                     let targetButtonId = null;
                     if (targetMode) {
-                        // targetMode může být: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
-                        if (targetMode.includes('Off') || targetMode.includes('Vypnuto')) {
-                            targetButtonId = 'btn-grid-off';
-                        } else if (targetMode.includes('On') || targetMode.includes('Zapnuto')) {
-                            targetButtonId = 'btn-grid-on';
-                        } else if (targetMode.includes('Limited') || targetMode.includes('omezení') || targetMode.includes('Omezeno')) {
-                            targetButtonId = 'btn-grid-limited';
+                        // Find exact match first
+                        const gridModeLower = gridModeMap[targetMode];
+                        if (gridModeLower) {
+                            targetButtonId = `btn-grid-${gridModeLower}`;
+                        } else {
+                            // Fallback to includes() for partial matches
+                            if (targetMode.includes('Off') || targetMode.includes('Vypnuto')) {
+                                targetButtonId = 'btn-grid-off';
+                            } else if (targetMode.includes('On') || targetMode.includes('Zapnuto')) {
+                                targetButtonId = 'btn-grid-on';
+                            } else if (targetMode.includes('Limited') || targetMode.includes('omezení') || targetMode.includes('Omezeno')) {
+                                targetButtonId = 'btn-grid-limited';
+                            }
                         }
                     } else if (hasLimitRequest && !hasModeRequest) {
                         // If only changing limit (not mode), target is Limited button
                         targetButtonId = 'btn-grid-limited';
                     }
+                    
+                    console.log('[Shield] Grid button targeting:', { targetMode, targetButtonId, hasModeRequest, hasLimitRequest });
 
                     // Disable all buttons with animation on target (same as box mode)
                     gridButtons.forEach(btn => {
@@ -3915,12 +3934,14 @@
 
                     // Show badge in "Přetoky do sítě" section if mode OR limit is changing
                     if ((hasModeRequest || hasLimitRequest) && gridChangeIndicator && gridChangeText) {
-                        const modeIcon = targetMode?.includes('Off') ? '🚫' :
-                                        targetMode?.includes('On') ? '💧' :
-                                        targetMode?.includes('?') ? '🔄' : '🚰';
-                        const modeName = targetMode?.includes('Off') ? 'Vypnuto' :
-                                        targetMode?.includes('On') ? 'Zapnuto' :
-                                        targetMode?.includes('?') ? 'Změna...' : 'Omezeno';
+                        // Normalize mode name to Czech for display
+                        const isOff = targetMode?.includes('Off') || targetMode?.includes('Vypnuto');
+                        const isOn = targetMode?.includes('On') || targetMode?.includes('Zapnuto');
+                        const isChanging = targetMode?.includes('?');
+                        
+                        const modeIcon = isOff ? '🚫' : isOn ? '💧' : isChanging ? '🔄' : '🚰';
+                        const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : isChanging ? 'Změna...' : 'Omezeno';
+                        
                         gridChangeText.textContent = `${modeIcon} ${modeName}`;
                         gridChangeIndicator.style.display = 'flex';
                         console.log('[Shield] Grid badge shown in Přetoky section:', modeName, 'hasModeRequest:', hasModeRequest, 'hasLimitRequest:', hasLimitRequest);
@@ -4017,7 +4038,7 @@
                     const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
                     const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
                     console.log('[Shield] Boiler button targeting:', { targetMode, targetModeLower, targetButtonId });
-                    
+
                     boilerButtons.forEach(btn => {
                         btn.disabled = true;
 
