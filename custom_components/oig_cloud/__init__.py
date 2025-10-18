@@ -328,28 +328,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await session_manager._ensure_auth()
 
         # CRITICAL: Check if live data is enabled (actual element present in API response)
-        _LOGGER.debug("Checking if live data is enabled in OIG Cloud app...")
+        # Stats structure: { "box_id": { "actual": {...}, "settings": {...} } }
+        _LOGGER.debug("Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'...")
         try:
             test_stats = await oig_api.get_stats()
-            if test_stats and "actual" not in test_stats:
-                _LOGGER.error(
-                    "❌ CRITICAL: Live data not enabled in OIG Cloud app! "
-                    "API response missing 'actual' element. "
-                    "User must enable 'Živá data' in mobile app: Settings → Data Access → Live Data"
+            if test_stats:
+                # Get first device data
+                first_device = next(iter(test_stats.values())) if test_stats else None
+                if not first_device or "actual" not in first_device:
+                    _LOGGER.error(
+                        "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
+                        "API odpověď neobsahuje element 'actual'. "
+                        "Uživatel musí v mobilní aplikaci zapnout: Nastavení → Přístup k datům → Živá data"
+                    )
+                    raise ConfigEntryNotReady(
+                        "V aplikaci OIG Cloud nejsou zapnutá 'Živá data'. "
+                        "Zapněte je v mobilní aplikaci OIG Cloud (Nastavení → Přístup k datům → Živá data) "
+                        "a restartujte Home Assistant."
+                    )
+                _LOGGER.info(
+                    "✅ Kontrola živých dat úspěšná - element 'actual' nalezen v API odpovědi"
                 )
-                raise ConfigEntryNotReady(
-                    "Live data not enabled in OIG Cloud app. "
-                    "Please enable 'Živá data' in OIG Cloud mobile app (Settings → Data Access → Live Data) "
-                    "and restart Home Assistant."
+            else:
+                _LOGGER.warning(
+                    "API vrátilo prázdnou odpověď, přeskakuji kontrolu živých dat"
                 )
-            _LOGGER.info(
-                "✅ Live data check passed - 'actual' element found in API response"
-            )
         except ConfigEntryNotReady:
             raise
         except Exception as e:
-            _LOGGER.warning(f"Could not verify live data status: {e}")
-            # Continue anyway - might be a temporary API issue
+            _LOGGER.warning(f"Nelze ověřit stav živých dat: {e}")
+            # Pokračujeme i tak - může jít o dočasný problém s API
 
         # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
         coordinator = OigCloudCoordinator(

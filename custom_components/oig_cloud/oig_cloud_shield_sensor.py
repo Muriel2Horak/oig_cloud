@@ -174,7 +174,7 @@ class OigCloudShieldSensor(OigCloudSensor):
                             "description": f"Změna {svc_name.replace('oig_cloud.', '').replace('_', ' ')}",
                             "changes": changes,
                             "started_at": (
-                                svc_info.get("called_at").strftime("%d.%m.%Y %H:%M:%S")
+                                svc_info.get("called_at").isoformat()
                                 if svc_info.get("called_at")
                                 else None
                             ),

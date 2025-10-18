@@ -183,6 +183,14 @@ async def async_setup_entry_services_with_shield(
             client: OigCloudApi = coordinator.api
             mode: Optional[str] = service_data.get("mode")
             limit: Optional[int] = service_data.get("limit")
+            acknowledgement: bool = service_data.get("acknowledgement", False)
+
+            # Kontrola acknowledgement (required v schema)
+            if not acknowledgement:
+                _LOGGER.error(
+                    "Služba set_formating_mode vyžaduje potvrzení (acknowledgement)"
+                )
+                return
 
             # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
             if limit is not None:
@@ -312,6 +320,14 @@ async def async_setup_entry_services_fallback(
         client: OigCloudApi = coordinator.api
         mode: Optional[str] = call.data.get("mode")
         limit: Optional[int] = call.data.get("limit")
+        acknowledgement: bool = call.data.get("acknowledgement", False)
+
+        # Kontrola acknowledgement (required v schema)
+        if not acknowledgement:
+            _LOGGER.error(
+                "Služba set_formating_mode vyžaduje potvrzení (acknowledgement)"
+            )
+            return
 
         # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
         if limit is not None:

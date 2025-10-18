@@ -3423,8 +3423,8 @@
                     let createdText = '<span style="opacity: 0.4;">--</span>';
                     let durationText = '<span style="opacity: 0.4;">--</span>';
 
-                    // Try multiple timestamp fields (created_at, timestamp, created)
-                    const timestamp = req.created_at || req.timestamp || req.created;
+                    // Try multiple timestamp fields (started_at for running, queued_at for queued)
+                    const timestamp = req.started_at || req.queued_at || req.created_at || req.timestamp || req.created;
 
                     if (timestamp) {
                         try {
@@ -4139,26 +4139,30 @@
                         warning: true
                     });
 
-                    const success = await callService('oig_cloud', 'set_grid_delivery', {
-                        limit: result.limit,
-                        acknowledgement: true,
-                        warning: true
-                    });
+                const success = await callService('oig_cloud', 'set_grid_delivery', {
+                    limit: result.limit,
+                    acknowledgement: true,
+                    warning: true
+                });
 
-                    if (!success) {
-                        showNotification('Chyba', 'Nepodařilo se změnit limit přetoků', 'error');
-                        return;
-                    }
-
-                    // Trigger immediate check
-                    await monitorShieldActivity();
-
-                    setTimeout(() => {
-                        updateShieldUI();
-                        updateButtonStates();
-                    }, 500);
-
+                if (!success) {
+                    showNotification('Chyba', 'Nepodařilo se změnit limit přetoků', 'error');
                     return;
+                }
+
+                // Wait for ServiceShield to register the request
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // Trigger immediate check (3x with delays to catch the update)
+                await monitorShieldActivity();
+                setTimeout(async () => {
+                    await monitorShieldActivity();
+                    updateShieldUI();
+                    updateButtonStates();
+                }, 1000);
+                setTimeout(async () => {
+                    await monitorShieldActivity();
+                }, 2000);                    return;
                 }
 
                 // Normal case: changing to Limited from Off/On (two steps)
@@ -4212,8 +4216,18 @@
                     }
 
                     console.log('[Grid] ✅ Both steps done!');
-                    // Both successful - trigger immediate check
+
+                    // Wait for ServiceShield to register the request
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Trigger immediate check (3x with delays)
                     await monitorShieldActivity();
+                    setTimeout(async () => {
+                        await monitorShieldActivity();
+                    }, 1000);
+                    setTimeout(async () => {
+                        await monitorShieldActivity();
+                    }, 2000);
 
                 } else {
                     // Single step: just mode
@@ -4237,15 +4251,27 @@
                     }
 
                     console.log('[Grid] ✅ Single-step done!');
-                    // Trigger immediate check
+
+                    // Wait for ServiceShield to register the request
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Trigger immediate check (3x with delays)
                     await monitorShieldActivity();
+                    setTimeout(async () => {
+                        await monitorShieldActivity();
+                        updateShieldUI();
+                        updateButtonStates();
+                    }, 1000);
+                    setTimeout(async () => {
+                        await monitorShieldActivity();
+                    }, 2000);
                 }
 
-                // Update UI
+                // Final UI update after all checks
                 setTimeout(() => {
                     updateShieldUI();
                     updateButtonStates();
-                }, 500);
+                }, 3000);
 
             } catch (e) {
                 console.error('[Grid] Error in setGridDelivery:', e);
@@ -4362,11 +4388,13 @@
                 if (success) {
                     // NO notification popup - user already confirmed via dialog
 
-                    // Trigger immediate check
-                    await monitorShieldActivity();
+                    // Wait for ServiceShield to register the request
+                    await new Promise(resolve => setTimeout(resolve, 500));
 
-                    // Update shield UI immediately
-                    setTimeout(() => {
+                    // Trigger immediate check (3x with delays to catch the update)
+                    await monitorShieldActivity();
+                    setTimeout(async () => {
+                        await monitorShieldActivity();
                         updateShieldUI();
                         updateButtonStates();
                     }, 500);
@@ -5547,7 +5575,8 @@
                 // Call service
                 const success = await callService('oig_cloud', 'set_formating_mode', {
                     mode: 'Nabíjet',
-                    limit: targetSoC
+                    limit: targetSoC,
+                    acknowledgement: true
                 });
 
                 if (success) {

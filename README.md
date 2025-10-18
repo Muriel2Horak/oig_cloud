@@ -20,11 +20,13 @@ Nejjednodušší způsob instalace je přes [HACS](https://hacs.xyz/). V nastave
 **Před instalací integrace MUSÍTE mít v mobilní aplikaci OIG Cloud zapnutá "Živá data"!**
 
 ⚠️ Bez živých dat:
+
 - API vrací chybu **500 Internal Server Error**
 - Integrace se **nenainstaluje**
 - Všechny senzory budou **nedostupné**
 
 ### Jak Zapnout Živá Data
+
 1. Otevřete mobilní aplikaci **OIG Cloud**
 2. **☰ Menu** → **⚙️ Nastavení** → **Přístup k datům**
 3. Zapněte přepínač **"Živá data"**
@@ -36,7 +38,7 @@ Nejjednodušší způsob instalace je přes [HACS](https://hacs.xyz/). V nastave
 
 ## Konfigurace
 
-Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci). 
+Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci).
 
 ⚠️ **Nový checkpoint:** Musíte potvrdit, že máte v aplikaci zapnutá "Živá data".
 
