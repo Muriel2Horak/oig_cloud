@@ -1069,7 +1069,11 @@
         }
 
         .info-bubble-tooltip {
-            position: fixed; /* Změna z absolute na fixed pro lepší kontrolu */
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
             background: rgba(0, 0, 0, 0.95);
             color: white;
             padding: 12px 16px;
@@ -1077,42 +1081,30 @@
             font-size: 11px;
             line-height: 1.5;
             white-space: normal;
-            max-width: 280px; /* Změna z width na max-width pro lepší responzivitu */
-            width: max-content; /* Přizpůsobení šířky obsahu */
+            width: 280px;
             opacity: 0;
+            visibility: hidden;
             pointer-events: none;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
             z-index: 10000;
             text-align: left;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-            /* Pozice bude nastavena dynamicky pomocí JS */
         }
 
         .info-bubble:hover .info-bubble-tooltip {
             opacity: 1;
-            pointer-events: auto; /* Umožnění interakce s tooltipem */
+            visibility: visible;
+            pointer-events: auto;
         }
 
         .info-bubble-tooltip::after {
             content: '';
             position: absolute;
-            border: 6px solid transparent;
-            left: var(--arrow-left, 50%);
-            transform: translateX(-50%);
-        }
-
-        /* Šipka směřující dolů (tooltip nad prvkem) */
-        .info-bubble-tooltip.tooltip-above::after {
             top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
             border-top-color: rgba(0, 0, 0, 0.95);
-            border-bottom-color: transparent;
-        }
-
-        /* Šipka směřující nahoru (tooltip pod prvkem) */
-        .info-bubble-tooltip.tooltip-below::after {
-            bottom: 100%;
-            border-bottom-color: rgba(0, 0, 0, 0.95);
-            border-top-color: transparent;
         }
 
         .info-bubble-tooltip strong {
@@ -2366,26 +2358,24 @@
 
             <!-- Shield Queue -->
             <div class="control-section" id="shield-queue-section" style="width: 100%; display: block; margin-right: 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" onclick="toggleQueueSection()">
-                    <h4 style="display: inline-block; margin: 0;">
-                        📋 Fronta požadavků <span id="queue-count-badge">(0)</span>
-                        <span class="info-bubble" onclick="event.stopPropagation()">❓
-                            <span class="info-bubble-tooltip">
-                                <strong>ServiceShield fronta</strong>
-                                Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
-                                <ul>
-                                    <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
-                                    <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
-                                    <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
-                                    <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
-                                </ul>
-                                Chrání API před přetížením a zajišťuje spolehlivé změny.
-                            </span>
+                <h4 style="display: flex; align-items: center; gap: 8px; margin: 0 0 12px 0;">
+                    📋 Fronta požadavků
+                    <span id="queue-count-badge" style="font-size: 14px; opacity: 0.7;">(0)</span>
+                    <span class="info-bubble" onclick="event.stopPropagation()">❓
+                        <span class="info-bubble-tooltip">
+                            <strong>ServiceShield fronta</strong>
+                            Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
+                            <ul>
+                                <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
+                                <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
+                                <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
+                                <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
+                            </ul>
+                            Chrání API před přetížením a zajišťuje spolehlivé změny.
                         </span>
-                    </h4>
-                    <span id="queue-toggle-icon" style="font-size: 14px;">▶</span>
-                </div>
-                <div id="shield-queue-container" style="display: none; text-align: left; width: 100%; margin-top: 8px;">
+                    </span>
+                </h4>
+                <div id="shield-queue-container" style="text-align: left; width: 100%;">
                     <div style="text-align: center; opacity: 0.5; padding: 20px;">
                         Načítání...
                     </div>
@@ -2853,187 +2843,6 @@
 
         // === TOOLTIP POSITIONING ===
 
-        // Dynamické pozicionování tooltipů při hover
-        function initTooltipPositioning() {
-            // Info bubble tooltips
-            const infoBubbles = document.querySelectorAll('.info-bubble');
-
-            infoBubbles.forEach(bubble => {
-                let isHovering = false;
-                let positionUpdateInterval = null;
-
-                // Funkce pro výpočet optimální pozice tooltipu
-                function updateTooltipPosition() {
-                    if (!isHovering) return;
-
-                    const tooltip = bubble.querySelector('.info-bubble-tooltip');
-                    if (!tooltip) return;
-
-                    const bubbleRect = bubble.getBoundingClientRect();
-                    const tooltipRect = tooltip.getBoundingClientRect();
-
-                    const viewportWidth = window.innerWidth;
-                    const viewportHeight = window.innerHeight;
-
-                    const spacing = 10; // Mezera od okraje viewportu
-                    const arrowSize = 6;
-
-                    // Výchozí pozice - nad bublinkou, centrovaně
-                    let top = bubbleRect.top - tooltipRect.height - arrowSize - 5;
-                    let left = bubbleRect.left + (bubbleRect.width / 2) - (tooltipRect.width / 2);
-
-                    // Kontrola přetečení vlevo
-                    if (left < spacing) {
-                        left = spacing;
-                    }
-
-                    // Kontrola přetečení vpravo
-                    if (left + tooltipRect.width > viewportWidth - spacing) {
-                        left = viewportWidth - tooltipRect.width - spacing;
-                    }
-
-                    // Kontrola přetečení nahoře - pokud není místo nad bublinkou, zobraz pod ní
-                    let showBelow = false;
-                    if (top < spacing) {
-                        top = bubbleRect.bottom + arrowSize + 5;
-                        showBelow = true;
-                    }
-
-                    // Kontrola přetečení dole (když je tooltip zobrazený pod bublinkou)
-                    if (showBelow && top + tooltipRect.height > viewportHeight - spacing) {
-                        // Pokud ani dole není dost místa, zobraz alespoň tam, kde je více prostoru
-                        const spaceAbove = bubbleRect.top;
-                        const spaceBelow = viewportHeight - bubbleRect.bottom;
-
-                        if (spaceAbove > spaceBelow) {
-                            top = spacing;
-                            showBelow = false;
-                        } else {
-                            top = viewportHeight - tooltipRect.height - spacing;
-                            showBelow = true;
-                        }
-                    }
-
-                    // Nastavení pozice
-                    tooltip.style.top = `${top}px`;
-                    tooltip.style.left = `${left}px`;
-                    tooltip.style.transform = 'none'; // Vypnout původní transform
-
-                    // Nastavení pozice šipky
-                    const arrowLeft = bubbleRect.left + (bubbleRect.width / 2) - left;
-
-                    // Nastavit vlastní CSS proměnné pro pozici šipky
-                    tooltip.style.setProperty('--arrow-left', `${arrowLeft}px`);
-                    tooltip.style.setProperty('--arrow-direction', showBelow ? 'up' : 'down');
-
-                    // Přidat třídu podle směru šipky
-                    tooltip.classList.toggle('tooltip-below', showBelow);
-                    tooltip.classList.toggle('tooltip-above', !showBelow);
-                }
-
-                // Event listenery pro hover
-                bubble.addEventListener('mouseenter', () => {
-                    isHovering = true;
-                    // Počkat chvíli, než se tooltip zobrazí (kvůli transition)
-                    setTimeout(() => {
-                        updateTooltipPosition();
-                        // Aktualizovat pozici periodicky během hoveru (pro případ scrollování)
-                        positionUpdateInterval = setInterval(updateTooltipPosition, 100);
-                    }, 10);
-                });
-
-                bubble.addEventListener('mouseleave', () => {
-                    isHovering = false;
-                    if (positionUpdateInterval) {
-                        clearInterval(positionUpdateInterval);
-                        positionUpdateInterval = null;
-                    }
-                });
-            });
-
-            // Entity-value tooltips
-            const entityValues = document.querySelectorAll('.entity-value[data-tooltip]');
-
-            entityValues.forEach(element => {
-                let updateTimer = null;
-
-                function updateEntityTooltipPosition() {
-                    const rect = element.getBoundingClientRect();
-                    const viewportWidth = window.innerWidth;
-                    const viewportHeight = window.innerHeight;
-
-                    const spacing = 10;
-                    const arrowSize = 4;
-
-                    // Odhadovaná šířka tooltipu
-                    const estimatedWidth = Math.min(250, viewportWidth - 20);
-                    const estimatedHeight = 60;
-
-                    // Výchozí pozice - nad elementem
-                    let top = rect.top - estimatedHeight - arrowSize - 5;
-                    let left = rect.left + (rect.width / 2) - (estimatedWidth / 2);
-
-                    // Kontrola přetečení vlevo
-                    if (left < spacing) {
-                        left = spacing;
-                    }
-
-                    // Kontrola přetečení vpravo
-                    if (left + estimatedWidth > viewportWidth - spacing) {
-                        left = viewportWidth - estimatedWidth - spacing;
-                    }
-
-                    // Kontrola přetečení nahoře
-                    let showBelow = false;
-                    if (top < spacing) {
-                        top = rect.bottom + arrowSize + 5;
-                        showBelow = true;
-                    }
-
-                    // Nastavení CSS proměnných
-                    element.style.setProperty('--tooltip-top', `${top}px`);
-                    element.style.setProperty('--tooltip-left', `${left}px`);
-
-                    // Pozice šipky
-                    const arrowLeft = rect.left + (rect.width / 2);
-                    let arrowTop;
-
-                    if (showBelow) {
-                        // Tooltip je pod elementem, šipka směřuje nahoru
-                        arrowTop = top - arrowSize;
-                        element.classList.add('tooltip-below');
-                    } else {
-                        // Tooltip je nad elementem, šipka směřuje dolů
-                        arrowTop = top + estimatedHeight;
-                        element.classList.remove('tooltip-below');
-                    }
-
-                    element.style.setProperty('--tooltip-arrow-left', `${arrowLeft}px`);
-                    element.style.setProperty('--tooltip-arrow-top', `${arrowTop}px`);
-                }
-
-                element.addEventListener('mouseenter', () => {
-                    updateEntityTooltipPosition();
-                    updateTimer = setInterval(updateEntityTooltipPosition, 100);
-                });
-
-                element.addEventListener('mouseleave', () => {
-                    if (updateTimer) {
-                        clearInterval(updateTimer);
-                        updateTimer = null;
-                    }
-                    // Odstranit třídu při opuštění
-                    element.classList.remove('tooltip-below');
-                });
-            });
-        }
-
-        // Inicializovat při načtení stránky
-        document.addEventListener('DOMContentLoaded', initTooltipPositioning);
-
-        // Reinicializovat při změně velikosti okna
-        window.addEventListener('resize', initTooltipPositioning);
-
         // === CONTROL PANEL FUNCTIONS ===
 
         // Toggle control panel
@@ -3045,18 +2854,6 @@
         }
 
         // Toggle queue section
-        function toggleQueueSection() {
-            const container = document.getElementById('shield-queue-container');
-            const icon = document.getElementById('queue-toggle-icon');
-            if (container.style.display === 'none') {
-                container.style.display = 'block';
-                icon.textContent = '▼';
-            } else {
-                container.style.display = 'none';
-                icon.textContent = '▶';
-            }
-        }
-
         // === SHIELD INTEGRATION FUNCTIONS ===
 
         // Debouncing timers
@@ -4329,13 +4126,83 @@
 
                 if (success) {
                     showNotification('Hotovo', `Položka #${position} byla odstraněna z fronty`, 'success');
-                    // UI will be updated automatically via WebSocket events
+                    // Okamžitá aktualizace UI (bez čekání na WebSocket debounce)
+                    await updateShieldQueue();
+                    await updateShieldUI();
                 } else {
                     showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
                 }
             } catch (e) {
                 console.error('[Queue] Error removing from queue:', e);
                 showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
+            }
+        }
+
+        // === SHIELD SERVICE CALL HELPERS ===
+
+        /**
+         * Univerzální wrapper pro volání služeb s pending UI
+         * @param {Object} config - Konfigurace
+         * @param {string} config.serviceName - Název služby (pro UI)
+         * @param {string} config.buttonId - ID tlačítka pro pending state (optional)
+         * @param {Function} config.serviceCall - Async funkce která volá service
+         * @param {boolean} config.skipQueueWarning - Přeskočit warning při plné frontě
+         */
+        async function executeServiceWithPendingUI(config) {
+            const { serviceName, buttonId, serviceCall, skipQueueWarning = false } = config;
+            
+            try {
+                // Check shield queue before adding task
+                if (!skipQueueWarning) {
+                    const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+                    const queueCount = parseInt(shieldQueue.value) || 0;
+
+                    if (queueCount >= 3) {
+                        const proceed = confirm(
+                            `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
+                            `Každá změna může trvat až 10 minut.\n` +
+                            `Opravdu chcete přidat další úkol?`
+                        );
+                        if (!proceed) return false;
+                    }
+                }
+
+                // Show pending state immediately
+                const btn = buttonId ? document.getElementById(buttonId) : null;
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('pending');
+                }
+
+                // Execute service call
+                const success = await serviceCall();
+
+                if (success) {
+                    // Okamžitá aktualizace UI bez čekání na WebSocket debounce
+                    monitorShieldActivity();
+                    await updateShieldQueue();
+                    await updateShieldUI();
+                    await updateButtonStates();
+                    return true;
+                } else {
+                    // Re-enable on error
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('pending');
+                    }
+                    return false;
+                }
+            } catch (e) {
+                console.error(`[Shield] Error in ${serviceName}:`, e);
+                showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
+                
+                // Re-enable button on error
+                const btn = buttonId ? document.getElementById(buttonId) : null;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('pending');
+                }
+                return false;
             }
         }
 
@@ -4347,22 +4214,7 @@
                 const currentMode = currentModeData.value || '';
 
                 if (currentMode.includes(mode)) {
-                    // Режим už je aktivní - tiše ignorovat
-                    return;
-                }
-
-                // Check shield queue before adding task (use dynamic lookup)
-                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
-                const queueCount = parseInt(shieldQueue.value) || 0;
-
-                // Warn if queue is getting full
-                if (queueCount >= 3) {
-                    const proceed = confirm(
-                        `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
-                        `Každá změna může trvat až 10 minut.\n` +
-                        `Opravdu chcete přidat další úkol?`
-                    );
-                    if (!proceed) return;
+                    return; // Режим už je aktivní - tiše ignorovat
                 }
 
                 // Show acknowledgement dialog
@@ -4373,35 +4225,26 @@
                 );
                 if (!confirmed) return;
 
-                // Show pending state immediately
+                // Button ID mapping
                 const buttonIds = {
                     'Home 1': 'btn-mode-home1',
                     'Home 2': 'btn-mode-home2',
                     'Home 3': 'btn-mode-home3',
                     'Home UPS': 'btn-mode-ups'
                 };
-                const btn = document.getElementById(buttonIds[mode]);
-                if (btn) {
-                    btn.disabled = true;
-                    btn.classList.add('pending');
-                }
 
-                const success = await callService('oig_cloud', 'set_box_mode', {
-                    mode: mode,
-                    acknowledgement: true
+                // Execute with pending UI
+                await executeServiceWithPendingUI({
+                    serviceName: 'Změna režimu boxu',
+                    buttonId: buttonIds[mode],
+                    serviceCall: async () => {
+                        return await callService('oig_cloud', 'set_box_mode', {
+                            mode: mode,
+                            acknowledgement: true
+                        });
+                    }
                 });
 
-                if (success) {
-                    // Shield activity will be monitored automatically via subscribeToShield event listener
-                    // WebSocket events will trigger debouncedShieldMonitor() which updates everything
-                    // No need for manual updates here!
-                } else {
-                    // Re-enable on error
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('pending');
-                    }
-                }
             } catch (e) {
                 console.error('[Shield] Error in setBoxMode:', e);
                 showNotification('Chyba', 'Nepodařilo se změnit režim boxu', 'error');
@@ -4421,10 +4264,7 @@
                 const currentLimitData = await getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid'));
                 const currentLimit = currentLimitData.value || 5000;
 
-                console.log('[Grid] Current state:', {
-                    currentMode: currentMode,
-                    currentLimit: currentLimit
-                });
+                console.log('[Grid] Current state:', { currentMode, currentLimit });
 
                 // Check if change is already in progress
                 if (currentMode === 'Probíhá změna') {
@@ -4433,26 +4273,20 @@
                 }
 
                 // Check if already active (except for Limited - can change limit)
-                // Sensor returns: "Vypnuto", "Zapnuto", "Omezeno" (without English translation)
                 const isAlreadyActive =
                     (mode === 'Vypnuto / Off' && currentMode === 'Vypnuto') ||
                     (mode === 'Zapnuto / On' && currentMode === 'Zapnuto');
 
                 if (isAlreadyActive) {
-                    // Režim už je aktivní - tiše ignorovat (bez notifikace)
                     console.log('[Grid] ⏸️ Mode already active, skipping silently');
                     return;
                 }
 
                 // Check if Limited is already active
-                // Sensor returns: "Omezeno" (without English translation)
                 const isLimitedActive = currentMode === 'Omezeno';
                 const isChangingToLimited = mode === 'S omezením / Limited';
 
-                console.log('[Grid] Decision flags:', {
-                    isLimitedActive: isLimitedActive,
-                    isChangingToLimited: isChangingToLimited
-                });
+                console.log('[Grid] Decision flags:', { isLimitedActive, isChangingToLimited });
 
                 // Show dialog
                 console.log('[Grid] 📋 Opening dialog...');
@@ -4465,110 +4299,92 @@
 
                 console.log('[Grid] ✅ Dialog confirmed with:', result);
 
-                // Special case: Limited is already active, just change limit
+                // Determine button ID
+                const buttonIds = {
+                    'Vypnuto / Off': 'btn-grid-off',
+                    'Zapnuto / On': 'btn-grid-on',
+                    'S omezením / Limited': 'btn-grid-limited'
+                };
+                const buttonId = buttonIds[mode];
+
+                // CASE 1: Limited is active, just change limit
                 if (isLimitedActive && isChangingToLimited && result.limit) {
-                    console.log('[Grid] 🔧 Case: Limited already active, just changing limit');
-                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
-                        limit: result.limit,
-                        acknowledgement: true,
-                        warning: true
+                    console.log('[Grid] 🔧 Case 1: Changing limit only');
+                    
+                    await executeServiceWithPendingUI({
+                        serviceName: 'Změna limitu přetoků',
+                        buttonId: buttonId,
+                        serviceCall: async () => {
+                            return await callService('oig_cloud', 'set_grid_delivery', {
+                                limit: result.limit,
+                                acknowledgement: true,
+                                warning: true
+                            });
+                        }
                     });
-
-                const success = await callService('oig_cloud', 'set_grid_delivery', {
-                    limit: result.limit,
-                    acknowledgement: true,
-                    warning: true
-                });
-
-                if (!success) {
-                    showNotification('Chyba', 'Nepodařilo se změnit limit přetoků', 'error');
                     return;
                 }
 
-                // Shield activity will be monitored automatically via WebSocket events
-                // No need for manual polling here!
-                return;
+                // CASE 2: Two-step change (Limited from Off/On)
+                if (isChangingToLimited && result.limit) {
+                    console.log('[Grid] 🔧 Case 2: Two-step change (limit + mode)');
+                    
+                    const success = await executeServiceWithPendingUI({
+                        serviceName: 'Nastavení přetoků s omezením',
+                        buttonId: buttonId,
+                        serviceCall: async () => {
+                            // Step 1: Set limit
+                            console.log('[Grid] Step 1/2: Setting limit =', result.limit);
+                            const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
+                                limit: result.limit,
+                                acknowledgement: true,
+                                warning: true
+                            });
+
+                            if (!limitSuccess) {
+                                console.log('[Grid] ❌ Step 1 failed');
+                                showNotification('Chyba', 'Nepodařilo se nastavit limit přetoků', 'error');
+                                return false;
+                            }
+
+                            console.log('[Grid] ✅ Step 1 done, waiting 1s...');
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+
+                            // Step 2: Set mode
+                            console.log('[Grid] Step 2/2: Setting mode =', mode);
+                            const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
+                                mode: mode,
+                                acknowledgement: true,
+                                warning: true
+                            });
+
+                            if (!modeSuccess) {
+                                console.log('[Grid] ❌ Step 2 failed');
+                                showNotification('Chyba', 'Limit nastaven, ale režim se nepodařilo změnit', 'error');
+                                return false;
+                            }
+
+                            console.log('[Grid] ✅ Both steps done!');
+                            return true;
+                        }
+                    });
+                    return;
                 }
 
-                // Normal case: changing to Limited from Off/On (two steps)
-                const needsLimit = isChangingToLimited && result.limit;
-
-                if (needsLimit) {
-                    // Two-step process: 1) Set limit, 2) Set mode
-                    console.log('[Grid] 🔧 Case: Two-step change (Limited from Off/On)');
-                    console.log('[Grid] Step 1/2: Setting limit =', result.limit);
-                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
-                        limit: result.limit,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    // Step 1: Set limit
-                    const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
-                        limit: result.limit,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    if (!limitSuccess) {
-                        console.log('[Grid] ❌ Step 1 failed');
-                        showNotification('Chyba', 'Nepodařilo se nastavit limit přetoků', 'error');
-                        return;
+                // CASE 3: Single-step change (just mode)
+                console.log('[Grid] 🔧 Case 3: Single-step change (mode only)');
+                
+                await executeServiceWithPendingUI({
+                    serviceName: 'Změna dodávky do sítě',
+                    buttonId: buttonId,
+                    serviceCall: async () => {
+                        return await callService('oig_cloud', 'set_grid_delivery', {
+                            mode: mode,
+                            acknowledgement: true,
+                            warning: true
+                        });
                     }
-
-                    console.log('[Grid] ✅ Step 1 done, waiting 1s...');
-                    // Wait a bit before second call
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-
-                    // Step 2: Set mode
-                    console.log('[Grid] Step 2/2: Setting mode =', mode);
-                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
-                        mode: mode,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
-                        mode: mode,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    if (!modeSuccess) {
-                        console.log('[Grid] ❌ Step 2 failed');
-                        showNotification('Chyba', 'Limit nastaven, ale režim se nepodařilo změnit', 'error');
-                        return;
-                    }
-
-                    console.log('[Grid] ✅ Both steps done!');
-                    // UI will be updated automatically via WebSocket events
-
-                } else {
-                    // Single step: just mode
-                    console.log('[Grid] 🔧 Case: Single-step change (just mode)');
-                    console.log('[Grid] Will call: oig_cloud.set_grid_delivery', {
-                        mode: mode,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    const success = await callService('oig_cloud', 'set_grid_delivery', {
-                        mode: mode,
-                        acknowledgement: true,
-                        warning: true
-                    });
-
-                    if (!success) {
-                        console.log('[Grid] ❌ Single-step failed');
-                        showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
-                        return;
-                    }
-
-                    console.log('[Grid] ✅ Single-step done!');
-                    // UI will be updated automatically via WebSocket events
-                }
-
-                // All done - WebSocket events will handle UI updates automatically
+                });
 
             } catch (e) {
                 console.error('[Grid] Error in setGridDelivery:', e);
@@ -4638,30 +4454,16 @@
 
                 console.log('[Boiler] setBoilerMode called:', { mode, currentMode, currentModeRaw });
 
-                // Check if already active - tiše ignorovat (bez notifikace)
+                // Check if already active
                 if (currentMode === mode) {
                     console.log('[Boiler] ⏸️ Mode already active, skipping silently');
                     return;
                 }
 
-                // Check shield queue before adding task (use dynamic lookup)
-                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
-                const queueCount = parseInt(shieldQueue.value) || 0;
-
-                // Warn if queue is getting full
-                if (queueCount >= 3) {
-                    const proceed = confirm(
-                        `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
-                        `Každá změna může trvat až 10 minut.\n` +
-                        `Opravdu chcete přidat další úkol?`
-                    );
-                    if (!proceed) return;
-                }
-
                 const modeName = mode === 'CBB' ? 'Inteligentní' : 'Manuální';
                 const modeIcon = mode === 'CBB' ? '🤖' : '👤';
 
-                // Show acknowledgement dialog (same as box mode)
+                // Show acknowledgement dialog
                 const confirmed = await showAcknowledgementDialog(
                     'Změna režimu bojleru',
                     `Chystáte se změnit režim bojleru na <strong>"${modeIcon} ${modeName}"</strong>.<br><br>` +
@@ -4669,34 +4471,26 @@
                 );
                 if (!confirmed) return;
 
-                // Show pending state immediately
+                // Button ID
                 const btnId = `btn-boiler-${mode.toLowerCase()}`;
-                const btn = document.getElementById(btnId);
-                if (btn) {
-                    btn.disabled = true;
-                    btn.classList.add('pending');
-                }
 
-                // Store expected mode for monitoring (convert to Czech format that sensor returns)
+                // Store expected mode for monitoring
                 const expectedMode = mode === 'CBB' ? 'CBB' : 'Manuální';
                 window._lastRequestedBoilerMode = expectedMode;
                 console.log('[Boiler] Stored expected mode for monitoring:', expectedMode);
 
-                const success = await callService('oig_cloud', 'set_boiler_mode', {
-                    mode: mode,
-                    acknowledgement: true
+                // Execute with pending UI
+                await executeServiceWithPendingUI({
+                    serviceName: 'Změna režimu bojleru',
+                    buttonId: btnId,
+                    serviceCall: async () => {
+                        return await callService('oig_cloud', 'set_boiler_mode', {
+                            mode: mode,
+                            acknowledgement: true
+                        });
+                    }
                 });
 
-                if (success) {
-                    // NO notification popup - user already confirmed via dialog
-                    // UI will be updated automatically via WebSocket events
-                } else {
-                    // Re-enable on error
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('pending');
-                    }
-                }
             } catch (e) {
                 console.error('[Shield] Error in setBoilerMode:', e);
                 showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
@@ -5810,9 +5604,6 @@
             } catch (e) {
                 console.error('[Details] Error loading node details:', e);
             }
-
-            // Reinicializovat tooltips po načtení detailů
-            initTooltipPositioning();
         }
 
         // Check if boiler is in use and show/hide box
@@ -6000,10 +5791,10 @@
             // Subscribe to shield state changes for real-time updates
             subscribeToShield();
 
-            // REMOVED: Initial button state update - WebSocket events will handle this
-            // setTimeout(() => {
-            //     updateButtonStates();
-            // }, 1000);
+            // Initial button state update after sensors are loaded
+            setTimeout(() => {
+                updateButtonStates(); // Set initial active states (green highlighting)
+            }, 1000);
 
             // REMOVED: Initial shield activity check - WebSocket events will handle this
             // setTimeout(() => {
