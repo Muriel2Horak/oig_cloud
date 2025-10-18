@@ -3964,7 +3964,7 @@
                     ${limitInputHtml}
                     <div class="ack-dialog-warning">
                         ⚠️ <strong>Upozornění:</strong> ${needsLimit ?
-                            'Změna se provede ve dvou krocích: nejdřív se nastaví limit, pak režim. Každý krok může trvat až 10 minut.' :
+                            'Režim a limit budou změněny postupně (serializováno). Každá změna může trvat až 10 minut.' :
                             'Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.'}
                     </div>
                     <div class="ack-checkbox-wrapper">
@@ -4319,47 +4319,23 @@
                     return;
                 }
 
-                // CASE 2: Two-step change (Limited from Off/On)
+                // CASE 2: Mode + Limit together (Limited from Off/On)
                 if (isChangingToLimited && result.limit) {
-                    console.log('[Grid] 🔧 Case 2: Two-step change (limit + mode)');
+                    console.log('[Grid] 🔧 Case 2: Mode + limit together (backend will serialize)');
 
-                    const success = await executeServiceWithPendingUI({
+                    await executeServiceWithPendingUI({
                         serviceName: 'Nastavení přetoků s omezením',
                         buttonId: buttonId,
                         serviceCall: async () => {
-                            // Step 1: Set limit
-                            console.log('[Grid] Step 1/2: Setting limit =', result.limit);
-                            const limitSuccess = await callService('oig_cloud', 'set_grid_delivery', {
+                            // NOVÁ LOGIKA: Pošleme OBĚ parametry najednou
+                            // Backend automaticky rozdělí na 2 volání ve frontě
+                            console.log('[Grid] Sending mode + limit together:', { mode, limit: result.limit });
+                            return await callService('oig_cloud', 'set_grid_delivery', {
+                                mode: mode,
                                 limit: result.limit,
                                 acknowledgement: true,
                                 warning: true
                             });
-
-                            if (!limitSuccess) {
-                                console.log('[Grid] ❌ Step 1 failed');
-                                showNotification('Chyba', 'Nepodařilo se nastavit limit přetoků', 'error');
-                                return false;
-                            }
-
-                            console.log('[Grid] ✅ Step 1 done, waiting 1s...');
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-
-                            // Step 2: Set mode
-                            console.log('[Grid] Step 2/2: Setting mode =', mode);
-                            const modeSuccess = await callService('oig_cloud', 'set_grid_delivery', {
-                                mode: mode,
-                                acknowledgement: true,
-                                warning: true
-                            });
-
-                            if (!modeSuccess) {
-                                console.log('[Grid] ❌ Step 2 failed');
-                                showNotification('Chyba', 'Limit nastaven, ale režim se nepodařilo změnit', 'error');
-                                return false;
-                            }
-
-                            console.log('[Grid] ✅ Both steps done!');
-                            return true;
                         }
                     });
                     return;

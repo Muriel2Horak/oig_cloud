@@ -488,6 +488,33 @@ class ServiceShield:
         params = data["params"]
         trace_id = str(uuid.uuid4())[:8]
 
+        # SPECIÁLNÍ LOGIKA: set_grid_delivery s mode + limit současně
+        # Rozdělíme na 2 samostatné volání (serializace)
+        if service_name == "oig_cloud.set_grid_delivery" and "mode" in params and "limit" in params:
+            _LOGGER.info(
+                f"[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
+            )
+            
+            # Vytvoříme 2 samostatné volání
+            # 1. Mode (pokud se liší od aktuálního)
+            mode_params = {k: v for k, v in params.items() if k != "limit"}
+            # 2. Limit (pokud se liší od aktuálního)
+            limit_params = {k: v for k, v in params.items() if k != "mode"}
+            
+            # Zavoláme intercept rekurzivně pro každý parametr
+            _LOGGER.info(f"[Grid Delivery] Step 1/2: Processing mode change")
+            await self.intercept_service_call(
+                domain, service, {"params": mode_params}, original_call, blocking, context
+            )
+            
+            _LOGGER.info(f"[Grid Delivery] Step 2/2: Processing limit change")
+            await self.intercept_service_call(
+                domain, service, {"params": limit_params}, original_call, blocking, context
+            )
+            
+            _LOGGER.info(f"[Grid Delivery] Both calls queued successfully")
+            return
+
         expected_entities = self.extract_expected_entities(service_name, params)
         api_info = self._extract_api_info(service_name, params)
 
@@ -1108,11 +1135,21 @@ class ServiceShield:
                             result_entities[entity_id] = str(expected_value)
 
             if "mode" in data:
-                # Mode je 0 nebo 1, ale senzor vrací "Zapnuto"/"Vypnuto"/"Omezeno"
-                try:
-                    expected_mode = int(data["mode"])
-                except (ValueError, TypeError):
-                    # Pokud mode je nevalidní, vrátíme jen limit (pokud existuje)
+                # Mode přichází jako STRING ze služby: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
+                # Senzor vrací: "Vypnuto", "Zapnuto", "Omezeno"
+                mode_string = str(data["mode"]).strip()
+                
+                # Mapování mode string → očekávaný text senzoru
+                mode_mapping = {
+                    "Vypnuto / Off": "Vypnuto",
+                    "Zapnuto / On": "Zapnuto nebo Omezeno",  # "Zapnuto" nebo "Omezeno" jsou OK
+                    "S omezením / Limited": "Zapnuto nebo Omezeno",  # "Omezeno" je cílový stav
+                }
+                
+                expected_text = mode_mapping.get(mode_string)
+                if not expected_text:
+                    # Neznámý mode, vrátíme jen limit
+                    _LOGGER.warning(f"[extract] Unknown grid delivery mode: {mode_string}")
                     return result_entities
 
                 entity_id = find_entity("_invertor_prms_to_grid")
@@ -1121,36 +1158,22 @@ class ServiceShield:
                     state = self.hass.states.get(entity_id)
                     current_text = state.state if state else None
 
-                    # Mapování: mode=0 → "Vypnuto", mode=1 → "Zapnuto" nebo "Omezeno"
-                    if expected_mode == 0:
-                        expected_text = "Vypnuto"
-                    elif expected_mode == 1:
-                        # Mode=1 může být "Zapnuto" (unlimited) nebo "Omezeno" (limited)
-                        # Pro účely kontroly považujeme obě hodnoty za správné
-                        expected_text = "Zapnuto nebo Omezeno"
-                    else:
-                        # Neznámý mode, vrátíme jen limit
-                        return result_entities
-
                     _LOGGER.debug(
-                        "[extract] grid_delivery.mode | current='%s' expected='%s' (mode=%s)",
+                        "[extract] grid_delivery.mode | current='%s' expected='%s' (mode_string='%s')",
                         current_text,
                         expected_text,
-                        expected_mode,
+                        mode_string,
                     )
 
                     # Kontrola podle mapy
                     needs_change = False
-                    if expected_mode == 0 and current_text != "Vypnuto":
+                    if expected_text == "Vypnuto" and current_text != "Vypnuto":
                         needs_change = True
-                    elif expected_mode == 1 and current_text not in [
-                        "Zapnuto",
-                        "Omezeno",
-                    ]:
+                    elif expected_text == "Zapnuto nebo Omezeno" and current_text not in ["Zapnuto", "Omezeno"]:
                         needs_change = True
 
                     if needs_change:
-                        # Pro logbook vrátíme textovou hodnotu (ne číslo)
+                        # Pro logbook vrátíme textovou hodnotu
                         result_entities[entity_id] = expected_text
 
             # Vrátíme všechny entity (mode + limit), pokud byly detekovány změny
