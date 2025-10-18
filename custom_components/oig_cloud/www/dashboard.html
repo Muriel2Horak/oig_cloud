@@ -2358,23 +2358,6 @@
 
             <!-- Shield Queue -->
             <div class="control-section" id="shield-queue-section" style="width: 100%; display: block; margin-right: 0;">
-                <h4 style="display: flex; align-items: center; gap: 8px; margin: 0 0 12px 0;">
-                    📋 Fronta požadavků
-                    <span id="queue-count-badge" style="font-size: 14px; opacity: 0.7;">(0)</span>
-                    <span class="info-bubble" onclick="event.stopPropagation()">❓
-                        <span class="info-bubble-tooltip">
-                            <strong>ServiceShield fronta</strong>
-                            Ochranný systém který řadí všechna API volání do fronty a postupně je zpracovává.
-                            <ul>
-                                <li><strong>⏳ Pending:</strong> Čeká na zpracování</li>
-                                <li><strong>▶️ Running:</strong> Právě běží (2-5s)</li>
-                                <li><strong>✅ Completed:</strong> Úspěšně dokončeno</li>
-                                <li><strong>❌ Failed:</strong> Selhalo po 3 pokusech</li>
-                            </ul>
-                            Chrání API před přetížením a zajišťuje spolehlivé změny.
-                        </span>
-                    </span>
-                </h4>
                 <div id="shield-queue-container" style="text-align: left; width: 100%;">
                     <div style="text-align: center; opacity: 0.5; padding: 20px;">
                         Načítání...
@@ -3375,14 +3358,6 @@
                 const queuedRequests = attrs.queued_requests || [];
                 const allRequests = [...runningRequests, ...queuedRequests];
 
-                // Update queue count badge
-                const badge = document.getElementById('queue-count-badge');
-                if (badge) {
-                    badge.textContent = `(${allRequests.length})`;
-                    badge.style.color = allRequests.length > 0 ? 'rgba(255, 152, 0, 1)' : 'rgba(255, 255, 255, 0.5)';
-                    badge.style.fontWeight = allRequests.length > 0 ? '700' : '400';
-                }
-
                 if (allRequests.length === 0) {
                     container.innerHTML = '<div class="queue-empty">✅ Fronta je prázdná</div>';
                     return;
@@ -3395,6 +3370,7 @@
 
                 allRequests.forEach((req, index) => {
                     const isRunning = index === 0 && runningRequests.length > 0;
+                    const isQueued = !isRunning; // Anything not running is queued
                     const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
                     const statusIcon = isRunning ? '🔄' : '⏳';
                     const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
@@ -3489,7 +3465,7 @@
                             <td class="queue-time">${createdText}</td>
                             <td class="queue-time" style="font-weight: 600;">${durationText}</td>
                             <td style="text-align: center;">
-                                ${req.status === 'queued' ? `
+                                ${isQueued ? `
                                     <button
                                         onclick="removeFromQueue(${req.position})"
                                         style="
@@ -5802,10 +5778,10 @@
             let retryCount = 0;
             const maxRetries = 10;
             const retryInterval = 2000; // 2s between retries
-            
+
             function tryInitialShieldLoad() {
                 console.log(`[Shield] Attempting initial load (attempt ${retryCount + 1}/${maxRetries})...`);
-                
+
                 // Check if shield sensors are available
                 const hass = getHass();
                 if (!hass || !hass.states) {
@@ -5827,7 +5803,7 @@
                     }
                     return;
                 }
-                
+
                 const activitySensorId = findShieldSensorId('service_shield_activity');
                 if (!activitySensorId || !hass.states[activitySensorId]) {
                     console.warn('[Shield] Shield sensors not ready yet, will retry...');
@@ -5848,7 +5824,7 @@
                     }
                     return;
                 }
-                
+
                 // Sensors are ready, load UI
                 console.log('[Shield] Sensors ready, loading initial UI...');
                 updateButtonStates(); // Set initial active states (green highlighting)
@@ -5856,7 +5832,7 @@
                 updateShieldUI();     // Load initial shield status
                 monitorShieldActivity(); // Start activity monitoring
             }
-            
+
             // Start initial load with delay
             setTimeout(tryInitialShieldLoad, 1000);
 

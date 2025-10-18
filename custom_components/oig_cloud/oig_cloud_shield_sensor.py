@@ -30,7 +30,7 @@ def translate_shield_state(state: str) -> str:
 
 
 class OigCloudShieldSensor(OigCloudSensor):
-    """Senzor pro ServiceShield monitoring."""
+    """Senzor pro ServiceShield monitoring - REAL-TIME bez coordinator delay."""
 
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
         # PŘESKOČÍME parent init pro ServiceShield senzory
@@ -39,14 +39,14 @@ class OigCloudShieldSensor(OigCloudSensor):
                 f"OigCloudShieldSensor can only handle service_shield sensors, got: {sensor_type}"
             )
 
-        # Inicializujeme přímo CoordinatorEntity a SensorEntity, ne OigCloudSensor
-        from homeassistant.helpers.update_coordinator import CoordinatorEntity
+        # KRITICKÁ OPRAVA: Shield senzory NESMÍ dědit z CoordinatorEntity!
+        # CoordinatorEntity má built-in debounce (30s interval), který zpozdí updates.
+        # Shield senzory potřebují OKAMŽITÉ updaty (<100ms), proto používáme jen SensorEntity.
         from homeassistant.components.sensor import SensorEntity
 
-        CoordinatorEntity.__init__(self, coordinator)
         SensorEntity.__init__(self)
 
-        self.coordinator = coordinator
+        self.coordinator = coordinator  # Uložíme pro přístup k box_id
         self._sensor_type = sensor_type
         self._shield_callback_registered = False
 
@@ -64,13 +64,33 @@ class OigCloudShieldSensor(OigCloudSensor):
         self._attr_device_class = sensor_def.get("device_class")
         self._attr_state_class = sensor_def.get("state_class")
 
-        # Nastavíme box_id a entity_id podle vzoru z OigCloudDataSensor
-        self._box_id: str = list(self.coordinator.data.keys())[0]
+        # OPRAVA: Bezpečné získání box_id s fallback (stejně jako v OigCloudSensor)
+        try:
+            if (
+                coordinator.data
+                and isinstance(coordinator.data, dict)
+                and coordinator.data
+            ):
+                self._box_id: str = list(coordinator.data.keys())[0]
+            else:
+                _LOGGER.warning(
+                    f"No coordinator data available for {sensor_type}, using fallback box_id"
+                )
+                self._box_id = "unknown"
+        except (TypeError, IndexError, KeyError) as e:
+            _LOGGER.error(f"Error getting box_id for {sensor_type}: {e}")
+            self._box_id = "unknown"
+
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
         _LOGGER.debug(
             f"✅ Properly initialized ServiceShield sensor: {sensor_type} with entity_id: {self.entity_id}"
         )
+
+    @property
+    def should_poll(self) -> bool:
+        """Shield senzory jsou event-driven, nepotřebují polling."""
+        return False
 
     async def async_added_to_hass(self) -> None:
         """Když je senzor přidán do Home Assistant."""
