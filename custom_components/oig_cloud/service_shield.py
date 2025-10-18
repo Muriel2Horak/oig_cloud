@@ -355,16 +355,29 @@ class ServiceShield:
 
         removed_item = self.queue[queue_index]
         service_name = removed_item[0]
+        params = removed_item[1]
+        expected_entities = removed_item[2]
 
         # Smažeme položku z fronty
         del self.queue[queue_index]
 
         # Smažeme i metadata
-        params = removed_item[1]
         self.queue_metadata.pop((service_name, str(params)), None)
 
         _LOGGER.info(
             f"[OIG Shield] Odstraněna položka z fronty na pozici {position}: {service_name}"
+        )
+
+        # LOGBOOK: Zapíšeme informaci o zrušení služby
+        await self._log_event(
+            "cancelled",
+            service_name,
+            {
+                "params": params,
+                "entities": expected_entities,
+            },
+            reason=f"Uživatel zrušil požadavek z fronty (pozice {position})",
+            context=call.context,
         )
 
         # KRITICKÉ: Notifikuj senzory o změně
@@ -958,6 +971,8 @@ class ServiceShield:
                 )
             elif event_type == "released":
                 message = f"Semafor uvolněn – služba {service} dokončena"
+            elif event_type == "cancelled":
+                message = f"Zrušeno uživatelem – {friendly_name}: očekávaná změna na '{expected_value}' nebyla provedena"
             else:
                 message = f"{event_type} – {service}"
 
@@ -1064,7 +1079,7 @@ class ServiceShield:
             # OPRAVA: Grid delivery může měnit mode + limit současně
             # Musíme vrátit OBĚ entity pro správný logbook
             result_entities = {}
-            
+
             if "limit" in data:
                 try:
                     expected_value = round(float(data["limit"]))
@@ -1137,7 +1152,7 @@ class ServiceShield:
                     if needs_change:
                         # Pro logbook vrátíme textovou hodnotu (ne číslo)
                         result_entities[entity_id] = expected_text
-            
+
             # Vrátíme všechny entity (mode + limit), pokud byly detekovány změny
             return result_entities
 
