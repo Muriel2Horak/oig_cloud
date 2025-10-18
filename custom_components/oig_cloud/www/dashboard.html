@@ -1163,22 +1163,22 @@
 
         /* Price indicator animations - jemné pulzování */
         @keyframes price-cheap-pulse {
-            0%, 100% { 
+            0%, 100% {
                 box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
                 border-color: rgba(76, 175, 80, 0.6);
             }
-            50% { 
+            50% {
                 box-shadow: 0 0 25px rgba(76, 175, 80, 0.6);
                 border-color: rgba(76, 175, 80, 0.8);
             }
         }
 
         @keyframes price-expensive-pulse {
-            0%, 100% { 
+            0%, 100% {
                 box-shadow: 0 0 15px rgba(255, 152, 0, 0.4);
                 border-color: rgba(255, 152, 0, 0.6);
             }
-            50% { 
+            50% {
                 box-shadow: 0 0 25px rgba(255, 152, 0, 0.6);
                 border-color: rgba(255, 152, 0, 0.8);
             }
@@ -4618,29 +4618,49 @@
             });
         }
 
-        // Create flow particle
-        function createParticle(from, to, color, speed = 2000) {
-            const particle = document.createElement('div');
-            particle.className = 'particle';
-            particle.style.background = color;
-            particle.style.left = from.x + 'px';
-            particle.style.top = from.y + 'px';
+        // Create flow particle with optional delay for multiple particles
+        function createParticle(from, to, color, speed = 2000, delay = 0) {
+            setTimeout(() => {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.background = color;
+                particle.style.left = from.x + 'px';
+                particle.style.top = from.y + 'px';
 
-            document.getElementById('particles').appendChild(particle);
+                document.getElementById('particles').appendChild(particle);
 
-            const dx = to.x - from.x;
-            const dy = to.y - from.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+                const dx = to.x - from.x;
+                const dy = to.y - from.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-            particle.animate([
-                { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
-                { opacity: 1, offset: 0.1 },
-                { opacity: 1, offset: 0.9 },
-                { left: to.x + 'px', top: to.y + 'px', opacity: 0 }
-            ], {
-                duration: speed,
-                easing: 'linear'
-            }).onfinish = () => particle.remove();
+                particle.animate([
+                    { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
+                    { opacity: 1, offset: 0.1 },
+                    { opacity: 1, offset: 0.9 },
+                    { left: to.x + 'px', top: to.y + 'px', opacity: 0 }
+                ], {
+                    duration: speed,
+                    easing: 'linear'
+                }).onfinish = () => particle.remove();
+            }, delay);
+        }
+
+        // Create multiple particles based on power percentage
+        function createParticleFlow(from, to, color, speed, powerPercentage) {
+            // Determine number of particles based on power
+            let particleCount = 1;
+            if (powerPercentage > 66) {
+                particleCount = 3; // High power: 3 particles
+            } else if (powerPercentage > 33) {
+                particleCount = 2; // Medium power: 2 particles
+            }
+            // Low power (0-33%): 1 particle (default)
+
+            // Create particles with staggered delays
+            const delayBetweenParticles = speed / particleCount / 2; // Stagger them evenly
+            for (let i = 0; i < particleCount; i++) {
+                createParticle(from, to, color, speed, i * delayBetweenParticles);
+            }
         }
 
         // Animate particles
@@ -4681,7 +4701,7 @@
             // 100% = fast (1000ms), 0% = no animation
             if (solarPerc > 0 && solarPower > 10) {
                 const speedMs = 3000 - (solarPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                createParticle(centers.solar, centers.inverter, '#ffd54f', speedMs);
+                createParticleFlow(centers.solar, centers.inverter, '#ffd54f', speedMs, solarPerc);
             }
 
             // 2. BATTERY ↔ INVERTER
@@ -4695,10 +4715,10 @@
 
                 if (batteryPower > 0) {
                     // Charging: Inverter → Battery
-                    createParticle(centers.inverter, centers.battery, '#4caf50', speedMs);
+                    createParticleFlow(centers.inverter, centers.battery, '#4caf50', speedMs, batteryPerc);
                 } else {
                     // Discharging: Battery → Inverter
-                    createParticle(centers.battery, centers.inverter, '#ff9800', speedMs);
+                    createParticleFlow(centers.battery, centers.inverter, '#ff9800', speedMs, batteryPerc);
                 }
             }
 
@@ -4713,10 +4733,10 @@
 
                 if (gridPower > 0) {
                     // From grid: Grid → Inverter (RED)
-                    createParticle(centers.grid, centers.inverter, '#f44336', speedMs);
+                    createParticleFlow(centers.grid, centers.inverter, '#f44336', speedMs, gridPerc);
                 } else {
                     // To grid: Inverter → Grid (GREEN)
-                    createParticle(centers.inverter, centers.grid, '#4caf50', speedMs);
+                    createParticleFlow(centers.inverter, centers.grid, '#4caf50', speedMs, gridPerc);
                 }
             }
 
@@ -4725,7 +4745,7 @@
             if (housePower > 10) {
                 const housePerc = Math.min(housePower / 17000, 1) * 100; // 0-100%
                 const speedMs = 3000 - (housePerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                createParticle(centers.inverter, centers.house, '#f06292', speedMs);
+                createParticleFlow(centers.inverter, centers.house, '#f06292', speedMs, housePerc);
             }
 
             // 5. HOUSE → BOILER (if boiler exists AND is visible)
@@ -4734,7 +4754,7 @@
             if (centers.boiler && boilerNode && !boilerNode.classList.contains('hidden') && boilerPower > 10) {
                 const boilerPerc = Math.min(boilerPower / boilerMaxPower, 1) * 100; // 0-100%
                 const speedMs = 3000 - (boilerPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                createParticle(centers.house, centers.boiler, '#ff9800', speedMs);
+                createParticleFlow(centers.house, centers.boiler, '#ff9800', speedMs, boilerPerc);
             }
         }
 
