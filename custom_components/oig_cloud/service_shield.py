@@ -490,28 +490,42 @@ class ServiceShield:
 
         # SPECIÁLNÍ LOGIKA: set_grid_delivery s mode + limit současně
         # Rozdělíme na 2 samostatné volání (serializace)
-        if service_name == "oig_cloud.set_grid_delivery" and "mode" in params and "limit" in params:
+        if (
+            service_name == "oig_cloud.set_grid_delivery"
+            and "mode" in params
+            and "limit" in params
+        ):
             _LOGGER.info(
                 f"[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
             )
-            
+
             # Vytvoříme 2 samostatné volání
             # 1. Mode (pokud se liší od aktuálního)
             mode_params = {k: v for k, v in params.items() if k != "limit"}
             # 2. Limit (pokud se liší od aktuálního)
             limit_params = {k: v for k, v in params.items() if k != "mode"}
-            
+
             # Zavoláme intercept rekurzivně pro každý parametr
             _LOGGER.info(f"[Grid Delivery] Step 1/2: Processing mode change")
             await self.intercept_service_call(
-                domain, service, {"params": mode_params}, original_call, blocking, context
+                domain,
+                service,
+                {"params": mode_params},
+                original_call,
+                blocking,
+                context,
             )
-            
+
             _LOGGER.info(f"[Grid Delivery] Step 2/2: Processing limit change")
             await self.intercept_service_call(
-                domain, service, {"params": limit_params}, original_call, blocking, context
+                domain,
+                service,
+                {"params": limit_params},
+                original_call,
+                blocking,
+                context,
             )
-            
+
             _LOGGER.info(f"[Grid Delivery] Both calls queued successfully")
             return
 
@@ -1103,11 +1117,12 @@ class ServiceShield:
             return {}
 
         elif service_name == "oig_cloud.set_grid_delivery":
-            # OPRAVA: Grid delivery může měnit mode + limit současně
-            # Musíme vrátit OBĚ entity pro správný logbook
+            # OPRAVA: Wrapper rozděluje mode + limit na 2 samostatná volání
+            # Každé volání má jen JEDEN parametr → vrátíme jen JEDNU entitu
             result_entities = {}
 
-            if "limit" in data:
+            # PŘÍPAD 1: Pouze LIMIT (bez mode)
+            if "limit" in data and "mode" not in data:
                 try:
                     expected_value = round(float(data["limit"]))
                 except (ValueError, TypeError):
@@ -1125,32 +1140,39 @@ class ServiceShield:
                             current_value = None
 
                         _LOGGER.debug(
-                            "[extract] grid_delivery.limit | current=%s expected=%s",
+                            "[extract] grid_delivery.limit ONLY | current=%s expected=%s",
                             current_value,
                             expected_value,
                         )
 
                         if current_value != expected_value:
-                            # Přidáme limit entitu do výsledku
-                            result_entities[entity_id] = str(expected_value)
+                            # Vrátíme POUZE limit entitu
+                            return {entity_id: str(expected_value)}
+                        else:
+                            _LOGGER.info(
+                                f"[extract] Limit již je {expected_value}W - přeskakuji"
+                            )
+                            return {}
 
-            if "mode" in data:
+            # PŘÍPAD 2: Pouze MODE (bez limit)
+            if "mode" in data and "limit" not in data:
                 # Mode přichází jako STRING ze služby: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
                 # Senzor vrací: "Vypnuto", "Zapnuto", "Omezeno"
                 mode_string = str(data["mode"]).strip()
-                
+
                 # Mapování mode string → očekávaný text senzoru
                 mode_mapping = {
                     "Vypnuto / Off": "Vypnuto",
                     "Zapnuto / On": "Zapnuto nebo Omezeno",  # "Zapnuto" nebo "Omezeno" jsou OK
                     "S omezením / Limited": "Zapnuto nebo Omezeno",  # "Omezeno" je cílový stav
                 }
-                
+
                 expected_text = mode_mapping.get(mode_string)
                 if not expected_text:
-                    # Neznámý mode, vrátíme jen limit
-                    _LOGGER.warning(f"[extract] Unknown grid delivery mode: {mode_string}")
-                    return result_entities
+                    _LOGGER.warning(
+                        f"[extract] Unknown grid delivery mode: {mode_string}"
+                    )
+                    return {}
 
                 entity_id = find_entity("_invertor_prms_to_grid")
                 if entity_id:
@@ -1159,7 +1181,7 @@ class ServiceShield:
                     current_text = state.state if state else None
 
                     _LOGGER.debug(
-                        "[extract] grid_delivery.mode | current='%s' expected='%s' (mode_string='%s')",
+                        "[extract] grid_delivery.mode ONLY | current='%s' expected='%s' (mode_string='%s')",
                         current_text,
                         expected_text,
                         mode_string,
@@ -1169,15 +1191,30 @@ class ServiceShield:
                     needs_change = False
                     if expected_text == "Vypnuto" and current_text != "Vypnuto":
                         needs_change = True
-                    elif expected_text == "Zapnuto nebo Omezeno" and current_text not in ["Zapnuto", "Omezeno"]:
+                    elif (
+                        expected_text == "Zapnuto nebo Omezeno"
+                        and current_text not in ["Zapnuto", "Omezeno"]
+                    ):
                         needs_change = True
 
                     if needs_change:
-                        # Pro logbook vrátíme textovou hodnotu
-                        result_entities[entity_id] = expected_text
+                        # Vrátíme POUZE mode entitu
+                        return {entity_id: expected_text}
+                    else:
+                        _LOGGER.info(
+                            f"[extract] Mode již je {current_text} - přeskakuji"
+                        )
+                        return {}
 
-            # Vrátíme všechny entity (mode + limit), pokud byly detekovány změny
-            return result_entities
+            # PŘÍPAD 3: OBĚ parametry najednou
+            # NEMŮŽE NASTAT - wrapper to rozdělí na 2 volání PŘED voláním extract_expected_entities()
+            if "mode" in data and "limit" in data:
+                _LOGGER.error(
+                    "[extract] CHYBA: grid_delivery dostalo mode + limit současně! Wrapper měl rozdělit!"
+                )
+                return {}
+
+            return {}
 
         elif service_name == "oig_cloud.set_formating_mode":
             return {}

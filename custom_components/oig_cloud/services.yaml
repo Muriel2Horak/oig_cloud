@@ -30,20 +30,20 @@ set_grid_delivery:
   description: |
     Povolení nebo zakázání přetoků do distribuční sítě. Přetoky je možné zcela vypnout, zapnout, nebo zapnut s limitem.
     K použití této funkce musí být nainstalován odpovídající firmware a může trvat delší dobu, než se nastavení projeví.
-    
+
     NOVÁ VERZE (automatická serializace):
     Můžete nyní nastavit režim a limit v JEDNOM volání služby. Shield automaticky serializuje změny:
     1. Nejdřív se změní režim (pokud je potřeba)
     2. Pak se změní limit (pokud je potřeba)
     3. Každá změna má vlastní záznam v logbooku
-    
+
     Příklad: {mode: "S omezením / Limited", limit: 5000} - nastaví OBĚ parametry postupně.
-    
+
     ZPĚTNÁ KOMPATIBILITA:
     Stále můžete volat službu 2× samostatně:
     1. Nejprve {mode: "S omezením / Limited"}
     2. Pak {limit: 5000}
-    
+
     Více informací: https://raw.githubusercontent.com/psimsa/oig_cloud/main/docs/grid_delivery_script_sample.yaml
   fields:
     mode:
