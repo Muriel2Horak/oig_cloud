@@ -2141,13 +2141,11 @@ Kliknutím na "Odeslat" pokračujte v nastavení.
                 self.config_entry, options=new_options
             )
 
-            # NOVÉ: Informace o nutnosti reloadu
-            return self.async_create_entry(
-                title="",
-                data={
-                    "info": "⚠️ Změny byly uloženy. Pro aktivaci změn prosím restartujte Home Assistant nebo reloadněte integraci OIG Cloud."
-                },
-            )
+            # Automaticky reloadnout integraci pro aplikování změn
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+            # Vrátit prázdný výsledek (změny byly uloženy)
+            return self.async_create_entry(title="", data={})
 
         # Zobrazit summary se stejnou logikou jako v ConfigFlow
         summary_lines = [
@@ -2177,7 +2175,7 @@ Kliknutím na "Odeslat" pokračujte v nastavení.
                 f"- Základní data: {self._wizard_data.get('standard_scan_interval', 30)}s",
                 f"- Rozšířená data: {self._wizard_data.get('extended_scan_interval', 300)}s",
                 "",
-                "⚠️ **Důležité:** Po uložení změn prosím restartujte Home Assistant!",
+                "✅ **Po uložení se integrace automaticky znovu načte.**",
                 "",
                 "Kliknutím na 'Odeslat' uložíte změny.",
             ]
