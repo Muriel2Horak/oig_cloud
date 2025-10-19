@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OIG Cloud Energy Flow</title>
+    <!-- Version: 2024-10-19-unified-layout -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1809,33 +1810,33 @@
             }
 
             .header {
-                margin-bottom: 10px;
+                margin-bottom: 5px; /* Menší margin */
                 flex-wrap: wrap;
                 padding: 5px;
             }
 
             .header h1 {
-                font-size: 16px;
+                font-size: 14px; /* Menší font */
                 width: 100%;
-                margin-bottom: 3px;
+                margin-bottom: 2px;
             }
 
             .time {
-                font-size: 12px;
+                font-size: 11px; /* Menší font */
             }
 
             .last-update {
-                font-size: 9px;
+                font-size: 8px; /* Menší font */
                 width: 100%;
                 text-align: left;
                 margin-top: 2px;
             }
 
             .flow-canvas {
-                height: 650px;
+                height: 750px; /* Zvětšeno z 650px pro více prostoru */
                 max-width: 100%;
                 margin-top: 0;
-                transform: scale(0.82);
+                transform: scale(0.92); /* Zvětšeno z 0.82 pro lepší čitelnost */
                 transform-origin: top center;
                 overflow: visible;
             }
@@ -1886,7 +1887,7 @@
             /* Overflow protection - detaily nesmí vytékat */
             .node {
                 overflow: visible; /* Změněno z hidden aby fungovaly indikátory */
-                position: relative;
+                /* position zůstává absolute z výchozího CSS! */
             }
 
             .node-details {
@@ -1930,85 +1931,15 @@
                 margin-bottom: 3px;
             }
 
-            .inverter {
-                min-width: 140px;
-                max-width: 180px;
-            }
-
-            /* DESKTOP LAYOUT pro mobil - stejné pozice jako na webu! */
-            /* Solár nahoře uprostřed */
-            .solar {
-                top: 40px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .solar:hover {
-                transform: translateX(-50%) scale(1.02);
-            }
-
-            .solar.expanded:hover {
-                transform: translateX(-50%) scale(1.02);
-            }
-
-            /* Síť vlevo uprostřed */
+            /* POUŽITÍ DESKTOP LAYOUTU s větším rozestupem pro mobil */
+            /* Síť více vlevo */
             .grid-node {
-                top: 50%;
-                left: 20px;
-                transform: translateY(-50%);
+                left: 10px; /* Méně než desktop 80px pro větší rozestup na mobilu */
             }
 
-            .grid-node:hover {
-                transform: translateY(-50%) scale(1.02);
-            }
-
-            .grid-node.expanded:hover {
-                transform: translateY(-50%) scale(1.02);
-            }
-
-            /* Spotřeba vpravo uprostřed */
+            /* Spotřeba více vpravo */
             .house {
-                top: 50%;
-                right: 20px;
-                transform: translateY(-50%);
-            }
-
-            .house:hover {
-                transform: translateY(-50%) scale(1.02);
-            }
-
-            .house.expanded:hover {
-                transform: translateY(-50%) scale(1.02);
-            }
-
-            /* Střídač uprostřed obrazovky */
-            .inverter {
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-            }
-
-            .inverter:hover {
-                transform: translate(-50%, -50%) scale(1.02);
-            }
-
-            .inverter.expanded:hover {
-                transform: translate(-50%, -50%) scale(1.02);
-            }
-
-            /* Baterie dole uprostřed */
-            .battery {
-                bottom: 40px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .battery:hover {
-                transform: translateX(-50%) scale(1.02);
-            }
-
-            .battery.expanded:hover {
-                transform: translateX(-50%) scale(1.02);
+                right: 10px; /* Méně než desktop 80px pro větší rozestup na mobilu */
             }
 
             /* Solar forecast corners - větší */
@@ -2165,14 +2096,8 @@
                 max-width: 175px;
             }
 
-            /* Stejné pozice, jen menší mezery */
-            .grid-node {
-                left: 15px;
-            }
-
-            .house {
-                right: 15px;
-            }
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+            /* Žádné custom pozice */
         }
 
         /* Tablet portrait mode (iPad: 768x1024px) */
@@ -2224,58 +2149,8 @@
                 font-size: 9.5px;
             }
 
-            /* Vertikální layout pro portrait - KOMPAKTNÍ */
-            .solar {
-                top: 15px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .solar:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
-
-            .grid-node {
-                top: 180px;
-                left: 15px;
-                transform: none;
-            }
-
-            .grid-node:hover {
-                transform: scale(1.03);
-            }
-
-            .house {
-                top: 180px;
-                right: 15px;
-                left: auto;
-                transform: none;
-            }
-
-            .house:hover {
-                transform: scale(1.03);
-            }
-
-            .inverter {
-                top: 365px;
-                left: 50%;
-                max-width: 150px;
-                transform: translateX(-50%);
-            }
-
-            .inverter:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
-
-            .battery {
-                top: 520px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .battery:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+            /* Žádné custom pozice - vše zůstává z výchozího CSS */
 
             /* Větší indikátory pro tablet */
             .solar-forecast-today,
@@ -2345,57 +2220,8 @@
                 font-size: 10px;
             }
 
-            /* DESKTOP LAYOUT - stejný jako na webu! */
-            .solar {
-                top: 40px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .solar:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
-
-            .grid-node {
-                top: 50%;
-                left: 80px;
-                transform: translateY(-50%);
-            }
-
-            .grid-node:hover {
-                transform: translateY(-50%) scale(1.03);
-            }
-
-            .house {
-                top: 50%;
-                right: 80px;
-                transform: translateY(-50%);
-            }
-
-            .house:hover {
-                transform: translateY(-50%) scale(1.03);
-            }
-
-            .inverter {
-                top: 50%;
-                left: 50%;
-                max-width: 200px;
-                transform: translate(-50%, -50%);
-            }
-
-            .inverter:hover {
-                transform: translate(-50%, -50%) scale(1.03);
-            }
-
-            .battery {
-                bottom: 40px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .battery:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+            /* Žádné custom pozice - vše zůstává z výchozího CSS */
 
             /* Indikátory */
             .solar-forecast-today,
