@@ -1347,6 +1347,28 @@
             font-size: 9px;
             padding: 2px 6px;
         }
+        
+        /* Mobile: Expand/Collapse indicator */
+        @media (max-width: 768px) {
+            .node::after {
+                content: '▼';
+                position: absolute;
+                bottom: 3px;
+                right: 5px;
+                font-size: 8px;
+                opacity: 0.4;
+                transition: transform 0.3s ease, opacity 0.3s ease;
+            }
+            
+            .node:hover::after {
+                opacity: 0.7;
+            }
+            
+            .node.expanded::after {
+                transform: rotate(180deg);
+                opacity: 0.7;
+            }
+        }
 
         /* Klikatelné hodnoty s entity */
         .entity-value {
@@ -1874,45 +1896,79 @@
             }
 
             .flow-canvas {
-                height: 780px;
+                height: 490px;
                 max-width: 100%;
                 margin-top: 0;
-                transform: scale(0.92);
+                transform: scale(1);
                 transform-origin: top center;
                 overflow: visible;
             }
 
             /* Zmenšení všech boxů pro mobil */
             .node {
-                min-width: 75px;
-                max-width: 110px;
-                padding: 5px 7px;
+                min-width: 85px;
+                max-width: 155px;
+                padding: 6px 8px;
             }
 
             .node-icon {
-                font-size: 18px;
+                font-size: 20px;
                 margin-bottom: 2px;
             }
 
             .node-label {
-                font-size: 7.5px;
+                font-size: 8px;
                 margin-bottom: 2px;
                 font-weight: 600;
             }
 
             .node-value {
-                font-size: 15px;
+                font-size: 16px;
                 margin-bottom: 1px;
             }
 
             .node-subvalue {
-                font-size: 7.5px;
+                font-size: 8px;
             }
 
+            /* COLLAPSED DETAILS - skryté defaultně */
             .node-details {
+                display: none;
                 font-size: 7px;
                 margin-top: 4px;
                 padding-top: 3px;
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+            }
+
+            .node.expanded .node-details {
+                display: block;
+                max-height: 500px;
+            }
+            
+            /* Overflow protection - detaily nesmí vytékat */
+            .node {
+                overflow: visible; /* Změněno z hidden aby fungovaly indikátory */
+                position: relative;
+            }
+            
+            .node-details {
+                width: 100%;
+                box-sizing: border-box;
+            }
+            
+            /* Battery - extra protection */
+            .battery .detail-group,
+            .battery .detail-row {
+                max-width: 100%;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+            
+            .battery .detail-group > div[style*="grid"] {
+                background: transparent;
+                max-width: 100%;
             }
 
             .detail-label {
@@ -1940,62 +1996,83 @@
 
             .inverter {
                 min-width: 110px;
-                max-width: 130px;
+                max-width: 140px;
             }
 
-            /* Pozice boxů pro mobil - VELMI KOMPAKTNÍ LAYOUT */
+            /* NOVÝ LAYOUT - 2x2 grid + střídač uprostřed */
+            /* Horní řada - Solár vlevo, Síť vpravo */
             .solar {
-                top: 8px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-
-            .solar:hover {
-                transform: translateX(-50%) scale(1.03);
-            }
-
-            /* Prostřední řada - Síť a Spotřeba */
-            .grid-node {
-                top: 160px;
-                left: 8px;
+                top: 5px;
+                left: 5px;
                 transform: none;
             }
 
-            .grid-node:hover {
-                transform: scale(1.03);
+            .solar:hover {
+                transform: scale(1.02);
             }
 
-            .house {
-                top: 160px;
-                right: 8px;
+            .solar.expanded:hover {
+                transform: scale(1.02);
+            }
+
+            .grid-node {
+                top: 5px;
+                right: 5px;
                 left: auto;
                 transform: none;
             }
 
-            .house:hover {
-                transform: scale(1.03);
+            .grid-node:hover {
+                transform: scale(1.02);
             }
 
-            /* Střídač - na střed */
+            .grid-node.expanded:hover {
+                transform: scale(1.02);
+            }
+
+            /* Prostřední řada - Střídač uprostřed */
             .inverter {
-                top: 340px;
+                top: 165px;
                 left: 50%;
                 transform: translateX(-50%);
             }
 
             .inverter:hover {
-                transform: translateX(-50%) scale(1.03);
+                transform: translateX(-50%) scale(1.02);
             }
 
-            /* Baterie - dole */
+            .inverter.expanded:hover {
+                transform: translateX(-50%) scale(1.02);
+            }
+
+            /* Spodní řada - Baterie vlevo, Spotřeba vpravo */
             .battery {
-                top: 540px;
-                left: 50%;
-                transform: translateX(-50%);
+                top: 330px;
+                left: 5px;
+                transform: none;
             }
 
             .battery:hover {
-                transform: translateX(-50%) scale(1.03);
+                transform: scale(1.02);
+            }
+
+            .battery.expanded:hover {
+                transform: scale(1.02);
+            }
+
+            .house {
+                top: 330px;
+                right: 5px;
+                left: auto;
+                transform: none;
+            }
+
+            .house:hover {
+                transform: scale(1.02);
+            }
+
+            .house.expanded:hover {
+                transform: scale(1.02);
             }
 
             /* Solar forecast corners - zmenšení */
@@ -2143,39 +2220,40 @@
         /* Extra small phones */
         @media (max-width: 380px) {
             .flow-canvas {
-                transform: scale(0.88);
-                height: 750px;
+                transform: scale(0.95);
+                height: 490px;
             }
 
             .node {
-                min-width: 70px;
-                max-width: 100px;
-                padding: 4px 6px;
+                min-width: 80px;
+                max-width: 145px;
+                padding: 5px 7px;
             }
 
             .node-value {
-                font-size: 13px;
+                font-size: 14px;
             }
 
             .node-icon {
-                font-size: 16px;
+                font-size: 18px;
             }
 
             .node-label {
-                font-size: 7px;
+                font-size: 7.5px;
             }
 
-            .grid-node,
-            .house {
-                top: 155px;
+            .solar,
+            .grid-node {
+                top: 5px;
             }
 
             .inverter {
-                top: 330px;
+                top: 160px;
             }
 
-            .battery {
-                top: 520px;
+            .battery,
+            .house {
+                top: 315px;
             }
         }
 
@@ -2192,6 +2270,12 @@
                 min-width: 100px;
                 max-width: 135px;
                 padding: 9px 11px;
+            }
+            
+            /* Na tabletu ZOBRAZIT detaily - ne collapsed! */
+            .node-details {
+                display: block !important;
+                font-size: 8.5px;
             }
 
             .node-icon {
@@ -2228,7 +2312,7 @@
                 left: 50%;
                 transform: translateX(-50%);
             }
-            
+
             .solar:hover {
                 transform: translateX(-50%) scale(1.03);
             }
@@ -2238,7 +2322,7 @@
                 left: 15px;
                 transform: none;
             }
-            
+
             .grid-node:hover {
                 transform: scale(1.03);
             }
@@ -2249,7 +2333,7 @@
                 left: auto;
                 transform: none;
             }
-            
+
             .house:hover {
                 transform: scale(1.03);
             }
@@ -2260,7 +2344,7 @@
                 max-width: 150px;
                 transform: translateX(-50%);
             }
-            
+
             .inverter:hover {
                 transform: translateX(-50%) scale(1.03);
             }
@@ -2270,7 +2354,7 @@
                 left: 50%;
                 transform: translateX(-50%);
             }
-            
+
             .battery:hover {
                 transform: translateX(-50%) scale(1.03);
             }
@@ -2367,97 +2451,103 @@
         /* Tablet landscape mode (Nest Hub: 1024x600px, iPad Mini: 1024x768px) */
         @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
             .flow-canvas {
-                height: 480px;
-                transform: scale(0.93);
+                height: 380px;
+                transform: scale(0.88);
                 max-width: 900px;
                 margin: 0 auto;
             }
 
             .node {
-                min-width: 95px;
-                max-width: 130px;
-                padding: 8px 10px;
+                min-width: 110px;
+                max-width: 155px;
+                padding: 9px 11px;
             }
-
-            .node-icon {
-                font-size: 20px;
-            }
-
-            .node-label {
-                font-size: 9px;
-            }
-
-            .node-value {
-                font-size: 17px;
-            }
-
-            .node-subvalue {
-                font-size: 9px;
-            }
-
+            
+            /* Na tabletu ZOBRAZIT detaily - ne collapsed! */
             .node-details {
+                display: block !important;
                 font-size: 8px;
             }
 
+            .node-icon {
+                font-size: 22px;
+            }
+
+            .node-label {
+                font-size: 9.5px;
+            }
+
+            .node-value {
+                font-size: 18px;
+            }
+
+            .node-subvalue {
+                font-size: 9.5px;
+            }
+
             .detail-label {
-                font-size: 7.5px;
+                font-size: 8px;
             }
 
             .detail-value {
-                font-size: 8.5px;
+                font-size: 9px;
             }
 
-            /* Kompaktní vertikální layout pro landscape */
+            /* 2x2 GRID LAYOUT PRO NEST HUB - stejný jako mobil */
+            /* Horní řada - Solár vlevo, Síť vpravo */
             .solar {
-                top: 12px;
-                left: 50%;
-                transform: translateX(-50%);
+                top: 10px;
+                left: 15px;
+                transform: none;
             }
-            
+
             .solar:hover {
-                transform: translateX(-50%) scale(1.03);
+                transform: scale(1.03);
             }
 
             .grid-node {
-                top: 145px;
-                left: 12px;
+                top: 10px;
+                right: 15px;
+                left: auto;
                 transform: none;
             }
-            
+
             .grid-node:hover {
                 transform: scale(1.03);
             }
 
-            .house {
-                top: 145px;
-                right: 12px;
-                left: auto;
-                transform: none;
-            }
-            
-            .house:hover {
-                transform: scale(1.03);
-            }
-
+            /* Prostřední řada - Střídač uprostřed */
             .inverter {
-                top: 280px;
+                top: 140px;
                 left: 50%;
-                max-width: 140px;
+                max-width: 160px;
                 transform: translateX(-50%);
             }
-            
+
             .inverter:hover {
                 transform: translateX(-50%) scale(1.03);
             }
 
+            /* Spodní řada - Baterie vlevo, Spotřeba vpravo */
             .battery {
-                top: 390px;
-                left: 50%;
-                transform: translateX(-50%);
+                top: 260px;
+                left: 15px;
+                transform: none;
             }
-            
+
             .battery:hover {
-                transform: translateX(-50%) scale(1.03);
+                transform: scale(1.03);
+            }
+
+            .house {
+                top: 260px;
+                right: 15px;
+                left: auto;
+                transform: none;
+            }
+
+            .house:hover {
+                transform: scale(1.03);
             }
 
             /* Zmenšení indikátorů */
@@ -2468,25 +2558,20 @@
             .battery-temp-indicator,
             .inverter-notification,
             .grid-mode-indicator {
-                font-size: 8px;
+                font-size: 8.5px;
                 padding: 3px 5px;
             }
 
             .forecast-icon {
-                font-size: 10px;
+                font-size: 11px;
             }
 
             /* Info panel optimalizace */
             .info-panel {
-                font-size: 9px;
-                padding: 8px 10px;
-                gap: 8px;
+                font-size: 9.5px;
+                padding: 9px 11px;
+                gap: 9px;
             }
-
-            .control-panel {
-                max-height: 90vh;
-            }
-        }
 
             .control-panel {
                 max-height: 90vh;
@@ -5987,7 +6072,7 @@
                 if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
-                
+
                 // Get canvas scale factor
                 const canvasStyle = window.getComputedStyle(canvas);
                 const transform = canvasStyle.transform;
@@ -5999,7 +6084,7 @@
                         scale = parseFloat(values[0]) || 1;
                     }
                 }
-                
+
                 return {
                     x: (rect.left + rect.width / 2 - canvasRect.left) / scale,
                     y: (rect.top + rect.height / 2 - canvasRect.top) / scale
@@ -6099,7 +6184,7 @@
                 if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
-                
+
                 // Get canvas scale factor
                 const canvasStyle = window.getComputedStyle(canvas);
                 const transform = canvasStyle.transform;
@@ -6111,7 +6196,7 @@
                         scale = parseFloat(values[0]) || 1;
                     }
                 }
-                
+
                 return {
                     x: (rect.left + rect.width / 2 - canvasRect.left) / scale,
                     y: (rect.top + rect.height / 2 - canvasRect.top) / scale
@@ -7354,6 +7439,23 @@
 
             // Redraw lines on resize
             window.addEventListener('resize', drawConnections);
+            
+            // Mobile: Toggle node details on click (collapsed by default)
+            if (window.innerWidth <= 768) {
+                const nodes = document.querySelectorAll('.node');
+                nodes.forEach(node => {
+                    node.addEventListener('click', function(e) {
+                        // Ignore clicks on buttons inside nodes
+                        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                            return;
+                        }
+                        this.classList.toggle('expanded');
+                    });
+                    
+                    // Add cursor pointer to indicate clickability
+                    node.style.cursor = 'pointer';
+                });
+            }
         }
 
         // Wait for DOM
