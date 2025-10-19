@@ -174,7 +174,31 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class WizardMixin:
+    """Mixin třída obsahující všechny wizard kroky.
+    
+    Sdílená mezi ConfigFlow (nová instalace) a OptionsFlow (rekonfigurace).
+    Poskytuje konzistentní UX pro oba případy.
+    """
+
+    def __init__(self) -> None:
+        """Initialize wizard data."""
+        super().__init__()
+        self._wizard_data: Dict[str, Any] = {}
+        self._step_history: list[str] = []
+        
+    def _is_reconfiguration(self) -> bool:
+        """Check if this is a reconfiguration (Options Flow)."""
+        return hasattr(self, 'config_entry') and self.config_entry is not None
+    
+    def _get_defaults(self) -> Dict[str, Any]:
+        """Get default values from existing config (for reconfiguration)."""
+        if self._is_reconfiguration():
+            return dict(self.config_entry.options)
+        return {}
+
+
+class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for OIG Cloud."""
 
     VERSION = 1
@@ -182,8 +206,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         super().__init__()
-        self._wizard_data: Dict[str, Any] = {}
-        self._step_history: list[str] = []
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -890,7 +912,7 @@ class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
                             "statistics_config": "📊 Statistiky a analýzy",
                             "solar_forecast": "☀️ Solární předpověď (vyžaduje nastavení)",
                             "battery_prediction": "🔋 Predikce baterie",
-                            "pricing_config": "💰 Spotové ceny elektřiny",
+                            "pricing_config": "💰 Cenové senzory a spotové ceny z OTE",
                             "dashboard_config": "📈 Webový dashboard",  # NOVÉ
                         }
                     )

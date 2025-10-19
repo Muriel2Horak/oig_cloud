@@ -34,18 +34,16 @@
           "enable_statistics": "📊 Statistiky a analýzy spotřeby",
           "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
           "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
-          "enable_pricing": "💰 Cenové senzory a kalkulace nákladů",
-          "enable_spot_prices": "📈 Spotové ceny elektřiny z OTE",
+          "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
           "enable_dashboard": "📊 Webový dashboard s grafy"
         },
         "data_description": {
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
-          "enable_spot_prices": "Doporučeno - ceny z OTE ČR",
+          "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
-          "enable_pricing": "Pokročilé - detailní kalkulace nákladů",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA"
         }
       },
@@ -156,7 +154,7 @@
           "enable_statistics": "Statistiky a analýzy",
           "enable_solar_forecast": "Solární předpověď",
           "enable_battery_prediction": "Chytré nabíjení baterie",
-          "enable_spot_prices": "Spotové ceny elektřiny",
+          "enable_pricing": "Cenové senzory a spotové ceny",
           "enable_extended_sensors": "Rozšířené senzory"
         }
       },
@@ -192,7 +190,7 @@
           "enable_statistics": "Statistiky",
           "enable_solar_forecast": "Solární předpověď",
           "enable_battery_prediction": "Chytré nabíjení",
-          "enable_spot_prices": "Spotové ceny",
+          "enable_pricing": "Cenové senzory a spotové ceny",
           "enable_extended_sensors": "Rozšířené senzory",
           "enable_extended_battery_sensors": "Rozšířené senzory baterie",
           "enable_extended_fve_sensors": "Rozšířené senzory FVE",
@@ -355,10 +353,10 @@
         }
       },
       "pricing_config": {
-        "title": "Spotové ceny elektřiny",
+        "title": "Cenové senzory a spotové ceny",
         "description": "Aktuálně {current_state}. Model: {current_model}, Tarif: {dual_tariff}, Distribuce VT: {distribution_fee_vt} CZK/kWh, NT: {distribution_fee_nt} CZK/kWh",
         "data": {
-          "enable_spot_prices": "Povolit spotové ceny elektřiny z OTE",
+          "enable_pricing": "Povolit cenové senzory a spotové ceny z OTE",
           "spot_pricing_model": "Model výpočtu obchodní ceny",
           "spot_positive_fee_percent": "Obchodní přirážka při kladné spotové ceně (%)",
           "spot_negative_fee_percent": "Obchodní přirážka při záporné spotové ceně (%)",
@@ -375,7 +373,7 @@
           "tariff_vt_start_weekend": "Začátky VT tarifu - víkend"
         },
         "data_description": {
-          "enable_spot_prices": "Stahování a zpracování spotových cen elektřiny z OTE každý den ve 13:00",
+          "enable_pricing": "Stahování spotových cen z OTE a výpočet celkových nákladů na elektřinu",
           "spot_pricing_model": "Jak se počítá obchodní cena z hrubé spotové ceny nebo použití fixních cen",
           "spot_positive_fee_percent": "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15% = cena × 1,15",
           "spot_negative_fee_percent": "Při záporné spotové ceně: cena × (1 - procento/100). Např. 9% = cena × 0,91",
