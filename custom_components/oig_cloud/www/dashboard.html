@@ -3061,22 +3061,28 @@
                 if (!btn) return;
 
                 // Reset classes
-                btn.classList.remove('active', 'pending', 'processing');
+                btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
 
-                // Check if this is pending task
-                if (pending && pending.service === 'set_box_mode' && pending.target === mode) {
-                    if (isRunning) {
-                        btn.classList.add('processing');
-                        console.log(`[Shield] Button ${mode} -> processing`);
+                // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_box_mode (nezávisle na target)
+                if (pending && pending.service === 'set_box_mode') {
+                    btn.disabled = true;
+                    // Pokud je tento mode cílový, zobraz jako processing/pending
+                    if (pending.target === mode) {
+                        btn.classList.add(isRunning ? 'processing' : 'pending');
+                        console.log(`[Shield] Button ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
                     } else {
-                        btn.classList.add('pending');
-                        console.log(`[Shield] Button ${mode} -> pending`);
+                        // Ostatní tlačítka jen zamknout
+                        btn.classList.add('disabled-by-service');
+                        console.log(`[Shield] Button ${mode} -> disabled (service running)`);
                     }
                 }
                 // Check if this is current mode (exact match)
-                else if (currentMode === mode) {
-                    btn.classList.add('active');
-                    console.log(`[Shield] Button ${mode} -> active (currentMode: ${currentMode})`);
+                else {
+                    btn.disabled = false;
+                    if (currentMode === mode) {
+                        btn.classList.add('active');
+                        console.log(`[Shield] Button ${mode} -> active (currentMode: ${currentMode})`);
+                    }
                 }
             });
 
@@ -3104,22 +3110,28 @@
                 if (!btn) return;
 
                 // Reset classes
-                btn.classList.remove('active', 'pending', 'processing');
+                btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
 
-                // Check if pending
-                if (pending && pending.service === 'set_boiler_mode' && pending.target === mode) {
-                    if (isRunning) {
-                        btn.classList.add('processing');
-                        console.log(`[Shield] Boiler ${mode} -> processing`);
+                // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_boiler_mode (nezávisle na target)
+                if (pending && pending.service === 'set_boiler_mode') {
+                    btn.disabled = true;
+                    // Pokud je tento mode cílový, zobraz jako processing/pending
+                    if (pending.target === mode) {
+                        btn.classList.add(isRunning ? 'processing' : 'pending');
+                        console.log(`[Shield] Boiler ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
                     } else {
-                        btn.classList.add('pending');
-                        console.log(`[Shield] Boiler ${mode} -> pending`);
+                        // Ostatní tlačítka jen zamknout
+                        btn.classList.add('disabled-by-service');
+                        console.log(`[Shield] Boiler ${mode} -> disabled (service running)`);
                     }
                 }
                 // Check if active
-                else if (currentMode === mode) {
-                    btn.classList.add('active');
-                    console.log(`[Shield] Boiler ${mode} -> active`);
+                else {
+                    btn.disabled = false;
+                    if (currentMode === mode) {
+                        btn.classList.add('active');
+                        console.log(`[Shield] Boiler ${mode} -> active`);
+                    }
                 }
             });
 
@@ -3180,21 +3192,26 @@
                         return;
                     }
 
-                    // Re-enable button when not changing
-                    btn.disabled = false;
-
-                    // Check if pending (mode change from shield queue)
+                    // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_grid_delivery (nezávisle na target)
                     if (pending && pending.service === 'set_grid_delivery') {
-                        // Pokud pending target obsahuje "Vypnuto", "Zapnuto", "Limited"
+                        btn.disabled = true;
+                        // Pokud pending target obsahuje tento mode, zobraz jako cílový
                         if (pending.target && pending.target.includes(mode.split(' ')[0])) {
                             btn.classList.add(isRunning ? 'processing' : 'pending');
-                            console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'}`);
+                            console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
+                        } else {
+                            // Ostatní tlačítka jen zamknout, nezobrazovat jako pending
+                            btn.classList.add('disabled-by-service');
+                            console.log(`[Shield] Grid ${mode} -> disabled (service running)`);
                         }
                     }
                     // Check if active (porovnat label s currentModeLabel)
-                    else if (mode === currentModeLabel) {
-                        btn.classList.add('active');
-                        console.log(`[Shield] Grid ${mode} -> active (currentMode: ${currentMode})`);
+                    else {
+                        btn.disabled = false;
+                        if (mode === currentModeLabel) {
+                            btn.classList.add('active');
+                            console.log(`[Shield] Grid ${mode} -> active (currentMode: ${currentMode})`);
+                        }
                     }
                 });
 
