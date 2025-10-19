@@ -780,7 +780,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         """Calculate total number of steps based on enabled modules."""
         # Detekce, zda běžíme v Options Flow
         is_options_flow = "wizard_welcome_reconfigure" in self._step_history
-        
+
         # Základní kroky:
         # Config Flow: welcome, credentials, modules, intervals = 4
         # Options Flow: welcome_reconfigure, modules, intervals = 3
@@ -804,8 +804,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
     def _get_current_step_number(self, step_id: str) -> int:
         """Get current step number based on step_id and enabled modules."""
         # Detekce, zda běžíme v Options Flow (má welcome_reconfigure místo credentials)
-        is_options_flow = "wizard_welcome_reconfigure" in self._step_history or step_id == "wizard_welcome_reconfigure"
-        
+        is_options_flow = (
+            "wizard_welcome_reconfigure" in self._step_history
+            or step_id == "wizard_welcome_reconfigure"
+        )
+
         # Mapování kroků na čísla
         if is_options_flow:
             # Options Flow: welcome_reconfigure, modules, intervals (bez credentials)
@@ -842,9 +845,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if step_id == "wizard_pricing_import":
             return current
         if step_id == "wizard_pricing_export":
-            return current + 1 if self._wizard_data.get("enable_pricing", False) else current
+            return (
+                current + 1
+                if self._wizard_data.get("enable_pricing", False)
+                else current
+            )
         if step_id == "wizard_pricing_distribution":
-            return current + 2 if self._wizard_data.get("enable_pricing", False) else current
+            return (
+                current + 2
+                if self._wizard_data.get("enable_pricing", False)
+                else current
+            )
         if self._wizard_data.get("enable_pricing", False):
             current += 3
 
