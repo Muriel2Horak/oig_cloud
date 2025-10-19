@@ -979,7 +979,7 @@
         /* Tooltip pro entity-value */
         .entity-value::before {
             content: attr(data-tooltip);
-            position: fixed;
+            position: absolute;
             top: var(--tooltip-top, -9999px);
             left: var(--tooltip-left, -9999px);
             background: rgba(0, 0, 0, 0.95);
@@ -1006,7 +1006,7 @@
         /* Šipka tooltipu pro entity-value - výchozí (nahoře, směrem dolů) */
         .entity-value::after {
             content: '';
-            position: fixed;
+            position: absolute;
             top: var(--tooltip-arrow-top, -9999px);
             left: var(--tooltip-arrow-left, -9999px);
             transform: translateX(-50%);
@@ -5810,56 +5810,62 @@
 
         // Initialize
         // === TOOLTIP SYSTEM ===
-        
+
         /**
          * Inicializuje tooltip systém pro všechny entity-value elementy
          */
         function initTooltips() {
             const entityValues = document.querySelectorAll('.entity-value[data-tooltip]');
-            
+
             entityValues.forEach(element => {
                 element.addEventListener('mouseenter', function(e) {
                     const rect = this.getBoundingClientRect();
                     const tooltipText = this.getAttribute('data-tooltip');
-                    
+
                     if (!tooltipText) return;
-                    
-                    // Výpočet pozice tooltipu
+
+                    // Výpočet pozice tooltipu - absolute používá document souřadnice
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
                     const tooltipWidth = 250; // max-width z CSS
                     const tooltipHeight = 40; // přibližná výška
                     const padding = 10;
-                    
-                    let tooltipTop = rect.top - tooltipHeight - padding;
-                    let tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
-                    
+
+                    // Převést viewport souřadnice na document souřadnice
+                    let tooltipTop = rect.top + scrollTop - tooltipHeight - padding;
+                    let tooltipLeft = rect.left + scrollLeft + (rect.width / 2) - (tooltipWidth / 2);
+
                     // Zajistit že tooltip není mimo viewport
                     const viewportWidth = window.innerWidth;
-                    if (tooltipLeft < padding) tooltipLeft = padding;
-                    if (tooltipLeft + tooltipWidth > viewportWidth - padding) {
-                        tooltipLeft = viewportWidth - tooltipWidth - padding;
+                    if (tooltipLeft < scrollLeft + padding) tooltipLeft = scrollLeft + padding;
+                    if (tooltipLeft + tooltipWidth > scrollLeft + viewportWidth - padding) {
+                        tooltipLeft = scrollLeft + viewportWidth - tooltipWidth - padding;
                     }
-                    
+
                     // Pokud by byl tooltip nad okrajem, dát ho dolů
                     let isBelow = false;
-                    if (tooltipTop < padding) {
-                        tooltipTop = rect.bottom + padding;
+                    if (rect.top < padding) {
+                        tooltipTop = rect.bottom + scrollTop + padding;
                         isBelow = true;
                         this.classList.add('tooltip-below');
                     } else {
                         this.classList.remove('tooltip-below');
                     }
-                    
-                    // Pozice šipky
-                    const arrowLeft = rect.left + (rect.width / 2);
-                    const arrowTop = isBelow ? (rect.bottom + padding - 4) : (rect.top - padding - 4);
-                    
+
+                    // Pozice šipky - také document souřadnice
+                    const arrowLeft = rect.left + scrollLeft + (rect.width / 2);
+                    const arrowTop = isBelow
+                        ? (rect.bottom + scrollTop + padding - 4)
+                        : (rect.top + scrollTop - padding - 4);
+
                     // Nastavit CSS proměnné
                     this.style.setProperty('--tooltip-top', `${tooltipTop}px`);
                     this.style.setProperty('--tooltip-left', `${tooltipLeft}px`);
                     this.style.setProperty('--tooltip-arrow-top', `${arrowTop}px`);
                     this.style.setProperty('--tooltip-arrow-left', `${arrowLeft}px`);
                 });
-                
+
                 element.addEventListener('mouseleave', function() {
                     // Reset pozice mimo viewport
                     this.style.setProperty('--tooltip-top', '-9999px');
@@ -5869,7 +5875,7 @@
                     this.classList.remove('tooltip-below');
                 });
             });
-            
+
             console.log('[Tooltips] Initialized for', entityValues.length, 'elements');
         }
 
@@ -5877,7 +5883,7 @@
 
         function init() {
             drawConnections();
-            
+
             // Initialize tooltip system
             initTooltips();
 
