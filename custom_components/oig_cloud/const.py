@@ -6,9 +6,8 @@ DOMAIN = "oig_cloud"
 
 # Configuration constants
 CONF_ENABLE_STATISTICS = "enable_statistics"
-CONF_ENABLE_PRICING = "enable_pricing"
-CONF_ENABLE_SPOT_PRICES = "enable_spot_prices"  # NOVÉ
-CONF_SPOT_PRICES_UPDATE_INTERVAL = "spot_prices_update_interval"  # NOVÉ
+CONF_ENABLE_PRICING = "enable_pricing"  # Sjednoceno: pricing + spotové ceny
+CONF_SPOT_PRICES_UPDATE_INTERVAL = "spot_prices_update_interval"
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"

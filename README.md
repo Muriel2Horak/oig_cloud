@@ -38,6 +38,44 @@ Nejjednodušší způsob instalace je přes [HACS](https://hacs.xyz/). V nastave
 
 ## Konfigurace
 
+### 🧙‍♂️ Nový Wizard Průvodce
+
+Integrace nyní obsahuje **moderní průvodce nastavením** pro snadnější konfiguraci!
+
+#### Typy nastavení:
+
+1. **🧙‍♂️ Průvodce nastavením (DOPORUČENO)**
+
+   - Postupné kroky s kontextovou nápovědou
+   - Automatické přeskočení nepotřebných sekcí
+   - Možnost vrátit se zpět a opravit
+   - Souhrn před dokončením
+   - ⏱️ Trvání: 2-10 minut
+
+2. **⚡ Rychlé nastavení**
+
+   - Pouze přihlašovací údaje
+   - Výchozí hodnoty pro vše ostatní
+   - ⏱️ Trvání: 30 sekund
+
+3. **📥 Import z YAML**
+   - Pro migraci existující konfigurace
+   - (Zatím není implementováno)
+
+#### Wizard Flow:
+
+```
+1. Přihlášení → Ověření + Živá data
+2. Výběr modulů → Co chcete používat
+3. Intervaly → Jak často načítat data
+4. Detaily modulů → Nastavení zapnutých funkcí
+5. Souhrn → Kontrola a dokončení
+```
+
+📖 **Kompletní dokumentace:** [WIZARD_QUICK_START.md](./WIZARD_QUICK_START.md)
+
+### Klasická konfigurace
+
 Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci).
 
 ⚠️ **Nový checkpoint:** Musíte potvrdit, že máte v aplikaci zapnutá "Živá data".

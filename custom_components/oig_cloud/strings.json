@@ -2,18 +2,145 @@
   "config": {
     "step": {
       "user": {
-        "title": "OIG Cloud",
-        "description": "Nastavte své přihlašovací údaje pro OIG Cloud",
+        "title": "OIG Cloud - Výběr typu nastavení",
+        "description": "{info}",
         "data": {
-          "username": "Uživatelské jméno nebo e-mail",
+          "setup_type": "Způsob nastavení"
+        },
+        "data_description": {
+          "setup_type": "🧙‍♂️ Průvodce = postupné nastavení krok za krokem\n⚡ Rychlé = jen přihlášení, vše ostatní na výchozí hodnoty"
+        }
+      },
+      "wizard_welcome": {
+        "title": "🎯 Vítejte v průvodci OIG Cloud",
+        "description": "{info}"
+      },
+      "wizard_credentials": {
+        "title": "🔐 Přihlašovací údaje",
+        "description": "{step}\n{progress}\n\nZadejte své přihlašovací údaje do OIG Cloud aplikace.\n\n⚠️ **DŮLEŽITÉ:** V mobilní aplikaci OIG Cloud musíte mít zapnutou funkci 'Živá data' v nastavení!",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
           "password": "Heslo",
-          "enable_solar_forecast": "Povolit solární předpověď",
-          "enable_statistics": "Povolit statistiky a analýzy",
-          "enable_pricing": "Povolit cenové senzory",
-          "enable_spot_prices": "Povolit spotové ceny elektřiny",
-          "enable_extended_sensors": "Povolit rozšířené senzory",
-          "enable_dashboard": "Povolit webový dashboard",
-          "setup_type": "Typ nastavení"
+          "live_data_enabled": "✅ Potvrzuji, že mám zapnutá 'Živá data' v aplikaci"
+        },
+        "data_description": {
+          "live_data_enabled": "Bez zapnutých živých dat integrace nebude fungovat!"
+        }
+      },
+      "wizard_modules": {
+        "title": "📦 Výběr modulů a funkcí",
+        "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
+        "data": {
+          "enable_statistics": "📊 Statistiky a analýzy spotřeby",
+          "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
+          "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
+          "enable_pricing": "💰 Cenové senzory a kalkulace nákladů",
+          "enable_spot_prices": "📈 Spotové ceny elektřiny z OTE",
+          "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
+          "enable_dashboard": "📊 Webový dashboard s grafy"
+        },
+        "data_description": {
+          "enable_statistics": "Doporučeno - medián spotřeby, predikce",
+          "enable_spot_prices": "Doporučeno - ceny z OTE ČR",
+          "enable_extended_sensors": "Doporučeno - detailní monitoring",
+          "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
+          "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
+          "enable_pricing": "Pokročilé - detailní kalkulace nákladů",
+          "enable_dashboard": "Webové rozhraní s grafy přístupné v HA"
+        }
+      },
+      "wizard_intervals": {
+        "title": "⏱️ Intervaly načítání dat",
+        "description": "{step}\n{progress}\n\nNastavte, jak často se mají načítat data z OIG Cloud.\n\n💡 **Tip:** Kratší interval = aktuálnější data, ale vyšší zátěž na API servery.",
+        "data": {
+          "standard_scan_interval": "Základní data (sekund)",
+          "extended_scan_interval": "Rozšířená data (sekund)"
+        },
+        "data_description": {
+          "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
+          "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)"
+        }
+      },
+      "wizard_solar": {
+        "title": "☀️ Konfigurace solární předpovědi",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z https://forecast.solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na https://forecast.solar",
+        "data": {
+          "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solar_forecast_latitude": "GPS šířka instalace",
+          "solar_forecast_longitude": "GPS délka instalace",
+          "solar_forecast_string1_enabled": "Zapnout String 1",
+          "solar_forecast_string1_declination": "String 1 - Sklon panelů (°)",
+          "solar_forecast_string1_azimuth": "String 1 - Azimut / Orientace (°)",
+          "solar_forecast_string1_kwp": "String 1 - Instalovaný výkon (kWp)"
+        },
+        "data_description": {
+          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ",
+          "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně"
+        }
+      },
+      "wizard_battery": {
+        "title": "🔋 Konfigurace predikce baterie",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
+        "data": {
+          "min_capacity_percent": "Minimální kapacita baterie (%)",
+          "target_capacity_percent": "Cílová kapacita baterie (%)",
+          "home_charge_rate": "Nabíjecí výkon ze sítě (kW)"
+        },
+        "data_description": {
+          "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
+          "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)"
+        }
+      },
+      "wizard_pricing": {
+        "title": "💰 Konfigurace cenových senzorů",
+        "description": "{step}\n{progress}\n\nNastavte parametry pro výpočet nákladů na elektřinu.\n\n💡 Pokud obchodujete na spotu, zapněte první volbu.",
+        "data": {
+          "spot_trading_enabled": "Obchoduji na spotovém trhu",
+          "distribution_area": "Distribuční oblast",
+          "fixed_price_vt": "Fixní cena VT (Kč/kWh)",
+          "fixed_price_nt": "Fixní cena NT (Kč/kWh)"
+        },
+        "data_description": {
+          "spot_trading_enabled": "Pokud ANO, použijí se spotové ceny + poplatky",
+          "distribution_area": "PRE = ČEZ Distribuce, CEZ = ČEZ, EGD = E.ON"
+        }
+      },
+      "wizard_extended": {
+        "title": "⚡ Konfigurace rozšířených senzorů",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje detailní monitoring napětí, proudů, teplot a dalších pokročilých parametrů baterie, FVE a elektroměru.\n\n🔧 **Co je potřeba:**\n• Pouze přístup k OIG Cloud API (již máte)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n• 📊 Dashboard (webové rozhraní)\n\n💡 **Tip:** Tyto senzory se načítají méně často (každých 5 minut) kvůli velkému množství dat.",
+        "data": {
+          "enable_extended_battery_sensors": "🔋 Napětí článků a teplota baterie",
+          "enable_extended_fve_sensors": "☀️ Výkon a proudy stringů FVE",
+          "enable_extended_grid_sensors": "⚡ Napětí L1/L2/L3 a frekvence sítě"
+        },
+        "data_description": {
+          "enable_extended_battery_sensors": "Doporučeno pro diagnostiku baterie",
+          "enable_extended_fve_sensors": "Doporučeno pro monitoring výkonu FVE",
+          "enable_extended_grid_sensors": "Užitečné pro kontrolu kvality sítě"
+        }
+      },
+      "wizard_dashboard": {
+        "title": "📊 Konfigurace dashboardu",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nWebové rozhraní přímo v Home Assistant zobrazující interaktivní grafy spotřeby, výroby, stavu baterie a další metriky v reálném čase.\n\n🔧 **Co je potřeba - VŠECHNY tyto moduly MUSÍ být zapnuté:**\n• 📊 Statistiky a analýzy\n• ☀️ Solární předpověď\n• 🔋 Predikce baterie\n• 💰 Cenové senzory\n• 📈 Spotové ceny\n• ⚡ Rozšířené senzory\n\n⚠️ **Důležité:** Dashboard vyžaduje kompletní konfiguraci všech modulů, protože využívá data ze všech částí systému.\n\n💡 **Tip:** Po dokončení konfigurace najdete dashboard v postranním menu Home Assistant.",
+        "data": {
+          "dashboard_refresh_interval": "Interval obnovení grafu (sekundy)"
+        },
+        "data_description": {
+          "dashboard_refresh_interval": "Jak často se mají aktualizovat grafy (doporučeno 5-10s)"
+        }
+      },
+      "wizard_summary": {
+        "title": "✅ Shrnutí konfigurace",
+        "description": "{step}\n{progress}\n\n{summary}\n\n💡 Po dokončení můžete vše ještě upravit v nastavení integrace."
+      },
+      "quick_setup": {
+        "title": "⚡ Rychlé nastavení OIG Cloud",
+        "description": "Zadejte pouze přihlašovací údaje. Vše ostatní bude nastaveno na výchozí hodnoty.\n\n⚠️ **DŮLEŽITÉ:** V aplikaci OIG Cloud musíte mít zapnutá 'Živá data'!",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo",
+          "live_data_enabled": "✅ Potvrzuji zapnutá 'Živá data' v aplikaci"
         }
       },
       "credentials": {
@@ -148,74 +275,82 @@
       }
     },
     "error": {
-      "cannot_connect": "Nepodařilo se připojit",
-      "invalid_auth": "Neplatné ověření",
+      "cannot_connect": "Nepodařilo se připojit k OIG Cloud API",
+      "invalid_auth": "Neplatné přihlašovací údaje",
       "unknown": "Neočekávaná chyba",
-      "solar_forecast_no_strings": "Musíte povolit alespoň jeden string."
+      "live_data_not_enabled": "V OIG Cloud aplikaci nejsou zapnutá 'Živá data'. Zapněte je v nastavení aplikace!",
+      "live_data_not_confirmed": "Musíte potvrdit, že máte v aplikaci zapnutá 'Živá data'",
+      "solar_forecast_no_strings": "Musíte povolit alespoň jeden string",
+      "solar_forecast_invalid_api_key": "Neplatný API klíč pro Forecast.Solar",
+      "invalid_coordinates": "Neplatné GPS souřadnice",
+      "invalid_interval": "Interval musí být v povoleném rozsahu",
+      "requires_solar_forecast": "⚠️ Predikce baterie vyžaduje zapnutou solární předpověď",
+      "required_for_battery": "⚠️ Predikce baterie vyžaduje zapnuté rozšířené senzory",
+      "dashboard_requires_all": "⚠️ Dashboard vyžaduje všechny ostatní moduly (Statistiky, Solární předpověď, Predikce baterie, Cenové senzory, Spotové ceny, Rozšířené senzory)"
     },
     "abort": {
-      "already_configured": "Zařízení je již nakonfigurováno",
-      "import_not_implemented": "Import konfigurace ještě není implementován"
+      "already_configured": "Integrace OIG Cloud je již nakonfigurována",
+      "not_implemented": "Tato funkce ještě není implementována"
     }
   },
   "options": {
     "step": {
       "menu": {
         "title": "Konfigurace OIG Cloud",
-        "description": "Vyberte, co chcete konfigurovat",
+        "description": "Vyberte kategorii nastavení, kterou chcete upravit",
         "menu_options": {
-          "basic_config": "⚙️ Základní nastavení",
-          "extended_sensors": "📊 Rozšířené senzory",
-          "solar_forecast": "☀️ Solar forecast",
-          "statistics_config": "📈 Statistiky a analytics",
-          "battery_prediction": "🔋 Battery Prediction",
-          "pricing_config": "💰 Cenové senzory",
-          "dashboard_config": "📈 Webový dashboard"
+          "basic_config": "⚙️ Základní nastavení a přihlašovací údaje",
+          "extended_sensors": "📊 Rozšířené senzory (napětí, proudy, teploty)",
+          "solar_forecast": "☀️ Solární předpověď výroby elektřiny",
+          "statistics_config": "📈 Statistiky a analýzy spotřeby",
+          "battery_prediction": "🔋 Inteligentní optimalizace nabíjení baterie",
+          "pricing_config": "💰 Cenové senzory a spotové ceny",
+          "dashboard_config": "📈 Webový dashboard s grafy"
         }
       },
       "basic_config": {
         "title": "Základní nastavení",
-        "description": "Základní nastavení integrace a přihlašovací údaje",
+        "description": "{info}",
         "data": {
-          "standard_scan_interval": "Interval aktualizace (sekundy)",
-          "username": "Uživatelské jméno / E-mail",
+          "standard_scan_interval": "Interval načítání základních dat (sekund)",
+          "username": "Uživatelské jméno nebo e-mail",
           "password": "Heslo"
         },
         "data_description": {
-          "standard_scan_interval": "Jak často načítat základní data z OIG Cloud (doporučeno 20-30s)",
+          "standard_scan_interval": "Jak často načítat základní data z OIG Cloud (minimálně 30 sekund)",
           "username": "E-mail nebo uživatelské jméno pro přihlášení do OIG Cloud",
-          "password": "Heslo pro OIG Cloud (pokud necháte prázdné, heslo se nezmění)"
+          "password": "Heslo pro OIG Cloud (pokud necháte prázdné, heslo zůstane beze změny)"
         }
       },
       "statistics_config": {
-        "title": "Statistiky a analytics",
-        "description": "Aktuálně {current_state}",
+        "title": "Statistiky a analýzy",
+        "description": "Aktuální stav: {current_state}\n\n{info}",
         "data": {
-          "enable_statistics": "Povolit statistické senzory",
-          "reconfigure_statistics": "Rekonfigurovat statistics (vymaže stará data)"
+          "enable_statistics": "Povolit statistické senzory a analýzy",
+          "reconfigure_statistics": "Smazat historická data a začít znovu"
         },
         "data_description": {
-          "enable_statistics": "Medián spotřeby podle času, analýzy a predikce",
-          "reconfigure_statistics": "⚠️ Vymaže všechna historická data a začne znovu"
+          "enable_statistics": "Medián spotřeby podle času, predikce a analýzy trendů",
+          "reconfigure_statistics": "⚠️ POZOR: Tímto vymažete všechna nasbíraná historická data a statistiky začnou od nuly"
         }
       },
       "battery_prediction": {
-        "title": "Battery Prediction",
-        "description": "Aktuálně {current_state}. Min. kapacita: {min_capacity}%, Nabíjecí výkon: {charge_rate}W",
+        "title": "Predikce a optimalizace baterie",
+        "description": "Aktuální stav: {current_state}\nMinimální kapacita: {min_capacity}%\nNabíjecí výkon: {charge_rate}W",
         "data": {
-          "enable_battery_prediction": "Povolit battery prediction",
+          "enable_battery_prediction": "Povolit inteligentní optimalizaci nabíjení baterie",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
-          "home_charge_rate": "Nabíjecí výkon z sítě (W)",
-          "percentile_conf": "Percentil pro určení špičky (%)",
-          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
-          "total_hours": "Počet hodin pro predikci"
+          "home_charge_rate": "Nabíjecí výkon ze sítě (W)",
+          "percentile_conf": "Percentil pro určení spotřební špičky (%)",
+          "max_price_conf": "Maximální cena elektřiny pro nabíjení (Kč/kWh)",
+          "total_hours": "Počet hodin dopředu pro plánování predikce"
         },
         "data_description": {
-          "enable_battery_prediction": "Inteligentní plánování nabíjení na základě spotových cen",
-          "min_capacity_percent": "Pod touto úrovní se spustí nabíjení ze sítě (doporučeno 15-25%)",
-          "home_charge_rate": "Maximální nabíjecí výkon vašeho systému ze sítě (W)",
-          "percentile_conf": "Hodnoty nad tímto percentilem = špička (doporučeno 75-85%)",
-          "max_price_conf": "Nikdy nenabíjet ze sítě při ceně vyšší než (CZK/kWh)",
+          "enable_battery_prediction": "Inteligentní plánování nabíjení podle spotových cen elektřiny a předpovědi spotřeby",
+          "min_capacity_percent": "Pokud kapacita baterie klesne pod tuto hodnotu, spustí se automatické nabíjení ze sítě (doporučeno 15-25%)",
+          "home_charge_rate": "Maximální nabíjecí výkon, kterým může váš systém nabíjet baterii ze sítě (ve wattech)",
+          "percentile_conf": "Hodnoty spotřeby nad tímto percentilem se považují za spotřební špičku (doporučeno 75-85%)",
+          "max_price_conf": "Systém nikdy nenabije baterii ze sítě, pokud je cena elektřiny vyšší než tato hodnota (v Kč/kWh)",
           "total_hours": "Jak daleko do budoucna plánovat nabíjení (doporučeno 24-48h)"
         }
       },
@@ -258,67 +393,67 @@
         }
       },
       "solar_forecast": {
-        "title": "Solar Forecast",
-        "description": "Aktuálně {current_state}. Režim: {current_mode}",
+        "title": "Solární předpověď výroby elektřiny",
+        "description": "Aktuální stav: {current_state}\nRežim: {current_mode}",
         "data": {
-          "enable_solar_forecast": "Povolit solar forecast",
-          "solar_forecast_mode": "Režim aktualizace",
-          "solar_forecast_api_key": "Forecast.Solar API klíč (volitelné)",
-          "solar_forecast_latitude": "Zeměpisná šířka",
-          "solar_forecast_longitude": "Zeměpisná délka",
-          "solar_forecast_string1_enabled": "Povolit String 1",
-          "solar_forecast_string1_kwp": "String 1 - Výkon (kWp)",
-          "solar_forecast_string1_declination": "String 1 - Sklon (°)",
-          "solar_forecast_string1_azimuth": "String 1 - Azimut (°)",
-          "solar_forecast_string2_enabled": "Povolit String 2",
-          "solar_forecast_string2_kwp": "String 2 - Výkon (kWp)",
-          "solar_forecast_string2_declination": "String 2 - Sklon (°)",
-          "solar_forecast_string2_azimuth": "String 2 - Azimut (°)"
+          "enable_solar_forecast": "Povolit solární předpověď výroby z fotovoltaiky",
+          "solar_forecast_mode": "Režim aktualizace předpovědi",
+          "solar_forecast_api_key": "API klíč pro Forecast.Solar (volitelný)",
+          "solar_forecast_latitude": "GPS zeměpisná šířka instalace",
+          "solar_forecast_longitude": "GPS zeměpisná délka instalace",
+          "solar_forecast_string1_enabled": "Zapnout první string solárních panelů",
+          "solar_forecast_string1_kwp": "String 1 - Instalovaný výkon (kWp)",
+          "solar_forecast_string1_declination": "String 1 - Sklon panelů od horizontály (°)",
+          "solar_forecast_string1_azimuth": "String 1 - Orientace panelů (azimut °)",
+          "solar_forecast_string2_enabled": "Zapnout druhý string solárních panelů",
+          "solar_forecast_string2_kwp": "String 2 - Instalovaný výkon (kWp)",
+          "solar_forecast_string2_declination": "String 2 - Sklon panelů od horizontály (°)",
+          "solar_forecast_string2_azimuth": "String 2 - Orientace panelů (azimut °)"
         },
         "data_description": {
-          "enable_solar_forecast": "Povolit solární předpověď pro optimalizaci baterie a predikce výroby",
-          "solar_forecast_mode": "Jak často aktualizovat solární předpověď",
-          "solar_forecast_api_key": "API klíč pro forecast.solar (volitelné, zvýší limity)",
-          "solar_forecast_latitude": "GPS zeměpisná šířka vaší FVE (-90 až 90)",
-          "solar_forecast_longitude": "GPS zeměpisná délka vaší FVE (-180 až 180)",
-          "solar_forecast_string1_enabled": "Zapnout první string panelů (musí být alespoň jeden)",
-          "solar_forecast_string1_kwp": "Instalovaný výkon 1. stringu v kWp",
-          "solar_forecast_string1_declination": "Sklon panelů 1. stringu od horizontály (0-90°)",
-          "solar_forecast_string1_azimuth": "Orientace panelů 1. stringu (0°=sever, 90°=východ, 180°=jih, 270°=západ)",
-          "solar_forecast_string2_enabled": "Zapnout druhý string panelů (volitelné)",
-          "solar_forecast_string2_kwp": "Instalovaný výkon 2. stringu v kWp",
-          "solar_forecast_string2_declination": "Sklon panelů 2. stringu od horizontály (0-90°)",
-          "solar_forecast_string2_azimuth": "Orientace panelů 2. stringu (0°=sever, 90°=východ, 180°=jih, 270°=západ)"
+          "enable_solar_forecast": "Zapnutím získáte předpověď výroby elektřiny z fotovoltaiky pro optimalizaci baterie a plánování spotřeby",
+          "solar_forecast_mode": "Určuje, jak často se mají aktualizovat data předpovědi ze serveru Forecast.Solar",
+          "solar_forecast_api_key": "Volitelný API klíč z forecast.solar pro zvýšení limitů počtu dotazů (registrace zdarma na jejich webu)",
+          "solar_forecast_latitude": "GPS zeměpisná šířka polohy vaší fotovoltaické elektrárny (číslo od -90 do 90)",
+          "solar_forecast_longitude": "GPS zeměpisná délka polohy vaší fotovoltaické elektrárny (číslo od -180 do 180)",
+          "solar_forecast_string1_enabled": "Musíte zapnout alespoň jeden string solárních panelů pro funkci předpovědi",
+          "solar_forecast_string1_kwp": "Celkový instalovaný výkon prvního stringu panelů v kilowatt-peak (kWp)",
+          "solar_forecast_string1_declination": "Úhel sklonu panelů prvního stringu od vodorovné roviny (0° = vodorovně, 90° = svisle)",
+          "solar_forecast_string1_azimuth": "Směr orientace panelů prvního stringu (0° = sever, 90° = východ, 180° = jih, 270° = západ)",
+          "solar_forecast_string2_enabled": "Volitelný druhý string panelů s jinou orientací nebo sklonem (pokud máte různě orientované panely)",
+          "solar_forecast_string2_kwp": "Celkový instalovaný výkon druhého stringu panelů v kilowatt-peak (kWp)",
+          "solar_forecast_string2_declination": "Úhel sklonu panelů druhého stringu od vodorovné roviny (0° = vodorovně, 90° = svisle)",
+          "solar_forecast_string2_azimuth": "Směr orientace panelů druhého stringu (0° = sever, 90° = východ, 180° = jih, 270° = západ)"
         }
       },
       "extended_sensors": {
-        "title": "Rozšířené senzory",
-        "description": "Aktuálně {current_state}",
+        "title": "Rozšířené senzory pro detailní monitoring",
+        "description": "Aktuální stav: {current_state}\n\n{info}",
         "data": {
-          "enable_extended_sensors": "Povolit rozšířené senzory",
-          "extended_scan_interval": "Interval aktualizace rozšířených senzorů (sekundy)",
-          "disable_extended_stats_api": "Vypnout API volání extended stats",
-          "enable_extended_battery_sensors": "Rozšířené údaje o baterii",
-          "enable_extended_fve_sensors": "Rozšířené údaje o FVE",
-          "enable_extended_grid_sensors": "Rozšířené údaje o síti"
+          "enable_extended_sensors": "Povolit rozšířené senzory pro detailní monitoring",
+          "extended_scan_interval": "Interval načítání rozšířených dat (sekund)",
+          "disable_extended_stats_api": "Vypnout volání API pro rozšířená data",
+          "enable_extended_battery_sensors": "Zobrazit detailní údaje o baterii",
+          "enable_extended_fve_sensors": "Zobrazit detailní údaje o fotovoltaice",
+          "enable_extended_grid_sensors": "Zobrazit detailní údaje o elektrické síti"
         },
         "data_description": {
-          "enable_extended_sensors": "Povolit rozšířené senzory pro detailní monitoring systému",
-          "extended_scan_interval": "Jak často načítat rozšířená data (doporučeno 300s)",
-          "disable_extended_stats_api": "Vypnout API volání pokud způsobují HTTP 500 chyby",
-          "enable_extended_battery_sensors": "Napětí článků, proudy, teplota a detailní stav baterie",
-          "enable_extended_fve_sensors": "Výkon a proudy jednotlivých stringů fotovoltaiky",
-          "enable_extended_grid_sensors": "Napětí L1/L2/L3, frekvence sítě, výkon po fázích"
+          "enable_extended_sensors": "Zapnutím získáte přístup k detailním datům pro pokročilý monitoring a diagnostiku vašeho systému",
+          "extended_scan_interval": "Jak často načítat rozšířená data jako napětí článků, teploty a proudy (minimálně 300 sekund, doporučeno 300-600 sekund)",
+          "disable_extended_stats_api": "Vypnout API volání pro rozšířená data v případě, že způsobují chyby HTTP 500 na serverech OIG Cloud",
+          "enable_extended_battery_sensors": "Zobrazit napětí jednotlivých článků baterie, nabíjecí/vybíjecí proudy, teplotu a další detailní parametry",
+          "enable_extended_fve_sensors": "Zobrazit výkon a proudy jednotlivých stringů fotovoltaických panelů pro sledování výkonnosti každého stringu zvlášť",
+          "enable_extended_grid_sensors": "Zobrazit napětí na jednotlivých fázích (L1/L2/L3), frekvenci sítě a výkon odebíraný nebo dodávaný po jednotlivých fázích"
         }
       },
       "dashboard_config": {
-        "title": "Webový dashboard",
-        "description": "Aktuálně {current_state}",
+        "title": "Webový dashboard s grafy",
+        "description": "Aktuální stav: {current_state}",
         "data": {
-          "enable_dashboard": "Povolit webový dashboard"
+          "enable_dashboard": "Povolit webový dashboard s interaktivními grafy"
         },
         "data_description": {
-          "enable_dashboard": "Povolit webový dashboard s interaktivními grafy"
+          "enable_dashboard": "Zapnutím získáte přístup k webovému rozhraní s interaktivními grafy spotřeby, výroby a stavu baterie přímo v Home Assistant"
         }
       }
     }

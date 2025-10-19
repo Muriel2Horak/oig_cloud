@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **🧙‍♂️ Multi-Step Wizard Config Flow**: Complete redesign of initial setup experience
+
+  - **Guided Installation**: Step-by-step wizard with 5-10 screens based on selected features
+  - **Setup Type Selection**: Choose between Wizard (recommended), Quick Setup, or YAML Import
+  - **Conditional Steps**: Automatically skips configuration for disabled modules
+  - **Progress Indicator**: Visual progress bar and step counter (e.g., "Krok 3 z 5 ▓▓▓░░")
+  - **Module Selection Screen**: Check boxes for Statistics, Solar Forecast, Battery Prediction, Pricing, Spot Prices, Extended Sensors, and Dashboard
+  - **Detailed Configuration**: Separate screens for each enabled module with contextual help
+  - **Configuration Summary**: Review all settings before completing setup
+  - **Quick Setup Mode**: Alternative 30-second setup with sensible defaults for advanced users
+  - **State Management**: Wizard remembers selections, supports browser back button
+  - **Enhanced Validation**: Per-step validation with immediate error feedback
+  - **Full Localization**: Complete Czech translations in `strings.json`
+  - **Documentation**:
+    - `WIZARD_CONFIG_FLOW_DESIGN.md` - Technical design and architecture
+    - `docs/WIZARD_CONFIG_FLOW.md` - User documentation with screenshots guide
+    - `WIZARD_QUICK_START.md` - Quick reference for users
+    - `WIZARD_IMPLEMENTATION_SUMMARY.md` - Developer summary
+
 - **Jitter in Polling**: ✅ VERIFIED IN PRODUCTION - Randomized update intervals to spread API load
 
   - Base interval: 30 seconds

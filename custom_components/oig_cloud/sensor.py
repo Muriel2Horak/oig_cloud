@@ -517,12 +517,13 @@ async def async_setup_entry(
     else:
         _LOGGER.info("Battery prediction sensors disabled - skipping creation")
 
-    spot_prices_enabled = entry.options.get("enable_spot_prices", False)
-    _LOGGER.info(f"Spot prices enabled: {spot_prices_enabled}")
+    # 9. Pricing and Spot Prices sensors - SJEDNOCENO pod enable_pricing flag
+    pricing_enabled = entry.options.get("enable_pricing", False)
+    _LOGGER.info(f"Pricing and spot prices enabled: {pricing_enabled}")
 
-    if spot_prices_enabled:
+    if pricing_enabled:
         try:
-            _LOGGER.info("💰 Creating analytics sensors for spot prices")
+            _LOGGER.info("💰 Creating analytics sensors for pricing and spot prices")
 
             from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
             from .oig_cloud_analytics_sensor import OigCloudAnalyticsSensor
@@ -593,7 +594,7 @@ async def async_setup_entry(
         except Exception as e:
             _LOGGER.error(f"Error initializing analytics sensors: {e}", exc_info=True)
     else:
-        _LOGGER.info("💰 Spot prices disabled - skipping analytics sensors")
+        _LOGGER.info("💰 Pricing disabled - skipping pricing and spot price sensors")
 
     _LOGGER.info("OIG Cloud sensor setup completed")
 

@@ -48,13 +48,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
 
         # NOVÉ: OTE API inicializace - OPRAVA logiky
-        spot_prices_enabled = self.config_entry and self.config_entry.options.get(
-            "enable_spot_prices", False
+        pricing_enabled = self.config_entry and self.config_entry.options.get(
+            "enable_pricing", False
         )
 
-        if spot_prices_enabled:
+        if pricing_enabled:
             try:
-                _LOGGER.debug("Spot prices enabled - initializing OTE API")
+                _LOGGER.debug("Pricing enabled - initializing OTE API")
                 from .api.ote_api import OteApi
 
                 self.ote_api = OteApi()

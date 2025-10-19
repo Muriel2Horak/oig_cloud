@@ -995,16 +995,16 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        # OPRAVA: Kontrola zda jsou spotové ceny povoleny
-        spot_prices_enabled = self._entry.options.get("enable_spot_prices", False)
+        # OPRAVA: Kontrola zda jsou cenové senzory povoleny
+        pricing_enabled = self._entry.options.get("enable_pricing", False)
 
-        if not spot_prices_enabled:
-            _LOGGER.debug(f"💰 [{self.entity_id}] Unavailable - spot prices disabled")
-            return False  # Spotové ceny jsou vypnuté - senzor není dostupný
+        if not pricing_enabled:
+            _LOGGER.debug(f"💰 [{self.entity_id}] Unavailable - pricing disabled")
+            return False  # Cenové senzory jsou vypnuté - senzor není dostupný
 
         is_available = self.coordinator.last_update_success
         _LOGGER.debug(
-            f"💰 [{self.entity_id}] Available check: coordinator_success={is_available}, spot_enabled={spot_prices_enabled}"
+            f"💰 [{self.entity_id}] Available check: coordinator_success={is_available}, pricing_enabled={pricing_enabled}"
         )
 
         return is_available

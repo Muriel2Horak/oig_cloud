@@ -453,7 +453,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # NOVÉ: Podpora pro OTE API a spotové ceny
         ote_api = None
-        if entry.options.get("enable_spot_prices", False):
+        if entry.options.get("enable_pricing", False):
             try:
                 _LOGGER.debug("Initializing OTE API for spot prices")
                 from .api.ote_api import OteApi
@@ -467,7 +467,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await ote_api.close()
                 ote_api = None
         else:
-            _LOGGER.debug("Spot prices disabled - skipping OTE API initialization")
+            _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
@@ -489,7 +489,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "config": {
                 "enable_statistics": statistics_enabled,
                 "enable_pricing": entry.options.get("enable_pricing", False),
-                "enable_spot_prices": entry.options.get("enable_spot_prices", False),
                 "enable_dashboard": dashboard_enabled,  # NOVÉ
             },
         }

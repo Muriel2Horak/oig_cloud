@@ -1932,14 +1932,24 @@
             }
 
             /* POUŽITÍ DESKTOP LAYOUTU s větším rozestupem pro mobil */
-            /* Síť více vlevo */
-            .grid-node {
-                left: 10px; /* Méně než desktop 80px pro větší rozestup na mobilu */
+            /* Zmenšení střídače aby se nevěkrýval */
+            .inverter {
+                min-width: 110px;
+                max-width: 140px;
+                padding: 8px 10px;
+                top: 55%; /* Posunuto níž aby se nepřekrýval se sítí/spotřebou */
             }
 
-            /* Spotřeba více vpravo */
+            /* Síť více vlevo a nahoru */
+            .grid-node {
+                left: 5px; /* Ještě blíž ke kraji */
+                top: 40%; /* Výš než střídač */
+            }
+
+            /* Spotřeba více vpravo a nahoru */
             .house {
-                right: 10px; /* Méně než desktop 80px pro větší rozestup na mobilu */
+                right: 5px; /* Ještě blíž ke kraji */
+                top: 40%; /* Výš než střídač */
             }
 
             /* Solar forecast corners - větší */
@@ -2060,6 +2070,34 @@
             #shield-queue-section {
                 display: none; /* Skrýt na mobilu kvůli prostoru */
             }
+
+            /* Pokud by se shield queue zobrazila, udělat ji scrollovatelnou */
+            .shield-queue-table {
+                display: block;
+                overflow-x: auto;
+                font-size: 9px;
+            }
+
+            .shield-queue-table thead,
+            .shield-queue-table tbody,
+            .shield-queue-table tr {
+                display: table;
+                width: 100%;
+                table-layout: fixed;
+            }
+
+            .shield-queue-table th,
+            .shield-queue-table td {
+                padding: 6px 4px;
+                font-size: 9px;
+            }
+
+            /* Menší šířky sloupců pro mobil */
+            .shield-queue-table th:nth-child(1) { width: 80px; } /* Stav */
+            .shield-queue-table th:nth-child(2) { width: 100px; } /* Služba */
+            .shield-queue-table th:nth-child(3) { width: auto; } /* Změny */
+            .shield-queue-table th:nth-child(4) { width: 60px; } /* Vytvořeno */
+            .shield-queue-table th:nth-child(5) { width: 50px; } /* Trvání */
 
             /* Tooltips - menší na mobilu */
             #global-tooltip {
@@ -2190,10 +2228,20 @@
                 padding: 12px 14px;
             }
 
-            /* Na tabletu ZOBRAZIT detaily - ne collapsed! */
+            /* COLLAPSED DETAILS - skryté defaultně jako na mobilu */
             .node-details {
-                display: block !important;
+                display: none;
                 font-size: 9px;
+                margin-top: 5px;
+                padding-top: 4px;
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+            }
+
+            .node.expanded .node-details {
+                display: block;
+                max-height: 500px;
             }
 
             .node-icon {
@@ -6988,6 +7036,16 @@
 
             // Detekovat a aplikovat téma z Home Assistantu
             detectAndApplyTheme();
+
+            // Auto-collapse control panel on mobile
+            if (window.innerWidth <= 768) {
+                const panel = document.getElementById('control-panel');
+                const icon = document.getElementById('panel-toggle-icon');
+                if (panel && icon) {
+                    panel.classList.add('minimized');
+                    icon.textContent = '+';
+                }
+            }
 
             // Initialize tooltip system
             initTooltips();
