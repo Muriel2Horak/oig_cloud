@@ -1031,17 +1031,19 @@ class ServiceShield:
 
         for entity_id, expected_value in entities.items() or {None: None}.items():
             state = self.hass.states.get(entity_id) if entity_id else None
-            
+
             # OPRAVA: Pro grid delivery limit použijeme hlavní entitu pro lepší UX
             display_entity_id = entity_id
             if entity_id and "_invertor_prm1_p_max_feed_grid" in entity_id:
                 # Najdeme hlavní entitu (_invertor_prms_to_grid)
-                main_entity_id = entity_id.replace("_invertor_prm1_p_max_feed_grid", "_invertor_prms_to_grid")
+                main_entity_id = entity_id.replace(
+                    "_invertor_prm1_p_max_feed_grid", "_invertor_prms_to_grid"
+                )
                 main_state = self.hass.states.get(main_entity_id)
                 if main_state:
                     display_entity_id = main_entity_id
                     state = main_state
-            
+
             friendly_name = (
                 state.attributes.get("friendly_name", display_entity_id)
                 if state and display_entity_id
@@ -1056,8 +1058,10 @@ class ServiceShield:
                 from_value = current_value
 
             # OPRAVA: Pro grid delivery limit upravíme zprávy pro lepší UX
-            is_limit_change = entity_id and "_invertor_prm1_p_max_feed_grid" in entity_id
-            
+            is_limit_change = (
+                entity_id and "_invertor_prm1_p_max_feed_grid" in entity_id
+            )
+
             if event_type == "change_requested":
                 if is_limit_change:
                     message = f"Požadavek na změnu {friendly_name} – nastavení limitu na {expected_value}W"

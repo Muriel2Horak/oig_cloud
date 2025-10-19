@@ -272,11 +272,15 @@ class OigCloudShieldSensor(OigCloudSensor):
                     # Legacy: Zachovat changes pro zpětnou kompatibilitu
                     changes = []
                     for target in targets:
-                        entity_display = "_".join(
-                            target["entity_id"].split("_")[-2:]
-                            if "_" in target["entity_id"]
-                            else [target["entity_id"]]
-                        )
+                        # OPRAVA: Pro grid limit potřebujeme více částí entity_id
+                        entity_parts = target["entity_id"].split("_")
+                        if "p_max_feed_grid" in target["entity_id"]:
+                            # Pro grid limit: vezmi posledních 5 částí = "prm1_p_max_feed_grid"
+                            entity_display = "_".join(entity_parts[-5:])
+                        else:
+                            # Pro ostatní: vezmi poslední 2 části
+                            entity_display = "_".join(entity_parts[-2:]) if "_" in target["entity_id"] else target["entity_id"]
+                        
                         changes.append(
                             f"{entity_display}: '{target['from']}' → '{target['to']}' (nyní: '{target['current']}')"
                         )
@@ -346,11 +350,15 @@ class OigCloudShieldSensor(OigCloudSensor):
                     # Legacy: Zachovat changes pro zpětnou kompatibilitu
                     changes = []
                     for target in targets:
-                        entity_display = "_".join(
-                            target["entity_id"].split("_")[-2:]
-                            if "_" in target["entity_id"]
-                            else [target["entity_id"]]
-                        )
+                        # OPRAVA: Pro grid limit potřebujeme více částí entity_id
+                        entity_parts = target["entity_id"].split("_")
+                        if "p_max_feed_grid" in target["entity_id"]:
+                            # Pro grid limit: vezmi posledních 5 částí = "prm1_p_max_feed_grid"
+                            entity_display = "_".join(entity_parts[-5:])
+                        else:
+                            # Pro ostatní: vezmi poslední 2 části
+                            entity_display = "_".join(entity_parts[-2:]) if "_" in target["entity_id"] else target["entity_id"]
+                        
                         changes.append(
                             f"{entity_display}: '{target['current']}' → '{target['to']}'"
                         )
