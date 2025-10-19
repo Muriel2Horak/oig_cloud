@@ -1192,56 +1192,195 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return vol.Schema(schema_fields)
 
-    async def async_step_wizard_pricing(
+    async def async_step_wizard_pricing_export(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Wizard Step 6: Pricing configuration."""
+        """Wizard Step 6b: Export (sell) pricing configuration."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
             if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_pricing")
+                return await self._handle_back_button("wizard_pricing_export")
+
+            # Detekce změny scénáře
+            old_scenario = self._wizard_data.get("export_pricing_scenario", "spot_percentage_1tariff")
+            new_scenario = user_input.get("export_pricing_scenario", "spot_percentage_1tariff")
+            
+            if old_scenario != new_scenario:
+                self._wizard_data.update(user_input)
+                return self.async_show_form(
+                    step_id="wizard_pricing_export",
+                    data_schema=self._get_pricing_export_schema(user_input),
+                    description_placeholders=self._get_step_placeholders("wizard_pricing_export"),
+                )
 
             errors = {}
 
-            # Validace podle modelu
-            model = user_input.get("spot_pricing_model", "percentage")
+            # Validace podle scénáře
+            scenario = user_input.get("export_pricing_scenario", "spot_percentage_1tariff")
 
-            if model == "percentage":
-                pos_fee = user_input.get("spot_positive_fee_percent", 15.0)
-                neg_fee = user_input.get("spot_negative_fee_percent", 9.0)
-                if pos_fee < 0.1 or pos_fee > 100:
-                    errors["spot_positive_fee_percent"] = "invalid_percentage"
-                if neg_fee < 0.1 or neg_fee > 100:
-                    errors["spot_negative_fee_percent"] = "invalid_percentage"
-            elif model == "fixed":
-                fee = user_input.get("spot_fixed_fee_mwh", 500.0)
-                if fee < 0.1:
-                    errors["spot_fixed_fee_mwh"] = "invalid_fee"
-            elif model == "fixed_prices":
-                vt = user_input.get("fixed_commercial_price_vt", 4.50)
-                nt = user_input.get("fixed_commercial_price_nt", 3.20)
-                if vt < 0 or vt > 20:
-                    errors["fixed_commercial_price_vt"] = "invalid_price"
-                if nt < 0 or nt > 20:
-                    errors["fixed_commercial_price_nt"] = "invalid_price"
+            if "spot_percentage" in scenario:
+                if "2tariff" not in scenario:
+                    fee = user_input.get("export_spot_fee_percent", 15.0)
+                    if fee < 0 or fee > 50:
+                        errors["export_spot_fee_percent"] = "invalid_percentage"
+                else:
+                    fee_vt = user_input.get("export_spot_fee_percent_vt", 15.0)
+                    fee_nt = user_input.get("export_spot_fee_percent_nt", 13.0)
+                    if fee_vt < 0 or fee_vt > 50:
+                        errors["export_spot_fee_percent_vt"] = "invalid_percentage"
+                    if fee_nt < 0 or fee_nt > 50:
+                        errors["export_spot_fee_percent_nt"] = "invalid_percentage"
+                    
+            elif "spot_fixed" in scenario:
+                if "2tariff" not in scenario:
+                    fee = user_input.get("export_spot_fixed_fee_czk", 0.20)
+                    if fee < 0 or fee > 5:
+                        errors["export_spot_fixed_fee_czk"] = "invalid_fee"
+                else:
+                    fee_vt = user_input.get("export_spot_fixed_fee_czk_vt", 0.20)
+                    fee_nt = user_input.get("export_spot_fixed_fee_czk_nt", 0.15)
+                    if fee_vt < 0 or fee_vt > 5:
+                        errors["export_spot_fixed_fee_czk_vt"] = "invalid_fee"
+                    if fee_nt < 0 or fee_nt > 5:
+                        errors["export_spot_fixed_fee_czk_nt"] = "invalid_fee"
+                    
+            elif "fix" in scenario:
+                if "2tariff" not in scenario:
+                    price = user_input.get("export_fixed_price", 2.50)
+                    if price < 0 or price > 10:
+                        errors["export_fixed_price"] = "invalid_price"
+                else:
+                    price_vt = user_input.get("export_fixed_price_vt", 2.50)
+                    price_nt = user_input.get("export_fixed_price_nt", 2.00)
+                    if price_vt < 0 or price_vt > 10:
+                        errors["export_fixed_price_vt"] = "invalid_price"
+                    if price_nt < 0 or price_nt > 10:
+                        errors["export_fixed_price_nt"] = "invalid_price"
 
-            # Validace export modelu
-            export_model = user_input.get("export_pricing_model", "percentage")
-            if export_model == "percentage":
-                export_fee = user_input.get("export_fee_percent", 15.0)
-                if export_fee < 0 or export_fee > 50:
-                    errors["export_fee_percent"] = "invalid_percentage"
-            else:
-                export_fee_czk = user_input.get("export_fixed_fee_czk", 0.20)
-                if export_fee_czk < 0 or export_fee_czk > 5:
-                    errors["export_fixed_fee_czk"] = "invalid_fee"
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_pricing_export",
+                    data_schema=self._get_pricing_export_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders("wizard_pricing_export"),
+                )
 
-            # Validace distribuce
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_pricing_export")
+
+            next_step = self._get_next_step("wizard_pricing_export")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_pricing_export",
+            data_schema=self._get_pricing_export_schema(),
+            description_placeholders=self._get_step_placeholders("wizard_pricing_export"),
+        )
+
+    def _get_pricing_export_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for export pricing step."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        scenario = defaults.get("export_pricing_scenario", "spot_percentage_1tariff")
+
+        schema_fields = {
+            vol.Optional("export_pricing_scenario", default=scenario): vol.In(
+                {
+                    "spot_percentage_1tariff": "💰 SPOT - procento (1 tarif)",
+                    "spot_percentage_2tariff": "💰 SPOT - procento (2 tarify VT/NT)",
+                    "spot_fixed_1tariff": "💵 SPOT - fixní srážka (1 tarif)",
+                    "spot_fixed_2tariff": "💵 SPOT - fixní srážka (2 tarify VT/NT)",
+                    "fix_1tariff": "🔒 FIX cena (1 tarif)",
+                    "fix_2tariff": "🔒 FIX ceny (2 tarify VT/NT)",
+                }
+            ),
+        }
+
+        # Conditional fields based on scenario
+        if scenario == "spot_percentage_1tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_spot_fee_percent",
+                    default=defaults.get("export_spot_fee_percent", 15.0),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+            })
+        elif scenario == "spot_percentage_2tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_spot_fee_percent_vt",
+                    default=defaults.get("export_spot_fee_percent_vt", 15.0),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+                vol.Optional(
+                    "export_spot_fee_percent_nt",
+                    default=defaults.get("export_spot_fee_percent_nt", 13.0),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+            })
+        elif scenario == "spot_fixed_1tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_spot_fixed_fee_czk",
+                    default=defaults.get("export_spot_fixed_fee_czk", 0.20),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            })
+        elif scenario == "spot_fixed_2tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_spot_fixed_fee_czk_vt",
+                    default=defaults.get("export_spot_fixed_fee_czk_vt", 0.20),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                vol.Optional(
+                    "export_spot_fixed_fee_czk_nt",
+                    default=defaults.get("export_spot_fixed_fee_czk_nt", 0.15),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            })
+        elif scenario == "fix_1tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_fixed_price",
+                    default=defaults.get("export_fixed_price", 2.50),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+            })
+        elif scenario == "fix_2tariff":
+            schema_fields.update({
+                vol.Optional(
+                    "export_fixed_price_vt",
+                    default=defaults.get("export_fixed_price_vt", 2.50),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+                vol.Optional(
+                    "export_fixed_price_nt",
+                    default=defaults.get("export_fixed_price_nt", 2.00),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+            })
+
+        schema_fields[vol.Optional("go_back", default=False)] = bool
+
+        return vol.Schema(schema_fields)
+
+    async def async_step_wizard_pricing_distribution(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 6c: Distribution fees, VT/NT hours, and VAT."""
+        if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_pricing_distribution")
+
+            errors = {}
+
+            # Validace distribučních poplatků
             dist_vt = user_input.get("distribution_fee_vt", 1.42)
             if dist_vt < 0 or dist_vt > 10:
                 errors["distribution_fee_vt"] = "invalid_distribution_fee"
 
-            if user_input.get("dual_tariff_enabled", True):
+            # Zjistit, jestli má některý z pricing scénářů 2 tarify
+            import_scenario = self._wizard_data.get("import_pricing_scenario", "")
+            export_scenario = self._wizard_data.get("export_pricing_scenario", "")
+            has_dual_tariff = "2tariff" in import_scenario or "2tariff" in export_scenario
+
+            if has_dual_tariff:
                 dist_nt = user_input.get("distribution_fee_nt", 0.91)
                 if dist_nt < 0 or dist_nt > 10:
                     errors["distribution_fee_nt"] = "invalid_distribution_fee"
@@ -1253,145 +1392,65 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
             if errors:
                 return self.async_show_form(
-                    step_id="wizard_pricing",
-                    data_schema=self._get_pricing_schema(user_input),
+                    step_id="wizard_pricing_distribution",
+                    data_schema=self._get_pricing_distribution_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing"
-                    ),
+                    description_placeholders=self._get_step_placeholders("wizard_pricing_distribution"),
                 )
 
             self._wizard_data.update(user_input)
-            self._step_history.append("wizard_pricing")
+            self._step_history.append("wizard_pricing_distribution")
 
-            next_step = self._get_next_step("wizard_pricing")
+            next_step = self._get_next_step("wizard_pricing_distribution")
             return await getattr(self, f"async_step_{next_step}")()
 
         return self.async_show_form(
-            step_id="wizard_pricing",
-            data_schema=self._get_pricing_schema(),
-            description_placeholders=self._get_step_placeholders("wizard_pricing"),
+            step_id="wizard_pricing_distribution",
+            data_schema=self._get_pricing_distribution_schema(),
+            description_placeholders=self._get_step_placeholders("wizard_pricing_distribution"),
         )
 
-    def _get_pricing_schema(
+    def _get_pricing_distribution_schema(
         self, defaults: Optional[Dict[str, Any]] = None
     ) -> vol.Schema:
-        """Get schema for pricing step."""
+        """Get schema for distribution/VAT step."""
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
-        model = defaults.get("spot_pricing_model", "percentage")
-        export_model = defaults.get("export_pricing_model", "percentage")
-        dual_tariff = defaults.get("dual_tariff_enabled", True)
+        # Zjistit, jestli má některý z pricing scénářů 2 tarify
+        import_scenario = defaults.get("import_pricing_scenario", "")
+        export_scenario = defaults.get("export_pricing_scenario", "")
+        has_dual_tariff = "2tariff" in import_scenario or "2tariff" in export_scenario
 
         schema_fields = {
-            # IMPORT MODEL
-            vol.Optional("spot_pricing_model", default=model): vol.In(
-                {
-                    "percentage": "📊 Procentní přirážka (doporučeno)",
-                    "fixed": "💵 Fixní poplatek v CZK/MWh",
-                    "fixed_prices": "🔒 Fixní ceny (ignoruje spot)",
-                }
-            ),
+            vol.Optional(
+                "distribution_fee_vt",
+                default=defaults.get("distribution_fee_vt", 1.42),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
         }
 
-        # Conditional fields based on import model
-        if model == "percentage":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "spot_positive_fee_percent",
-                        default=defaults.get("spot_positive_fee_percent", 15.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                    vol.Optional(
-                        "spot_negative_fee_percent",
-                        default=defaults.get("spot_negative_fee_percent", 9.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                }
-            )
-        elif model == "fixed":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "spot_fixed_fee_mwh",
-                        default=defaults.get("spot_fixed_fee_mwh", 500.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1)),
-                }
-            )
-        elif model == "fixed_prices":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "fixed_commercial_price_vt",
-                        default=defaults.get("fixed_commercial_price_vt", 4.50),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                    vol.Optional(
-                        "fixed_commercial_price_nt",
-                        default=defaults.get("fixed_commercial_price_nt", 3.20),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
-                }
-            )
-
-        # EXPORT MODEL
-        schema_fields.update(
-            {
-                vol.Optional("export_pricing_model", default=export_model): vol.In(
-                    {
-                        "percentage": "📊 Procentní srážka z spotové ceny",
-                        "fixed": "💵 Fixní srážka v CZK/kWh",
-                    }
-                ),
-            }
-        )
-
-        if export_model == "percentage":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "export_fee_percent",
-                        default=defaults.get("export_fee_percent", 15.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
-                }
-            )
-        else:
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "export_fixed_fee_czk",
-                        default=defaults.get("export_fixed_fee_czk", 0.20),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-                }
-            )
-
-        # DISTRIBUTION & VAT
-        schema_fields.update(
-            {
-                vol.Optional("dual_tariff_enabled", default=dual_tariff): bool,
+        if has_dual_tariff:
+            schema_fields.update({
                 vol.Optional(
-                    "distribution_fee_vt",
-                    default=defaults.get("distribution_fee_vt", 1.42),
+                    "distribution_fee_nt",
+                    default=defaults.get("distribution_fee_nt", 0.91),
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
-            }
-        )
-
-        if dual_tariff:
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "distribution_fee_nt",
-                        default=defaults.get("distribution_fee_nt", 0.91),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
-                }
-            )
-
-        schema_fields.update(
-            {
                 vol.Optional(
-                    "vat_rate", default=defaults.get("vat_rate", 21.0)
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=30.0)),
-                vol.Optional("go_back", default=False): bool,
-            }
-        )
+                    "vt_hours_start",
+                    default=defaults.get("vt_hours_start", "6:00"),
+                ): str,
+                vol.Optional(
+                    "vt_hours_end",
+                    default=defaults.get("vt_hours_end", "22:00"),
+                ): str,
+            })
+
+        schema_fields.update({
+            vol.Optional(
+                "vat_rate", default=defaults.get("vat_rate", 21.0)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=30.0)),
+            vol.Optional("go_back", default=False): bool,
+        })
 
         return vol.Schema(schema_fields)
 
