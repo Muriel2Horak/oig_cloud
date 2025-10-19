@@ -172,7 +172,7 @@ class ServiceShield:
         )
         for callback in self._state_change_callbacks:
             try:
-                self.hass.async_add_job(callback)
+                self.hass.async_create_task(callback())
             except Exception as e:
                 _LOGGER.error(f"[OIG Shield] Chyba při volání callback: {e}")
 

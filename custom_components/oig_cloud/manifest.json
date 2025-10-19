@@ -1,10 +1,7 @@
 {
   "domain": "oig_cloud",
   "name": "OIG Cloud (Čez Battery Box)",
-  "codeowners": [
-    "@psimsa",
-    "Muriel2Horak"
-  ],
+  "codeowners": ["@psimsa", "Muriel2Horak"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/psimsa/oig_cloud",
