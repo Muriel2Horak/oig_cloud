@@ -491,8 +491,8 @@
 
         .grid-limit-indicator {
             position: absolute;
-            top: 92px;
-            right: -80px;
+            top: 0;
+            right: -85px;
             background: linear-gradient(135deg, rgba(156, 39, 176, 0.95), rgba(123, 31, 162, 0.95));
             border: 1px solid rgba(156, 39, 176, 0.8);
             border-radius: 8px;
@@ -2331,20 +2331,12 @@
             <!-- Grid Delivery -->
             <div class="control-section">
                 <h4>Dodávka do sítě</h4>
-                <div class="button-group" style="position: relative;">
+                <div class="button-group">
                     <button onclick="setGridDelivery('Vypnuto / Off')" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">🚫 Vypnuto</button>
                     <button onclick="setGridDelivery('Zapnuto / On')" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">💧 Zapnuto</button>
                     <button onclick="setGridDelivery('S omezením / Limited')" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">🚰 S omezením</button>
-
-                    <!-- Grid limit change indicator (for limit changes) -->
-                    <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
-                        <span class="spinner"></span>
-                        <span id="grid-limit-text">→ --W</span>
-                    </div>
                 </div>
-            </div>
-
-            <!-- Battery Formating -->
+            </div>            <!-- Battery Formating -->
             <div class="control-section">
                 <h4>Nabíjení baterie ze sítě</h4>
                 <div class="button-group">
@@ -2582,12 +2574,18 @@
                                       data-tooltip="Režim dodávky do sítě"
                                       onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                            <div style="display: flex; align-items: center; gap: 5px; white-space: nowrap; position: relative;">
                                 <span class="detail-label">LIMIT:</span>
                                 <span class="detail-value entity-value" id="inverter-export-limit"
                                       data-entity="invertor_prm1_p_max_feed_grid"
                                       data-tooltip="Limit přetoků"
                                       onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- kW</span>
+
+                                <!-- Grid limit change indicator (for limit changes) -->
+                                <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
+                                    <span class="spinner"></span>
+                                    <span id="grid-limit-text">→ --W</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3201,8 +3199,14 @@
                     // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_grid_delivery (nezávisle na target)
                     if (pending && pending.service === 'set_grid_delivery') {
                         btn.disabled = true;
-                        // Pokud pending target obsahuje tento mode, zobraz jako cílový
-                        if (pending.target && pending.target.includes(mode.split(' ')[0])) {
+
+                        // Pokud pending target je číslo (limit change), animuj tlačítko "S omezením"
+                        const isLimitChange = !isNaN(parseInt(pending.target));
+                        const isTargetButton = isLimitChange
+                            ? btnId === 'btn-grid-limited'  // Při změně limitu animuj "S omezením"
+                            : pending.target && pending.target.includes(mode.split(' ')[0]); // Při změně mode animuj odpovídající tlačítko
+
+                        if (isTargetButton) {
                             btn.classList.add(isRunning ? 'processing' : 'pending');
                             console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
                         } else {
@@ -3834,10 +3838,6 @@
             });
         }
 
-        // Grid Mode - storage for live duration update
-        let gridModeDurationInterval = null;
-        let gridModeStartedAt = null;
-
         // Grid Mode
         function showGridModeChanging(targetMode, startedAt = null) {
             const gridModeMap = {
@@ -3865,14 +3865,7 @@
                 gridExportModeElement.classList.add('mode-changing');
             }
 
-            // Store started_at for live duration calculation
-            if (startedAt) {
-                gridModeStartedAt = new Date(startedAt);
-            } else {
-                gridModeStartedAt = new Date();
-            }
-
-            // Show badge
+            // Show badge - bez duration!
             const gridChangeIndicator = document.getElementById('grid-change-indicator');
             const gridChangeText = document.getElementById('grid-change-text');
             if (gridChangeIndicator && gridChangeText) {
@@ -3880,18 +3873,9 @@
                 const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
                 const modeIcon = isOff ? '🚫' : isOn ? '💧' : '🚰';
                 const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : 'Omezeno';
-
-                // Initial text with duration
-                updateGridModeBadgeText(modeIcon, modeName);
+                
+                gridChangeText.textContent = `${modeIcon} ${modeName}`;
                 gridChangeIndicator.style.display = 'flex';
-
-                // Start live duration update (every 1 second)
-                if (gridModeDurationInterval) {
-                    clearInterval(gridModeDurationInterval);
-                }
-                gridModeDurationInterval = setInterval(() => {
-                    updateGridModeBadgeText(modeIcon, modeName);
-                }, 1000);
             }
 
             // Lock buttons, animate target
@@ -3905,15 +3889,6 @@
                     btn.style.opacity = '0.5';
                 }
             });
-        }
-
-        function updateGridModeBadgeText(modeIcon, modeName) {
-            const gridChangeText = document.getElementById('grid-change-text');
-            if (!gridChangeText || !gridModeStartedAt) return;
-
-            const now = new Date();
-            const durationSeconds = Math.floor((now - gridModeStartedAt) / 1000);
-            gridChangeText.textContent = `${modeIcon} ${modeName} (${durationSeconds}s)`;
         }
 
         function hideGridModeChanging() {
@@ -3935,13 +3910,6 @@
                 gridChangeIndicator.style.display = 'none';
             }
 
-            // Stop live duration update
-            if (gridModeDurationInterval) {
-                clearInterval(gridModeDurationInterval);
-                gridModeDurationInterval = null;
-            }
-            gridModeStartedAt = null;
-
             // Unlock buttons
             gridButtons.forEach(btn => {
                 btn.disabled = false;
@@ -3949,10 +3917,6 @@
                 btn.style.opacity = '';
             });
         }
-
-        // Grid Limit - storage for live duration update
-        let gridLimitDurationInterval = null;
-        let gridLimitStartedAt = null;
 
         // Grid Limit
         function showGridLimitChanging(targetLimit, startedAt = null) {
@@ -3965,28 +3929,12 @@
             // When only limit changes, animate the Limited button
             const targetButtonId = 'btn-grid-limited';
 
-            // Show limit badge (different from mode badge)
+            // Show limit badge (different from mode badge) - bez duration!
             const gridLimitIndicator = document.getElementById('grid-limit-indicator');
             const gridLimitText = document.getElementById('grid-limit-text');
             if (gridLimitIndicator && gridLimitText) {
-                // Store started_at for live duration calculation
-                if (startedAt) {
-                    gridLimitStartedAt = new Date(startedAt);
-                } else {
-                    gridLimitStartedAt = new Date();
-                }
-
-                // Initial text with duration
-                updateGridLimitBadgeText(targetLimit);
+                gridLimitText.textContent = `→ ${targetLimit}W`;
                 gridLimitIndicator.style.display = 'flex';
-
-                // Start live duration update (every 1 second)
-                if (gridLimitDurationInterval) {
-                    clearInterval(gridLimitDurationInterval);
-                }
-                gridLimitDurationInterval = setInterval(() => {
-                    updateGridLimitBadgeText(targetLimit);
-                }, 1000);
             }
 
             // Lock buttons, animate Limited
@@ -4002,15 +3950,6 @@
             });
         }
 
-        function updateGridLimitBadgeText(targetLimit) {
-            const gridLimitText = document.getElementById('grid-limit-text');
-            if (!gridLimitText || !gridLimitStartedAt) return;
-
-            const now = new Date();
-            const durationSeconds = Math.floor((now - gridLimitStartedAt) / 1000);
-            gridLimitText.textContent = `→ ${targetLimit}W (${durationSeconds}s)`;
-        }
-
         function hideGridLimitChanging() {
             const gridButtons = [
                 document.getElementById('btn-grid-off'),
@@ -4023,13 +3962,6 @@
             if (gridLimitIndicator) {
                 gridLimitIndicator.style.display = 'none';
             }
-
-            // Stop live duration update
-            if (gridLimitDurationInterval) {
-                clearInterval(gridLimitDurationInterval);
-                gridLimitDurationInterval = null;
-            }
-            gridLimitStartedAt = null;
 
             // Unlock buttons (only if no mode change is active)
             gridButtons.forEach(btn => {
