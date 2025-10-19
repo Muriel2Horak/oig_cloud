@@ -58,6 +58,9 @@ async def async_setup_entry(
         f"Setting up sensors with coordinator data: {len(coordinator.data)} devices"
     )
 
+    # NOVÉ: Vyčistíme osiřelá zařízení (která už nejsou v coordinator.data)
+    await _cleanup_orphaned_devices(hass, entry, coordinator)
+    
     # Vyčistíme prázdná zařízení PŘED vytvořením nových senzorů
     await _cleanup_empty_devices(hass, entry)
 
@@ -692,3 +695,72 @@ async def _cleanup_empty_devices(
     _LOGGER.info(
         f"Device cleanup completed: removed {removed_count}, kept {kept_count} devices"
     )
+
+
+async def _cleanup_orphaned_devices(
+    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
+) -> None:
+    """Clean up devices that no longer exist in coordinator.data (removed Battery Boxes)."""
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    
+    _LOGGER.info("Starting cleanup of orphaned devices (removed Battery Boxes)")
+    
+    if not coordinator or not coordinator.data:
+        _LOGGER.debug("No coordinator data available, skipping orphaned device cleanup")
+        return
+    
+    device_reg = dr.async_get(hass)
+    entity_reg = er.async_get(hass)
+    
+    # Získej seznam aktuálních box_id z coordinator.data
+    current_box_ids = set(coordinator.data.keys())
+    _LOGGER.debug(f"Current box_ids in coordinator.data: {current_box_ids}")
+    
+    # Najdeme všechna zařízení pro tuto config entry
+    devices = dr.async_entries_for_config_entry(device_reg, config_entry.entry_id)
+    
+    removed_count = 0
+    
+    for device in devices:
+        # Extrahuj box_id z device identifiers
+        # Identifiers: {(DOMAIN, "2206237016"), ...} nebo {(DOMAIN, "2206237016_shield"), ...}
+        device_box_id = None
+        
+        for identifier in device.identifiers:
+            if identifier[0] == DOMAIN:
+                identifier_value = identifier[1]
+                # Odstraň suffix _shield nebo _analytics
+                device_box_id = identifier_value.replace("_shield", "").replace("_analytics", "")
+                break
+        
+        if not device_box_id:
+            _LOGGER.debug(f"Could not extract box_id from device {device.name}, skipping")
+            continue
+        
+        # Zkontroluj, jestli tento box_id stále existuje v coordinator.data
+        if device_box_id not in current_box_ids:
+            _LOGGER.warning(
+                f"Device {device.name} (box_id: {device_box_id}) no longer exists in coordinator data - removing"
+            )
+            try:
+                # Nejprve smažeme všechny entity tohoto zařízení
+                entities = er.async_entries_for_device(entity_reg, device.id)
+                for entity in entities:
+                    entity_reg.async_remove(entity.entity_id)
+                    _LOGGER.debug(f"Removed entity {entity.entity_id}")
+                
+                # Pak smažeme samotné zařízení
+                device_reg.async_remove_device(device.id)
+                removed_count += 1
+                _LOGGER.info(
+                    f"Successfully removed orphaned device: {device.name} (box_id: {device_box_id})"
+                )
+            except Exception as e:
+                _LOGGER.error(f"Failed to remove orphaned device {device.name}: {e}")
+        else:
+            _LOGGER.debug(f"Device {device.name} (box_id: {device_box_id}) still exists - keeping")
+    
+    if removed_count > 0:
+        _LOGGER.info(f"Orphaned device cleanup completed: removed {removed_count} devices")
+    else:
+        _LOGGER.debug("No orphaned devices found to remove")

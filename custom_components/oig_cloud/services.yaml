@@ -6,6 +6,15 @@ set_box_mode:
     in the BBox and the UI, but occasionally may take up to an hour.
     You can check whether the call was successful in the OIG web or mobile app in the Notifications section.
   fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
     mode:
       description: The mode to set
       selector:
@@ -46,6 +55,15 @@ set_grid_delivery:
 
     Více informací: https://raw.githubusercontent.com/psimsa/oig_cloud/main/docs/grid_delivery_script_sample.yaml
   fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
     mode:
       description: Režim přetoků
       selector:
@@ -100,6 +118,15 @@ set_boiler_mode:
     bez ohledu na HDO a nebo výrobu FVE. Defaultně je SSR, kdy si plně CBB řídí nabíjení bojleru podle HDO a přetoků.
     Nastavení Manual všechno toto obchází.
   fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
     mode:
       description: Režim bojleru
       selector:
@@ -122,6 +149,15 @@ set_formating_mode:
   description: |
     Tímto parametrem nastavujete okamžité spuštění nabíjení baterige ze sítě na stanovenou hodnotu limitu.
   fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
     mode:
       description: Režim nabíjení
       selector:

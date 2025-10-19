@@ -9,11 +9,86 @@ from homeassistant.core import HomeAssistant, ServiceCall, Context, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_box_id_from_device(
+    hass: HomeAssistant, device_id: Optional[str], entry_id: str
+) -> Optional[str]:
+    """
+    Extrahuje box_id z device_id nebo vrátí první dostupný box_id.
+
+    Args:
+        hass: HomeAssistant instance
+        device_id: ID zařízení z service call (může být None)
+        entry_id: Config entry ID
+
+    Returns:
+        box_id (str) nebo None pokud nenalezen
+    """
+    coordinator = hass.data[DOMAIN][entry_id]["coordinator"]
+
+    # Pokud není device_id, použij první dostupný box_id
+    if not device_id:
+        if coordinator.data and len(coordinator.data) > 0:
+            available_boxes = list(coordinator.data.keys())
+            _LOGGER.debug(
+                f"No device_id provided, available boxes: {available_boxes}, "
+                f"using first: {available_boxes[0]}"
+            )
+            return available_boxes[0]
+        _LOGGER.warning("No device_id provided and no coordinator data available")
+        return None
+
+    # Máme device_id, najdi odpovídající box_id
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get(device_id)
+
+    if not device:
+        _LOGGER.warning(f"Device {device_id} not found in registry")
+        # Fallback na první dostupný
+        if coordinator.data and len(coordinator.data) > 0:
+            return list(coordinator.data.keys())[0]
+        return None
+
+    # Extrahuj box_id z device identifiers
+    # Identifiers mají formát: {(DOMAIN, identifier_value), ...}
+    # identifier_value může být:
+    #   - "2206237016" (hlavní zařízení)
+    #   - "2206237016_shield" (shield)
+    #   - "2206237016_analytics" (analytics)
+    for identifier in device.identifiers:
+        if identifier[0] == DOMAIN:
+            identifier_value = identifier[1]
+
+            # Odstraň suffix _shield nebo _analytics pokud existuje
+            box_id = identifier_value.replace("_shield", "").replace("_analytics", "")
+
+            # Ověř, že tento box_id existuje v coordinator.data
+            if coordinator.data and box_id in coordinator.data:
+                _LOGGER.debug(
+                    f"Found box_id {box_id} from device {device_id} (identifier: {identifier_value})"
+                )
+                return box_id
+            else:
+                _LOGGER.warning(
+                    f"box_id {box_id} from device not found in coordinator data. "
+                    f"Available: {list(coordinator.data.keys()) if coordinator.data else 'None'}"
+                )
+
+    _LOGGER.warning(f"Could not extract box_id from device {device_id}")
+    # Fallback na první dostupný
+    if coordinator.data and len(coordinator.data) > 0:
+        fallback_box = list(coordinator.data.keys())[0]
+        _LOGGER.info(f"Using fallback box_id: {fallback_box}")
+        return fallback_box
+    return None
+
 
 # Schema pro update solární předpovědi
 SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema({})
@@ -119,8 +194,22 @@ async def async_setup_entry_services_with_shield(
         with tracer.start_as_current_span("async_set_box_mode"):
             coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
             client: OigCloudApi = coordinator.api
+
+            # Extrahuj box_id z device_id nebo použij první dostupný
+            device_id: Optional[str] = service_data.get("device_id")
+            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+            if not box_id:
+                _LOGGER.error("Cannot determine box_id for set_box_mode")
+                return
+
             mode: Optional[str] = service_data.get("mode")
             mode_value: Optional[str] = MODES.get(mode) if mode else None
+
+            _LOGGER.info(
+                f"[SHIELD] Setting box mode for device {box_id} to {mode} (value: {mode_value})"
+            )
+
             await client.set_box_mode(mode_value)
 
     @callback
@@ -131,6 +220,14 @@ async def async_setup_entry_services_with_shield(
         blocking: bool,
         context: Optional[Context],
     ) -> None:
+        # Extrahuj box_id z device_id nebo použij první dostupný
+        device_id: Optional[str] = service_data.get("device_id")
+        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+        if not box_id:
+            _LOGGER.error("Cannot determine box_id for set_grid_delivery")
+            return
+
         grid_mode: Optional[str] = service_data.get("mode")
         limit: Optional[int] = service_data.get("limit")
 
@@ -147,6 +244,11 @@ async def async_setup_entry_services_with_shield(
         with tracer.start_as_current_span("async_set_grid_delivery"):
             coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
             client: OigCloudApi = coordinator.api
+
+            _LOGGER.info(
+                f"[SHIELD] Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
+            )
+
             if grid_mode is not None:
                 mode: Optional[int] = GRID_DELIVERY.get(grid_mode)
                 await client.set_grid_delivery(mode)
@@ -166,8 +268,22 @@ async def async_setup_entry_services_with_shield(
         with tracer.start_as_current_span("async_set_boiler_mode"):
             coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
             client: OigCloudApi = coordinator.api
+
+            # Extrahuj box_id z device_id nebo použij první dostupný
+            device_id: Optional[str] = service_data.get("device_id")
+            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+            if not box_id:
+                _LOGGER.error("Cannot determine box_id for set_boiler_mode")
+                return
+
             mode: Optional[str] = service_data.get("mode")
             mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
+
+            _LOGGER.info(
+                f"[SHIELD] Setting boiler mode for device {box_id} to {mode} (value: {mode_value})"
+            )
+
             await client.set_boiler_mode(mode_value)
 
     @callback
@@ -181,9 +297,22 @@ async def async_setup_entry_services_with_shield(
         with tracer.start_as_current_span("async_set_formating_mode"):
             coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
             client: OigCloudApi = coordinator.api
+
+            # Extrahuj box_id z device_id nebo použij první dostupný
+            device_id: Optional[str] = service_data.get("device_id")
+            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+            if not box_id:
+                _LOGGER.error("Cannot determine box_id for set_formating_mode")
+                return
+
             mode: Optional[str] = service_data.get("mode")
             limit: Optional[int] = service_data.get("limit")
             acknowledgement: bool = service_data.get("acknowledgement", False)
+
+            _LOGGER.info(
+                f"[SHIELD] Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
+            )
 
             # Kontrola acknowledgement (required v schema)
             if not acknowledgement:
@@ -211,6 +340,7 @@ async def async_setup_entry_services_with_shield(
             wrap_with_shield("set_box_mode", real_call_set_box_mode),
             schema=vol.Schema(
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(
                         ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
                     ),
@@ -226,6 +356,7 @@ async def async_setup_entry_services_with_shield(
             wrap_with_shield("set_grid_delivery", real_call_set_grid_delivery),
             schema=vol.Schema(
                 {
+                    vol.Optional("device_id"): cv.string,
                     "mode": vol.Any(
                         None,
                         vol.In(
@@ -246,6 +377,7 @@ async def async_setup_entry_services_with_shield(
             wrap_with_shield("set_boiler_mode", real_call_set_boiler_mode),
             schema=vol.Schema(
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(["CBB", "Manual"]),
                     vol.Required("acknowledgement"): vol.In([True]),
                 }
@@ -259,6 +391,7 @@ async def async_setup_entry_services_with_shield(
             wrap_with_shield("set_formating_mode", real_call_set_formating_mode),
             schema=vol.Schema(
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(["Nenabíjet", "Nabíjet"]),
                     vol.Required("acknowledgement"): vol.In([True]),
                     "limit": vol.Any(None, vol.Coerce(int)),
@@ -293,22 +426,67 @@ async def async_setup_entry_services_fallback(
     async def handle_set_box_mode(call: ServiceCall) -> None:
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         client: OigCloudApi = coordinator.api
+
+        # Extrahuj box_id z device_id nebo použij první dostupný
+        device_id: Optional[str] = call.data.get("device_id")
+        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+        if not box_id:
+            _LOGGER.error("Cannot determine box_id for set_box_mode")
+            return
+
         mode: Optional[str] = call.data.get("mode")
         mode_value: Optional[str] = MODES.get(mode) if mode else None
+
+        _LOGGER.info(
+            f"Setting box mode for device {box_id} to {mode} (value: {mode_value})"
+        )
+
+        # DOČASNĚ: API nemá box_id parametr, použij původní metodu
+        # TODO: Upravit API aby přijímalo box_id
         await client.set_box_mode(mode_value)
 
     async def handle_set_boiler_mode(call: ServiceCall) -> None:
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         client: OigCloudApi = coordinator.api
+
+        # Extrahuj box_id z device_id nebo použij první dostupný
+        device_id: Optional[str] = call.data.get("device_id")
+        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+        if not box_id:
+            _LOGGER.error("Cannot determine box_id for set_boiler_mode")
+            return
+
         mode: Optional[str] = call.data.get("mode")
         mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
+
+        _LOGGER.info(
+            f"Setting boiler mode for device {box_id} to {mode} (value: {mode_value})"
+        )
+
+        # DOČASNĚ: API nemá box_id parametr
         await client.set_boiler_mode(mode_value)
 
     async def handle_set_grid_delivery(call: ServiceCall) -> None:
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         client: OigCloudApi = coordinator.api
+
+        # Extrahuj box_id z device_id nebo použij první dostupný
+        device_id: Optional[str] = call.data.get("device_id")
+        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+        if not box_id:
+            _LOGGER.error("Cannot determine box_id for set_grid_delivery")
+            return
+
         grid_mode: Optional[str] = call.data.get("mode")
         limit: Optional[int] = call.data.get("limit")
+
+        _LOGGER.info(
+            f"Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
+        )
+
         if grid_mode is not None:
             mode: Optional[int] = GRID_DELIVERY.get(grid_mode)
             await client.set_grid_delivery(mode)
@@ -318,9 +496,22 @@ async def async_setup_entry_services_fallback(
     async def handle_set_formating_mode(call: ServiceCall) -> None:
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         client: OigCloudApi = coordinator.api
+
+        # Extrahuj box_id z device_id nebo použij první dostupný
+        device_id: Optional[str] = call.data.get("device_id")
+        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+
+        if not box_id:
+            _LOGGER.error("Cannot determine box_id for set_formating_mode")
+            return
+
         mode: Optional[str] = call.data.get("mode")
         limit: Optional[int] = call.data.get("limit")
         acknowledgement: bool = call.data.get("acknowledgement", False)
+
+        _LOGGER.info(
+            f"Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
+        )
 
         # Kontrola acknowledgement (required v schema)
         if not acknowledgement:
@@ -347,6 +538,7 @@ async def async_setup_entry_services_fallback(
                 "set_box_mode",
                 handle_set_box_mode,
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(
                         ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
                     ),
@@ -357,6 +549,7 @@ async def async_setup_entry_services_fallback(
                 "set_boiler_mode",
                 handle_set_boiler_mode,
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(["CBB", "Manual"]),
                     vol.Required("acknowledgement"): vol.In([True]),
                 },
@@ -365,6 +558,7 @@ async def async_setup_entry_services_fallback(
                 "set_grid_delivery",
                 handle_set_grid_delivery,
                 {
+                    vol.Optional("device_id"): cv.string,
                     "mode": vol.Any(
                         None,
                         vol.In(
@@ -380,6 +574,7 @@ async def async_setup_entry_services_fallback(
                 "set_formating_mode",
                 handle_set_formating_mode,
                 {
+                    vol.Optional("device_id"): cv.string,
                     vol.Required("mode"): vol.In(["Nenabíjet", "Nabíjet"]),
                     vol.Required("acknowledgement"): vol.In([True]),
                     "limit": vol.Any(None, vol.Coerce(int)),
