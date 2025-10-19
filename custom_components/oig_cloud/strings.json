@@ -82,26 +82,54 @@
         "data": {
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "target_capacity_percent": "Cílová kapacita baterie (%)",
-          "home_charge_rate": "Nabíjecí výkon ze sítě (kW)"
+          "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
+          "percentile_conf": "Percentil pro detekci špičky (%)",
+          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
+          "charge_on_bad_weather": "Nabíjet preventivně při špatném počasí",
+          "weather_entity": "Weather entita pro předpověď počasí"
         },
         "data_description": {
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
-          "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)"
+          "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
+          "percentile_conf": "Percentil pro detekci špičkové spotřeby - vyšší hodnota = agresivnější nabíjení (50-95%)",
+          "max_price_conf": "Maximální cena elektřiny, za kterou ještě nabíjet (1-50 CZK/kWh)",
+          "charge_on_bad_weather": "Při předpovědi deštivého počasí se baterie přednabije na cílovou kapacitu",
+          "weather_entity": "Výběr konkrétní weather entity pro předpověď (prázdné = automaticky)"
         }
       },
       "wizard_pricing": {
         "title": "💰 Konfigurace cenových senzorů",
-        "description": "{step}\n{progress}\n\nNastavte parametry pro výpočet nákladů na elektřinu.\n\n💡 Pokud obchodujete na spotu, zapněte první volbu.",
+        "description": "{step}\n{progress}\n\nNastavte parametry pro výpočet nákladů na elektřinu.\n\n💡 Vyberte model výpočtu a zadejte distribuční poplatky.",
         "data": {
-          "spot_trading_enabled": "Obchoduji na spotovém trhu",
-          "distribution_area": "Distribuční oblast",
-          "fixed_price_vt": "Fixní cena VT (Kč/kWh)",
-          "fixed_price_nt": "Fixní cena NT (Kč/kWh)"
+          "spot_pricing_model": "Model výpočtu nákupní ceny",
+          "spot_positive_fee_percent": "Přirážka při kladné ceně (%)",
+          "spot_negative_fee_percent": "Přirážka při záporné ceně (%)",
+          "spot_fixed_fee_mwh": "Fixní poplatek (CZK/MWh)",
+          "fixed_commercial_price_vt": "Fixní obchodní cena VT (CZK/kWh)",
+          "fixed_commercial_price_nt": "Fixní obchodní cena NT (CZK/kWh)",
+          "export_pricing_model": "Model výpočtu výkupní ceny",
+          "export_fee_percent": "Srážka z exportu (%)",
+          "export_fixed_fee_czk": "Fixní srážka exportu (CZK/kWh)",
+          "dual_tariff_enabled": "Dvoutarifní sazba (VT/NT)",
+          "distribution_fee_vt": "Distribuční poplatek VT (CZK/kWh)",
+          "distribution_fee_nt": "Distribuční poplatek NT (CZK/kWh)",
+          "vat_rate": "Sazba DPH (%)"
         },
         "data_description": {
-          "spot_trading_enabled": "Pokud ANO, použijí se spotové ceny + poplatky",
-          "distribution_area": "PRE = ČEZ Distribuce, CEZ = ČEZ, EGD = E.ON"
+          "spot_pricing_model": "Jak se počítá vaše nákupní cena: procentní přirážka (doporučeno), fixní poplatek, nebo fixní ceny",
+          "spot_positive_fee_percent": "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15% = cena × 1,15",
+          "spot_negative_fee_percent": "Při záporné spotové ceně: cena × (1 - procento/100). Např. 9% = cena × 0,91",
+          "spot_fixed_fee_mwh": "Konstantní poplatek v CZK za MWh přičtený ke spotové ceně (500 CZK/MWh = 0,50 CZK/kWh)",
+          "fixed_commercial_price_vt": "Fixní obchodní cena pro vysoký tarif v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
+          "fixed_commercial_price_nt": "Fixní obchodní cena pro nízký tarif v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
+          "export_pricing_model": "Jak se počítá vaše výkupní cena za export do sítě",
+          "export_fee_percent": "Srážka z exportu v procentech. Např. 15% = dostanete 85% ze spotové ceny",
+          "export_fixed_fee_czk": "Fixní srážka odečtená od spotové ceny při exportu",
+          "dual_tariff_enabled": "Povolit dvoutarifní sazbu (VT/NT). Pokud ne, bude se používat pouze VT sazba",
+          "distribution_fee_vt": "Distribuční poplatek VT (vysoký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
+          "distribution_fee_nt": "Distribuční poplatek NT (nízký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
+          "vat_rate": "Sazba daně z přidané hodnoty v procentech (obvykle 21%)"
         }
       },
       "wizard_extended": {
@@ -122,10 +150,16 @@
         "title": "📊 Konfigurace dashboardu",
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nWebové rozhraní přímo v Home Assistant zobrazující interaktivní grafy spotřeby, výroby, stavu baterie a další metriky v reálném čase.\n\n🔧 **Co je potřeba - VŠECHNY tyto moduly MUSÍ být zapnuté:**\n• 📊 Statistiky a analýzy\n• ☀️ Solární předpověď\n• 🔋 Predikce baterie\n• 💰 Cenové senzory\n• 📈 Spotové ceny\n• ⚡ Rozšířené senzory\n\n⚠️ **Důležité:** Dashboard vyžaduje kompletní konfiguraci všech modulů, protože využívá data ze všech částí systému.\n\n💡 **Tip:** Po dokončení konfigurace najdete dashboard v postranním menu Home Assistant.",
         "data": {
-          "dashboard_refresh_interval": "Interval obnovení grafu (sekundy)"
+          "dashboard_endpoint": "API endpoint",
+          "dashboard_port": "Port Home Assistant serveru",
+          "dashboard_use_https": "Použít HTTPS",
+          "dashboard_refresh_interval": "Interval obnovení dat (sekundy)"
         },
         "data_description": {
-          "dashboard_refresh_interval": "Jak často se mají aktualizovat grafy (doporučeno 5-10s)"
+          "dashboard_endpoint": "Cesta k API endpointu dashboardu (musí začínat /)",
+          "dashboard_port": "Port na kterém běží Home Assistant (obvykle 8123)",
+          "dashboard_use_https": "Použít zabezpečené HTTPS připojení místo HTTP",
+          "dashboard_refresh_interval": "Jak často aktualizovat data v dashboardu (10-300 sekund)"
         }
       },
       "wizard_summary": {
@@ -284,7 +318,24 @@
       "invalid_interval": "Interval musí být v povoleném rozsahu",
       "requires_solar_forecast": "⚠️ Predikce baterie vyžaduje zapnutou solární předpověď",
       "required_for_battery": "⚠️ Predikce baterie vyžaduje zapnuté rozšířené senzory",
-      "dashboard_requires_all": "⚠️ Dashboard vyžaduje všechny ostatní moduly (Statistiky, Solární předpověď, Predikce baterie, Cenové senzory, Spotové ceny, Rozšířené senzory)"
+      "dashboard_requires_all": "⚠️ Dashboard vyžaduje všechny ostatní moduly (Statistiky, Solární předpověď, Predikce baterie, Cenové senzory, Spotové ceny, Rozšířené senzory)",
+      "api_key_required_for_frequent_updates": "⚠️ Pro aktualizaci každé 4 hodiny nebo každou hodinu je vyžadován API klíč z Forecast.Solar",
+      "no_strings_enabled": "⚠️ Musíte povolit alespoň jeden string solárních panelů (String 1 nebo String 2)",
+      "invalid_latitude": "Neplatná GPS šířka (musí být od -90 do 90°)",
+      "invalid_longitude": "Neplatná GPS délka (musí být od -180 do 180°)",
+      "invalid_kwp": "Neplatný výkon kWp (musí být od 0.1 do 15 kWp)",
+      "invalid_declination": "Neplatný sklon panelů (musí být od 0° do 90°)",
+      "invalid_azimuth": "Neplatná orientace panelů (musí být od 0° do 360°)",
+      "invalid_string1_params": "Neplatné parametry pro String 1",
+      "invalid_string2_params": "Neplatné parametry pro String 2",
+      "min_must_be_less_than_target": "⚠️ Minimální kapacita musí být menší než cílová kapacita",
+      "invalid_price": "⚠️ Neplatná cena (1-50 CZK/kWh)",
+      "invalid_percentage": "⚠️ Neplatné procento (0.1-100%)",
+      "invalid_fee": "⚠️ Neplatný poplatek",
+      "invalid_distribution_fee": "⚠️ Neplatný distribuční poplatek (0-10 CZK/kWh)",
+      "invalid_vat": "⚠️ Neplatná sazba DPH (0-30%)",
+      "endpoint_must_start_with_slash": "⚠️ Endpoint musí začínat lomítkem (/)",
+      "invalid_port": "⚠️ Neplatný port (1-65535)"
     },
     "abort": {
       "already_configured": "Integrace OIG Cloud je již nakonfigurována",
@@ -293,6 +344,10 @@
   },
   "options": {
     "step": {
+      "init": {
+        "title": "🔧 Změna nastavení OIG Cloud",
+        "description": "{info}"
+      },
       "menu": {
         "title": "Konfigurace OIG Cloud",
         "description": "Vyberte kategorii nastavení, kterou chcete upravit",

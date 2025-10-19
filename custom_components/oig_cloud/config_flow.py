@@ -176,7 +176,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
-    
+
     Sdílená mezi ConfigFlow (nová instalace) a OptionsFlow (rekonfigurace).
     Poskytuje konzistentní UX pro oba případy.
     """
@@ -186,16 +186,823 @@ class WizardMixin:
         super().__init__()
         self._wizard_data: Dict[str, Any] = {}
         self._step_history: list[str] = []
-        
+
     def _is_reconfiguration(self) -> bool:
         """Check if this is a reconfiguration (Options Flow)."""
-        return hasattr(self, 'config_entry') and self.config_entry is not None
-    
+        return hasattr(self, "config_entry") and self.config_entry is not None
+
     def _get_defaults(self) -> Dict[str, Any]:
         """Get default values from existing config (for reconfiguration)."""
         if self._is_reconfiguration():
             return dict(self.config_entry.options)
         return {}
+
+    # === WIZARD METHODS - Shared by ConfigFlow and OptionsFlow ===
+
+    async def async_step_wizard_welcome(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard: Welcome screen with overview."""
+        if user_input is not None:
+            return await self.async_step_wizard_credentials()
+
+        return self.async_show_form(
+            step_id="wizard_welcome",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "info": """
+🎯 Vítejte v průvodci nastavením OIG Cloud!
+
+Tento průvodce vás krok za krokem provede nastavením integrace.
+Můžete se kdykoli vrátit zpět a změnit předchozí nastavení.
+
+**Co budeme konfigurovat:**
+1. Přihlašovací údaje
+2. Výběr funkcí a modulů
+3. Podrobné nastavení vybraných modulů
+4. Kontrola a dokončení
+
+Kliknutím na "Odeslat" spustíte průvodce.
+                """.strip()
+            },
+        )
+
+    async def async_step_wizard_credentials(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 1: Credentials."""
+        if user_input is not None:
+            errors = {}
+
+            if not user_input.get("live_data_enabled", False):
+                errors["live_data_enabled"] = "live_data_not_confirmed"
+                return self.async_show_form(
+                    step_id="wizard_credentials",
+                    data_schema=self._get_credentials_schema(),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(1, 5),
+                )
+
+            try:
+                await validate_input(self.hass, user_input)
+                self._wizard_data.update(user_input)
+                self._step_history.append("wizard_credentials")
+                return await self.async_step_wizard_modules()
+
+            except LiveDataNotEnabled:
+                errors["base"] = "live_data_not_enabled"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+
+            return self.async_show_form(
+                step_id="wizard_credentials",
+                data_schema=self._get_credentials_schema(),
+                errors=errors,
+                description_placeholders=self._get_step_placeholders(1, 5),
+            )
+
+        return self.async_show_form(
+            step_id="wizard_credentials",
+            data_schema=self._get_credentials_schema(),
+            description_placeholders=self._get_step_placeholders(1, 5),
+        )
+
+    async def async_step_wizard_modules(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 2: Select modules to enable."""
+        if user_input is not None:
+            errors = {}
+
+            if user_input.get("enable_battery_prediction"):
+                if not user_input.get("enable_solar_forecast"):
+                    errors["enable_battery_prediction"] = "requires_solar_forecast"
+                if not user_input.get("enable_extended_sensors"):
+                    errors["enable_extended_sensors"] = "required_for_battery"
+
+            if user_input.get("enable_dashboard"):
+                missing = []
+                if not user_input.get("enable_statistics"):
+                    missing.append("Statistiky")
+                if not user_input.get("enable_solar_forecast"):
+                    missing.append("Solární předpověď")
+                if not user_input.get("enable_battery_prediction"):
+                    missing.append("Predikce baterie")
+                if not user_input.get("enable_pricing"):
+                    missing.append("Cenové senzory a spotové ceny")
+                if not user_input.get("enable_extended_sensors"):
+                    missing.append("Rozšířené senzory")
+
+                if missing:
+                    errors["enable_dashboard"] = "dashboard_requires_all"
+                    self._wizard_data["_missing_for_dashboard"] = missing
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_modules",
+                    data_schema=self._get_modules_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(2, 5),
+                )
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_modules")
+
+            next_step = self._get_next_step("wizard_modules")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_modules",
+            data_schema=self._get_modules_schema(),
+            description_placeholders=self._get_step_placeholders(2, 5),
+        )
+
+    def _get_modules_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for modules selection with defaults."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "enable_statistics", default=defaults.get("enable_statistics", True)
+                ): bool,
+                vol.Optional(
+                    "enable_solar_forecast",
+                    default=defaults.get("enable_solar_forecast", False),
+                ): bool,
+                vol.Optional(
+                    "enable_battery_prediction",
+                    default=defaults.get("enable_battery_prediction", False),
+                ): bool,
+                vol.Optional(
+                    "enable_pricing", default=defaults.get("enable_pricing", False)
+                ): bool,
+                vol.Optional(
+                    "enable_extended_sensors",
+                    default=defaults.get("enable_extended_sensors", True),
+                ): bool,
+                vol.Optional(
+                    "enable_dashboard", default=defaults.get("enable_dashboard", False)
+                ): bool,
+            }
+        )
+
+    def _get_credentials_schema(self) -> vol.Schema:
+        """Get schema for credentials step."""
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_USERNAME,
+                    default=self._wizard_data.get(CONF_USERNAME, ""),
+                    description={
+                        "suggested_value": self._wizard_data.get(CONF_USERNAME, "")
+                    },
+                ): str,
+                vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
+                vol.Required(
+                    "live_data_enabled",
+                    default=False,
+                ): bool,
+            }
+        )
+
+    def _get_step_placeholders(
+        self, current: int, total: int, **kwargs
+    ) -> dict[str, str]:
+        """Get placeholders for step description."""
+        progress_bar = "▓" * current + "░" * (total - current)
+        placeholders = {
+            "step": f"Krok {current} z {total}",
+            "progress": progress_bar,
+        }
+        # Přidat další placeholders podle potřeby
+        placeholders.update(kwargs)
+        return placeholders
+
+    def _get_next_step(self, current_step: str) -> str:
+        """Determine next step based on enabled modules."""
+        all_steps = [
+            "wizard_welcome",
+            "wizard_credentials",
+            "wizard_modules",
+            "wizard_intervals",
+            "wizard_solar",
+            "wizard_battery",
+            "wizard_pricing",
+            "wizard_extended",
+            "wizard_dashboard",
+            "wizard_summary",
+        ]
+
+        try:
+            current_idx = all_steps.index(current_step)
+        except ValueError:
+            return "wizard_summary"
+
+        for step in all_steps[current_idx + 1 :]:
+            if step == "wizard_summary":
+                return step
+
+            if step == "wizard_solar" and not self._wizard_data.get(
+                "enable_solar_forecast"
+            ):
+                continue
+            if step == "wizard_battery" and not self._wizard_data.get(
+                "enable_battery_prediction"
+            ):
+                continue
+            if step == "wizard_pricing" and not self._wizard_data.get("enable_pricing"):
+                continue
+            if step == "wizard_extended" and not self._wizard_data.get(
+                "enable_extended_sensors"
+            ):
+                continue
+            if step == "wizard_dashboard" and not self._wizard_data.get(
+                "enable_dashboard"
+            ):
+                continue
+
+            return step
+
+        return "wizard_summary"
+
+    async def async_step_wizard_intervals(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 3: Configure scan intervals."""
+        if user_input is not None:
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_intervals")
+
+            next_step = self._get_next_step("wizard_intervals")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_intervals",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("standard_scan_interval", default=30): vol.All(
+                        int, vol.Range(min=30, max=300)
+                    ),
+                    vol.Optional("extended_scan_interval", default=300): vol.All(
+                        int, vol.Range(min=300, max=3600)
+                    ),
+                }
+            ),
+            description_placeholders=self._get_step_placeholders(3, 5),
+        )
+
+    async def async_step_wizard_solar(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 4: Solar forecast configuration."""
+        if user_input is not None:
+            errors = {}
+
+            # Validace API klíče podle módu
+            api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
+            mode = user_input.get("solar_forecast_mode", "daily_optimized")
+
+            if mode in ["every_4h", "hourly"] and not api_key:
+                errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
+
+            # Validace GPS souřadnic
+            try:
+                lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
+                lon = float(user_input.get(CONF_SOLAR_FORECAST_LONGITUDE, 14.0))
+                if not (-90 <= lat <= 90):
+                    errors[CONF_SOLAR_FORECAST_LATITUDE] = "invalid_latitude"
+                if not (-180 <= lon <= 180):
+                    errors[CONF_SOLAR_FORECAST_LONGITUDE] = "invalid_longitude"
+            except (ValueError, TypeError):
+                errors["base"] = "invalid_coordinates"
+
+            # Validace stringů
+            string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
+            string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
+
+            if not string1_enabled and not string2_enabled:
+                errors["base"] = "no_strings_enabled"
+
+            # Validace parametrů String 1
+            if string1_enabled:
+                try:
+                    kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
+                    decl1 = int(
+                        user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35)
+                    )
+                    azim1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+
+                    if not (0 < kwp1 <= 15):
+                        errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
+                    if not (0 <= decl1 <= 90):
+                        errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = (
+                            "invalid_declination"
+                        )
+                    if not (0 <= azim1 <= 360):
+                        errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
+                except (ValueError, TypeError):
+                    errors["base"] = "invalid_string1_params"
+
+            # Validace parametrů String 2
+            if string2_enabled:
+                try:
+                    kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
+                    decl2 = int(
+                        user_input.get("solar_forecast_string2_declination", 35)
+                    )
+                    azim2 = int(user_input.get("solar_forecast_string2_azimuth", 180))
+
+                    if not (0 < kwp2 <= 15):
+                        errors["solar_forecast_string2_kwp"] = "invalid_kwp"
+                    if not (0 <= decl2 <= 90):
+                        errors["solar_forecast_string2_declination"] = (
+                            "invalid_declination"
+                        )
+                    if not (0 <= azim2 <= 360):
+                        errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
+                except (ValueError, TypeError):
+                    errors["base"] = "invalid_string2_params"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_solar",
+                    data_schema=self._get_solar_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(4, 5),
+                )
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_solar")
+
+            next_step = self._get_next_step("wizard_solar")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_solar",
+            data_schema=self._get_solar_schema(),
+            description_placeholders=self._get_step_placeholders(4, 5),
+        )
+
+    def _get_solar_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for solar forecast step."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        schema_fields = {
+            vol.Optional(
+                CONF_SOLAR_FORECAST_API_KEY,
+                default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
+                description="API klíč z Forecast.Solar (nepovinný pro 'Denní optimalizovaný' mód)",
+            ): str,
+            vol.Optional(
+                "solar_forecast_mode",
+                default=defaults.get("solar_forecast_mode", "daily_optimized"),
+            ): vol.In(
+                {
+                    "daily_optimized": "🌅 Denní optimalizovaný (1x denně, ZDARMA)",
+                    "every_4h": "🕐 Každé 4 hodiny (vyžaduje API klíč)",
+                    "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
+                }
+            ),
+            vol.Optional(
+                CONF_SOLAR_FORECAST_LATITUDE,
+                default=defaults.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_SOLAR_FORECAST_LONGITUDE,
+                default=defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, 14.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_SOLAR_FORECAST_STRING1_ENABLED,
+                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True),
+            ): bool,
+            vol.Optional(
+                CONF_SOLAR_FORECAST_STRING1_KWP,
+                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_SOLAR_FORECAST_STRING1_DECLINATION,
+                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35),
+            ): vol.All(int, vol.Range(min=0, max=90)),
+            vol.Optional(
+                CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0),
+            ): vol.All(int, vol.Range(min=0, max=360)),
+            vol.Optional(
+                "solar_forecast_string2_enabled",
+                default=defaults.get("solar_forecast_string2_enabled", False),
+            ): bool,
+            vol.Optional(
+                "solar_forecast_string2_kwp",
+                default=defaults.get("solar_forecast_string2_kwp", 5.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                "solar_forecast_string2_declination",
+                default=defaults.get("solar_forecast_string2_declination", 35),
+            ): vol.All(int, vol.Range(min=0, max=90)),
+            vol.Optional(
+                "solar_forecast_string2_azimuth",
+                default=defaults.get("solar_forecast_string2_azimuth", 180),
+            ): vol.All(int, vol.Range(min=0, max=360)),
+        }
+
+        return vol.Schema(schema_fields)
+
+    async def async_step_wizard_battery(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 5: Battery prediction configuration."""
+        if user_input is not None:
+            errors = {}
+
+            # Validace min < target
+            min_cap = user_input.get("min_capacity_percent", 20.0)
+            target_cap = user_input.get("target_capacity_percent", 80.0)
+
+            if min_cap >= target_cap:
+                errors["min_capacity_percent"] = "min_must_be_less_than_target"
+
+            # Validace max price
+            max_price = user_input.get("max_price_conf", 10.0)
+            if max_price < 1.0 or max_price > 50.0:
+                errors["max_price_conf"] = "invalid_price"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_battery",
+                    data_schema=self._get_battery_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(5, 5),
+                )
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_battery")
+
+            next_step = self._get_next_step("wizard_battery")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_battery",
+            data_schema=self._get_battery_schema(),
+            description_placeholders=self._get_step_placeholders(5, 5),
+        )
+
+    def _get_battery_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for battery prediction step."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        # Získat weather entity z HA
+        weather_entities = {"": "🤖 Automaticky (první dostupná)"}
+        if self.hass:
+            for state in self.hass.states.async_all("weather"):
+                has_forecast = bool(state.attributes.get("forecast"))
+                label = f"{state.attributes.get('friendly_name', state.entity_id)}"
+                if has_forecast:
+                    label += " ✅"
+                weather_entities[state.entity_id] = label
+
+        schema_fields = {
+            vol.Optional(
+                "min_capacity_percent",
+                default=defaults.get("min_capacity_percent", 20.0),
+            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=50.0)),
+            vol.Optional(
+                "target_capacity_percent",
+                default=defaults.get("target_capacity_percent", 80.0),
+            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=100.0)),
+            vol.Optional(
+                "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            vol.Optional(
+                "percentile_conf", default=defaults.get("percentile_conf", 75.0)
+            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=95.0)),
+            vol.Optional(
+                "max_price_conf", default=defaults.get("max_price_conf", 10.0)
+            ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+            vol.Optional(
+                "charge_on_bad_weather",
+                default=defaults.get("charge_on_bad_weather", False),
+            ): bool,
+        }
+
+        # Přidat weather entity POUZE když je bad weather zapnutý
+        if defaults.get("charge_on_bad_weather", False) and len(weather_entities) > 1:
+            schema_fields[
+                vol.Optional(
+                    "weather_entity", default=defaults.get("weather_entity", "")
+                )
+            ] = vol.In(weather_entities)
+
+        return vol.Schema(schema_fields)
+
+    async def async_step_wizard_pricing(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 6: Pricing configuration."""
+        if user_input is not None:
+            errors = {}
+
+            # Validace podle modelu
+            model = user_input.get("spot_pricing_model", "percentage")
+
+            if model == "percentage":
+                pos_fee = user_input.get("spot_positive_fee_percent", 15.0)
+                neg_fee = user_input.get("spot_negative_fee_percent", 9.0)
+                if pos_fee < 0.1 or pos_fee > 100:
+                    errors["spot_positive_fee_percent"] = "invalid_percentage"
+                if neg_fee < 0.1 or neg_fee > 100:
+                    errors["spot_negative_fee_percent"] = "invalid_percentage"
+            elif model == "fixed":
+                fee = user_input.get("spot_fixed_fee_mwh", 500.0)
+                if fee < 0.1:
+                    errors["spot_fixed_fee_mwh"] = "invalid_fee"
+            elif model == "fixed_prices":
+                vt = user_input.get("fixed_commercial_price_vt", 4.50)
+                nt = user_input.get("fixed_commercial_price_nt", 3.20)
+                if vt < 0 or vt > 20:
+                    errors["fixed_commercial_price_vt"] = "invalid_price"
+                if nt < 0 or nt > 20:
+                    errors["fixed_commercial_price_nt"] = "invalid_price"
+
+            # Validace export modelu
+            export_model = user_input.get("export_pricing_model", "percentage")
+            if export_model == "percentage":
+                export_fee = user_input.get("export_fee_percent", 15.0)
+                if export_fee < 0 or export_fee > 50:
+                    errors["export_fee_percent"] = "invalid_percentage"
+            else:
+                export_fee_czk = user_input.get("export_fixed_fee_czk", 0.20)
+                if export_fee_czk < 0 or export_fee_czk > 5:
+                    errors["export_fixed_fee_czk"] = "invalid_fee"
+
+            # Validace distribuce
+            dist_vt = user_input.get("distribution_fee_vt", 1.42)
+            if dist_vt < 0 or dist_vt > 10:
+                errors["distribution_fee_vt"] = "invalid_distribution_fee"
+
+            if user_input.get("dual_tariff_enabled", True):
+                dist_nt = user_input.get("distribution_fee_nt", 0.91)
+                if dist_nt < 0 or dist_nt > 10:
+                    errors["distribution_fee_nt"] = "invalid_distribution_fee"
+
+            # Validace VAT
+            vat = user_input.get("vat_rate", 21.0)
+            if vat < 0 or vat > 30:
+                errors["vat_rate"] = "invalid_vat"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_pricing",
+                    data_schema=self._get_pricing_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(6, 5),
+                )
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_pricing")
+
+            next_step = self._get_next_step("wizard_pricing")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_pricing",
+            data_schema=self._get_pricing_schema(),
+            description_placeholders=self._get_step_placeholders(6, 5),
+        )
+
+    def _get_pricing_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for pricing step."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        model = defaults.get("spot_pricing_model", "percentage")
+        export_model = defaults.get("export_pricing_model", "percentage")
+        dual_tariff = defaults.get("dual_tariff_enabled", True)
+
+        schema_fields = {
+            # IMPORT MODEL
+            vol.Optional("spot_pricing_model", default=model): vol.In(
+                {
+                    "percentage": "📊 Procentní přirážka (doporučeno)",
+                    "fixed": "💵 Fixní poplatek v CZK/MWh",
+                    "fixed_prices": "🔒 Fixní ceny (ignoruje spot)",
+                }
+            ),
+        }
+
+        # Conditional fields based on import model
+        if model == "percentage":
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "spot_positive_fee_percent",
+                        default=defaults.get("spot_positive_fee_percent", 15.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
+                    vol.Optional(
+                        "spot_negative_fee_percent",
+                        default=defaults.get("spot_negative_fee_percent", 9.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
+                }
+            )
+        elif model == "fixed":
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "spot_fixed_fee_mwh",
+                        default=defaults.get("spot_fixed_fee_mwh", 500.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1)),
+                }
+            )
+        elif model == "fixed_prices":
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "fixed_commercial_price_vt",
+                        default=defaults.get("fixed_commercial_price_vt", 4.50),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                    vol.Optional(
+                        "fixed_commercial_price_nt",
+                        default=defaults.get("fixed_commercial_price_nt", 3.20),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                }
+            )
+
+        # EXPORT MODEL
+        schema_fields.update(
+            {
+                vol.Optional("export_pricing_model", default=export_model): vol.In(
+                    {
+                        "percentage": "📊 Procentní srážka z spotové ceny",
+                        "fixed": "💵 Fixní srážka v CZK/kWh",
+                    }
+                ),
+            }
+        )
+
+        if export_model == "percentage":
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "export_fee_percent",
+                        default=defaults.get("export_fee_percent", 15.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+                }
+            )
+        else:
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "export_fixed_fee_czk",
+                        default=defaults.get("export_fixed_fee_czk", 0.20),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                }
+            )
+
+        # DISTRIBUTION & VAT
+        schema_fields.update(
+            {
+                vol.Optional("dual_tariff_enabled", default=dual_tariff): bool,
+                vol.Optional(
+                    "distribution_fee_vt",
+                    default=defaults.get("distribution_fee_vt", 1.42),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+            }
+        )
+
+        if dual_tariff:
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "distribution_fee_nt",
+                        default=defaults.get("distribution_fee_nt", 0.91),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+                }
+            )
+
+        schema_fields.update(
+            {
+                vol.Optional(
+                    "vat_rate", default=defaults.get("vat_rate", 21.0)
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=30.0)),
+            }
+        )
+
+        return vol.Schema(schema_fields)
+
+    async def async_step_wizard_extended(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 7: Extended sensors configuration."""
+        if user_input is not None:
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_extended")
+
+            next_step = self._get_next_step("wizard_extended")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_extended",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("enable_extended_battery_sensors", default=True): bool,
+                    vol.Optional("enable_extended_fve_sensors", default=True): bool,
+                    vol.Optional("enable_extended_grid_sensors", default=True): bool,
+                }
+            ),
+            description_placeholders=self._get_step_placeholders(4, 5),
+        )
+
+    async def async_step_wizard_dashboard(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 8: Dashboard configuration."""
+        if user_input is not None:
+            errors = {}
+
+            # Validace endpoint
+            endpoint = user_input.get("dashboard_endpoint", "/api/oig_dashboard")
+            if not endpoint.startswith("/"):
+                errors["dashboard_endpoint"] = "endpoint_must_start_with_slash"
+
+            # Validace portu
+            port = user_input.get("dashboard_port", 8123)
+            if port < 1 or port > 65535:
+                errors["dashboard_port"] = "invalid_port"
+
+            # Validace refresh interval
+            refresh = user_input.get("dashboard_refresh_interval", 30)
+            if refresh < 10 or refresh > 300:
+                errors["dashboard_refresh_interval"] = "invalid_interval"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_dashboard",
+                    data_schema=self._get_dashboard_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(8, 5),
+                )
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_dashboard")
+
+            next_step = self._get_next_step("wizard_dashboard")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_dashboard",
+            data_schema=self._get_dashboard_schema(),
+            description_placeholders=self._get_step_placeholders(8, 5),
+        )
+
+    def _get_dashboard_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for dashboard step."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "dashboard_endpoint",
+                    default=defaults.get("dashboard_endpoint", "/api/oig_dashboard"),
+                ): str,
+                vol.Optional(
+                    "dashboard_port", default=defaults.get("dashboard_port", 8123)
+                ): vol.All(int, vol.Range(min=1, max=65535)),
+                vol.Optional(
+                    "dashboard_use_https",
+                    default=defaults.get("dashboard_use_https", False),
+                ): bool,
+                vol.Optional(
+                    "dashboard_refresh_interval",
+                    default=defaults.get("dashboard_refresh_interval", 30),
+                ): vol.All(int, vol.Range(min=10, max=300)),
+            }
+        )
+
+    async def async_step_wizard_summary(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 9: Summary and confirmation."""
+        # This will be overridden in ConfigFlow and OptionsFlow
+        raise NotImplementedError("Must be implemented in subclass")
 
 
 class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
@@ -237,175 +1044,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "info": "Vyberte způsob nastavení integrace OIG Cloud"
             },
-        )
-
-    async def async_step_wizard_welcome(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard: Welcome screen with overview."""
-        if user_input is not None:
-            return await self.async_step_wizard_credentials()
-
-        return self.async_show_form(
-            step_id="wizard_welcome",
-            data_schema=vol.Schema({}),  # Jen informační stránka
-            description_placeholders={
-                "info": """
-🎯 Vítejte v průvodci nastavením OIG Cloud!
-
-Tento průvodce vás krok za krokem provede nastavením integrace.
-Můžete se kdykoli vrátit zpět a změnit předchozí nastavení.
-
-**Co budeme konfigurovat:**
-1. Přihlašovací údaje
-2. Výběr funkcí a modulů
-3. Podrobné nastavení vybraných modulů
-4. Kontrola a dokončení
-
-Kliknutím na "Odeslat" spustíte průvodce.
-                """.strip()
-            },
-        )
-
-    async def async_step_wizard_credentials(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 1: Credentials."""
-        if user_input is not None:
-            # Validace přihlášení
-            errors = {}
-
-            # Check if user confirmed live data is enabled
-            if not user_input.get("live_data_enabled", False):
-                errors["live_data_enabled"] = "live_data_not_confirmed"
-                return self.async_show_form(
-                    step_id="wizard_credentials",
-                    data_schema=self._get_credentials_schema(),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(1, 5),
-                )
-
-            try:
-                await validate_input(self.hass, user_input)
-
-                # Uložit data
-                self._wizard_data.update(user_input)
-                self._step_history.append("wizard_credentials")
-
-                # Pokračovat na další krok
-                return await self.async_step_wizard_modules()
-
-            except LiveDataNotEnabled:
-                errors["base"] = "live_data_not_enabled"
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-
-            return self.async_show_form(
-                step_id="wizard_credentials",
-                data_schema=self._get_credentials_schema(),
-                errors=errors,
-                description_placeholders=self._get_step_placeholders(1, 5),
-            )
-
-        return self.async_show_form(
-            step_id="wizard_credentials",
-            data_schema=self._get_credentials_schema(),
-            description_placeholders=self._get_step_placeholders(1, 5),
-        )
-
-    async def async_step_wizard_modules(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 2: Select modules to enable."""
-        if user_input is not None:
-            # Validace závislostí
-            errors = {}
-            warnings = []
-
-            # Kontrola závislostí pro Battery Prediction
-            if user_input.get("enable_battery_prediction"):
-                if not user_input.get("enable_solar_forecast"):
-                    errors["enable_battery_prediction"] = "requires_solar_forecast"
-                if not user_input.get("enable_extended_sensors"):
-                    errors["enable_extended_sensors"] = "required_for_battery"
-
-            # Kontrola závislostí pro Dashboard
-            if user_input.get("enable_dashboard"):
-                missing = []
-                if not user_input.get("enable_statistics"):
-                    missing.append("Statistiky")
-                if not user_input.get("enable_solar_forecast"):
-                    missing.append("Solární předpověď")
-                if not user_input.get("enable_battery_prediction"):
-                    missing.append("Predikce baterie")
-                if not user_input.get("enable_pricing"):
-                    missing.append("Cenové senzory a spotové ceny")
-                if not user_input.get("enable_extended_sensors"):
-                    missing.append("Rozšířené senzory")
-
-                if missing:
-                    errors["enable_dashboard"] = "dashboard_requires_all"
-                    # Uložit seznam chybějících pro zobrazení
-                    self._wizard_data["_missing_for_dashboard"] = missing
-
-            if errors:
-                return self.async_show_form(
-                    step_id="wizard_modules",
-                    data_schema=self._get_modules_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(2, 5),
-                )
-
-            # Uložit výběr modulů
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_modules")
-
-            # Určit další krok podle vybraných modulů
-            next_step = self._get_next_step("wizard_modules")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_modules",
-            data_schema=self._get_modules_schema(),
-            description_placeholders=self._get_step_placeholders(2, 5),
-        )
-
-    def _get_modules_schema(
-        self, defaults: Optional[Dict[str, Any]] = None
-    ) -> vol.Schema:
-        """Get schema for modules selection with defaults."""
-        if defaults is None:
-            defaults = {}
-
-        return vol.Schema(
-            {
-                vol.Optional(
-                    "enable_statistics", default=defaults.get("enable_statistics", True)
-                ): bool,
-                vol.Optional(
-                    "enable_solar_forecast",
-                    default=defaults.get("enable_solar_forecast", False),
-                ): bool,
-                vol.Optional(
-                    "enable_battery_prediction",
-                    default=defaults.get("enable_battery_prediction", False),
-                ): bool,
-                vol.Optional(
-                    "enable_pricing", default=defaults.get("enable_pricing", False)
-                ): bool,
-                vol.Optional(
-                    "enable_extended_sensors",
-                    default=defaults.get("enable_extended_sensors", True),
-                ): bool,
-                vol.Optional(
-                    "enable_dashboard", default=defaults.get("enable_dashboard", False)
-                ): bool,
-            }
         )
 
     async def async_step_quick_setup(
@@ -510,256 +1148,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # TODO: Implementovat import z YAML
         return self.async_abort(reason="not_implemented")
 
-    def _get_credentials_schema(self) -> vol.Schema:
-        """Get schema for credentials step."""
-        return vol.Schema(
-            {
-                vol.Required(
-                    CONF_USERNAME, default=self._wizard_data.get(CONF_USERNAME, "")
-                ): str,
-                vol.Required(CONF_PASSWORD): str,
-                vol.Required(
-                    "live_data_enabled",
-                    default=False,
-                    description="✅ POTVRZUJI: Mám v aplikaci OIG Cloud zapnutá 'Živá data'",
-                ): bool,
-            }
-        )
-
-    def _get_step_placeholders(self, current: int, total: int) -> dict[str, str]:
-        """Get placeholders for step description."""
-        progress_bar = "▓" * current + "░" * (total - current)
-        return {
-            "step": f"Krok {current} z {total}",
-            "progress": progress_bar,
-            "back_hint": (
-                "💡 Tip: Můžete se vrátit zpět pomocí tlačítka zpět v prohlížeči"
-                if self._step_history
-                else ""
-            ),
-        }
-
-    def _get_next_step(self, current_step: str) -> str:
-        """Determine next step based on enabled modules."""
-        # Definice všech kroků wizardu
-        all_steps = [
-            "wizard_welcome",
-            "wizard_credentials",
-            "wizard_modules",
-            "wizard_intervals",
-            "wizard_solar",  # conditional
-            "wizard_battery",  # conditional
-            "wizard_pricing",  # conditional
-            "wizard_extended",  # conditional
-            "wizard_dashboard",  # conditional
-            "wizard_summary",
-        ]
-
-        try:
-            current_idx = all_steps.index(current_step)
-        except ValueError:
-            return "wizard_summary"
-
-        # Projít zbývající kroky a najít další platný
-        for step in all_steps[current_idx + 1 :]:
-            # Vždy skončit summary
-            if step == "wizard_summary":
-                return step
-
-            # Podmíněné kroky - přeskočit pokud není modul zapnutý
-            if step == "wizard_solar" and not self._wizard_data.get(
-                "enable_solar_forecast"
-            ):
-                continue
-            if step == "wizard_battery" and not self._wizard_data.get(
-                "enable_battery_prediction"
-            ):
-                continue
-            if step == "wizard_pricing" and not self._wizard_data.get("enable_pricing"):
-                continue
-            if step == "wizard_extended" and not self._wizard_data.get(
-                "enable_extended_sensors"
-            ):
-                continue
-            if step == "wizard_dashboard" and not self._wizard_data.get(
-                "enable_dashboard"
-            ):
-                continue
-
-            return step
-
-        return "wizard_summary"
-
-    async def async_step_wizard_intervals(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 3: Configure scan intervals."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_intervals")
-
-            next_step = self._get_next_step("wizard_intervals")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_intervals",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("standard_scan_interval", default=30): vol.All(
-                        int, vol.Range(min=30, max=300)
-                    ),
-                    vol.Optional("extended_scan_interval", default=300): vol.All(
-                        int, vol.Range(min=300, max=3600)
-                    ),
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(3, 5),
-        )
-
-    async def async_step_wizard_solar(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 4: Solar forecast configuration."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_solar")
-
-            next_step = self._get_next_step("wizard_solar")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_solar",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SOLAR_FORECAST_API_KEY): str,
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_LATITUDE, default=50.0
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_LONGITUDE, default=14.0
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_ENABLED, default=True
-                    ): bool,
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_DECLINATION, default=35
-                    ): vol.All(int, vol.Range(min=0, max=90)),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH, default=0
-                    ): vol.All(int, vol.Range(min=-180, max=180)),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_KWP, default=5.0
-                    ): vol.Coerce(float),
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(4, 5),
-        )
-
-    async def async_step_wizard_battery(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 5: Battery prediction configuration."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_battery")
-
-            next_step = self._get_next_step("wizard_battery")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_battery",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("min_capacity_percent", default=20.0): vol.All(
-                        vol.Coerce(float), vol.Range(min=5.0, max=50.0)
-                    ),
-                    vol.Optional("target_capacity_percent", default=80.0): vol.All(
-                        vol.Coerce(float), vol.Range(min=50.0, max=100.0)
-                    ),
-                    vol.Optional("home_charge_rate", default=2.8): vol.All(
-                        vol.Coerce(float), vol.Range(min=0.5, max=10.0)
-                    ),
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(4, 5),
-        )
-
-    async def async_step_wizard_pricing(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 6: Pricing configuration."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_pricing")
-
-            next_step = self._get_next_step("wizard_pricing")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_pricing",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("spot_trading_enabled", default=False): bool,
-                    vol.Optional("distribution_area", default="PRE"): vol.In(
-                        ["PRE", "CEZ", "EGD"]
-                    ),
-                    vol.Optional("fixed_price_vt", default=4.50): vol.Coerce(float),
-                    vol.Optional("fixed_price_nt", default=3.20): vol.Coerce(float),
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(4, 5),
-        )
-
-    async def async_step_wizard_extended(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 7: Extended sensors configuration."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_extended")
-
-            next_step = self._get_next_step("wizard_extended")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_extended",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("enable_extended_battery_sensors", default=True): bool,
-                    vol.Optional("enable_extended_fve_sensors", default=True): bool,
-                    vol.Optional("enable_extended_grid_sensors", default=True): bool,
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(4, 5),
-        )
-
-    async def async_step_wizard_dashboard(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 8: Dashboard configuration."""
-        if user_input is not None:
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_dashboard")
-
-            next_step = self._get_next_step("wizard_dashboard")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_dashboard",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("dashboard_refresh_interval", default=5): vol.All(
-                        int, vol.Range(min=1, max=60)
-                    ),
-                }
-            ),
-            description_placeholders=self._get_step_placeholders(4, 5),
-        )
-
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Wizard Step 9: Summary and confirmation."""
+        """Wizard Step 9: Summary and confirmation - ConfigFlow implementation."""
         if user_input is not None:
             # Vytvořit entry s nakonfigurovanými daty
             return self.async_create_entry(
@@ -805,11 +1197,27 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ),
                     "disable_extended_stats_api": False,
                     # Solar forecast
-                    **{
-                        k: v
-                        for k, v in self._wizard_data.items()
-                        if k.startswith("solar_forecast_")
-                    },
+                    CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_API_KEY
+                    ),
+                    CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_LATITUDE
+                    ),
+                    CONF_SOLAR_FORECAST_LONGITUDE: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_LONGITUDE
+                    ),
+                    CONF_SOLAR_FORECAST_STRING1_ENABLED: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_STRING1_ENABLED
+                    ),
+                    CONF_SOLAR_FORECAST_STRING1_DECLINATION: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_STRING1_DECLINATION
+                    ),
+                    CONF_SOLAR_FORECAST_STRING1_AZIMUTH: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH
+                    ),
+                    CONF_SOLAR_FORECAST_STRING1_KWP: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_STRING1_KWP
+                    ),
                     # Battery prediction
                     "min_capacity_percent": self._wizard_data.get(
                         "min_capacity_percent", 20.0
@@ -834,37 +1242,25 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 },
             )
 
-        # Připravit souhrn konfigurace
+        # Zobrazit souhrn konfigurace
         summary_lines = [
-            "**Přihlášení:**",
-            f"- Uživatel: {self._wizard_data.get(CONF_USERNAME, 'N/A')}",
+            f"👤 **Uživatel:** {self._wizard_data.get(CONF_USERNAME)}",
             "",
-            "**Zapnuté moduly:**",
+            "📊 **Zapnuté moduly:**",
         ]
 
         if self._wizard_data.get("enable_statistics"):
-            summary_lines.append("✅ Statistiky a analýzy")
+            summary_lines.append("  ✅ Statistiky")
         if self._wizard_data.get("enable_solar_forecast"):
-            summary_lines.append("✅ Solární předpověď")
+            summary_lines.append("  ✅ Solární předpověď")
         if self._wizard_data.get("enable_battery_prediction"):
-            summary_lines.append("✅ Predikce baterie")
+            summary_lines.append("  ✅ Predikce baterie")
         if self._wizard_data.get("enable_pricing"):
-            summary_lines.append("✅ Cenové senzory a spotové ceny")
+            summary_lines.append("  ✅ Cenové senzory")
         if self._wizard_data.get("enable_extended_sensors"):
-            summary_lines.append("✅ Rozšířené senzory")
+            summary_lines.append("  ✅ Rozšířené senzory")
         if self._wizard_data.get("enable_dashboard"):
-            summary_lines.append("✅ Webový dashboard")
-
-        summary_lines.extend(
-            [
-                "",
-                "**Intervaly načítání:**",
-                f"- Základní data: {self._wizard_data.get('standard_scan_interval', 30)}s",
-                f"- Rozšířená data: {self._wizard_data.get('extended_scan_interval', 300)}s",
-                "",
-                "Kliknutím na 'Odeslat' dokončíte nastavení.",
-            ]
-        )
+            summary_lines.append("  ✅ Interaktivní dashboard")
 
         return self.async_show_form(
             step_id="wizard_summary",
@@ -892,7 +1288,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         """Initialize options flow."""
         super().__init__()
         self.config_entry = config_entry
-        
+
         # Předvyplnit wizard_data z existující konfigurace
         self._wizard_data = dict(config_entry.options)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
@@ -901,10 +1297,35 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Entry point for options flow - redirect to wizard welcome."""
-        # Při rekonfiguraci rovnou začneme na výběru modulů (credentials už máme)
-        return await self.async_step_wizard_modules()
-    
+        """Entry point for options flow - show welcome screen for reconfiguration."""
+        if user_input is not None:
+            return await self.async_step_wizard_modules()
+
+        # Zobrazit uvítací obrazovku pro rekonfiguraci
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "info": """
+🔧 **Změna nastavení OIG Cloud**
+
+Upravte konfiguraci vaší integrace OIG Cloud.
+
+**Co můžete změnit:**
+• 📦 Zapnout/vypnout moduly a funkce
+• ⏱️ Upravit intervaly načítání dat
+• ☀️ Změnit nastavení solární předpovědi
+• 🔋 Upravit parametry predikce baterie
+• 💰 Změnit cenové nastavení
+• ⚡ Upravit rozšířené senzory
+
+**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.
+
+Kliknutím na "Odeslat" pokračujte v nastavení.
+                """.strip()
+            },
+        )
+
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -920,9 +1341,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "extended_scan_interval", 300
                 ),
                 # Moduly
-                "enable_statistics": self._wizard_data.get(
-                    "enable_statistics", True
-                ),
+                "enable_statistics": self._wizard_data.get("enable_statistics", True),
                 "enable_solar_forecast": self._wizard_data.get(
                     "enable_solar_forecast", False
                 ),
@@ -933,9 +1352,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "enable_extended_sensors": self._wizard_data.get(
                     "enable_extended_sensors", True
                 ),
-                "enable_dashboard": self._wizard_data.get(
-                    "enable_dashboard", False
-                ),
+                "enable_dashboard": self._wizard_data.get("enable_dashboard", False),
                 # Extended sensors detail
                 "enable_extended_battery_sensors": self._wizard_data.get(
                     "enable_extended_battery_sensors", True
@@ -965,9 +1382,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "spot_trading_enabled": self._wizard_data.get(
                     "spot_trading_enabled", False
                 ),
-                "distribution_area": self._wizard_data.get(
-                    "distribution_area", "PRE"
-                ),
+                "distribution_area": self._wizard_data.get("distribution_area", "PRE"),
                 "fixed_price_vt": self._wizard_data.get("fixed_price_vt", 4.50),
                 "fixed_price_nt": self._wizard_data.get("fixed_price_nt", 3.20),
                 # Dashboard
@@ -975,20 +1390,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "dashboard_refresh_interval", 5
                 ),
             }
-            
+
             # Aktualizovat entry
             self.hass.config_entries.async_update_entry(
                 self.config_entry, options=new_options
             )
-            
+
             # NOVÉ: Informace o nutnosti reloadu
             return self.async_create_entry(
                 title="",
                 data={
                     "info": "⚠️ Změny byly uloženy. Pro aktivaci změn prosím restartujte Home Assistant nebo reloadněte integraci OIG Cloud."
-                }
+                },
             )
-        
+
         # Zobrazit summary se stejnou logikou jako v ConfigFlow
         summary_lines = [
             "**Přihlášení:**",

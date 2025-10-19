@@ -255,15 +255,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if "enable_spot_prices" in entry.options:
         _LOGGER.info("🔄 Migrating enable_spot_prices to enable_pricing")
         new_options = dict(entry.options)
-        
+
         # Pokud enable_spot_prices byl True, zapneme enable_pricing
         if new_options.get("enable_spot_prices", False):
             new_options["enable_pricing"] = True
             _LOGGER.info("✅ Migrated: enable_spot_prices=True -> enable_pricing=True")
-        
+
         # Odstraníme starý flag
         new_options.pop("enable_spot_prices", None)
-        
+
         # Aktualizujeme entry
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
