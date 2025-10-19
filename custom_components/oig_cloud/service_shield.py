@@ -1056,7 +1056,7 @@ class ServiceShield:
                     f"očekávaná = '{expected_value}'"
                 )
             elif event_type == "started":
-                message = f"Spuštěna služba – {service}"
+                message = f"Spuštěna služba – {friendly_name}: z '{from_value}' na '{expected_value}'"
             elif event_type == "ignored":
                 message = (
                     f"Ignorováno – {service} ({reason or 'už běží nebo ve frontě'})"
@@ -1118,7 +1118,7 @@ class ServiceShield:
         self, service_name: str, data: Dict[str, Any]
     ) -> Dict[str, str]:
         """Extrahuje očekávané entity a jejich cílové hodnoty z parametrů služby.
-        
+
         KLÍČOVÉ: Vrací hodnoty tak, jak je SENZOR skutečně poskytuje (vždy česky),
         protože senzory mají hardcoded "cs" v state() property.
         """
@@ -1197,16 +1197,16 @@ class ServiceShield:
             mode = str(data.get("mode") or "").strip()
             if mode not in ("CBB", "Manual"):
                 return {}
-            
+
             # OPRAVA: Přesné mapování služba → senzor (backend VŽDY česky)
             # Služba přijímá: "CBB", "Manual" (anglicky)
             # Senzor vrací: "CBB", "Manuální" (česky)
             boiler_mode_mapping = {
-                "CBB": "CBB",           # Stejné
-                "Manual": "Manuální"    # Překlad EN → CS
+                "CBB": "CBB",  # Stejné
+                "Manual": "Manuální",  # Překlad EN → CS
             }
             expected_value = boiler_mode_mapping.get(mode)
-            
+
             entity_id = find_entity("_boiler_manual_mode")
             if entity_id:
                 self.last_checked_entity_id = entity_id
@@ -1270,9 +1270,9 @@ class ServiceShield:
 
                 # OPRAVA: Přesné mapování služba → senzor (backend VŽDY česky)
                 mode_mapping = {
-                    "Vypnuto / Off": "Vypnuto",      # Přesná shoda
-                    "Zapnuto / On": "Zapnuto",        # Přesná shoda (NE "nebo Omezeno"!)
-                    "S omezením / Limited": "Omezeno" # Přesná shoda (NE "Zapnuto nebo"!)
+                    "Vypnuto / Off": "Vypnuto",  # Přesná shoda
+                    "Zapnuto / On": "Zapnuto",  # Přesná shoda (NE "nebo Omezeno"!)
+                    "S omezením / Limited": "Omezeno",  # Přesná shoda (NE "Zapnuto nebo"!)
                 }
 
                 expected_text = mode_mapping.get(mode_string)

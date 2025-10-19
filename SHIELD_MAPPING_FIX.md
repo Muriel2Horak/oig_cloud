@@ -7,6 +7,7 @@ Shield nefungoval správně pro `set_grid_delivery` a `set_boiler_mode` kvůli *
 ### Zjištěné problémy:
 
 1. **Grid Delivery Mode - "nebo" hack**
+
    ```python
    # ŠPATNĚ (service_shield.py):
    mode_mapping = {
@@ -15,6 +16,7 @@ Shield nefungoval správně pro `set_grid_delivery` a `set_boiler_mode` kvůli *
    ```
 
 2. **Boiler Mode - EN vs CS**
+
    ```python
    # Služba: "Manual" (anglicky)
    # Senzor: "Manuální" (česky)
@@ -82,17 +84,17 @@ Shield nyní poskytuje **strukturovaná data** pro Frontend:
 ```javascript
 // Dashboard může zobrazovat česky/anglicky
 const GRID_MODE_MAP = {
-    "Vypnuto": { label_en: "Off", label_cs: "Vypnuto" },
-    "Zapnuto": { label_en: "On", label_cs: "Zapnuto" },
-    "Omezeno": { label_en: "Limited", label_cs: "Omezeno" }
+  Vypnuto: { label_en: "Off", label_cs: "Vypnuto" },
+  Zapnuto: { label_en: "On", label_cs: "Zapnuto" },
+  Omezeno: { label_en: "Limited", label_cs: "Omezeno" },
 };
 
 // Použití:
-request.targets.forEach(target => {
-    if (target.param === 'mode') {
-        const label = GRID_MODE_MAP[target.value].label_cs;
-        updateButton(label);
-    }
+request.targets.forEach((target) => {
+  if (target.param === "mode") {
+    const label = GRID_MODE_MAP[target.value].label_cs;
+    updateButton(label);
+  }
 });
 ```
 
@@ -108,33 +110,35 @@ request.targets.forEach(target => {
 
 ### Grid Delivery Mode
 
-| Služba (input) | Shield (expected) | Senzor (current) | Status |
-|----------------|-------------------|------------------|--------|
-| `"Vypnuto / Off"` | `"Vypnuto"` | `"Vypnuto"` | ✅ Funguje |
-| `"Zapnuto / On"` | `"Zapnuto"` | `"Zapnuto"` | ✅ Funguje |
-| `"S omezením / Limited"` | `"Omezeno"` | `"Omezeno"` | ✅ Funguje |
+| Služba (input)           | Shield (expected) | Senzor (current) | Status     |
+| ------------------------ | ----------------- | ---------------- | ---------- |
+| `"Vypnuto / Off"`        | `"Vypnuto"`       | `"Vypnuto"`      | ✅ Funguje |
+| `"Zapnuto / On"`         | `"Zapnuto"`       | `"Zapnuto"`      | ✅ Funguje |
+| `"S omezením / Limited"` | `"Omezeno"`       | `"Omezeno"`      | ✅ Funguje |
 
 ### Boiler Mode
 
-| Služba (input) | Shield (expected) | Senzor (current) | Status |
-|----------------|-------------------|------------------|--------|
-| `"CBB"` | `"CBB"` | `"CBB"` | ✅ Funguje |
-| `"Manual"` | `"Manuální"` | `"Manuální"` | ✅ Funguje |
+| Služba (input) | Shield (expected) | Senzor (current) | Status     |
+| -------------- | ----------------- | ---------------- | ---------- |
+| `"CBB"`        | `"CBB"`           | `"CBB"`          | ✅ Funguje |
+| `"Manual"`     | `"Manuální"`      | `"Manuální"`     | ✅ Funguje |
 
 ### Box Mode
 
-| Služba (input) | Shield (expected) | Senzor (current) | Status |
-|----------------|-------------------|------------------|--------|
-| `"Home 1"` až `"Home 6"` | `"Home X"` | `"Home X"` | ✅ Funguje |
+| Služba (input)           | Shield (expected) | Senzor (current) | Status     |
+| ------------------------ | ----------------- | ---------------- | ---------- |
+| `"Home 1"` až `"Home 6"` | `"Home X"`        | `"Home X"`       | ✅ Funguje |
 
 ## 🔬 Testování
 
 1. **Změna Grid Delivery Mode:**
+
    ```yaml
    service: oig_cloud.set_grid_delivery
    data:
      mode: "Vypnuto / Off"
    ```
+
    - ✅ Shield detekuje změnu
    - ✅ Frontend zamkne tlačítko
    - ✅ Logbook zobrazí záznam
@@ -152,6 +156,7 @@ request.targets.forEach(target => {
 ## 📝 Změněné soubory
 
 1. `service_shield.py`
+
    - Opraveno mapování pro `set_grid_delivery` (mode)
    - Opraveno mapování pro `set_boiler_mode`
    - Přidána helper funkce `_extract_param_type()`

@@ -243,7 +243,7 @@ class OigCloudShieldSensor(OigCloudSensor):
                 for svc_name, svc_info in pending.items():
                     # OPRAVA: Strukturovaný targets output pro Frontend
                     targets = []
-                    
+
                     for entity_id, expected_value in svc_info.get(
                         "entities", {}
                     ).items():
@@ -254,16 +254,20 @@ class OigCloudShieldSensor(OigCloudSensor):
                         original_value = svc_info.get("original_states", {}).get(
                             entity_id, "unknown"
                         )
-                        
+
                         # Strukturovaný target objekt
-                        targets.append({
-                            "param": _extract_param_type(entity_id),  # "mode", "limit", "level"
-                            "value": expected_value,                  # Cílová hodnota (vždy česky ze senzoru)
-                            "entity_id": entity_id,                   # Pro identifikaci
-                            "from": original_value,                   # Odkud
-                            "to": expected_value,                     # Kam (stejné jako value)
-                            "current": current_value                  # Aktuální stav
-                        })
+                        targets.append(
+                            {
+                                "param": _extract_param_type(
+                                    entity_id
+                                ),  # "mode", "limit", "level"
+                                "value": expected_value,  # Cílová hodnota (vždy česky ze senzoru)
+                                "entity_id": entity_id,  # Pro identifikaci
+                                "from": original_value,  # Odkud
+                                "to": expected_value,  # Kam (stejné jako value)
+                                "current": current_value,  # Aktuální stav
+                            }
+                        )
 
                     # Legacy: Zachovat changes pro zpětnou kompatibilitu
                     changes = []
@@ -318,22 +322,26 @@ class OigCloudShieldSensor(OigCloudSensor):
 
                     # OPRAVA: Strukturovaný targets output pro Frontend
                     targets = []
-                    
+
                     for entity_id, expected_value in expected_entities.items():
                         current_state = self.hass.states.get(entity_id)
                         current_value = (
                             current_state.state if current_state else "unknown"
                         )
-                        
+
                         # Strukturovaný target objekt (pro queue nemáme original_states)
-                        targets.append({
-                            "param": _extract_param_type(entity_id),  # "mode", "limit", "level"
-                            "value": expected_value,                  # Cílová hodnota (vždy česky)
-                            "entity_id": entity_id,                   # Pro identifikaci
-                            "from": current_value,                    # Pro queue = current
-                            "to": expected_value,                     # Kam
-                            "current": current_value                  # Aktuální stav
-                        })
+                        targets.append(
+                            {
+                                "param": _extract_param_type(
+                                    entity_id
+                                ),  # "mode", "limit", "level"
+                                "value": expected_value,  # Cílová hodnota (vždy česky)
+                                "entity_id": entity_id,  # Pro identifikaci
+                                "from": current_value,  # Pro queue = current
+                                "to": expected_value,  # Kam
+                                "current": current_value,  # Aktuální stav
+                            }
+                        )
 
                     # Legacy: Zachovat changes pro zpětnou kompatibilitu
                     changes = []
