@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import Mock
 
-from custom_components.oig_cloud.models import (
+from custom_components.oig_cloud.lib.oig_cloud_client.models import (
     AcInData,
     AcInBData,
     AcOutData,

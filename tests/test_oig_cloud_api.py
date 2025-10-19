@@ -8,7 +8,7 @@ import aiohttp
 import pytest
 from aiohttp import ClientResponseError
 
-from custom_components.oig_cloud.api.oig_cloud_api import (
+from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
     OigCloudApi,
     OigCloudApiError,
     OigCloudAuthError,
@@ -26,9 +26,9 @@ class TestOigCloudApi(unittest.TestCase):
         with open("tests/sample-response.json", "r") as f:
             self.sample_data = json.load(f)
         
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.datetime")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.datetime")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_stats(self, mock_tracer, mock_datetime, mock_session):
         """Test getting stats from API."""
         mock_datetime.datetime.now.return_value = mock_datetime.datetime(2025, 1, 27, 8, 34, 57)
@@ -42,9 +42,9 @@ class TestOigCloudApi(unittest.TestCase):
         self.assertEqual(self.api.last_state, {"key": "value"})
         self.assertEqual(self.api.box_id, "key")
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.datetime")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.datetime")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_stats_cache(self, mock_tracer, mock_datetime, mock_session):
         """Test caching behavior for stats."""
         mock_datetime.datetime.now.return_value = mock_datetime.datetime(2025, 1, 27, 8, 34, 57)
@@ -57,8 +57,8 @@ class TestOigCloudApi(unittest.TestCase):
         # Verify the session was not created (no API call made)
         mock_session.assert_not_called()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_authenticate_success(self, mock_tracer, mock_session):
         """Test successful authentication."""
         # Configure mock response
@@ -81,8 +81,8 @@ class TestOigCloudApi(unittest.TestCase):
         self.assertEqual(self.api._phpsessid, "test_session_id")
         mock_session.return_value.__aenter__.return_value.post.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_authenticate_failure_wrong_response(self, mock_tracer, mock_session):
         """Test authentication failure with wrong response."""
         # Configure mock response
@@ -98,8 +98,8 @@ class TestOigCloudApi(unittest.TestCase):
             
         mock_session.return_value.__aenter__.return_value.post.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_authenticate_failure_http_error(self, mock_tracer, mock_session):
         """Test authentication failure with HTTP error."""
         # Configure mock response
@@ -115,8 +115,8 @@ class TestOigCloudApi(unittest.TestCase):
             
         mock_session.return_value.__aenter__.return_value.post.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_session_not_authenticated(self, mock_tracer, mock_session):
         """Test get_session when not authenticated."""
         self.api._phpsessid = None
@@ -126,8 +126,8 @@ class TestOigCloudApi(unittest.TestCase):
             
         mock_session.assert_not_called()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_stats_internal_auth_retry(self, mock_tracer, mock_session):
         """Test get_stats_internal with authentication retry."""
         self.api._phpsessid = "test_session_id"
@@ -159,7 +159,7 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertEqual(self.api.last_state, {"key": "value"})
             mock_auth.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_box_mode(self, mock_tracer):
         """Test setting box mode."""
         # Mock the internal method
@@ -168,7 +168,7 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertTrue(result)
             mock_set_params.assert_called_once_with("box_prms", "mode", "1")
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_grid_delivery_limit(self, mock_tracer):
         """Test setting grid delivery limit."""
         # Mock the internal method
@@ -177,7 +177,7 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertTrue(result)
             mock_set_params.assert_called_once_with("invertor_prm1", "p_max_feed_grid", 5000)
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_boiler_mode(self, mock_tracer):
         """Test setting boiler mode."""
         # Mock the internal method
@@ -186,9 +186,9 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertTrue(result)
             mock_set_params.assert_called_once_with("boiler_prms", "manual", "1")
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.time")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.time")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_box_params_internal(self, mock_tracer, mock_time, mock_session):
         """Test setting box parameters."""
         self.api._phpsessid = "test_session_id"
@@ -221,7 +221,7 @@ class TestOigCloudApi(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_box_params_internal_no_box_id(self, mock_tracer):
         """Test setting box parameters without box ID."""
         self.api.box_id = None
@@ -229,9 +229,9 @@ class TestOigCloudApi(unittest.TestCase):
         with self.assertRaises(OigCloudApiError):
             await self.api.set_box_params_internal("table", "column", "value")
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.time")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.time")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_box_params_internal_failure(self, mock_tracer, mock_time, mock_session):
         """Test setting box parameters failure."""
         self.api._phpsessid = "test_session_id"
@@ -249,9 +249,9 @@ class TestOigCloudApi(unittest.TestCase):
         with self.assertRaises(OigCloudApiError):
             await self.api.set_box_params_internal("table", "column", "value")
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.time")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.time")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_grid_delivery(self, mock_tracer, mock_time, mock_session):
         """Test setting grid delivery mode."""
         self.api._phpsessid = "test_session_id"
@@ -282,7 +282,7 @@ class TestOigCloudApi(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_grid_delivery_no_telemetry(self, mock_tracer):
         """Test setting grid delivery with no telemetry."""
         self.api._no_telemetry = True
@@ -290,9 +290,9 @@ class TestOigCloudApi(unittest.TestCase):
         with self.assertRaises(OigCloudApiError):
             await self.api.set_grid_delivery(1)
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.aiohttp.ClientSession")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.time")
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.aiohttp.ClientSession")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.time")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_set_formating_mode(self, mock_tracer, mock_time, mock_session):
         """Test setting battery formatting mode."""
         self.api._phpsessid = "test_session_id"
@@ -321,7 +321,7 @@ class TestOigCloudApi(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_data(self, mock_tracer):
         """Test get_data method."""
         # Mock the get_stats method
@@ -330,7 +330,7 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertEqual(result, self.sample_data)
             mock_get_stats.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_typed_data(self, mock_tracer):
         """Test get_typed_data method."""
         # Mock the get_stats method
@@ -340,7 +340,7 @@ class TestOigCloudApi(unittest.TestCase):
             self.assertEqual(len(result.devices), len(self.sample_data))
             mock_get_stats.assert_called_once()
 
-    @patch("custom_components.oig_cloud.api.oig_cloud_api.tracer")
+    @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.tracer")
     async def test_get_typed_data_empty(self, mock_tracer):
         """Test get_typed_data method with empty data."""
         # Mock the get_stats method
