@@ -4130,14 +4130,84 @@
             });
         }
 
+        // Jednoduchý confirm dialog bez checkboxu a vysvětlení
+        function showSimpleConfirmDialog(title, message, confirmText = 'OK', cancelText = 'Zrušit') {
+            return new Promise((resolve) => {
+                // Create overlay
+                const overlay = document.createElement('div');
+                overlay.className = 'ack-dialog-overlay';
+
+                // Create dialog
+                const dialog = document.createElement('div');
+                dialog.className = 'ack-dialog';
+
+                dialog.innerHTML = `
+                    <div class="ack-dialog-header">
+                        ⚠️ ${title}
+                    </div>
+                    <div class="ack-dialog-body" style="padding: 20px 0;">
+                        ${message}
+                    </div>
+                    <div class="ack-dialog-buttons">
+                        <button class="btn-cancel">${cancelText}</button>
+                        <button class="btn-confirm">${confirmText}</button>
+                    </div>
+                `;
+
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+
+                const confirmBtn = dialog.querySelector('.btn-confirm');
+                const cancelBtn = dialog.querySelector('.btn-cancel');
+
+                // Handle confirm
+                confirmBtn.addEventListener('click', () => {
+                    document.body.removeChild(overlay);
+                    resolve(true);
+                });
+
+                // Handle cancel
+                cancelBtn.addEventListener('click', () => {
+                    document.body.removeChild(overlay);
+                    resolve(false);
+                });
+
+                // Handle ESC key
+                const handleEsc = (e) => {
+                    if (e.key === 'Escape') {
+                        document.body.removeChild(overlay);
+                        document.removeEventListener('keydown', handleEsc);
+                        resolve(false);
+                    }
+                };
+                document.addEventListener('keydown', handleEsc);
+            });
+        }
+
         // Remove item from shield queue
         async function removeFromQueue(position) {
             try {
-                // OPRAVA: Použít showAcknowledgementDialog místo browser confirm()
-                const confirmed = await showAcknowledgementDialog(
-                    `Odstranit položku #${position} z fronty?`,
-                    `Tato akce je nevratná. Požadavek bude odstraněn z fronty a nebude zpracován.`,
-                    'Odstranit',
+                // Získat detaily položky pro název akce
+                const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+                const requests = shieldQueue.attributes?.requests || [];
+                const request = requests.find(r => r.position === position);
+
+                let actionName = 'Operace';
+                if (request) {
+                    if (request.service_name.includes('set_box_mode')) {
+                        actionName = `Změna režimu na ${request.target_display || request.target_value || 'neznámý'}`;
+                    } else if (request.service_name.includes('set_grid_limit')) {
+                        actionName = `Změna limitu do sítě na ${request.target_display || request.target_value || 'neznámý'}`;
+                    } else if (request.service_name.includes('set_grid_delivery_limit')) {
+                        actionName = `Změna limitu ze sítě na ${request.target_display || request.target_value || 'neznámý'}`;
+                    }
+                }
+
+                // Jednoduchý confirm dialog
+                const confirmed = await showSimpleConfirmDialog(
+                    actionName,
+                    'Operace bude odstraněna z fronty bez provedení.',
+                    'OK',
                     'Zrušit'
                 );
 
@@ -4150,8 +4220,7 @@
                 });
 
                 if (success) {
-                    showNotification('Hotovo', `Položka #${position} byla odstraněna z fronty`, 'success');
-                    // Okamžitá aktualizace UI (bez čekání na WebSocket debounce)
+                    // Tichá aktualizace bez notifikace
                     await updateShieldQueue();
                     await updateShieldUI();
                 } else {
