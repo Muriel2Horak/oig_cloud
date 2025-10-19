@@ -1031,9 +1031,20 @@ class ServiceShield:
 
         for entity_id, expected_value in entities.items() or {None: None}.items():
             state = self.hass.states.get(entity_id) if entity_id else None
+            
+            # OPRAVA: Pro grid delivery limit použijeme hlavní entitu pro lepší UX
+            display_entity_id = entity_id
+            if entity_id and "_invertor_prm1_p_max_feed_grid" in entity_id:
+                # Najdeme hlavní entitu (_invertor_prms_to_grid)
+                main_entity_id = entity_id.replace("_invertor_prm1_p_max_feed_grid", "_invertor_prms_to_grid")
+                main_state = self.hass.states.get(main_entity_id)
+                if main_state:
+                    display_entity_id = main_entity_id
+                    state = main_state
+            
             friendly_name = (
-                state.attributes.get("friendly_name", entity_id)
-                if state and entity_id
+                state.attributes.get("friendly_name", display_entity_id)
+                if state and display_entity_id
                 else service
             )
             current_value = state.state if state else "neznámá"
@@ -1044,28 +1055,49 @@ class ServiceShield:
             else:
                 from_value = current_value
 
+            # OPRAVA: Pro grid delivery limit upravíme zprávy pro lepší UX
+            is_limit_change = entity_id and "_invertor_prm1_p_max_feed_grid" in entity_id
+            
             if event_type == "change_requested":
-                message = f"Požadavek na změnu {friendly_name} z '{from_value}' na '{expected_value}'"
+                if is_limit_change:
+                    message = f"Požadavek na změnu {friendly_name} – nastavení limitu na {expected_value}W"
+                else:
+                    message = f"Požadavek na změnu {friendly_name} z '{from_value}' na '{expected_value}'"
             elif event_type == "completed":
-                message = f"Změna provedena – {friendly_name} z '{from_value}' na '{expected_value}'"
+                if is_limit_change:
+                    message = f"Změna provedena – {friendly_name} má nastavený limit {expected_value}W"
+                else:
+                    message = f"Změna provedena – {friendly_name} z '{from_value}' na '{expected_value}'"
             elif event_type == "skipped":
-                message = f"Změna přeskočena – {friendly_name} má již hodnotu '{expected_value}'"
+                if is_limit_change:
+                    message = f"Změna přeskočena – {friendly_name} má již limit {expected_value}W"
+                else:
+                    message = f"Změna přeskočena – {friendly_name} má již hodnotu '{expected_value}'"
             elif event_type == "queued":
-                message = (
-                    f"Přidáno do fronty – {friendly_name}: aktuální = '{current_value}', "
-                    f"očekávaná = '{expected_value}'"
-                )
+                if is_limit_change:
+                    message = f"Přidáno do fronty – {friendly_name}: nastavení limitu na {expected_value}W"
+                else:
+                    message = (
+                        f"Přidáno do fronty – {friendly_name}: aktuální = '{current_value}', "
+                        f"očekávaná = '{expected_value}'"
+                    )
             elif event_type == "started":
-                message = f"Spuštěna služba – {friendly_name}: z '{from_value}' na '{expected_value}'"
+                if is_limit_change:
+                    message = f"Spuštěna služba – {friendly_name}: nastavení limitu na {expected_value}W"
+                else:
+                    message = f"Spuštěna služba – {friendly_name}: z '{from_value}' na '{expected_value}'"
             elif event_type == "ignored":
                 message = (
                     f"Ignorováno – {service} ({reason or 'už běží nebo ve frontě'})"
                 )
             elif event_type == "timeout":
-                message = (
-                    f"Časový limit vypršel – {friendly_name} stále není '{expected_value}' "
-                    f"(aktuální: '{current_value}')"
-                )
+                if is_limit_change:
+                    message = f"Časový limit vypršel – {friendly_name}: limit stále není {expected_value}W"
+                else:
+                    message = (
+                        f"Časový limit vypršel – {friendly_name} stále není '{expected_value}' "
+                        f"(aktuální: '{current_value}')"
+                    )
             elif event_type == "released":
                 message = f"Semafor uvolněn – služba {service} dokončena"
             elif event_type == "cancelled":
@@ -1080,7 +1112,7 @@ class ServiceShield:
                     "name": "OIG Shield",
                     "message": message,
                     "domain": "oig_cloud",
-                    "entity_id": entity_id,
+                    "entity_id": display_entity_id,  # OPRAVA: Použijeme display_entity_id místo entity_id
                     "when": dt_now(),
                     "source": "OIG Cloud Shield",
                     "source_type": "system",
