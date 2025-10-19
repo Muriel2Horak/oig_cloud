@@ -788,11 +788,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_battery_prediction", False):
             total += 1  # wizard_battery
         if self._wizard_data.get("enable_pricing", False):
-            total += 1  # wizard_pricing
+            total += 3  # wizard_pricing (3 kroky: import, export, distribution)
         if self._wizard_data.get("enable_extended_sensors", False):
             total += 1  # wizard_extended
-        if self._wizard_data.get("enable_dashboard", False):
-            total += 1  # wizard_dashboard
 
         # Summary krok (vždy na konci):
         total += 1
@@ -886,7 +884,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_pricing_export",
             "wizard_pricing_distribution",
             "wizard_extended",
-            "wizard_dashboard",
             "wizard_summary",
         ]
 
@@ -916,10 +913,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 continue
             if step == "wizard_extended" and not self._wizard_data.get(
                 "enable_extended_sensors"
-            ):
-                continue
-            if step == "wizard_dashboard" and not self._wizard_data.get(
-                "enable_dashboard"
             ):
                 continue
 
@@ -1721,82 +1714,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 }
             ),
             description_placeholders=self._get_step_placeholders("wizard_extended"),
-        )
-
-    async def async_step_wizard_dashboard(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 8: Dashboard configuration."""
-        if user_input is not None:
-            # Kontrola tlačítka "Zpět"
-            if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_dashboard")
-
-            errors = {}
-
-            # Validace endpoint
-            endpoint = user_input.get("dashboard_endpoint", "/api/oig_dashboard")
-            if not endpoint.startswith("/"):
-                errors["dashboard_endpoint"] = "endpoint_must_start_with_slash"
-
-            # Validace portu
-            port = user_input.get("dashboard_port", 8123)
-            if port < 1 or port > 65535:
-                errors["dashboard_port"] = "invalid_port"
-
-            # Validace refresh interval
-            refresh = user_input.get("dashboard_refresh_interval", 30)
-            if refresh < 10 or refresh > 300:
-                errors["dashboard_refresh_interval"] = "invalid_interval"
-
-            if errors:
-                return self.async_show_form(
-                    step_id="wizard_dashboard",
-                    data_schema=self._get_dashboard_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_dashboard"
-                    ),
-                )
-
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_dashboard")
-
-            next_step = self._get_next_step("wizard_dashboard")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_dashboard",
-            data_schema=self._get_dashboard_schema(),
-            description_placeholders=self._get_step_placeholders("wizard_dashboard"),
-        )
-
-    def _get_dashboard_schema(
-        self, defaults: Optional[Dict[str, Any]] = None
-    ) -> vol.Schema:
-        """Get schema for dashboard step."""
-        if defaults is None:
-            defaults = self._wizard_data if self._wizard_data else {}
-
-        return vol.Schema(
-            {
-                vol.Optional(
-                    "dashboard_endpoint",
-                    default=defaults.get("dashboard_endpoint", "/api/oig_dashboard"),
-                ): str,
-                vol.Optional(
-                    "dashboard_port", default=defaults.get("dashboard_port", 8123)
-                ): vol.All(int, vol.Range(min=1, max=65535)),
-                vol.Optional(
-                    "dashboard_use_https",
-                    default=defaults.get("dashboard_use_https", False),
-                ): bool,
-                vol.Optional(
-                    "dashboard_refresh_interval",
-                    default=defaults.get("dashboard_refresh_interval", 30),
-                ): vol.All(int, vol.Range(min=10, max=300)),
-                vol.Optional("go_back", default=False): bool,
-            }
         )
 
     async def async_step_wizard_summary(

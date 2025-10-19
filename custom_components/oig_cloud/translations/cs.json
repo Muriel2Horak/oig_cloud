@@ -139,24 +139,6 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
-      "wizard_dashboard": {
-        "title": "📊 Konfigurace dashboardu",
-        "description": "{step}\n{progress}\n\n📖 **Webový dashboard**\n\nNastavte parametry webového rozhraní s grafy a vizualizacemi.\n\n💡 **Co dashboard poskytuje:**\n• 📈 Grafy spotřeby a výroby v čase\n• 🔋 Vizualizace stavu baterie\n• ☀️ Předpověď solární výroby\n• 💰 Aktuální a předpovídané ceny\n\n⚙️ Dashboard bude dostupný na: http://[IP_ADRESA]:[PORT][ENDPOINT]",
-        "data": {
-          "dashboard_endpoint": "Endpoint URL",
-          "dashboard_port": "Port",
-          "dashboard_use_https": "Použít HTTPS",
-          "dashboard_refresh_interval": "Interval aktualizace (s)",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
-        },
-        "data_description": {
-          "dashboard_endpoint": "Cesta k dashboardu (musí začínat /). Např. /api/oig_dashboard",
-          "dashboard_port": "Port na kterém bude dashboard dostupný (1-65535)",
-          "dashboard_use_https": "Pokud máte nastaven HTTPS certifikát, zaškrtněte",
-          "dashboard_refresh_interval": "Jak často se mají obnovovat data v dashboardu (10-300 sekund)",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
-        }
-      },
       "wizard_pricing_import": {
         "title": "💰 Konfigurace nákupní ceny (1/3)",
         "description": "{step}\n{progress}\n\n📖 **Krok 1: Nákupní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za nákup elektřiny ze sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT + procento - Variabilní cena podle burzy\n• 💵 SPOT + fixní poplatek - Stabilnější než procento\n• 🔒 FIX cena - Předvídatelná fixní cena\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
@@ -214,6 +196,16 @@
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
+      },
+      "wizard_summary": {
+        "title": "✅ Shrnutí a dokončení",
+        "description": "{step}\n{progress}\n\n📋 **Shrnutí konfigurace**\n\n{summary}\n\n---\n\n✅ **Vše je připraveno!**\n\nKliknutím na 'Odeslat' dokončíte nastavení a integrace se aktivuje.",
+        "data": {
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
