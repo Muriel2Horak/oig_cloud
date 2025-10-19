@@ -491,8 +491,8 @@
 
         .grid-limit-indicator {
             position: absolute;
-            top: 0;
-            right: -120px;
+            top: 50px;
+            right: -80px;
             background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
             border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
@@ -3357,7 +3357,7 @@
             if (shieldQueueUpdateInterval) {
                 clearInterval(shieldQueueUpdateInterval);
             }
-            
+
             // Update every second for live duration
             shieldQueueUpdateInterval = setInterval(() => {
                 updateShieldQueue();
@@ -3901,7 +3901,7 @@
                 const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
                 const modeIcon = isOff ? '🚫' : isOn ? '💧' : '🚰';
                 const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : 'Omezeno';
-                
+
                 gridChangeText.textContent = `${modeIcon} ${modeName}`;
                 gridChangeIndicator.style.display = 'flex';
             }
