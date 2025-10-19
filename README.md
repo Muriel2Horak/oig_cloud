@@ -1,3 +1,5 @@
+# ČEZ Battery Box - OIG Cloud Integrace pro Home Assistant
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 ![GitHub manifest version (path)](https://img.shields.io/github/manifest-json/v/psimsa/oig_cloud?filename=custom_components%2Foig_cloud%2Fmanifest.json)
 ![GitHub Release Date - Published_At](https://img.shields.io/github/release-date/psimsa/oig_cloud)
@@ -5,148 +7,276 @@
 [![HACS Action](https://github.com/psimsa/oig_cloud/actions/workflows/hacs.yml/badge.svg)](https://github.com/psimsa/oig_cloud/actions/workflows/hacs.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/psimsa/oig_cloud/badge)](https://www.codefactor.io/repository/github/psimsa/oig_cloud)
 
----
-
-# OIG Cloud Integrace pro Home Assistant
-
-Tato integrace umožňuje propojení ČEZ Battery Box s Home Assistantem skrze OIG Cloud. Poskytuje základní informace o stavu baterie, výroby, spotřeby a historických dat. Obsahuje také potřebné entity pro použití stránky Energie a umožňuje také nastavit pracovní režim boxu a regulovat přetoky do distribuční sítě.
-
-## Instalace
-
-Nejjednodušší způsob instalace je přes [HACS](https://hacs.xyz/). V nastavení HACS zvolte "Integrations" a vyhledejte "OIG Cloud". Po instalaci je nutné restartovat Home Assistant.
-
-## 🔴 DŮLEŽITÉ: Povinný Požadavek - Živá Data
-
-**Před instalací integrace MUSÍTE mít v mobilní aplikaci OIG Cloud zapnutá "Živá data"!**
-
-⚠️ Bez živých dat:
-
-- API vrací chybu **500 Internal Server Error**
-- Integrace se **nenainstaluje**
-- Všechny senzory budou **nedostupné**
-
-### Jak Zapnout Živá Data
-
-1. Otevřete mobilní aplikaci **OIG Cloud**
-2. **☰ Menu** → **⚙️ Nastavení** → **Přístup k datům**
-3. Zapněte přepínač **"Živá data"**
-4. Počkejte ~30 sekund
-
-📖 **Detailní návod:** [LIVE_DATA_REQUIREMENT.md](./docs/LIVE_DATA_REQUIREMENT.md)
+Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Monitorování, řízení a automatizace vašeho domácího úložiště energie.
 
 ---
 
-## Konfigurace
+## 🚀 Hlavní Funkce
 
-### 🧙‍♂️ Nový Wizard Průvodce
+### 📊 **Monitorování v reálném čase**
+- Aktuální výkon a stav baterie (SOC, napětí, teplota)
+- FVE výroba a domácí spotřeba
+- Import/export elektrické sítě
+- Sledování bojleru a dalších zařízení
 
-Integrace nyní obsahuje **moderní průvodce nastavením** pro snadnější konfiguraci!
+### ⚡ **Integrace s Home Assistant Energy**
+- Přímá podpora pro Energy Dashboard
+- Statistiky výroby, spotřeby a toků energie
+- Dlouhodobé ukládání dat
 
-#### Typy nastavení:
+### 🎛️ **Pokročilé Řízení**
+- Změna pracovního režimu (Home, Home+, Grid, UPS)
+- Nastavení přetoků do sítě
+- Řízení bojleru
+- Podpora více Battery Boxů na jednom účtu
 
-1. **🧙‍♂️ Průvodce nastavením (DOPORUČENO)**
+### 🛡️ **ServiceShield™ Ochrana**
+- Automatická ochrana proti nechtěným změnám
+- Configurable timeout protection (5-60 minut)
+- Detekce externích změn režimu
+- Live monitoring změn
 
-   - Postupné kroky s kontextovou nápovědou
-   - Automatické přeskočení nepotřebných sekcí
-   - Možnost vrátit se zpět a opravit
-   - Souhrn před dokončením
-   - ⏱️ Trvání: 2-10 minut
+### 🧙‍♂️ **Moderní Průvodce Nastavením**
+- Wizard s postupnými kroky
+- Kontextová nápověda
+- Rychlé nastavení za 30 sekund
+- Pokročilá konfigurace pro power-usery
 
-2. **⚡ Rychlé nastavení**
+### 📈 **Rozšířené Statistiky**
+- Denní, měsíční a roční přehledy
+- Nabíjení baterie z FVE vs. ze sítě
+- Přesné výpočty pomocí Riemannovy integrace
+- Automatické resety statistik
 
-   - Pouze přihlašovací údaje
-   - Výchozí hodnoty pro vše ostatní
-   - ⏱️ Trvání: 30 sekund
+---
 
-3. **📥 Import z YAML**
-   - Pro migraci existující konfigurace
-   - (Zatím není implementováno)
+## 📋 Požadavky
 
-#### Wizard Flow:
+### ✅ Povinné
+- **Home Assistant** 2024.1.0 nebo novější
+- **ČEZ Battery Box** s přístupem k OIG Cloud
+- **Aktivní "Živá data"** v mobilní aplikaci OIG Cloud
+  - ⚠️ **Bez živých dat integrace nefunguje!**
+  - 📖 [Jak zapnout živá data](./docs/LIVE_DATA_REQUIREMENT.md)
 
+### 🔧 Doporučené
+- HACS pro snadnou instalaci a aktualizace
+
+---
+
+## 📥 Instalace
+
+### Pomocí HACS (Doporučeno)
+
+1. Otevřete **HACS** → **Integrations**
+2. Klikněte na **⋮** (tři tečky) → **Custom repositories**
+3. Přidejte: `https://github.com/psimsa/oig_cloud`
+4. Kategorie: **Integration**
+5. Vyhledejte **"OIG Cloud"** a klikněte na **Download**
+6. **Restartujte Home Assistant**
+
+### Manuálně
+
+1. Stáhněte nejnovější release
+2. Rozbalte do `custom_components/oig_cloud/`
+3. Restartujte Home Assistant
+
+---
+
+## ⚙️ Konfigurace
+
+### 🧙‍♂️ Průvodce nastavením (Doporučeno)
+
+1. **Nastavení** → **Zařízení a služby** → **+ Přidat integraci**
+2. Vyhledejte **"OIG Cloud"**
+3. Zvolte **"🧙‍♂️ Průvodce nastavením"**
+4. Postupujte podle kroků:
+   - ✅ Přihlášení a ověření
+   - 🎯 Výběr modulů (Energy, Bojler, Shield...)
+   - ⏱️ Nastavení intervalů aktualizace
+   - 🎨 Detailní konfigurace funkcí
+   - 📋 Souhrn a dokončení
+
+⏱️ **Trvání:** 2-10 minut (podle zvolených funkcí)
+
+### ⚡ Rychlé nastavení
+
+1. Stejný postup jako u wizardu
+2. Zvolte **"⚡ Rychlé nastavení"**
+3. Zadejte pouze přihlašovací údaje
+4. Vše ostatní se nastaví automaticky
+
+⏱️ **Trvání:** 30 sekund
+
+📖 **Detailní dokumentace:** [Wizard Quick Start](./docs/WIZARD_QUICK_START.md)
+
+---
+
+## 📚 Dokumentace
+
+### 👤 Pro Uživatele
+- **[Konfigurace](./docs/user/CONFIGURATION.md)** - Detailní nastavení integrace
+- **[Dashboard](./docs/user/DASHBOARD.md)** - Použití energetického dashboardu
+- **[Entity](./docs/user/ENTITIES.md)** - Seznam všech senzorů a ovladačů
+- **[Služby](./docs/user/SERVICES.md)** - Volání služeb pro řízení Battery Boxu
+- **[ServiceShield™](./docs/user/SHIELD.md)** - Ochrana před nechtěnými změnami
+- **[Automatizace](./docs/user/AUTOMATIONS.md)** - Příklady automatizací
+- **[FAQ](./docs/user/FAQ.md)** - Časté dotazy
+- **[Troubleshooting](./docs/user/TROUBLESHOOTING.md)** - Řešení problémů
+
+### 🔧 Pro Vývojáře
+- **[Architecture](./docs/dev/DEVICE_ARCHITECTURE_ANALYSIS.md)** - Architektura integrace
+- **[Multi-Device Support](./docs/dev/MULTI_DEVICE_ANALYSIS.md)** - Podpora více Battery Boxů
+- **[API Communication](./docs/dev/API_COMMUNICATION_REPORT.md)** - Komunikace s OIG Cloud API
+- **[Vendoring Guide](./docs/dev/VENDORING_GUIDE.md)** - Správa závislostí
+- **[Module Dependencies](./docs/dev/MODULE_DEPENDENCIES.md)** - Závislosti mezi moduly
+- **[Development Setup](./docs/dev/VENDORING_IMPLEMENTATION_SUMMARY.md)** - Nastavení vývojového prostředí
+
+---
+
+## 🎯 Klíčové Moduly
+
+### 🔋 Battery (Základní modul)
+Vždy aktivní - poskytuje data o baterii, FVE, spotřebě a síti.
+
+### ⚡ Energy Dashboard
+Statistické entity pro Energy Dashboard v Home Assistant.
+
+### 🔥 Boiler (Bojler)
+Monitoring a řízení elektrického bojleru.
+
+### 🛡️ ServiceShield™
+Ochrana proti nechtěným změnám pracovního režimu.
+
+### 📊 Extended Stats
+Rozšířené statistiky (denní, měsíční, roční).
+
+---
+
+## 🔧 Služby (Services)
+
+### `oig_cloud.set_box_mode`
+Nastavení pracovního režimu Battery Boxu.
+
+**Režimy:**
+- `home` - Domácí režim
+- `home1` - Home+ (priorita bojler)
+- `home2` - Home+ (priorita baterie)
+- `grid` - Síťový režim
+- `ups` - UPS režim
+- `homeups` - Domácí + UPS
+
+### `oig_cloud.set_grid_delivery`
+Nastavení maximálního přetoku do sítě (0-10000 W).
+
+### `oig_cloud.set_boiler_mode`
+Zapnutí/vypnutí bojleru.
+
+### `oig_cloud.set_formating_mode`
+Formátování baterie (⚠️ Vymaže data!).
+
+📖 **Detailní dokumentace služeb:** [Services Documentation](./docs/user/SERVICES.md)
+
+---
+
+## 🆕 Co Je Nového ve Verzi 2.0.0-beta
+
+### 🔄 **Multi-Device Support**
+- Podpora více Battery Boxů na jednom OIG účtu
+- Device selector ve službách
+- Automatické čištění osiřelých zařízení
+
+### 📦 **Vendored Dependencies**
+- OIG Cloud Client nyní jako vendored modul
+- Žádné externí Python závislosti
+- Rychlejší instalace
+
+### 🧙‍♂️ **Wizard Configuration Flow**
+- Moderní průvodce nastavením
+- Progresivní kroky s validací
+- Rychlé nastavení vs. pokročilá konfigurace
+
+### 🛡️ **ServiceShield™ Vylepšení**
+- Configurable timeout (5-60 minut)
+- Live monitoring změn
+- Lepší detekce externích změn
+
+### 🔧 **Další Vylepšení**
+- ETag caching pro optimalizaci API komunikace
+- Jitter v pollingu pro rozprostření zátěže
+- Lepší error handling a logování
+- Testovací pokrytí
+
+📖 **Kompletní changelog:** [CHANGELOG.md](./CHANGELOG.md)
+
+---
+
+## 🐛 Známé Problémy
+
+### API vrací chybu 500
+✅ **Řešení:** Zapněte "Živá data" v mobilní aplikaci OIG Cloud
+
+### Entity jsou nedostupné
+✅ **Řešení:** Zkontrolujte, že je integrace správně nakonfigurována a OIG Cloud je dostupný
+
+### ServiceShield blokuje změny
+✅ **Řešení:** Počkejte na vypršení timeout nebo upravte timeout v Options
+
+📖 **Více problémů:** [Troubleshooting](./docs/user/TROUBLESHOOTING.md)
+
+---
+
+## 🤝 Přispívání
+
+Příspěvky jsou vítány! Prosím:
+
+1. Fork repozitář
+2. Vytvořte feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit změny (`git commit -m 'feat: Add amazing feature'`)
+4. Push do branch (`git push origin feature/amazing-feature`)
+5. Otevřete Pull Request
+
+### Development Setup
+
+```bash
+# Clone repo
+git clone https://github.com/psimsa/oig_cloud.git
+cd oig_cloud
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest tests/
 ```
-1. Přihlášení → Ověření + Živá data
-2. Výběr modulů → Co chcete používat
-3. Intervaly → Jak často načítat data
-4. Detaily modulů → Nastavení zapnutých funkcí
-5. Souhrn → Kontrola a dokončení
-```
-
-📖 **Kompletní dokumentace:** [WIZARD_QUICK_START.md](./WIZARD_QUICK_START.md)
-
-### Klasická konfigurace
-
-Při konfiguraci je třeba zadat přihlašovací údaje do OIG Cloudu (stejné jako pro mobilní aplikaci).
-
-⚠️ **Nový checkpoint:** Musíte potvrdit, že máte v aplikaci zapnutá "Živá data".
-
-![Konfigurace](./docs/login.png)
-
-## Použití
-
-Po instalaci a konfiguraci se vytvoří nové zařízení a entity. Všechny entity jsou dostupné v entitním registru a lze je tak přidat do UI. K aktualizaci dat dochází každou minutu.
-
-### 🚀 Optimalizace komunikace s API
-
-Integrace využívá pokročilé techniky pro minimalizaci zátěže OIG Cloud API:
-
-- **ETag / If-None-Match Caching**:
-
-  - Při každém požadavku integrace ukládá ETag hlavičku z odpovědi serveru
-  - Při dalších požadavcích posílá `If-None-Match` hlavičku
-  - Pokud data na serveru nebyla změněna, server vrací `304 Not Modified` a integrace používá lokální cache
-  - Výsledek: Snížení přenosů dat a rychlejší odezva při nezměněných datech
-
-- **Jitter v pollingu**:
-  - Základní interval aktualizace je 30 sekund
-  - K tomuto intervalu se přidává náhodná odchylka ±5 sekund
-  - Důvod: Rozprostření zátěže na server, zamezení synchronizovaných requestů
-  - Příklad: Interval se náhodně pohybuje mezi 25-35 sekundami
-
-Tyto optimalizace jsou transparentní pro uživatele a fungují automaticky na pozadí.
-
-## Energie
-
-Integrace obsahuje statistické entity, které lze přímo využít v panelu Energie. Jde o položky:
-
-- Dnešní odběr ze sítě
-- Dnešní dodávka do sítě
-- Dnešní výroba
-- Dnešní nabíjení baterie
-- Dnešní vybíjení baterie
-
-![Energie](./docs/energy.png)
 
 ---
 
-# ✨ Novinky ve verzi `1.0.6`
+## 📜 Licence
 
-- **Nové rozšířené senzory**:
-
-  - Přidány nové computed senzory pro sledování nabíjení a vybíjení baterie po dnech, měsících a rocích.
-  - Přidáno měření energie nabíjení baterie **z FVE** a **ze sítě** zvlášť.
-
-- **Nastavitelná frekvence aktualizace**:
-
-  - Přidána možnost nastavit interval obnovy standardních a rozšířených statistik přímo v GUI Home Assistantu.
-
-- **Přesnější měření energie**:
-
-  - Výpočty energie baterie využívají vlastní integraci s podobným principem jako Riemannův součet (přesnější součet výkonu v čase).
-
-- **Zlepšená přesnost měření bojleru**:
-
-  - Výpočet výkonu bojleru nyní zohledňuje aktuální výkon FVE, domácí spotřebu a export do sítě.
-
-- **Další vylepšení**:
-  - Přidán reset statistik na konci dne, měsíce a roku.
-  - Vylepšené logování pro snadnější debugování.
-  - Úprava struktury kódu pro vyšší spolehlivost a rozšiřitelnost.
+Tento projekt je licencován pod [MIT License](./LICENSE).
 
 ---
 
-# 📜 Licence
+## 🙏 Poděkování
 
-Tento projekt je pod licencí MIT.
+- **ČEZ** za Battery Box a OIG Cloud API
+- **Home Assistant** komunita
+- Všem přispěvatelům a testerům
 
 ---
+
+## 📞 Podpora
+
+- **🐛 Bug Reports:** [GitHub Issues](https://github.com/psimsa/oig_cloud/issues)
+- **💡 Feature Requests:** [GitHub Discussions](https://github.com/psimsa/oig_cloud/discussions)
+- **📖 Dokumentace:** [docs/](./docs/)
+
+---
+
+**Vyrobeno s ❤️ pro Home Assistant a ČEZ Battery Box komunitu**
