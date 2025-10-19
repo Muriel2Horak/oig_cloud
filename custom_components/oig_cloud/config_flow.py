@@ -178,7 +178,7 @@ def _validate_tariff_hours(
     vt_starts_str: str, nt_starts_str: str
 ) -> tuple[bool, Optional[str]]:
     """Validate VT/NT tariff hour starts for gaps and overlaps.
-    
+
     Returns:
         (is_valid, error_key) - error_key is None if valid
     """
@@ -189,7 +189,7 @@ def _validate_tariff_hours(
             return False, "invalid_hour_range"
     except ValueError:
         return False, "invalid_hour_format"
-    
+
     # Parse NT starts
     try:
         nt_starts = [int(x.strip()) for x in nt_starts_str.split(",") if x.strip()]
@@ -197,10 +197,10 @@ def _validate_tariff_hours(
             return False, "invalid_hour_range"
     except ValueError:
         return False, "invalid_hour_format"
-    
+
     # Build 24-hour coverage map
     hour_map = {}  # hour -> tariff type
-    
+
     # Process VT starts - každý VT start znamená VT až do dalšího NT nebo VT
     for i, vt_start in enumerate(sorted(vt_starts)):
         # Najít další start (VT nebo NT)
@@ -214,7 +214,7 @@ def _validate_tariff_hours(
                 next_start = all_starts[0]
         except (ValueError, IndexError):
             next_start = (vt_start + 1) % 24
-        
+
         # Mark hours as VT
         h = vt_start
         while h != next_start:
@@ -224,7 +224,7 @@ def _validate_tariff_hours(
             h = (h + 1) % 24
             if len(hour_map) > 24:  # Safety check
                 break
-    
+
     # Process NT starts similarly
     for i, nt_start in enumerate(sorted(nt_starts)):
         all_starts = sorted(vt_starts + nt_starts)
@@ -236,7 +236,7 @@ def _validate_tariff_hours(
                 next_start = all_starts[0]
         except (ValueError, IndexError):
             next_start = (nt_start + 1) % 24
-        
+
         # Mark hours as NT
         h = nt_start
         while h != next_start:
@@ -246,11 +246,11 @@ def _validate_tariff_hours(
             h = (h + 1) % 24
             if len(hour_map) > 24:
                 break
-    
+
     # Check for gaps (all 24 hours should be covered)
     if len(hour_map) != 24:
         return False, "tariff_gaps"
-    
+
     return True, None
 
 
@@ -778,9 +778,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _get_total_steps(self) -> int:
         """Calculate total number of steps based on enabled modules."""
-        # Základní kroky (vždy):
-        # 1. welcome, 2. credentials, 3. modules, 4. intervals
-        total = 4
+        # Detekce, zda běžíme v Options Flow
+        is_options_flow = "wizard_welcome_reconfigure" in self._step_history
+        
+        # Základní kroky:
+        # Config Flow: welcome, credentials, modules, intervals = 4
+        # Options Flow: welcome_reconfigure, modules, intervals = 3
+        total = 3 if is_options_flow else 4
 
         # Volitelné kroky podle zapnutých modulů:
         if self._wizard_data.get("enable_solar_forecast", False):
@@ -799,17 +803,29 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _get_current_step_number(self, step_id: str) -> int:
         """Get current step number based on step_id and enabled modules."""
+        # Detekce, zda běžíme v Options Flow (má welcome_reconfigure místo credentials)
+        is_options_flow = "wizard_welcome_reconfigure" in self._step_history or step_id == "wizard_welcome_reconfigure"
+        
         # Mapování kroků na čísla
-        step_map = {
-            "wizard_welcome": 1,
-            "wizard_credentials": 2,
-            "wizard_modules": 3,
-            "wizard_intervals": 4,
-        }
+        if is_options_flow:
+            # Options Flow: welcome_reconfigure, modules, intervals (bez credentials)
+            step_map = {
+                "wizard_welcome_reconfigure": 1,
+                "wizard_modules": 2,
+                "wizard_intervals": 3,
+            }
+            current = 4  # Začínáme od 4 (po intervals)
+        else:
+            # Config Flow: welcome, credentials, modules, intervals
+            step_map = {
+                "wizard_welcome": 1,
+                "wizard_credentials": 2,
+                "wizard_modules": 3,
+                "wizard_intervals": 4,
+            }
+            current = 5  # Začínáme od 5 (po intervals)
 
         # Dynamické kroky - musíme spočítat podle toho, co je zapnuté
-        current = 5  # Začínáme od 5 (po intervals)
-
         # Solar
         if step_id == "wizard_solar":
             return current
@@ -822,22 +838,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_battery_prediction", False):
             current += 1
 
-        # Pricing
-        if step_id == "wizard_pricing":
+        # Pricing - 3 kroky (import, export, distribution)
+        if step_id == "wizard_pricing_import":
             return current
+        if step_id == "wizard_pricing_export":
+            return current + 1 if self._wizard_data.get("enable_pricing", False) else current
+        if step_id == "wizard_pricing_distribution":
+            return current + 2 if self._wizard_data.get("enable_pricing", False) else current
         if self._wizard_data.get("enable_pricing", False):
-            current += 1
+            current += 3
 
         # Extended
         if step_id == "wizard_extended":
             return current
         if self._wizard_data.get("enable_extended_sensors", False):
-            current += 1
-
-        # Dashboard
-        if step_id == "wizard_dashboard":
-            return current
-        if self._wizard_data.get("enable_dashboard", False):
             current += 1
 
         # Summary
@@ -1598,11 +1612,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 dist_nt = user_input.get("distribution_fee_nt_kwh", 0.91)
                 if dist_nt < 0 or dist_nt > 10:
                     errors["distribution_fee_nt_kwh"] = "invalid_distribution_fee"
-                
+
                 # Validace VT/NT hodin na mezery a překryvy
                 vt_starts = user_input.get("tariff_vt_start_weekday", "6")
                 nt_starts = user_input.get("tariff_nt_start_weekday", "22,2")
-                
+
                 is_valid, error_key = _validate_tariff_hours(vt_starts, nt_starts)
                 if not is_valid:
                     errors["tariff_vt_start_weekday"] = error_key
@@ -2010,19 +2024,26 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
-        """Entry point for options flow - show welcome screen for reconfiguration."""
+        """Entry point for options flow - redirect to wizard welcome."""
+        return await self.async_step_wizard_welcome_reconfigure()
+
+    async def async_step_wizard_welcome_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Welcome screen for reconfiguration - replaces wizard_welcome."""
         if user_input is not None:
+            # Přeskočit credentials a jít přímo na moduly
+            self._step_history.append("wizard_welcome_reconfigure")
             return await self.async_step_wizard_modules()
 
-        # Zobrazit uvítací obrazovku pro rekonfiguraci
         return self.async_show_form(
-            step_id="init",
+            step_id="wizard_welcome_reconfigure",
             data_schema=vol.Schema({}),
             description_placeholders={
                 "info": """
 🔧 **Změna nastavení OIG Cloud**
 
-Upravte konfiguraci vaší integrace OIG Cloud.
+Tento průvodce vás provede úpravou konfigurace integrace.
 
 **Co můžete změnit:**
 • 📦 Zapnout/vypnout moduly a funkce

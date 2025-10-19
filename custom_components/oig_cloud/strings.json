@@ -15,6 +15,10 @@
         "title": "🎯 Vítejte v průvodci OIG Cloud",
         "description": "{info}"
       },
+      "wizard_welcome_reconfigure": {
+        "title": "🔧 Změna nastavení OIG Cloud",
+        "description": "{info}"
+      },
       "wizard_credentials": {
         "title": "🔐 Přihlašovací údaje",
         "description": "{step}\n{progress}\n\nZadejte své přihlašovací údaje do OIG Cloud aplikace.\n\n⚠️ **DŮLEŽITÉ:** V mobilní aplikaci OIG Cloud musíte mít zapnutou funkci 'Živá data' v nastavení!",
