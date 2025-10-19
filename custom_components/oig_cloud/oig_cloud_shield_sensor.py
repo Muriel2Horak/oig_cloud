@@ -2,12 +2,19 @@
 
 import logging
 from typing import Any, Dict, Optional, Union
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# SCAN_INTERVAL pro live duration updates
+# Shield senzory kombinují:
+# - Event-driven updates (okamžité) přes callback když se změní fronta
+# - Dynamický polling (2s) jen když je aktivita (queue/pending neprázdné)
+# Výsledek: 0% CPU overhead když nic neběží, live duration když je aktivita
+SCAN_INTERVAL = timedelta(seconds=2)
 
 # OPRAVA: České překlady pro ServiceShield stavy
 SERVICESHIELD_STATE_TRANSLATIONS: Dict[str, str] = {
@@ -89,8 +96,26 @@ class OigCloudShieldSensor(OigCloudSensor):
 
     @property
     def should_poll(self) -> bool:
-        """Shield senzory jsou event-driven, nepotřebují polling."""
-        return False
+        """Dynamický polling - aktivní jen když je něco ve frontě nebo běží služba.
+        
+        Polling interval je 1 sekunda (definováno v SCAN_INTERVAL), ALE:
+        - Polling je aktivní JEN když shield.queue má položky NEBO shield.pending má položky
+        - Když je fronta prázdná a nic neběží → polling OFF (šetří výkon)
+        - Event-driven updates fungují vždy (přes callback)
+        
+        Výsledek: Live duration updates JEN když je potřeba, jinak 0% CPU overhead.
+        """
+        try:
+            shield = self.hass.data.get(DOMAIN, {}).get("shield")
+            if shield:
+                queue = getattr(shield, "queue", [])
+                pending = getattr(shield, "pending", {})
+                # Polling aktivní jen když je něco ve frontě nebo něco běží
+                has_activity = len(queue) > 0 or len(pending) > 0
+                return has_activity
+            return False
+        except Exception:
+            return False
 
     async def async_added_to_hass(self) -> None:
         """Když je senzor přidán do Home Assistant."""
@@ -267,10 +292,24 @@ class OigCloudShieldSensor(OigCloudSensor):
                             f"{entity_display}: '{current_value}' → '{expected_value}'"
                         )
 
-                    # Čas zařazení z queue_metadata
-                    queued_time = getattr(shield, "queue_metadata", {}).get(
+                    # Čas zařazení z queue_metadata (nyní slovník s trace_id a queued_at)
+                    queue_meta = getattr(shield, "queue_metadata", {}).get(
                         (q[0], str(params))
                     )
+                    
+                    # Zpětná kompatibilita: queue_meta může být string (starý formát) nebo dict (nový)
+                    if isinstance(queue_meta, dict):
+                        queued_at = queue_meta.get("queued_at")
+                        trace_id = queue_meta.get("trace_id")
+                    else:
+                        # Starý formát - jen trace_id jako string
+                        queued_at = None
+                        trace_id = queue_meta
+
+                    # Vypočítáme duration pokud máme queued_at
+                    duration_seconds = None
+                    if queued_at:
+                        duration_seconds = (datetime.now() - queued_at).total_seconds()
 
                     queue_items.append(
                         {
@@ -278,7 +317,9 @@ class OigCloudShieldSensor(OigCloudSensor):
                             "service": service_name,
                             "description": f"Změna {service_name.replace('_', ' ')}",
                             "changes": changes,
-                            "queued_at": queued_time,
+                            "queued_at": queued_at.isoformat() if queued_at else None,
+                            "duration_seconds": duration_seconds,
+                            "trace_id": trace_id,
                             "params": params,
                         }
                     )

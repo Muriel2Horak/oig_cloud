@@ -46,7 +46,8 @@ class ServiceShield:
                 Optional[Context],  # context
             ]
         ] = []
-        self.queue_metadata: Dict[Tuple[str, str], str] = {}
+        # OPRAVA: queue_metadata nyní ukládá slovník s trace_id a queued_at pro live duration
+        self.queue_metadata: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.running: Optional[str] = None
         self.last_checked_entity_id: Optional[str] = None
 
@@ -658,8 +659,11 @@ class ServiceShield:
                     context,
                 )
             )
-            # Uložíme metadata pro UI
-            self.queue_metadata[(service_name, str(params))] = trace_id
+            # OPRAVA: Uložíme metadata s trace_id A časem zařazení pro live duration
+            self.queue_metadata[(service_name, str(params))] = {
+                "trace_id": trace_id,
+                "queued_at": datetime.now(),
+            }
 
             # Notifikuj senzory o nové položce ve frontě
             self._notify_state_change()
