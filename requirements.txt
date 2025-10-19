@@ -1,7 +1,6 @@
-aiohttp>=3.8.0
-opentelemetry-sdk==1.29.0
-grpcio==1.70.0
-opentelemetry-exporter-otlp-proto-http==1.29.0
-opentelemetry-exporter-otlp-proto-grpc==1.29.0
-pandas>=1.3.0
-openpyxl>=3.0.0
+# OIG Cloud Integration - Runtime Dependencies
+#
+# This integration uses vendored dependencies (lib/oig_cloud_client/)
+# No external Python packages are required at runtime.
+#
+# All required libraries are included in the integration itself.

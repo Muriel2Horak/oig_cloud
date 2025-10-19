@@ -12,6 +12,5 @@
   "ssdp": [],
   "version": "2.0.0-beta",
   "zeroconf": [],
-  "country": ["CZ"],
-  "homeassistant": "2022.0.0"
+  "homeassistant": "2024.1.0"
 }
