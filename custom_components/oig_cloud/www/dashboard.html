@@ -2331,10 +2331,16 @@
             <!-- Grid Delivery -->
             <div class="control-section">
                 <h4>Dodávka do sítě</h4>
-                <div class="button-group">
+                <div class="button-group" style="position: relative;">
                     <button onclick="setGridDelivery('Vypnuto / Off')" id="btn-grid-off" title="Vypnuto: Nevytváří přetoky do sítě">🚫 Vypnuto</button>
                     <button onclick="setGridDelivery('Zapnuto / On')" id="btn-grid-on" title="Zapnuto: Povolena dodávka přebytků do distribuční sítě">💧 Zapnuto</button>
                     <button onclick="setGridDelivery('S omezením / Limited')" id="btn-grid-limited" title="Omezeno: Dodávka do sítě s definovaným limitem výkonu">🚰 S omezením</button>
+
+                    <!-- Grid limit change indicator (for limit changes) -->
+                    <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
+                        <span class="spinner"></span>
+                        <span id="grid-limit-text">→ --W</span>
+                    </div>
                 </div>
             </div>
 
@@ -3532,20 +3538,20 @@
             // NOVÝ PŘÍSTUP: Použij strukturovaná data z targets[] místo parsování changes[]
             if (request.targets && Array.isArray(request.targets) && request.targets.length > 0) {
                 const target = request.targets[0];
-                
+
                 // Mapování param → type
                 if (service.includes('set_box_mode') && target.param === 'mode') {
                     return { type: 'box_mode', targetValue: target.value };
                 }
-                
+
                 if (service.includes('set_boiler_mode') && target.param === 'mode') {
                     return { type: 'boiler_mode', targetValue: target.value };
                 }
-                
+
                 if (service.includes('set_grid_delivery') && target.param === 'mode') {
                     return { type: 'grid_mode', targetValue: target.value };
                 }
-                
+
                 if (service.includes('set_grid_delivery') && target.param === 'limit') {
                     return { type: 'grid_limit', targetValue: target.value };
                 }
@@ -3586,8 +3592,8 @@
         }
 
         // Helper: Show changing indicator for specific service type
-        function showChangingIndicator(type, targetValue) {
-            console.log(`[Shield] Showing change indicator: ${type} → ${targetValue}`);
+        function showChangingIndicator(type, targetValue, startedAt = null) {
+            console.log(`[Shield] Showing change indicator: ${type} → ${targetValue} (started: ${startedAt})`);
 
             switch (type) {
                 case 'box_mode':
@@ -3597,10 +3603,10 @@
                     showBoilerModeChanging(targetValue);
                     break;
                 case 'grid_mode':
-                    showGridModeChanging(targetValue);
+                    showGridModeChanging(targetValue, startedAt);
                     break;
                 case 'grid_limit':
-                    showGridLimitChanging(targetValue);
+                    showGridLimitChanging(targetValue, startedAt);
                     break;
             }
         }
@@ -3667,7 +3673,8 @@
                     const parsed = parseServiceRequest(request);
                     if (parsed) {
                         activeServices.add(parsed.type);
-                        showChangingIndicator(parsed.type, parsed.targetValue);
+                        // Pass the full request object for started_at access
+                        showChangingIndicator(parsed.type, parsed.targetValue, request.started_at);
                     }
                 });
 
@@ -3827,8 +3834,12 @@
             });
         }
 
+        // Grid Mode - storage for live duration update
+        let gridModeDurationInterval = null;
+        let gridModeStartedAt = null;
+
         // Grid Mode
-        function showGridModeChanging(targetMode) {
+        function showGridModeChanging(targetMode, startedAt = null) {
             const gridModeMap = {
                 'Off': 'off',
                 'Vypnuto': 'off',
@@ -3854,6 +3865,13 @@
                 gridExportModeElement.classList.add('mode-changing');
             }
 
+            // Store started_at for live duration calculation
+            if (startedAt) {
+                gridModeStartedAt = new Date(startedAt);
+            } else {
+                gridModeStartedAt = new Date();
+            }
+
             // Show badge
             const gridChangeIndicator = document.getElementById('grid-change-indicator');
             const gridChangeText = document.getElementById('grid-change-text');
@@ -3862,8 +3880,18 @@
                 const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
                 const modeIcon = isOff ? '🚫' : isOn ? '💧' : '🚰';
                 const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : 'Omezeno';
-                gridChangeText.textContent = `${modeIcon} ${modeName}`;
+
+                // Initial text with duration
+                updateGridModeBadgeText(modeIcon, modeName);
                 gridChangeIndicator.style.display = 'flex';
+
+                // Start live duration update (every 1 second)
+                if (gridModeDurationInterval) {
+                    clearInterval(gridModeDurationInterval);
+                }
+                gridModeDurationInterval = setInterval(() => {
+                    updateGridModeBadgeText(modeIcon, modeName);
+                }, 1000);
             }
 
             // Lock buttons, animate target
@@ -3877,6 +3905,15 @@
                     btn.style.opacity = '0.5';
                 }
             });
+        }
+
+        function updateGridModeBadgeText(modeIcon, modeName) {
+            const gridChangeText = document.getElementById('grid-change-text');
+            if (!gridChangeText || !gridModeStartedAt) return;
+
+            const now = new Date();
+            const durationSeconds = Math.floor((now - gridModeStartedAt) / 1000);
+            gridChangeText.textContent = `${modeIcon} ${modeName} (${durationSeconds}s)`;
         }
 
         function hideGridModeChanging() {
@@ -3898,6 +3935,13 @@
                 gridChangeIndicator.style.display = 'none';
             }
 
+            // Stop live duration update
+            if (gridModeDurationInterval) {
+                clearInterval(gridModeDurationInterval);
+                gridModeDurationInterval = null;
+            }
+            gridModeStartedAt = null;
+
             // Unlock buttons
             gridButtons.forEach(btn => {
                 btn.disabled = false;
@@ -3906,8 +3950,12 @@
             });
         }
 
+        // Grid Limit - storage for live duration update
+        let gridLimitDurationInterval = null;
+        let gridLimitStartedAt = null;
+
         // Grid Limit
-        function showGridLimitChanging(targetLimit) {
+        function showGridLimitChanging(targetLimit, startedAt = null) {
             const gridButtons = [
                 document.getElementById('btn-grid-off'),
                 document.getElementById('btn-grid-on'),
@@ -3921,8 +3969,24 @@
             const gridLimitIndicator = document.getElementById('grid-limit-indicator');
             const gridLimitText = document.getElementById('grid-limit-text');
             if (gridLimitIndicator && gridLimitText) {
-                gridLimitText.textContent = `→ ${targetLimit}W`;
+                // Store started_at for live duration calculation
+                if (startedAt) {
+                    gridLimitStartedAt = new Date(startedAt);
+                } else {
+                    gridLimitStartedAt = new Date();
+                }
+
+                // Initial text with duration
+                updateGridLimitBadgeText(targetLimit);
                 gridLimitIndicator.style.display = 'flex';
+
+                // Start live duration update (every 1 second)
+                if (gridLimitDurationInterval) {
+                    clearInterval(gridLimitDurationInterval);
+                }
+                gridLimitDurationInterval = setInterval(() => {
+                    updateGridLimitBadgeText(targetLimit);
+                }, 1000);
             }
 
             // Lock buttons, animate Limited
@@ -3938,6 +4002,15 @@
             });
         }
 
+        function updateGridLimitBadgeText(targetLimit) {
+            const gridLimitText = document.getElementById('grid-limit-text');
+            if (!gridLimitText || !gridLimitStartedAt) return;
+
+            const now = new Date();
+            const durationSeconds = Math.floor((now - gridLimitStartedAt) / 1000);
+            gridLimitText.textContent = `→ ${targetLimit}W (${durationSeconds}s)`;
+        }
+
         function hideGridLimitChanging() {
             const gridButtons = [
                 document.getElementById('btn-grid-off'),
@@ -3950,6 +4023,13 @@
             if (gridLimitIndicator) {
                 gridLimitIndicator.style.display = 'none';
             }
+
+            // Stop live duration update
+            if (gridLimitDurationInterval) {
+                clearInterval(gridLimitDurationInterval);
+                gridLimitDurationInterval = null;
+            }
+            gridLimitStartedAt = null;
 
             // Unlock buttons (only if no mode change is active)
             gridButtons.forEach(btn => {
