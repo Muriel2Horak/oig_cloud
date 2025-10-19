@@ -32,7 +32,7 @@ Queue Item #1: set_grid_delivery
   Duration: 5 seconds
   ↓ (2 sekundy později)
   Duration: 7 seconds  ← Live update!
-  ↓ (2 sekundy později)  
+  ↓ (2 sekundy později)
   Duration: 9 seconds  ← Stále live!
 ```
 
@@ -94,6 +94,7 @@ def should_poll(self) -> bool:
 ```
 
 **Logika:**
+
 - ✅ `queue` nebo `pending` neprázdné → `should_poll = True` → aktualizace každé 2s
 - ✅ `queue` i `pending` prázdné → `should_poll = False` → 0% CPU overhead
 
@@ -145,18 +146,18 @@ queue_items.append({
 
 ### CPU Overhead:
 
-| Stav | Polling | CPU Impact |
-|------|---------|-----------|
-| Fronta prázdná, nic neběží | OFF ❌ | 0% |
-| Služba běží nebo ve frontě | ON ✅ | ~0.1% (každé 2s) |
+| Stav                       | Polling | CPU Impact       |
+| -------------------------- | ------- | ---------------- |
+| Fronta prázdná, nic neběží | OFF ❌  | 0%               |
+| Služba běží nebo ve frontě | ON ✅   | ~0.1% (každé 2s) |
 
 ### Přesnost duration:
 
-| Typ | Přesnost | Update frekvence |
-|-----|----------|------------------|
-| Running service | ±2 sekundy | Každé 2s |
-| Queue item | ±2 sekundy | Každé 2s |
-| Event-driven změny | Okamžitě | <100ms |
+| Typ                | Přesnost   | Update frekvence |
+| ------------------ | ---------- | ---------------- |
+| Running service    | ±2 sekundy | Každé 2s         |
+| Queue item         | ±2 sekundy | Každé 2s         |
+| Event-driven změny | Okamžitě   | <100ms           |
 
 ---
 
@@ -245,10 +246,10 @@ Expected:
 
 ## ✅ Shrnutí
 
-✅ **Live duration updates** pro běžící služby i frontu  
-✅ **Dynamický polling** - aktivní jen když je potřeba  
-✅ **Zero overhead** když nic neběží  
-✅ **Zpětná kompatibilita** se starým formátem queue_metadata  
-✅ **Event-driven** updates stále fungují okamžitě  
+✅ **Live duration updates** pro běžící služby i frontu
+✅ **Dynamický polling** - aktivní jen když je potřeba
+✅ **Zero overhead** když nic neběží
+✅ **Zpětná kompatibilita** se starým formátem queue_metadata
+✅ **Event-driven** updates stále fungují okamžitě
 
 Výsledek: **Responzivní UI s minimálním CPU overhead!** 🎉

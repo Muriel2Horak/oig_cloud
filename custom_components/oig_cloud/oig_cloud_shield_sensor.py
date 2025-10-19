@@ -9,12 +9,22 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# SCAN_INTERVAL pro live duration updates
-# Shield senzory kombinují:
-# - Event-driven updates (okamžité) přes callback když se změní fronta
-# - Dynamický polling (2s) jen když je aktivita (queue/pending neprázdné)
-# Výsledek: 0% CPU overhead když nic neběží, live duration když je aktivita
-SCAN_INTERVAL = timedelta(seconds=2)
+
+def _extract_param_type(entity_id: str) -> str:
+    """Extrahuje typ parametru z entity_id pro strukturovaný targets output."""
+    if "p_max_feed_grid" in entity_id:
+        return "limit"
+    elif "prms_to_grid" in entity_id:
+        return "mode"
+    elif "box_prms_mode" in entity_id:
+        return "mode"
+    elif "boiler_manual_mode" in entity_id:
+        return "mode"
+    elif "formating_mode" in entity_id:
+        return "level"
+    else:
+        return "value"  # Fallback
+
 
 # OPRAVA: České překlady pro ServiceShield stavy
 SERVICESHIELD_STATE_TRANSLATIONS: Dict[str, str] = {
@@ -96,26 +106,14 @@ class OigCloudShieldSensor(OigCloudSensor):
 
     @property
     def should_poll(self) -> bool:
-        """Dynamický polling - aktivní jen když je něco ve frontě nebo běží služba.
-        
-        Polling interval je 1 sekunda (definováno v SCAN_INTERVAL), ALE:
-        - Polling je aktivní JEN když shield.queue má položky NEBO shield.pending má položky
-        - Když je fronta prázdná a nic neběží → polling OFF (šetří výkon)
-        - Event-driven updates fungují vždy (přes callback)
-        
-        Výsledek: Live duration updates JEN když je potřeba, jinak 0% CPU overhead.
+        """Shield senzor je čistě event-driven.
+
+        Updates přicházejí:
+        - Okamžitě přes callback když se změní fronta/pending
+        - Automaticky při coordinator refresh (30-120s)
+        - Ihned po API volání díky coordinator.async_request_refresh()
         """
-        try:
-            shield = self.hass.data.get(DOMAIN, {}).get("shield")
-            if shield:
-                queue = getattr(shield, "queue", [])
-                pending = getattr(shield, "pending", {})
-                # Polling aktivní jen když je něco ve frontě nebo něco běží
-                has_activity = len(queue) > 0 or len(pending) > 0
-                return has_activity
-            return False
-        except Exception:
-            return False
+        return False
 
     async def async_added_to_hass(self) -> None:
         """Když je senzor přidán do Home Assistant."""
@@ -201,7 +199,24 @@ class OigCloudShieldSensor(OigCloudSensor):
             elif self._sensor_type == "service_shield_activity":
                 running = getattr(shield, "running", None)
                 if running:
-                    return running.replace("oig_cloud.", "")
+                    # OPRAVA: Vrátit formát "service: target" pro frontend parsing
+                    # Frontend parseShieldActivity() očekává: "set_box_mode: Home 5"
+                    service_short = running.replace("oig_cloud.", "")
+
+                    # Získáme target hodnotu z pending
+                    pending = getattr(shield, "pending", {})
+                    pending_info = pending.get(running)
+
+                    if pending_info:
+                        entities = pending_info.get("entities", {})
+                        # Vezmeme první expected_value jako target
+                        if entities:
+                            target_value = next(iter(entities.values()), None)
+                            if target_value:
+                                return f"{service_short}: {target_value}"
+
+                    # Fallback - jen název služby
+                    return service_short
                 else:
                     return translate_shield_state("idle")
 
@@ -226,7 +241,9 @@ class OigCloudShieldSensor(OigCloudSensor):
                 # Všechny běžící služby (všechno v pending)
                 running_requests = []
                 for svc_name, svc_info in pending.items():
-                    changes = []
+                    # OPRAVA: Strukturovaný targets output pro Frontend
+                    targets = []
+                    
                     for entity_id, expected_value in svc_info.get(
                         "entities", {}
                     ).items():
@@ -237,21 +254,44 @@ class OigCloudShieldSensor(OigCloudSensor):
                         original_value = svc_info.get("original_states", {}).get(
                             entity_id, "unknown"
                         )
-                        entity_name = (
-                            entity_id.split("_")[-2:]
-                            if "_" in entity_id
-                            else [entity_id]
+                        
+                        # Strukturovaný target objekt
+                        targets.append({
+                            "param": _extract_param_type(entity_id),  # "mode", "limit", "level"
+                            "value": expected_value,                  # Cílová hodnota (vždy česky ze senzoru)
+                            "entity_id": entity_id,                   # Pro identifikaci
+                            "from": original_value,                   # Odkud
+                            "to": expected_value,                     # Kam (stejné jako value)
+                            "current": current_value                  # Aktuální stav
+                        })
+
+                    # Legacy: Zachovat changes pro zpětnou kompatibilitu
+                    changes = []
+                    for target in targets:
+                        entity_display = "_".join(
+                            target["entity_id"].split("_")[-2:]
+                            if "_" in target["entity_id"]
+                            else [target["entity_id"]]
                         )
-                        entity_display = "_".join(entity_name)
                         changes.append(
-                            f"{entity_display}: '{original_value}' → '{expected_value}' (nyní: '{current_value}')"
+                            f"{entity_display}: '{target['from']}' → '{target['to']}' (nyní: '{target['current']}')"
                         )
+
+                    # Description pro frontend parsing (backward compatible)
+                    service_short = svc_name.replace("oig_cloud.", "")
+                    target_value = targets[0]["value"] if targets else None
+                    if target_value:
+                        description = f"{service_short}: {target_value}"
+                    else:
+                        # Fallback pokud není target (např. formating_mode)
+                        description = f"Změna {service_short.replace('_', ' ')}"
 
                     running_requests.append(
                         {
-                            "service": svc_name.replace("oig_cloud.", ""),
-                            "description": f"Změna {svc_name.replace('oig_cloud.', '').replace('_', ' ')}",
-                            "changes": changes,
+                            "service": service_short,
+                            "description": description,
+                            "targets": targets,  # ← NOVÝ: Strukturovaná data pro Frontend!
+                            "changes": changes,  # ← LEGACY: Zachovat pro kompatibilitu
                             "started_at": (
                                 svc_info.get("called_at").isoformat()
                                 if svc_info.get("called_at")
@@ -276,27 +316,42 @@ class OigCloudShieldSensor(OigCloudSensor):
                     params = q[1]
                     expected_entities = q[2]
 
-                    changes = []
+                    # OPRAVA: Strukturovaný targets output pro Frontend
+                    targets = []
+                    
                     for entity_id, expected_value in expected_entities.items():
                         current_state = self.hass.states.get(entity_id)
                         current_value = (
                             current_state.state if current_state else "unknown"
                         )
-                        entity_name = (
-                            entity_id.split("_")[-2:]
-                            if "_" in entity_id
-                            else [entity_id]
+                        
+                        # Strukturovaný target objekt (pro queue nemáme original_states)
+                        targets.append({
+                            "param": _extract_param_type(entity_id),  # "mode", "limit", "level"
+                            "value": expected_value,                  # Cílová hodnota (vždy česky)
+                            "entity_id": entity_id,                   # Pro identifikaci
+                            "from": current_value,                    # Pro queue = current
+                            "to": expected_value,                     # Kam
+                            "current": current_value                  # Aktuální stav
+                        })
+
+                    # Legacy: Zachovat changes pro zpětnou kompatibilitu
+                    changes = []
+                    for target in targets:
+                        entity_display = "_".join(
+                            target["entity_id"].split("_")[-2:]
+                            if "_" in target["entity_id"]
+                            else [target["entity_id"]]
                         )
-                        entity_display = "_".join(entity_name)
                         changes.append(
-                            f"{entity_display}: '{current_value}' → '{expected_value}'"
+                            f"{entity_display}: '{target['current']}' → '{target['to']}'"
                         )
 
                     # Čas zařazení z queue_metadata (nyní slovník s trace_id a queued_at)
                     queue_meta = getattr(shield, "queue_metadata", {}).get(
                         (q[0], str(params))
                     )
-                    
+
                     # Zpětná kompatibilita: queue_meta může být string (starý formát) nebo dict (nový)
                     if isinstance(queue_meta, dict):
                         queued_at = queue_meta.get("queued_at")
@@ -311,12 +366,20 @@ class OigCloudShieldSensor(OigCloudSensor):
                     if queued_at:
                         duration_seconds = (datetime.now() - queued_at).total_seconds()
 
+                    # Description pro frontend parsing (backward compatible)
+                    target_value = targets[0]["value"] if targets else None
+                    if target_value:
+                        description = f"{service_name}: {target_value}"
+                    else:
+                        description = f"Změna {service_name.replace('_', ' ')}"
+
                     queue_items.append(
                         {
                             "position": i + 1,
                             "service": service_name,
-                            "description": f"Změna {service_name.replace('_', ' ')}",
-                            "changes": changes,
+                            "description": description,
+                            "targets": targets,  # ← NOVÝ: Strukturovaná data!
+                            "changes": changes,  # ← LEGACY: Kompatibilita
                             "queued_at": queued_at.isoformat() if queued_at else None,
                             "duration_seconds": duration_seconds,
                             "trace_id": trace_id,

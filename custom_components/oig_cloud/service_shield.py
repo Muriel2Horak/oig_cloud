@@ -1117,7 +1117,27 @@ class ServiceShield:
     def extract_expected_entities(
         self, service_name: str, data: Dict[str, Any]
     ) -> Dict[str, str]:
+        """Extrahuje očekávané entity a jejich cílové hodnoty z parametrů služby.
+        
+        KLÍČOVÉ: Vrací hodnoty tak, jak je SENZOR skutečně poskytuje (vždy česky),
+        protože senzory mají hardcoded "cs" v state() property.
+        """
         self.last_checked_entity_id = None
+
+        def _extract_param_type(entity_id: str) -> str:
+            """Extrahuje typ parametru z entity_id pro strukturovaný targets output."""
+            if "p_max_feed_grid" in entity_id:
+                return "limit"
+            elif "prms_to_grid" in entity_id:
+                return "mode"
+            elif "box_prms_mode" in entity_id:
+                return "mode"
+            elif "boiler_manual_mode" in entity_id:
+                return "mode"
+            elif "formating_mode" in entity_id:
+                return "level"
+            else:
+                return "value"  # Fallback
 
         def find_entity(suffix: str) -> str | None:
             _LOGGER.info(f"[FIND ENTITY] Hledám entitu se suffixem: {suffix}")
@@ -1177,7 +1197,16 @@ class ServiceShield:
             mode = str(data.get("mode") or "").strip()
             if mode not in ("CBB", "Manual"):
                 return {}
-            expected_value = "Manuální" if mode == "Manual" else "CBB"
+            
+            # OPRAVA: Přesné mapování služba → senzor (backend VŽDY česky)
+            # Služba přijímá: "CBB", "Manual" (anglicky)
+            # Senzor vrací: "CBB", "Manuální" (česky)
+            boiler_mode_mapping = {
+                "CBB": "CBB",           # Stejné
+                "Manual": "Manuální"    # Překlad EN → CS
+            }
+            expected_value = boiler_mode_mapping.get(mode)
+            
             entity_id = find_entity("_boiler_manual_mode")
             if entity_id:
                 self.last_checked_entity_id = entity_id
@@ -1185,9 +1214,10 @@ class ServiceShield:
                 current = self._normalize_value(state.state if state else None)
                 expected = self._normalize_value(expected_value)
                 _LOGGER.debug(
-                    "[extract] boiler_mode | current='%s' expected='%s'",
+                    "[extract] boiler_mode | current='%s' expected='%s' (input='%s')",
                     current,
                     expected,
+                    mode,
                 )
                 if current != expected:
                     return {entity_id: expected_value}
@@ -1233,15 +1263,16 @@ class ServiceShield:
 
             # PŘÍPAD 2: Pouze MODE (bez limit)
             if "mode" in data and "limit" not in data:
-                # Mode přichází jako STRING ze služby: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
-                # Senzor vrací: "Vypnuto", "Zapnuto", "Omezeno"
+                # OPRAVA: Mode přichází jako STRING ze služby: "Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"
+                # Senzor VŽDY vrací ČESKY (hardcoded "cs"): "Vypnuto", "Zapnuto", "Omezeno"
+                # KLÍČ: Mapujeme službu → přesná hodnota senzoru (bez hacku "nebo")
                 mode_string = str(data["mode"]).strip()
 
-                # Mapování mode string → očekávaný text senzoru
+                # OPRAVA: Přesné mapování služba → senzor (backend VŽDY česky)
                 mode_mapping = {
-                    "Vypnuto / Off": "Vypnuto",
-                    "Zapnuto / On": "Zapnuto nebo Omezeno",  # "Zapnuto" nebo "Omezeno" jsou OK
-                    "S omezením / Limited": "Zapnuto nebo Omezeno",  # "Omezeno" je cílový stav
+                    "Vypnuto / Off": "Vypnuto",      # Přesná shoda
+                    "Zapnuto / On": "Zapnuto",        # Přesná shoda (NE "nebo Omezeno"!)
+                    "S omezením / Limited": "Omezeno" # Přesná shoda (NE "Zapnuto nebo"!)
                 }
 
                 expected_text = mode_mapping.get(mode_string)
@@ -1264,18 +1295,9 @@ class ServiceShield:
                         mode_string,
                     )
 
-                    # Kontrola podle mapy
-                    needs_change = False
-                    if expected_text == "Vypnuto" and current_text != "Vypnuto":
-                        needs_change = True
-                    elif (
-                        expected_text == "Zapnuto nebo Omezeno"
-                        and current_text not in ["Zapnuto", "Omezeno"]
-                    ):
-                        needs_change = True
-
-                    if needs_change:
-                        # Vrátíme POUZE mode entitu
+                    # OPRAVA: Přesné porovnání (žádné "nebo")
+                    if current_text != expected_text:
+                        # Vrátíme POUZE mode entitu s přesnou hodnotou
                         return {entity_id: expected_text}
                     else:
                         _LOGGER.info(
