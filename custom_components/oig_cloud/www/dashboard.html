@@ -503,9 +503,9 @@
         }
 
         .boiler-change-indicator {
-            position: relative;
-            display: inline-flex;
-            margin: 8px auto;
+            position: absolute;
+            top: 30px;
+            right: -80px;
             background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
             border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
@@ -513,6 +513,7 @@
             font-size: 9px;
             font-weight: 600;
             color: #1a1a2e;
+            display: flex;
             align-items: center;
             gap: 4px;
             box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
@@ -2317,11 +2318,6 @@
             <!-- Boiler -->
             <div class="control-section" id="boiler-control-section">
                 <h4>Režim bojleru</h4>
-                <!-- Boiler mode change indicator -->
-                <div class="boiler-change-indicator" id="boiler-change-indicator" style="display: none;">
-                    <span class="spinner"></span>
-                    <span id="boiler-change-text">🌡️ --</span>
-                </div>
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
                     <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
@@ -2703,6 +2699,11 @@
 
             <!-- House -->
             <div class="node house">
+                <!-- Boiler mode change indicator -->
+                <div class="boiler-change-indicator" id="boiler-change-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="boiler-change-text">🌡️ --</span>
+                </div>
                 <div class="node-icon">🏠</div>
                 <div class="node-label">Spotřeba</div>
                 <div class="node-value entity-value" id="house-power"
