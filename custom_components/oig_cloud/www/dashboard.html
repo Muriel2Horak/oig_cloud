@@ -7,13 +7,397 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        /* === THEME VARIABLES === */
+        /* Tmavý režim (výchozí) */
+        body {
+            /* Pozadí */
+            --bg-primary: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            --bg-secondary: rgba(255, 255, 255, 0.05);
+            --bg-tertiary: rgba(255, 255, 255, 0.03);
+            --bg-hover: rgba(255, 255, 255, 0.1);
+            --bg-active: rgba(76, 175, 80, 0.3);
+            --bg-disabled: rgba(255, 255, 255, 0.02);
+
+            /* Text */
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-tertiary: rgba(255, 255, 255, 0.5);
+            --text-disabled: rgba(255, 255, 255, 0.3);
+
+            /* Borders */
+            --border-primary: rgba(255, 255, 255, 0.15);
+            --border-secondary: rgba(255, 255, 255, 0.1);
+            --border-tertiary: rgba(255, 255, 255, 0.05);
+
+            /* Shadows */
+            --shadow-color: rgba(0, 0, 0, 0.4);
+            --shadow-strong: rgba(0, 0, 0, 0.7);
+            --shadow-light: rgba(0, 0, 0, 0.2);
+
+            /* Komponenty specifické barvy */
+            --solar-bg: linear-gradient(135deg, rgba(255, 213, 79, 0.15) 0%, rgba(255, 179, 0, 0.08) 100%);
+            --solar-border: rgba(255, 213, 79, 0.4);
+            --solar-accent: rgba(255, 193, 7, 0.95);
+
+            --grid-bg: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
+            --grid-border: rgba(66, 165, 245, 0.4);
+
+            --battery-bg: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
+            --battery-border: rgba(76, 175, 80, 0.4);
+
+            --house-bg: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
+            --house-border: rgba(240, 98, 146, 0.4);
+
+            --inverter-bg: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
+            --inverter-border: rgba(149, 117, 205, 0.4);
+
+            /* Status colors */
+            --status-charging-bg: rgba(33, 150, 243, 0.3);
+            --status-charging-text: #42a5f5;
+            --status-discharging-bg: rgba(255, 152, 0, 0.3);
+            --status-discharging-text: #ffb74d;
+            --status-idle-bg: rgba(76, 175, 80, 0.3);
+            --status-idle-text: #81c784;
+            --status-importing-bg: rgba(244, 67, 54, 0.3);
+            --status-importing-text: #e57373;
+            --status-exporting-bg: rgba(76, 175, 80, 0.3);
+            --status-exporting-text: #81c784;
+
+            /* UI elements */
+            --dialog-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+            --dialog-border: rgba(66, 165, 245, 0.4);
+            --button-bg: rgba(255, 255, 255, 0.1);
+            --button-border: rgba(255, 255, 255, 0.2);
+            --button-hover: rgba(255, 255, 255, 0.2);
+            --button-active-border: rgba(76, 175, 80, 0.6);
+            --input-bg: rgba(255, 255, 255, 0.05);
+            --input-border: rgba(255, 255, 255, 0.2);
+            --input-focus-border: #42a5f5;
+
+            /* Warnings and alerts */
+            --warning-bg: rgba(255, 193, 7, 0.2);
+            --warning-text: #ffc107;
+            --warning-bg-transparent: rgba(255, 193, 7, 0.6);
+            --warning-text-transparent: rgba(255, 193, 7, 0.9);
+            --error-bg: rgba(244, 67, 54, 0.2);
+            --error-text: #e57373;
+            --error-bg-transparent: rgba(244, 67, 54, 0.8);
+            --error-text-transparent: rgba(244, 67, 54, 1);
+            --info-bg: rgba(33, 150, 243, 0.2);
+            --info-text: #42a5f5;
+
+            /* Animace - transparentní varianty */
+            --status-idle-bg-transparent: rgba(59, 130, 246, 0.7);
+            --status-idle-bg-semi: rgba(59, 130, 246, 0.4);
+
+            /* Indicator badges */
+            --indicator-warning-bg: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+            --indicator-warning-border: rgba(255, 193, 7, 0.8);
+            --indicator-warning-shadow: rgba(255, 193, 7, 0.4);
+            --indicator-info-bg: linear-gradient(135deg, rgba(33, 150, 243, 0.95), rgba(25, 118, 210, 0.95));
+            --indicator-info-border: rgba(33, 150, 243, 0.8);
+            --indicator-info-shadow: rgba(33, 150, 243, 0.4);
+            --indicator-text: #1a1a2e;
+            --spinner-border: rgba(26, 26, 46, 0.3);
+            --spinner-border-top: #1a1a2e;
+
+            /* Tooltips */
+            --tooltip-bg: rgba(0, 0, 0, 0.95);
+            --tooltip-bg-secondary: rgba(50, 50, 50, 0.95);
+            --tooltip-border: rgba(0, 0, 0, 0.95);
+            --tooltip-border-secondary: rgba(50, 50, 50, 0.95);
+
+            /* Control panel */
+            --control-panel-bg: rgba(10, 14, 39, 0.98);
+            --control-panel-border: rgba(66, 165, 245, 0.3);
+
+            /* Success/Error text colors */
+            --success-text: #4caf50;
+            --error-text-alt: #ff3333;
+
+            /* Header */
+            --header-gradient: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+
+            /* Toast notifications */
+            --toast-body-text: rgba(255, 255, 255, 0.85);
+            --toast-success-border: rgba(76, 175, 80, 0.6);
+            --toast-success-border-light: rgba(76, 175, 80, 0.2);
+            --toast-success-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(76, 175, 80, 0.2);
+            --toast-error-border: rgba(244, 67, 54, 0.6);
+            --toast-error-border-light: rgba(244, 67, 54, 0.2);
+            --toast-error-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(244, 67, 54, 0.2);
+            --toast-warning-border: rgba(255, 152, 0, 0.6);
+            --toast-warning-border-light: rgba(255, 152, 0, 0.2);
+            --toast-warning-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 152, 0, 0.2);
+
+            /* Modal */
+            --modal-backdrop: rgba(0, 0, 0, 0.7);
+            --modal-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+            --modal-border: rgba(100, 116, 139, 0.3);
+            --modal-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            --modal-header-text: rgba(255, 255, 255, 0.95);
+            --modal-body-text: rgba(255, 255, 255, 0.8);
+            --modal-warning-bg: rgba(255, 152, 0, 0.1);
+            --modal-warning-border: rgba(255, 152, 0, 0.3);
+            --modal-warning-text: rgba(255, 193, 7, 0.95);
+            --modal-checkbox-bg: rgba(100, 116, 139, 0.1);
+            --modal-checkbox-label: rgba(255, 255, 255, 0.9);
+            --modal-button-cancel-bg: rgba(100, 116, 139, 0.2);
+            --modal-button-cancel-hover: rgba(100, 116, 139, 0.3);
+            --modal-button-cancel-text: rgba(255, 255, 255, 0.8);
+            --modal-button-confirm-bg: linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(29, 78, 216, 0.8) 100%);
+            --modal-button-confirm-hover: linear-gradient(135deg, rgba(59, 130, 246, 1) 0%, rgba(29, 78, 216, 1) 100%);
+            --modal-button-confirm-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+
+            /* Shield states */
+            --shield-idle-bg: rgba(76, 175, 80, 0.2);
+            --shield-idle-border: rgba(76, 175, 80, 0.4);
+            --shield-idle-text: #4caf50;
+            --shield-idle-shadow: 0 0 10px rgba(76, 175, 80, 0.3), 0 0 20px rgba(76, 175, 80, 0.5);
+            --shield-pending-bg: rgba(255, 193, 7, 0.4);
+            --shield-pending-border: rgba(255, 193, 7, 0.7);
+            --shield-pending-text: #ffc107;
+            --shield-pending-shadow: 0 0 10px rgba(255, 193, 7, 0.3), 0 0 20px rgba(255, 193, 7, 0.5);
+            --shield-processing-bg: rgba(66, 165, 245, 0.5);
+            --shield-processing-border: rgba(66, 165, 245, 0.8);
+            --shield-processing-text: #42a5f5;
+            --shield-processing-shadow: 0 0 15px rgba(66, 165, 245, 0.4);
+            --shield-button-active-bg: rgba(76, 175, 80, 0.5);
+            --shield-button-active-border: rgba(76, 175, 80, 0.8);
+            --shield-button-active-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+            --shield-button-active-check: #81c784;
+            --shield-queue-bg: rgba(255, 193, 7, 0.3);
+
+            /* Light text variants */
+            --text-label: rgba(255, 255, 255, 0.7);
+            --table-header-bg: rgba(255, 255, 255, 0.05);
+            --table-border: rgba(255, 255, 255, 0.1);
+            --table-border-light: rgba(255, 255, 255, 0.05);
+
+            /* Drop shadows */
+            --shadow-success: rgba(76, 175, 80, 0.8);
+            --shadow-error: rgba(244, 67, 54, 1);
+            --shadow-error-weak: rgba(244, 67, 54, 0.8);
+            --shadow-error-light: rgba(244, 67, 54, 0.4);
+            --shadow-warning: rgba(255, 193, 7, 0.8);
+            --shadow-info: rgba(33, 150, 243, 0.8);
+            --shadow-white: rgba(255, 255, 255, 0.8);
+
+            /* Status borders and shadows */
+            --status-discharging-border: rgba(255, 152, 0, 0.6);
+            --status-discharging-shadow: rgba(255, 152, 0, 0.4);
+            --status-charging-border: rgba(33, 150, 243, 0.6);
+            --status-charging-shadow: rgba(33, 150, 243, 0.4);
+
+            /* Battery gauge gradient */
+            --battery-gauge-gradient: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
+
+            /* Button states */
+            --button-active-bg: rgba(76, 175, 80, 0.4);
+            --button-disabled-bg: rgba(128, 128, 128, 0.2);
+            --button-disabled-border: rgba(128, 128, 128, 0.3);
+            --button-disabled-text: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Světlý režim */
+        body.light-theme {
+            /* Pozadí */
+            --bg-primary: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+            --bg-secondary: rgba(255, 255, 255, 0.85);
+            --bg-tertiary: rgba(255, 255, 255, 0.6);
+            --bg-hover: rgba(0, 0, 0, 0.1);
+            --bg-active: rgba(76, 175, 80, 0.2);
+            --bg-disabled: rgba(0, 0, 0, 0.02);
+
+            /* Text */
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
+            --text-tertiary: #718096;
+            --text-disabled: #cbd5e0;
+
+            /* Borders */
+            --border-primary: rgba(0, 0, 0, 0.15);
+            --border-secondary: rgba(0, 0, 0, 0.1);
+            --border-tertiary: rgba(0, 0, 0, 0.05);
+
+            /* Shadows */
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --shadow-strong: rgba(0, 0, 0, 0.2);
+            --shadow-light: rgba(0, 0, 0, 0.05);
+
+            /* Komponenty specifické barvy */
+            --solar-bg: linear-gradient(135deg, rgba(255, 245, 220, 0.95) 0%, rgba(255, 235, 180, 0.9) 100%);
+            --solar-border: rgba(255, 193, 7, 0.5);
+            --solar-accent: rgba(255, 160, 0, 0.95);
+
+            --grid-bg: linear-gradient(135deg, rgba(227, 242, 253, 0.95) 0%, rgba(187, 222, 251, 0.9) 100%);
+            --grid-border: rgba(66, 165, 245, 0.5);
+
+            --battery-bg: linear-gradient(135deg, rgba(232, 245, 233, 0.95) 0%, rgba(200, 230, 201, 0.9) 100%);
+            --battery-border: rgba(76, 175, 80, 0.5);
+
+            --house-bg: linear-gradient(135deg, rgba(252, 228, 236, 0.95) 0%, rgba(248, 187, 208, 0.9) 100%);
+            --house-border: rgba(240, 98, 146, 0.5);
+
+            --inverter-bg: linear-gradient(135deg, rgba(237, 231, 246, 0.95) 0%, rgba(209, 196, 233, 0.9) 100%);
+            --inverter-border: rgba(149, 117, 205, 0.5);
+
+            /* Status colors */
+            --status-charging-bg: rgba(33, 150, 243, 0.2);
+            --status-charging-text: #1565c0;
+            --status-discharging-bg: rgba(255, 152, 0, 0.2);
+            --status-discharging-text: #e65100;
+            --status-idle-bg: rgba(76, 175, 80, 0.2);
+            --status-idle-text: #2e7d32;
+            --status-importing-bg: rgba(244, 67, 54, 0.2);
+            --status-importing-text: #c62828;
+            --status-exporting-bg: rgba(76, 175, 80, 0.2);
+            --status-exporting-text: #2e7d32;
+
+            /* UI elements */
+            --dialog-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 248, 0.98) 100%);
+            --dialog-border: rgba(66, 165, 245, 0.3);
+            --button-bg: rgba(0, 0, 0, 0.05);
+            --button-border: rgba(0, 0, 0, 0.15);
+            --button-hover: rgba(0, 0, 0, 0.1);
+            --button-active-border: rgba(76, 175, 80, 0.6);
+            --input-bg: rgba(0, 0, 0, 0.05);
+            --input-border: rgba(0, 0, 0, 0.15);
+            --input-focus-border: #1976d2;
+
+            /* Warnings and alerts */
+            --warning-bg: rgba(255, 193, 7, 0.15);
+            --warning-text: #f57c00;
+            --warning-bg-transparent: rgba(255, 193, 7, 0.6);
+            --warning-text-transparent: rgba(255, 193, 7, 0.9);
+            --error-bg: rgba(244, 67, 54, 0.15);
+            --error-text: #c62828;
+            --error-bg-transparent: rgba(244, 67, 54, 0.8);
+            --error-text-transparent: rgba(244, 67, 54, 1);
+            --info-bg: rgba(33, 150, 243, 0.15);
+            --info-text: #1976d2;
+
+            /* Animace - transparentní varianty */
+            --status-idle-bg-transparent: rgba(59, 130, 246, 0.7);
+            --status-idle-bg-semi: rgba(59, 130, 246, 0.4);
+
+            /* Indicator badges */
+            --indicator-warning-bg: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+            --indicator-warning-border: rgba(255, 193, 7, 0.8);
+            --indicator-warning-shadow: rgba(255, 193, 7, 0.4);
+            --indicator-info-bg: linear-gradient(135deg, rgba(33, 150, 243, 0.95), rgba(25, 118, 210, 0.95));
+            --indicator-info-border: rgba(33, 150, 243, 0.8);
+            --indicator-info-shadow: rgba(33, 150, 243, 0.4);
+            --indicator-text: #ffffff;
+            --spinner-border: rgba(255, 255, 255, 0.3);
+            --spinner-border-top: #ffffff;
+
+            /* Tooltips */
+            --tooltip-bg: rgba(255, 255, 255, 0.98);
+            --tooltip-bg-secondary: rgba(240, 240, 240, 0.98);
+            --tooltip-border: rgba(0, 0, 0, 0.1);
+            --tooltip-border-secondary: rgba(0, 0, 0, 0.05);
+
+            /* Control panel */
+            --control-panel-bg: rgba(255, 255, 255, 0.98);
+            --control-panel-border: rgba(66, 165, 245, 0.3);
+
+            /* Success/Error text colors */
+            --success-text: #2e7d32;
+            --error-text-alt: #c62828;
+
+            /* Header */
+            --header-gradient: linear-gradient(135deg, #ff8f00 0%, #f57c00 100%);
+
+            /* Toast notifications */
+            --toast-body-text: rgba(0, 0, 0, 0.75);
+            --toast-success-border: rgba(46, 125, 50, 0.5);
+            --toast-success-border-light: rgba(46, 125, 50, 0.15);
+            --toast-success-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(46, 125, 50, 0.2);
+            --toast-error-border: rgba(198, 40, 40, 0.5);
+            --toast-error-border-light: rgba(198, 40, 40, 0.15);
+            --toast-error-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(198, 40, 40, 0.2);
+            --toast-warning-border: rgba(245, 124, 0, 0.5);
+            --toast-warning-border-light: rgba(245, 124, 0, 0.15);
+            --toast-warning-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(245, 124, 0, 0.2);
+
+            /* Modal */
+            --modal-backdrop: rgba(0, 0, 0, 0.5);
+            --modal-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+            --modal-border: rgba(66, 165, 245, 0.3);
+            --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            --modal-header-text: rgba(0, 0, 0, 0.87);
+            --modal-body-text: rgba(0, 0, 0, 0.7);
+            --modal-warning-bg: rgba(255, 152, 0, 0.08);
+            --modal-warning-border: rgba(245, 124, 0, 0.25);
+            --modal-warning-text: rgba(245, 124, 0, 0.95);
+            --modal-checkbox-bg: rgba(0, 0, 0, 0.03);
+            --modal-checkbox-label: rgba(0, 0, 0, 0.8);
+            --modal-button-cancel-bg: rgba(0, 0, 0, 0.05);
+            --modal-button-cancel-hover: rgba(0, 0, 0, 0.1);
+            --modal-button-cancel-text: rgba(0, 0, 0, 0.7);
+            --modal-button-confirm-bg: linear-gradient(135deg, rgba(25, 118, 210, 0.9) 0%, rgba(13, 71, 161, 0.9) 100%);
+            --modal-button-confirm-hover: linear-gradient(135deg, rgba(25, 118, 210, 1) 0%, rgba(13, 71, 161, 1) 100%);
+            --modal-button-confirm-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+
+            /* Shield states */
+            --shield-idle-bg: rgba(46, 125, 50, 0.15);
+            --shield-idle-border: rgba(46, 125, 50, 0.4);
+            --shield-idle-text: #2e7d32;
+            --shield-idle-shadow: 0 0 10px rgba(46, 125, 50, 0.2), 0 0 20px rgba(46, 125, 50, 0.3);
+            --shield-pending-bg: rgba(245, 124, 0, 0.2);
+            --shield-pending-border: rgba(245, 124, 0, 0.5);
+            --shield-pending-text: #f57c00;
+            --shield-pending-shadow: 0 0 10px rgba(245, 124, 0, 0.2), 0 0 20px rgba(245, 124, 0, 0.3);
+            --shield-processing-bg: rgba(25, 118, 210, 0.2);
+            --shield-processing-border: rgba(25, 118, 210, 0.5);
+            --shield-processing-text: #1976d2;
+            --shield-processing-shadow: 0 0 15px rgba(25, 118, 210, 0.3);
+            --shield-button-active-bg: rgba(46, 125, 50, 0.3);
+            --shield-button-active-border: rgba(46, 125, 50, 0.6);
+            --shield-button-active-shadow: 0 0 15px rgba(46, 125, 50, 0.3);
+            --shield-button-active-check: #2e7d32;
+            --shield-queue-bg: rgba(245, 124, 0, 0.15);
+
+            /* Light text variants */
+            --text-label: rgba(0, 0, 0, 0.6);
+            --table-header-bg: rgba(0, 0, 0, 0.03);
+            --table-border: rgba(0, 0, 0, 0.08);
+            --table-border-light: rgba(0, 0, 0, 0.04);
+
+            /* Drop shadows */
+            --shadow-success: rgba(76, 175, 80, 0.8);
+            --shadow-error: rgba(244, 67, 54, 1);
+            --shadow-error-weak: rgba(244, 67, 54, 0.8);
+            --shadow-error-light: rgba(244, 67, 54, 0.4);
+            --shadow-warning: rgba(255, 193, 7, 0.8);
+            --shadow-info: rgba(33, 150, 243, 0.8);
+            --shadow-white: rgba(0, 0, 0, 0.2);
+
+            /* Status borders and shadows */
+            --status-discharging-border: rgba(255, 152, 0, 0.6);
+            --status-discharging-shadow: rgba(255, 152, 0, 0.4);
+            --status-charging-border: rgba(33, 150, 243, 0.6);
+            --status-charging-shadow: rgba(33, 150, 243, 0.4);
+
+            /* Battery gauge gradient */
+            --battery-gauge-gradient: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
+
+            /* Button states */
+            --button-active-bg: rgba(76, 175, 80, 0.4);
+            --button-disabled-bg: rgba(200, 200, 200, 0.2);
+            --button-disabled-border: rgba(180, 180, 180, 0.3);
+            --button-disabled-text: rgba(0, 0, 0, 0.4);
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-            color: white;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             overflow-y: auto;
             overflow-x: hidden;
             min-height: 100vh;
+            transition: background 0.3s ease, color 0.3s ease;
         }
 
         .container {
@@ -35,7 +419,7 @@
         .header h1 {
             font-size: 24px;
             font-weight: 700;
-            background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+            background: var(--header-gradient);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -83,10 +467,10 @@
         /* Components - Kompaktní a široké */
         .node {
             position: absolute;
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 255, 255, 0.15);
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-primary);
             border-radius: 12px;
-            padding: 10px 14px; /* Menší vertikální, větší horizontální */
+            padding: 10px 14px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -94,15 +478,15 @@
             transition: all 0.3s ease;
             backdrop-filter: blur(10px);
             z-index: 2;
-            min-width: 130px; /* Širší */
-            max-width: 180px; /* Omezení šířky */
+            min-width: 130px;
+            max-width: 180px;
         }
 
         .node:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.3);
+            background: var(--bg-hover);
+            border-color: var(--border-primary);
             transform: scale(1.05);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 10px 40px var(--shadow-color);
         }
 
         /* Solar - Top Center - S VĚTŠÍM ODSTUPEM */
@@ -110,8 +494,8 @@
             top: 40px;
             left: 50%;
             transform: translateX(-50%);
-            border-color: rgba(255, 213, 79, 0.4);
-            background: linear-gradient(135deg, rgba(255, 213, 79, 0.15) 0%, rgba(255, 179, 0, 0.08) 100%);
+            border-color: var(--solar-border);
+            background: var(--solar-bg);
         }
 
         .solar:hover {
@@ -123,8 +507,8 @@
             top: 50%;
             left: 80px;
             transform: translateY(-50%);
-            border-color: rgba(66, 165, 245, 0.4);
-            background: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
+            border-color: var(--grid-border);
+            background: var(--grid-bg);
         }
 
         .grid-node:hover {
@@ -136,8 +520,8 @@
             bottom: 40px;
             left: 50%;
             transform: translateX(-50%);
-            border-color: rgba(76, 175, 80, 0.4);
-            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
+            border-color: var(--battery-border);
+            background: var(--battery-bg);
         }
 
         .battery:hover {
@@ -149,8 +533,8 @@
             top: 50%;
             right: 80px;
             transform: translateY(-50%);
-            border-color: rgba(240, 98, 146, 0.4);
-            background: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
+            border-color: var(--house-border);
+            background: var(--house-bg);
         }
 
         .house:hover {
@@ -162,8 +546,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            border-color: rgba(149, 117, 205, 0.4);
-            background: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
+            border-color: var(--inverter-border);
+            background: var(--inverter-bg);
             min-width: 200px; /* Rozšířeno pro lepší zobrazení notifikací a přetoků */
             max-width: 200px;
         }
@@ -382,11 +766,11 @@
         @keyframes pulse-pending {
             0%, 100% {
                 opacity: 0.6;
-                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+                box-shadow: 0 0 0 0 var(--status-idle-bg-transparent);
             }
             50% {
                 opacity: 0.8;
-                box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.4);
+                box-shadow: 0 0 12px 4px var(--status-idle-bg-semi);
             }
         }
 
@@ -394,11 +778,11 @@
         @keyframes pulse-mode-changing {
             0%, 100% {
                 opacity: 0.7;
-                text-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+                text-shadow: 0 0 8px var(--warning-bg-transparent);
             }
             50% {
                 opacity: 1;
-                text-shadow: 0 0 16px rgba(255, 193, 7, 0.9);
+                text-shadow: 0 0 16px var(--warning-text-transparent);
             }
         }
 
@@ -411,17 +795,17 @@
             position: absolute;
             top: 30px;
             right: -80px;
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
-            border: 1px solid rgba(255, 193, 7, 0.8);
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
-            color: #1a1a2e;
+            color: var(--indicator-text);
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 10;
             white-space: nowrap;
@@ -431,8 +815,8 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            border: 2px solid rgba(26, 26, 46, 0.3);
-            border-top-color: #1a1a2e;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -446,17 +830,17 @@
             position: absolute;
             top: 70px;
             right: -80px;
-            background: linear-gradient(135deg, rgba(33, 150, 243, 0.95), rgba(25, 118, 210, 0.95));
-            border: 1px solid rgba(33, 150, 243, 0.8);
+            background: var(--indicator-info-bg);
+            border: 1px solid var(--indicator-info-border);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
-            color: #1a1a2e;
+            color: var(--indicator-text);
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.4);
+            box-shadow: 0 2px 8px var(--indicator-info-shadow);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 10;
             white-space: nowrap;
@@ -466,8 +850,8 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            border: 2px solid rgba(26, 26, 46, 0.3);
-            border-top-color: #1a1a2e;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -476,17 +860,17 @@
             position: absolute;
             top: 70px;
             right: -80px;
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
-            border: 1px solid rgba(255, 193, 7, 0.8);
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
-            color: #1a1a2e;
+            color: var(--indicator-text);
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.15s both;
             z-index: 10;
             white-space: nowrap;
@@ -496,8 +880,8 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            border: 2px solid rgba(26, 26, 46, 0.3);
-            border-top-color: #1a1a2e;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -506,17 +890,17 @@
             position: absolute;
             top: 30px;
             right: -80px;
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
-            border: 1px solid rgba(255, 193, 7, 0.8);
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
-            color: #1a1a2e;
+            color: var(--indicator-text);
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 10;
             white-space: nowrap;
@@ -526,8 +910,8 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            border: 2px solid rgba(26, 26, 46, 0.3);
-            border-top-color: #1a1a2e;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -560,12 +944,12 @@
         }
 
         .bypass-ok {
-            filter: drop-shadow(0 0 3px rgba(76, 175, 80, 0.8));
+            filter: drop-shadow(0 0 3px var(--shadow-success));
         }
 
         .bypass-warning {
             animation: pulse-warning 1s ease-in-out infinite;
-            filter: drop-shadow(0 0 5px rgba(244, 67, 54, 1));
+            filter: drop-shadow(0 0 5px var(--shadow-error));
         }
 
         .inverter-temp-indicator {
@@ -595,39 +979,39 @@
         /* Warning border animation for inverter */
         @keyframes warning-border {
             0%, 100% {
-                border-color: rgba(244, 67, 54, 0.8);
-                box-shadow: 0 0 10px rgba(244, 67, 54, 0.4);
+                border-color: var(--shadow-error-weak);
+                box-shadow: 0 0 10px var(--shadow-error-light);
             }
             50% {
-                border-color: rgba(244, 67, 54, 1);
-                box-shadow: 0 0 20px rgba(244, 67, 54, 0.8);
+                border-color: var(--shadow-error);
+                box-shadow: 0 0 20px var(--shadow-error-weak);
             }
         }
 
         .inverter.warning-active {
-            border: 3px solid rgba(244, 67, 54, 0.8);
+            border: 3px solid var(--shadow-error-weak);
             animation: warning-border 1.5s ease-in-out infinite;
         }
 
         @keyframes pulse-warning {
             0%, 100% {
                 transform: scale(1);
-                filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+                filter: drop-shadow(0 0 3px var(--shadow-error-weak));
             }
             50% {
                 transform: scale(1.15);
-                filter: drop-shadow(0 0 8px rgba(244, 67, 54, 1));
+                filter: drop-shadow(0 0 8px var(--shadow-error));
             }
         }
 
         /* Notification styles */
         .notification-error {
-            color: #f44336 !important;
+            color: var(--error-text) !important;
             font-weight: 700 !important;
         }
 
         .notification-ok {
-            color: #4caf50 !important;
+            color: var(--success-text) !important;
         }
 
         /* Solar icon animations */
@@ -722,11 +1106,11 @@
         }
 
         .inverter-bypass-indicator.status-ok {
-            color: #4caf50;
+            color: var(--success-text);
         }
 
         .inverter-bypass-indicator.warning-active {
-            color: #ff3333;
+            color: var(--error-text-alt);
             animation: pulse-warning 2s ease-in-out infinite;
         }
 
@@ -757,12 +1141,12 @@
         /* Inverter temperature hot threshold at 35°C */
         .inverter-temp-hot {
             animation: pulse-hot 1s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+            filter: drop-shadow(0 0 3px var(--shadow-error-weak));
         }
 
         .inverter-temp-cold {
             animation: pulse-cold 1s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+            filter: drop-shadow(0 0 3px var(--shadow-info));
         }
 
         /* Distribution crisis indicator */
@@ -784,11 +1168,11 @@
         }
 
         .inverter-distribution-crisis.status-ok {
-            color: #4caf50;
+            color: var(--success-text);
         }
 
         .inverter-distribution-crisis.warning-active {
-            color: #ff3333;
+            color: var(--error-text-alt);
             animation: pulse-warning 2s ease-in-out infinite;
         }
 
@@ -800,12 +1184,12 @@
         }
 
         .notification-badge.has-error {
-            color: #ff3333;
+            color: var(--error-text-alt);
             font-weight: 700;
         }
 
         .notification-badge.has-unread {
-            color: #ffc107;
+            color: var(--warning-text);
             font-weight: 600;
         }
 
@@ -871,19 +1255,19 @@
 
         /* Grid box price coloring */
         .grid-node.price-cheap {
-            border: 2px solid rgba(76, 175, 80, 0.6);
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+            border: 2px solid var(--battery-border);
+            box-shadow: 0 0 15px var(--shadow-success);
             animation: price-cheap-pulse 3s ease-in-out infinite;
         }
 
         .grid-node.price-normal {
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            border: 2px solid var(--border-primary);
             /* Žádná animace - neutrální stav */
         }
 
         .grid-node.price-expensive {
-            border: 2px solid rgba(255, 152, 0, 0.6);
-            box-shadow: 0 0 15px rgba(255, 152, 0, 0.4);
+            border: 2px solid var(--status-discharging-border);
+            box-shadow: 0 0 15px var(--status-discharging-shadow);
             animation: price-expensive-pulse 2s ease-in-out infinite;
         }
 
@@ -895,14 +1279,14 @@
 
         .price-icon-expensive {
             animation: icon-expensive 1.5s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.8));
+            filter: drop-shadow(0 0 3px var(--status-discharging-shadow));
         }
 
         /* Node Details - Čitelné písmo */
         .node-details {
             margin-top: 6px;
             padding-top: 6px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid var(--border-secondary);
             font-size: 11px; /* Zvětšeno z 8px */
             line-height: 1.4;
         }
@@ -936,7 +1320,7 @@
         .detail-group {
             margin-top: 6px;
             padding-top: 5px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid var(--border-tertiary);
         }
 
         .detail-subheader {
@@ -972,18 +1356,15 @@
         }
 
         .entity-value:hover {
-            color: #42a5f5;
+            color: var(--info-text);
             transform: scale(1.05);
         }
 
-        /* Tooltip pro entity-value */
-        .entity-value::before {
-            content: attr(data-tooltip);
-            position: absolute;
-            top: var(--tooltip-top, -9999px);
-            left: var(--tooltip-left, -9999px);
-            background: rgba(0, 0, 0, 0.95);
-            color: white;
+        /* Globální tooltip kontejner - mimo flow, position: fixed */
+        #global-tooltip {
+            position: fixed;
+            background: var(--tooltip-bg);
+            color: var(--text-primary);
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 11px;
@@ -995,48 +1376,85 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-            z-index: 10000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100000;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            top: -9999px;
+            left: -9999px;
         }
 
-        .entity-value:hover::before {
+        /* Světlý režim - detekce z HA tématu pomocí JavaScript */
+        body.light-theme #global-tooltip {
+            background: var(--tooltip-bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 4px 12px var(--shadow-color);
+        }
+
+        /* Fallback: Světlý režim - systémová preference (pokud JS selže) */
+        @media (prefers-color-scheme: light) {
+            #global-tooltip {
+                background: var(--tooltip-bg-secondary);
+                color: var(--text-primary);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            }
+        }
+
+        #global-tooltip.visible {
             opacity: 1;
         }
 
-        /* Šipka tooltipu pro entity-value - výchozí (nahoře, směrem dolů) */
-        .entity-value::after {
-            content: '';
-            position: absolute;
-            top: var(--tooltip-arrow-top, -9999px);
-            left: var(--tooltip-arrow-left, -9999px);
-            transform: translateX(-50%);
-            border: 4px solid transparent;
-            border-top-color: rgba(0, 0, 0, 0.9);
+        /* Globální tooltip šipka */
+        #global-tooltip-arrow {
+            position: fixed;
+            width: 0;
+            height: 0;
+            border: 5px solid transparent;
+            border-top-color: var(--tooltip-border);
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-            z-index: 10000;
+            z-index: 100000;
+            top: -9999px;
+            left: -9999px;
         }
 
-        .entity-value:hover::after {
+        /* Světlý režim - detekce z HA tématu pomocí JavaScript */
+        body.light-theme #global-tooltip-arrow {
+            border-top-color: var(--tooltip-border-secondary);
+        }
+
+        body.light-theme #global-tooltip-arrow.below {
+            border-top-color: transparent;
+            border-bottom-color: var(--tooltip-border-secondary);
+        }
+
+        /* Fallback: Světlý režim - systémová preference (pokud JS selže) */
+        @media (prefers-color-scheme: light) {
+            #global-tooltip-arrow {
+                border-top-color: var(--tooltip-border-secondary);
+            }
+
+            #global-tooltip-arrow.below {
+                border-top-color: transparent;
+                border-bottom-color: var(--tooltip-border-secondary);
+            }
+        }
+
+        #global-tooltip-arrow.visible {
             opacity: 1;
         }
 
-        /* Šipka tooltipu pro entity-value - když je tooltip dole */
-        .entity-value.tooltip-below::after {
+        #global-tooltip-arrow.below {
             border-top-color: transparent;
-            border-bottom-color: rgba(0, 0, 0, 0.9);
-        }
-
-        /* Info bubble system */
+            border-bottom-color: var(--tooltip-border);
+        }        /* Info bubble system */
         .info-bubble {
             display: inline-block;
             width: 16px;
             height: 16px;
             line-height: 16px;
             text-align: center;
-            background: rgba(33, 150, 243, 0.2);
-            border: 1px solid rgba(33, 150, 243, 0.4);
+            background: var(--info-bg);
+            border: 1px solid var(--indicator-info-border);
             border-radius: 50%;
             font-size: 11px;
             cursor: help;
@@ -1046,7 +1464,7 @@
         }
 
         .info-bubble:hover {
-            background: rgba(33, 150, 243, 0.4);
+            background: var(--status-charging-bg);
             transform: scale(1.1);
         }
 
@@ -1056,8 +1474,8 @@
             left: 50%;
             transform: translateX(-50%);
             margin-bottom: 8px;
-            background: rgba(0, 0, 0, 0.95);
-            color: white;
+            background: var(--tooltip-bg);
+            color: var(--text-primary);
             padding: 12px 16px;
             border-radius: 8px;
             font-size: 11px;
@@ -1070,7 +1488,7 @@
             transition: opacity 0.2s ease, visibility 0.2s ease;
             z-index: 10000;
             text-align: left;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 4px 12px var(--shadow-color);
         }
 
         .info-bubble:hover .info-bubble-tooltip {
@@ -1086,11 +1504,11 @@
             left: 50%;
             transform: translateX(-50%);
             border: 6px solid transparent;
-            border-top-color: rgba(0, 0, 0, 0.95);
+            border-top-color: var(--tooltip-border);
         }
 
         .info-bubble-tooltip strong {
-            color: #42a5f5;
+            color: var(--info-text);
             display: block;
             margin-bottom: 6px;
         }
@@ -1111,28 +1529,28 @@
         }
 
         .status-charging {
-            background: rgba(33, 150, 243, 0.3);
-            color: #42a5f5;
+            background: var(--status-charging-bg);
+            color: var(--status-charging-text);
         }
 
         .status-discharging {
-            background: rgba(255, 152, 0, 0.3);
-            color: #ffb74d;
+            background: var(--status-discharging-bg);
+            color: var(--status-discharging-text);
         }
 
         .status-idle {
-            background: rgba(76, 175, 80, 0.3);
-            color: #81c784;
+            background: var(--status-idle-bg);
+            color: var(--status-idle-text);
         }
 
         .status-importing {
-            background: rgba(244, 67, 54, 0.3);
-            color: #e57373;
+            background: var(--status-importing-bg);
+            color: var(--status-importing-text);
         }
 
         .status-exporting {
-            background: rgba(76, 175, 80, 0.3);
-            color: #81c784;
+            background: var(--status-exporting-bg);
+            color: var(--status-exporting-text);
         }
 
         /* Flow Particles */
@@ -1159,23 +1577,23 @@
         /* Price indicator animations - jemné pulzování */
         @keyframes price-cheap-pulse {
             0%, 100% {
-                box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
-                border-color: rgba(76, 175, 80, 0.6);
+                box-shadow: 0 0 15px var(--shadow-success);
+                border-color: var(--battery-border);
             }
             50% {
-                box-shadow: 0 0 25px rgba(76, 175, 80, 0.6);
-                border-color: rgba(76, 175, 80, 0.8);
+                box-shadow: 0 0 25px var(--shadow-success);
+                border-color: var(--button-active-border);
             }
         }
 
         @keyframes price-expensive-pulse {
             0%, 100% {
-                box-shadow: 0 0 15px rgba(255, 152, 0, 0.4);
-                border-color: rgba(255, 152, 0, 0.6);
+                box-shadow: 0 0 15px var(--status-discharging-shadow);
+                border-color: var(--status-discharging-border);
             }
             50% {
-                box-shadow: 0 0 25px rgba(255, 152, 0, 0.6);
-                border-color: rgba(255, 152, 0, 0.8);
+                box-shadow: 0 0 25px var(--status-discharging-border);
+                border-color: var(--status-discharging-text);
             }
         }
 
@@ -1192,17 +1610,17 @@
 
         .control-button {
             padding: 6px 12px;
-            background: rgba(33, 150, 243, 0.3);
-            border: 1px solid rgba(33, 150, 243, 0.5);
+            background: var(--status-charging-bg);
+            border: 1px solid var(--status-charging-border);
             border-radius: 4px;
-            color: white;
+            color: var(--text-primary);
             font-size: 11px;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
         .control-button:hover {
-            background: rgba(33, 150, 243, 0.5);
+            background: var(--status-charging-shadow);
             transform: scale(1.05);
         }
 
@@ -1246,7 +1664,7 @@
             grid-column: span 2; /* Celá šířka */
             margin-top: 4px;
             padding-top: 4px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid var(--border-tertiary);
         }
 
         .battery .detail-group .detail-row {
@@ -1263,7 +1681,7 @@
         .battery-gauge {
             width: 100%;
             height: 8px;
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--button-bg);
             border-radius: 4px;
             margin-top: 6px;
             margin-bottom: 4px;
@@ -1273,7 +1691,7 @@
 
         .battery-gauge-fill {
             height: 100%;
-            background: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
+            background: var(--battery-gauge-gradient);
             border-radius: 4px;
             transition: width 0.5s ease, background 0.5s ease;
         }
@@ -1285,28 +1703,28 @@
 
         /* Green (OK) - when OFF/Standby */
         .warning-capable.status-ok {
-            color: #4caf50 !important;
+            color: var(--success-text) !important;
             font-weight: 600 !important;
             font-size: 11px !important;
         }
 
         /* Red (WARNING) - when ON/Active */
         .warning-capable.warning-active {
-            color: #ff3333 !important;
+            color: var(--error-text-alt) !important;
             font-weight: 700 !important;
             font-size: 11px !important;
-            text-shadow: 0 0 8px rgba(255, 51, 51, 0.8);
+            text-shadow: 0 0 8px var(--shadow-error-weak);
             animation: pulse-warning 2s ease-in-out infinite;
         }
 
         @keyframes pulse-warning {
             0%, 100% {
                 opacity: 1;
-                text-shadow: 0 0 8px rgba(255, 51, 51, 0.8);
+                text-shadow: 0 0 8px var(--shadow-error-weak);
             }
             50% {
                 opacity: 0.85;
-                text-shadow: 0 0 12px rgba(255, 51, 51, 1);
+                text-shadow: 0 0 12px var(--shadow-error);
             }
         }
 
@@ -1316,8 +1734,8 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-secondary);
             border-radius: 16px;
             padding: 16px 24px;
             backdrop-filter: blur(10px);
@@ -1417,123 +1835,296 @@
 
         /* Mobile - small screens */
         @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+                padding-bottom: 20px;
+            }
+
+            .header {
+                margin-bottom: 15px;
+                flex-wrap: wrap;
+            }
+
+            .header h1 {
+                font-size: 18px;
+                width: 100%;
+                margin-bottom: 5px;
+            }
+
+            .time {
+                font-size: 14px;
+            }
+
+            .last-update {
+                font-size: 10px;
+                width: 100%;
+                text-align: left;
+                margin-top: 2px;
+            }
+
             .flow-canvas {
-                height: 900px;
-                margin-top: 0; /* Top bar handles spacing */
+                height: 1100px;
+                max-width: 100%;
+                margin-top: 0;
+                transform: scale(0.85);
+                transform-origin: top center;
             }
 
             /* Zmenšení všech boxů pro mobil */
             .node {
-                min-width: 110px;
-                padding: 12px;
+                min-width: 100px;
+                max-width: 140px;
+                padding: 8px 10px;
             }
 
             .node-icon {
-                font-size: 32px;
-                margin-bottom: 6px;
-            }
-
-            .node-label {
-                font-size: 10px;
+                font-size: 24px;
                 margin-bottom: 4px;
             }
 
-            .node-value {
-                font-size: 24px;
+            .node-label {
+                font-size: 9px;
                 margin-bottom: 3px;
             }
 
+            .node-value {
+                font-size: 18px;
+                margin-bottom: 2px;
+            }
+
             .node-subvalue {
-                font-size: 11px;
+                font-size: 9px;
             }
 
             .node-details {
-                font-size: 9px;
-                margin-top: 8px;
-                padding-top: 6px;
+                font-size: 8px;
+                margin-top: 6px;
+                padding-top: 4px;
             }
 
             .detail-label {
-                font-size: 8px;
+                font-size: 7px;
             }
 
             .detail-value {
-                font-size: 9px;
+                font-size: 8px;
             }
 
             .detail-extra {
-                font-size: 8px;
+                font-size: 7px;
             }
 
             .detail-subheader {
-                font-size: 8px;
+                font-size: 7px;
+                padding: 2px 4px;
+            }
+
+            .detail-row {
+                gap: 3px;
             }
 
             .inverter {
-                min-width: 120px;
+                min-width: 140px;
+                max-width: 160px;
             }
 
-            /* Pozice boxů pro mobil - NOVÝ LAYOUT */
+            /* Pozice boxů pro mobil - VERTIKÁLNÍ LAYOUT */
             .solar {
-                top: 10px;
+                top: 20px;
                 left: 50%;
                 transform: translateX(-50%);
             }
 
+            .solar:hover {
+                transform: translateX(-50%) scale(1.05);
+            }
+
+            /* Prostřední řada - Síť a Spotřeba */
             .grid-node {
-                top: 150px;
-                left: 10px;
+                top: 240px;
+                left: 15px;
                 transform: none;
+            }
+
+            .grid-node:hover {
+                transform: scale(1.05);
             }
 
             .house {
-                top: 150px;
-                right: 10px;
+                top: 240px;
+                right: 15px;
+                left: auto;
                 transform: none;
             }
 
-            .battery {
-                top: 350px;
-                left: 10px;
-                transform: none;
+            .house:hover {
+                transform: scale(1.05);
             }
 
+            /* Střídač - na střed */
             .inverter {
-                top: 420px;
+                top: 490px;
                 left: 50%;
                 transform: translateX(-50%);
             }
 
-            .info-panel {
-                bottom: 10px;
-                flex-direction: column;
-                gap: 10px;
+            .inverter:hover {
+                transform: translateX(-50%) scale(1.05);
+            }
+
+            /* Baterie - dole */
+            .battery {
+                top: 750px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+
+            .battery:hover {
+                transform: translateX(-50%) scale(1.05);
+            }
+
+            /* Solar forecast corners - zmenšení */
+            .solar-forecast-today,
+            .solar-forecast-tomorrow {
+                font-size: 8px;
+                padding: 3px 5px;
+            }
+
+            .forecast-icon {
                 font-size: 10px;
             }
 
+            .forecast-value {
+                font-size: 8px;
+            }
+
+            /* Battery indicators - zmenšení */
+            .battery-current-indicator,
+            .battery-voltage-indicator,
+            .battery-temp-indicator {
+                font-size: 8px;
+                padding: 2px 4px;
+            }
+
+            /* Inverter notifications - zmenšení */
+            .inverter-notification {
+                font-size: 8px;
+                padding: 2px 5px;
+            }
+
+            /* Grid mode indicator */
+            .grid-mode-indicator {
+                font-size: 7px;
+                padding: 2px 5px;
+            }
+
+            /* Info panel */
+            .info-panel {
+                position: relative;
+                bottom: auto;
+                margin-top: 20px;
+                flex-direction: column;
+                gap: 8px;
+                font-size: 9px;
+            }
+
+            /* Control panel - mobile sticky */
             .control-panel {
-                position: fixed;
+                position: sticky;
                 top: 0;
                 left: 0;
                 right: 0;
                 width: 100%;
                 max-height: 100vh;
-                border-radius: 0 0 16px 16px;
+                border-radius: 0 0 12px 12px;
                 overflow-y: auto;
             }
 
+            .panel-header h3 {
+                font-size: 11px;
+            }
+
             .panel-content {
-                max-height: calc(100vh - 80px);
+                max-height: calc(100vh - 60px);
                 overflow-y: auto;
+                padding: 8px;
+            }
+
+            .control-section {
+                margin-bottom: 12px;
+            }
+
+            .control-section h4 {
+                font-size: 11px;
+                margin-bottom: 6px;
             }
 
             .button-group {
                 grid-template-columns: repeat(2, 1fr);
+                gap: 6px;
+            }
+
+            .button-group button {
+                font-size: 10px;
+                padding: 6px 8px;
             }
 
             /* Menší battery gauge */
             .battery-gauge {
-                height: 6px;
+                height: 5px;
+            }
+
+            /* Solar columns - vertical stacking */
+            .solar-columns {
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .solar-column {
+                width: 100%;
+            }
+
+            /* Phase displays */
+            .node-phases {
+                font-size: 8px;
+                gap: 3px;
+            }
+
+            .phase-value {
+                font-size: 8px;
+            }
+
+            /* Shield queue - hide on mobile nebo zmenšit */
+            #shield-queue-section {
+                display: none; /* Skrýt na mobilu kvůli prostoru */
+            }
+
+            /* Tooltips - menší na mobilu */
+            #global-tooltip {
+                max-width: min(200px, calc(100vw - 30px));
+                font-size: 10px;
+                padding: 6px 10px;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 380px) {
+            .flow-canvas {
+                transform: scale(0.75);
+                height: 1000px;
+            }
+
+            .node {
+                min-width: 90px;
+                max-width: 120px;
+            }
+
+            .node-value {
+                font-size: 16px;
+            }
+
+            .node-icon {
+                font-size: 22px;
             }
         }
 
@@ -1545,11 +2136,11 @@
             right: 0;
             width: 100%;
             max-height: auto; /* Auto - přizpůsobí se obsahu */
-            background: rgba(10, 14, 39, 0.98);
-            border-bottom: 2px solid rgba(66, 165, 245, 0.3);
+            background: var(--control-panel-bg);
+            border-bottom: 2px solid var(--control-panel-border);
             backdrop-filter: blur(10px);
             z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 4px 20px var(--shadow-color);
             overflow: hidden;
             transition: all 0.3s ease;
         }
@@ -1567,8 +2158,8 @@
             justify-content: space-between;
             align-items: center;
             padding: 4px 12px; /* Ještě menší */
-            background: rgba(66, 165, 245, 0.1);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--info-bg);
+            border-bottom: 1px solid var(--border-secondary);
             cursor: pointer;
         }
 
@@ -1579,9 +2170,9 @@
         }
 
         .btn-minimize {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--button-bg);
             border: none;
-            color: white;
+            color: var(--text-primary);
             width: 20px; /* Velmi malé */
             height: 20px;
             border-radius: 4px;
@@ -1594,7 +2185,7 @@
         }
 
         .btn-minimize:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: var(--button-hover);
         }
 
         .panel-content {
@@ -1642,23 +2233,43 @@
         }
 
         .panel-content::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--bg-tertiary);
             border-radius: 10px;
         }
 
         .panel-content::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
+            background: var(--button-hover);
             border-radius: 10px;
         }
 
         .panel-content::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
+            background: var(--bg-hover);
         }
 
         .control-section {
             margin-bottom: 0;
             padding-bottom: 0;
             border-bottom: none;
+        }
+
+        #charge-battery-btn {
+            background: var(--shield-pending-bg);
+            border-color: var(--shield-pending-border);
+        }
+
+        .dialog-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .dialog-input:focus {
+            border-color: var(--input-focus-border);
+            outline: none;
         }
 
         .control-section:last-child {
@@ -1672,7 +2283,7 @@
             font-size: 10px;
             font-weight: 600;
             margin: 0 0 4px 0;
-            color: rgba(255, 255, 255, 0.7);
+            color: var(--text-label);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             white-space: nowrap;
@@ -1687,10 +2298,10 @@
 
         .button-group button {
             padding: 6px 12px;
-            background: rgba(66, 165, 245, 0.2);
-            border: 1px solid rgba(66, 165, 245, 0.4);
+            background: var(--info-bg);
+            border: 1px solid var(--indicator-info-border);
             border-radius: 6px;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
             font-size: 11px;
             font-weight: 500;
@@ -1699,8 +2310,8 @@
         }
 
         .button-group button:hover {
-            background: rgba(66, 165, 245, 0.4);
-            border-color: rgba(66, 165, 245, 0.6);
+            background: var(--status-charging-bg);
+            border-color: var(--status-charging-border);
             transform: translateY(-2px);
         }
 
@@ -1709,15 +2320,15 @@
         }
 
         .button-group button.active {
-            background: rgba(76, 175, 80, 0.4);
-            border-color: rgba(76, 175, 80, 0.6);
+            background: var(--button-active-bg);
+            border-color: var(--battery-border);
         }
 
         .button-group button:disabled,
         .button-group button.disabled {
-            background: rgba(128, 128, 128, 0.2);
-            border-color: rgba(128, 128, 128, 0.3);
-            color: rgba(255, 255, 255, 0.4);
+            background: var(--button-disabled-bg);
+            border-color: var(--button-disabled-border);
+            color: var(--button-disabled-text);
             cursor: not-allowed;
             pointer-events: none;
         }
@@ -1725,7 +2336,7 @@
         .button-group button:disabled:hover,
         .button-group button.disabled:hover {
             transform: none;
-            background: rgba(128, 128, 128, 0.2);
+            background: var(--button-disabled-bg);
         }
 
         .button-group button:disabled {
@@ -1749,26 +2360,26 @@
         .input-group input {
             flex: 1;
             padding: 6px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
             border-radius: 4px;
-            color: white;
+            color: var(--text-primary);
             font-size: 11px;
             min-width: 80px;
         }
 
         .input-group input:focus {
             outline: none;
-            border-color: rgba(66, 165, 245, 0.6);
-            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--input-focus-border);
+            background: var(--bg-hover);
         }
 
         .input-group button {
             padding: 6px 12px;
-            background: rgba(76, 175, 80, 0.3);
-            border: 1px solid rgba(76, 175, 80, 0.5);
+            background: var(--status-idle-bg);
+            border: 1px solid var(--battery-border);
             border-radius: 4px;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
             font-size: 10px;
             font-weight: 500;
@@ -1777,8 +2388,8 @@
         }
 
         .input-group button:hover {
-            background: rgba(76, 175, 80, 0.5);
-            border-color: rgba(76, 175, 80, 0.7);
+            background: var(--button-active-bg);
+            border-color: var(--button-active-border);
         }
 
         .input-group {
@@ -1794,17 +2405,17 @@
         .input-group input {
             flex: 1;
             padding: 2px 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
             border-radius: 3px;
-            color: white;
+            color: var(--text-primary);
             font-size: 9px;
         }
 
         .input-group input:focus {
             outline: none;
-            border-color: rgba(66, 165, 245, 0.6);
-            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--input-focus-border);
+            background: var(--bg-hover);
         }
 
         /* Status texty - skryté */
@@ -1815,10 +2426,10 @@
         .input-group button,
         .btn-action {
             padding: 8px 16px;
-            background: rgba(76, 175, 80, 0.3);
-            border: 1px solid rgba(76, 175, 80, 0.5);
+            background: var(--status-idle-bg);
+            border: 1px solid var(--battery-border);
             border-radius: 6px;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
             font-size: 12px;
             font-weight: 500;
@@ -1828,7 +2439,7 @@
 
         .input-group button:hover,
         .btn-action:hover {
-            background: rgba(76, 175, 80, 0.5);
+            background: var(--button-active-bg);
         }
 
         .status {
@@ -1836,22 +2447,22 @@
             opacity: 0.7;
             margin-top: 8px;
             padding: 6px 10px;
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--bg-tertiary);
             border-radius: 6px;
         }
 
         .status span {
-            color: #4caf50;
+            color: var(--success-text);
             font-weight: 600;
         }
 
         .btn-secondary {
             width: 100%;
             padding: 12px;
-            background: rgba(149, 117, 205, 0.2);
-            border: 1px solid rgba(149, 117, 205, 0.4);
+            background: var(--inverter-bg);
+            border: 1px solid var(--inverter-border);
             border-radius: 8px;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
             font-size: 13px;
             font-weight: 500;
@@ -1859,7 +2470,7 @@
         }
 
         .btn-secondary:hover {
-            background: rgba(149, 117, 205, 0.4);
+            background: var(--bg-active);
         }
 
         .notification-toast {
@@ -1869,11 +2480,11 @@
             transform: translate(-50%, -50%);
             min-width: 400px;
             max-width: 500px;
-            background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
-            border: 2px solid rgba(66, 165, 245, 0.4);
+            background: var(--dialog-bg);
+            border: 2px solid var(--dialog-border);
             border-radius: 16px;
             backdrop-filter: blur(20px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+            box-shadow: 0 20px 60px var(--shadow-strong);
             z-index: 10000;
             animation: popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
         }
@@ -1894,13 +2505,13 @@
             justify-content: space-between;
             align-items: center;
             padding: 20px 24px 16px 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--border-secondary);
         }
 
         .toast-header strong {
             font-size: 18px;
             font-weight: 600;
-            color: rgba(255, 255, 255, 0.95);
+            color: var(--text-primary);
         }
 
         .toast-header button {
@@ -1926,34 +2537,34 @@
             padding: 16px 24px 20px 24px;
             font-size: 14px;
             line-height: 1.6;
-            color: rgba(255, 255, 255, 0.85);
+            color: var(--toast-body-text);
         }
 
         .toast-success {
-            border-color: rgba(76, 175, 80, 0.6);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(76, 175, 80, 0.2);
+            border-color: var(--toast-success-border);
+            box-shadow: var(--toast-success-shadow);
         }
 
         .toast-success .toast-header {
-            border-bottom-color: rgba(76, 175, 80, 0.2);
+            border-bottom-color: var(--toast-success-border-light);
         }
 
         .toast-error {
-            border-color: rgba(244, 67, 54, 0.6);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(244, 67, 54, 0.2);
+            border-color: var(--toast-error-border);
+            box-shadow: var(--toast-error-shadow);
         }
 
         .toast-error .toast-header {
-            border-bottom-color: rgba(244, 67, 54, 0.2);
+            border-bottom-color: var(--toast-error-border-light);
         }
 
         .toast-warning {
-            border-color: rgba(255, 152, 0, 0.6);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 152, 0, 0.2);
+            border-color: var(--toast-warning-border);
+            box-shadow: var(--toast-warning-shadow);
         }
 
         .toast-warning .toast-header {
-            border-bottom-color: rgba(255, 152, 0, 0.2);
+            border-bottom-color: var(--toast-warning-border-light);
         }
 
         /* Custom Acknowledgement Dialog */
@@ -1963,7 +2574,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            background: var(--modal-backdrop);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1972,20 +2583,20 @@
         }
 
         .ack-dialog {
-            background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
-            border: 1px solid rgba(100, 116, 139, 0.3);
+            background: var(--modal-bg);
+            border: 1px solid var(--modal-border);
             border-radius: 12px;
             padding: 24px;
             max-width: 500px;
             width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--modal-shadow);
         }
 
         .ack-dialog-header {
             font-size: 20px;
             font-weight: 600;
             margin-bottom: 16px;
-            color: rgba(255, 255, 255, 0.95);
+            color: var(--modal-header-text);
             display: flex;
             align-items: center;
             gap: 12px;
@@ -1995,17 +2606,17 @@
             font-size: 14px;
             line-height: 1.6;
             margin-bottom: 20px;
-            color: rgba(255, 255, 255, 0.8);
+            color: var(--modal-body-text);
         }
 
         .ack-dialog-warning {
-            background: rgba(255, 152, 0, 0.1);
-            border: 1px solid rgba(255, 152, 0, 0.3);
+            background: var(--modal-warning-bg);
+            border: 1px solid var(--modal-warning-border);
             border-radius: 8px;
             padding: 12px;
             margin-bottom: 16px;
             font-size: 13px;
-            color: rgba(255, 193, 7, 0.95);
+            color: var(--modal-warning-text);
         }
 
         .ack-checkbox-wrapper {
@@ -2014,7 +2625,7 @@
             gap: 12px;
             margin-bottom: 20px;
             padding: 12px;
-            background: rgba(100, 116, 139, 0.1);
+            background: var(--modal-checkbox-bg);
             border-radius: 8px;
         }
 
@@ -2029,7 +2640,7 @@
             flex: 1;
             font-size: 13px;
             line-height: 1.5;
-            color: rgba(255, 255, 255, 0.9);
+            color: var(--modal-checkbox-label);
             cursor: pointer;
         }
 
@@ -2050,23 +2661,23 @@
         }
 
         .ack-dialog-buttons .btn-cancel {
-            background: rgba(100, 116, 139, 0.2);
-            color: rgba(255, 255, 255, 0.8);
+            background: var(--modal-button-cancel-bg);
+            color: var(--modal-button-cancel-text);
         }
 
         .ack-dialog-buttons .btn-cancel:hover {
-            background: rgba(100, 116, 139, 0.3);
+            background: var(--modal-button-cancel-hover);
         }
 
         .ack-dialog-buttons .btn-confirm {
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(29, 78, 216, 0.8) 100%);
+            background: var(--modal-button-confirm-bg);
             color: white;
         }
 
         .ack-dialog-buttons .btn-confirm:hover:not(:disabled) {
-            background: linear-gradient(135deg, rgba(59, 130, 246, 1) 0%, rgba(29, 78, 216, 1) 100%);
+            background: var(--modal-button-confirm-hover);
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            box-shadow: var(--modal-button-confirm-shadow);
         }
 
         .ack-dialog-buttons .btn-confirm:disabled {
@@ -2088,53 +2699,53 @@
         }
 
         .shield-status.idle {
-            background: rgba(76, 175, 80, 0.2);
-            border: 1px solid rgba(76, 175, 80, 0.4);
-            color: #4caf50;
+            background: var(--shield-idle-bg);
+            border: 1px solid var(--shield-idle-border);
+            color: var(--shield-idle-text);
         }
 
         .shield-status.pending {
-            background: rgba(255, 193, 7, 0.2);
-            border: 1px solid rgba(255, 193, 7, 0.4);
-            color: #ffc107;
+            background: var(--shield-pending-bg);
+            border: 1px solid var(--shield-pending-border);
+            color: var(--shield-pending-text);
             animation: pulse-status 1.5s ease-in-out infinite;
         }
 
         .shield-status.processing {
-            background: rgba(66, 165, 245, 0.2);
-            border: 1px solid rgba(66, 165, 245, 0.4);
-            color: #42a5f5;
+            background: var(--shield-processing-bg);
+            border: 1px solid var(--shield-processing-border);
+            color: var(--shield-processing-text);
         }
 
         @keyframes pulse-status {
             0%, 100% {
                 opacity: 1;
-                box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
+                box-shadow: var(--shield-pending-shadow);
             }
             50% {
                 opacity: 0.8;
-                box-shadow: 0 0 20px rgba(255, 193, 7, 0.5);
+                box-shadow: var(--shield-pending-shadow);
             }
         }
 
         /* Button states for shield */
         .button-group button.active {
-            background: rgba(76, 175, 80, 0.5);
-            border-color: rgba(76, 175, 80, 0.8);
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+            background: var(--shield-button-active-bg);
+            border-color: var(--shield-button-active-border);
+            box-shadow: var(--shield-button-active-shadow);
             font-weight: 600;
         }
 
         .button-group button.active::before {
             content: '✓ ';
-            color: #81c784;
+            color: var(--shield-button-active-check);
             font-weight: bold;
             margin-right: 2px;
         }
 
         .button-group button.pending {
-            background: rgba(255, 193, 7, 0.4);
-            border-color: rgba(255, 193, 7, 0.7);
+            background: var(--shield-pending-bg);
+            border-color: var(--shield-pending-border);
             animation: pulse-pending 1.5s ease-in-out infinite;
         }
 
@@ -2147,19 +2758,19 @@
             0%, 100% {
                 opacity: 1;
                 transform: scale(1);
-                box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
+                box-shadow: var(--shield-pending-shadow);
             }
             50% {
                 opacity: 0.75;
                 transform: scale(1.02);
-                box-shadow: 0 0 20px rgba(255, 193, 7, 0.5);
+                box-shadow: var(--shield-pending-shadow);
             }
         }
 
         .button-group button.processing {
-            background: rgba(66, 165, 245, 0.5);
-            border-color: rgba(66, 165, 245, 0.8);
-            box-shadow: 0 0 15px rgba(66, 165, 245, 0.4);
+            background: var(--shield-processing-bg);
+            border-color: var(--shield-processing-border);
+            box-shadow: var(--shield-processing-shadow);
         }
 
         .button-group button.processing::before {
@@ -2176,7 +2787,7 @@
 
         /* Status text transitions */
         .status .transitioning {
-            color: #ffc107;
+            color: var(--shield-pending-text);
             animation: pulse-text 1s ease-in-out infinite;
         }
 
@@ -2189,12 +2800,12 @@
         .queue-indicator {
             display: inline-block;
             padding: 2px 8px;
-            background: rgba(255, 193, 7, 0.3);
+            background: var(--shield-queue-bg);
             border-radius: 12px;
             font-size: 11px;
             font-weight: 600;
             margin-left: 8px;
-            color: #ffc107;
+            color: var(--shield-pending-text);
         }
 
         /* Shield Queue Table */
@@ -2208,11 +2819,11 @@
         }
 
         .shield-queue-table th {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--table-header-bg);
             padding: 10px 12px;
             text-align: left;
             font-weight: 600;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--table-border);
             white-space: nowrap;
         }
 
@@ -2224,7 +2835,7 @@
 
         .shield-queue-table td {
             padding: 10px 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--table-border-light);
             vertical-align: top;
         }
 
@@ -2255,9 +2866,238 @@
             padding: 20px;
             opacity: 0.5;
         }
+        /* === LIGHT THEME OVERRIDES === */
+        body.light-theme {
+            /* Text adjustments */
+            color: var(--text-primary);
+        }
+
+        body.light-theme .node-label {
+            opacity: 0.8;
+        }
+
+        body.light-theme .node-subvalue,
+        body.light-theme .detail-label,
+        body.light-theme .detail-extra {
+            opacity: 0.7;
+        }
+
+        body.light-theme .time,
+        body.light-theme .last-update {
+            opacity: 0.7;
+        }
+
+        /* Control panel */
+        body.light-theme .control-panel {
+            background: rgba(255, 255, 255, 0.98);
+            border-bottom: 2px solid rgba(66, 165, 245, 0.3);
+            box-shadow: 0 4px 20px var(--shadow-color);
+        }
+
+        body.light-theme .panel-header {
+            background: rgba(66, 165, 245, 0.1);
+            border-bottom: 1px solid var(--border-secondary);
+        }
+
+        body.light-theme .panel-header h3 {
+            color: var(--text-primary);
+        }
+
+        body.light-theme .btn-minimize {
+            background: rgba(0, 0, 0, 0.1);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .btn-minimize:hover {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        /* Buttons */
+        body.light-theme .button-group button {
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .button-group button:hover:not(:disabled) {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        body.light-theme .button-group button.active {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.6);
+            color: #2e7d32;
+        }
+
+        body.light-theme .button-group button:disabled {
+            background: rgba(0, 0, 0, 0.03);
+            border-color: rgba(0, 0, 0, 0.08);
+            color: var(--text-tertiary);
+        }
+
+        /* Info bubbles */
+        body.light-theme .info-bubble {
+            background: rgba(33, 150, 243, 0.15);
+            border: 1px solid rgba(33, 150, 243, 0.3);
+            color: #1976d2;
+        }
+
+        body.light-theme .info-bubble:hover {
+            background: rgba(33, 150, 243, 0.25);
+        }
+
+        body.light-theme .info-bubble-tooltip {
+            background: rgba(30, 30, 30, 0.95);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Shield queue table */
+        body.light-theme .shield-queue-table th {
+            background: rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid var(--border-secondary);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .shield-queue-table td {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .shield-queue-table tr:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        /* Dialogs */
+        body.light-theme .charge-dialog,
+        body.light-theme .notification-toast,
+        body.light-theme .ack-dialog {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 248, 0.98) 100%);
+            border: 2px solid rgba(66, 165, 245, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .toast-header,
+        body.light-theme .dialog-header {
+            border-bottom: 1px solid var(--border-secondary);
+        }
+
+        body.light-theme .toast-header strong,
+        body.light-theme .dialog-header strong {
+            color: var(--text-primary);
+        }
+
+        body.light-theme .btn-close {
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--text-secondary);
+        }
+
+        body.light-theme .btn-close:hover {
+            background: rgba(244, 67, 54, 0.2);
+            color: #d32f2f;
+        }
+
+        /* Form inputs */
+        body.light-theme input[type="number"],
+        body.light-theme select {
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-primary);
+            color: var(--text-primary);
+        }
+
+        body.light-theme input[type="number"]:focus,
+        body.light-theme select:focus {
+            background: rgba(0, 0, 0, 0.08);
+            border-color: #42a5f5;
+        }
+
+        /* Info panel */
+        body.light-theme .info-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-top: 1px solid var(--border-secondary);
+            color: var(--text-secondary);
+        }
+
+        /* Entity values */
+        body.light-theme .entity-value:hover {
+            color: #1976d2;
+        }
+
+        /* Status colors adjustments for light theme */
+        body.light-theme .queue-status-running {
+            color: #1976d2;
+        }
+
+        body.light-theme .queue-status-queued {
+            color: #f57c00;
+        }
+
+        /* Battery gauge */
+        body.light-theme .battery-gauge {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Phase displays */
+        body.light-theme .node-phases,
+        body.light-theme .phase-value {
+            opacity: 0.9;
+        }
+
+        /* Notifications */
+        body.light-theme .inverter-notification,
+        body.light-theme .battery-current-indicator,
+        body.light-theme .battery-voltage-indicator,
+        body.light-theme .battery-temp-indicator {
+            background: rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            color: var(--text-primary);
+        }
+
+        body.light-theme .grid-mode-indicator {
+            background: rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            color: var(--text-primary);
+        }
+
+        /* Control section headers */
+        body.light-theme .control-section h4 {
+            color: var(--text-primary);
+            opacity: 0.9;
+        }
+
+        /* Specific status colors that need better contrast in light mode */
+        body.light-theme .status-charging {
+            background: rgba(33, 150, 243, 0.2);
+            color: #1565c0;
+        }
+
+        body.light-theme .status-discharging {
+            background: rgba(255, 152, 0, 0.2);
+            color: #e65100;
+        }
+
+        body.light-theme .status-idle {
+            background: rgba(76, 175, 80, 0.2);
+            color: #2e7d32;
+        }
+
+        body.light-theme .status-importing {
+            background: rgba(244, 67, 54, 0.2);
+            color: #c62828;
+        }
+
+        body.light-theme .status-exporting {
+            background: rgba(76, 175, 80, 0.2);
+            color: #2e7d32;
+        }
     </style>
 </head>
 <body>
+    <!-- Globální tooltip systém - mimo flow strukturu -->
+    <div id="global-tooltip"></div>
+    <div id="global-tooltip-arrow"></div>
+
     <div class="container">
         <div class="header">
             <h1>⚡ Energetické Toky</h1>
@@ -2311,7 +3151,7 @@
             <div class="control-section">
                 <h4>Nabíjení baterie ze sítě</h4>
                 <div class="button-group">
-                    <button onclick="showChargeBatteryDialog()" id="charge-battery-btn" title="Nabít baterii na cílové SoC" style="background: rgba(255, 152, 0, 0.3); border-color: rgba(255, 152, 0, 0.5);">⚡ Nabít na SoC</button>
+                    <button onclick="showChargeBatteryDialog()" id="charge-battery-btn" title="Nabít baterii na cílové SoC">⚡ Nabít na SoC</button>
                 </div>
             </div>
 
@@ -3979,8 +4819,7 @@
                                max="20000"
                                step="100"
                                value="${currentLimit || 5000}"
-                               style="width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.2);
-                                      background: rgba(255,255,255,0.05); color: white; border-radius: 4px; font-size: 14px;">
+                               class="dialog-input">
                         <small style="display: block; margin-top: 5px; opacity: 0.7;">Rozsah: 1-20000 W</small>
                     </div>
                 ` : '';
@@ -5715,17 +6554,17 @@
                             Potvrzuji, že jsem si vědom možných dopadů na provoz systému a beru na sebe odpovědnost za tuto změnu.
                         </label>
                     </div>
-                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <div class="ack-dialog-buttons">
                         <button
+                            class="btn-cancel"
                             onclick="this.closest('.ack-dialog-overlay').remove()"
-                            style="padding: 10px 20px; background: rgba(100, 116, 139, 0.3); border: 1px solid rgba(100, 116, 139, 0.5); border-radius: 6px; color: white; cursor: pointer;"
                         >
                             Zrušit
                         </button>
                         <button
                             id="charge-confirm-btn"
+                            class="btn-confirm"
                             onclick="confirmChargeBattery()"
-                            style="padding: 10px 20px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.5); border-radius: 6px; color: white; cursor: pointer; opacity: 0.5;"
                             disabled
                         >
                             ⚡ Spustit nabíjení
@@ -5809,70 +6648,185 @@
         }
 
         // Initialize
+        // === THEME DETECTION ===
+
+        /**
+         * Detekuje aktuální téma Home Assistantu a aplikuje správné styly
+         */
+        function detectAndApplyTheme() {
+            try {
+                const hass = getHass();
+                const bodyElement = document.body;
+                let isLightTheme = false;
+
+                if (hass && hass.themes) {
+                    // Metoda 1: Přímý přístup k HA theme konfiguraci (nejspolehlivější)
+                    const selectedTheme = hass.selectedTheme || hass.themes.default_theme;
+                    const darkMode = hass.themes.darkMode;
+
+                    console.log('[Theme] HA theme info:', {
+                        selectedTheme,
+                        darkMode,
+                        themes: hass.themes
+                    });
+
+                    // HA má explicitní dark mode flag
+                    if (darkMode !== undefined) {
+                        isLightTheme = !darkMode;
+                        console.log('[Theme] Using HA darkMode flag:', darkMode, '-> light theme:', isLightTheme);
+                    } else if (selectedTheme) {
+                        // Fallback: některá témata mají v názvu "light" nebo "dark"
+                        const themeName = selectedTheme.toLowerCase();
+                        if (themeName.includes('light')) {
+                            isLightTheme = true;
+                        } else if (themeName.includes('dark')) {
+                            isLightTheme = false;
+                        }
+                        console.log('[Theme] Detected from theme name:', selectedTheme, '-> light:', isLightTheme);
+                    }
+                } else {
+                    console.warn('[Theme] Cannot access hass.themes, trying CSS detection');
+                }
+
+                // Metoda 2: Fallback - detekce z CSS proměnných
+                if (!hass || !hass.themes) {
+                    try {
+                        const haElement = parent.document.querySelector('home-assistant');
+                        if (haElement) {
+                            const computedStyle = getComputedStyle(haElement);
+                            const primaryBg = computedStyle.getPropertyValue('--primary-background-color');
+
+                            if (primaryBg) {
+                                const rgb = primaryBg.match(/\d+/g);
+                                if (rgb && rgb.length >= 3) {
+                                    const brightness = (parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2])) / 3;
+                                    isLightTheme = brightness > 128;
+                                    console.log('[Theme] CSS detection - brightness:', brightness, '-> light:', isLightTheme);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[Theme] CSS detection failed:', e);
+                    }
+                }
+
+                // Aplikovat třídu na body
+                if (isLightTheme) {
+                    bodyElement.classList.add('light-theme');
+                    bodyElement.classList.remove('dark-theme');
+                    console.log('[Theme] ✓ Light theme applied');
+                } else {
+                    bodyElement.classList.add('dark-theme');
+                    bodyElement.classList.remove('light-theme');
+                    console.log('[Theme] ✓ Dark theme applied');
+                }
+
+            } catch (error) {
+                console.error('[Theme] Error detecting theme:', error);
+                // Výchozí: tmavé téma
+                document.body.classList.add('dark-theme');
+                document.body.classList.remove('light-theme');
+            }
+        }
+
         // === TOOLTIP SYSTEM ===
 
         /**
-         * Inicializuje tooltip systém pro všechny entity-value elementy
+         * Globální tooltip systém - používá dedikované DOM elementy mimo flow
+         * Toto řešení zaručuje správné pozicování bez ohledu na CSS transformace rodičů
          */
         function initTooltips() {
+            const tooltip = document.getElementById('global-tooltip');
+            const arrow = document.getElementById('global-tooltip-arrow');
             const entityValues = document.querySelectorAll('.entity-value[data-tooltip]');
 
-            entityValues.forEach(element => {
-                element.addEventListener('mouseenter', function(e) {
-                    const rect = this.getBoundingClientRect();
-                    const tooltipText = this.getAttribute('data-tooltip');
+            if (!tooltip || !arrow) {
+                console.error('[Tooltips] Global tooltip elements not found!');
+                return;
+            }
 
+            entityValues.forEach(element => {
+                element.addEventListener('mouseenter', function() {
+                    const tooltipText = this.getAttribute('data-tooltip');
                     if (!tooltipText) return;
 
-                    // Výpočet pozice tooltipu - absolute používá document souřadnice
-                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                    // Nastavit text
+                    tooltip.textContent = tooltipText;
 
-                    const tooltipWidth = 250; // max-width z CSS
-                    const tooltipHeight = 40; // přibližná výška
+                    // Získat pozici elementu v rámci viewportu
+                    const rect = this.getBoundingClientRect();
+
+                    // Nejprve zobrazit tooltip pro změření jeho skutečné velikosti
+                    tooltip.style.visibility = 'hidden';
+                    tooltip.style.opacity = '1';
+
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    const tooltipWidth = tooltipRect.width;
+                    const tooltipHeight = tooltipRect.height;
                     const padding = 10;
+                    const arrowSize = 5;
 
-                    // Převést viewport souřadnice na document souřadnice
-                    let tooltipTop = rect.top + scrollTop - tooltipHeight - padding;
-                    let tooltipLeft = rect.left + scrollLeft + (rect.width / 2) - (tooltipWidth / 2);
+                    // Vypočítat pozici tooltipu
+                    let tooltipTop = rect.top - tooltipHeight - arrowSize - padding;
+                    let tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
 
-                    // Zajistit že tooltip není mimo viewport
+                    // Zajistit že tooltip není mimo viewport (horizontálně)
                     const viewportWidth = window.innerWidth;
-                    if (tooltipLeft < scrollLeft + padding) tooltipLeft = scrollLeft + padding;
-                    if (tooltipLeft + tooltipWidth > scrollLeft + viewportWidth - padding) {
-                        tooltipLeft = scrollLeft + viewportWidth - tooltipWidth - padding;
+                    if (tooltipLeft < padding) {
+                        tooltipLeft = padding;
+                    }
+                    if (tooltipLeft + tooltipWidth > viewportWidth - padding) {
+                        tooltipLeft = viewportWidth - tooltipWidth - padding;
                     }
 
-                    // Pokud by byl tooltip nad okrajem, dát ho dolů
+                    // Kontrola zda se tooltip vejde nad element
                     let isBelow = false;
-                    if (rect.top < padding) {
-                        tooltipTop = rect.bottom + scrollTop + padding;
+                    if (tooltipTop < padding) {
+                        // Nedostatek místa nahoře - zobrazit dole
+                        tooltipTop = rect.bottom + arrowSize + padding;
                         isBelow = true;
-                        this.classList.add('tooltip-below');
-                    } else {
-                        this.classList.remove('tooltip-below');
                     }
 
-                    // Pozice šipky - také document souřadnice
-                    const arrowLeft = rect.left + scrollLeft + (rect.width / 2);
+                    // Pozice šipky - vždy uprostřed původního elementu
+                    const arrowLeft = rect.left + (rect.width / 2) - arrowSize;
                     const arrowTop = isBelow
-                        ? (rect.bottom + scrollTop + padding - 4)
-                        : (rect.top + scrollTop - padding - 4);
+                        ? rect.bottom + padding
+                        : rect.top - arrowSize - padding;
 
-                    // Nastavit CSS proměnné
-                    this.style.setProperty('--tooltip-top', `${tooltipTop}px`);
-                    this.style.setProperty('--tooltip-left', `${tooltipLeft}px`);
-                    this.style.setProperty('--tooltip-arrow-top', `${arrowTop}px`);
-                    this.style.setProperty('--tooltip-arrow-left', `${arrowLeft}px`);
+                    // Aplikovat vypočítané pozice
+                    tooltip.style.top = `${tooltipTop}px`;
+                    tooltip.style.left = `${tooltipLeft}px`;
+                    tooltip.style.visibility = 'visible';
+
+                    arrow.style.top = `${arrowTop}px`;
+                    arrow.style.left = `${arrowLeft}px`;
+
+                    // Nastavit směr šipky
+                    if (isBelow) {
+                        arrow.classList.add('below');
+                    } else {
+                        arrow.classList.remove('below');
+                    }
+
+                    // Zobrazit tooltip a šipku
+                    tooltip.classList.add('visible');
+                    arrow.classList.add('visible');
                 });
 
                 element.addEventListener('mouseleave', function() {
-                    // Reset pozice mimo viewport
-                    this.style.setProperty('--tooltip-top', '-9999px');
-                    this.style.setProperty('--tooltip-left', '-9999px');
-                    this.style.setProperty('--tooltip-arrow-top', '-9999px');
-                    this.style.setProperty('--tooltip-arrow-left', '-9999px');
-                    this.classList.remove('tooltip-below');
+                    // Skrýt tooltip a šipku
+                    tooltip.classList.remove('visible');
+                    arrow.classList.remove('visible');
+
+                    // Po animaci schovat mimo obrazovku
+                    setTimeout(() => {
+                        if (!tooltip.classList.contains('visible')) {
+                            tooltip.style.top = '-9999px';
+                            tooltip.style.left = '-9999px';
+                            arrow.style.top = '-9999px';
+                            arrow.style.left = '-9999px';
+                        }
+                    }, 200); // délka CSS transition
                 });
             });
 
@@ -5883,6 +6837,9 @@
 
         function init() {
             drawConnections();
+
+            // Detekovat a aplikovat téma z Home Assistantu
+            detectAndApplyTheme();
 
             // Initialize tooltip system
             initTooltips();
@@ -5968,6 +6925,32 @@
             setInterval(() => {
                 loadNodeDetails();
             }, 30000);
+
+            // Sledovat změny tématu
+            // 1. Při každé aktualizaci dat (5s interval)
+            setInterval(() => {
+                detectAndApplyTheme();
+            }, 5000);
+
+            // 2. Event listener pro změny v parent okně (okamžitá reakce)
+            try {
+                if (parent && parent.addEventListener) {
+                    parent.addEventListener('theme-changed', () => {
+                        console.log('[Theme] Theme changed event detected');
+                        detectAndApplyTheme();
+                    });
+                }
+            } catch (e) {
+                console.warn('[Theme] Cannot listen to parent events:', e);
+            }
+
+            // 3. Fallback - sledovat system preference změny
+            if (window.matchMedia) {
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                    console.log('[Theme] System preference changed');
+                    detectAndApplyTheme();
+                });
+            }
 
             // REMOVED: Backup shield monitoring - WebSocket events handle all updates in real-time
             // setInterval(() => {
