@@ -197,6 +197,108 @@ class WizardMixin:
             return dict(self.config_entry.options)
         return {}
 
+    async def _handle_back_button(self, current_step: str) -> FlowResult:
+        """Handle back button - return to previous step."""
+        if len(self._step_history) > 0:
+            # Odebrat současný krok z historie
+            if self._step_history[-1] == current_step:
+                self._step_history.pop()
+
+            # Vrátit se o krok zpět
+            if len(self._step_history) > 0:
+                previous_step = self._step_history.pop()
+                return await getattr(self, f"async_step_{previous_step}")()
+
+        # Pokud není historie, vrátit se na začátek
+        return await self.async_step_wizard_welcome()
+
+    def _generate_summary(self) -> str:
+        """Generate configuration summary for review."""
+        summary_parts = []
+
+        # Přihlášení
+        summary_parts.append("👤 **Přihlášení:**")
+        summary_parts.append(
+            f"   • Uživatel: {self._wizard_data.get(CONF_USERNAME, 'N/A')}"
+        )
+        summary_parts.append("")
+
+        # Intervaly
+        summary_parts.append("⏱️ **Intervaly načítání:**")
+        summary_parts.append(
+            f"   • Základní data: {self._wizard_data.get('standard_scan_interval', 30)}s"
+        )
+        summary_parts.append(
+            f"   • Rozšířená data: {self._wizard_data.get('extended_scan_interval', 300)}s"
+        )
+        summary_parts.append("")
+
+        # Zapnuté moduly
+        summary_parts.append("📦 **Zapnuté moduly:**")
+        if self._wizard_data.get("enable_statistics", True):
+            summary_parts.append("   ✅ Statistiky a analýzy")
+        if self._wizard_data.get("enable_solar_forecast", False):
+            summary_parts.append("   ✅ Solární předpověď")
+            mode = self._wizard_data.get("solar_forecast_mode", "daily_optimized")
+            mode_names = {
+                "daily_optimized": "Denní optimalizovaný",
+                "every_4h": "Každé 4 hodiny",
+                "hourly": "Každou hodinu",
+            }
+            summary_parts.append(f"      → Režim: {mode_names.get(mode, mode)}")
+            if self._wizard_data.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False):
+                kwp1 = self._wizard_data.get(CONF_SOLAR_FORECAST_STRING1_KWP, 0)
+                summary_parts.append(f"      → String 1: {kwp1} kWp")
+            if self._wizard_data.get("solar_forecast_string2_enabled", False):
+                kwp2 = self._wizard_data.get("solar_forecast_string2_kwp", 0)
+                summary_parts.append(f"      → String 2: {kwp2} kWp")
+
+        if self._wizard_data.get("enable_battery_prediction", False):
+            summary_parts.append("   ✅ Predikce baterie")
+            min_cap = self._wizard_data.get("min_capacity_percent", 20)
+            target_cap = self._wizard_data.get("target_capacity_percent", 80)
+            max_price = self._wizard_data.get("max_price_conf", 10.0)
+            summary_parts.append(f"      → Kapacita: {min_cap}% - {target_cap}%")
+            summary_parts.append(f"      → Max. cena: {max_price} CZK/kWh")
+            if self._wizard_data.get("charge_on_bad_weather", False):
+                summary_parts.append("      → Preventivní nabíjení: Zapnuto")
+
+        if self._wizard_data.get("enable_pricing", False):
+            summary_parts.append("   ✅ Cenové senzory a spotové ceny")
+            model = self._wizard_data.get("spot_pricing_model", "percentage")
+            model_names = {
+                "percentage": "Procentní přirážka",
+                "fixed": "Fixní poplatek",
+                "fixed_prices": "Fixní ceny",
+            }
+            summary_parts.append(f"      → Model: {model_names.get(model, model)}")
+            vat = self._wizard_data.get("vat_rate", 21.0)
+            summary_parts.append(f"      → DPH: {vat}%")
+
+        if self._wizard_data.get("enable_extended_sensors", True):
+            summary_parts.append("   ✅ Rozšířené senzory")
+            sensors = []
+            if self._wizard_data.get("enable_extended_battery_sensors", True):
+                sensors.append("Baterie")
+            if self._wizard_data.get("enable_extended_fve_sensors", True):
+                sensors.append("FVE")
+            if self._wizard_data.get("enable_extended_grid_sensors", True):
+                sensors.append("Síť")
+            if sensors:
+                summary_parts.append(f"      → Aktivní: {', '.join(sensors)}")
+
+        if self._wizard_data.get("enable_dashboard", False):
+            summary_parts.append("   ✅ Interaktivní dashboard")
+            refresh = self._wizard_data.get("dashboard_refresh_interval", 30)
+            summary_parts.append(f"      → Obnovení: {refresh}s")
+
+        summary_parts.append("")
+        summary_parts.append(
+            "💡 **Tip:** Můžete se vrátit zpět a změnit jakékoli nastavení."
+        )
+
+        return "\n".join(summary_parts)
+
     # === WIZARD METHODS - Shared by ConfigFlow and OptionsFlow ===
 
     async def async_step_wizard_welcome(
@@ -232,15 +334,29 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 1: Credentials."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět" - musí být PRVNÍ, bez validace
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_credentials")
+
             errors = {}
 
+            # Validace povinných polí (pouze když NEjdeme zpět)
+            if not user_input.get(CONF_USERNAME, "").strip():
+                errors[CONF_USERNAME] = "required"
+            if not user_input.get(CONF_PASSWORD, ""):
+                errors[CONF_PASSWORD] = "required"
+            
             if not user_input.get("live_data_enabled", False):
                 errors["live_data_enabled"] = "live_data_not_confirmed"
+            
+            if errors:
                 return self.async_show_form(
                     step_id="wizard_credentials",
                     data_schema=self._get_credentials_schema(),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(1, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_credentials"
+                    ),
                 )
 
             try:
@@ -263,13 +379,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 step_id="wizard_credentials",
                 data_schema=self._get_credentials_schema(),
                 errors=errors,
-                description_placeholders=self._get_step_placeholders(1, 5),
+                description_placeholders=self._get_step_placeholders(
+                    "wizard_credentials"
+                ),
             )
 
         return self.async_show_form(
             step_id="wizard_credentials",
             data_schema=self._get_credentials_schema(),
-            description_placeholders=self._get_step_placeholders(1, 5),
+            description_placeholders=self._get_step_placeholders("wizard_credentials"),
         )
 
     async def async_step_wizard_modules(
@@ -277,6 +395,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 2: Select modules to enable."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_modules")
+
             errors = {}
 
             if user_input.get("enable_battery_prediction"):
@@ -307,7 +429,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     step_id="wizard_modules",
                     data_schema=self._get_modules_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(2, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_modules"
+                    ),
                 )
 
             self._wizard_data.update(user_input)
@@ -319,7 +443,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self.async_show_form(
             step_id="wizard_modules",
             data_schema=self._get_modules_schema(),
-            description_placeholders=self._get_step_placeholders(2, 5),
+            description_placeholders=self._get_step_placeholders("wizard_modules"),
         )
 
     def _get_modules_schema(
@@ -352,6 +476,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 vol.Optional(
                     "enable_dashboard", default=defaults.get("enable_dashboard", False)
                 ): bool,
+                vol.Optional("go_back", default=False): bool,
             }
         )
 
@@ -359,25 +484,114 @@ Kliknutím na "Odeslat" spustíte průvodce.
         """Get schema for credentials step."""
         return vol.Schema(
             {
-                vol.Required(
+                vol.Optional(
                     CONF_USERNAME,
                     default=self._wizard_data.get(CONF_USERNAME, ""),
                     description={
                         "suggested_value": self._wizard_data.get(CONF_USERNAME, "")
                     },
                 ): str,
-                vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
-                vol.Required(
+                vol.Optional(
+                    CONF_PASSWORD, 
+                    default="",
+                    description={"suggested_value": ""}
+                ): str,
+                vol.Optional(
                     "live_data_enabled",
                     default=False,
                 ): bool,
+                vol.Optional("go_back", default=False): bool,
             }
         )
 
-    def _get_step_placeholders(
-        self, current: int, total: int, **kwargs
-    ) -> dict[str, str]:
-        """Get placeholders for step description."""
+    def _get_total_steps(self) -> int:
+        """Calculate total number of steps based on enabled modules."""
+        # Základní kroky (vždy):
+        # 1. welcome, 2. credentials, 3. modules, 4. intervals
+        total = 4
+
+        # Volitelné kroky podle zapnutých modulů:
+        if self._wizard_data.get("enable_solar_forecast", False):
+            total += 1  # wizard_solar
+        if self._wizard_data.get("enable_battery_prediction", False):
+            total += 1  # wizard_battery
+        if self._wizard_data.get("enable_pricing", False):
+            total += 1  # wizard_pricing
+        if self._wizard_data.get("enable_extended_sensors", False):
+            total += 1  # wizard_extended
+        if self._wizard_data.get("enable_dashboard", False):
+            total += 1  # wizard_dashboard
+
+        # Summary krok (vždy na konci):
+        total += 1
+
+        return total
+
+    def _get_current_step_number(self, step_id: str) -> int:
+        """Get current step number based on step_id and enabled modules."""
+        # Mapování kroků na čísla
+        step_map = {
+            "wizard_welcome": 1,
+            "wizard_credentials": 2,
+            "wizard_modules": 3,
+            "wizard_intervals": 4,
+        }
+
+        # Dynamické kroky - musíme spočítat podle toho, co je zapnuté
+        current = 5  # Začínáme od 5 (po intervals)
+
+        # Solar
+        if step_id == "wizard_solar":
+            return current
+        if self._wizard_data.get("enable_solar_forecast", False):
+            current += 1
+
+        # Battery
+        if step_id == "wizard_battery":
+            return current
+        if self._wizard_data.get("enable_battery_prediction", False):
+            current += 1
+
+        # Pricing
+        if step_id == "wizard_pricing":
+            return current
+        if self._wizard_data.get("enable_pricing", False):
+            current += 1
+
+        # Extended
+        if step_id == "wizard_extended":
+            return current
+        if self._wizard_data.get("enable_extended_sensors", False):
+            current += 1
+
+        # Dashboard
+        if step_id == "wizard_dashboard":
+            return current
+        if self._wizard_data.get("enable_dashboard", False):
+            current += 1
+
+        # Summary
+        if step_id == "wizard_summary":
+            return current
+
+        # Pro základní kroky použij pevnou mapu
+        return step_map.get(step_id, 1)
+
+    def _get_step_placeholders(self, step_id: str = None, **kwargs) -> dict[str, str]:
+        """Get placeholders for step description.
+
+        Args:
+            step_id: ID of current step (e.g. 'wizard_solar')
+            **kwargs: Additional placeholders
+        """
+        if step_id:
+            current = self._get_current_step_number(step_id)
+            total = self._get_total_steps()
+        else:
+            # Fallback pro staré volání
+            current = kwargs.pop("current", 1)
+            total = kwargs.pop("total", 5)
+
         progress_bar = "▓" * current + "░" * (total - current)
         placeholders = {
             "step": f"Krok {current} z {total}",
@@ -439,6 +653,46 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 3: Configure scan intervals."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_intervals")
+
+            errors = {}
+
+            # Validace intervalů s českými zprávami
+            standard = user_input.get("standard_scan_interval", 30)
+            extended = user_input.get("extended_scan_interval", 300)
+
+            if standard < 30:
+                errors["standard_scan_interval"] = "interval_too_short"
+            elif standard > 300:
+                errors["standard_scan_interval"] = "interval_too_long"
+
+            if extended < 300:
+                errors["extended_scan_interval"] = "extended_interval_too_short"
+            elif extended > 3600:
+                errors["extended_scan_interval"] = "extended_interval_too_long"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_intervals",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Optional(
+                                "standard_scan_interval", default=standard
+                            ): int,
+                            vol.Optional(
+                                "extended_scan_interval", default=extended
+                            ): int,
+                            vol.Optional("go_back", default=False): bool,
+                        }
+                    ),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_intervals"
+                    ),
+                )
+
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_intervals")
 
@@ -449,15 +703,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
             step_id="wizard_intervals",
             data_schema=vol.Schema(
                 {
-                    vol.Optional("standard_scan_interval", default=30): vol.All(
-                        int, vol.Range(min=30, max=300)
-                    ),
-                    vol.Optional("extended_scan_interval", default=300): vol.All(
-                        int, vol.Range(min=300, max=3600)
-                    ),
+                    vol.Optional("standard_scan_interval", default=30): int,
+                    vol.Optional("extended_scan_interval", default=300): int,
+                    vol.Optional("go_back", default=False): bool,
                 }
             ),
-            description_placeholders=self._get_step_placeholders(3, 5),
+            description_placeholders=self._get_step_placeholders("wizard_intervals"),
         )
 
     async def async_step_wizard_solar(
@@ -465,6 +716,25 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 4: Solar forecast configuration."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_solar")
+
+            # Detekce změny stavu checkboxů - pokud se změnil, znovu zobrazit formulář s rozbalenými poli
+            old_string1_enabled = self._wizard_data.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True)
+            old_string2_enabled = self._wizard_data.get("solar_forecast_string2_enabled", False)
+            new_string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
+            new_string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
+            
+            # Pokud se změnil stav checkboxu, aktualizovat data a znovu zobrazit formulář
+            if old_string1_enabled != new_string1_enabled or old_string2_enabled != new_string2_enabled:
+                self._wizard_data.update(user_input)
+                return self.async_show_form(
+                    step_id="wizard_solar",
+                    data_schema=self._get_solar_schema(user_input),
+                    description_placeholders=self._get_step_placeholders("wizard_solar"),
+                )
+
             errors = {}
 
             # Validace API klíče podle módu
@@ -537,7 +807,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     step_id="wizard_solar",
                     data_schema=self._get_solar_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(4, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_solar"
+                    ),
                 )
 
             self._wizard_data.update(user_input)
@@ -549,7 +821,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self.async_show_form(
             step_id="wizard_solar",
             data_schema=self._get_solar_schema(),
-            description_placeholders=self._get_step_placeholders(4, 5),
+            description_placeholders=self._get_step_placeholders("wizard_solar"),
         )
 
     def _get_solar_schema(
@@ -563,14 +835,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 CONF_SOLAR_FORECAST_API_KEY,
                 default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
-                description="API klíč z Forecast.Solar (nepovinný pro 'Denní optimalizovaný' mód)",
             ): str,
             vol.Optional(
                 "solar_forecast_mode",
                 default=defaults.get("solar_forecast_mode", "daily_optimized"),
             ): vol.In(
                 {
-                    "daily_optimized": "🌅 Denní optimalizovaný (1x denně, ZDARMA)",
+                    "daily_optimized": "🎯 Optimalizovaný (3× denně, ZDARMA)",
+                    "daily": "🌅 Denní (1× denně, ZDARMA)",
                     "every_4h": "🕐 Každé 4 hodiny (vyžaduje API klíč)",
                     "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
                 }
@@ -587,35 +859,58 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,
                 default=defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True),
             ): bool,
-            vol.Optional(
-                CONF_SOLAR_FORECAST_STRING1_KWP,
-                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_SOLAR_FORECAST_STRING1_DECLINATION,
-                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35),
-            ): vol.All(int, vol.Range(min=0, max=90)),
-            vol.Optional(
-                CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
-                default=defaults.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0),
-            ): vol.All(int, vol.Range(min=0, max=360)),
+        }
+
+        # String 1 parametry - zobrazit jen když je povolen
+        if defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True):
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        CONF_SOLAR_FORECAST_STRING1_KWP,
+                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        CONF_SOLAR_FORECAST_STRING1_DECLINATION,
+                        default=defaults.get(
+                            CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
+                        ),
+                    ): vol.Coerce(int),
+                    vol.Optional(
+                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0),
+                    ): vol.Coerce(int),
+                }
+            )
+
+        # String 2 checkbox
+        schema_fields[
             vol.Optional(
                 "solar_forecast_string2_enabled",
                 default=defaults.get("solar_forecast_string2_enabled", False),
-            ): bool,
-            vol.Optional(
-                "solar_forecast_string2_kwp",
-                default=defaults.get("solar_forecast_string2_kwp", 5.0),
-            ): vol.Coerce(float),
-            vol.Optional(
-                "solar_forecast_string2_declination",
-                default=defaults.get("solar_forecast_string2_declination", 35),
-            ): vol.All(int, vol.Range(min=0, max=90)),
-            vol.Optional(
-                "solar_forecast_string2_azimuth",
-                default=defaults.get("solar_forecast_string2_azimuth", 180),
-            ): vol.All(int, vol.Range(min=0, max=360)),
-        }
+            )
+        ] = bool
+
+        # String 2 parametry - zobrazit jen když je povolen
+        if defaults.get("solar_forecast_string2_enabled", False):
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "solar_forecast_string2_kwp",
+                        default=defaults.get("solar_forecast_string2_kwp", 5.0),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        "solar_forecast_string2_declination",
+                        default=defaults.get("solar_forecast_string2_declination", 35),
+                    ): vol.Coerce(int),
+                    vol.Optional(
+                        "solar_forecast_string2_azimuth",
+                        default=defaults.get("solar_forecast_string2_azimuth", 180),
+                    ): vol.Coerce(int),
+                }
+            )
+
+        # Přidat go_back na konec
+        schema_fields[vol.Optional("go_back", default=False)] = bool
 
         return vol.Schema(schema_fields)
 
@@ -624,6 +919,23 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 5: Battery prediction configuration."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_battery")
+
+            # Detekce změny stavu checkboxu charge_on_bad_weather - pokud se změnil, znovu zobrazit formulář
+            old_bad_weather = self._wizard_data.get("charge_on_bad_weather", False)
+            new_bad_weather = user_input.get("charge_on_bad_weather", False)
+            
+            # Pokud se změnil stav checkboxu, aktualizovat data a znovu zobrazit formulář
+            if old_bad_weather != new_bad_weather:
+                self._wizard_data.update(user_input)
+                return self.async_show_form(
+                    step_id="wizard_battery",
+                    data_schema=self._get_battery_schema(user_input),
+                    description_placeholders=self._get_step_placeholders("wizard_battery"),
+                )
+
             errors = {}
 
             # Validace min < target
@@ -643,7 +955,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     step_id="wizard_battery",
                     data_schema=self._get_battery_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(5, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_battery"
+                    ),
                 )
 
             self._wizard_data.update(user_input)
@@ -655,7 +969,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self.async_show_form(
             step_id="wizard_battery",
             data_schema=self._get_battery_schema(),
-            description_placeholders=self._get_step_placeholders(5, 5),
+            description_placeholders=self._get_step_placeholders("wizard_battery"),
         )
 
     def _get_battery_schema(
@@ -707,6 +1021,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 )
             ] = vol.In(weather_entities)
 
+        # Přidat go_back na konec
+        schema_fields[vol.Optional("go_back", default=False)] = bool
+
         return vol.Schema(schema_fields)
 
     async def async_step_wizard_pricing(
@@ -714,6 +1031,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 6: Pricing configuration."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_pricing")
+
             errors = {}
 
             # Validace podle modelu
@@ -769,7 +1090,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     step_id="wizard_pricing",
                     data_schema=self._get_pricing_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(6, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_pricing"
+                    ),
                 )
 
             self._wizard_data.update(user_input)
@@ -781,7 +1104,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self.async_show_form(
             step_id="wizard_pricing",
             data_schema=self._get_pricing_schema(),
-            description_placeholders=self._get_step_placeholders(6, 5),
+            description_placeholders=self._get_step_placeholders("wizard_pricing"),
         )
 
     def _get_pricing_schema(
@@ -900,6 +1223,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 vol.Optional(
                     "vat_rate", default=defaults.get("vat_rate", 21.0)
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=30.0)),
+                vol.Optional("go_back", default=False): bool,
             }
         )
 
@@ -910,6 +1234,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 7: Extended sensors configuration."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_extended")
+
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_extended")
 
@@ -923,9 +1251,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     vol.Optional("enable_extended_battery_sensors", default=True): bool,
                     vol.Optional("enable_extended_fve_sensors", default=True): bool,
                     vol.Optional("enable_extended_grid_sensors", default=True): bool,
+                    vol.Optional("go_back", default=False): bool,
                 }
             ),
-            description_placeholders=self._get_step_placeholders(4, 5),
+            description_placeholders=self._get_step_placeholders("wizard_extended"),
         )
 
     async def async_step_wizard_dashboard(
@@ -933,6 +1262,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 8: Dashboard configuration."""
         if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_dashboard")
+
             errors = {}
 
             # Validace endpoint
@@ -955,7 +1288,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     step_id="wizard_dashboard",
                     data_schema=self._get_dashboard_schema(user_input),
                     errors=errors,
-                    description_placeholders=self._get_step_placeholders(8, 5),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_dashboard"
+                    ),
                 )
 
             self._wizard_data.update(user_input)
@@ -967,7 +1302,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self.async_show_form(
             step_id="wizard_dashboard",
             data_schema=self._get_dashboard_schema(),
-            description_placeholders=self._get_step_placeholders(8, 5),
+            description_placeholders=self._get_step_placeholders("wizard_dashboard"),
         )
 
     def _get_dashboard_schema(
@@ -994,6 +1329,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     "dashboard_refresh_interval",
                     default=defaults.get("dashboard_refresh_interval", 30),
                 ): vol.All(int, vol.Range(min=10, max=300)),
+                vol.Optional("go_back", default=False): bool,
             }
         )
 
@@ -1153,6 +1489,10 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Wizard Step 9: Summary and confirmation - ConfigFlow implementation."""
         if user_input is not None:
+            # Zkontrolovat, jestli uživatel chce jít zpět
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_summary")
+
             # Vytvořit entry s nakonfigurovanými daty
             return self.async_create_entry(
                 title=DEFAULT_NAME,
@@ -1242,33 +1582,26 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
-        # Zobrazit souhrn konfigurace
-        summary_lines = [
-            f"👤 **Uživatel:** {self._wizard_data.get(CONF_USERNAME)}",
-            "",
-            "📊 **Zapnuté moduly:**",
-        ]
+        # Vygenerovat detailní shrnutí konfigurace
+        summary_text = self._generate_summary()
 
-        if self._wizard_data.get("enable_statistics"):
-            summary_lines.append("  ✅ Statistiky")
-        if self._wizard_data.get("enable_solar_forecast"):
-            summary_lines.append("  ✅ Solární předpověď")
-        if self._wizard_data.get("enable_battery_prediction"):
-            summary_lines.append("  ✅ Predikce baterie")
-        if self._wizard_data.get("enable_pricing"):
-            summary_lines.append("  ✅ Cenové senzory")
-        if self._wizard_data.get("enable_extended_sensors"):
-            summary_lines.append("  ✅ Rozšířené senzory")
-        if self._wizard_data.get("enable_dashboard"):
-            summary_lines.append("  ✅ Interaktivní dashboard")
-
+        # Přidat tlačítko zpět pomocí boolean pole
         return self.async_show_form(
             step_id="wizard_summary",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("go_back", default=False): bool,
+                }
+            ),
             description_placeholders={
-                "step": "Krok 5 z 5 - Souhrn",
-                "progress": "▓▓▓▓▓",
-                "summary": "\n".join(summary_lines),
+                "step": f"Krok {self._get_current_step_number('wizard_summary')} z {self._get_total_steps()} - Souhrn",
+                "progress": "▓" * self._get_current_step_number("wizard_summary")
+                + "░"
+                * (
+                    self._get_total_steps()
+                    - self._get_current_step_number("wizard_summary")
+                ),
+                "summary": summary_text,
             },
         )
 
