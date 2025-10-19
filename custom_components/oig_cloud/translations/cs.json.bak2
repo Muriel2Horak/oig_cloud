@@ -183,6 +183,14 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
+          "spot_positive_fee_percent": "Přirážka kladná cena (%)",
+          "spot_negative_fee_percent": "Přirážka záporná cena (%)",
+          "export_fee_percent": "Srážka za export (%)",
+          "distribution_fee_vt": "Distribuce VT (CZK/kWh)",
+          "distribution_fee_nt": "Distribuce NT (CZK/kWh)",
+          "vat_rate": "DPH (%)"
+        }
+      },
       "import_config": {
         "title": "Import konfigurace",
         "data": {

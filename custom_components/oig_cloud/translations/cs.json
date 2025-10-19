@@ -123,197 +123,64 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
-      "wizard_pricing": {
-        "title": "💰 Konfigurace cenových senzorů",
-        "description": "{step}\n{progress}\n\nNastavte parametry pro výpočet nákladů na elektřinu.\n\n💡 Vyberte model výpočtu a zadejte distribuční poplatky.",
+      "wizard_pricing_import": {
+        "title": "�� Konfigurace nákupní ceny (1/3)",
+        "description": "{step}\n{progress}\n\n📖 **Krok 1: Nákupní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za nákup elektřiny ze sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT + procento - Variabilní cena podle burzy\n• 💵 SPOT + fixní poplatek - Stabilnější než procento\n• 🔒 FIX cena - Předvídatelná fixní cena\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
         "data": {
-          "spot_pricing_model": "Model výpočtu nákupní ceny",
-          "spot_positive_fee_percent": "Přirážka při kladné ceně (%)",
-          "spot_negative_fee_percent": "Přirážka při záporné ceně (%)",
+          "import_pricing_scenario": "Scénář nákupní ceny",
+          "spot_positive_fee_percent": "Přirážka při kladné spotové ceně (%)",
+          "spot_negative_fee_percent": "Přirážka při záporné spotové ceně (%)",
           "spot_fixed_fee_mwh": "Fixní poplatek (CZK/MWh)",
-          "fixed_commercial_price_vt": "Fixní obchodní cena VT (CZK/kWh)",
-          "fixed_commercial_price_nt": "Fixní obchodní cena NT (CZK/kWh)",
-          "export_pricing_model": "Model výpočtu výkupní ceny",
+          "fixed_price_kwh": "Fixní nákupní cena (CZK/kWh)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "import_pricing_scenario": "💡 Klikněte 'Odeslat' pro zobrazení parametrů zvoleného scénáře",
+          "spot_positive_fee_percent": "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15% = spot × 1,15",
+          "spot_negative_fee_percent": "Při záporné spotové ceně: cena × (1 - procento/100). Např. 9% = spot × 0,91",
+          "spot_fixed_fee_mwh": "Konstantní poplatek přičtený ke spotové ceně (500 CZK/MWh = 0,50 CZK/kWh)",
+          "fixed_price_kwh": "Fixní nákupní cena. ⚠️ ZADÁVEJTE BEZ DPH A DISTRIBUCE!",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
+      },
+      "wizard_pricing_export": {
+        "title": "💸 Konfigurace prodejní ceny (2/3)",
+        "description": "{step}\n{progress}\n\n📖 **Krok 2: Prodejní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za prodej přebytků do sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT - procento - Výhodné při vysokých spotových cenách\n• �� SPOT - fixní srážka - Stabilnější výkup\n• 🔒 FIX cena - Stabilní výkupní cena po celý rok\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
+        "data": {
+          "export_pricing_scenario": "Scénář prodejní ceny",
           "export_fee_percent": "Srážka z exportu (%)",
           "export_fixed_fee_czk": "Fixní srážka exportu (CZK/kWh)",
-          "dual_tariff_enabled": "Dvoutarifní sazba (VT/NT)",
-          "distribution_fee_vt": "Distribuční poplatek VT (CZK/kWh)",
-          "distribution_fee_nt": "Distribuční poplatek NT (CZK/kWh)",
-          "vat_rate": "Sazba DPH (%)",
+          "export_fixed_price_kwh": "Fixní výkupní cena (CZK/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
-          "spot_pricing_model": "Jak se počítá vaše nákupní cena: procentní přirážka (doporučeno), fixní poplatek, nebo fixní ceny",
-          "spot_positive_fee_percent": "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15% = cena × 1,15",
-          "spot_negative_fee_percent": "Při záporné spotové ceně: cena × (1 - procento/100). Např. 9% = cena × 0,91",
-          "spot_fixed_fee_mwh": "Konstantní poplatek v CZK za MWh přičtený ke spotové ceně (500 CZK/MWh = 0,50 CZK/kWh)",
-          "fixed_commercial_price_vt": "Fixní obchodní cena pro vysoký tarif v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-          "fixed_commercial_price_nt": "Fixní obchodní cena pro nízký tarif v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-          "export_pricing_model": "Jak se počítá vaše výkupní cena za export do sítě",
-          "export_fee_percent": "Srážka z exportu v procentech. Např. 15% = dostanete 85% ze spotové ceny",
-          "export_fixed_fee_czk": "Fixní srážka odečtená od spotové ceny při exportu",
-          "dual_tariff_enabled": "Povolit dvoutarifní sazbu (VT/NT). Pokud ne, bude se používat pouze VT sazba",
-          "distribution_fee_vt": "Distribuční poplatek VT (vysoký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-          "distribution_fee_nt": "Distribuční poplatek NT (nízký tarif) v CZK/kWh ⚠️ ZADÁVEJTE BEZ DPH!",
-          "vat_rate": "Sazba daně z přidané hodnoty v procentech (obvykle 21%)",
+          "export_pricing_scenario": "💡 Klikněte 'Odeslat' pro zobrazení parametrů zvoleného scénáře",
+          "export_fee_percent": "Srážka v %. Např. 15% = dostanete 85% ze spotové ceny (spot × 0.85)",
+          "export_fixed_fee_czk": "Fixní srážka od spotové ceny. Např. 0.20 CZK/kWh = spot - 0.20",
+          "export_fixed_price_kwh": "Fixní výkupní cena bez ohledu na spot. Např. 2.50 CZK/kWh",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
-      "wizard_extended": {
-        "title": "⚡ Konfigurace rozšířených senzorů",
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje detailní monitoring napětí, proudů, teplot a dalších pokročilých parametrů baterie, FVE a elektroměru.\n\n🔧 **Co je potřeba:**\n• Pouze přístup k OIG Cloud API (již máte)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n• 📊 Dashboard (webové rozhraní)\n\n💡 **Tip:** Tyto senzory se načítají méně často (každých 5 minut) kvůli velkému množství dat.",
+      "wizard_pricing_distribution": {
+        "title": "⚡ Konfigurace distribuce a DPH (3/3)",
+        "description": "{step}\n{progress}\n\n📖 **Krok 3: Distribuce a DPH**\n\nNastavte distribuční poplatky a DPH.\n\n💡 **Informace:**\n• Distribuce je **nezávislá** na typu nákupu/prodeje (FIX/SPOT)\n• Pokud máte 2 tarify (VT/NT), zaškrtněte 'Dva tarify'\n• VT hodiny se automaticky nastaví podle běžných časů\n\n⚙️ Po výběru počtu tarifů klikněte 'Odeslat' pro zobrazení parametrů.",
         "data": {
-          "enable_extended_battery_sensors": "🔋 Napětí článků a teplota baterie",
-          "enable_extended_fve_sensors": "☀️ Výkon a proudy stringů FVE",
-          "enable_extended_grid_sensors": "⚡ Napětí L1/L2/L3 a frekvence sítě",
+          "tariff_count": "Počet tarifů",
+          "distribution_fee_vt_kwh": "Poplatek za distribuci VT (CZK/kWh)",
+          "distribution_fee_nt_kwh": "Poplatek za distribuci NT (CZK/kWh)",
+          "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
+          "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
+          "vat_rate": "DPH (%)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
-          "enable_extended_battery_sensors": "Doporučeno pro diagnostiku baterie",
-          "enable_extended_fve_sensors": "Doporučeno pro monitoring výkonu FVE",
-          "enable_extended_grid_sensors": "Užitečné pro kontrolu kvality sítě",
+          "tariff_count": "💡 Klikněte 'Odeslat' pro zobrazení parametrů podle počtu tarifů",
+          "distribution_fee_vt_kwh": "Distribuční poplatek VT (vysoký tarif). Např. 1.42 CZK/kWh",
+          "distribution_fee_nt_kwh": "Distribuční poplatek NT (nízký tarif). Např. 0.91 CZK/kWh",
+          "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
+          "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
+          "vat_rate": "Sazba DPH v procentech. Standardně 21%",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
-        }
-      },
-      "wizard_dashboard": {
-        "title": "📊 Konfigurace dashboardu",
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nWebové rozhraní přímo v Home Assistant zobrazující interaktivní grafy spotřeby, výroby, stavu baterie a další metriky v reálném čase.\n\n🔧 **Co je potřeba - VŠECHNY tyto moduly MUSÍ být zapnuté:**\n• 📊 Statistiky a analýzy\n• ☀️ Solární předpověď\n• 🔋 Predikce baterie\n• 💰 Cenové senzory\n• 📈 Spotové ceny\n• ⚡ Rozšířené senzory\n\n⚠️ **Důležité:** Dashboard vyžaduje kompletní konfiguraci všech modulů, protože využívá data ze všech částí systému.\n\n💡 **Tip:** Po dokončení konfigurace najdete dashboard v postranním menu Home Assistant.",
-        "data": {
-          "dashboard_endpoint": "API endpoint",
-          "dashboard_port": "Port Home Assistant serveru",
-          "dashboard_use_https": "Použít HTTPS",
-          "dashboard_refresh_interval": "Interval obnovení dat (sekundy)",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
-        },
-        "data_description": {
-          "dashboard_endpoint": "Cesta k API endpointu dashboardu (musí začínat /)",
-          "dashboard_port": "Port na kterém běží Home Assistant (obvykle 8123)",
-          "dashboard_use_https": "Použít zabezpečené HTTPS připojení místo HTTP",
-          "dashboard_refresh_interval": "Jak často aktualizovat data v dashboardu (10-300 sekund)",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
-        }
-      },
-      "wizard_summary": {
-        "title": "✅ Shrnutí konfigurace",
-        "description": "{step}\n{progress}\n\n{summary}",
-        "data": {
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
-        },
-        "data_description": {
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět a můžete upravit nastavení"
-        }
-      },
-      "quick_setup": {
-        "title": "⚡ Rychlé nastavení OIG Cloud",
-        "description": "Zadejte pouze přihlašovací údaje. Vše ostatní bude nastaveno na výchozí hodnoty.\n\n⚠️ **DŮLEŽITÉ:** V aplikaci OIG Cloud musíte mít zapnutá 'Živá data'!",
-        "data": {
-          "username": "E-mail nebo uživatelské jméno",
-          "password": "Heslo",
-          "live_data_enabled": "✅ Potvrzuji zapnutá 'Živá data' v aplikaci"
-        }
-      },
-      "credentials": {
-        "title": "Přihlášení do OIG Cloud",
-        "data": {
-          "username": "E-mail",
-          "password": "Heslo"
-        }
-      },
-      "quick_modules": {
-        "title": "Výběr funkcí",
-        "data": {
-          "enable_statistics": "Statistiky a analýzy",
-          "enable_solar_forecast": "Solární předpověď",
-          "enable_battery_prediction": "Chytré nabíjení baterie",
-          "enable_pricing": "Cenové senzory a spotové ceny",
-          "enable_extended_sensors": "Rozšířené senzory"
-        }
-      },
-      "quick_solar": {
-        "title": "Solární předpověď",
-        "data": {
-          "solar_latitude": "GPS šířka",
-          "solar_longitude": "GPS délka",
-          "solar_kwp": "Výkon FVE (kWp)",
-          "solar_declination": "Sklon panelů (°)",
-          "solar_azimuth": "Orientace panelů"
-        }
-      },
-      "quick_battery": {
-        "title": "Chytré nabíjení",
-        "data": {
-          "battery_min_percent": "Minimální kapacita (%)",
-          "battery_target_percent": "Cílová kapacita (%)",
-          "battery_charge_rate": "Nabíjecí výkon (kW)",
-          "battery_max_price": "Max. cena (CZK/kWh)"
-        }
-      },
-      "quick_pricing": {
-        "title": "Spotové ceny",
-        "data": {
-          "pricing_provider": "Dodavatel elektřiny",
-          "distribution_area": "Distribuční oblast"
-        }
-      },
-      "select_modules": {
-        "title": "Pokročilý výběr modulů",
-        "data": {
-          "enable_statistics": "Statistiky",
-          "enable_solar_forecast": "Solární předpověď",
-          "enable_battery_prediction": "Chytré nabíjení",
-          "enable_pricing": "Cenové senzory a spotové ceny",
-          "enable_extended_sensors": "Rozšířené senzory",
-          "enable_extended_battery_sensors": "Rozšířené senzory baterie",
-          "enable_extended_fve_sensors": "Rozšířené senzory FVE",
-          "enable_extended_grid_sensors": "Rozšířené senzory sítě"
-        }
-      },
-      "advanced_solar": {
-        "title": "Solární předpověď (pokročilé)",
-        "data": {
-          "solar_latitude": "GPS šířka",
-          "solar_longitude": "GPS délka",
-          "solar_api_key": "Forecast.Solar API klíč",
-          "solar_mode": "Režim aktualizace",
-          "string1_enabled": "String 1 - zapnout",
-          "string1_kwp": "String 1 - výkon (kWp)",
-          "string1_declination": "String 1 - sklon (°)",
-          "string1_azimuth": "String 1 - azimut (°)",
-          "string2_enabled": "String 2 - zapnout",
-          "string2_kwp": "String 2 - výkon (kWp)",
-          "string2_declination": "String 2 - sklon (°)",
-          "string2_azimuth": "String 2 - azimut (°)"
-        }
-      },
-      "advanced_battery": {
-        "title": "Chytré nabíjení (pokročilé)",
-        "data": {
-          "battery_min_percent": "Minimální kapacita (%)",
-          "battery_target_percent": "Cílová kapacita (%)",
-          "battery_charge_rate": "Nabíjecí výkon (kW)",
-          "battery_max_price": "Max. cena (CZK/kWh)",
-          "battery_percentile": "Percentil špičky (%)",
-          "charge_on_bad_weather": "Nabíjet při špatném počasí",
-          "weather_entity": "Weather entita"
-        }
-      },
-      "advanced_pricing": {
-        "title": "Spotové ceny (pokročilé)",
-        "data": {
-          "pricing_model": "Model výpočtu cen",
-          "distribution_area": "Distribuční oblast",
-          "dual_tariff": "Dvoutarifní sazba"
-        }
-      },
-      "advanced_pricing_custom": {
-        "title": "Vlastní pricing model",
-        "data": {
-          "spot_positive_fee_percent": "Přirážka kladná cena (%)",
-          "spot_negative_fee_percent": "Přirážka záporná cena (%)",
-          "export_fee_percent": "Srážka za export (%)",
-          "distribution_fee_vt": "Distribuce VT (CZK/kWh)",
-          "distribution_fee_nt": "Distribuce NT (CZK/kWh)",
-          "vat_rate": "DPH (%)"
         }
       },
       "import_config": {
