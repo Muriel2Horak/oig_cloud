@@ -157,23 +157,6 @@
             transform: translateY(-50%) scale(1.05);
         }
 
-        /* Boiler - Right Bottom, Below House - S ODSTUPEM */
-        .boiler {
-            top: 65%;
-            right: 80px;
-            transform: translateY(0);
-            border-color: rgba(255, 152, 0, 0.4);
-            background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(245, 124, 0, 0.08) 100%);
-        }
-
-        .boiler:hover {
-            transform: translateY(0) scale(1.05);
-        }
-
-        .boiler.hidden {
-            display: none;
-        }
-
         /* Center Hub - Inverter */
         .inverter {
             top: 50%;
@@ -492,7 +475,7 @@
         .grid-limit-indicator {
             position: absolute;
             top: 50px;
-            right: -80px;
+            right: -105px;
             background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
             border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
@@ -520,21 +503,19 @@
         }
 
         .boiler-change-indicator {
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, rgba(255, 152, 0, 0.95), rgba(245, 124, 0, 0.95));
-            border: 1px solid rgba(255, 152, 0, 0.8);
+            position: relative;
+            display: inline-flex;
+            margin: 8px auto;
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+            border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
             color: #1a1a2e;
-            display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(255, 152, 0, 0.4);
+            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 10;
             white-space: nowrap;
@@ -1431,11 +1412,6 @@
                 transform: translateY(-50%);
             }
 
-            .boiler {
-                top: 60%;
-                right: 60px;
-                transform: translateY(0);
-            }
         }
 
         /* Mobile - small screens */
@@ -1518,12 +1494,6 @@
             .battery {
                 top: 350px;
                 left: 10px;
-                transform: none;
-            }
-
-            .boiler {
-                top: 280px;
-                right: 10px;
                 transform: none;
             }
 
@@ -2347,7 +2317,11 @@
             <!-- Boiler -->
             <div class="control-section" id="boiler-control-section">
                 <h4>Režim bojleru</h4>
-                <!-- Boiler mode change indicator is shown in flow diagram, not here -->
+                <!-- Boiler mode change indicator -->
+                <div class="boiler-change-indicator" id="boiler-change-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="boiler-change-text">🌡️ --</span>
+                </div>
                 <div class="button-group">
                     <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb" title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖 Inteligentní</button>
                     <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual" title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
@@ -2774,46 +2748,6 @@
                                   data-tooltip="Režim bojleru"
                                   onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</span>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Boiler (hidden if not in use) -->
-            <div class="node boiler hidden" id="boiler-node">
-                <!-- Boiler mode change indicator -->
-                <div class="boiler-change-indicator" id="boiler-change-indicator" style="display: none;">
-                    <span class="spinner"></span>
-                    <span id="boiler-change-text">🌡️ --</span>
-                </div>
-                <div class="node-icon">🌡️</div>
-                <div class="node-label">Bojler</div>
-                <div class="node-value entity-value" id="boiler-power"
-                     data-entity="boiler_current_cbb_w"
-                     data-tooltip="Aktuální výkon bojleru"
-                     onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))">-- W</div>
-                <div class="node-subvalue entity-value" id="boiler-mode"
-                     data-entity="boiler_manual_mode"
-                     data-tooltip="Režim bojleru"
-                     onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</div>
-                <div class="node-details">
-                    <div class="detail-row">
-                        <span class="detail-icon">⚙️</span>
-                        <span class="detail-value entity-value" id="boiler-mode-detail"
-                              data-entity="boiler_manual_mode"
-                              data-tooltip="Režim bojleru"
-                              onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</span>
-                        <span class="detail-icon">🌡️</span>
-                        <span class="detail-value entity-value" id="boiler-temp"
-                              data-entity="boiler_temperature"
-                              data-tooltip="Teplota bojleru"
-                              onclick="openEntityDialog(getSensorId('boiler_temperature'))">-- °C</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-icon">📊</span>
-                        <span class="detail-value entity-value" id="boiler-status"
-                              data-entity="boiler_status"
-                              data-tooltip="Stav bojleru"
-                              onclick="openEntityDialog(getSensorId('boiler_status'))">--</span>
                     </div>
                 </div>
             </div>
@@ -4772,8 +4706,7 @@
                 battery: document.querySelector('.battery'),
                 inverter: document.querySelector('.inverter'),
                 grid: document.querySelector('.grid-node'),
-                house: document.querySelector('.house'),
-                boiler: document.querySelector('.boiler')
+                house: document.querySelector('.house')
             };
 
             // Get center points
@@ -4800,11 +4733,6 @@
                 { from: 'inverter', to: 'grid', color: '#42a5f5' },
                 { from: 'inverter', to: 'house', color: '#f06292' }
             ];
-
-            // Add boiler connection if boiler exists AND is visible (not hidden)
-            if (centers.boiler && nodes.boiler && !nodes.boiler.classList.contains('hidden')) {
-                connections.push({ from: 'house', to: 'boiler', color: '#ff9800' });
-            }
 
             connections.forEach(conn => {
                 if (!centers[conn.from] || !centers[conn.to]) return; // Skip if node missing
@@ -4878,8 +4806,7 @@
                 battery: document.querySelector('.battery'),
                 inverter: document.querySelector('.inverter'),
                 grid: document.querySelector('.grid-node'),
-                house: document.querySelector('.house'),
-                boiler: document.querySelector('.boiler')
+                house: document.querySelector('.house')
             };
 
             function getCenter(el) {
@@ -4897,8 +4824,7 @@
                 battery: getCenter(nodes.battery),
                 inverter: getCenter(nodes.inverter),
                 grid: getCenter(nodes.grid),
-                house: getCenter(nodes.house),
-                boiler: getCenter(nodes.boiler)
+                house: getCenter(nodes.house)
             };
 
             // 1. SOLAR → INVERTER
@@ -4953,14 +4879,6 @@
                 createParticleFlow(centers.inverter, centers.house, '#f06292', speedMs, housePerc);
             }
 
-            // 5. HOUSE → BOILER (if boiler exists AND is visible)
-            // Max: boilerMaxPower, always one direction
-            const boilerNode = document.querySelector('.boiler');
-            if (centers.boiler && boilerNode && !boilerNode.classList.contains('hidden') && boilerPower > 10) {
-                const boilerPerc = Math.min(boilerPower / boilerMaxPower, 1) * 100; // 0-100%
-                const speedMs = 3000 - (boilerPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-                createParticleFlow(centers.house, centers.boiler, '#ff9800', speedMs, boilerPerc);
-            }
         }
 
         // Cache for previous values to detect changes
@@ -5673,26 +5591,6 @@
             }
         }
 
-        // Check if boiler is in use and show/hide box
-        async function checkBoilerAvailability() {
-            try {
-                const boilerInUse = await getSensorSafe(getSensorId('boiler_is_use'));
-                const boilerNode = document.getElementById('boiler-node');
-
-                if (boilerInUse && boilerInUse.exists && boilerInUse.value === true) {
-                    boilerNode.classList.remove('hidden');
-                } else {
-                    boilerNode.classList.add('hidden');
-                }
-                // Redraw connections after visibility change
-                drawConnections();
-            } catch (e) {
-                document.getElementById('boiler-node').classList.add('hidden');
-                // Redraw connections after visibility change
-                drawConnections();
-            }
-        }
-
         // Show charge battery dialog
         async function showChargeBatteryDialog() {
             try {
@@ -5844,9 +5742,6 @@
         // Initialize
         function init() {
             drawConnections();
-
-            // Check boiler availability
-            checkBoilerAvailability();
 
             // Initial full load
             forceFullRefresh();
