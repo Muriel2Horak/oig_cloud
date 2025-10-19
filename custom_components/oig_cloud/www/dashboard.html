@@ -492,18 +492,18 @@
         .grid-limit-indicator {
             position: absolute;
             top: 0;
-            right: -105px;
-            background: linear-gradient(135deg, rgba(156, 39, 176, 0.95), rgba(123, 31, 162, 0.95));
-            border: 1px solid rgba(156, 39, 176, 0.8);
+            right: -120px;
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+            border: 1px solid rgba(255, 193, 7, 0.8);
             border-radius: 8px;
             padding: 4px 8px;
             font-size: 9px;
             font-weight: 600;
-            color: white;
+            color: #1a1a2e;
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 8px rgba(156, 39, 176, 0.4);
+            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
             animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.15s both;
             z-index: 10;
             white-space: nowrap;
@@ -513,8 +513,8 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top-color: white;
+            border: 2px solid rgba(26, 26, 46, 0.3);
+            border-top-color: #1a1a2e;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -3349,6 +3349,28 @@
         let modeChangeInProgress = false;
         let lastModeChangeNotified = false;
 
+        // Shield Queue live duration update
+        let shieldQueueUpdateInterval = null;
+
+        function startShieldQueueLiveUpdate() {
+            // Clear existing interval
+            if (shieldQueueUpdateInterval) {
+                clearInterval(shieldQueueUpdateInterval);
+            }
+            
+            // Update every second for live duration
+            shieldQueueUpdateInterval = setInterval(() => {
+                updateShieldQueue();
+            }, 1000);
+        }
+
+        function stopShieldQueueLiveUpdate() {
+            if (shieldQueueUpdateInterval) {
+                clearInterval(shieldQueueUpdateInterval);
+                shieldQueueUpdateInterval = null;
+            }
+        }
+
         // Update Shield Queue display
         function updateShieldQueue() {
             try {
@@ -3387,7 +3409,13 @@
 
                 if (allRequests.length === 0) {
                     container.innerHTML = '<div class="queue-empty">✅ Fronta je prázdná</div>';
+                    stopShieldQueueLiveUpdate(); // Stop live updates when queue is empty
                     return;
+                }
+
+                // Start live duration updates when there are active requests
+                if (!shieldQueueUpdateInterval) {
+                    startShieldQueueLiveUpdate();
                 }
 
                 // Build table
