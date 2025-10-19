@@ -123,8 +123,42 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
+      "wizard_extended": {
+        "title": "⚡ Rozšířené senzory",
+        "description": "{step}\n{progress}\n\n📖 **Rozšířené senzory**\n\nVyberte, které skupiny rozšířených senzorů chcete aktivovat.\n\n💡 **Dostupné skupiny:**\n• 🔋 Baterie - napětí článků, teploty, proudy\n• ☀️ FVE - napětí stringů, proudy, teploty\n• ⚡ Síť - napětí fází, frekvence, kvalita\n\n⚠️ **Poznámka:** Více senzorů = vyšší zátěž na API",
+        "data": {
+          "enable_extended_battery_sensors": "🔋 Rozšířené senzory baterie",
+          "enable_extended_fve_sensors": "☀️ Rozšířené senzory FVE",
+          "enable_extended_grid_sensors": "⚡ Rozšířené senzory sítě",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "enable_extended_battery_sensors": "Napětí článků, teploty, proudy nabíjení/vybíjení",
+          "enable_extended_fve_sensors": "Napětí stringů, proudy, teploty, výkon jednotlivých stringů",
+          "enable_extended_grid_sensors": "Napětí fází L1/L2/L3, frekvence, kvalita napájení",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
+      },
+      "wizard_dashboard": {
+        "title": "📊 Konfigurace dashboardu",
+        "description": "{step}\n{progress}\n\n📖 **Webový dashboard**\n\nNastavte parametry webového rozhraní s grafy a vizualizacemi.\n\n💡 **Co dashboard poskytuje:**\n• 📈 Grafy spotřeby a výroby v čase\n• 🔋 Vizualizace stavu baterie\n• ☀️ Předpověď solární výroby\n• 💰 Aktuální a předpovídané ceny\n\n⚙️ Dashboard bude dostupný na: http://[IP_ADRESA]:[PORT][ENDPOINT]",
+        "data": {
+          "dashboard_endpoint": "Endpoint URL",
+          "dashboard_port": "Port",
+          "dashboard_use_https": "Použít HTTPS",
+          "dashboard_refresh_interval": "Interval aktualizace (s)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "dashboard_endpoint": "Cesta k dashboardu (musí začínat /). Např. /api/oig_dashboard",
+          "dashboard_port": "Port na kterém bude dashboard dostupný (1-65535)",
+          "dashboard_use_https": "Pokud máte nastaven HTTPS certifikát, zaškrtněte",
+          "dashboard_refresh_interval": "Jak často se mají obnovovat data v dashboardu (10-300 sekund)",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
+      },
       "wizard_pricing_import": {
-        "title": "�� Konfigurace nákupní ceny (1/3)",
+        "title": "💰 Konfigurace nákupní ceny (1/3)",
         "description": "{step}\n{progress}\n\n📖 **Krok 1: Nákupní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za nákup elektřiny ze sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT + procento - Variabilní cena podle burzy\n• 💵 SPOT + fixní poplatek - Stabilnější než procento\n• 🔒 FIX cena - Předvídatelná fixní cena\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
         "data": {
           "import_pricing_scenario": "Scénář nákupní ceny",
