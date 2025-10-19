@@ -2523,6 +2523,11 @@
                     <span class="spinner"></span>
                     <span id="mode-change-text">→ --</span>
                 </div>
+                <!-- Grid limit change indicator (for limit changes) -->
+                <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="grid-limit-text">→ --W</span>
+                </div>
                 <!-- Grid delivery change indicator moved to "Přetoky do sítě" section -->
                 <div class="node-icon">🔄</div>
                 <div class="node-label">Střídač</div>
@@ -2554,12 +2559,6 @@
                                       data-entity="invertor_prm1_p_max_feed_grid"
                                       data-tooltip="Limit přetoků"
                                       onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">-- kW</span>
-
-                                <!-- Grid limit change indicator (for limit changes) -->
-                                <div class="grid-limit-indicator" id="grid-limit-indicator" style="display: none;">
-                                    <span class="spinner"></span>
-                                    <span id="grid-limit-text">→ --W</span>
-                                </div>
                             </div>
                         </div>
                     </div>
