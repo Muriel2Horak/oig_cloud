@@ -279,8 +279,12 @@ class OigCloudShieldSensor(OigCloudSensor):
                             entity_display = "_".join(entity_parts[-5:])
                         else:
                             # Pro ostatní: vezmi poslední 2 části
-                            entity_display = "_".join(entity_parts[-2:]) if "_" in target["entity_id"] else target["entity_id"]
-                        
+                            entity_display = (
+                                "_".join(entity_parts[-2:])
+                                if "_" in target["entity_id"]
+                                else target["entity_id"]
+                            )
+
                         changes.append(
                             f"{entity_display}: '{target['from']}' → '{target['to']}' (nyní: '{target['current']}')"
                         )
@@ -357,8 +361,12 @@ class OigCloudShieldSensor(OigCloudSensor):
                             entity_display = "_".join(entity_parts[-5:])
                         else:
                             # Pro ostatní: vezmi poslední 2 části
-                            entity_display = "_".join(entity_parts[-2:]) if "_" in target["entity_id"] else target["entity_id"]
-                        
+                            entity_display = (
+                                "_".join(entity_parts[-2:])
+                                if "_" in target["entity_id"]
+                                else target["entity_id"]
+                            )
+
                         changes.append(
                             f"{entity_display}: '{target['current']}' → '{target['to']}'"
                         )

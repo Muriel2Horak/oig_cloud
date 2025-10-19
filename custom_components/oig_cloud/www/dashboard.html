@@ -3523,11 +3523,39 @@
 
         // Helper: Parse service request to get type and target value
         function parseServiceRequest(request) {
-            if (!request || !request.service || !request.changes || !Array.isArray(request.changes)) {
+            if (!request || !request.service) {
                 return null;
             }
 
             const service = request.service;
+
+            // NOVÝ PŘÍSTUP: Použij strukturovaná data z targets[] místo parsování changes[]
+            if (request.targets && Array.isArray(request.targets) && request.targets.length > 0) {
+                const target = request.targets[0];
+                
+                // Mapování param → type
+                if (service.includes('set_box_mode') && target.param === 'mode') {
+                    return { type: 'box_mode', targetValue: target.value };
+                }
+                
+                if (service.includes('set_boiler_mode') && target.param === 'mode') {
+                    return { type: 'boiler_mode', targetValue: target.value };
+                }
+                
+                if (service.includes('set_grid_delivery') && target.param === 'mode') {
+                    return { type: 'grid_mode', targetValue: target.value };
+                }
+                
+                if (service.includes('set_grid_delivery') && target.param === 'limit') {
+                    return { type: 'grid_limit', targetValue: target.value };
+                }
+            }
+
+            // FALLBACK: Starý přístup pro kompatibilitu (pokud targets[] není dostupný)
+            if (!request.changes || !Array.isArray(request.changes)) {
+                return null;
+            }
+
             const changeStr = request.changes[0] || '';
 
             // Box mode: "prms_mode: 'Home 1' → 'Home 2'"
