@@ -1874,39 +1874,39 @@
             }
 
             .flow-canvas {
-                height: 950px;
+                height: 850px;
                 max-width: 100%;
                 margin-top: 0;
-                transform: scale(0.92);
+                transform: scale(0.95);
                 transform-origin: top center;
                 overflow: visible;
             }
 
             /* Zmenšení všech boxů pro mobil */
             .node {
-                min-width: 85px;
-                max-width: 120px;
-                padding: 6px 8px;
+                min-width: 80px;
+                max-width: 115px;
+                padding: 5px 7px;
             }
 
             .node-icon {
-                font-size: 20px;
-                margin-bottom: 3px;
+                font-size: 18px;
+                margin-bottom: 2px;
             }
 
             .node-label {
-                font-size: 8px;
+                font-size: 7.5px;
                 margin-bottom: 2px;
                 font-weight: 600;
             }
 
             .node-value {
-                font-size: 16px;
-                margin-bottom: 2px;
+                font-size: 15px;
+                margin-bottom: 1px;
             }
 
             .node-subvalue {
-                font-size: 8px;
+                font-size: 7.5px;
             }
 
             .node-details {
@@ -1939,13 +1939,13 @@
             }
 
             .inverter {
-                min-width: 120px;
-                max-width: 140px;
+                min-width: 110px;
+                max-width: 130px;
             }
 
-            /* Pozice boxů pro mobil - KOMPAKTNÍ VERTIKÁLNÍ LAYOUT */
+            /* Pozice boxů pro mobil - VELMI KOMPAKTNÍ LAYOUT */
             .solar {
-                top: 15px;
+                top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -1956,8 +1956,8 @@
 
             /* Prostřední řada - Síť a Spotřeba */
             .grid-node {
-                top: 200px;
-                left: 10px;
+                top: 175px;
+                left: 8px;
                 transform: none;
             }
 
@@ -1966,8 +1966,8 @@
             }
 
             .house {
-                top: 200px;
-                right: 10px;
+                top: 175px;
+                right: 8px;
                 left: auto;
                 transform: none;
             }
@@ -1978,7 +1978,7 @@
 
             /* Střídač - na střed */
             .inverter {
-                top: 410px;
+                top: 370px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -1989,7 +1989,7 @@
 
             /* Baterie - dole */
             .battery {
-                top: 650px;
+                top: 590px;
                 left: 50%;
                 transform: translateX(-50%);
             }
@@ -2143,22 +2143,22 @@
         /* Extra small phones */
         @media (max-width: 380px) {
             .flow-canvas {
-                transform: scale(0.85);
-                height: 900px;
+                transform: scale(0.88);
+                height: 800px;
             }
 
             .node {
-                min-width: 80px;
-                max-width: 110px;
-                padding: 5px 7px;
+                min-width: 75px;
+                max-width: 105px;
+                padding: 4px 6px;
             }
 
             .node-value {
-                font-size: 14px;
+                font-size: 13px;
             }
 
             .node-icon {
-                font-size: 18px;
+                font-size: 16px;
             }
             
             .node-label {
@@ -2167,15 +2167,15 @@
             
             .grid-node,
             .house {
-                top: 190px;
+                top: 165px;
             }
             
             .inverter {
-                top: 390px;
+                top: 350px;
             }
             
             .battery {
-                top: 620px;
+                top: 560px;
             }
         }
 
