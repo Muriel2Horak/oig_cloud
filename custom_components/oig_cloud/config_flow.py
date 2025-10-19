@@ -174,6 +174,86 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+def _validate_tariff_hours(
+    vt_starts_str: str, nt_starts_str: str
+) -> tuple[bool, Optional[str]]:
+    """Validate VT/NT tariff hour starts for gaps and overlaps.
+    
+    Returns:
+        (is_valid, error_key) - error_key is None if valid
+    """
+    # Parse VT starts
+    try:
+        vt_starts = [int(x.strip()) for x in vt_starts_str.split(",") if x.strip()]
+        if not all(0 <= h <= 23 for h in vt_starts):
+            return False, "invalid_hour_range"
+    except ValueError:
+        return False, "invalid_hour_format"
+    
+    # Parse NT starts
+    try:
+        nt_starts = [int(x.strip()) for x in nt_starts_str.split(",") if x.strip()]
+        if not all(0 <= h <= 23 for h in nt_starts):
+            return False, "invalid_hour_range"
+    except ValueError:
+        return False, "invalid_hour_format"
+    
+    # Build 24-hour coverage map
+    hour_map = {}  # hour -> tariff type
+    
+    # Process VT starts - každý VT start znamená VT až do dalšího NT nebo VT
+    for i, vt_start in enumerate(sorted(vt_starts)):
+        # Najít další start (VT nebo NT)
+        all_starts = sorted(vt_starts + nt_starts)
+        try:
+            next_start_idx = all_starts.index(vt_start) + 1
+            if next_start_idx < len(all_starts):
+                next_start = all_starts[next_start_idx]
+            else:
+                # Wrap to first start
+                next_start = all_starts[0]
+        except (ValueError, IndexError):
+            next_start = (vt_start + 1) % 24
+        
+        # Mark hours as VT
+        h = vt_start
+        while h != next_start:
+            if h in hour_map:
+                return False, "overlapping_tariffs"
+            hour_map[h] = "VT"
+            h = (h + 1) % 24
+            if len(hour_map) > 24:  # Safety check
+                break
+    
+    # Process NT starts similarly
+    for i, nt_start in enumerate(sorted(nt_starts)):
+        all_starts = sorted(vt_starts + nt_starts)
+        try:
+            next_start_idx = all_starts.index(nt_start) + 1
+            if next_start_idx < len(all_starts):
+                next_start = all_starts[next_start_idx]
+            else:
+                next_start = all_starts[0]
+        except (ValueError, IndexError):
+            next_start = (nt_start + 1) % 24
+        
+        # Mark hours as NT
+        h = nt_start
+        while h != next_start:
+            if h in hour_map:
+                return False, "overlapping_tariffs"
+            hour_map[h] = "NT"
+            h = (h + 1) % 24
+            if len(hour_map) > 24:
+                break
+    
+    # Check for gaps (all 24 hours should be covered)
+    if len(hour_map) != 24:
+        return False, "tariff_gaps"
+    
+    return True, None
+
+
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
 
@@ -299,17 +379,17 @@ class WizardMixin:
     @staticmethod
     def _map_pricing_to_backend(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         """Map UI pricing scenarios to backend attribute names.
-        
+
         This function converts user-friendly UI selections to the exact
         attribute names that backend (spot_price_sensor.py) expects.
-        
+
         Returns dict with backend-compatible attribute names.
         """
         backend_data = {}
-        
+
         # Import (purchase) pricing
         import_scenario = wizard_data.get("import_pricing_scenario", "spot_percentage")
-        
+
         if import_scenario == "spot_percentage":
             backend_data["spot_pricing_model"] = "percentage"
             backend_data["spot_positive_fee_percent"] = wizard_data.get(
@@ -320,19 +400,19 @@ class WizardMixin:
             )
         elif import_scenario == "spot_fixed":
             backend_data["spot_pricing_model"] = "fixed"
-            backend_data["spot_fixed_fee_mwh"] = wizard_data.get(
-                "spot_fixed_fee_mwh", 500.0
-            )
+            # Convert kWh to MWh (backend expects MWh)
+            fee_kwh = wizard_data.get("spot_fixed_fee_kwh", 0.50)
+            backend_data["spot_fixed_fee_mwh"] = fee_kwh * 1000.0
         elif import_scenario == "fix_price":
             backend_data["spot_pricing_model"] = "fixed_prices"
             backend_data["fixed_commercial_price_vt"] = wizard_data.get(
                 "fixed_price_kwh", 4.50
             )
             # Pro fixed prices backend očekává vždy VT cenu
-        
+
         # Export (sell) pricing
         export_scenario = wizard_data.get("export_pricing_scenario", "spot_percentage")
-        
+
         if export_scenario == "spot_percentage":
             backend_data["export_pricing_model"] = "percentage"
             backend_data["export_fee_percent"] = wizard_data.get(
@@ -348,15 +428,15 @@ class WizardMixin:
             backend_data["export_fixed_price"] = wizard_data.get(
                 "export_fixed_price_kwh", 2.50
             )
-        
+
         # Distribution fees (tariff count determines dual/single)
         tariff_count = wizard_data.get("tariff_count", "single")
-        backend_data["dual_tariff_enabled"] = (tariff_count == "dual")
-        
+        backend_data["dual_tariff_enabled"] = tariff_count == "dual"
+
         backend_data["distribution_fee_vt_kwh"] = wizard_data.get(
             "distribution_fee_vt_kwh", 1.42
         )
-        
+
         if tariff_count == "dual":
             backend_data["distribution_fee_nt_kwh"] = wizard_data.get(
                 "distribution_fee_nt_kwh", 0.91
@@ -367,10 +447,10 @@ class WizardMixin:
             backend_data["tariff_nt_start_weekday"] = wizard_data.get(
                 "tariff_nt_start_weekday", "22,2"
             )
-        
+
         # VAT rate
         backend_data["vat_rate"] = wizard_data.get("vat_rate", 21.0)
-        
+
         return backend_data
 
     def __init__(self) -> None:
@@ -1253,9 +1333,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             old_scenario = self._wizard_data.get(
                 "import_pricing_scenario", "spot_percentage"
             )
-            new_scenario = user_input.get(
-                "import_pricing_scenario", "spot_percentage"
-            )
+            new_scenario = user_input.get("import_pricing_scenario", "spot_percentage")
 
             if old_scenario != new_scenario:
                 self._wizard_data.update(user_input)
@@ -1270,9 +1348,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             errors = {}
 
             # Validace podle scénáře
-            scenario = user_input.get(
-                "import_pricing_scenario", "spot_percentage"
-            )
+            scenario = user_input.get("import_pricing_scenario", "spot_percentage")
 
             if scenario == "spot_percentage":
                 pos_fee = user_input.get("spot_positive_fee_percent", 15.0)
@@ -1283,9 +1359,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     errors["spot_negative_fee_percent"] = "invalid_percentage"
 
             elif scenario == "spot_fixed":
-                fee = user_input.get("spot_fixed_fee_mwh", 500.0)
-                if fee < 0.1:
-                    errors["spot_fixed_fee_mwh"] = "invalid_fee"
+                fee = user_input.get("spot_fixed_fee_kwh", 0.50)
+                if fee < 0.01 or fee > 10:
+                    errors["spot_fixed_fee_kwh"] = "invalid_fee"
 
             elif scenario == "fix_price":
                 price = user_input.get("fixed_price_kwh", 4.50)
@@ -1353,9 +1429,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             schema_fields.update(
                 {
                     vol.Optional(
-                        "spot_fixed_fee_mwh",
-                        default=defaults.get("spot_fixed_fee_mwh", 500.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1)),
+                        "spot_fixed_fee_kwh",
+                        default=defaults.get("spot_fixed_fee_kwh", 0.50),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=10.0)),
                 }
             )
         elif scenario == "fix_price":
@@ -1385,9 +1461,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             old_scenario = self._wizard_data.get(
                 "export_pricing_scenario", "spot_percentage"
             )
-            new_scenario = user_input.get(
-                "export_pricing_scenario", "spot_percentage"
-            )
+            new_scenario = user_input.get("export_pricing_scenario", "spot_percentage")
 
             if old_scenario != new_scenario:
                 self._wizard_data.update(user_input)
@@ -1402,9 +1476,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             errors = {}
 
             # Validace podle scénáře
-            scenario = user_input.get(
-                "export_pricing_scenario", "spot_percentage"
-            )
+            scenario = user_input.get("export_pricing_scenario", "spot_percentage")
 
             if scenario == "spot_percentage":
                 fee = user_input.get("export_fee_percent", 15.0)
@@ -1533,6 +1605,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 dist_nt = user_input.get("distribution_fee_nt_kwh", 0.91)
                 if dist_nt < 0 or dist_nt > 10:
                     errors["distribution_fee_nt_kwh"] = "invalid_distribution_fee"
+                
+                # Validace VT/NT hodin na mezery a překryvy
+                vt_starts = user_input.get("tariff_vt_start_weekday", "6")
+                nt_starts = user_input.get("tariff_nt_start_weekday", "22,2")
+                
+                is_valid, error_key = _validate_tariff_hours(vt_starts, nt_starts)
+                if not is_valid:
+                    errors["tariff_vt_start_weekday"] = error_key
 
             # Validace VAT
             vat = user_input.get("vat_rate", 21.0)
@@ -1880,10 +1960,10 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._handle_back_button("wizard_summary")
 
             # Vytvořit entry s nakonfigurovanými daty
-            
+
             # Převést UI pricing scénáře na backend atributy
             pricing_backend = self._map_pricing_to_backend(self._wizard_data)
-            
+
             return self.async_create_entry(
                 title=DEFAULT_NAME,
                 data={

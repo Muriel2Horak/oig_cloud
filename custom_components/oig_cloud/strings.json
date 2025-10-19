@@ -130,7 +130,7 @@
           "import_pricing_scenario": "Scénář nákupní ceny",
           "spot_positive_fee_percent": "Přirážka při kladné spotové ceně (%)",
           "spot_negative_fee_percent": "Přirážka při záporné spotové ceně (%)",
-          "spot_fixed_fee_mwh": "Fixní poplatek (CZK/MWh)",
+          "spot_fixed_fee_kwh": "Fixní poplatek (CZK/kWh)",
           "fixed_price_kwh": "Fixní nákupní cena (CZK/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
@@ -138,7 +138,7 @@
           "import_pricing_scenario": "💡 Klikněte 'Odeslat' pro zobrazení parametrů zvoleného scénáře",
           "spot_positive_fee_percent": "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15% = spot × 1,15",
           "spot_negative_fee_percent": "Při záporné spotové ceně: cena × (1 - procento/100). Např. 9% = spot × 0,91",
-          "spot_fixed_fee_mwh": "Konstantní poplatek přičtený ke spotové ceně (500 CZK/MWh = 0,50 CZK/kWh)",
+          "spot_fixed_fee_kwh": "Konstantní poplatek přičtený ke spotové ceně. Např. 0,50 CZK/kWh",
           "fixed_price_kwh": "Fixní nákupní cena. ⚠️ ZADÁVEJTE BEZ DPH A DISTRIBUCE!",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
@@ -243,6 +243,10 @@
       "invalid_fee": "⚠️ Neplatný poplatek",
       "invalid_distribution_fee": "⚠️ Neplatný distribuční poplatek (0-10 CZK/kWh)",
       "invalid_vat": "⚠️ Neplatná sazba DPH (0-30%)",
+      "invalid_hour_range": "⚠️ Hodiny musí být v rozsahu 0-23",
+      "invalid_hour_format": "⚠️ Neplatný formát hodin. Použijte čísla oddělená čárkou (např: 6,14,18)",
+      "overlapping_tariffs": "⚠️ VT a NT tarify se překrývají. Každá hodina může být pouze VT nebo NT.",
+      "tariff_gaps": "⚠️ Tarify nepokrývají celý den (0-23 hodin). Zkontrolujte začátky VT a NT.",
       "endpoint_must_start_with_slash": "⚠️ Endpoint musí začínat lomítkem (/)",
       "invalid_port": "⚠️ Neplatný port (1-65535)"
     },
