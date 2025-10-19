@@ -885,14 +885,165 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return OigCloudOptionsFlowHandler(config_entry)
 
 
-class OigCloudOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for OIG Cloud."""
+class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
+    """Handle options flow for OIG Cloud - uses wizard for better UX."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         super().__init__()
+        self.config_entry = config_entry
+        
+        # Předvyplnit wizard_data z existující konfigurace
+        self._wizard_data = dict(config_entry.options)
+        self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
+        # Password nečteme z bezpečnostních důvodů
 
     async def async_step_init(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Entry point for options flow - redirect to wizard welcome."""
+        # Při rekonfiguraci rovnou začneme na výběru modulů (credentials už máme)
+        return await self.async_step_wizard_modules()
+    
+    async def async_step_wizard_summary(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Override summary step for options flow - update entry instead of creating new."""
+        if user_input is not None:
+            # Aktualizovat existující entry místo vytvoření nového
+            new_options = {
+                # Intervaly
+                "standard_scan_interval": self._wizard_data.get(
+                    "standard_scan_interval", 30
+                ),
+                "extended_scan_interval": self._wizard_data.get(
+                    "extended_scan_interval", 300
+                ),
+                # Moduly
+                "enable_statistics": self._wizard_data.get(
+                    "enable_statistics", True
+                ),
+                "enable_solar_forecast": self._wizard_data.get(
+                    "enable_solar_forecast", False
+                ),
+                "enable_battery_prediction": self._wizard_data.get(
+                    "enable_battery_prediction", False
+                ),
+                "enable_pricing": self._wizard_data.get("enable_pricing", False),
+                "enable_extended_sensors": self._wizard_data.get(
+                    "enable_extended_sensors", True
+                ),
+                "enable_dashboard": self._wizard_data.get(
+                    "enable_dashboard", False
+                ),
+                # Extended sensors detail
+                "enable_extended_battery_sensors": self._wizard_data.get(
+                    "enable_extended_battery_sensors", True
+                ),
+                "enable_extended_fve_sensors": self._wizard_data.get(
+                    "enable_extended_fve_sensors", True
+                ),
+                "enable_extended_grid_sensors": self._wizard_data.get(
+                    "enable_extended_grid_sensors", True
+                ),
+                "disable_extended_stats_api": False,
+                # Solar forecast
+                **{
+                    k: v
+                    for k, v in self._wizard_data.items()
+                    if k.startswith("solar_forecast_")
+                },
+                # Battery prediction
+                "min_capacity_percent": self._wizard_data.get(
+                    "min_capacity_percent", 20.0
+                ),
+                "target_capacity_percent": self._wizard_data.get(
+                    "target_capacity_percent", 80.0
+                ),
+                "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
+                # Pricing
+                "spot_trading_enabled": self._wizard_data.get(
+                    "spot_trading_enabled", False
+                ),
+                "distribution_area": self._wizard_data.get(
+                    "distribution_area", "PRE"
+                ),
+                "fixed_price_vt": self._wizard_data.get("fixed_price_vt", 4.50),
+                "fixed_price_nt": self._wizard_data.get("fixed_price_nt", 3.20),
+                # Dashboard
+                "dashboard_refresh_interval": self._wizard_data.get(
+                    "dashboard_refresh_interval", 5
+                ),
+            }
+            
+            # Aktualizovat entry
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            
+            # NOVÉ: Informace o nutnosti reloadu
+            return self.async_create_entry(
+                title="",
+                data={
+                    "info": "⚠️ Změny byly uloženy. Pro aktivaci změn prosím restartujte Home Assistant nebo reloadněte integraci OIG Cloud."
+                }
+            )
+        
+        # Zobrazit summary se stejnou logikou jako v ConfigFlow
+        summary_lines = [
+            "**Přihlášení:**",
+            f"- Uživatel: {self.config_entry.data.get(CONF_USERNAME, 'N/A')}",
+            "",
+            "**Zapnuté moduly:**",
+        ]
+
+        if self._wizard_data.get("enable_statistics"):
+            summary_lines.append("✅ Statistiky a analýzy")
+        if self._wizard_data.get("enable_solar_forecast"):
+            summary_lines.append("✅ Solární předpověď")
+        if self._wizard_data.get("enable_battery_prediction"):
+            summary_lines.append("✅ Predikce baterie")
+        if self._wizard_data.get("enable_pricing"):
+            summary_lines.append("✅ Cenové senzory a spotové ceny")
+        if self._wizard_data.get("enable_extended_sensors"):
+            summary_lines.append("✅ Rozšířené senzory")
+        if self._wizard_data.get("enable_dashboard"):
+            summary_lines.append("✅ Webový dashboard")
+
+        summary_lines.extend(
+            [
+                "",
+                "**Intervaly načítání:**",
+                f"- Základní data: {self._wizard_data.get('standard_scan_interval', 30)}s",
+                f"- Rozšířená data: {self._wizard_data.get('extended_scan_interval', 300)}s",
+                "",
+                "⚠️ **Důležité:** Po uložení změn prosím restartujte Home Assistant!",
+                "",
+                "Kliknutím na 'Odeslat' uložíte změny.",
+            ]
+        )
+
+        return self.async_show_form(
+            step_id="wizard_summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "step": "Rekonfigurace - Souhrn změn",
+                "progress": "▓▓▓▓▓",
+                "summary": "\n".join(summary_lines),
+            },
+        )
+
+
+# STARÝ OPTIONS FLOW KÓD - ponechám pro zpětnou kompatibilitu, ale nebude se používat
+class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
+    """Legacy options flow handler - kept for reference."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        super().__init__()
+        self.config_entry = config_entry
+
+    async def async_step_init_legacy(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Manage the options - zobrazit menu s výběrem konfigurace."""
