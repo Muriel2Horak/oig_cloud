@@ -492,7 +492,7 @@
         .grid-limit-indicator {
             position: absolute;
             top: 0;
-            right: -85px;
+            right: -105px;
             background: linear-gradient(135deg, rgba(156, 39, 176, 0.95), rgba(123, 31, 162, 0.95));
             border: 1px solid rgba(156, 39, 176, 0.8);
             border-radius: 8px;
@@ -3929,6 +3929,12 @@
             // When only limit changes, animate the Limited button
             const targetButtonId = 'btn-grid-limited';
 
+            // Animate limit value in flow diagram
+            const gridLimitElement = document.getElementById('inverter-export-limit');
+            if (gridLimitElement) {
+                gridLimitElement.classList.add('mode-changing');
+            }
+
             // Show limit badge (different from mode badge) - bez duration!
             const gridLimitIndicator = document.getElementById('grid-limit-indicator');
             const gridLimitText = document.getElementById('grid-limit-text');
@@ -3956,6 +3962,12 @@
                 document.getElementById('btn-grid-on'),
                 document.getElementById('btn-grid-limited')
             ].filter(b => b);
+
+            // Remove limit value animation in flow diagram
+            const gridLimitElement = document.getElementById('inverter-export-limit');
+            if (gridLimitElement) {
+                gridLimitElement.classList.remove('mode-changing');
+            }
 
             // Hide limit badge
             const gridLimitIndicator = document.getElementById('grid-limit-indicator');
