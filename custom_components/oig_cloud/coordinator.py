@@ -137,9 +137,9 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
                 if self._last_extended_update is not None:
                     time_since_last = current_time - self._last_extended_update
 
-                if (
-                    self._last_extended_update is None
-                    or (time_since_last is not None and time_since_last >= self._extended_update_interval)
+                if self._last_extended_update is None or (
+                    time_since_last is not None
+                    and time_since_last >= self._extended_update_interval
                 ):
                     _LOGGER.info(f"Fetching extended data")
                     try:

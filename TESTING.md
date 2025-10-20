@@ -47,7 +47,7 @@ Testy se automaticky spustí při push/PR do `main` branch.
 ```
 tests/
 ├── test_coordinator.py      # DataUpdateCoordinator testy
-├── test_models.py           # Data model testy  
+├── test_models.py           # Data model testy
 ├── test_oig_cloud_api.py    # API client testy
 ├── test_etag_caching.py     # ETag caching testy
 └── sample-response.json     # Sample API data
@@ -114,6 +114,7 @@ HA dostupný na: http://localhost:8123
 ## 🚀 CI/CD
 
 GitHub Actions automaticky:
+
 1. Spustí `hassfest` - validace integrace
 2. Spustí `HACS` - HACS kompatibilita
 3. Spustí `pytest` - unit testy
@@ -132,13 +133,13 @@ from custom_components.oig_cloud.coordinator import OigCloudDataUpdateCoordinato
 async def test_coordinator_update(hass: HomeAssistant):
     """Test coordinator data update."""
     coordinator = OigCloudDataUpdateCoordinator(
-        hass, 
+        hass,
         api_client,
         update_interval=30
     )
-    
+
     await coordinator.async_refresh()
-    
+
     assert coordinator.data is not None
     assert "box_id" in coordinator.data
 ```

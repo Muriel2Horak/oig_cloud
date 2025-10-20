@@ -4,15 +4,17 @@
 
 ### 1. ✅ Home Assistant 2025.4 Kompatibilita
 
-**Problém**: 
+**Problém**:
+
 ```
-Detected that custom integration 'oig_cloud' calls `async_add_job`, 
+Detected that custom integration 'oig_cloud' calls `async_add_job`,
 which will stop working in Home Assistant 2025.4
 ```
 
 **Lokace**: `custom_components/oig_cloud/service_shield.py:175`
 
 **Oprava**:
+
 ```python
 # Před:
 self.hass.async_add_job(callback)
@@ -30,6 +32,7 @@ self.hass.async_create_task(callback())
 **Problém**: Field `country` je deprecated v novějších verzích HA
 
 **Oprava**:
+
 ```json
 // Odstraněno:
 "country": ["CZ"]
@@ -45,6 +48,7 @@ self.hass.async_create_task(callback())
 ### 3. ✅ GitHub Actions Test Failures
 
 **Problém**:
+
 ```
 ModuleNotFoundError: No module named 'homeassistant.helpers.event'
 platform linux -- Python 3.13.8
@@ -55,12 +59,14 @@ platform linux -- Python 3.13.8
 **Opravy**:
 
 #### a) Python Version Downgrade
+
 ```yaml
 # .github/workflows/test.yml
-python-version: '3.12'  # bylo: '3.13'
+python-version: "3.12" # bylo: '3.13'
 ```
 
 #### b) Dependency Install Error Handling
+
 ```yaml
 # Odstraněno '|| true' - fail fast na chyby
 pip install -r requirements-dev.txt
@@ -75,6 +81,7 @@ pip install -r requirements-dev.txt
 **Problém**: Staré external dependencies v `requirements.txt`
 
 **Před**:
+
 ```
 aiohttp>=3.8.0
 opentelemetry-sdk==1.29.0
@@ -86,6 +93,7 @@ openpyxl>=3.0.0
 ```
 
 **Po**:
+
 ```
 # OIG Cloud Integration - Runtime Dependencies
 #
@@ -103,22 +111,24 @@ openpyxl>=3.0.0
 
 ## 📊 Souhrn Commitů
 
-| Commit | Popis | Soubory |
-|--------|-------|---------|
+| Commit    | Popis                                                       | Soubory                                                   |
+| --------- | ----------------------------------------------------------- | --------------------------------------------------------- |
 | `8126913` | HA 2025.4 compatibility (async_add_job → async_create_task) | service_shield.py, manifest.json, RELEASE_PREP_SUMMARY.md |
-| `08f8879` | Test infrastructure + dependency cleanup | test.yml, requirements.txt, manifest.json |
+| `08f8879` | Test infrastructure + dependency cleanup                    | test.yml, requirements.txt, manifest.json                 |
 
 ---
 
 ## 🧪 Test Status
 
 ### Před opravami:
+
 - ❌ Tests failing - Python 3.13 incompatibility
 - ❌ ModuleNotFoundError with homeassistant.helpers.event
-- ⚠️  Deprecated async_add_job warning
-- ⚠️  Deprecated country field warning
+- ⚠️ Deprecated async_add_job warning
+- ⚠️ Deprecated country field warning
 
 ### Po opravách:
+
 - ✅ Python 3.12 (kompatibilní s HA 2025.1.4)
 - ✅ async_create_task (HA 2025.4 ready)
 - ✅ Deprecated field removed
@@ -138,7 +148,9 @@ openpyxl>=3.0.0
 ## 📝 Poznámky
 
 ### requirements-dev.txt
+
 Ponecháno:
+
 ```
 pytest
 pytest-cov
@@ -151,7 +163,9 @@ homeassistant==2025.1.4  # Pro testy
 ```
 
 ### Vendored Dependencies
+
 Vše v `custom_components/oig_cloud/lib/oig_cloud_client/`:
+
 - API Client
 - Models
 - Utils
@@ -159,6 +173,6 @@ Vše v `custom_components/oig_cloud/lib/oig_cloud_client/`:
 
 ---
 
-**Status**: ✅ Všechny známé problémy opraveny  
-**Branch**: `temp`  
+**Status**: ✅ Všechny známé problémy opraveny
+**Branch**: `temp`
 **Latest Commit**: `08f8879`

@@ -1,7 +1,10 @@
 {
     "python.analysis.diagnosticSeverityOverrides": {
       "reportMissingImports": "none",
-      "reportMissingModuleSource": "none"
+      "reportMissingModuleSource": "none",
+      "reportReturnType": "none",
+      "reportArgumentType": "none",
+      "reportOptionalOperand": "none"
     },
     "python.analysis.ignore": [
       "**/lib/**"
