@@ -404,6 +404,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                         "attributes": dict(state.attributes),
                     }
 
+        _LOGGER.info(f"Found {len(load_sensors)} load_avg sensors")
+        if len(load_sensors) > 0:
+            # Log first sensor for debugging
+            first_sensor = list(load_sensors.keys())[0]
+            _LOGGER.info(
+                f"Example sensor: {first_sensor}, "
+                f"value={load_sensors[first_sensor]['value']}W, "
+                f"attrs={load_sensors[first_sensor]['attributes']}"
+            )
+
         return load_sensors
 
     def _get_solar_for_timestamp(
@@ -487,9 +497,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 watts = sensor_data.get("value", 0.0)
                 kwh_per_hour = watts / 1000.0  # W → kW
                 kwh_per_15min = kwh_per_hour / 4.0  # kWh/h → kWh/15min
+                _LOGGER.debug(
+                    f"Matched {entity_id} for {time_str}: "
+                    f"{watts}W → {kwh_per_15min:.5f} kWh/15min"
+                )
                 return kwh_per_15min
 
         # Žádný senzor nenalezen
+        _LOGGER.warning(
+            f"No load_avg sensor found for {time_str} ({day_type}), "
+            f"searched {len(load_avg_sensors)} sensors"
+        )
         return 0.0
 
     def _parse_time_range(self, time_range: str) -> tuple[Optional[str], Optional[str]]:
@@ -537,8 +555,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # Handle range přes půlnoc
             if start <= end:
-                return start <= time < end
+                # Inclusive start, exclusive end (standard interval notation)
+                # BUT: for boundary times, check if next range starts at this time
+                # For now: inclusive on both ends to avoid gaps
+                return start <= time <= end
             else:
-                return time >= start or time < end
+                # Range přes půlnoc (např. "22:00-02:00")
+                return time >= start or time <= end
         except ValueError:
             return False
