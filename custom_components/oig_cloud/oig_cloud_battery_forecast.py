@@ -33,13 +33,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
         self._config_entry = config_entry
         self._device_info = device_info
-        
+
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
         # Získání inverter_sn - STEJNÁ LOGIKA jako OigCloudStatisticsSensor
         self._data_key = "unknown"
-        
+
         # Priorita 1: Z coordinator.config_entry.data (standardní cesta)
         if hasattr(coordinator, "config_entry") and coordinator.config_entry:
             if (
@@ -125,11 +125,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             current_capacity = self._get_current_battery_capacity()
             max_capacity = self._get_max_battery_capacity()
             min_capacity = self._get_min_battery_capacity()
-            
+
             _LOGGER.info("Calling _get_spot_price_timeline()...")
             spot_prices = await self._get_spot_price_timeline()  # ASYNC!
-            _LOGGER.info(f"_get_spot_price_timeline() returned {len(spot_prices)} prices")
-            
+            _LOGGER.info(
+                f"_get_spot_price_timeline() returned {len(spot_prices)} prices"
+            )
+
             solar_forecast = self._get_solar_forecast()
             load_avg_sensors = self._get_load_avg_sensors()
 
@@ -220,7 +222,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "battery_capacity_kwh": round(battery_kwh, 2),
                     "solar_production_kwh": round(solar_kwh, 2),
                     "consumption_kwh": round(load_kwh, 2),
-                    "grid_change_kwh": round(grid_kwh, 2),
+                    "grid_charge_kwh": round(grid_kwh, 2),
                 }
             )
 
@@ -276,7 +278,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
         """Získat timeline spotových cen z spot_price_current_15min.
-        
+
         Použijeme retry logiku protože spot_price sensor může být připravený později než battery_forecast.
         """
         if not self._hass:
@@ -284,15 +286,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return []
 
         sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
-        
+
         # Retry logika: max 3 pokusy s 2s čekáním
         import asyncio
+
         max_retries = 3
         retry_delay = 2.0
-        
+
         for attempt in range(max_retries):
             state = self._hass.states.get(sensor_id)
-            
+
             # Debug logging - co vidíme?
             _LOGGER.info(
                 f"Attempt {attempt+1}/{max_retries}: Checking {sensor_id} - "
@@ -300,7 +303,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 f"state.state: {state.state if state else 'N/A'}, "
                 f"has attributes: {state.attributes is not None if state else False}"
             )
-            
+
             # OPRAVA: Kontrolovat state.state jako OigCloudStatisticsSensor
             if not state or state.state in ("unavailable", "unknown", None):
                 _LOGGER.info(
@@ -310,9 +313,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             elif state.attributes:
                 # Načíst prices z atributů (formát: [{date, time, price, tariff}, ...])
                 prices = state.attributes.get("prices", [])
-                
+
                 _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
-                
+
                 if prices:
                     # Konvertovat na timeline formát s timestamp
                     timeline = []
@@ -328,21 +331,29 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                         timestamp = f"{date_str}T{time_str}:00"
 
                         timeline.append({"time": timestamp, "price": price})
-                    
-                    _LOGGER.info(f"Successfully loaded {len(timeline)} spot price points from {sensor_id}")
+
+                    _LOGGER.info(
+                        f"Successfully loaded {len(timeline)} spot price points from {sensor_id}"
+                    )
                     return timeline
                 else:
-                    _LOGGER.info(f"Attempt {attempt+1}: No prices data in {sensor_id} attributes")
+                    _LOGGER.info(
+                        f"Attempt {attempt+1}: No prices data in {sensor_id} attributes"
+                    )
             else:
-                _LOGGER.info(f"Attempt {attempt+1}: Sensor {sensor_id} has no attributes")
-            
+                _LOGGER.info(
+                    f"Attempt {attempt+1}: Sensor {sensor_id} has no attributes"
+                )
+
             # Pokud nejsme na posledním pokusu, počkáme
             if attempt < max_retries - 1:
                 _LOGGER.info(f"Waiting {retry_delay}s before retry...")
                 await asyncio.sleep(retry_delay)
-        
+
         # Všechny pokusy selhaly
-        _LOGGER.error(f"Failed to load spot price timeline after {max_retries} attempts")
+        _LOGGER.error(
+            f"Failed to load spot price timeline after {max_retries} attempts"
+        )
         return []
 
     def _get_solar_forecast(self) -> Dict[str, Any]:
