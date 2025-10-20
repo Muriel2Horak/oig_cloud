@@ -75,6 +75,19 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             f"extended={self._extended_update_interval}s, jitter=±{JITTER_SECONDS}s"
         )
 
+        # Initialize jitter
+        self._next_jitter: float = 0.0
+
+    def _calculate_jitter(self) -> float:
+        """Calculate random jitter for update interval.
+        
+        Returns a random value between -JITTER_SECONDS and +JITTER_SECONDS.
+        This spreads API requests over time to avoid synchronized polling.
+        """
+        jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
+        self._next_jitter = jitter
+        return jitter
+
     async def _fetch_basic_data(self) -> Dict[str, Any]:
         """Fetch basic data from API."""
         try:
