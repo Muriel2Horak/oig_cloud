@@ -197,5 +197,14 @@ backups/
 *.zip
 *BACKUP*.txt
 
+# Old/backup files
+*_OLD.md
+*_old.md
+*.bak
+*.backup
+
+# Docker volumes
+config/
+
 # Legacy config flow (backup)
 custom_components/oig_cloud/config_flow_legacy.py

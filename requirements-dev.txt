@@ -2,6 +2,7 @@
 pytest
 pytest-cov
 pytest-asyncio
+pytest-homeassistant-custom-component
 
 # Linting dependencies
 flake8
@@ -10,6 +11,3 @@ isort
 
 # Optional: Type checking
 mypy
-
-# Home assistant
-homeassistant==2025.1.4
