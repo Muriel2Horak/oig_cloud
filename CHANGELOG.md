@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Obrovský release s **238 commity** od července 2024, obsahující **55,160 řádků nového kódu** napříč **146 soubory**. Toto je preview verze pro testery před finálním stable release v2.0.4.
 
 ### ✨ **1. ENERGY FLOW DASHBOARD (Zcela nový)**
+
 - **Grafická vizualizace** energetických toků v reálném čase
 - **Animované toky** podle směru a výkonu energie (dynamický počet kuliček)
 - **Responzivní design** - mobil, tablet, desktop
@@ -28,6 +29,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Automatická detekce** boileru a baterie
 
 ### 🛡️ **2. SERVICESHIELD™ REFACTOR (Kompletní přepracování)**
+
 - **Event-based monitoring** - okamžitá reakce místo pollingu
 - **Live duration tracking** s dynamickými aktualizacemi v reálném čase
 - **Strukturovaný targets output** - frontend bez parsování JSON
@@ -43,6 +45,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Coordinator auto-refresh** - okamžitá aktualizace po API volání
 
 ### 🧙 **3. WIZARD CONFIG FLOW (Nový průvodce)**
+
 - **Kompletní wizard** - intuitivní krok-za-krokem setup
 - **Unifikace Options Flow** - stejné UX jako Config Flow
 - **3-step pricing wizard** - scenario-based konfigurace (Fixní/Spot/Tarify)
@@ -55,10 +58,11 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Migration handler** - bezproblémový upgrade z v1 → v2
 
 ### 📡 **4. API KOMUNIKACE (Efektivnější)**
+
 - **Zero external dependencies** - vendorovaný `oig_cloud_client` (žádné external repos!)
 - **Browser-perfect headers** - 12 kompletních HTTP headerů (Chrome User-Agent, Sec-Ch-Ua, atd.)
 - **ETag caching** - redukce duplicitních requestů (až 70% úspora)
-- **Polling jitter** - eliminace API spikes (_calculate_jitter() method)
+- **Polling jitter** - eliminace API spikes (\_calculate_jitter() method)
 - **Session management** - robustní cookie handling s PHPSESSID
 - **TLS/HTTP2 podpora** - moderní protokoly
 - **Automatic coordinator refresh** po každém API volání
@@ -66,6 +70,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Retry mechanismus** - automatické opakování při selhání
 
 ### 🎨 **5. THEME SYSTEM (Light/Dark Mode)**
+
 - **Complete theme support** s CSS custom properties
 - **Automatické přepínání** light/dark podle HA nastavení
 - **CSS variables** pro snadnou customizaci (barvy, spacing, shadows)
@@ -75,6 +80,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 ### 📚 **6. DOKUMENTACE (8 uživatelských + 22 vývojářských)**
 
 **User Guides:**
+
 - `CONFIGURATION.md` (488 lines) - Kompletní konfigurace systému
 - `DASHBOARD.md` (601 lines) - Dashboard setup, customizace, troubleshooting
 - `ENTITIES.md` (495 lines) - Všechny entity, význam, použití
@@ -85,6 +91,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - `TROUBLESHOOTING.md` (1041 lines) - Řešení problémů A-Z
 
 **Developer Docs (22+ souborů):**
+
 - Vendoring guide & implementation summary
 - Wizard implementation & GAP analysis
 - Shield sensor mapping & refactor
@@ -95,6 +102,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - ... a mnoho dalších
 
 ### 🧪 **7. TEST INFRASTRUCTURE**
+
 - **Docker-based testing** - konzistentní prostředí (HA 2025.1.4 container)
 - **pytest-homeassistant-custom-component** - oficiální test framework
 - **GitHub Actions CI** s Python 3.12 a automated tests
@@ -104,6 +112,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **61 testů celkem** - kompletní pokrytí coordinator, API, models
 
 ### � **8. HOME ASSISTANT 2025.4 COMPATIBILITY**
+
 - **async_create_task** místo deprecated `async_add_job()`
 - **Minimum HA 2024.1.0** (upgrade z 2022.0.0)
 - **Removed 'country' field** z manifest.json (deprecated)
@@ -111,6 +120,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Type hints** - kompletní typing napříč codebase
 
 ### 🎯 **9. UX IMPROVEMENTS**
+
 - **Pending UI** - univerzální zobrazení pro všechny service calls
 - **Okamžitá aktualizace** shield fronty (bez zdržení)
 - **Button state detection** - správné zvýraznění aktivní služby
@@ -123,6 +133,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **Live badges** - žlutý badge pro běžící služby s duration
 
 ### 🐛 **10. 50+ BUGFIXŮ**
+
 - **Grid delivery** mode/limit mapping (přesné mapování EN ↔ CS)
 - **Boiler mode blinking** - odstranění blikání při změně
 - **Shield state listener** - thread safety s lock mechanismem
@@ -140,6 +151,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - ... a mnoho dalších
 
 ### 📊 **STATISTIKA ZMĚN:**
+
 - **238 commitů** od července 2024
 - **55,160 řádků přidáno**, 2,886 odstraněno
 - **146 souborů změněno**
@@ -150,6 +162,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **22+ vývojářských dokumentů** (7,000+ řádků technical docs)
 
 ### 🔄 Changed
+
 - **Manifest version** bumped to 2.0.3-preview
 - **Minimum HA version** updated to 2024.1.0
 - **Requirements** cleaned (zero external dependencies)
@@ -157,6 +170,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - **IDE configuration** standardized (Pylance/Pyright)
 
 ### 🐛 Fixed (Selected Critical Fixes)
+
 - HA 2025.4 compatibility (async_create_task)
 - Coordinator missing methods restoration
 - Shield thread safety and race conditions
@@ -169,6 +183,7 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - Initial UI load reliability
 
 ### 📝 Documentation
+
 - Complete user documentation suite (8 guides)
 - Comprehensive developer documentation (22+ docs)
 - IDE setup guide for contributors
@@ -176,12 +191,15 @@ Obrovský release s **238 commity** od července 2024, obsahující **55,160 ř�
 - API documentation and examples
 
 ### ⚠️ **BREAKING CHANGES:**
+
 - Minimum HA version: **2024.1.0** (previously 2022.0.0)
 - Config entry version migrated to **v2** (automatic migration included)
 - External dependency removed: `oig-cloud-client` now vendored
 
 ### 🎉 **PRO TESTERY:**
+
 Toto je **preview release** pro testování. Prosíme o feedback zejména k:
+
 - ✅ Energy Flow Dashboard - animace, responzivita, výkon
 - ✅ ServiceShield - správné fungování fronty, timeouty
 - ✅ Wizard Config Flow - srozumitelnost, chyby
@@ -189,6 +207,7 @@ Toto je **preview release** pro testování. Prosíme o feedback zejména k:
 - ✅ Boiler mode - žádné blikání, stabilita
 
 **Známé limitace:**
+
 - Home 5 a Home 6 režimy jsou zobrazeny, ale disabled (čekáme na dokumentaci OIG)
 - Formating mode má fixed 2min timeout (nelze detekovat completion)
 
@@ -203,6 +222,7 @@ This is a **major release** with significant architectural changes, new features
 ### ✨ Added
 
 #### 🔄 **Multi-Device Support**
+
 - **Multiple Battery Boxes**: Full support for multiple ČEZ Battery Boxes on single OIG Cloud account
 - **Device Selector in Services**: Optional `device_id` parameter in all services (`set_box_mode`, `set_grid_delivery`, `set_boiler_mode`, `set_formating_mode`)
 - **Automatic Device Cleanup**: Orphaned devices are automatically removed when Battery Box is deleted from OIG Cloud account
@@ -210,6 +230,7 @@ This is a **major release** with significant architectural changes, new features
 - **Backward Compatible**: Services work with or without device_id - defaults to first device if not specified
 
 #### 📦 **Vendored Dependencies**
+
 - **Self-Contained Integration**: OIG Cloud Client now included as vendored module in `custom_components/oig_cloud/lib/oig_cloud_client/`
 - **Zero External Dependencies**: No external Python packages required
 - **Faster Installation**: No dependency resolution needed
@@ -217,17 +238,18 @@ This is a **major release** with significant architectural changes, new features
 - **Version Control**: API client versioned with integration
 
 #### 🧙‍♂️ **Wizard Configuration Flow**
+
 - **Multi-Step Wizard**: Complete redesign of initial setup experience with 5-10 screens
-- **Setup Type Selection**: 
+- **Setup Type Selection**:
   - 🧙‍♂️ **Wizard** (recommended) - Guided setup with contextual help
   - ⚡ **Quick Setup** - 30 seconds with sensible defaults
   - 📥 **YAML Import** - For existing configurations (future)
-- **Progressive Disclosure**: 
+- **Progressive Disclosure**:
   - Module selection screen (Statistics, Solar Forecast, Battery Prediction, etc.)
   - Conditional steps - only shows configuration for enabled modules
   - Detailed configuration screens with inline help
 - **Configuration Summary**: Review all settings before completing
-- **State Management**: 
+- **State Management**:
   - Wizard remembers selections
   - Browser back button support
   - Session recovery
@@ -236,18 +258,20 @@ This is a **major release** with significant architectural changes, new features
 - **Full Localization**: Complete Czech translations
 
 #### 🛡️ **ServiceShield™ Enhancements**
+
 - **Configurable Timeout**: Set protection timeout from 5 to 60 minutes in Options
 - **Live Monitoring**: Real-time detection of mode changes in coordinator
 - **Improved Detection**: Better identification of external vs. internal changes
 - **Enhanced Logging**: Detailed Shield activity logs for debugging
 
 #### 🚀 **API Communication Optimizations**
-- **ETag / If-None-Match Caching**: 
+
+- **ETag / If-None-Match Caching**:
   - HTTP ETag implementation for bandwidth optimization
   - Per-endpoint caching for `json.php` and `json2.php`
   - Handles `304 Not Modified` responses
   - Ready for server-side ETag support
-- **Jitter in Polling**: 
+- **Jitter in Polling**:
   - Randomized update intervals (±5 seconds) to spread API load
   - Base interval: 30 seconds → actual: 25-35 seconds
   - Prevents synchronized requests from multiple instances
@@ -255,6 +279,7 @@ This is a **major release** with significant architectural changes, new features
   - ✅ **Verified in production**
 
 #### 📝 **Documentation Overhaul**
+
 - **User Documentation** (`docs/user/`):
   - Configuration guide
   - Dashboard setup
@@ -273,6 +298,7 @@ This is a **major release** with significant architectural changes, new features
   - Development setup
 
 #### 🧪 **Testing & Quality**
+
 - **Unit Tests**: Comprehensive test suite with pytest
 - **CI/CD**: GitHub Actions workflows for automated testing
 - **Test Coverage**: pytest-cov integration
@@ -314,6 +340,7 @@ This is a **major release** with significant architectural changes, new features
 ### 📋 Technical Details
 
 #### **Module Structure**
+
 ```
 custom_components/oig_cloud/
 ├── lib/
@@ -331,6 +358,7 @@ custom_components/oig_cloud/
 ```
 
 #### **Device Architecture**
+
 - **1 ConfigEntry** per OIG Cloud account
 - **Multiple Device entries**:
   - Main device: `(DOMAIN, box_id)`
@@ -339,6 +367,7 @@ custom_components/oig_cloud/
 - **Entity Assignment**: Entities properly assigned to relevant devices
 
 #### **Service Schema**
+
 ```yaml
 device_id:
   description: The ČEZ Battery Box device to control
