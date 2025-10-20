@@ -80,7 +80,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _calculate_jitter(self) -> float:
         """Calculate random jitter for update interval.
-        
+
         Returns a random value between -JITTER_SECONDS and +JITTER_SECONDS.
         This spreads API requests over time to avoid synchronized polling.
         """

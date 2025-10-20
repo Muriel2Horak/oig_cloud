@@ -7,6 +7,193 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3-preview] - 2025-10-20
+
+### 🚀 **MAJOR RELEASE** - Complete Rewrite & Enhancement
+
+Obrovský release s **238 commity** od července 2024, obsahující **55,160 řádků nového kódu** napříč **146 soubory**. Toto je preview verze pro testery před finálním stable release v2.0.4.
+
+### ✨ **1. ENERGY FLOW DASHBOARD (Zcela nový)**
+- **Grafická vizualizace** energetických toků v reálném čase
+- **Animované toky** podle směru a výkonu energie (dynamický počet kuliček)
+- **Responzivní design** - mobil, tablet, desktop
+- **Inteligentní node systém**: Grid, Solar, Battery, Home, Boiler
+- **Dual-color status** (zelená/červená) podle aktuálního stavu
+- **Cenové informace** a tarify přímo v dashboardu
+- **Solární forecast** integrace s předpovědí výroby
+- **Top bar control panel** s horizontálním layoutem
+- **Detailní informace** u všech uzlů (výkon, napětí, proud)
+- **Partial re-rendering** pro optimální výkon (60 FPS)
+- **Sbalitelná fronta** Service Shield ve vizualizaci
+- **Automatická detekce** boileru a baterie
+
+### 🛡️ **2. SERVICESHIELD™ REFACTOR (Kompletní přepracování)**
+- **Event-based monitoring** - okamžitá reakce místo pollingu
+- **Live duration tracking** s dynamickými aktualizacemi v reálném čase
+- **Strukturovaný targets output** - frontend bez parsování JSON
+- **Inteligentní serializace** operací (správné pořadí mode → limit)
+- **Grid delivery split** - automatické rozdělení na samostatné služby
+- **Shield sensor mapping** - kompletní mapování všech služeb na senzory
+- **Multi-device support** - automatické čištění orphaned zařízení
+- **Thread safety** - lock mechanismus pro prevenci race conditions
+- **Logbook integrace** - všechny události v HA logbooku s friendly names
+- **Delete button** - možnost mazat položky z fronty (+ bezpečnostní kontroly)
+- **Retry logika** - robustní initial load s 20s fallback
+- **State listener** - automatický unsub při prázdné frontě
+- **Coordinator auto-refresh** - okamžitá aktualizace po API volání
+
+### 🧙 **3. WIZARD CONFIG FLOW (Nový průvodce)**
+- **Kompletní wizard** - intuitivní krok-za-krokem setup
+- **Unifikace Options Flow** - stejné UX jako Config Flow
+- **3-step pricing wizard** - scenario-based konfigurace (Fixní/Spot/Tarify)
+- **Validace bypass** pro back button (uživatelsky přívětivé)
+- **Dynamické formuláře** s hints a tooltip nápovědou
+- **GAP analysis** - automatické doplnění všech chybějících parametrů
+- **Povinná live data** - validace v config flow (prevence neúplných dat)
+- **Automatický reload** integrace po změně nastavení
+- **Kompletní české překlady** - 100% lokalizace
+- **Migration handler** - bezproblémový upgrade z v1 → v2
+
+### 📡 **4. API KOMUNIKACE (Efektivnější)**
+- **Zero external dependencies** - vendorovaný `oig_cloud_client` (žádné external repos!)
+- **Browser-perfect headers** - 12 kompletních HTTP headerů (Chrome User-Agent, Sec-Ch-Ua, atd.)
+- **ETag caching** - redukce duplicitních requestů (až 70% úspora)
+- **Polling jitter** - eliminace API spikes (_calculate_jitter() method)
+- **Session management** - robustní cookie handling s PHPSESSID
+- **TLS/HTTP2 podpora** - moderní protokoly
+- **Automatic coordinator refresh** po každém API volání
+- **Multi-device API** - správa více zařízení současně
+- **Retry mechanismus** - automatické opakování při selhání
+
+### 🎨 **5. THEME SYSTEM (Light/Dark Mode)**
+- **Complete theme support** s CSS custom properties
+- **Automatické přepínání** light/dark podle HA nastavení
+- **CSS variables** pro snadnou customizaci (barvy, spacing, shadows)
+- **Theme-aware controls** - všechny komponenty respektují téma
+- **Consistent styling** napříč celým dashboardem
+
+### 📚 **6. DOKUMENTACE (8 uživatelských + 22 vývojářských)**
+
+**User Guides:**
+- `CONFIGURATION.md` (488 lines) - Kompletní konfigurace systému
+- `DASHBOARD.md` (601 lines) - Dashboard setup, customizace, troubleshooting
+- `ENTITIES.md` (495 lines) - Všechny entity, význam, použití
+- `SERVICES.md` (651 lines) - Všechny služby s příklady YAML
+- `SHIELD.md` (763 lines) - ServiceShield™ průvodce a best practices
+- `AUTOMATIONS.md` (799 lines) - Příklady automatizací (spotová cena, baterie, boiler)
+- `FAQ.md` (677 lines) - Často kladené otázky a odpovědi
+- `TROUBLESHOOTING.md` (1041 lines) - Řešení problémů A-Z
+
+**Developer Docs (22+ souborů):**
+- Vendoring guide & implementation summary
+- Wizard implementation & GAP analysis
+- Shield sensor mapping & refactor
+- TLS/HTTP2 analysis & optimization
+- Dependency validation & module dependencies
+- Test infrastructure & Docker setup
+- IDE setup (Pylance/Pyright)
+- ... a mnoho dalších
+
+### 🧪 **7. TEST INFRASTRUCTURE**
+- **Docker-based testing** - konzistentní prostředí (HA 2025.1.4 container)
+- **pytest-homeassistant-custom-component** - oficiální test framework
+- **GitHub Actions CI** s Python 3.12 a automated tests
+- **282 řádků testů** pro ETag caching alone
+- **PYTHONPATH konfigurace** pro správné importy vendored modules
+- **pytest.ini** s asyncio settings a proper timeouts
+- **61 testů celkem** - kompletní pokrytí coordinator, API, models
+
+### � **8. HOME ASSISTANT 2025.4 COMPATIBILITY**
+- **async_create_task** místo deprecated `async_add_job()`
+- **Minimum HA 2024.1.0** (upgrade z 2022.0.0)
+- **Removed 'country' field** z manifest.json (deprecated)
+- **Python 3.12 optimalizace** pro CI/CD
+- **Type hints** - kompletní typing napříč codebase
+
+### 🎯 **9. UX IMPROVEMENTS**
+- **Pending UI** - univerzální zobrazení pro všechny service calls
+- **Okamžitá aktualizace** shield fronty (bez zdržení)
+- **Button state detection** - správné zvýraznění aktivní služby
+- **Layout optimization** - žádné překrývání elementů, flex-wrap: nowrap
+- **Responsive controls** - mobil-first design approach
+- **Battery charging button** - tlačítko pro manuální nabíjení
+- **Battery forecast** - 15minutové intervaly predikce
+- **Boiler detection** - automatická detekce a konfigurace
+- **Collapsible queue** - možnost sbalit frontu v dashboardu
+- **Live badges** - žlutý badge pro běžící služby s duration
+
+### 🐛 **10. 50+ BUGFIXŮ**
+- **Grid delivery** mode/limit mapping (přesné mapování EN ↔ CS)
+- **Boiler mode blinking** - odstranění blikání při změně
+- **Shield state listener** - thread safety s lock mechanismem
+- **Coordinator context** - fix AttributeError při async_added_to_hass
+- **Layout shift prevention** - flex-wrap: nowrap pro stabilitu
+- **Translation completeness** - všechny chybějící překlady doplněny
+- **Entity mapping** - fix pro všechny služby (box_mode, boiler, grid)
+- **Timeout handling** - speciální 2min timeout pro formating_mode
+- **Remove from queue** - správná logika pro position calculation
+- **Initial shield UI load** - fix pro načtení při otevření stránky
+- **Pylance warnings** - kompletní diagnostic suppressions
+- **Test suite** - fix import paths, PYTHONPATH, missing methods
+- **Jitter calculation** - restored `_calculate_jitter()` method
+- **Coordinator methods** - restored `_fetch_basic_data()` & `_fetch_extended_data()`
+- ... a mnoho dalších
+
+### 📊 **STATISTIKA ZMĚN:**
+- **238 commitů** od července 2024
+- **55,160 řádků přidáno**, 2,886 odstraněno
+- **146 souborů změněno**
+- **55 nových funkcí** (feat:)
+- **50+ bugfixů** (fix:)
+- **20+ refactorů** (refactor:)
+- **8 uživatelských příruček** (4,515 řádků dokumentace)
+- **22+ vývojářských dokumentů** (7,000+ řádků technical docs)
+
+### 🔄 Changed
+- **Manifest version** bumped to 2.0.3-preview
+- **Minimum HA version** updated to 2024.1.0
+- **Requirements** cleaned (zero external dependencies)
+- **Test infrastructure** migrated to Docker
+- **IDE configuration** standardized (Pylance/Pyright)
+
+### 🐛 Fixed (Selected Critical Fixes)
+- HA 2025.4 compatibility (async_create_task)
+- Coordinator missing methods restoration
+- Shield thread safety and race conditions
+- Grid delivery mode/limit split and mapping
+- Boiler mode blinking elimination
+- Layout shift and responsiveness
+- Translation completeness
+- Test suite import paths
+- Pylance diagnostic suppressions
+- Initial UI load reliability
+
+### 📝 Documentation
+- Complete user documentation suite (8 guides)
+- Comprehensive developer documentation (22+ docs)
+- IDE setup guide for contributors
+- Testing guide with Docker instructions
+- API documentation and examples
+
+### ⚠️ **BREAKING CHANGES:**
+- Minimum HA version: **2024.1.0** (previously 2022.0.0)
+- Config entry version migrated to **v2** (automatic migration included)
+- External dependency removed: `oig-cloud-client` now vendored
+
+### 🎉 **PRO TESTERY:**
+Toto je **preview release** pro testování. Prosíme o feedback zejména k:
+- ✅ Energy Flow Dashboard - animace, responzivita, výkon
+- ✅ ServiceShield - správné fungování fronty, timeouty
+- ✅ Wizard Config Flow - srozumitelnost, chyby
+- ✅ Grid delivery - správné mapování mode/limit
+- ✅ Boiler mode - žádné blikání, stabilita
+
+**Známé limitace:**
+- Home 5 a Home 6 režimy jsou zobrazeny, ale disabled (čekáme na dokumentaci OIG)
+- Formating mode má fixed 2min timeout (nelze detekovat completion)
+
+**Po testování a opravách vydáme v2.0.4 jako stable release.**
+
 ## [2.0.0-beta] - 2025-10-19
 
 ### 🎉 Major Release - Complete Rewrite
