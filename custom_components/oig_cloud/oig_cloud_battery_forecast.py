@@ -370,11 +370,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         return []
 
     def _get_solar_forecast(self) -> Dict[str, Any]:
-        """Získat solární předpověď z hourly_real_fve_total_kwh."""
+        """Získat solární předpověď z solar_forecast senzoru."""
         if not self._hass:
             return {}
 
-        sensor_id = "sensor.hourly_real_fve_total_kwh"
+        sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
         state = self._hass.states.get(sensor_id)
 
         if not state or not state.attributes:
