@@ -16,12 +16,22 @@ docker run --rm \
   -w /workspace \
   homeassistant/home-assistant:2025.1.4 \
   sh -c "
-    echo '📥 Installing test dependencies...' &&
-    pip install pytest pytest-cov pytest-asyncio pytest-homeassistant-custom-component &&
-    echo '✅ Dependencies installed' &&
-    echo '' &&
-    echo '🧪 Running tests...' &&
-    pytest tests/ -v --tb=short
+    echo "🧪 Running tests..."
+docker run --rm \
+    -v "$(pwd)":/workspace \
+    -w /workspace \
+    -e PYTHONPATH=/workspace \
+    homeassistant/home-assistant:2025.1.4 \
+    bash -c '
+echo "📥 Installing test dependencies..."
+pip install pytest pytest-cov pytest-asyncio pytest-homeassistant-custom-component
+
+echo "✅ Dependencies installed"
+echo ""
+echo "🧪 Running tests..."
+export PYTHONPATH=/workspace
+pytest tests/ -v --tb=short
+'
   "
 
 echo ""
