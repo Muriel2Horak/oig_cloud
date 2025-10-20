@@ -7324,7 +7324,16 @@
                     avgCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
 
                     // Use spot price timestamps as master timeline (includes today + tomorrow)
-                    allLabels = prices.map(p => p.time);
+                    // Format timestamps to show date + time for multi-day view
+                    allLabels = prices.map(p => {
+                        // p.time is ISO format: "2025-10-20T14:30:00"
+                        const timestamp = new Date(p.time);
+                        const day = timestamp.getDate().toString().padStart(2, '0');
+                        const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
+                        const hours = timestamp.getHours().toString().padStart(2, '0');
+                        const minutes = timestamp.getMinutes().toString().padStart(2, '0');
+                        return `${day}.${month} ${hours}:${minutes}`;
+                    });
                     datasets.push({
                         label: 'Spotová cena nákupu',
                         data: prices.map(p => p.price),
@@ -7333,6 +7342,7 @@
                         borderWidth: 2,
                         fill: false,
                         tension: 0.4,
+                        type: 'line',
                         yAxisID: 'y-price'
                     });
                 }
@@ -7359,6 +7369,7 @@
                         backgroundColor: 'rgba(102,187,106,0.1)',
                         borderWidth: 2,
                         fill: false,
+                        type: 'line',
                         tension: 0.4,
                         yAxisID: 'y-price'
                     });
@@ -7464,6 +7475,7 @@
                             borderWidth: 0,
                             fill: 'origin',
                             tension: 0.4,
+                            type: 'line',
                             yAxisID: 'y-power',
                             stack: 'solar'
                         });
@@ -7479,6 +7491,7 @@
                             borderWidth: 0,
                             fill: '-1',
                             tension: 0.4,
+                            type: 'line',
                             yAxisID: 'y-power',
                             stack: 'solar'
                         });
@@ -7497,6 +7510,7 @@
                         backgroundColor: 'transparent',
                         borderWidth: 2,
                         fill: false,
+                        type: 'line',
                         tension: 0.4,
                         yAxisID: 'y-power',
                         borderDash: [2, 2]
@@ -7510,55 +7524,66 @@
 
             console.log('[Pricing] Battery forecast sensor:', batteryForecastEntityId, batteryForecastSensor ? 'FOUND' : 'NOT FOUND');
 
-            if (batteryForecastSensor && batteryForecastSensor.attributes) {
+            if (batteryForecastSensor && batteryForecastSensor.attributes && spotSensor && spotSensor.attributes) {
                 const timelineData = batteryForecastSensor.attributes.timeline_data || [];
                 console.log('[Pricing] Timeline data length:', timelineData.length);
                 const maxCapacityKwh = batteryForecastSensor.attributes.max_capacity_kwh || 10;
+                const minCapacityKwh = batteryForecastSensor.attributes.min_capacity_kwh || 0;
+                const prices = spotSensor.attributes.prices || []; // Original ISO timestamps
 
-                if (timelineData.length > 0 && allLabels.length > 0) {
-                    // Map timeline data to 15min grid (match with spot prices)
+                if (timelineData.length > 0 && prices.length > 0) {
+                    // Map timeline data to 15min grid using original ISO timestamps
                     const batteryCapacityData = [];
+                    const batteryColors = []; // Dynamic colors based on SOC
 
-                    for (let i = 0; i < allLabels.length; i++) {
-                        const label = allLabels[i];
-                        let timestamp;
-
-                        // Parse label to ISO timestamp
-                        if (label.includes(' ')) {
-                            // Format: "YYYY-MM-DD HH:MM"
-                            timestamp = label.replace(' ', 'T') + ':00';
-                        } else {
-                            // Format: "HH:MM" - add today's date
-                            const now = new Date();
-                            const [hour, minute] = label.split(':').map(Number);
-
-                            // Detect if it's tomorrow (after midnight rollover)
-                            const labelDate = new Date(now);
-                            if (i > 0 && hour < 12 && allLabels[i-1].split(':')[0] > 12) {
-                                labelDate.setDate(labelDate.getDate() + 1);
-                            }
-
-                            labelDate.setHours(hour, minute, 0, 0);
-                            timestamp = labelDate.toISOString().substring(0, 19);
-                        }
-
+                    for (let i = 0; i < prices.length; i++) {
+                        const timestamp = prices[i].time; // ISO format: "2025-10-20T14:30:00"
+                        
                         // Find matching timeline entry
                         const timelineEntry = timelineData.find(t => t.timestamp === timestamp);
-                        batteryCapacityData.push(timelineEntry ? timelineEntry.battery_capacity_kwh : null);
+                        
+                        if (timelineEntry) {
+                            const capacity = timelineEntry.battery_capacity_kwh;
+                            batteryCapacityData.push(capacity);
+                            
+                            // Calculate SOC percentage (0-100%)
+                            const socPercent = ((capacity - minCapacityKwh) / (maxCapacityKwh - minCapacityKwh)) * 100;
+                            
+                            // Gradient: red (0%) → yellow (50%) → green (100%)
+                            let color;
+                            if (socPercent <= 50) {
+                                // Red to yellow (0-50%)
+                                const ratio = socPercent / 50;
+                                const r = 255;
+                                const g = Math.round(165 * ratio); // 0 → 165
+                                const b = 0;
+                                color = `rgba(${r}, ${g}, ${b}, 0.7)`;
+                            } else {
+                                // Yellow to green (50-100%)
+                                const ratio = (socPercent - 50) / 50;
+                                const r = Math.round(255 * (1 - ratio)); // 255 → 0
+                                const g = Math.round(165 + 90 * ratio); // 165 → 255
+                                const b = 0;
+                                color = `rgba(${r}, ${g}, ${b}, 0.7)`;
+                            }
+                            batteryColors.push(color);
+                        } else {
+                            batteryCapacityData.push(null);
+                            batteryColors.push('rgba(128,128,128,0.3)');
+                        }
                     }
 
-                    // Add battery capacity line
+                    // Add battery capacity as bar chart with gradient
                     if (batteryCapacityData.some(v => v != null)) {
                         datasets.push({
                             label: 'Predikce baterie',
                             data: batteryCapacityData,
-                            borderColor: '#00bcd4',
-                            backgroundColor: 'rgba(0,188,212,0.1)',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.4,
+                            backgroundColor: batteryColors,
+                            borderColor: batteryColors.map(c => c.replace('0.7', '1')),
+                            borderWidth: 1,
+                            type: 'bar', // Bar chart for battery
                             yAxisID: 'y-battery',
-                            borderDash: [5, 5]
+                            order: 2 // Draw after lines (lower order = drawn later)
                         });
                     }
                 }
@@ -7572,7 +7597,7 @@
                 combinedChart.update();
             } else {
                 combinedChart = new Chart(ctx, {
-                    type: 'line',
+                    type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
                     data: { labels: allLabels, datasets: datasets },
                     options: {
                         responsive: true,
