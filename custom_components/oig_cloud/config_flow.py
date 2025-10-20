@@ -2260,11 +2260,17 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=new_data, options=new_options
                 )
+            else:
+                # I když se nezměnilo heslo/username, musíme uložit nové options (např. interval)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_options
+                )
 
             # Restart integrace pro aplikování všech změn (včetně intervalu)
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            return self.async_create_entry(title="", data=new_options)
+            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+            return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
         current_data = self.config_entry.data
@@ -2354,7 +2360,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            return self.async_create_entry(title="", data=new_options)
+            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+            return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
         extended_enabled = current_options.get("enable_extended_sensors", False)
@@ -2406,13 +2413,19 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Configure statistics options."""
         if user_input is not None:
-            # Použijeme self.options místo self.config_entry.options
-            new_options = {**self.options, **user_input}
+            # OPRAVA: Použijeme self.config_entry.options místo self.options
+            new_options = {**self.config_entry.options, **user_input}
+
+            # Uložíme změny PŘED reloadem
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
 
             # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            return self.async_create_entry(title="", data=new_options)
+            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+            return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
 
@@ -2446,13 +2459,16 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
         if user_input is not None:
             new_options = {**self.config_entry.options, **user_input}
 
-            # Restart integrace pro aplikování nových nastavení
+            # Uložíme změny PŘED reloadem
             self.hass.config_entries.async_update_entry(
                 self.config_entry, options=new_options
             )
+
+            # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            return self.async_create_entry(title="", data=new_options)
+            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+            return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
         battery_enabled = current_options.get("enable_battery_prediction", False)
@@ -2909,7 +2925,13 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                                 f"🌞 Failed to trigger immediate solar forecast update: {e}"
                             )
 
-                return self.async_create_entry(title="", data=new_options)
+                # Uložíme změny PŘED reloadem
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_options
+                )
+
+                # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+                return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
         solar_enabled = current_options.get("enable_solar_forecast", False)
@@ -3619,10 +3641,16 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Aktualizovat options
             new_options = {**self.config_entry.options, **user_input}
 
+            # Uložíme změny PŘED reloadem
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+
             # Restart integrace pro aplikování změn (dashboard se musí zaregistrovat/odregistrovat)
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            return self.async_create_entry(title="", data=new_options)
+            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
+            return self.async_create_entry(title="", data={})
 
         current_options = self.config_entry.options
         dashboard_enabled = current_options.get("enable_dashboard", False)
