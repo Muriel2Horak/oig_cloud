@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "OIG Cloud - Výběr typu nastavení",
-        "description": "{info}",
+        "description": "Vyberte způsob nastavení integrace OIG Cloud",
         "data": {
           "setup_type": "Způsob nastavení"
         },
@@ -13,11 +13,11 @@
       },
       "wizard_welcome": {
         "title": "🎯 Vítejte v průvodci OIG Cloud",
-        "description": "{info}"
+        "description": "Vítejte v průvodci nastavením OIG Cloud! Tento průvodce vás krok za krokem provede nastavením integrace. Můžete se kdykoli vrátit zpět a změnit předchozí nastavení.\n\n**Co budeme konfigurovat:**\n1. Přihlašovací údaje\n2. Výběr funkcí a modulů\n3. Podrobné nastavení vybraných modulů\n4. Kontrola a dokončení\n\nKliknutím na \"Odeslat\" spustíte průvodce."
       },
       "wizard_welcome_reconfigure": {
         "title": "🔧 Změna nastavení OIG Cloud",
-        "description": "{info}"
+        "description": "Vítejte ve změně nastavení OIG Cloud! Můžete upravit existující nastavení integrace. Použijte tlačítko \"Zpět\" pro návrat k předchozím krokům.\n\nKliknutím na \"Odeslat\" zahájíte úpravy nastavení."
       },
       "wizard_credentials": {
         "title": "🔐 Přihlašovací údaje",
@@ -289,7 +289,7 @@
     "step": {
       "wizard_welcome_reconfigure": {
         "title": "🔧 Změna nastavení OIG Cloud",
-        "description": "{info}"
+        "description": "Vítejte ve změně nastavení OIG Cloud! Můžete upravit existující nastavení integrace. Použijte tlačítko \"Zpět\" pro návrat k předchozím krokům.\n\nKliknutím na \"Odeslat\" zahájíte úpravy nastavení."
       },
       "wizard_modules": {
         "title": "📦 Výběr modulů a funkcí",
