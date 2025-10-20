@@ -64,6 +64,9 @@ async def async_setup_entry(
     # Vyčistíme prázdná zařízení PŘED vytvořením nových senzorů
     await _cleanup_empty_devices(hass, entry)
 
+    # NOVÉ: Vyčistíme staré battery_prediction senzory (nahrazeny battery_forecast)
+    await _cleanup_old_battery_prediction_sensors(hass, entry)
+
     # 1. Basic sensors - only if data is available
     basic_sensors: List[Any] = []
 
@@ -487,9 +490,9 @@ async def async_setup_entry(
                 for sensor_type, config in SENSOR_TYPES.items():
                     if config.get("sensor_type_category") == "battery_prediction":
                         try:
-                            # OPRAVA: Předat analytics_device_info
+                            # OPRAVA: Předat analytics_device_info a hass
                             sensor = OigCloudBatteryForecastSensor(
-                                coordinator, sensor_type, entry, analytics_device_info
+                                coordinator, sensor_type, entry, analytics_device_info, hass
                             )
                             battery_forecast_sensors.append(sensor)
                             _LOGGER.debug(
@@ -772,3 +775,53 @@ async def _cleanup_orphaned_devices(
         )
     else:
         _LOGGER.debug("No orphaned devices found to remove")
+
+
+async def _cleanup_old_battery_prediction_sensors(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
+    """Clean up old battery_prediction sensors (replaced by battery_forecast)."""
+    from homeassistant.helpers import entity_registry as er
+
+    _LOGGER.info("Starting cleanup of old battery_prediction sensors")
+
+    entity_reg = er.async_get(hass)
+
+    # Pattern pro staré battery prediction senzory
+    # sensor.oig_{box_id}_battery_prediction_*
+    old_sensor_patterns = [
+        "_battery_prediction_current",
+        "_battery_prediction_8h",
+        "_battery_prediction_16h",
+        "_battery_prediction_24h",
+        "_battery_prediction_min",
+        "_battery_prediction_max",
+    ]
+
+    removed_count = 0
+
+    # Najít všechny entity pro tuto config entry
+    entries = er.async_entries_for_config_entry(entity_reg, config_entry.entry_id)
+
+    for entry in entries:
+        # Zkontrolovat jestli je to starý battery prediction senzor
+        for pattern in old_sensor_patterns:
+            if pattern in entry.entity_id:
+                try:
+                    entity_reg.async_remove(entry.entity_id)
+                    removed_count += 1
+                    _LOGGER.info(
+                        f"Removed old battery prediction sensor: {entry.entity_id}"
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        f"Failed to remove battery prediction sensor {entry.entity_id}: {e}"
+                    )
+                break  # Přejít na další entry
+
+    if removed_count > 0:
+        _LOGGER.info(
+            f"Battery prediction cleanup completed: removed {removed_count} sensors"
+        )
+    else:
+        _LOGGER.debug("No old battery prediction sensors found to remove")

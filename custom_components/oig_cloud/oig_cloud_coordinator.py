@@ -556,8 +556,16 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             # Importujeme battery forecast třídu
             from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
 
+            # Debug: Zkontrolovat config_entry
+            _LOGGER.debug(
+                f"🔍 Coordinator config_entry: {self.config_entry}, "
+                f"has data: {hasattr(self.config_entry, 'data') if self.config_entry else False}, "
+                f"data keys: {list(self.config_entry.data.keys()) if self.config_entry and hasattr(self.config_entry, 'data') else []}"
+            )
+
             # Získat inverter_sn z config_entry
-            inverter_sn: str = self.config_entry.data.get("inverter_sn", "unknown")
+            inverter_sn: str = self.config_entry.data.get("inverter_sn", "unknown") if self.config_entry else "unknown"
+            _LOGGER.debug(f"🔍 Inverter SN from config_entry: {inverter_sn}")
 
             # Vytvořit device_info pro Analytics Module
             from .const import DOMAIN
@@ -571,16 +579,38 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             }
 
             # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
+            # DŮLEŽITÉ: Předáme hass PŘÍMO do __init__
+            _LOGGER.debug(f"🔍 Creating temp sensor with config_entry: {self.config_entry is not None}")
             temp_sensor = OigCloudBatteryForecastSensor(
-                self, "battery_forecast", self.config_entry, device_info
+                self, "battery_forecast", self.config_entry, device_info, self.hass
             )
-            temp_sensor._hass = self.hass
+            _LOGGER.debug(f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}")
 
-            # Spustíme výpočet
-            self.battery_forecast_data = await temp_sensor._calculate_battery_forecast()
-            _LOGGER.debug(
-                "🔋 Battery forecast data updated in coordinator successfully"
-            )
+            # Spustíme výpočet - nová metoda async_update()
+            await temp_sensor.async_update()
+
+            # Získat data z timeline_data
+            if temp_sensor._timeline_data:
+                self.battery_forecast_data = {
+                    "timeline_data": temp_sensor._timeline_data,
+                    "calculation_time": (
+                        temp_sensor._last_update.isoformat()
+                        if temp_sensor._last_update
+                        else None
+                    ),
+                    "data_source": "simplified_calculation",
+                    "current_battery_kwh": (
+                        temp_sensor._timeline_data[0].get("battery_capacity_kwh", 0)
+                        if temp_sensor._timeline_data
+                        else 0
+                    ),
+                }
+                _LOGGER.debug(
+                    f"🔋 Battery forecast data updated in coordinator: {len(temp_sensor._timeline_data)} points"
+                )
+            else:
+                self.battery_forecast_data = None
+                _LOGGER.warning("🔋 Battery forecast returned no timeline data")
 
         except Exception as e:
             _LOGGER.error(

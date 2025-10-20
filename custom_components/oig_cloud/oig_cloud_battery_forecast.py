@@ -1,4 +1,4 @@
-"""Senzor pro predikci nabití baterie v průběhu dne."""
+"""Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
 import logging
 from typing import Any, Dict, List, Optional, Union
@@ -10,15 +10,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
-    """Senzor pro predikci nabití baterie."""
+    """Zjednodušený senzor pro predikci nabití baterie."""
 
     def __init__(
         self,
@@ -26,6 +25,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         sensor_type: str,
         config_entry: ConfigEntry,
         device_info: Dict[str, Any],
+        hass: Optional[HomeAssistant] = None,
     ) -> None:
         """Initialize the battery forecast sensor."""
         super().__init__(coordinator)
@@ -33,58 +33,53 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
         self._config_entry = config_entry
         self._device_info = device_info
-        self._hass: Optional[HomeAssistant] = None
+        
+        # Nastavit hass - priorita: parametr > coordinator.hass
+        self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání inverter_sn STEJNĚ jako OigCloudStatisticsSensor
-        inverter_sn = "unknown"
-
-        # Zkusit z coordinator.config_entry
+        # Získání inverter_sn - STEJNÁ LOGIKA jako OigCloudStatisticsSensor
+        self._data_key = "unknown"
+        
+        # Priorita 1: Z coordinator.config_entry.data (standardní cesta)
         if hasattr(coordinator, "config_entry") and coordinator.config_entry:
             if (
                 hasattr(coordinator.config_entry, "data")
                 and coordinator.config_entry.data
             ):
-                inverter_sn = coordinator.config_entry.data.get(
+                self._data_key = coordinator.config_entry.data.get(
                     "inverter_sn", "unknown"
                 )
-                _LOGGER.debug(
-                    f"Battery forecast: Got inverter_sn from coordinator.config_entry: {inverter_sn}"
-                )
 
-        # Fallback - zkusit získat z coordinator.data
-        if inverter_sn == "unknown" and coordinator.data:
+        # Priorita 2: Fallback - zkusit získat z coordinator.data
+        if self._data_key == "unknown" and coordinator.data:
             first_device_key = list(coordinator.data.keys())[0]
-            inverter_sn = first_device_key
-            _LOGGER.debug(
-                f"Battery forecast: Got inverter_sn from coordinator.data: {inverter_sn}"
-            )
+            self._data_key = first_device_key
 
-        if inverter_sn == "unknown":
+        if self._data_key == "unknown":
             _LOGGER.error("Cannot determine inverter_sn for battery forecast sensor")
             raise ValueError("Cannot determine inverter_sn for battery forecast sensor")
 
-        _LOGGER.debug(f"Battery forecast: Using inverter_sn: {inverter_sn}")
-
-        # Nastavit atributy senzoru
-        self._box_id = inverter_sn
+        # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
+        self._box_id = self._data_key
+        self._attr_unique_id = f"{self._data_key}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-        self._attr_name = "Predikce kapacity baterie"
-        self._attr_unique_id = f"{self._box_id}_{sensor_type}"
         self._attr_icon = "mdi:battery-charging-60"
         self._attr_native_unit_of_measurement = "kWh"
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_entity_category = None
 
-        # OPRAVA: Přepsat název podle name_cs logiky - bez replace("_", " ").title()
+        # Načíst název ze sensor types
         from .sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
         sensor_config = SENSOR_TYPES_STATISTICS.get(sensor_type, {})
         name_cs = sensor_config.get("name_cs")
         name_en = sensor_config.get("name")
-
-        # Preferujeme český název, fallback na anglický, fallback na sensor_type
         self._attr_name = name_cs or name_en or sensor_type
+
+        # Timeline data cache
+        self._timeline_data: List[Dict[str, Any]] = []
+        self._last_update: Optional[datetime] = None
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA."""
@@ -95,32 +90,6 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """Při odebrání z HA."""
         await super().async_will_remove_from_hass()
 
-    async def _wait_for_sensor(self, entity_id: str, timeout: int = 5) -> bool:
-        """
-        Počká na dostupnost senzoru.
-
-        Args:
-            entity_id: ID senzoru na který čekat
-            timeout: Max čas čekání v sekundách
-
-        Returns:
-            bool: True pokud je senzor dostupný
-        """
-        import asyncio
-
-        if not self._hass:
-            return False
-
-        for _ in range(timeout):
-            state = self._hass.states.get(entity_id)
-            if state and state.state not in ["unknown", "unavailable", None]:
-                _LOGGER.debug(f"✅ Sensor {entity_id} is available")
-                return True
-            await asyncio.sleep(1)
-
-        _LOGGER.debug(f"⚠️ Sensor {entity_id} not available after {timeout}s")
-        return False
-
     @property
     def device_info(self) -> Optional[Dict[str, Any]]:
         """Return device info - Analytics Module."""
@@ -128,1354 +97,421 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def state(self) -> Optional[Union[float, str]]:
-        """Stav senzoru - aktuální predikovaná kapacita baterie."""
-        # OPRAVA: Používat správnou strukturu dat
-        forecast_data = getattr(self.coordinator, "battery_forecast_data", None)
-
-        if not forecast_data:
+        """Stav senzoru - aktuální kapacita baterie."""
+        if not self._timeline_data:
             return None
 
-        # Vzít aktuální kapacitu z výpočtu
-        current_kwh = forecast_data.get("current_battery_kwh", 0)
-        return round(current_kwh, 2) if current_kwh > 0 else None
+        # První bod v timeline je current capacity
+        return round(self._timeline_data[0].get("battery_capacity_kwh", 0), 2)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Dodatečné atributy s daty forecast."""
-        forecast_data = getattr(self.coordinator, "battery_forecast_data", None)
-
-        if not forecast_data:
-            return {}
-
+        """Dodatečné atributy s timeline daty."""
         return {
-            # Původní kompatibilní struktura
-            "solar_today_predicted": forecast_data.get("solar_today_predicted", {}),
-            "solar_tomorrow_predicted": forecast_data.get(
-                "solar_tomorrow_predicted", {}
+            "timeline_data": self._timeline_data,
+            "calculation_time": (
+                self._last_update.isoformat() if self._last_update else None
             ),
-            "battery_today_predicted": forecast_data.get("battery_today_predicted", {}),
-            "battery_tomorrow_predicted": forecast_data.get(
-                "battery_tomorrow_predicted", {}
-            ),
-            "consumption_prediction": forecast_data.get("consumption_prediction", {}),
-            # NOVÉ: Timeline data pro dashboard
-            "timeline_data": forecast_data.get("timeline_data", []),
-            # Metadata
-            "current_battery_kwh": forecast_data.get("current_battery_kwh", 0),
-            "max_capacity_kwh": forecast_data.get("max_capacity_kwh", 0),
-            "calculation_time": forecast_data.get("calculation_time"),
-            "data_source": forecast_data.get("data_source", "unknown"),
-            # Optimalizační data
-            "charging_hours_recommended": forecast_data.get(
-                "charging_hours_recommended", []
-            ),
-            "charging_hours_today": forecast_data.get("charging_hours_today", []),
-            "charging_hours_tomorrow": forecast_data.get("charging_hours_tomorrow", []),
-            "peak_hours": forecast_data.get("peak_hours", []),
-            "off_peak_hours": forecast_data.get("off_peak_hours", []),
-            "optimization_enabled": forecast_data.get("optimization_enabled", False),
-            "battery_config": forecast_data.get("battery_config", {}),
-            # NOVÉ: Control signály pro řízení (10min předstih)
-            "control_signals": forecast_data.get("control_signals", {}),
-            "charging_state": forecast_data.get("charging_state", "idle"),
-            "next_charging_event": forecast_data.get("next_charging_event"),
-            "should_prepare_charging": forecast_data.get(
-                "should_prepare_charging", False
-            ),
-            "is_charging_active": forecast_data.get("is_charging_active", False),
-            "should_end_charging": forecast_data.get("should_end_charging", False),
+            "data_source": "simplified_calculation",
         }
 
-    async def _calculate_battery_forecast(self) -> Dict[str, Any]:
-        """Výpočet predikce nabití baterie pomocí existujících senzorů."""
-        _LOGGER.debug("🔋 Starting battery forecast calculation using existing sensors")
+    async def async_update(self) -> None:
+        """Update sensor data."""
+        await super().async_update()
 
-        calculation_time = datetime.now()
+        try:
+            # Získat všechna potřebná data
+            _LOGGER.info("Battery forecast async_update() called")
+            current_capacity = self._get_current_battery_capacity()
+            max_capacity = self._get_max_battery_capacity()
+            min_capacity = self._get_min_battery_capacity()
+            
+            _LOGGER.info("Calling _get_spot_price_timeline()...")
+            spot_prices = await self._get_spot_price_timeline()  # ASYNC!
+            _LOGGER.info(f"_get_spot_price_timeline() returned {len(spot_prices)} prices")
+            
+            solar_forecast = self._get_solar_forecast()
+            load_avg_sensors = self._get_load_avg_sensors()
 
-        # Počkat na klíčové senzory před výpočetem
-        critical_sensors = [
-            "sensor.hourly_real_fve_total_kwh",
-            f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh",
-            f"sensor.oig_{self._box_id}_batt_bat_c",
-        ]
-
-        for sensor_id in critical_sensors:
-            if not await self._wait_for_sensor(sensor_id, timeout=5):
-                _LOGGER.warning(
-                    f"🔋 Critical sensor {sensor_id} not available, continuing with fallback data"
+            if current_capacity is None or not spot_prices:
+                _LOGGER.info(
+                    f"Missing required data for battery forecast: "
+                    f"current_capacity={current_capacity}, spot_prices count={len(spot_prices)}"
                 )
+                return
 
-        # Použijeme data z existujících senzorů (synchronní operace)
-        solar_forecast_data = self._get_existing_solar_forecast()
-        consumption_stats = self._get_existing_consumption_stats()
-        current_battery_data = self._get_current_battery_state()
-        spot_prices_data = self._get_existing_spot_prices()
-
-        # Jednoduchý forecast výpočet (bez nabíjení)
-        battery_forecast_base = self._calculate_simple_battery_forecast(
-            solar_forecast_data, consumption_stats, current_battery_data
-        )
-
-        # NOVÉ: Načíst konfiguraci pro optimalizaci nabíjení
-        optimization_config = self._get_optimization_config()
-        charging_hours: List[str] = []
-        peak_hours: Dict[str, bool] = {}
-
-        # NOVÉ: Pokud máme spotové ceny a je zapnutá optimalizace, najít optimální nabíjecí hodiny
-        if spot_prices_data and optimization_config.get("enabled", False):
-            _LOGGER.info(
-                "🔋 Charging optimization is enabled, calculating optimal hours"
+            # Vypočítat timeline
+            self._timeline_data = self._calculate_timeline(
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_prices=spot_prices,
+                solar_forecast=solar_forecast,
+                load_avg_sensors=load_avg_sensors,
             )
 
-            # Identifikovat peak/off-peak hodiny
-            peak_hours = self._identify_peak_hours(
-                spot_prices_data,
-                optimization_config.get("percentile_threshold", 75.0),
-                optimization_config.get("max_price", 10.0),
-            )
-
-            # Najít optimální nabíjecí hodiny
-            charging_hours = await self._find_optimal_charging_hours(
-                battery_forecast_base.get("continuous", {}),
-                spot_prices_data,
-                peak_hours,
-                {
-                    "min_capacity_percent": optimization_config.get(
-                        "min_capacity_percent", 20.0
-                    ),
-                    "max_capacity_kwh": current_battery_data.get("max_kwh", 10.0),
-                    "charge_rate_kw": optimization_config.get("charge_rate_kw", 2.8),
-                    "target_capacity_percent": optimization_config.get(
-                        "target_capacity_percent", 80.0
-                    ),
-                    "max_price": optimization_config.get("max_price", 10.0),
-                    "charge_on_bad_weather": optimization_config.get(
-                        "charge_on_bad_weather", False
-                    ),
-                },
-            )
-
-            # Přepočítat forecast s nabíjením
-            if charging_hours:
-                battery_forecast_optimized = self._recalculate_forecast_with_charging(
-                    battery_forecast_base.get("continuous", {}),
-                    charging_hours,
-                    optimization_config.get("charge_rate_kw", 2.8),
-                    current_battery_data.get("max_kwh", 10.0),
-                )
-
-                # Aktualizovat forecast s optimalizovanými hodnotami
-                battery_forecast = battery_forecast_optimized
-            else:
-                battery_forecast = battery_forecast_base
-        else:
-            battery_forecast = battery_forecast_base
+            self._last_update = datetime.now()
             _LOGGER.debug(
-                "🔋 Charging optimization disabled or no spot prices available"
+                f"Battery forecast updated: {len(self._timeline_data)} points"
             )
 
-        # NOVÉ: Vytvoříme spojitou časovou řadu pro všechna data
-        timeline_data = self._create_combined_timeline(
-            solar_forecast_data, battery_forecast, spot_prices_data
-        )
+        except Exception as e:
+            _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
 
-        # NOVÉ: Přidat informace o nabíjení do timeline
-        timeline_data = self._enrich_timeline_with_charging(
-            timeline_data, charging_hours, peak_hours
-        )
-
-        # NOVÉ: Rozdělit nabíjecí hodiny na dnes/zítra
-        charging_today, charging_tomorrow = self._split_charging_hours_by_day(
-            charging_hours
-        )
-
-        # NOVÉ: Generovat control signály pro řízení nabíjení
-        control_signals = self._get_charging_control_signals(
-            charging_hours, pre_signal_minutes=10
-        )
-
-        return {
-            # Původní struktura pro kompatibilitu
-            "solar_today_predicted": solar_forecast_data.get(
-                "today_hourly_total_kw", {}
-            ),
-            "solar_tomorrow_predicted": solar_forecast_data.get(
-                "tomorrow_hourly_total_kw", {}
-            ),
-            "consumption_prediction": consumption_stats,
-            "battery_today_predicted": battery_forecast.get("today", {}),
-            "battery_tomorrow_predicted": battery_forecast.get("tomorrow", {}),
-            # NOVÉ: Spojitá časová řada pro dashboard
-            "timeline_data": timeline_data,
-            # NOVÉ: Optimalizační data
-            "charging_hours_recommended": charging_hours,
-            "charging_hours_today": charging_today,
-            "charging_hours_tomorrow": charging_tomorrow,
-            "peak_hours": [k for k, v in peak_hours.items() if v],
-            "off_peak_hours": [k for k, v in peak_hours.items() if not v],
-            "spot_prices": spot_prices_data,  # NOVÉ: Pro dashboard graf
-            "optimization_enabled": optimization_config.get("enabled", False),
-            # NOVÉ: Control signály pro řízení
-            "control_signals": control_signals,
-            "charging_state": control_signals.get("current_state"),
-            "next_charging_event": control_signals.get("next_event"),
-            "should_prepare_charging": control_signals.get("should_prepare_charging"),
-            "is_charging_active": control_signals.get("is_charging_active"),
-            "should_end_charging": control_signals.get("should_end_charging"),
-            # Metadata
-            "calculation_time": calculation_time.isoformat(),
-            "data_source": "existing_sensors",
-            "current_battery_kwh": current_battery_data.get("current_kwh", 0),
-            "max_capacity_kwh": current_battery_data.get("max_kwh", 10),
-            "battery_config": {
-                "min_capacity_percent": optimization_config.get(
-                    "min_capacity_percent", 20.0
-                ),
-                "charge_rate_kw": optimization_config.get("charge_rate_kw", 2.8),
-                "max_price_czk": optimization_config.get("max_price", 10.0),
-                "percentile_threshold": optimization_config.get(
-                    "percentile_threshold", 75.0
-                ),
-                "target_capacity_percent": optimization_config.get(
-                    "target_capacity_percent", 80.0
-                ),
-                "charge_on_bad_weather": optimization_config.get(
-                    "charge_on_bad_weather", False
-                ),
-            },
-        }
-
-    def _get_optimization_config(self) -> Dict[str, Any]:
-        """Načte konfiguraci pro optimalizaci nabíjení z options."""
-        if not self._config_entry:
-            return {"enabled": False}
-
-        options = self._config_entry.options
-
-        # Zkontrolovat jestli je optimalizace zapnutá
-        enabled = options.get("enable_battery_prediction", False)
-
-        return {
-            "enabled": enabled,
-            "min_capacity_percent": options.get("min_capacity_percent", 20.0),
-            "charge_rate_kw": options.get("home_charge_rate", 2.8),
-            "percentile_threshold": options.get("percentile_conf", 75.0),
-            "max_price": options.get("max_price_conf", 10.0),
-            "target_capacity_percent": options.get("target_capacity_percent", 80.0),
-            "charge_on_bad_weather": options.get("charge_on_bad_weather", False),
-        }
-
-    def _split_forecast_by_days(
-        self, continuous_forecast: Dict[str, float]
-    ) -> Dict[str, Dict[str, float]]:
-        """Rozdělí spojitý forecast zpět na dny."""
-        now = datetime.now()
-        today = now.date()
-        yesterday = (now - timedelta(days=1)).date()
-        tomorrow = (now + timedelta(days=1)).date()
-
-        result = {
-            "yesterday": {},
-            "today": {},
-            "tomorrow": {},
-            "continuous": continuous_forecast,
-        }
-
-        for timestamp_str, capacity in continuous_forecast.items():
-            timestamp = datetime.fromisoformat(timestamp_str)
-            hour_key = f"{timestamp.hour:02d}:00"
-
-            if timestamp.date() == yesterday:
-                result["yesterday"][hour_key] = capacity
-            elif timestamp.date() == today:
-                result["today"][hour_key] = capacity
-            elif timestamp.date() == tomorrow:
-                result["tomorrow"][hour_key] = capacity
-
-        return result
-
-    def _enrich_timeline_with_charging(
+    def _calculate_timeline(
         self,
-        timeline: List[Dict[str, Any]],
-        charging_hours: List[str],
-        peak_hours: Dict[str, bool],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_avg_sensors: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        """Přidá informace o nabíjení a peak hodinách do timeline."""
-        enriched = []
-
-        for point in timeline:
-            timestamp_str = point["timestamp"]
-
-            # Vytvořit hodinový klíč pro porovnání
-            try:
-                dt = datetime.fromisoformat(timestamp_str)
-                hour_key = f"{dt.strftime('%Y-%m-%d')}T{dt.hour:02d}:00:00"
-
-                # Přidat informaci o nabíjení
-                point["is_charging_recommended"] = hour_key in charging_hours
-                point["is_peak_hour"] = peak_hours.get(hour_key, False)
-
-            except (ValueError, AttributeError):
-                point["is_charging_recommended"] = False
-                point["is_peak_hour"] = False
-
-            enriched.append(point)
-
-        return enriched
-
-    def _split_charging_hours_by_day(
-        self, charging_hours: List[str]
-    ) -> tuple[List[str], List[str]]:
-        """Rozdělí nabíjecí hodiny na dnešní a zítřejší."""
-        today = datetime.now().date()
-        tomorrow = today + timedelta(days=1)
-
-        today_str = today.strftime("%Y-%m-%d")
-        tomorrow_str = tomorrow.strftime("%Y-%m-%d")
-
-        charging_today = [h for h in charging_hours if h.startswith(today_str)]
-        charging_tomorrow = [h for h in charging_hours if h.startswith(tomorrow_str)]
-
-        return charging_today, charging_tomorrow
-
-    def _get_charging_control_signals(
-        self, charging_hours: List[str], pre_signal_minutes: int = 10
-    ) -> Dict[str, Any]:
         """
-        Generuje control signály pro řízení nabíjení s předstihem.
+        Vypočítat timeline predikce baterie.
 
-        Systém potřebuje 10 minut na změnu režimu, proto:
-        - Pre-signal: Signál 10 min před začátkem nabíjení
-        - Active: Aktivní nabíjení v této hodině
-        - Post-signal: Signál 10 min před koncem (pro ukončení)
+        Args:
+            current_capacity: Aktuální kapacita baterie (kWh)
+            max_capacity: Maximální kapacita baterie (kWh)
+            min_capacity: Minimální kapacita baterie (kWh)
+            spot_prices: Timeline spotových cen (15min intervaly)
+            solar_forecast: Solární předpověď (hodinové hodnoty)
+            load_avg_sensors: Load average senzory
 
         Returns:
-            Dict s časovými okny a aktuálními stavy
+            List timeline bodů s predikcí
         """
-        now = datetime.now()
+        timeline = []
+        battery_kwh = current_capacity
 
-        # Vytvoříme timeline všech nabíjecích událostí
-        charging_timeline: List[Dict[str, Any]] = []
+        _LOGGER.debug(f"Starting calculation with capacity={battery_kwh:.2f} kWh")
 
-        for hour_str in sorted(charging_hours):
-            try:
-                charge_start = datetime.fromisoformat(hour_str)
-                charge_end = charge_start + timedelta(hours=1)
-
-                # Pre-signal začíná 10 min před nabíjením
-                pre_signal_start = charge_start - timedelta(minutes=pre_signal_minutes)
-
-                # Post-signal začíná 10 min před koncem
-                post_signal_start = charge_end - timedelta(minutes=pre_signal_minutes)
-
-                charging_timeline.append(
-                    {
-                        "pre_signal_start": pre_signal_start,
-                        "charge_start": charge_start,
-                        "post_signal_start": post_signal_start,
-                        "charge_end": charge_end,
-                        "hour_key": hour_str,
-                    }
-                )
-
-            except (ValueError, AttributeError):
+        for price_point in spot_prices:
+            timestamp_str = price_point.get("time")
+            if not timestamp_str:
                 continue
 
-        # Zjistit aktuální stav
-        current_state = "idle"
-        next_event: Optional[Dict[str, Any]] = None
-        active_charging_hour: Optional[str] = None
+            timestamp = datetime.fromisoformat(timestamp_str)
 
-        for event in charging_timeline:
-            # PRE-SIGNAL fáze (10 min před nabíjením)
-            if event["pre_signal_start"] <= now < event["charge_start"]:
-                current_state = "pre_signal"
-                next_event = {
-                    "type": "charging_start",
-                    "time": event["charge_start"],
-                    "minutes_until": int(
-                        (event["charge_start"] - now).total_seconds() / 60
-                    ),
-                }
-                active_charging_hour = event["hour_key"]
-                break
+            # Získat solar production pro tento čas (kWh za 15min)
+            solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
 
-            # ACTIVE fáze (nabíjení probíhá)
-            elif event["charge_start"] <= now < event["post_signal_start"]:
-                current_state = "charging"
-                next_event = {
-                    "type": "post_signal",
-                    "time": event["post_signal_start"],
-                    "minutes_until": int(
-                        (event["post_signal_start"] - now).total_seconds() / 60
-                    ),
-                }
-                active_charging_hour = event["hour_key"]
-                break
+            # Získat load average pro tento čas (kWh za 15min)
+            load_kwh = self._get_load_avg_for_timestamp(timestamp, load_avg_sensors)
 
-            # POST-SIGNAL fáze (10 min před koncem)
-            elif event["post_signal_start"] <= now < event["charge_end"]:
-                current_state = "post_signal"
-                next_event = {
-                    "type": "charging_end",
-                    "time": event["charge_end"],
-                    "minutes_until": int(
-                        (event["charge_end"] - now).total_seconds() / 60
-                    ),
-                }
-                active_charging_hour = event["hour_key"]
-                break
+            # Grid charging (prozatím 0, připraveno pro budoucí logiku)
+            grid_kwh = 0.0
 
-        # Pokud nejsme v žádné fázi, najít další budoucí event
-        if current_state == "idle" and charging_timeline:
-            for event in charging_timeline:
-                if event["pre_signal_start"] > now:
-                    next_event = {
-                        "type": "pre_signal",
-                        "time": event["pre_signal_start"],
-                        "minutes_until": int(
-                            (event["pre_signal_start"] - now).total_seconds() / 60
-                        ),
-                    }
-                    break
+            # Výpočet změny kapacity za 15 minut
+            # battery_kwh = předchozí + solar + grid - consumption
+            battery_kwh = battery_kwh + solar_kwh + grid_kwh - load_kwh
 
-        return {
-            "current_state": current_state,
-            "active_charging_hour": active_charging_hour,
-            "next_event": next_event,
-            "timeline": charging_timeline,
-            "pre_signal_minutes": pre_signal_minutes,
-            # Binary sensors friendly výstupy
-            "should_prepare_charging": current_state == "pre_signal",
-            "is_charging_active": current_state == "charging",
-            "should_end_charging": current_state == "post_signal",
-        }
+            # Clamp na min/max
+            if battery_kwh > max_capacity:
+                battery_kwh = max_capacity
+            if battery_kwh < min_capacity:
+                battery_kwh = min_capacity
 
-    async def _find_optimal_charging_hours(
-        self,
-        battery_forecast: Dict[str, float],
-        spot_prices: Dict[str, float],
-        peak_hours: Dict[str, bool],
-        config: Dict[str, Any],
-    ) -> List[str]:
-        """
-        NOVÝ ALGORITMUS s 15-minutovými intervaly a nabíjecími bloky:
-
-        1. Načíst spot ceny v 15min intervalech
-        2. Najít SOUVISLÉ BLOKY levných off-peak intervalů
-        3. Minimální délka bloku = 30 minut (2× 15min)
-        4. Vybrat bloky s nejnižší průměrnou cenou
-        5. Nabíjet v souvislých blocích (ne přepínat každých 15min)
-
-        DŮLEŽITÉ OMEZENÍ:
-        - Zapnutí/vypnutí nabíjení trvá ~10 minut
-        - Minimální nabíjecí blok = 30 minut (2× 15min intervaly)
-        - Preferovat delší souvislé bloky před krátkými skoky
-
-        Args:
-            battery_forecast: Predikovaná kapacita baterie {timestamp: kwh}
-            spot_prices: Spotové ceny v 15min intervalech {timestamp: czk/kwh}
-            peak_hours: Peak/off-peak označení {timestamp: bool}
-            config: Konfigurační parametry
-
-        Returns:
-            List[str]: Seznam ISO timestampů nabíjecích intervalů (15min)
-        """
-
-        # Konfigurace
-        min_capacity_percent = config.get("min_capacity_percent", 20.0)
-        target_capacity_percent = config.get("target_capacity_percent", 80.0)
-        max_capacity_kwh = config.get("max_capacity_kwh", 10.0)
-        charge_rate_kw = config.get("charge_rate_kw", 2.8)
-        max_price_czk = config.get("max_price", 10.0)
-        charge_on_bad_weather = config.get("charge_on_bad_weather", False)
-
-        # Přepočet na kWh
-        min_capacity_kwh = (min_capacity_percent / 100.0) * max_capacity_kwh
-        target_capacity_kwh = (target_capacity_percent / 100.0) * max_capacity_kwh
-
-        _LOGGER.info(
-            f"🔋 Optimization config: min={min_capacity_kwh:.2f}kWh ({min_capacity_percent}%), "
-            f"target={target_capacity_kwh:.2f}kWh ({target_capacity_percent}%), "
-            f"charge_rate={charge_rate_kw}kW, max_price={max_price_czk}CZK/kWh"
-        )
-
-        # KROK 1: Identifikovat OFF-PEAK intervaly s cenami
-        off_peak_prices: List[tuple[str, float]] = []
-
-        for time_key, is_peak in peak_hours.items():
-            if not is_peak:  # POUZE off-peak
-                price = spot_prices.get(time_key)
-                if price is not None and price <= max_price_czk:
-                    off_peak_prices.append((time_key, price))
-
-        if not off_peak_prices:
-            _LOGGER.warning("🔋 No off-peak intervals available within price limit!")
-            return []
-
-        # KROK 2: Vytvořit SOUVISLÉ BLOKY z off-peak intervalů
-        # Minimální délka bloku = 30 minut (2× 15min)
-        charging_blocks = self._create_charging_blocks(
-            off_peak_prices, min_block_duration_minutes=30
-        )
-
-        if not charging_blocks:
-            _LOGGER.warning("🔋 No charging blocks available (all too short)!")
-            return []
-
-        _LOGGER.info(
-            f"🔋 Found {len(charging_blocks)} charging blocks, "
-            f"shortest: {charging_blocks[-1]['duration_min']}min, "
-            f"longest: {charging_blocks[0]['duration_min']}min"
-        )
-        _LOGGER.debug(
-            f"🔋 Cheapest blocks: "
-            f"{[(b['start_time'], b['duration_min'], b['avg_price']) for b in charging_blocks[:5]]}"
-        )
-
-        # KROK 3: Detekce nepřízně počasí (pokud je zapnuto)
-        bad_weather_detected = False
-        if charge_on_bad_weather:
-            bad_weather_detected = await self._check_bad_weather_forecast()
-            if bad_weather_detected:
-                _LOGGER.warning(
-                    "🔋 ⚠️ BAD WEATHER detected! Preventive charging enabled"
-                )
-
-        # KROK 4: Iterativní výběr nabíjecích BLOKŮ (15min intervaly)
-        selected_blocks: List[Dict[str, Any]] = []
-        charging_intervals: List[str] = []  # Všechny 15min intervaly ze všech bloků
-        working_forecast = battery_forecast.copy()
-
-        max_iterations = 100
-        for iteration in range(max_iterations):
-            # Najít nejkritičtější čas (kde klesáme pod minimum)
-            critical_time: Optional[str] = None
-            min_capacity_time: Optional[str] = None
-            min_capacity_value = float("inf")
-
-            for time_key in sorted(working_forecast.keys()):
-                capacity = working_forecast[time_key]
-
-                # Najít minimum
-                if capacity < min_capacity_value:
-                    min_capacity_value = capacity
-                    min_capacity_time = time_key
-
-                # Kritický pokles pod minimum
-                if capacity < min_capacity_kwh and time_key not in charging_intervals:
-                    critical_time = time_key
-                    break
-
-            # KROK 5: Rozhodování o nabíjení (BLOKY)
-
-            # Případ A: KRITICKÝ stav - klesáme pod minimum
-            if critical_time:
-                _LOGGER.warning(
-                    f"🔋 ⚠️ CRITICAL: Battery will drop to {working_forecast[critical_time]:.2f}kWh "
-                    f"(below {min_capacity_kwh:.2f}kWh) at {critical_time}"
-                )
-
-                # LOGIKA: Najít bloky PŘED critical_time
-                current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:00")
-
-                # Filtrovat bloky: musí začínat PŘED critical_time
-                # A nesmí být již použité
-                blocks_before_critical = [
-                    block
-                    for block in charging_blocks
-                    if block["start_time"] < critical_time
-                    and block["start_time"] >= current_time
-                    and block not in selected_blocks
-                ]
-
-                selected_block: Optional[Dict[str, Any]] = None
-
-                if blocks_before_critical:
-                    # Vyber nejlevnější blok (již seřazené podle avg_price)
-                    selected_block = blocks_before_critical[0]
-                    _LOGGER.info(
-                        f"🔋 ✓ Found cheapest block before critical: "
-                        f"{selected_block['start_time']} - {selected_block['end_time']} "
-                        f"({selected_block['duration_min']}min) "
-                        f"at {selected_block['avg_price']:.2f} CZK/kWh avg "
-                        f"(from {len(blocks_before_critical)} options)"
-                    )
-                else:
-                    # EMERGENCY: Žádný blok před critical_time
-                    _LOGGER.error(
-                        f"🔋 ❌ No charging blocks available BEFORE critical time {critical_time}!"
-                    )
-                    _LOGGER.warning(
-                        f"🔋 💡 RECOMMENDATION: Consider charging NOW or lower max_price limit"
-                    )
-
-                    # EMERGENCY: Vytvořit "nouzový" blok z JAKÝCHKOLIV intervalů (včetně peak)
-                    # Najít všechny intervaly před critical_time
-                    emergency_intervals = [
-                        (time_key, spot_prices[time_key])
-                        for time_key in sorted(spot_prices.keys())
-                        if current_time <= time_key < critical_time
-                        and time_key not in charging_intervals
-                    ]
-
-                    if emergency_intervals:
-                        # Vytvořit bloky z emergency intervalů
-                        emergency_blocks = self._create_charging_blocks(
-                            emergency_intervals, min_block_duration_minutes=30
-                        )
-
-                        if emergency_blocks:
-                            selected_block = emergency_blocks[0]  # Nejlevnější
-                            _LOGGER.warning(
-                                f"🔋 🚨 EMERGENCY BLOCK (may include PEAK): "
-                                f"{selected_block['start_time']} - {selected_block['end_time']} "
-                                f"at {selected_block['avg_price']:.2f} CZK/kWh avg"
-                            )
-                        else:
-                            _LOGGER.error(
-                                f"🔋 ❌ CANNOT PREVENT CRITICAL! No blocks available before {critical_time}"
-                            )
-                            break
-                    else:
-                        _LOGGER.error(
-                            f"🔋 ❌ CANNOT PREVENT CRITICAL! No intervals available before {critical_time}"
-                        )
-                        break
-
-                if selected_block:
-                    # Přidat blok a všechny jeho intervaly
-                    selected_blocks.append(selected_block)
-                    charging_intervals.extend(selected_block["intervals"])
-
-                    _LOGGER.info(
-                        f"🔋 ✅ Adding charging block: {selected_block['start_time']} - {selected_block['end_time']} "
-                        f"({selected_block['duration_min']}min, {len(selected_block['intervals'])} intervals, "
-                        f"avg: {selected_block['avg_price']:.2f} CZK/kWh, "
-                        f"total: {selected_block['total_kwh']:.2f} kWh)"
-                    )
-
-                    # Přepočítat forecast se všemi nabíjecími intervaly
-                    working_forecast = self._recalculate_forecast_with_charging(
-                        working_forecast,
-                        charging_intervals,
-                        charge_rate_kw,
-                        max_capacity_kwh,
-                    )
-                    continue
-                else:
-                    break
-
-            # Případ B: Nepřízeň počasí - nabít na target
-            elif bad_weather_detected and min_capacity_value < target_capacity_kwh:
-                _LOGGER.info(
-                    f"🔋 🌧️ Bad weather mode: charging to target "
-                    f"(current min: {min_capacity_value:.2f}kWh)"
-                )
-
-                # Vybrat nejlevnější dostupný blok
-                selected_block: Optional[Dict[str, Any]] = None
-
-                for block in charging_blocks:
-                    if block not in selected_blocks:
-                        selected_block = block
-                        break
-
-                if selected_block:
-                    selected_blocks.append(selected_block)
-                    charging_intervals.extend(selected_block["intervals"])
-
-                    _LOGGER.info(
-                        f"🔋 ✅ Weather charging block: {selected_block['start_time']} - {selected_block['end_time']} "
-                        f"(avg: {selected_block['avg_price']:.2f} CZK/kWh)"
-                    )
-
-                    working_forecast = self._recalculate_forecast_with_charging(
-                        working_forecast,
-                        charging_intervals,
-                        charge_rate_kw,
-                        max_capacity_kwh,
-                    )
-                    continue
-                else:
-                    break
-
-            # Případ C: Optimální stav - žádné nabíjení potřeba
-            else:
-                _LOGGER.info(
-                    f"🔋 ✅ Battery forecast OK: minimum {min_capacity_value:.2f}kWh "
-                    f"(above {min_capacity_kwh:.2f}kWh limit)"
-                )
-                break
-
-        # KROK 6: Výstup - vrátit všechny 15min intervaly
-        final_intervals = sorted(charging_intervals)
-
-        if final_intervals:
-            total_cost = sum(
-                block["avg_price"] * block["total_kwh"] for block in selected_blocks
-            )
-            _LOGGER.info(
-                f"🔋 📊 Final plan: {len(selected_blocks)} charging blocks, "
-                f"{len(final_intervals)} total 15min intervals, "
-                f"total cost: ~{total_cost:.2f} CZK"
-            )
-            for block in sorted(selected_blocks, key=lambda x: x["start_time"]):
-                _LOGGER.info(
-                    f"🔋   • {block['start_time']} - {block['end_time']}: "
-                    f"{block['duration_min']}min, {block['avg_price']:.2f} CZK/kWh avg, "
-                    f"{block['total_kwh']:.2f} kWh"
-                )
-        else:
-            _LOGGER.info("🔋 ✅ No charging needed - battery forecast is sufficient")
-
-        return final_intervals
-
-    async def _check_bad_weather_forecast(self) -> bool:
-        """
-        Kontrola předpovědi počasí z Home Assistant Weather entity.
-
-        Automaticky detekuje weather entitu a analyzuje předpověď.
-
-        Detekuje:
-        - Bouřky (thunderstorm, lightning)
-        - Vichřice (strong wind > 60 km/h)
-        - Extrémní sníh/déšť (heavy-rain, heavy-snow)
-        - Krupobití (hail)
-
-        Returns:
-            bool: True pokud je detekována nepřízeň počasí v příštích 24h
-        """
-        try:
-            if not self._hass:
-                return False
-
-            # KROK 1: Najít weather entity (preferujeme tu co má forecast)
-            weather_entity_id: Optional[str] = None
-
-            # Zkusíme z config_flow options (pokud uživatel vybral)
-            weather_entity_id = self._config_entry.options.get("weather_entity")
-
-            # Pokud není v options, najdeme první dostupnou weather entitu
-            if not weather_entity_id:
-                weather_entity_id = self._find_weather_entity()
-
-            if not weather_entity_id:
-                _LOGGER.debug(
-                    "🌦️ No weather entity found, skipping bad weather detection"
-                )
-                return False
-
-            _LOGGER.debug(f"🌦️ Using weather entity: {weather_entity_id}")
-
-            # KROK 2: Získat weather state a forecast
-            weather_state = self._hass.states.get(weather_entity_id)
-
-            if not weather_state:
-                _LOGGER.warning(f"🌦️ Weather entity {weather_entity_id} not found")
-                return False
-
-            # KROK 3: Analyzovat aktuální stav
-            current_condition = weather_state.state.lower()
-
-            # Kritické aktuální stavy
-            critical_conditions = [
-                "lightning",
-                "lightning-rainy",
-                "pouring",
-                "hail",
-                "exceptional",
-            ]
-
-            if current_condition in critical_conditions:
-                _LOGGER.warning(f"🌦️ ⚠️ CRITICAL weather NOW: {current_condition}")
-                return True
-
-            # KROK 4: Analyzovat forecast (příštích 24 hodin)
-            forecast = weather_state.attributes.get("forecast", [])
-
-            if not forecast:
-                _LOGGER.debug("🌦️ No forecast data available")
-                return False
-
-            now = datetime.now()
-            bad_weather_hours: List[str] = []
-
-            for forecast_item in forecast:
-                try:
-                    # Parsovat čas předpovědi
-                    forecast_time_str = forecast_item.get("datetime")
-                    if not forecast_time_str:
-                        continue
-
-                    forecast_time = datetime.fromisoformat(
-                        forecast_time_str.replace("Z", "+00:00")
-                    )
-
-                    # Pouze příštích 24 hodin
-                    hours_ahead = (forecast_time - now).total_seconds() / 3600
-                    if hours_ahead < 0 or hours_ahead > 24:
-                        continue
-
-                    # Analyzovat condition
-                    condition = forecast_item.get("condition", "").lower()
-
-                    # Kritické podmínky
-                    if condition in critical_conditions:
-                        bad_weather_hours.append(
-                            f"{forecast_time.strftime('%H:%M')} ({condition})"
-                        )
-                        continue
-
-                    # Bouřky
-                    if "thunder" in condition or "storm" in condition:
-                        bad_weather_hours.append(
-                            f"{forecast_time.strftime('%H:%M')} (storm)"
-                        )
-                        continue
-
-                    # Silný vítr
-                    wind_speed = forecast_item.get("wind_speed")
-                    if wind_speed and wind_speed > 60:  # km/h
-                        bad_weather_hours.append(
-                            f"{forecast_time.strftime('%H:%M')} (wind {wind_speed}km/h)"
-                        )
-                        continue
-
-                    # Extrémní srážky
-                    precipitation = forecast_item.get("precipitation")
-                    if precipitation and precipitation > 10:  # mm/h
-                        bad_weather_hours.append(
-                            f"{forecast_time.strftime('%H:%M')} (rain {precipitation}mm)"
-                        )
-                        continue
-
-                except Exception as e:
-                    _LOGGER.debug(f"Error parsing forecast item: {e}")
-                    continue
-
-            # KROK 5: Vyhodnocení
-            if bad_weather_hours:
-                _LOGGER.warning(
-                    f"🌦️ ⚠️ BAD WEATHER FORECAST detected in next 24h: "
-                    f"{', '.join(bad_weather_hours[:3])}"  # Zobrazit max 3
-                )
-                return True
-            else:
-                _LOGGER.debug("🌦️ ✅ Weather forecast OK for next 24h")
-                return False
-
-        except Exception as e:
-            _LOGGER.error(f"🌦️ Error checking weather forecast: {e}")
-            return False
-
-    def _find_weather_entity(self) -> Optional[str]:
-        """
-        Automaticky najde první dostupnou weather entitu v HA.
-
-        Preferuje entity které mají forecast atribut.
-
-        Returns:
-            str: Entity ID weather entity nebo None
-        """
-        try:
-            if not self._hass:
-                return None
-
-            # Získat všechny weather entity
-            weather_entities: List[str] = []
-
-            for state in self._hass.states.async_all("weather"):
-                entity_id = state.entity_id
-
-                # Preferujeme entity s forecast
-                if state.attributes.get("forecast"):
-                    _LOGGER.debug(f"🌦️ Found weather entity with forecast: {entity_id}")
-                    return entity_id
-
-                weather_entities.append(entity_id)
-
-            # Pokud žádná nemá forecast, vrátíme první
-            if weather_entities:
-                _LOGGER.debug(
-                    f"🌦️ Found weather entity (no forecast): {weather_entities[0]}"
-                )
-                return weather_entities[0]
-
-            return None
-
-        except Exception as e:
-            _LOGGER.error(f"Error finding weather entity: {e}")
-            return None
-
-    # ========== METODY PRO ČTENÍ DAT ZE SENZORŮ ==========
-
-    def _get_existing_solar_forecast(self) -> Dict[str, Any]:
-        """
-        Načte data z existujícího solar forecast senzoru.
-
-        Returns:
-            Dict s hodinovými předpověďmi FVE výroby
-        """
-        if not self._hass:
-            return {}
-
-        # Senzor s hodinovou FVE předpovědí
-        solar_sensor_id = "sensor.hourly_real_fve_total_kwh"
-        solar_state = self._hass.states.get(solar_sensor_id)
-
-        if not solar_state:
-            _LOGGER.warning(f"Solar forecast sensor {solar_sensor_id} not found")
-            return {}
-
-        # Získat hodinová data z atributů
-        today_hourly = solar_state.attributes.get("today_hourly_total_kw", {})
-        tomorrow_hourly = solar_state.attributes.get("tomorrow_hourly_total_kw", {})
-
-        return {
-            "today_hourly_total_kw": today_hourly,
-            "tomorrow_hourly_total_kw": tomorrow_hourly,
-        }
-
-    def _get_existing_consumption_stats(self) -> Dict[str, Any]:
-        """
-        Načte statistiky spotřeby z analytics senzoru.
-
-        Returns:
-            Dict s průměrnou hodinovou spotřebou
-        """
-        if not self._hass:
-            return {"average_hourly_kwh": 0.5}
-
-        # Analytics senzor se spotřebou
-        analytics_sensor_id = f"sensor.oig_{self._box_id}_analytics"
-        analytics_state = self._hass.states.get(analytics_sensor_id)
-
-        if not analytics_state:
-            _LOGGER.debug(
-                f"Analytics sensor {analytics_sensor_id} not found, using default consumption"
-            )
-            return {"average_hourly_kwh": 0.5}
-
-        # Průměrná spotřeba z posledních 30 dní
-        consumption_30d = analytics_state.attributes.get("consumption_30d_kwh", 0)
-
-        # Převést na hodinový průměr
-        average_hourly = consumption_30d / (30 * 24) if consumption_30d > 0 else 0.5
-
-        return {
-            "average_hourly_kwh": round(average_hourly, 2),
-            "consumption_30d_kwh": consumption_30d,
-        }
-
-    def _get_current_battery_state(self) -> Dict[str, Any]:
-        """
-        Načte aktuální stav baterie ze senzorů.
-
-        Returns:
-            Dict s aktuální kapacitou a maximem
-        """
-        if not self._hass:
-            return {"current_kwh": 0, "max_kwh": 10.0, "current_percent": 0}
-
-        # 1. Načíst instalovanou kapacitu baterie (celková kapacita v Wh)
-        installed_capacity_sensor_id = (
-            f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
-        )
-        installed_state = self._hass.states.get(installed_capacity_sensor_id)
-
-        installed_capacity_wh = 0.0
-        if installed_state and installed_state.state not in ["unknown", "unavailable"]:
-            try:
-                installed_capacity_wh = float(installed_state.state)
-            except (ValueError, TypeError):
-                installed_capacity_wh = 0.0
-
-        # 2. Použitelná kapacita = 80% z celkové (20% buffer pro životnost baterie)
-        if installed_capacity_wh > 0:
-            max_kwh = round((installed_capacity_wh * 0.8) / 1000, 2)  # Převod Wh → kWh
-        else:
-            # Fallback na konfiguraci
-            max_kwh = self._config_entry.options.get("battery_capacity_kwh", 10.0)
-
-        # 3. Načíst aktuální stav nabití baterie (procenta)
-        percent_sensor_id = f"sensor.oig_{self._box_id}_batt_bat_c"
-        percent_state = self._hass.states.get(percent_sensor_id)
-
-        current_percent = 0.0
-        if percent_state and percent_state.state not in ["unknown", "unavailable"]:
-            try:
-                current_percent = float(percent_state.state)
-            except (ValueError, TypeError):
-                current_percent = 0.0
-
-        # 4. Vypočítat aktuální kWh z procent a použitelné kapacity
-        current_kwh = round((current_percent / 100.0) * max_kwh, 2)
-
-        _LOGGER.debug(
-            f"🔋 Battery state: installed={installed_capacity_wh}Wh, "
-            f"usable={max_kwh}kWh (80%), current={current_percent}% = {current_kwh}kWh"
-        )
-
-        return {
-            "current_kwh": current_kwh,
-            "max_kwh": max_kwh,
-            "current_percent": round(current_percent, 1),
-        }
-
-    def _get_existing_spot_prices(self) -> Dict[str, float]:
-        """
-        Načte spotové ceny z 15min spot price senzoru.
-
-        Returns:
-            Dict {timestamp: price_czk_kwh}
-        """
-        if not self._hass:
-            return {}
-
-        # 15min spot price senzor
-        spot_sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
-        spot_state = self._hass.states.get(spot_sensor_id)
-
-        if not spot_state:
-            _LOGGER.debug(f"Spot price sensor {spot_sensor_id} not found")
-            return {}
-
-        # Získat hodinové ceny z atributů
-        prices = spot_state.attributes.get("prices", [])
-
-        if not prices:
-            return {}
-
-        # Převést na dict {timestamp: price}
-        spot_prices: Dict[str, float] = {}
-
-        for interval in prices:
-            date = interval.get("date")
-            time = interval.get("time")
-            price = interval.get("price")
-
-            if date and time and price is not None:
-                # Vytvořit ISO timestamp
-                timestamp = f"{date}T{time}:00"
-                spot_prices[timestamp] = price
-
-        return spot_prices
-
-    def _calculate_simple_battery_forecast(
-        self,
-        solar_forecast: Dict[str, Any],
-        consumption_stats: Dict[str, Any],
-        battery_state: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        Jednoduchý výpočet predikce baterie bez nabíjení ze sítě.
-        NOVĚ: Pracuje s 15-minutovými intervaly!
-
-        Args:
-            solar_forecast: Hodinová předpověď FVE (stále hodiny, interpolujeme)
-            consumption_stats: Statistiky spotřeby
-            battery_state: Aktuální stav baterie
-
-        Returns:
-            Dict s předpovědí kapacity po 15-minutových intervalech
-        """
-        now = datetime.now()
-        current_capacity = battery_state.get("current_kwh", 0)
-        max_capacity = battery_state.get("max_kwh", 10.0)
-
-        # Průměrná spotřeba za hodinu → na 15min
-        average_consumption_hourly = consumption_stats.get("average_hourly_kwh", 0.5)
-        average_consumption_15min = (
-            average_consumption_hourly / 4.0
-        )  # Rozdělit na 4× 15min
-
-        today_solar = solar_forecast.get("today_hourly_total_kw", {})
-        tomorrow_solar = solar_forecast.get("tomorrow_hourly_total_kw", {})
-
-        # Spojená časová řada - 15min intervaly
-        continuous_forecast: Dict[str, float] = {}
-        capacity = current_capacity
-
-        # Zpracovat dnes + zítra (48 hodin = 192× 15min intervalů)
-        total_intervals = 48 * 4  # 192 intervalů
-
-        for interval_offset in range(total_intervals):
-            # Posun v minutách
-            minutes_offset = interval_offset * 15
-            target_time = now + timedelta(minutes=minutes_offset)
-
-            # Vytvořit timestamp pro 15min interval
-            # Zaokrouhlit na násobek 15 minut
-            minute_rounded = (target_time.minute // 15) * 15
-            target_time_rounded = target_time.replace(
-                minute=minute_rounded, second=0, microsecond=0
-            )
-
-            date_str = target_time_rounded.strftime("%Y-%m-%d")
-            time_str = target_time_rounded.strftime("%H:%M")
-            timestamp = f"{date_str}T{time_str}:00"
-
-            # Získat FVE výrobu pro tuto hodinu (interpolace z hodinových dat)
-            hour_key = f"{target_time_rounded.hour:02d}:00"
-            if target_time_rounded.date() == now.date():
-                solar_kwh_hourly = today_solar.get(hour_key, 0)
-            else:
-                solar_kwh_hourly = tomorrow_solar.get(hour_key, 0)
-
-            # FVE výroba za 15min = hodinová / 4
-            solar_kwh_15min = solar_kwh_hourly / 4.0
-
-            # Bilance: FVE - spotřeba (za 15min)
-            net_kwh = solar_kwh_15min - average_consumption_15min
-
-            # Aktualizovat kapacitu
-            capacity += net_kwh
-
-            # Omezit na rozsah 0 - max
-            capacity = max(0, min(capacity, max_capacity))
-
-            continuous_forecast[timestamp] = round(capacity, 2)
-
-        # Rozdělit na dny
-        result = self._split_forecast_by_days(continuous_forecast)
-
-        return result
-
-    def _identify_peak_hours(
-        self,
-        spot_prices: Dict[str, float],
-        percentile_threshold: float,
-        max_price: float,
-    ) -> Dict[str, bool]:
-        """
-        Identifikuje peak/off-peak hodiny podle spotových cen.
-
-        Peak hodiny = ceny nad percentil threshold NEBO nad max_price
-
-        Args:
-            spot_prices: Spotové ceny {timestamp: price}
-            percentile_threshold: Percentil pro určení peak (75.0 = top 25%)
-            max_price: Maximální cena pro off-peak
-
-        Returns:
-            Dict {timestamp: is_peak}
-        """
-        if not spot_prices:
-            return {}
-
-        prices_list = list(spot_prices.values())
-
-        # Vypočítat percentil
-        prices_sorted = sorted(prices_list)
-        percentile_index = int(len(prices_sorted) * (percentile_threshold / 100.0))
-        percentile_price = (
-            prices_sorted[percentile_index] if prices_sorted else max_price
-        )
-
-        # Použít nižší z obou limitů
-        effective_limit = min(percentile_price, max_price)
-
-        _LOGGER.debug(
-            f"🔋 Peak identification: percentile {percentile_threshold}% = {percentile_price:.2f} CZK/kWh, "
-            f"max_price = {max_price:.2f} CZK/kWh, using {effective_limit:.2f} CZK/kWh"
-        )
-
-        # Označit hodiny
-        peak_hours: Dict[str, bool] = {}
-        for timestamp, price in spot_prices.items():
-            peak_hours[timestamp] = price > effective_limit
-
-        return peak_hours
-
-    def _recalculate_forecast_with_charging(
-        self,
-        base_forecast: Dict[str, float],
-        charging_intervals: List[str],
-        charge_rate_kw: float,
-        max_capacity_kwh: float,
-    ) -> Dict[str, float]:
-        """
-        Přepočítá forecast baterie s přidáním nabíjení ze sítě.
-        NOVĚ: Pracuje s 15-minutovými intervaly!
-
-        Args:
-            base_forecast: Základní forecast bez nabíjení {timestamp: kwh}
-            charging_intervals: Seznam 15min timestampů kdy nabíjet
-            charge_rate_kw: Nabíjecí výkon [kW]
-            max_capacity_kwh: Maximální kapacita baterie
-
-        Returns:
-            Dict {timestamp: kwh} s přepočítaným forecastem
-        """
-        optimized_forecast: Dict[str, float] = {}
-
-        for timestamp in sorted(base_forecast.keys()):
-            base_capacity = base_forecast[timestamp]
-
-            # Pokud je toto nabíjecí interval, přidat nabití
-            if timestamp in charging_intervals:
-                # Nabít o charge_rate_kw za 15 minut
-                # 15min = 0.25 hodiny → energie = výkon × čas
-                charge_kwh_15min = charge_rate_kw * 0.25
-                new_capacity = base_capacity + charge_kwh_15min
-                # Omezit na maximum
-                new_capacity = min(new_capacity, max_capacity_kwh)
-                optimized_forecast[timestamp] = round(new_capacity, 2)
-            else:
-                optimized_forecast[timestamp] = base_capacity
-
-        # Vrátit jen dict, ne strukturu s klíčem "continuous"
-        return optimized_forecast
-
-    def _create_combined_timeline(
-        self,
-        solar_forecast: Dict[str, Any],
-        battery_forecast: Dict[str, Any],
-        spot_prices: Dict[str, float],
-    ) -> List[Dict[str, Any]]:
-        """
-        Vytvoří spojenou časovou řadu pro dashboard.
-
-        Args:
-            solar_forecast: FVE předpověď
-            battery_forecast: Předpověď baterie
-            spot_prices: Spotové ceny
-
-        Returns:
-            List timeline bodů
-        """
-        timeline: List[Dict[str, Any]] = []
-
-        # Získat continuous forecast
-        continuous_battery = battery_forecast.get("continuous", {})
-
-        for timestamp in sorted(continuous_battery.keys()):
-            battery_kwh = continuous_battery[timestamp]
-
-            # Najít odpovídající spotovou cenu
-            spot_price = spot_prices.get(timestamp)
-
+            # Přidat bod do timeline
             timeline.append(
                 {
-                    "timestamp": timestamp,
-                    "battery_kwh": battery_kwh,
-                    "spot_price_czk": spot_price,
+                    "timestamp": timestamp_str,
+                    "spot_price_czk": price_point.get("price", 0),
+                    "battery_capacity_kwh": round(battery_kwh, 2),
+                    "solar_production_kwh": round(solar_kwh, 2),
+                    "consumption_kwh": round(load_kwh, 2),
+                    "grid_change_kwh": round(grid_kwh, 2),
                 }
             )
 
         return timeline
 
-    def _create_charging_blocks(
-        self,
-        off_peak_prices: List[tuple[str, float]],
-        min_block_duration_minutes: int = 30,
-    ) -> List[Dict[str, Any]]:
+    def _get_current_battery_capacity(self) -> Optional[float]:
+        """Získat aktuální kapacitu baterie z remaining_usable_capacity."""
+        if not self._hass:
+            return None
+
+        sensor_id = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unknown", "unavailable"]:
+            _LOGGER.warning(f"Sensor {sensor_id} not available")
+            return None
+
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            _LOGGER.warning(f"Invalid value for {sensor_id}: {state.state}")
+            return None
+
+    def _get_max_battery_capacity(self) -> float:
+        """Získat maximální kapacitu baterie z usable_battery_capacity."""
+        if not self._hass:
+            return 10.0  # Default fallback
+
+        sensor_id = f"sensor.oig_{self._box_id}_usable_battery_capacity"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unknown", "unavailable"]:
+            _LOGGER.warning(f"Sensor {sensor_id} not available, using default 10.0")
+            return 10.0
+
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            _LOGGER.warning(f"Invalid value for {sensor_id}: {state.state}")
+            return 10.0
+
+    def _get_min_battery_capacity(self) -> float:
+        """Získat minimální kapacitu baterie z config flow."""
+        # Získat z config entry
+        if self._config_entry and self._config_entry.data:
+            min_capacity_percent = self._config_entry.data.get(
+                "min_capacity_percent", 20.0
+            )
+            max_capacity = self._get_max_battery_capacity()
+            return (min_capacity_percent / 100.0) * max_capacity
+
+        return 2.0  # Default 20% z 10kWh
+
+    async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
+        """Získat timeline spotových cen z spot_price_current_15min.
+        
+        Použijeme retry logiku protože spot_price sensor může být připravený později než battery_forecast.
         """
-        Vytvoří SOUVISLÉ BLOKY nabíjecích intervalů z off-peak cen.
-
-        Algoritmus:
-        1. Seřadit intervaly chronologicky
-        2. Najít souvislé sekvence (časově po sobě jdoucí 15min intervaly)
-        3. Vytvořit bloky minimálně 30 minut (2× 15min)
-        4. Seřadit bloky podle průměrné ceny
-
-        Args:
-            off_peak_prices: List[(timestamp, price)] off-peak intervalů
-            min_block_duration_minutes: Minimální délka bloku v minutách (default 30)
-
-        Returns:
-            List bloků, seřazené od nejlevnější průměrné ceny:
-            [
-                {
-                    'start_time': '2025-10-15T22:30:00',
-                    'end_time': '2025-10-15T23:00:00',
-                    'duration_min': 30,
-                    'intervals': ['2025-10-15T22:30:00', '2025-10-15T22:45:00'],
-                    'avg_price': 3.15,
-                    'total_kwh': 5.0  # kolik energie nabijeme (při 10kW)
-                },
-                ...
-            ]
-        """
-        if not off_peak_prices:
+        if not self._hass:
+            _LOGGER.warning("HASS not available in _get_spot_price_timeline")
             return []
 
-        # Seřadit chronologicky
-        sorted_intervals = sorted(off_peak_prices, key=lambda x: x[0])
+        sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
+        
+        # Retry logika: max 3 pokusy s 2s čekáním
+        import asyncio
+        max_retries = 3
+        retry_delay = 2.0
+        
+        for attempt in range(max_retries):
+            state = self._hass.states.get(sensor_id)
+            
+            # Debug logging - co vidíme?
+            _LOGGER.info(
+                f"Attempt {attempt+1}/{max_retries}: Checking {sensor_id} - "
+                f"state exists: {state is not None}, "
+                f"state.state: {state.state if state else 'N/A'}, "
+                f"has attributes: {state.attributes is not None if state else False}"
+            )
+            
+            # OPRAVA: Kontrolovat state.state jako OigCloudStatisticsSensor
+            if not state or state.state in ("unavailable", "unknown", None):
+                _LOGGER.info(
+                    f"Attempt {attempt+1}: Sensor {sensor_id} unavailable - "
+                    f"state.state={state.state if state else 'None'}"
+                )
+            elif state.attributes:
+                # Načíst prices z atributů (formát: [{date, time, price, tariff}, ...])
+                prices = state.attributes.get("prices", [])
+                
+                _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
+                
+                if prices:
+                    # Konvertovat na timeline formát s timestamp
+                    timeline = []
+                    for price_point in prices:
+                        date_str = price_point.get("date")  # "2025-10-20"
+                        time_str = price_point.get("time")  # "13:30"
+                        price = price_point.get("price", 0)
 
-        # Najít souvislé bloky
-        blocks: List[Dict[str, Any]] = []
-        current_block_intervals: List[tuple[str, float]] = []
+                        if not date_str or not time_str:
+                            continue
 
-        for i, (timestamp, price) in enumerate(sorted_intervals):
-            current_time = datetime.fromisoformat(timestamp)
+                        # Vytvořit ISO timestamp
+                        timestamp = f"{date_str}T{time_str}:00"
 
-            if not current_block_intervals:
-                # Začátek nového bloku
-                current_block_intervals.append((timestamp, price))
-            else:
-                # Zkontrolovat, jestli je souvislý s předchozím
-                last_timestamp = current_block_intervals[-1][0]
-                last_time = datetime.fromisoformat(last_timestamp)
-
-                time_diff = (current_time - last_time).total_seconds() / 60  # minuty
-
-                if time_diff == 15:  # Souvislý interval (15min)
-                    current_block_intervals.append((timestamp, price))
+                        timeline.append({"time": timestamp, "price": price})
+                    
+                    _LOGGER.info(f"Successfully loaded {len(timeline)} spot price points from {sensor_id}")
+                    return timeline
                 else:
-                    # Konec bloku - uložit pokud je dostatečně dlouhý
-                    if len(current_block_intervals) >= (
-                        min_block_duration_minutes / 15
-                    ):
-                        blocks.append(self._create_block_info(current_block_intervals))
+                    _LOGGER.info(f"Attempt {attempt+1}: No prices data in {sensor_id} attributes")
+            else:
+                _LOGGER.info(f"Attempt {attempt+1}: Sensor {sensor_id} has no attributes")
+            
+            # Pokud nejsme na posledním pokusu, počkáme
+            if attempt < max_retries - 1:
+                _LOGGER.info(f"Waiting {retry_delay}s before retry...")
+                await asyncio.sleep(retry_delay)
+        
+        # Všechny pokusy selhaly
+        _LOGGER.error(f"Failed to load spot price timeline after {max_retries} attempts")
+        return []
 
-                    # Začít nový blok
-                    current_block_intervals = [(timestamp, price)]
-
-        # Uložit poslední blok
-        if current_block_intervals and len(current_block_intervals) >= (
-            min_block_duration_minutes / 15
-        ):
-            blocks.append(self._create_block_info(current_block_intervals))
-
-        # Seřadit bloky podle průměrné ceny (od nejlevnější)
-        blocks.sort(key=lambda b: b["avg_price"])
-
-        return blocks
-
-    def _create_block_info(self, intervals: List[tuple[str, float]]) -> Dict[str, Any]:
-        """
-        Vytvoří info dict pro nabíjecí blok.
-
-        Args:
-            intervals: List[(timestamp, price)] souvislých intervalů
-
-        Returns:
-            Dict s informacemi o bloku
-        """
-        if not intervals:
+    def _get_solar_forecast(self) -> Dict[str, Any]:
+        """Získat solární předpověď z hourly_real_fve_total_kwh."""
+        if not self._hass:
             return {}
 
-        start_time = intervals[0][0]
-        end_time = intervals[-1][0]
+        sensor_id = "sensor.hourly_real_fve_total_kwh"
+        state = self._hass.states.get(sensor_id)
 
-        # Konec je +15 minut od posledního intervalu
-        end_datetime = datetime.fromisoformat(end_time) + timedelta(minutes=15)
-        end_time = end_datetime.strftime("%Y-%m-%dT%H:%M:00")
+        if not state or not state.attributes:
+            _LOGGER.warning(f"Sensor {sensor_id} not available")
+            return {}
 
-        duration_min = len(intervals) * 15
-        avg_price = sum(p for _, p in intervals) / len(intervals)
+        # Načíst today a tomorrow data
+        today = state.attributes.get("today", {})
+        tomorrow = state.attributes.get("tomorrow", {})
 
-        # Energie nabita při 10kW po dobu bloku
-        # 10kW * (duration_min / 60) = kWh
-        total_kwh = 10.0 * (duration_min / 60.0)
+        return {"today": today, "tomorrow": tomorrow}
 
-        return {
-            "start_time": start_time,
-            "end_time": end_time,
-            "duration_min": duration_min,
-            "intervals": [t for t, _ in intervals],
-            "avg_price": round(avg_price, 2),
-            "total_kwh": round(total_kwh, 2),
-        }
+    def _get_load_avg_sensors(self) -> Dict[str, Any]:
+        """Získat všechny load_avg senzory."""
+        if not self._hass:
+            return {}
+
+        load_sensors = {}
+
+        # Najít všechny load_avg senzory
+        for entity_id in self._hass.states.async_entity_ids("sensor"):
+            if "load_avg_" in entity_id:
+                state = self._hass.states.get(entity_id)
+                if state and state.state not in ["unknown", "unavailable"]:
+                    load_sensors[entity_id] = {
+                        "value": float(state.state),
+                        "attributes": dict(state.attributes),
+                    }
+
+        return load_sensors
+
+    def _get_solar_for_timestamp(
+        self, timestamp: datetime, solar_forecast: Dict[str, Any]
+    ) -> float:
+        """
+        Získat solar production pro daný timestamp (kWh za 15min).
+
+        Args:
+            timestamp: Timestamp pro který hledat produkci
+            solar_forecast: Dict s 'today' a 'tomorrow' hodinovými daty
+
+        Returns:
+            Solar production v kWh za 15 minut
+        """
+        # Rozhodnout jestli today nebo tomorrow
+        today = datetime.now().date()
+        is_today = timestamp.date() == today
+
+        data = solar_forecast.get("today" if is_today else "tomorrow", {})
+
+        if not data:
+            return 0.0
+
+        # Najít hodinovou hodnotu pro daný čas
+        hour_key = timestamp.strftime("%H:00")
+        hourly_kwh = data.get(hour_key, 0.0)
+
+        try:
+            hourly_kwh = float(hourly_kwh)
+        except (ValueError, TypeError):
+            return 0.0
+
+        # Převést na 15min interval (1/4 hodiny)
+        return hourly_kwh / 4.0
+
+    def _get_load_avg_for_timestamp(
+        self, timestamp: datetime, load_avg_sensors: Dict[str, Any]
+    ) -> float:
+        """
+        Získat load average pro daný timestamp (kWh za 15min).
+
+        Args:
+            timestamp: Timestamp pro který hledat spotřebu
+            load_avg_sensors: Dict všech load_avg senzorů
+
+        Returns:
+            Load average v kWh za 15 minut
+        """
+        # Zjistit den v týdnu (0=pondělí, 6=neděle)
+        is_weekend = timestamp.weekday() >= 5
+        day_type = "weekend" if is_weekend else "weekday"
+
+        # Čas v hodinách a minutách
+        time_str = timestamp.strftime("%H:%M")
+
+        # Najít odpovídající senzor
+        for entity_id, sensor_data in load_avg_sensors.items():
+            attrs = sensor_data.get("attributes", {})
+
+            # Zkontrolovat day_type
+            sensor_day_type = attrs.get("day_type", "").lower()
+            if sensor_day_type != day_type:
+                continue
+
+            # Zkontrolovat time_range
+            time_range = attrs.get("time_range", "")
+            if not time_range:
+                continue
+
+            # Parsovat time_range (např. "06:00-08:00")
+            start_time, end_time = self._parse_time_range(time_range)
+            if not start_time or not end_time:
+                continue
+
+            # Zkontrolovat jestli timestamp spadá do tohoto rozmezí
+            if self._is_time_in_range(time_str, start_time, end_time):
+                # Hodnota senzoru je v kWh, už je to průměr
+                # Převést na 15min interval (předpokládáme že je to hodinový průměr)
+                hourly_kwh = sensor_data.get("value", 0.0)
+                return hourly_kwh / 4.0
+
+        # Žádný senzor nenalezen
+        return 0.0
+
+    def _parse_time_range(self, time_range: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Parsovat time_range string.
+
+        Args:
+            time_range: String ve formátu "HH:MM-HH:MM"
+
+        Returns:
+            Tuple (start_time, end_time) jako stringy "HH:MM"
+        """
+        try:
+            parts = time_range.split("-")
+            if len(parts) != 2:
+                return None, None
+
+            start_time = parts[0].strip()
+            end_time = parts[1].strip()
+
+            # Validace formátu
+            datetime.strptime(start_time, "%H:%M")
+            datetime.strptime(end_time, "%H:%M")
+
+            return start_time, end_time
+        except (ValueError, AttributeError):
+            return None, None
+
+    def _is_time_in_range(self, time_str: str, start_time: str, end_time: str) -> bool:
+        """
+        Zkontrolovat jestli čas spadá do rozmezí.
+
+        Args:
+            time_str: Čas ve formátu "HH:MM"
+            start_time: Začátek rozmezí "HH:MM"
+            end_time: Konec rozmezí "HH:MM"
+
+        Returns:
+            True pokud čas spadá do rozmezí
+        """
+        try:
+            time = datetime.strptime(time_str, "%H:%M").time()
+            start = datetime.strptime(start_time, "%H:%M").time()
+            end = datetime.strptime(end_time, "%H:%M").time()
+
+            # Handle range přes půlnoc
+            if start <= end:
+                return start <= time < end
+            else:
+                return time >= start or time < end
+        except ValueError:
+            return False

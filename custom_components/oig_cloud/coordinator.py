@@ -229,13 +229,34 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
             temp_sensor = OigCloudBatteryForecastSensor(
-                self, "battery_forecast", self.config_entry, device_info
+                self, "battery_forecast", self.config_entry, device_info, self.hass
             )
-            temp_sensor._hass = self.hass
 
-            # Spustíme výpočet
-            self.battery_forecast_data = await temp_sensor._calculate_battery_forecast()
-            _LOGGER.debug("🔋 Battery forecast data updated in coordinator")
+            # Spustíme výpočet - nová metoda async_update()
+            await temp_sensor.async_update()
+
+            # Získat data z timeline_data
+            if temp_sensor._timeline_data:
+                self.battery_forecast_data = {
+                    "timeline_data": temp_sensor._timeline_data,
+                    "calculation_time": (
+                        temp_sensor._last_update.isoformat()
+                        if temp_sensor._last_update
+                        else None
+                    ),
+                    "data_source": "simplified_calculation",
+                    "current_battery_kwh": (
+                        temp_sensor._timeline_data[0].get("battery_capacity_kwh", 0)
+                        if temp_sensor._timeline_data
+                        else 0
+                    ),
+                }
+                _LOGGER.debug(
+                    f"🔋 Battery forecast data updated in coordinator: {len(temp_sensor._timeline_data)} points"
+                )
+            else:
+                self.battery_forecast_data = None
+                _LOGGER.warning("🔋 Battery forecast returned no timeline data")
 
         except Exception as e:
             _LOGGER.error(
