@@ -126,6 +126,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             max_capacity = self._get_max_battery_capacity()
             min_capacity = self._get_min_battery_capacity()
 
+            _LOGGER.info(
+                f"Battery capacities: current={current_capacity} kWh, "
+                f"max={max_capacity} kWh, min={min_capacity} kWh"
+            )
+
             _LOGGER.info("Calling _get_spot_price_timeline()...")
             spot_prices = await self._get_spot_price_timeline()  # ASYNC!
             _LOGGER.info(
@@ -203,6 +208,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # Grid charging (prozatím 0, připraveno pro budoucí logiku)
             grid_kwh = 0.0
+
+            # Debug první pár bodů
+            if len(timeline) < 3:
+                _LOGGER.info(
+                    f"Timeline point {len(timeline)}: {timestamp_str}, "
+                    f"battery_before={battery_kwh:.3f}, solar={solar_kwh:.3f}, "
+                    f"load={load_kwh:.3f}, grid={grid_kwh:.3f}"
+                )
 
             # Výpočet změny kapacity za 15 minut
             # battery_kwh = předchozí + solar + grid - consumption
@@ -468,10 +481,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # Zkontrolovat jestli timestamp spadá do tohoto rozmezí
             if self._is_time_in_range(time_str, start_time, end_time):
-                # Hodnota senzoru je v kWh, už je to průměr
-                # Převést na 15min interval (předpokládáme že je to hodinový průměr)
-                hourly_kwh = sensor_data.get("value", 0.0)
-                return hourly_kwh / 4.0
+                # Hodnota senzoru je ve wattech (W)
+                # 143W = 143Wh za hodinu = 0,143 kWh/h
+                # Pro 15min interval: 0,143 / 4 = 0,03575 kWh
+                watts = sensor_data.get("value", 0.0)
+                kwh_per_hour = watts / 1000.0  # W → kW
+                kwh_per_15min = kwh_per_hour / 4.0  # kWh/h → kWh/15min
+                return kwh_per_15min
 
         # Žádný senzor nenalezen
         return 0.0
