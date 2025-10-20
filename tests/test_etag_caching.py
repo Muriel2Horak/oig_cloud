@@ -17,7 +17,6 @@ def api_client() -> OigCloudApi:
         username="test@example.com",
         password="testpass",
         no_telemetry=False,
-        standard_scan_interval=30,
         timeout=30,
     )
 

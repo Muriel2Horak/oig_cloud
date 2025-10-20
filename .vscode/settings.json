@@ -1,7 +1,10 @@
 {
-    "python.analysis.extraPaths": [
-      "./custom_components",
-      "./custom_components/oig_cloud"
+    "python.analysis.diagnosticSeverityOverrides": {
+      "reportMissingImports": "none",
+      "reportMissingModuleSource": "none"
+    },
+    "python.analysis.ignore": [
+      "**/lib/**"
     ],
     "editor.formatOnSave": true,
     "editor.tabSize": 4,

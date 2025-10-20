@@ -75,6 +75,39 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
             f"extended={self._extended_update_interval}s, jitter=±{JITTER_SECONDS}s"
         )
 
+    async def _fetch_basic_data(self) -> Dict[str, Any]:
+        """Fetch basic data from API."""
+        try:
+            data: Optional[Dict[str, Any]] = await self.api.get_stats()
+            return {"basic": data if data is not None else {}}
+        except OigCloudApiError as e:
+            _LOGGER.error(f"Error fetching basic data: {e}")
+            raise UpdateFailed(f"Failed to fetch basic data: {e}")
+
+    async def _fetch_extended_data(self) -> Dict[str, Any]:
+        """Fetch extended data from API."""
+        try:
+            # Get extended stats for different time periods
+            today: datetime = datetime.now()
+            yesterday: datetime = today.replace(day=today.day - 1)
+
+            today_str: str = today.strftime("%Y-%m-%d")
+            yesterday_str: str = yesterday.strftime("%Y-%m-%d")
+
+            # Fetch different types of extended data
+            daily_data: Dict[str, Any] = await self.api.get_extended_stats(
+                name="daily", from_date=yesterday_str, to_date=today_str
+            )
+
+            monthly_data: Dict[str, Any] = await self.api.get_extended_stats(
+                name="monthly", from_date=today.strftime("%Y-%m-01"), to_date=today_str
+            )
+
+            return {"extended": {"daily": daily_data, "monthly": monthly_data}}
+        except OigCloudApiError as e:
+            _LOGGER.error(f"Error fetching extended data: {e}")
+            raise UpdateFailed(f"Failed to fetch extended data: {e}")
+
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint with jittered timing."""
         _LOGGER.warning("🔄 _async_update_data called - starting update cycle")
@@ -106,7 +139,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
                 if (
                     self._last_extended_update is None
-                    or time_since_last >= self._extended_update_interval
+                    or (time_since_last is not None and time_since_last >= self._extended_update_interval)
                 ):
                     _LOGGER.info(f"Fetching extended data")
                     try:
