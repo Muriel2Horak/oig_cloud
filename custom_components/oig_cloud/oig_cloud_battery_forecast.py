@@ -381,9 +381,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.warning(f"Sensor {sensor_id} not available")
             return {}
 
-        # Načíst today a tomorrow data
-        today = state.attributes.get("today", {})
-        tomorrow = state.attributes.get("tomorrow", {})
+        # Načíst today a tomorrow data (správné názvy atributů)
+        today = state.attributes.get("today_hourly_total_kw", {})
+        tomorrow = state.attributes.get("tomorrow_hourly_total_kw", {})
 
         # Debug logging
         if today:
@@ -447,29 +447,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return 0.0
 
         # Najít hodinovou hodnotu pro daný čas
-        # Zkusit několik formátů klíčů:
-        # 1. "HH:00" (např. "14:00")
-        # 2. "2025-10-20T14:00:00" (ISO timestamp)
-        # 3. "14:00:00" (s vteřinami)
+        # Klíče jsou ve formátu ISO timestamp: "2025-10-20T14:00:00"
+        hour_key = timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
         
-        hour_key_simple = timestamp.strftime("%H:00")
-        hour_key_iso = timestamp.replace(minute=0, second=0).isoformat()
-        hour_key_with_seconds = timestamp.strftime("%H:00:00")
-        
-        hourly_kwh = (
-            data.get(hour_key_simple) or 
-            data.get(hour_key_iso) or 
-            data.get(hour_key_with_seconds) or 
-            0.0
-        )
+        hourly_kw = data.get(hour_key, 0.0)
 
         try:
-            hourly_kwh = float(hourly_kwh)
+            hourly_kw = float(hourly_kw)
         except (ValueError, TypeError):
             _LOGGER.warning(
                 f"Invalid solar value for {timestamp.strftime('%H:%M')}: "
-                f"{hourly_kwh} (type={type(hourly_kwh)}), "
-                f"tried keys: {hour_key_simple}, {hour_key_iso}, {hour_key_with_seconds}"
+                f"{hourly_kw} (type={type(hourly_kw)}), key={hour_key}"
             )
             return 0.0
 
@@ -477,11 +465,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         if timestamp.hour in [14, 15, 16]:
             _LOGGER.debug(
                 f"Solar for {timestamp.strftime('%H:%M')}: "
-                f"hourly={hourly_kwh} kWh, 15min={hourly_kwh/4.0:.3f} kWh"
+                f"key={hour_key}, kW={hourly_kw}, 15min_kWh={hourly_kw/4.0:.3f}"
             )
 
-        # Převést na 15min interval (1/4 hodiny)
-        return hourly_kwh / 4.0
+        # Převést na 15min interval
+        # Hodnota je v kW (průměrný výkon za hodinu)
+        # Pro 15min: kW * 0.25h = kWh
+        return hourly_kw / 4.0
 
     def _get_load_avg_for_timestamp(
         self, timestamp: datetime, load_avg_sensors: Dict[str, Any]
