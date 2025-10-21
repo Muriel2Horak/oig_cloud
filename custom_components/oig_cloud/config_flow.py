@@ -1,6 +1,7 @@
 import voluptuous as vol
 import logging
 import asyncio
+import aiohttp
 from typing import Dict, Any, Optional
 from homeassistant import config_entries
 from homeassistant.config_entries import FlowResult
@@ -29,6 +30,10 @@ class InvalidAuth(Exception):
 
 class LiveDataNotEnabled(Exception):
     """Error to indicate live data are not enabled in OIG Cloud app."""
+
+
+class InvalidSolarForecastApiKey(Exception):
+    """Error to indicate invalid Solar Forecast API key."""
 
 
 async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -60,6 +65,69 @@ async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
         raise CannotConnect
 
     return {"title": DEFAULT_NAME}
+
+
+async def validate_solar_forecast_api_key(
+    api_key: str, lat: float = 50.1219800, lon: float = 13.9373742
+) -> bool:
+    """Validate Solar Forecast API key by making a test request.
+
+    Args:
+        api_key: The API key to validate
+        lat: Latitude for test request (default: Prague)
+        lon: Longitude for test request (default: Prague)
+
+    Returns:
+        True if API key is valid, False otherwise
+
+    Raises:
+        InvalidSolarForecastApiKey: If API key is invalid
+    """
+    if not api_key or not api_key.strip():
+        # Prázdný klíč je OK - použije se veřejné API s limity
+        return True
+
+    # Test URL s API klíčem - použijeme minimální parametry
+    test_url = (
+        f"https://api.forecast.solar/{api_key.strip()}/estimate/{lat}/{lon}/35/0/1"
+    )
+
+    _LOGGER.debug(f"🔑 Validating Solar Forecast API key: {test_url[:50]}...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(test_url, timeout=10) as response:
+                if response.status == 200:
+                    _LOGGER.info("🔑 Solar Forecast API key validation: SUCCESS")
+                    return True
+                elif response.status == 401:
+                    # Unauthorized - špatný API klíč
+                    _LOGGER.warning(
+                        f"🔑 Solar Forecast API key validation: UNAUTHORIZED (401)"
+                    )
+                    raise InvalidSolarForecastApiKey(
+                        "API key is invalid or unauthorized"
+                    )
+                elif response.status == 429:
+                    # Rate limit - klíč je platný, ale překročen limit
+                    _LOGGER.warning(
+                        f"🔑 Solar Forecast API key validation: RATE LIMITED (429) - but key seems valid"
+                    )
+                    return True  # Klíč je OK, jen je rate limited
+                else:
+                    error_text = await response.text()
+                    _LOGGER.error(
+                        f"🔑 Solar Forecast API validation failed with status {response.status}: {error_text}"
+                    )
+                    raise InvalidSolarForecastApiKey(
+                        f"API returned status {response.status}"
+                    )
+    except aiohttp.ClientError as e:
+        _LOGGER.error(f"🔑 Solar Forecast API validation network error: {e}")
+        raise InvalidSolarForecastApiKey(f"Network error: {e}")
+    except asyncio.TimeoutError:
+        _LOGGER.error("🔑 Solar Forecast API validation timeout")
+        raise InvalidSolarForecastApiKey("Request timeout")
 
 
 # Nové konstanty pro skenovací intervaly
@@ -1778,16 +1846,14 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required("setup_type", default="wizard"): vol.In(
                         {
-                            "wizard": "🧙‍♂️ Průvodce nastavením (doporučeno)",
-                            "quick": "⚡ Rychlé nastavení (jen přihlášení)",
-                            "import": "📥 Import z YAML konfigurace",
+                            "wizard": "wizard",
+                            "quick": "quick",
+                            "import": "import",
                         }
                     )
                 }
             ),
-            description_placeholders={
-                "info": "Vyberte způsob nastavení integrace OIG Cloud"
-            },
+            description_placeholders=self._get_step_placeholders("user"),
         )
 
     async def async_step_quick_setup(
@@ -2651,13 +2717,36 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 else:
                     api_key = str(api_key).strip()
 
-                # VŽDY uložit API klíč (i prázdný)
-                new_options["solar_forecast_api_key"] = api_key
+                # VALIDACE API KLÍČE - pokud je zadaný, zkontrolujeme, zda funguje
+                if api_key:  # Pouze pokud není prázdný
+                    try:
+                        lat = float(
+                            user_input.get("solar_forecast_latitude", 50.1219800)
+                        )
+                        lon = float(
+                            user_input.get("solar_forecast_longitude", 13.9373742)
+                        )
 
-                # Debug log pro kontrolu
-                _LOGGER.info(
-                    f"🔑 Solar forecast API key saved: '{api_key}' (empty: {not bool(api_key)})"
-                )
+                        _LOGGER.info(f"🔑 Validating Solar Forecast API key...")
+                        await validate_solar_forecast_api_key(api_key, lat, lon)
+                        _LOGGER.info(f"🔑 API key validation successful!")
+                    except InvalidSolarForecastApiKey as e:
+                        _LOGGER.error(f"🔑 API key validation failed: {e}")
+                        errors["solar_forecast_api_key"] = "invalid_api_key"
+                    except Exception as e:
+                        _LOGGER.error(f"🔑 API key validation error: {e}")
+                        errors["solar_forecast_api_key"] = "validation_failed"
+
+                # VŽDY uložit API klíč (i prázdný) - ale pouze pokud prošel validací
+                if "solar_forecast_api_key" not in errors:
+                    new_options["solar_forecast_api_key"] = api_key
+
+                    # Debug log pro kontrolu
+                    _LOGGER.info(
+                        f"🔑 Solar forecast API key saved: '{api_key[:10]}...' (empty: {not bool(api_key)})"
+                        if api_key
+                        else "🔑 Solar forecast API key saved: (empty)"
+                    )
 
                 mode = user_input.get("solar_forecast_mode", "daily_optimized")
 
@@ -2786,18 +2875,45 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                         except (ValueError, TypeError):
                             errors["base"] = "invalid_string2_params"
             else:
-                # OPRAVA 2: API klíč explicitně uložíme i když je modul vypnutý
+                # Solar forecast je vypnutý, ale uložíme API klíč pro příští zapnutí
                 api_key = user_input.get("solar_forecast_api_key")
                 if api_key is None:
                     api_key = ""
                 else:
                     api_key = str(api_key).strip()
-                new_options["solar_forecast_api_key"] = api_key
 
-                # Debug log pro kontrolu
-                _LOGGER.info(
-                    f"🔑 Solar forecast disabled, API key saved: '{api_key}' (empty: {not bool(api_key)})"
-                )
+                # VALIDACE API KLÍČE - i když je modul vypnutý, validujeme klíč pokud je zadaný
+                if api_key:  # Pouze pokud není prázdný
+                    try:
+                        lat = float(
+                            user_input.get("solar_forecast_latitude", 50.1219800)
+                        )
+                        lon = float(
+                            user_input.get("solar_forecast_longitude", 13.9373742)
+                        )
+
+                        _LOGGER.info(
+                            f"🔑 Validating Solar Forecast API key (module disabled)..."
+                        )
+                        await validate_solar_forecast_api_key(api_key, lat, lon)
+                        _LOGGER.info(f"🔑 API key validation successful!")
+                    except InvalidSolarForecastApiKey as e:
+                        _LOGGER.error(f"🔑 API key validation failed: {e}")
+                        errors["solar_forecast_api_key"] = "invalid_api_key"
+                    except Exception as e:
+                        _LOGGER.error(f"🔑 API key validation error: {e}")
+                        errors["solar_forecast_api_key"] = "validation_failed"
+
+                # Uložíme API klíč pouze pokud prošel validací
+                if "solar_forecast_api_key" not in errors:
+                    new_options["solar_forecast_api_key"] = api_key
+
+                    # Debug log pro kontrolu
+                    _LOGGER.info(
+                        f"🔑 Solar forecast disabled, API key saved: '{api_key[:10]}...' (empty: {not bool(api_key)})"
+                        if api_key
+                        else "🔑 Solar forecast disabled, API key saved: (empty)"
+                    )
 
                 # DŮLEŽITÉ: Když je solar forecast vypnutý, VŽDY vypneme všechny stringy
                 # ALE ponecháme všechny parametry pro příští zapnutí

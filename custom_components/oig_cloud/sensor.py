@@ -492,7 +492,11 @@ async def async_setup_entry(
                         try:
                             # OPRAVA: Předat analytics_device_info a hass
                             sensor = OigCloudBatteryForecastSensor(
-                                coordinator, sensor_type, entry, analytics_device_info, hass
+                                coordinator,
+                                sensor_type,
+                                entry,
+                                analytics_device_info,
+                                hass,
                             )
                             battery_forecast_sensors.append(sensor)
                             _LOGGER.debug(

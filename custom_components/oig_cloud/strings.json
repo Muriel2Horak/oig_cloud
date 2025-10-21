@@ -249,6 +249,8 @@
       "live_data_not_confirmed": "Musíte potvrdit, že máte v aplikaci zapnutá 'Živá data'",
       "solar_forecast_no_strings": "Musíte povolit alespoň jeden string",
       "solar_forecast_invalid_api_key": "Neplatný API klíč pro Forecast.Solar",
+      "invalid_api_key": "Neplatný API klíč - ověřte, že je správně zadaný a je aktivní na forecast.solar",
+      "validation_failed": "Chyba při ověřování API klíče - zkontrolujte připojení k internetu",
       "invalid_coordinates": "Neplatné GPS souřadnice",
       "invalid_interval": "Interval musí být v povoleném rozsahu",
       "interval_too_short": "⚠️ Standardní interval je příliš krátký (minimálně 30 sekund)",

@@ -472,5 +472,24 @@
         }
       }
     }
+  },
+  "selector": {
+    "setup_type": {
+      "options": {
+        "wizard": "🧙‍♂️ Průvodce nastavením (doporučeno)",
+        "quick": "⚡ Rychlé nastavení",
+        "import": "📥 Import z YAML"
+      }
+    },
+    "set_box_mode": {
+      "options": {
+        "Home 1": "Home 1",
+        "Home 2": "Home 2",
+        "Home 3": "Home 3",
+        "Home UPS": "Home UPS",
+        "Home 5": "Home 5",
+        "Home 6": "Home 6"
+      }
+    }
   }
 }

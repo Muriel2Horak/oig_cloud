@@ -37,27 +37,34 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání inverter_sn - STEJNÁ LOGIKA jako OigCloudStatisticsSensor
-        self._data_key = "unknown"
+        # Získání box_id (inverter_sn) - STEJNÁ LOGIKA jako OigCloudStatisticsSensor
+        # Priorita: coordinator.data > config_entry.data
+        self._data_key = None
 
-        # Priorita 1: Z coordinator.config_entry.data (standardní cesta)
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry:
-            if (
-                hasattr(coordinator.config_entry, "data")
-                and coordinator.config_entry.data
-            ):
-                self._data_key = coordinator.config_entry.data.get(
-                    "inverter_sn", "unknown"
-                )
+        if coordinator and coordinator.data:
+            # Získat první klíč z coordinator.data (to je box_id)
+            if isinstance(coordinator.data, dict) and coordinator.data:
+                first_key = next(iter(coordinator.data.keys()), None)
+                if first_key:
+                    self._data_key = first_key
+                    _LOGGER.debug(f"Got box_id from coordinator.data: {self._data_key}")
 
-        # Priorita 2: Fallback - zkusit získat z coordinator.data
-        if self._data_key == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            self._data_key = first_device_key
+        # Fallback: config_entry.data
+        if not self._data_key:
+            if hasattr(coordinator, "config_entry") and coordinator.config_entry:
+                if (
+                    hasattr(coordinator.config_entry, "data")
+                    and coordinator.config_entry.data
+                ):
+                    self._data_key = coordinator.config_entry.data.get("inverter_sn")
+                    if self._data_key:
+                        _LOGGER.debug(
+                            f"Got box_id from config_entry.data: {self._data_key}"
+                        )
 
-        if self._data_key == "unknown":
-            _LOGGER.error("Cannot determine inverter_sn for battery forecast sensor")
-            raise ValueError("Cannot determine inverter_sn for battery forecast sensor")
+        if not self._data_key:
+            _LOGGER.error("Cannot determine box_id for battery forecast sensor")
+            raise ValueError("Cannot determine box_id for battery forecast sensor")
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
         self._box_id = self._data_key
@@ -107,12 +114,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Dodatečné atributy s timeline daty."""
+        # HA databáze má limit 16KB na atributy
+        # Timeline s 135 body (každý ~120 bytes) = ~16KB
+        # Vrátíme CELOU timeline pro dashboard, ale s kompaktním formátem
         return {
-            "timeline_data": self._timeline_data,
+            "timeline_data": self._timeline_data,  # Celá timeline pro chart
             "calculation_time": (
                 self._last_update.isoformat() if self._last_update else None
             ),
             "data_source": "simplified_calculation",
+            "max_capacity_kwh": self._get_max_battery_capacity(),
+            "min_capacity_kwh": self._get_min_battery_capacity(),
         }
 
     async def async_update(self) -> None:
@@ -449,7 +461,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Najít hodinovou hodnotu pro daný čas
         # Klíče jsou ve formátu ISO timestamp: "2025-10-20T14:00:00"
         hour_key = timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
-        
+
         hourly_kw = data.get(hour_key, 0.0)
 
         try:

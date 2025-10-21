@@ -356,6 +356,13 @@
     }
   },
   "selector": {
+    "setup_type": {
+      "options": {
+        "wizard": "🧙‍♂️ Setup Wizard (recommended)",
+        "quick": "⚡ Quick Setup",
+        "import": "📥 Import from YAML"
+      }
+    },
     "set_box_mode": {
       "options": {
         "Home 1": "Home 1",

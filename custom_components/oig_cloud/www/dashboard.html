@@ -5672,7 +5672,21 @@
                 }
 
                 const sensorPrefix = `sensor.oig_${INVERTER_SN}_${sensorName}`;
-                const entityId = Object.keys(hass.states).find(id => id.startsWith(sensorPrefix));
+
+                // Find matching entity with strict pattern:
+                // - sensor.oig_<SN>_<name> (exact match)
+                // - sensor.oig_<SN>_<name>_2, _3, etc. (with numeric suffix)
+                const entityId = Object.keys(hass.states).find(id => {
+                    if (id === sensorPrefix) {
+                        return true; // Exact match
+                    }
+                    if (id.startsWith(sensorPrefix + '_')) {
+                        // Check if suffix is numeric (e.g., _2, _3)
+                        const suffix = id.substring(sensorPrefix.length + 1);
+                        return /^\d+$/.test(suffix);
+                    }
+                    return false;
+                });
 
                 if (!entityId) {
                     console.warn(`[Shield] Sensor not found with prefix: ${sensorPrefix}`);
@@ -7282,6 +7296,33 @@
         }
         let combinedChart = null;
 
+        // Helper funkce pro detekci theme a barvy
+        function isLightTheme() {
+            try {
+                const haElement = parent.document.querySelector('home-assistant');
+                if (haElement) {
+                    const computedStyle = getComputedStyle(haElement);
+                    const primaryBg = computedStyle.getPropertyValue('--primary-background-color');
+                    if (primaryBg) {
+                        const rgb = primaryBg.match(/\d+/g);
+                        if (rgb && rgb.length >= 3) {
+                            const brightness = (parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2])) / 3;
+                            return brightness > 128;
+                        }
+                    }
+                }
+            } catch (e) {}
+            return false; // Default: dark theme
+        }
+
+        function getTextColor() {
+            return isLightTheme() ? '#333333' : '#ffffff';
+        }
+
+        function getGridColor() {
+            return isLightTheme() ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
+        }
+
         function getBoxId() {
             const hass = getHass();
             if (!hass || !hass.states) return null;
@@ -7335,7 +7376,7 @@
                             // "HH:MM" format - keep as is for backward compatibility
                             return p.time;
                         }
-                        
+
                         const day = timestamp.getDate().toString().padStart(2, '0');
                         const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
                         const hours = timestamp.getHours().toString().padStart(2, '0');
@@ -7542,72 +7583,64 @@
                 if (timelineData.length > 0 && prices.length > 0) {
                     // Map timeline data to 15min grid using original ISO timestamps
                     const batteryCapacityData = [];
-                    const batteryColors = []; // Dynamic colors based on SOC
 
                     for (let i = 0; i < prices.length; i++) {
                         let timestamp = prices[i].time;
-                        
+
                         // Convert "HH:MM" format to ISO timestamp for matching
                         if (!timestamp.includes('T') && !timestamp.includes('-')) {
                             // Format is "HH:MM" - need to convert to ISO
                             const now = new Date();
                             const [hour, minute] = timestamp.split(':').map(Number);
-                            
+
                             // Detect if it's tomorrow (after midnight rollover)
                             const labelDate = new Date(now);
-                            if (i > 0 && hour < 12 && prices[i-1].time.split(':')[0] > 12) {
-                                labelDate.setDate(labelDate.getDate() + 1);
+                            if (i > 0) {
+                                // Compare with previous timestamp to detect day boundary
+                                const prevTime = prices[i-1].time;
+                                let prevHour;
+                                if (prevTime.includes('T')) {
+                                    prevHour = new Date(prevTime).getHours();
+                                } else {
+                                    prevHour = parseInt(prevTime.split(':')[0]);
+                                }
+                                // If previous hour was late (>12) and current is early (<12), it's tomorrow
+                                if (hour < 12 && prevHour > 12) {
+                                    labelDate.setDate(labelDate.getDate() + 1);
+                                }
                             }
-                            
+
                             labelDate.setHours(hour, minute, 0, 0);
                             timestamp = labelDate.toISOString().substring(0, 19);
                         }
-                        
+
                         // Find matching timeline entry
                         const timelineEntry = timelineData.find(t => t.timestamp === timestamp);
-                        
+
                         if (timelineEntry) {
                             const capacity = timelineEntry.battery_capacity_kwh;
                             batteryCapacityData.push(capacity);
-                            
-                            // Calculate SOC percentage (0-100%)
-                            const socPercent = ((capacity - minCapacityKwh) / (maxCapacityKwh - minCapacityKwh)) * 100;
-                            
-                            // Gradient: red (0%) → yellow (50%) → green (100%)
-                            let color;
-                            if (socPercent <= 50) {
-                                // Red to yellow (0-50%)
-                                const ratio = socPercent / 50;
-                                const r = 255;
-                                const g = Math.round(165 * ratio); // 0 → 165
-                                const b = 0;
-                                color = `rgba(${r}, ${g}, ${b}, 0.7)`;
-                            } else {
-                                // Yellow to green (50-100%)
-                                const ratio = (socPercent - 50) / 50;
-                                const r = Math.round(255 * (1 - ratio)); // 255 → 0
-                                const g = Math.round(165 + 90 * ratio); // 165 → 255
-                                const b = 0;
-                                color = `rgba(${r}, ${g}, ${b}, 0.7)`;
-                            }
-                            batteryColors.push(color);
                         } else {
                             batteryCapacityData.push(null);
-                            batteryColors.push('rgba(128,128,128,0.3)');
                         }
                     }
 
-                    // Add battery capacity as bar chart with gradient
+                    // Add battery capacity as smooth line
                     if (batteryCapacityData.some(v => v != null)) {
                         datasets.push({
-                            label: 'Predikce baterie',
+                            label: 'Kapacita baterie',
                             data: batteryCapacityData,
-                            backgroundColor: batteryColors,
-                            borderColor: batteryColors.map(c => c.replace('0.7', '1')),
-                            borderWidth: 1,
-                            type: 'bar', // Bar chart for battery
+                            borderColor: '#00bcd4',
+                            backgroundColor: 'rgba(0,188,212,0.15)',
+                            borderWidth: 3,
+                            fill: true,
+                            type: 'line',
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#00bcd4',
                             yAxisID: 'y-battery',
-                            order: 2 // Draw after lines (lower order = drawn later)
+                            order: 1 // Draw before other lines
                         });
                     }
                 }
@@ -7632,7 +7665,15 @@
                             tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#ffffff', bodyColor: '#ffffff' }
                         },
                         scales: {
-                            x: { ticks: { color: '#ffffff', maxRotation: 45, minRotation: 45, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                            x: {
+                                ticks: {
+                                    color: getTextColor(),
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    font: { size: 10 }
+                                },
+                                grid: { color: getGridColor() }
+                            },
                             'y-price': {
                                 type: 'linear',
                                 position: 'left',

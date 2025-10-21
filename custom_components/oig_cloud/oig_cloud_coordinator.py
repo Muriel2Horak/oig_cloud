@@ -564,7 +564,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             )
 
             # Získat inverter_sn z config_entry
-            inverter_sn: str = self.config_entry.data.get("inverter_sn", "unknown") if self.config_entry else "unknown"
+            inverter_sn: str = (
+                self.config_entry.data.get("inverter_sn", "unknown")
+                if self.config_entry
+                else "unknown"
+            )
             _LOGGER.debug(f"🔍 Inverter SN from config_entry: {inverter_sn}")
 
             # Vytvořit device_info pro Analytics Module
@@ -580,11 +584,15 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
             # DŮLEŽITÉ: Předáme hass PŘÍMO do __init__
-            _LOGGER.debug(f"🔍 Creating temp sensor with config_entry: {self.config_entry is not None}")
+            _LOGGER.debug(
+                f"🔍 Creating temp sensor with config_entry: {self.config_entry is not None}"
+            )
             temp_sensor = OigCloudBatteryForecastSensor(
                 self, "battery_forecast", self.config_entry, device_info, self.hass
             )
-            _LOGGER.debug(f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}")
+            _LOGGER.debug(
+                f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}"
+            )
 
             # Spustíme výpočet - nová metoda async_update()
             await temp_sensor.async_update()
