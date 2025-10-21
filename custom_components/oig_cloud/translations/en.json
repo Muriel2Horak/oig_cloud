@@ -17,7 +17,7 @@
       },
       "wizard_welcome_reconfigure": {
         "title": "🔧 OIG Cloud Configuration Change",
-        "description": "{info}"
+        "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup."
       },
       "wizard_credentials": {
         "title": "🔐 Login Credentials",
@@ -510,7 +510,7 @@
       },
       "wizard_welcome_reconfigure": {
         "title": "🔧 OIG Cloud Configuration Change",
-        "description": "{info}"
+        "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup."
       },
       "wizard_modules": {
         "title": "📦 Module and Feature Selection",

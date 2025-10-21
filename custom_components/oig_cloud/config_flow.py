@@ -960,6 +960,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "step": f"Krok {current} z {total}",
             "progress": progress_bar,
         }
+
         # Přidat další placeholders podle potřeby
         placeholders.update(kwargs)
         return placeholders
@@ -2116,25 +2117,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="wizard_welcome_reconfigure",
             data_schema=vol.Schema({}),
-            description_placeholders={
-                "info": """
-🔧 **Změna nastavení OIG Cloud**
-
-Tento průvodce vás provede úpravou konfigurace integrace.
-
-**Co můžete změnit:**
-• 📦 Zapnout/vypnout moduly a funkce
-• ⏱️ Upravit intervaly načítání dat
-• ☀️ Změnit nastavení solární předpovědi
-• 🔋 Upravit parametry predikce baterie
-• 💰 Změnit cenové nastavení
-• ⚡ Upravit rozšířené senzory
-
-**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.
-
-Kliknutím na "Odeslat" pokračujte v nastavení.
-                """.strip()
-            },
         )
 
     async def async_step_wizard_summary(

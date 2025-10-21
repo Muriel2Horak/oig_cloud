@@ -17,7 +17,7 @@
       },
       "wizard_welcome_reconfigure": {
         "title": "🔧 Změna nastavení OIG Cloud",
-        "description": "{info}"
+        "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení."
       },
       "wizard_credentials": {
         "title": "🔐 Přihlašovací údaje",
@@ -289,7 +289,7 @@
     "step": {
       "wizard_welcome_reconfigure": {
         "title": "🔧 Změna nastavení OIG Cloud",
-        "description": "{info}"
+        "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení."
       },
       "wizard_modules": {
         "title": "📦 Výběr modulů a funkcí",
