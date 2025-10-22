@@ -203,7 +203,8 @@ class OigBatteryForecastCard extends HTMLElement {
             chart: {
                 type: 'line',
                 height: 500,
-                stacked: false,
+                stacked: true,  // Zapnout stacking pro area série
+                stackType: 'normal',  // Normální sčítání
                 animations: {
                     enabled: true,
                     easing: 'easeinout',
@@ -244,44 +245,52 @@ class OigBatteryForecastCard extends HTMLElement {
                     title: {
                         text: 'Kapacita (kWh)',
                         style: {
-                            fontSize: '12px'
+                            fontSize: '12px',
+                            color: '#00E396'
                         }
                     },
                     min: 0,
                     max: undefined, // Bude nastaveno dynamicky
                     labels: {
-                        formatter: (val) => val ? val.toFixed(1) : '0'
+                        formatter: (val) => val ? val.toFixed(1) : '0',
+                        style: {
+                            colors: '#00E396'
+                        }
                     }
                 },
                 {
-                    seriesName: 'Výroba',
+                    seriesName: 'Nabíjení ze sítě',
                     opposite: true,
                     title: {
-                        text: 'Výkon (kW)',
+                        text: 'Přírůstek (kWh/15min)',
                         style: {
-                            fontSize: '12px'
+                            fontSize: '12px',
+                            color: '#2196F3'
                         }
                     },
                     min: 0,
+                    max: 3,  // Max přírůstek za 15min
                     labels: {
-                        formatter: (val) => val ? val.toFixed(1) : '0'
+                        formatter: (val) => val ? val.toFixed(2) : '0',
+                        style: {
+                            colors: '#2196F3'
+                        }
                     }
                 }
             ],
             stroke: {
-                width: [0, 3, 3, 0],
+                width: [3, 0, 0],  // line=3, area=0
                 curve: 'smooth'
             },
             fill: {
-                type: ['gradient', 'solid', 'solid', 'solid'],
-                gradient: {
-                    shadeIntensity: 1,
-                    opacityFrom: 0.7,
-                    opacityTo: 0.2,
-                    stops: [0, 90, 100]
-                }
+                type: ['solid', 'solid', 'solid'],
+                opacity: [1, 0.7, 0.7],  // line plná, plochy průhledné
             },
-            colors: ['#FF9800', '#4CAF50', '#F44336', '#2196F3'],
+            colors: [
+                '#00E396',  // Čára baterie - tyrkysová/zelená
+                '#2196F3',  // Grid charge - modrá
+                '#4CAF50'   // Solar charge - zelená
+            ],
             legend: {
                 show: true,
                 position: 'bottom',
@@ -481,40 +490,75 @@ class OigBatteryForecastCard extends HTMLElement {
     prepareSeries(attrs) {
         const series = [];
 
-        // 1. KAPACITA BATERIE (oranžová area chart)
-        const batteryData = this.prepareBatteryData(attrs);
-        if (batteryData.length > 0) {
+        // Připravíme data pro dvě nezávislé linie
+        const { batteryLineData, gridChargeData, solarChargeData } = this.prepareTwoLineData(attrs);
+
+        // 1. ČÁRA BATERIE - kapacita na levé Y ose (axis 0)
+        if (batteryLineData.length > 0) {
             series.push({
                 name: 'Kapacita baterie',
+                type: 'line',
+                data: batteryLineData,
+                yAxisIndex: 0  // Levá osa
+            });
+        }
+
+        // 2. GRID CHARGE - stacked area na pravé Y ose (axis 1)
+        if (gridChargeData.length > 0) {
+            series.push({
+                name: 'Nabíjení ze sítě',
                 type: 'area',
-                data: batteryData
+                data: gridChargeData,
+                yAxisIndex: 1  // Pravá osa
             });
         }
 
-        // 2. VÝROBA (zelená křivka)
-        const solarData = this.prepareSolarData(attrs);
-        if (solarData.length > 0) {
+        // 3. SOLAR CHARGE - stacked area na pravé Y ose (axis 1)
+        if (solarChargeData.length > 0) {
             series.push({
-                name: 'Výroba',
-                type: 'line',
-                data: solarData
+                name: 'Nabíjení ze soláru',
+                type: 'area',
+                data: solarChargeData,
+                yAxisIndex: 1  // Pravá osa (stackuje se s gridem)
             });
         }
-
-        // 3. SPOTŘEBA (červená křivka)
-        const consumptionData = this.prepareConsumptionData(attrs);
-        if (consumptionData.length > 0) {
-            series.push({
-                name: 'Spotřeba',
-                type: 'line',
-                data: consumptionData
-            });
-        }
-
-        // 4. NABÍJENÍ (zelené sloupce) - použijeme annotations místo series
-        // Viz prepareAnnotations()
 
         return series;
+    }    prepareTwoLineData(attrs) {
+        console.log('🔥 prepareTwoLineData called - NOVÁ VERZE!');
+        const batteryLineData = [];
+        const gridChargeData = [];
+        const solarChargeData = [];
+        const timelineData = attrs.timeline_data || [];
+
+        timelineData.forEach((point) => {
+            if (!point.timestamp) return;
+
+            const timestamp = new Date(point.timestamp).getTime();
+            const batteryKwh = point.battery_capacity_kwh || 0;
+            const solarChargeKwh = point.solar_charge_kwh || 0;
+            const gridChargeKwh = point.grid_charge_kwh || 0;
+
+            // Kapacita baterie - levá Y osa
+            batteryLineData.push({
+                x: timestamp,
+                y: batteryKwh
+            });
+
+            // Grid charge - pravá Y osa (stacked)
+            gridChargeData.push({
+                x: timestamp,
+                y: gridChargeKwh
+            });
+
+            // Solar charge - pravá Y osa (stacked nad gridem)
+            solarChargeData.push({
+                x: timestamp,
+                y: solarChargeKwh
+            });
+        });
+
+        return { batteryLineData, gridChargeData, solarChargeData };
     }
 
     prepareBatteryData(attrs) {

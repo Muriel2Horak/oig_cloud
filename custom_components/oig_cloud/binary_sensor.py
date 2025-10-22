@@ -9,7 +9,6 @@ from homeassistant.helpers.update_coordinator import (
 from .const import DOMAIN, DEFAULT_NAME, CONF_STANDARD_SCAN_INTERVAL
 from .binary_sensor_types import BINARY_SENSOR_TYPES
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
-from .oig_cloud_grid_charging_sensor import GridChargingPlannedSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,14 +106,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         OigCloudBinarySensor(coordinator, sensor_type)
         for sensor_type in BINARY_SENSOR_TYPES
     ]
-
-    # Přidat Grid Charging Planned sensor
-    box_id = config_entry.data.get("box_id")
-    device_name = config_entry.data.get("name", f"OIG {box_id}")
-    if box_id:
-        entities.append(
-            GridChargingPlannedSensor(hass, config_entry, box_id, device_name)
-        )
 
     async_add_entities(entities)
 

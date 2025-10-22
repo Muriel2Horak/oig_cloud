@@ -2,8 +2,13 @@
 
 from typing import List, Dict, Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.const import UnitOfPower, UnitOfEnergy, UnitOfTime, PERCENTAGE
+from homeassistant.const import (
+    UnitOfPower,
+    UnitOfEnergy,
+    UnitOfTime,
+    PERCENTAGE,
+    EntityCategory,
+)
 
 # Seznam statistických senzorů s jejich konfigurací
 SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
@@ -273,5 +278,16 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "sensor_type_category": "battery_prediction",  # Hlavní senzor - vytváří OigCloudBatteryForecastSensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Aktuální predikovaná kapacita baterie (kWh). Atributy obsahují kompletní timeline predikce.",
+    },
+    "grid_charging_planned": {
+        "name": "Grid Charging Planned",
+        "name_cs": "Plánované nabíjení ze sítě",
+        "unit": UnitOfEnergy.KILO_WATT_HOUR,
+        "icon": "mdi:battery-charging",
+        "device_class": SensorDeviceClass.ENERGY,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "grid_charging_plan",  # Specializovaný senzor
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "description": "Celková energie k nabití ze sítě (kWh). Atributy obsahují intervaly nabíjení a celkovou cenu.",
     },
 }

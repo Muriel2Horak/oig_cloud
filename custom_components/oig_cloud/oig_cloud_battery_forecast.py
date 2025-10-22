@@ -14,6 +14,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
+from .oig_cloud_data_sensor import OigCloudDataSensor
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -230,9 +232,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"load={load_kwh:.3f}, grid={grid_kwh:.3f}"
                 )
 
+            # DŮLEŽITÁ LOGIKA: Solár primárně snižuje spotřebu, až přebytek jde do baterie
+            # solar_charge_kwh = max(0, solar_production - consumption)
+            # Toto je čistý přírůstek do baterie ze soláru
+            solar_to_battery = max(0, solar_kwh - load_kwh)
+
             # Výpočet změny kapacity za 15 minut
-            # battery_kwh = předchozí + solar + grid - consumption
-            battery_kwh = battery_kwh + solar_kwh + grid_kwh - load_kwh
+            # battery_kwh = předchozí + solar_to_battery + grid - 0 (spotřeba už odečtena v solar_to_battery)
+            # POZOR: Původní výpočet byl: battery_kwh + solar + grid - load
+            # Ale to počítá spotřebu 2x! Správně:
+            battery_kwh = battery_kwh + solar_to_battery + grid_kwh
 
             # Clamp na min/max
             if battery_kwh > max_capacity:
@@ -241,13 +250,15 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 battery_kwh = min_capacity
 
             # Přidat bod do timeline
-            # FORMÁT: Pouze ISO timestamp
+            # FORMÁT: solar_production_kwh je přejmenováno na solar_charge_kwh (čistý přírůstek)
             timeline.append(
                 {
                     "timestamp": timestamp_str,
                     "spot_price_czk": price_point.get("price", 0),
                     "battery_capacity_kwh": round(battery_kwh, 2),
-                    "solar_production_kwh": round(solar_kwh, 2),
+                    "solar_charge_kwh": round(
+                        solar_to_battery, 2
+                    ),  # ZMĚNA: čistý přírůstek ze soláru
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
                 }
@@ -984,3 +995,108 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             new_capacity = max(min_capacity, min(new_capacity, max_capacity))
 
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
+
+
+class OigCloudGridChargingPlanSensor(OigCloudDataSensor):
+    """Sensor pro plánované nabíjení ze sítě - odvozený z battery_forecast."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        box_id: str,
+        sensor_type: str,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize sensor."""
+        super().__init__(hass, entry, box_id, sensor_type, device_info)
+        self._charging_intervals: List[Dict[str, Any]] = []
+        self._total_energy_kwh = 0.0
+        self._total_cost_czk = 0.0
+
+    @property
+    def state(self) -> Optional[float]:
+        """Stav = celková energie k nabití (kWh)."""
+        return round(self._total_energy_kwh, 2) if self._total_energy_kwh > 0 else 0.0
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Atributy s detaily nabíjení."""
+        return {
+            "charging_intervals": self._charging_intervals,
+            "total_energy_kwh": round(self._total_energy_kwh, 2),
+            "total_cost_czk": round(self._total_cost_czk, 2),
+            "interval_count": len(self._charging_intervals),
+            "is_charging_planned": len(self._charging_intervals) > 0,
+        }
+
+    async def async_update(self) -> None:
+        """Aktualizace dat ze battery_forecast sensoru."""
+        await super().async_update()
+
+        # Načíst battery forecast sensor
+        battery_forecast_id = f"sensor.oig_{self._box_id}_battery_forecast"
+        spot_price_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
+
+        battery_state = self.hass.states.get(battery_forecast_id)
+        spot_price_state = self.hass.states.get(spot_price_id)
+
+        if not battery_state or not battery_state.attributes:
+            _LOGGER.debug(
+                f"Battery forecast sensor {battery_forecast_id} not found or no attributes"
+            )
+            self._charging_intervals = []
+            self._total_energy_kwh = 0.0
+            self._total_cost_czk = 0.0
+            return
+
+        # Načíst timeline data
+        timeline_data = battery_state.attributes.get("timeline_data", [])
+        if not timeline_data:
+            self._charging_intervals = []
+            self._total_energy_kwh = 0.0
+            self._total_cost_czk = 0.0
+            return
+
+        # Extrahovat intervaly s plánovaným nabíjením ze sítě
+        charging_intervals = []
+        total_energy = 0.0
+        total_cost = 0.0
+        now = datetime.now()
+
+        for point in timeline_data:
+            grid_charge_kwh = point.get("grid_charge_kwh", 0)
+            if grid_charge_kwh > 0:
+                timestamp_str = point.get("timestamp", "")
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str)
+                    # Pouze budoucí intervaly
+                    if timestamp > now:
+                        spot_price_czk = point.get("spot_price_czk", 0)
+                        cost_czk = grid_charge_kwh * spot_price_czk
+
+                        charging_intervals.append(
+                            {
+                                "timestamp": timestamp_str,
+                                "energy_kwh": round(grid_charge_kwh, 3),
+                                "spot_price_czk": round(spot_price_czk, 2),
+                                "cost_czk": round(cost_czk, 2),
+                            }
+                        )
+
+                        total_energy += grid_charge_kwh
+                        total_cost += cost_czk
+                except (ValueError, TypeError) as e:
+                    _LOGGER.warning(
+                        f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
+                    )
+                    continue
+
+        self._charging_intervals = charging_intervals
+        self._total_energy_kwh = total_energy
+        self._total_cost_czk = total_cost
+
+        _LOGGER.debug(
+            f"Grid charging plan: intervals={len(charging_intervals)}, "
+            f"energy={total_energy:.2f} kWh, cost={total_cost:.2f} Kč"
+        )

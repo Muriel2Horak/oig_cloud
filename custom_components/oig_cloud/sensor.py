@@ -467,6 +467,35 @@ async def async_setup_entry(
                     f"Registering {len(battery_forecast_sensors)} battery prediction sensors"
                 )
                 async_add_entities(battery_forecast_sensors, True)
+
+                # Přidat také grid charging plan sensor
+                try:
+                    from .oig_cloud_battery_forecast import (
+                        OigCloudGridChargingPlanSensor,
+                    )
+
+                    grid_charging_sensors: List[Any] = []
+                    for sensor_type, config in SENSOR_TYPES.items():
+                        if config.get("sensor_type_category") == "grid_charging_plan":
+                            sensor = OigCloudGridChargingPlanSensor(
+                                hass,
+                                entry,
+                                box_id,
+                                sensor_type,
+                                analytics_device_info,
+                            )
+                            grid_charging_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Created grid charging plan sensor: {sensor_type}"
+                            )
+
+                    if grid_charging_sensors:
+                        _LOGGER.info(
+                            f"Registering {len(grid_charging_sensors)} grid charging plan sensors"
+                        )
+                        async_add_entities(grid_charging_sensors, True)
+                except Exception as e:
+                    _LOGGER.error(f"Error creating grid charging plan sensors: {e}")
             else:
                 _LOGGER.debug("No battery prediction sensors found")
         except ImportError as e:

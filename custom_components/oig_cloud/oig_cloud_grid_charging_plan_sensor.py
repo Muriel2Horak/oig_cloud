@@ -1,27 +1,27 @@
-"""Grid Charging Planned Sensor pro OIG Cloud integraci."""
+"""Grid Charging Plan Sensor pro OIG Cloud integraci."""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import StateType
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class GridChargingPlannedSensor(BinarySensorEntity):
-    """Binary sensor indikující plánované nabíjení baterie ze sítě."""
+class GridChargingPlanSensor(SensorEntity):
+    """Sensor zobrazující plánované nabíjení baterie ze sítě."""
 
     def __init__(
         self,
@@ -37,11 +37,15 @@ class GridChargingPlannedSensor(BinarySensorEntity):
         self._device_name = device_name
         self._attr_name = f"OIG {box_id} Grid Charging Planned"
         self._attr_unique_id = f"oig_{box_id}_grid_charging_planned"
-        self._attr_device_class = BinarySensorDeviceClass.POWER
-        self._attr_is_on = False
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:battery-charging"
+
         self._charging_intervals: list[dict[str, Any]] = []
         self._total_energy_kwh = 0.0
         self._total_cost_czk = 0.0
+        self._attr_native_value = 0.0
 
     @property
     def device_info(self) -> DeviceInfo:
