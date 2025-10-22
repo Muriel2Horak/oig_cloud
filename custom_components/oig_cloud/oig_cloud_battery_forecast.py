@@ -348,6 +348,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
 
                 if prices:
+                    # Vypočítat časové hranice: od teď do půlnoci dalšího dne
+                    now = datetime.now()
+                    tomorrow_midnight = (now + timedelta(days=1)).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                    
+                    _LOGGER.info(
+                        f"Filtering timeline: now={now.isoformat()}, "
+                        f"end={tomorrow_midnight.isoformat()}"
+                    )
+                    
                     # Konvertovat na timeline formát s timestamp
                     timeline = []
                     for price_point in prices:
@@ -359,12 +370,27 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                             continue
 
                         # Vytvořit ISO timestamp
-                        timestamp = f"{date_str}T{time_str}:00"
+                        timestamp_str = f"{date_str}T{time_str}:00"
+                        
+                        # Parsovat timestamp pro porovnání
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp_str)
+                        except ValueError:
+                            _LOGGER.warning(f"Invalid timestamp format: {timestamp_str}")
+                            continue
+                        
+                        # Filtrovat: pouze budoucnost až do půlnoci dalšího dne
+                        if timestamp < now:
+                            continue  # Přeskočit historická data
+                        
+                        if timestamp > tomorrow_midnight:
+                            break  # Ukončit na půlnoci dalšího dne (prices jsou seřazené)
 
-                        timeline.append({"time": timestamp, "price": price})
+                        timeline.append({"time": timestamp_str, "price": price})
 
                     _LOGGER.info(
-                        f"Successfully loaded {len(timeline)} spot price points from {sensor_id}"
+                        f"Successfully loaded {len(timeline)} spot price points "
+                        f"(filtered from {len(prices)} total) from {sensor_id}"
                     )
                     return timeline
                 else:
