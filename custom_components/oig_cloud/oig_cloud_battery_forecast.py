@@ -1,6 +1,7 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
 import logging
+import numpy as np
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 
@@ -250,6 +251,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "grid_charge_kwh": round(grid_kwh, 2),
                 }
             )
+
+        # Optimalizace nabíjení ze sítě
+        _LOGGER.debug(f"Timeline before optimization: {len(timeline)} points")
+        timeline = self._optimize_grid_charging(timeline)
+        _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
 
         return timeline
 
@@ -530,6 +536,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # 143W = 143Wh za hodinu = 0,143 kWh/h
                 # Pro 15min interval: 0,143 / 4 = 0,03575 kWh
                 watts = sensor_data.get("value", 0.0)
+                
+                # FALLBACK: Pokud jsou data 0 (ještě se nesebrala), použít 500W jako rozumný default
+                if watts == 0:
+                    watts = 500.0  # 500W = rozumná průměrná spotřeba domácnosti
+                    _LOGGER.info(
+                        f"No consumption data yet for {time_str}, using fallback: 500W"
+                    )
+                
                 kwh_per_hour = watts / 1000.0  # W → kW
                 kwh_per_15min = kwh_per_hour / 4.0  # kWh/h → kWh/15min
                 _LOGGER.debug(
@@ -538,12 +552,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 )
                 return kwh_per_15min
 
-        # Žádný senzor nenalezen
+        # Žádný senzor nenalezen - použít fallback 500W
         _LOGGER.warning(
             f"No load_avg sensor found for {time_str} ({day_type}), "
-            f"searched {len(load_avg_sensors)} sensors"
+            f"searched {len(load_avg_sensors)} sensors - using fallback 500W"
         )
-        return 0.0
+        # 500W = 0.5 kWh/h = 0.125 kWh/15min
+        return 0.125
 
     def _parse_time_range(self, time_range: str) -> tuple[Optional[str], Optional[str]]:
         """
@@ -599,3 +614,350 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 return time >= start or time <= end
         except ValueError:
             return False
+
+    # ========================================================================
+    # GRID CHARGING OPTIMIZATION METHODS
+    # ========================================================================
+
+    def _optimize_grid_charging(
+        self, timeline_data: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Optimalizuje nabíjení baterie ze sítě podle cenových dat.
+
+        Algoritmus:
+        1. PRIORITA 1: Vyřešit minimum v průběhu (aby neklesla pod limit)
+        2. PRIORITA 2: Vyřešit cílovou kapacitu na konci
+
+        Args:
+            timeline_data: Seznam bodů s predikcí baterie
+
+        Returns:
+            Optimalizovaná timeline s přidaným grid charging
+        """
+        if not timeline_data:
+            return timeline_data
+
+        try:
+            # Načíst konfiguraci
+            config = (
+                self._config_entry.options
+                if self._config_entry.options
+                else self._config_entry.data
+            )
+            min_capacity_percent = config.get("min_capacity_percent", 20.0)
+            target_capacity_percent = config.get("target_capacity_percent", 80.0)
+            max_charging_price = config.get("max_price_conf", 10.0)
+            peak_percentile = config.get("percentile_conf", 75.0)
+            charging_power_kw = config.get("home_charge_rate", 2.8)
+
+            max_capacity = self._get_max_battery_capacity()
+            min_capacity_kwh = (min_capacity_percent / 100.0) * max_capacity
+            target_capacity_kwh = (target_capacity_percent / 100.0) * max_capacity
+
+            _LOGGER.info(
+                f"Grid charging optimization: min={min_capacity_kwh:.2f}kWh, target={target_capacity_kwh:.2f}kWh, max_price={max_charging_price}CZK, percentile={peak_percentile}%"
+            )
+
+            # Identifikovat špičky podle percentilu
+            prices = [
+                point.get("spot_price_czk", 0)
+                for point in timeline_data
+                if point.get("spot_price_czk") is not None
+            ]
+            if not prices:
+                _LOGGER.warning("No price data available for optimization")
+                return timeline_data
+
+            price_threshold = np.percentile(prices, peak_percentile)
+            _LOGGER.debug(
+                f"Price threshold (percentile {peak_percentile}%): {price_threshold:.2f} CZK/kWh"
+            )
+
+            # Kopie timeline pro úpravy
+            optimized_timeline = [dict(point) for point in timeline_data]
+
+            # PRIORITA 1: Vyřešit minimum v průběhu
+            optimized_timeline = self._fix_minimum_capacity_violations(
+                optimized_timeline,
+                min_capacity_kwh,
+                max_charging_price,
+                price_threshold,
+                charging_power_kw,
+            )
+
+            # PRIORITA 2: Vyřešit cílovou kapacitu na konci
+            optimized_timeline = self._ensure_target_capacity_at_end(
+                optimized_timeline,
+                target_capacity_kwh,
+                max_charging_price,
+                price_threshold,
+                charging_power_kw,
+            )
+
+            return optimized_timeline
+
+        except Exception as e:
+            _LOGGER.error(f"Error in grid charging optimization: {e}", exc_info=True)
+            return timeline_data
+
+    def _fix_minimum_capacity_violations(
+        self,
+        timeline: List[Dict[str, Any]],
+        min_capacity: float,
+        max_price: float,
+        price_threshold: float,
+        charging_power_kw: float,
+    ) -> List[Dict[str, Any]]:
+        """
+        Opraví všechna místa kde kapacita klesne pod minimum.
+
+        Args:
+            timeline: Timeline data
+            min_capacity: Minimální kapacita (kWh)
+            max_price: Maximální cena pro nabíjení (CZK/kWh)
+            price_threshold: Práh pro špičky (CZK/kWh)
+            charging_power_kw: Nabíjecí výkon (kW)
+
+        Returns:
+            Opravená timeline
+        """
+        max_iterations = 50  # Ochrana proti nekonečné smyčce
+        iteration = 0
+
+        while iteration < max_iterations:
+            violation_index = self._find_first_minimum_violation(timeline, min_capacity)
+            if violation_index is None:
+                break  # Žádné porušení
+
+            _LOGGER.debug(
+                f"Found minimum violation at index {violation_index}, capacity={timeline[violation_index]['battery_capacity_kwh']:.2f}kWh"
+            )
+
+            # Najdi nejlevnější vhodnou hodinu PŘED porušením
+            charging_index = self._find_cheapest_hour_before(
+                timeline, violation_index, max_price, price_threshold
+            )
+
+            if charging_index is None:
+                _LOGGER.warning(
+                    f"Cannot fix minimum violation at index {violation_index} - no suitable charging time found"
+                )
+                break  # Nelze opravit
+
+            # Přidej nabíjení a přepočítej od tohoto bodu
+            charge_kwh = charging_power_kw / 4.0  # kW → kWh za 15min
+            old_charge = timeline[charging_index].get("grid_charge_kwh", 0)
+            timeline[charging_index]["grid_charge_kwh"] = old_charge + charge_kwh
+
+            _LOGGER.debug(
+                f"Adding {charge_kwh:.2f}kWh charging at index {charging_index}, price={timeline[charging_index]['spot_price_czk']:.2f}CZK"
+            )
+
+            self._recalculate_timeline_from_index(timeline, charging_index)
+            iteration += 1
+
+        if iteration >= max_iterations:
+            _LOGGER.warning("Reached max iterations in minimum capacity fixing")
+
+        return timeline
+
+    def _ensure_target_capacity_at_end(
+        self,
+        timeline: List[Dict[str, Any]],
+        target_capacity: float,
+        max_price: float,
+        price_threshold: float,
+        charging_power_kw: float,
+    ) -> List[Dict[str, Any]]:
+        """
+        Zajistí cílovou kapacitu na konci intervalu.
+
+        Args:
+            timeline: Timeline data
+            target_capacity: Cílová kapacita (kWh)
+            max_price: Maximální cena pro nabíjení (CZK/kWh)
+            price_threshold: Práh pro špičky (CZK/kWh)
+            charging_power_kw: Nabíjecí výkon (kW)
+
+        Returns:
+            Optimalizovaná timeline
+        """
+        if not timeline:
+            return timeline
+
+        max_iterations = 50  # Ochrana proti nekonečné smyčce
+        iteration = 0
+
+        while iteration < max_iterations:
+            final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
+            if final_capacity >= target_capacity:
+                _LOGGER.debug(
+                    f"Target capacity achieved: {final_capacity:.2f}kWh >= {target_capacity:.2f}kWh"
+                )
+                break
+
+            shortage = target_capacity - final_capacity
+            _LOGGER.debug(f"Target capacity shortage: {shortage:.2f}kWh")
+
+            # Najdi nejlevnější vhodnou hodinu v celém intervalu
+            charging_index = self._find_cheapest_suitable_hour(
+                timeline, max_price, price_threshold
+            )
+
+            if charging_index is None:
+                _LOGGER.warning(
+                    "Cannot achieve target capacity - no suitable charging time found"
+                )
+                break
+
+            # Přidej nabíjení a přepočítej od tohoto bodu
+            charge_kwh = charging_power_kw / 4.0  # kW → kWh za 15min
+            old_charge = timeline[charging_index].get("grid_charge_kwh", 0)
+            timeline[charging_index]["grid_charge_kwh"] = old_charge + charge_kwh
+
+            _LOGGER.debug(
+                f"Adding {charge_kwh:.2f}kWh charging at index {charging_index} for target capacity"
+            )
+
+            self._recalculate_timeline_from_index(timeline, charging_index)
+            iteration += 1
+
+        if iteration >= max_iterations:
+            _LOGGER.warning("Reached max iterations in target capacity ensuring")
+
+        return timeline
+
+    def _find_first_minimum_violation(
+        self, timeline: List[Dict[str, Any]], min_capacity: float
+    ) -> Optional[int]:
+        """
+        Najde první index kde kapacita klesne pod minimum.
+
+        Args:
+            timeline: Timeline data
+            min_capacity: Minimální kapacita (kWh)
+
+        Returns:
+            Index prvního porušení nebo None
+        """
+        for i, point in enumerate(timeline):
+            capacity = point.get("battery_capacity_kwh", 0)
+            if capacity < min_capacity:
+                return i
+        return None
+
+    def _find_cheapest_hour_before(
+        self,
+        timeline: List[Dict[str, Any]],
+        before_index: int,
+        max_price: float,
+        price_threshold: float,
+    ) -> Optional[int]:
+        """
+        Najde nejlevnější vhodnou hodinu před daným indexem.
+
+        Args:
+            timeline: Timeline data
+            before_index: Index před kterým hledat
+            max_price: Maximální cena (CZK/kWh)
+            price_threshold: Práh pro špičky (CZK/kWh)
+
+        Returns:
+            Index nejlevnější vhodné hodiny nebo None
+        """
+        candidates = []
+
+        for i in range(before_index):
+            point = timeline[i]
+            price = point.get("spot_price_czk", float("inf"))
+
+            # Kontrola podmínek
+            if price > max_price:
+                continue
+            if price > price_threshold:  # Je to špička
+                continue
+
+            candidates.append((i, price))
+
+        if not candidates:
+            return None
+
+        # Seřadit podle ceny a vrátit nejlevnější
+        candidates.sort(key=lambda x: x[1])
+        return candidates[0][0]
+
+    def _find_cheapest_suitable_hour(
+        self, timeline: List[Dict[str, Any]], max_price: float, price_threshold: float
+    ) -> Optional[int]:
+        """
+        Najde nejlevnější vhodnou hodinu v celém intervalu.
+
+        Args:
+            timeline: Timeline data
+            max_price: Maximální cena (CZK/kWh)
+            price_threshold: Práh pro špičky (CZK/kWh)
+
+        Returns:
+            Index nejlevnější vhodné hodiny nebo None
+        """
+        candidates = []
+
+        for i, point in enumerate(timeline):
+            price = point.get("spot_price_czk", float("inf"))
+
+            # Kontrola podmínek
+            if price > max_price:
+                continue
+            if price > price_threshold:  # Je to špička
+                continue
+
+            # Preferuj hodiny s nejmenším už existujícím nabíjením
+            existing_charge = point.get("grid_charge_kwh", 0)
+            candidates.append((i, price, existing_charge))
+
+        if not candidates:
+            return None
+
+        # Seřadit podle ceny (primární) a existujícího nabíjení (sekundární)
+        candidates.sort(key=lambda x: (x[1], x[2]))
+        return candidates[0][0]
+
+    def _recalculate_timeline_from_index(
+        self, timeline: List[Dict[str, Any]], start_index: int
+    ) -> None:
+        """
+        Přepočítá timeline od daného indexu podle vzorce baterie.
+
+        Args:
+            timeline: Timeline data (modifikuje in-place)
+            start_index: Index od kterého přepočítat
+        """
+        max_capacity = self._get_max_battery_capacity()
+        min_capacity_percent = (
+            self._config_entry.options.get("min_capacity_percent", 20.0)
+            if self._config_entry.options
+            else self._config_entry.data.get("min_capacity_percent", 20.0)
+        )
+        min_capacity = (min_capacity_percent / 100.0) * max_capacity
+
+        for i in range(start_index, len(timeline)):
+            if i == 0:
+                # První bod - použij aktuální kapacitu jako základ
+                continue
+
+            prev_point = timeline[i - 1]
+            curr_point = timeline[i]
+
+            # Vzorec: nová_kapacita = předchozí + solar + grid - consumption
+            prev_capacity = prev_point.get("battery_capacity_kwh", 0)
+            solar_kwh = curr_point.get("solar_production_kwh", 0)
+            grid_kwh = curr_point.get("grid_charge_kwh", 0)
+            consumption_kwh = curr_point.get("consumption_kwh", 0)
+
+            new_capacity = prev_capacity + solar_kwh + grid_kwh - consumption_kwh
+
+            # Clamp na min/max
+            new_capacity = max(min_capacity, min(new_capacity, max_capacity))
+
+            curr_point["battery_capacity_kwh"] = round(new_capacity, 2)

@@ -2,11 +2,14 @@ import voluptuous as vol
 import logging
 import asyncio
 import aiohttp
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from homeassistant import config_entries
-from homeassistant.config_entries import FlowResult
-from homeassistant.core import callback
+from homeassistant.data_entry_flow import FlowResult
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
 from .const import (
     CONF_NO_TELEMETRY,
     DEFAULT_NAME,
@@ -521,6 +524,78 @@ class WizardMixin:
 
         return backend_data
 
+    @staticmethod
+    def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Map backend attribute names back to UI-friendly frontend names.
+
+        This is the reverse of _map_pricing_to_backend - used when loading
+        existing configuration in OptionsFlow.
+        """
+        frontend_data = {}
+
+        # Import (purchase) pricing
+        spot_model = backend_data.get("spot_pricing_model", "percentage")
+        if spot_model == "percentage":
+            frontend_data["import_pricing_scenario"] = "spot_percentage"
+            frontend_data["spot_positive_fee_percent"] = backend_data.get(
+                "spot_positive_fee_percent", 15.0
+            )
+            frontend_data["spot_negative_fee_percent"] = backend_data.get(
+                "spot_negative_fee_percent", 9.0
+            )
+        elif spot_model == "fixed":
+            frontend_data["import_pricing_scenario"] = "spot_fixed"
+            # Convert MWh back to kWh (backend stores MWh)
+            fee_mwh = backend_data.get("spot_fixed_fee_mwh", 500.0)
+            frontend_data["spot_fixed_fee_kwh"] = fee_mwh / 1000.0
+        elif spot_model == "fixed_prices":
+            frontend_data["import_pricing_scenario"] = "fix_price"
+            frontend_data["fixed_price_kwh"] = backend_data.get(
+                "fixed_commercial_price_vt", 4.50
+            )
+
+        # Export (sell) pricing
+        export_model = backend_data.get("export_pricing_model", "percentage")
+        if export_model == "percentage":
+            frontend_data["export_pricing_scenario"] = "spot_percentage"
+            frontend_data["export_fee_percent"] = backend_data.get(
+                "export_fee_percent", 15.0
+            )
+        elif export_model == "fixed":
+            frontend_data["export_pricing_scenario"] = "spot_fixed"
+            frontend_data["export_fixed_fee_czk"] = backend_data.get(
+                "export_fixed_fee_czk", 0.20
+            )
+        elif export_model == "fixed_prices":
+            frontend_data["export_pricing_scenario"] = "fix_price"
+            frontend_data["export_fixed_price_kwh"] = backend_data.get(
+                "export_fixed_price", 2.50
+            )
+
+        # Distribution fees (tariff)
+        dual_tariff = backend_data.get("dual_tariff_enabled", False)
+        frontend_data["tariff_count"] = "dual" if dual_tariff else "single"
+
+        frontend_data["distribution_fee_vt_kwh"] = backend_data.get(
+            "distribution_fee_vt_kwh", 1.42
+        )
+
+        if dual_tariff:
+            frontend_data["distribution_fee_nt_kwh"] = backend_data.get(
+                "distribution_fee_nt_kwh", 0.91
+            )
+            frontend_data["tariff_vt_start_weekday"] = backend_data.get(
+                "tariff_vt_start_weekday", "6"
+            )
+            frontend_data["tariff_nt_start_weekday"] = backend_data.get(
+                "tariff_nt_start_weekday", "22,2"
+            )
+
+        # VAT rate
+        frontend_data["vat_rate"] = backend_data.get("vat_rate", 21.0)
+
+        return frontend_data
+
     def __init__(self) -> None:
         """Initialize wizard data."""
         super().__init__()
@@ -778,6 +853,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_modules")
+
+            # Debug log
+            _LOGGER.info(
+                f"🔧 Wizard modules: Updated data with {len(user_input)} fields"
+            )
+            _LOGGER.debug(
+                f"🔧 Wizard modules: Current _wizard_data keys: {list(self._wizard_data.keys())}"
+            )
 
             next_step = self._get_next_step("wizard_modules")
             return await getattr(self, f"async_step_{next_step}")()
@@ -1210,6 +1293,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
+        # Získat GPS souřadnice z Home Assistant konfigurace jako default
+        ha_latitude = self.hass.config.latitude if self.hass else 50.0
+        ha_longitude = self.hass.config.longitude if self.hass else 14.0
+
         schema_fields = {
             vol.Optional(
                 CONF_SOLAR_FORECAST_API_KEY,
@@ -1228,11 +1315,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ),
             vol.Optional(
                 CONF_SOLAR_FORECAST_LATITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0),
+                default=defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_LONGITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, 14.0),
+                default=defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,
@@ -1500,36 +1587,32 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         # Conditional fields based on scenario
         if scenario == "spot_percentage":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "spot_positive_fee_percent",
-                        default=defaults.get("spot_positive_fee_percent", 15.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                    vol.Optional(
-                        "spot_negative_fee_percent",
-                        default=defaults.get("spot_negative_fee_percent", 9.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "spot_positive_fee_percent",
+                    default=defaults.get("spot_positive_fee_percent", 15.0),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0))
+            schema_fields[
+                vol.Optional(
+                    "spot_negative_fee_percent",
+                    default=defaults.get("spot_negative_fee_percent", 9.0),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=100.0))
         elif scenario == "spot_fixed":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "spot_fixed_fee_kwh",
-                        default=defaults.get("spot_fixed_fee_kwh", 0.50),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=10.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "spot_fixed_fee_kwh",
+                    default=defaults.get("spot_fixed_fee_kwh", 0.50),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.01, max=10.0))
         elif scenario == "fix_price":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "fixed_price_kwh",
-                        default=defaults.get("fixed_price_kwh", 4.50),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=20.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "fixed_price_kwh",
+                    default=defaults.get("fixed_price_kwh", 4.50),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=20.0))
 
         schema_fields[vol.Optional("go_back", default=False)] = bool
 
@@ -1625,32 +1708,26 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         # Conditional fields based on scenario
         if scenario == "spot_percentage":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "export_fee_percent",
-                        default=defaults.get("export_fee_percent", 15.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "export_fee_percent",
+                    default=defaults.get("export_fee_percent", 15.0),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0))
         elif scenario == "spot_fixed":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "export_fixed_fee_czk",
-                        default=defaults.get("export_fixed_fee_czk", 0.20),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "export_fixed_fee_czk",
+                    default=defaults.get("export_fixed_fee_czk", 0.20),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0))
         elif scenario == "fix_price":
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "export_fixed_price_kwh",
-                        default=defaults.get("export_fixed_price_kwh", 2.50),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "export_fixed_price_kwh",
+                    default=defaults.get("export_fixed_price_kwh", 2.50),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0))
 
         schema_fields[vol.Optional("go_back", default=False)] = bool
 
@@ -2015,29 +2092,46 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         "enable_extended_grid_sensors", True
                     ),
                     "disable_extended_stats_api": False,
-                    # Solar forecast
+                    # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
+                    "solar_forecast_mode": self._wizard_data.get(
+                        "solar_forecast_mode", "daily_optimized"
+                    ),
                     CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_API_KEY
+                        CONF_SOLAR_FORECAST_API_KEY, ""
                     ),
                     CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_LATITUDE
+                        CONF_SOLAR_FORECAST_LATITUDE, 50.0
                     ),
                     CONF_SOLAR_FORECAST_LONGITUDE: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_LONGITUDE
+                        CONF_SOLAR_FORECAST_LONGITUDE, 14.0
                     ),
+                    # String 1
                     CONF_SOLAR_FORECAST_STRING1_ENABLED: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_ENABLED
+                        CONF_SOLAR_FORECAST_STRING1_ENABLED, True
                     ),
                     CONF_SOLAR_FORECAST_STRING1_DECLINATION: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_DECLINATION
+                        CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
                     ),
                     CONF_SOLAR_FORECAST_STRING1_AZIMUTH: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH
+                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
                     ),
                     CONF_SOLAR_FORECAST_STRING1_KWP: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_KWP
+                        CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
                     ),
-                    # Battery prediction
+                    # String 2
+                    "solar_forecast_string2_enabled": self._wizard_data.get(
+                        "solar_forecast_string2_enabled", False
+                    ),
+                    "solar_forecast_string2_declination": self._wizard_data.get(
+                        "solar_forecast_string2_declination", 35
+                    ),
+                    "solar_forecast_string2_azimuth": self._wizard_data.get(
+                        "solar_forecast_string2_azimuth", 180
+                    ),
+                    "solar_forecast_string2_kwp": self._wizard_data.get(
+                        "solar_forecast_string2_kwp", 5.0
+                    ),
+                    # Battery prediction - všechny parametry
                     "min_capacity_percent": self._wizard_data.get(
                         "min_capacity_percent", 20.0
                     ),
@@ -2045,6 +2139,12 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         "target_capacity_percent", 80.0
                     ),
                     "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
+                    "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
+                    "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
+                    "charge_on_bad_weather": self._wizard_data.get(
+                        "charge_on_bad_weather", False
+                    ),
+                    "weather_entity": self._wizard_data.get("weather_entity", ""),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
                     # Dashboard
@@ -2095,9 +2195,25 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self.config_entry = config_entry
 
         # Předvyplnit wizard_data z existující konfigurace
+        # Nejdříve zkopírovat všechna existující data
         self._wizard_data = dict(config_entry.options)
+
+        # Převést backend atributy zpět na frontend atributy pro UI
+        frontend_pricing = self._map_backend_to_frontend(config_entry.options)
+        self._wizard_data.update(frontend_pricing)
+
+        # Přidat přihlašovací údaje z data
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
         # Password nečteme z bezpečnostních důvodů
+
+        # Debug log
+        _LOGGER.info(
+            f"🔧 OptionsFlow: Initialized with {len(self._wizard_data)} existing options"
+        )
+        _LOGGER.debug(
+            f"🔧 OptionsFlow: Existing options keys: {list(self._wizard_data.keys())}"
+        )
+        _LOGGER.debug(f"🔧 OptionsFlow: Frontend pricing data: {frontend_pricing}")
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -2124,7 +2240,14 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     ) -> FlowResult:
         """Override summary step for options flow - update entry instead of creating new."""
         if user_input is not None:
-            # Aktualizovat existující entry místo vytvoření nového
+            # Zkontrolovat, jestli uživatel chce jít zpět
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_summary")
+
+            # Převést UI pricing scénáře na backend atributy (stejně jako v ConfigFlow)
+            pricing_backend = self._map_pricing_to_backend(self._wizard_data)
+
+            # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
             new_options = {
                 # Intervaly
                 "standard_scan_interval": self._wizard_data.get(
@@ -2157,13 +2280,46 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "enable_extended_grid_sensors", True
                 ),
                 "disable_extended_stats_api": False,
-                # Solar forecast
-                **{
-                    k: v
-                    for k, v in self._wizard_data.items()
-                    if k.startswith("solar_forecast_")
-                },
-                # Battery prediction
+                # Solar forecast - použít všechny parametry stejně jako v ConfigFlow
+                "solar_forecast_mode": self._wizard_data.get(
+                    "solar_forecast_mode", "daily_optimized"
+                ),
+                CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_API_KEY, ""
+                ),
+                CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_LATITUDE, 50.0
+                ),
+                CONF_SOLAR_FORECAST_LONGITUDE: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_LONGITUDE, 14.0
+                ),
+                # String 1
+                CONF_SOLAR_FORECAST_STRING1_ENABLED: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_STRING1_ENABLED, True
+                ),
+                CONF_SOLAR_FORECAST_STRING1_DECLINATION: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
+                ),
+                CONF_SOLAR_FORECAST_STRING1_AZIMUTH: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
+                ),
+                CONF_SOLAR_FORECAST_STRING1_KWP: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
+                ),
+                # String 2
+                "solar_forecast_string2_enabled": self._wizard_data.get(
+                    "solar_forecast_string2_enabled", False
+                ),
+                "solar_forecast_string2_declination": self._wizard_data.get(
+                    "solar_forecast_string2_declination", 35
+                ),
+                "solar_forecast_string2_azimuth": self._wizard_data.get(
+                    "solar_forecast_string2_azimuth", 180
+                ),
+                "solar_forecast_string2_kwp": self._wizard_data.get(
+                    "solar_forecast_string2_kwp", 5.0
+                ),
+                # Battery prediction - všechny parametry
                 "min_capacity_percent": self._wizard_data.get(
                     "min_capacity_percent", 20.0
                 ),
@@ -2171,18 +2327,27 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "target_capacity_percent", 80.0
                 ),
                 "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
-                # Pricing
-                "spot_trading_enabled": self._wizard_data.get(
-                    "spot_trading_enabled", False
+                "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
+                "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
+                "charge_on_bad_weather": self._wizard_data.get(
+                    "charge_on_bad_weather", False
                 ),
-                "distribution_area": self._wizard_data.get("distribution_area", "PRE"),
-                "fixed_price_vt": self._wizard_data.get("fixed_price_vt", 4.50),
-                "fixed_price_nt": self._wizard_data.get("fixed_price_nt", 3.20),
+                "weather_entity": self._wizard_data.get("weather_entity", ""),
+                # Pricing - použít mapované backend atributy
+                **pricing_backend,
                 # Dashboard
                 "dashboard_refresh_interval": self._wizard_data.get(
                     "dashboard_refresh_interval", 5
                 ),
             }
+
+            # Přidat debug log
+            _LOGGER.info(
+                f"🔧 OptionsFlow: Updating config entry with {len(new_options)} options"
+            )
+            _LOGGER.debug(
+                f"🔧 OptionsFlow: New options keys: {list(new_options.keys())}"
+            )
 
             # Aktualizovat entry
             self.hass.config_entries.async_update_entry(
@@ -2192,8 +2357,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             # Automaticky reloadnout integraci pro aplikování změn
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Vrátit prázdný výsledek (změny byly uloženy)
-            return self.async_create_entry(title="", data={})
+            # Vrátit výsledek bez dat (OptionsFlow nemá title ani data)
+            return self.async_create_entry(title="", data=new_options)
 
         # Zobrazit summary se stejnou logikou jako v ConfigFlow
         summary_lines = [
@@ -2285,8 +2450,14 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Základní konfigurace."""
         if user_input is not None:
+            _LOGGER.debug(
+                "🔧 Basic config - user_input: %s, current_options: %s",
+                user_input,
+                self.config_entry.options,
+            )
             # Pokud byly změněny přihlašovací údaje, aktualizuj je v config_entry.data
             new_options = {**self.config_entry.options, **user_input}
+            _LOGGER.debug("🔧 Basic config - new_options: %s", new_options)
 
             # Kontrola, zda se změnily přihlašovací údaje
             username_changed = user_input.get("username") and user_input.get(
@@ -2317,8 +2488,13 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování všech změn (včetně intervalu)
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-            return self.async_create_entry(title="", data={})
+            _LOGGER.info(
+                "🔧 Basic config saved: standard_scan_interval=%s",
+                new_options.get("standard_scan_interval"),
+            )
+
+            # Vrátit se zpět do menu (NESMÍME volat async_create_entry, protože by to přepsalo options!)
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
         current_data = self.config_entry.data
@@ -2408,8 +2584,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-            return self.async_create_entry(title="", data={})
+            # Vrátit se zpět do menu
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
         extended_enabled = current_options.get("enable_extended_sensors", False)
@@ -2472,8 +2648,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-            return self.async_create_entry(title="", data={})
+            # Vrátit se zpět do menu
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
 
@@ -2515,8 +2691,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování nových nastavení
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-            return self.async_create_entry(title="", data={})
+            # Vrátit se zpět do menu
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
         battery_enabled = current_options.get("enable_battery_prediction", False)
@@ -2682,6 +2858,25 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
         errors = {}
 
         if user_input is not None:
+            # Pokud je zaškrtnuté "Načíst z HA", přepíšeme GPS souřadnice
+            if user_input.get("load_gps_from_ha", False):
+                hass_lat = (
+                    self.hass.config.latitude
+                    if self.hass.config.latitude
+                    else 50.1219800
+                )
+                hass_lon = (
+                    self.hass.config.longitude
+                    if self.hass.config.longitude
+                    else 13.9373742
+                )
+                user_input["solar_forecast_latitude"] = hass_lat
+                user_input["solar_forecast_longitude"] = hass_lon
+                _LOGGER.info(f"📍 GPS načteno z HA: {hass_lat}, {hass_lon}")
+
+            # Odstraníme load_gps_from_ha z options (je to jen dočasný příznak)
+            user_input.pop("load_gps_from_ha", None)
+
             new_options = {**self.config_entry.options, **user_input}
 
             # Logika pro automatické zapnutí/vypnutí stringů
@@ -2907,10 +3102,15 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 )
 
             if not errors:
+                # Uložíme změny NEJDŘÍVE
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_options
+                )
+
                 # Restart integrace pro aplikování nových nastavení
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-                # Pro solar forecast - spustíme okamžitou aktualizaci dat při zapnutí
+                # Pro solar forecast - spustíme okamžitou aktualizaci dat při zapnutí/změně
                 if solar_enabled:
                     # Rozlišujeme mezi prvním zapnutím a změnou už zapnutého modulu
                     if not current_solar_enabled:
@@ -2989,47 +3189,46 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                         self.hass.async_create_task(delayed_solar_update())
 
                     else:
-                        # ZMĚNA EXISTUJÍCÍHO MODULU - senzory už existují, žádné čekání
+                        # ZMĚNA EXISTUJÍCÍHO MODULU - senzory už existují, ale po reloadu potřebujeme chvíli počkat
                         _LOGGER.info(
-                            "🌞 Solar forecast configuration update - triggering immediate update..."
+                            "🌞 Solar forecast configuration update - scheduling delayed update after reload..."
                         )
 
-                        try:
-                            entity_registry = er.async_get(self.hass)
-                            for entity in entity_registry.entities.values():
-                                if (
-                                    entity.platform == DOMAIN
-                                    and entity.domain == "sensor"
-                                    and "solar_forecast" in entity.entity_id
-                                    and not entity.entity_id.endswith("_string1")
-                                    and not entity.entity_id.endswith("_string2")
-                                ):
-                                    await self.hass.services.async_call(
-                                        "homeassistant",
-                                        "update_entity",
-                                        {"entity_id": entity.entity_id},
-                                        blocking=False,
-                                    )
-                                    _LOGGER.info(
-                                        f"🌞 Triggered immediate solar forecast update for {entity.entity_id}"
-                                    )
-                                    break
-                            else:
+                        # Spustíme update s krátkým zpožděním na pozadí, aby měl reload čas dokončit
+                        async def delayed_config_update() -> None:
+                            await asyncio.sleep(3)  # Krátké čekání po reloadu
+                            try:
+                                entity_registry = er.async_get(self.hass)
+                                for entity in entity_registry.entities.values():
+                                    if (
+                                        entity.platform == DOMAIN
+                                        and entity.domain == "sensor"
+                                        and "solar_forecast" in entity.entity_id
+                                        and not entity.entity_id.endswith("_string1")
+                                        and not entity.entity_id.endswith("_string2")
+                                    ):
+                                        await self.hass.services.async_call(
+                                            "homeassistant",
+                                            "update_entity",
+                                            {"entity_id": entity.entity_id},
+                                            blocking=False,
+                                        )
+                                        _LOGGER.info(
+                                            f"🌞 Triggered delayed solar forecast update for {entity.entity_id}"
+                                        )
+                                        return
                                 _LOGGER.warning(
-                                    "🌞 Solar forecast entity not found for immediate update"
+                                    "🌞 Solar forecast entity not found for delayed update"
                                 )
-                        except Exception as e:
-                            _LOGGER.warning(
-                                f"🌞 Failed to trigger immediate solar forecast update: {e}"
-                            )
+                            except Exception as e:
+                                _LOGGER.warning(
+                                    f"🌞 Failed to trigger delayed solar forecast update: {e}"
+                                )
 
-                # Uložíme změny PŘED reloadem
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=new_options
-                )
+                        self.hass.async_create_task(delayed_config_update())
 
-                # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-                return self.async_create_entry(title="", data={})
+                # Vrátit se zpět do menu
+                return await self.async_step_init()
 
         current_options = self.config_entry.options
         solar_enabled = current_options.get("enable_solar_forecast", False)
@@ -3107,6 +3306,11 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                     description=f"Jak často aktualizovat předpověď {('(pro častější režimy zadejte API klíč)' if not has_api_key else '')}",
                 ): vol.In(mode_options),
                 vol.Optional(
+                    "load_gps_from_ha",
+                    default=False,
+                    description=f"📍 Načíst GPS z HA (aktuální: {hass_latitude:.4f}, {hass_longitude:.4f})",
+                ): bool,
+                vol.Optional(
                     "solar_forecast_latitude",
                     default=current_options.get(
                         "solar_forecast_latitude", hass_latitude
@@ -3145,7 +3349,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 vol.Optional(
                     "solar_forecast_string1_azimuth",
                     default=current_options.get("solar_forecast_string1_azimuth", 138),
-                    description="Orientace panelů 1. stringu (0°=sever, 90°=východ, 180°=jih, 270°=západ)",
+                    description="Orientace panelů 1. stringu (0-sever, 90-východ, 180-jih, 270-západ)",
                 ): vol.Coerce(int),
                 vol.Optional(
                     "solar_forecast_string2_enabled",
@@ -3171,7 +3375,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 vol.Optional(
                     "solar_forecast_string2_azimuth",
                     default=current_options.get("solar_forecast_string2_azimuth", 138),
-                    description="Orientace panelů 2. stringu (0°=sever, 90°=východ, 180°=jih, 270°=západ)",
+                    description="Orientace panelů 2. stringu (0-sever, 90-východ, 180-jih, 270-západ)",
                 ): vol.Coerce(int),
             }
         )
@@ -3747,8 +3951,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             # Restart integrace pro aplikování změn (dashboard se musí zaregistrovat/odregistrovat)
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-            # Ukončíme flow BEZ přepisování dat (už jsou uložená pomocí async_update_entry)
-            return self.async_create_entry(title="", data={})
+            # Vrátit se zpět do menu
+            return await self.async_step_init()
 
         current_options = self.config_entry.options
         dashboard_enabled = current_options.get("enable_dashboard", False)
