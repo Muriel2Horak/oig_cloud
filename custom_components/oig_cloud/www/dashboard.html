@@ -7368,17 +7368,16 @@
                     // Use spot price timestamps as master timeline (includes today + tomorrow)
                     // Keep as Date objects for proper time axis handling
                     allLabels = prices.map(p => {
-                        // p.time can be either ISO format "2025-10-20T14:30:00" or "HH:MM"
-                        if (p.time.includes('T') || p.time.includes('-')) {
-                            // ISO format - return as Date object
-                            return new Date(p.time);
-                        } else {
-                            // "HH:MM" format - create Date object for today
-                            const [hours, minutes] = p.time.split(':');
-                            const date = new Date();
-                            date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-                            return date;
+                        // Pouze ISO timestamp formát
+                        const timeStr = p.timestamp;
+
+                        if (!timeStr) {
+                            console.warn('No timestamp found in price data:', p);
+                            return new Date();
                         }
+
+                        // p.timestamp je ISO format "2025-10-22T18:30:00"
+                        return new Date(timeStr);
                     });
                     datasets.push({
                         label: 'Spotová cena nákupu',

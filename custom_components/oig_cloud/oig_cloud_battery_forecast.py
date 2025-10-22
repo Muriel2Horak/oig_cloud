@@ -241,6 +241,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 battery_kwh = min_capacity
 
             # Přidat bod do timeline
+            # FORMÁT: Pouze ISO timestamp
             timeline.append(
                 {
                     "timestamp": timestamp_str,
@@ -348,43 +349,36 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
 
                 if prices:
-                    # Vypočítat časové hranice: od teď do půlnoci dalšího dne
+                    # Filtrovat pouze budoucí data (od teď dál)
                     now = datetime.now()
-                    tomorrow_midnight = (now + timedelta(days=1)).replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-                    
-                    _LOGGER.info(
-                        f"Filtering timeline: now={now.isoformat()}, "
-                        f"end={tomorrow_midnight.isoformat()}"
-                    )
-                    
-                    # Konvertovat na timeline formát s timestamp
+
+                    _LOGGER.info(f"Filtering timeline from now: {now.isoformat()}")
+
+                    # Konvertovat na timeline formát
                     timeline = []
                     for price_point in prices:
-                        date_str = price_point.get("date")  # "2025-10-20"
-                        time_str = price_point.get("time")  # "13:30"
+                        # Použít timestamp z sensoru (ISO formát)
+                        timestamp_str = price_point.get("timestamp")
                         price = price_point.get("price", 0)
 
-                        if not date_str or not time_str:
+                        if not timestamp_str:
+                            _LOGGER.warning(
+                                f"Price point missing timestamp: {price_point}"
+                            )
                             continue
 
-                        # Vytvořit ISO timestamp
-                        timestamp_str = f"{date_str}T{time_str}:00"
-                        
                         # Parsovat timestamp pro porovnání
                         try:
                             timestamp = datetime.fromisoformat(timestamp_str)
                         except ValueError:
-                            _LOGGER.warning(f"Invalid timestamp format: {timestamp_str}")
+                            _LOGGER.warning(
+                                f"Invalid timestamp format: {timestamp_str}"
+                            )
                             continue
-                        
-                        # Filtrovat: pouze budoucnost až do půlnoci dalšího dne
+
+                        # Filtrovat: pouze budoucnost (od teď dál)
                         if timestamp < now:
                             continue  # Přeskočit historická data
-                        
-                        if timestamp > tomorrow_midnight:
-                            break  # Ukončit na půlnoci dalšího dne (prices jsou seřazené)
 
                         timeline.append({"time": timestamp_str, "price": price})
 
@@ -562,14 +556,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # 143W = 143Wh za hodinu = 0,143 kWh/h
                 # Pro 15min interval: 0,143 / 4 = 0,03575 kWh
                 watts = sensor_data.get("value", 0.0)
-                
+
                 # FALLBACK: Pokud jsou data 0 (ještě se nesebrala), použít 500W jako rozumný default
                 if watts == 0:
                     watts = 500.0  # 500W = rozumná průměrná spotřeba domácnosti
                     _LOGGER.info(
                         f"No consumption data yet for {time_str}, using fallback: 500W"
                     )
-                
+
                 kwh_per_hour = watts / 1000.0  # W → kW
                 kwh_per_15min = kwh_per_hour / 4.0  # kWh/h → kWh/15min
                 _LOGGER.debug(
@@ -938,15 +932,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             if price > price_threshold:  # Je to špička
                 continue
 
-            # Preferuj hodiny s nejmenším už existujícím nabíjením
+            # PŘESKOČIT sloty, které už mají nějaké nabíjení
             existing_charge = point.get("grid_charge_kwh", 0)
-            candidates.append((i, price, existing_charge))
+            if existing_charge > 0:
+                continue
+
+            candidates.append((i, price))
 
         if not candidates:
             return None
 
-        # Seřadit podle ceny (primární) a existujícího nabíjení (sekundární)
-        candidates.sort(key=lambda x: (x[1], x[2]))
+        # Seřadit podle ceny a vrátit nejlevnější
+        candidates.sort(key=lambda x: x[1])
         return candidates[0][0]
 
     def _recalculate_timeline_from_index(

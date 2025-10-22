@@ -265,9 +265,9 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                         spot_price_czk, dt
                     )
 
+                    # FORMÁT: Pouze ISO timestamp
                     interval_data = {
-                        "date": dt.strftime("%Y-%m-%d"),
-                        "time": dt.strftime("%H:%M"),
+                        "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%S"),  # ISO formát
                         "price": export_price,  # Výkupní cena
                         "spot_price": round(
                             spot_price_czk, 2
@@ -656,10 +656,9 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                     final_price = self._calculate_final_price_15min(spot_price_czk, dt)
                     tariff = self._get_tariff_for_datetime(dt)
 
-                    # OPRAVA: Minimalistická data s datem
+                    # FORMÁT: Pouze ISO timestamp
                     interval_data = {
-                        "date": dt.strftime("%Y-%m-%d"),  # Datum pro rozlišení dnů
-                        "time": dt.strftime("%H:%M"),  # HH:MM
+                        "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%S"),  # ISO formát
                         "price": final_price,  # Finální cena
                         "tariff": tariff,  # VT/NT
                     }
