@@ -3888,7 +3888,7 @@ function loadPricingData() {
             // EXTEND allLabels with battery forecast timestamps (union)
             const batteryTimestamps = timelineData.map(t => new Date(t.timestamp));
             const priceTimestamps = allLabels; // already Date objects
-            
+
             // Merge and dedupe timestamps
             const allTimestamps = new Set([...priceTimestamps, ...batteryTimestamps].map(d => d.getTime()));
             allLabels = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
@@ -3907,7 +3907,7 @@ function loadPricingData() {
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i];
                 const isoKey = toLocalISOString(timeLabel);
-                
+
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
@@ -3930,65 +3930,64 @@ function loadPricingData() {
                 }
             }
 
-            // Barvy pro vizualizaci
+            // Barvy pro vizualizaci - zvýšená viditelnost
             const batteryColors = {
-                capacity: { border: '#00bcd4', bg: 'transparent' },              // tyrkysová linie
-                solar: { border: '#FDD835', bg: 'rgba(253, 216, 53, 0.8)' },    // žlutá - solár
-                grid: { border: '#42A5F5', bg: 'rgba(66, 165, 245, 0.8)' }      // modrá - síť
+                baseline: { border: '#90A4AE', bg: 'rgba(144, 164, 174, 0.15)' }, // šedá - zbývající kapacita (tlustá čára nahoře)
+                solar: { border: 'transparent', bg: 'rgba(255, 152, 0, 0.4)' },   // oranžová - solár (viditelnější)
+                grid: { border: 'transparent', bg: 'rgba(25, 118, 210, 0.4)' }    // modrá - síť (viditelnější)
             };
 
-            // 1. Grid area (nejspodnější) - 0.3 kWh
+            // POŘADÍ DATASETŮ určuje pořadí ve stacku (první = dole, poslední = nahoře)
+            // 1. Grid area (dole) - nabíjení ze sítě, BEZ borderu
             if (gridStackData.some(v => v != null && v > 0)) {
                 datasets.push({
                     label: 'Nabíjení ze sítě',
                     data: gridStackData,
                     backgroundColor: batteryColors.grid.bg,
                     borderColor: batteryColors.grid.border,
-                    borderWidth: 1,
+                    borderWidth: 0,
                     type: 'line',
                     fill: true,
                     tension: 0.4,
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     yAxisID: 'y-solar',
-                    stack: 'charging',  // Stack group
-                    order: 4
+                    stack: 'charging'
                 });
             }
 
-            // 2. Solar area (nad grid) - 0.7 kWh, Chart.js automaticky přidá nad grid
+            // 2. Solar area (uprostřed) - nabíjení ze solaru, BEZ borderu
             if (solarStackData.some(v => v != null && v > 0)) {
                 datasets.push({
                     label: 'Nabíjení ze solaru',
                     data: solarStackData,
                     backgroundColor: batteryColors.solar.bg,
                     borderColor: batteryColors.solar.border,
-                    borderWidth: 1,
+                    borderWidth: 0,
                     type: 'line',
                     fill: true,
                     tension: 0.4,
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     yAxisID: 'y-solar',
-                    stack: 'charging',  // STEJNÝ stack jako grid -> automaticky nad sebe
-                    order: 3
+                    stack: 'charging'
                 });
             }
 
-            // 3. Hlavní čára - prognóza kapacity (BEZ stacku!)
+            // 3. Baseline area (nahoře) - zbývající kapacita s TLUSTOU ČÁROU
             datasets.push({
-                label: 'Prognóza kapacity',
-                data: batteryCapacityData,
-                borderColor: batteryColors.capacity.border,
-                backgroundColor: batteryColors.capacity.bg,
-                borderWidth: 3,
-                fill: false,
+                label: 'Zbývající kapacita',
+                data: baselineData,
+                backgroundColor: batteryColors.baseline.bg,
+                borderColor: batteryColors.baseline.border,
+                borderWidth: 3,  // TLUSTÁ ČÁRA
                 type: 'line',
+                fill: true,
                 tension: 0.4,
-                pointRadius: 2,
-                pointHoverRadius: 5,
+                pointRadius: 0,
+                pointHoverRadius: 4,
                 yAxisID: 'y-solar',
-                order: 1  // Navrch všeho
+                stack: 'charging'
             });
         }
     }
