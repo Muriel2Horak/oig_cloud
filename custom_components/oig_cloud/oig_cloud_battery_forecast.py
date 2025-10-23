@@ -1035,7 +1035,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         if state_class:
             self._attr_state_class = SensorStateClass(state_class)
 
-    def _calculate_charging_intervals(self) -> tuple[List[Dict[str, Any]], float, float]:
+    def _calculate_charging_intervals(
+        self,
+    ) -> tuple[List[Dict[str, Any]], float, float]:
         """Vypočítá intervaly nabíjení ze sítě z battery_forecast dat."""
         # Načíst battery_forecast data z coordinátoru
         if not self.coordinator.data:
@@ -1054,9 +1056,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         total_energy = 0.0
         total_cost = 0.0
         now = datetime.now()
+        
+        # Pro kontrolu, jestli se baterie nabíjí, potřebujeme předchozí kapacitu
+        prev_battery_capacity = None
 
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
+            battery_capacity = point.get("battery_capacity_kwh", 0)
+            
             if grid_charge_kwh > 0:
                 timestamp_str = point.get("timestamp", "")
                 try:
@@ -1064,42 +1071,68 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     # Pouze budoucí intervaly
                     if timestamp > now:
                         spot_price_czk = point.get("spot_price_czk", 0)
-                        cost_czk = grid_charge_kwh * spot_price_czk
-
-                        charging_intervals.append(
-                            {
-                                "timestamp": timestamp_str,
-                                "energy_kwh": round(grid_charge_kwh, 3),
-                                "spot_price_czk": round(spot_price_czk, 2),
-                                "cost_czk": round(cost_czk, 2),
-                            }
-                        )
-
-                        total_energy += grid_charge_kwh
-                        total_cost += cost_czk
+                        
+                        # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
+                        # (kapacita roste oproti předchozímu bodu)
+                        is_actually_charging = False
+                        if prev_battery_capacity is not None:
+                            is_actually_charging = battery_capacity > prev_battery_capacity
+                        
+                        # Přidat interval do seznamu (všechny s grid_charge > 0)
+                        interval_data = {
+                            "timestamp": timestamp_str,
+                            "energy_kwh": round(grid_charge_kwh, 3),
+                            "spot_price_czk": round(spot_price_czk, 2),
+                            "battery_capacity_kwh": round(battery_capacity, 2),
+                            "is_charging_battery": is_actually_charging,
+                        }
+                        
+                        # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu
+                        if is_actually_charging:
+                            cost_czk = grid_charge_kwh * spot_price_czk
+                            interval_data["cost_czk"] = round(cost_czk, 2)
+                            total_energy += grid_charge_kwh
+                            total_cost += cost_czk
+                        else:
+                            # Grid pokrývá spotřebu, ne nabíjení baterie
+                            interval_data["cost_czk"] = 0.0
+                            interval_data["note"] = "Grid covers consumption, battery not charging"
+                        
+                        charging_intervals.append(interval_data)
+                        
                 except (ValueError, TypeError) as e:
                     _LOGGER.debug(
                         f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
                     )
                     continue
+            
+            # Uložit aktuální kapacitu pro další iteraci
+            prev_battery_capacity = battery_capacity
 
         return charging_intervals, total_energy, total_cost
 
     @property
-    def native_value(self) -> float:
-        """Vrátí stav senzoru - celková energie k nabití."""
-        intervals, total_energy, _ = self._calculate_charging_intervals()
-        return round(total_energy, 2) if total_energy > 0 else 0.0
+    def native_value(self) -> str:
+        """Vrátí stav senzoru - on/off jestli je nabíjení plánováno."""
+        intervals, _, _ = self._calculate_charging_intervals()
+        # Kontrola, jestli existují intervaly kde se SKUTEČNĚ nabíjí baterie
+        has_actual_charging = any(
+            interval.get("is_charging_battery", False) for interval in intervals
+        )
+        return "on" if has_actual_charging else "off"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Atributy s detaily nabíjení."""
         intervals, total_energy, total_cost = self._calculate_charging_intervals()
-        
+
         return {
             "charging_intervals": intervals,
             "total_energy_kwh": round(total_energy, 2),
             "total_cost_czk": round(total_cost, 2),
             "interval_count": len(intervals),
+            "charging_battery_count": sum(
+                1 for i in intervals if i.get("is_charging_battery", False)
+            ),
             "is_charging_planned": len(intervals) > 0,
         }

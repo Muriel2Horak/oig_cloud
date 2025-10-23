@@ -301,13 +301,13 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
     "grid_charging_planned": {
         "name": "Grid Charging Planned",
         "name_cs": "Plánované nabíjení ze sítě",
-        "unit": UnitOfEnergy.KILO_WATT_HOUR,
+        "unit": None,  # Binary sensor (on/off)
         "icon": "mdi:battery-charging",
-        "device_class": None,  # Žádná device class pro custom sensor
-        "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": None,  # Binary sensor bez device class
+        "state_class": None,  # Binary sensor nemá state class
         "sensor_type_category": "grid_charging_plan",
         "device_mapping": "analytics",  # Specializovaný senzor
         "entity_category": None,  # Hlavní senzor, ne diagnostic
-        "description": "Celková energie k nabití ze sítě (kWh). Atributy obsahují intervaly nabíjení a celkovou cenu.",
+        "description": "Indikátor plánovaného nabíjení baterie ze sítě (on/off). Atributy obsahují intervaly nabíjení, celkovou energii (kWh) a cenu (Kč).",
     },
 }
