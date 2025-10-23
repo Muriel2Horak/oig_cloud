@@ -232,11 +232,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # Ale to počítá spotřebu 2x! Správně:
             battery_kwh = battery_kwh + solar_to_battery + grid_kwh
 
-            # Clamp na min/max
+            # Clamp jen na maximum, NE na minimum
+            # (Chceme vidět pokles pod minimum aby grid charging algoritmus reagoval)
             if battery_kwh > max_capacity:
                 battery_kwh = max_capacity
-            if battery_kwh < min_capacity:
-                battery_kwh = min_capacity
+            # DŮLEŽITÉ: NEclampovat na minimum - ať timeline ukazuje skutečný pokles
+            # if battery_kwh < min_capacity:
+            #     battery_kwh = min_capacity
 
             # Přidat bod do timeline
             # FORMÁT: solar_production_kwh je přejmenováno na solar_charge_kwh (čistý přírůstek)
@@ -1164,8 +1166,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             new_capacity = prev_capacity + solar_kwh + grid_kwh - consumption_kwh
 
-            # Clamp na min/max
-            new_capacity = max(min_capacity, min(new_capacity, max_capacity))
+            # Clamp jen na maximum, NE na minimum (ať timeline ukazuje skutečný pokles)
+            new_capacity = min(new_capacity, max_capacity)
+            # NEPOUŽÍVAT: max(min_capacity, ...) - ať vidíme critical intervals
 
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
