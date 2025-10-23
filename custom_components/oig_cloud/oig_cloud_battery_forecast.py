@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
@@ -43,11 +44,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Získání box_id z coordinator.data (stejně jako v sensor.py řádek 377)
         # Coordinator vždy má data po async_config_entry_first_refresh()
         self._data_key = "unknown"
-        if coordinator and coordinator.data and isinstance(coordinator.data, dict) and coordinator.data:
+        if (
+            coordinator
+            and coordinator.data
+            and isinstance(coordinator.data, dict)
+            and coordinator.data
+        ):
             self._data_key = list(coordinator.data.keys())[0]
             _LOGGER.debug(f"Got box_id from coordinator.data: {self._data_key}")
         else:
-            _LOGGER.warning("Battery forecast sensor: coordinator has no data, using box_id='unknown'")
+            _LOGGER.warning(
+                "Battery forecast sensor: coordinator has no data, using box_id='unknown'"
+            )
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
         self._box_id = self._data_key
@@ -1003,19 +1011,39 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._box_id = (
             list(coordinator.data.keys())[0] if coordinator.data else "unknown"
         )
-        self._attr_unique_id = f"oig_{self._box_id}_{sensor_type}"
+        self._attr_unique_id = f"{self._box_id}_{sensor_type}"  # BEZ prefixu oig_
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-        self._attr_name = self._config.get("name", sensor_type)"
-        
+
+        # Načíst název ze sensor types
+        name_cs = self._config.get("name_cs")
+        name_en = self._config.get("name")
+        self._attr_name = name_cs or name_en or sensor_type
+
         # Nastavit vlastnosti senzoru
         self._attr_native_unit_of_measurement = self._config.get("unit")
         self._attr_icon = self._config.get("icon", "mdi:battery-charging")
-        self._attr_device_class = self._config.get("device_class")
-        self._attr_state_class = self._config.get("state_class")
+
+        # Správné typování pro device_class a entity_category
+        device_class = self._config.get("device_class")
+        if device_class:
+            self._attr_device_class = SensorDeviceClass(device_class)
+
+        entity_category = self._config.get("entity_category")
+        if entity_category:
+            self._attr_entity_category = EntityCategory(entity_category)
+
+        state_class = self._config.get("state_class")
+        if state_class:
+            self._attr_state_class = SensorStateClass(state_class)
+
+        # Inicializace hodnot
+        self._charging_intervals: List[Dict[str, Any]] = []
+        self._total_energy_kwh: float = 0.0
+        self._total_cost_czk: float = 0.0
 
     @property
-    def state(self) -> Optional[float]:
-        """Stav = celková energie k nabití (kWh)."""
+    def native_value(self) -> float:
+        """Vrátí stav senzoru - celková energie k nabití."""
         return round(self._total_energy_kwh, 2) if self._total_energy_kwh > 0 else 0.0
 
     @property
