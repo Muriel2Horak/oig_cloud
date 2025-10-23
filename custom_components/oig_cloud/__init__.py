@@ -153,12 +153,18 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
                 f"Dashboard: Found {entity_count} OIG entities for inverter {inverter_sn}"
             )
 
-            # Ukázka několika klíčových entit
+            # Kontrola klíčových entit (pouze pokud jsou zapnuté v konfiguraci)
             key_entities = [
-                f"sensor.oig_{inverter_sn}_remaining_usable_capacity",
-                f"sensor.oig_{inverter_sn}_solar_forecast",
-                f"sensor.oig_{inverter_sn}_battery_forecast",
+                f"sensor.oig_{inverter_sn}_remaining_usable_capacity",  # vždy
             ]
+            
+            # Přidat solar_forecast pouze pokud je zapnutý
+            if entry.options.get("enable_solar_forecast", False):
+                key_entities.append(f"sensor.oig_{inverter_sn}_solar_forecast")
+            
+            # Přidat battery_forecast pouze pokud je zapnutý
+            if entry.options.get("enable_battery_prediction", False):
+                key_entities.append(f"sensor.oig_{inverter_sn}_battery_forecast")
 
             for entity_id in key_entities:
                 entity_state = hass.states.get(entity_id)
