@@ -551,29 +551,47 @@
 
     <!-- Tab: Pricing & Forecast -->
     <div id="pricing-tab" class="tab-content">
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">Aktuální spotová cena</div>
-                <div class="stat-value" id="current-spot-price">--</div>
+        <!-- Nové karty s extrémními cenami -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+            <!-- Nejlevnější období NÁKUPU -->
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3);">
+                <div class="stat-label" style="color: #4CAF50; font-weight: 600;">🟢 Nejlevnější nákup</div>
+                <div class="stat-value" id="cheapest-buy-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                <div id="cheapest-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
+                <canvas id="cheapest-buy-chart" style="height: 40px; margin-top: 5px;"></canvas>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Aktuální výkupní cena</div>
-                <div class="stat-value" id="current-export-price">--</div>
+
+            <!-- Nejdražší období NÁKUPU -->
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(244, 67, 54, 0.15) 0%, rgba(244, 67, 54, 0.05) 100%); border: 1px solid rgba(244, 67, 54, 0.3);">
+                <div class="stat-label" style="color: #F44336; font-weight: 600;">🔴 Nejdražší nákup</div>
+                <div class="stat-value" id="expensive-buy-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                <div id="expensive-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
+                <canvas id="expensive-buy-chart" style="height: 40px; margin-top: 5px;"></canvas>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Průměr dnes (nákup)</div>
-                <div class="stat-value" id="avg-spot-today">--</div>
+
+            <!-- Nejlepší období PRODEJE (nejvyšší cena) -->
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3);">
+                <div class="stat-label" style="color: #4CAF50; font-weight: 600;">💰 Nejlepší prodej</div>
+                <div class="stat-value" id="best-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                <div id="best-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
+                <canvas id="best-export-chart" style="height: 40px; margin-top: 5px;"></canvas>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Solar forecast dnes</div>
-                <div class="stat-value" id="today-forecast-total">--</div>
+
+            <!-- Nejhorší období PRODEJE (nejnižší cena) -->
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(255, 167, 38, 0.15) 0%, rgba(255, 167, 38, 0.05) 100%); border: 1px solid rgba(255, 167, 38, 0.3);">
+                <div class="stat-label" style="color: #FFA726; font-weight: 600;">📉 Nejhorší prodej</div>
+                <div class="stat-value" id="worst-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                <div id="worst-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
+                <canvas id="worst-export-chart" style="height: 40px; margin-top: 5px;"></canvas>
             </div>
-            <div class="stat-card" id="grid-charging-card" style="grid-column: span 2; display: none;">
-                <div class="stat-label">📱 Plánované nabíjení ze sítě</div>
-                <div class="stat-value" id="grid-charging-summary" style="font-size: 0.9em; line-height: 1.4;">
-                    <div id="grid-charging-total">--</div>
-                    <div id="grid-charging-cost" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 5px;">--</div>
-                </div>
+        </div>
+
+        <!-- Grid Charging Card - ponechat když je aktiv -->
+        <div class="stat-card" id="grid-charging-card" style="display: none; margin-bottom: 15px;">
+            <div class="stat-label">📱 Plánované nabíjení ze sítě</div>
+            <div class="stat-value" id="grid-charging-summary" style="font-size: 0.9em; line-height: 1.4;">
+                <div id="grid-charging-total">--</div>
+                <div id="grid-charging-cost" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 5px;">--</div>
             </div>
         </div>
 
