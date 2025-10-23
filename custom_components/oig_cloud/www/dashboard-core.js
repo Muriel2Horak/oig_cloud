@@ -1941,21 +1941,22 @@ async function getSensorString(entityId) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
-            return { value: '', lastUpdated: null };
+            return { value: '', lastUpdated: null, attributes: {} };
         }
 
         const state = hass.states[entityId];
         if (!state) {
-            return { value: '', lastUpdated: null };
+            return { value: '', lastUpdated: null, attributes: {} };
         }
 
         const value = (state.state !== 'unavailable' && state.state !== 'unknown')
             ? state.state
             : '';
         const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
-        return { value, lastUpdated };
+        const attributes = state.attributes || {};
+        return { value, lastUpdated, attributes };
     } catch (e) {
-        return { value: '', lastUpdated: null };
+        return { value: '', lastUpdated: null, attributes: {} };
     }
 }
 
@@ -3306,7 +3307,7 @@ function initTooltips() {
 async function updateGridChargingPlan() {
     const gridChargingData = await getSensorString(getSensorId('grid_charging_planned'));
     const isPlanned = gridChargingData.value === 'on';
-    
+
     console.log('[Grid Charging] updateGridChargingPlan() called');
     console.log('[Grid Charging] Sensor ID:', getSensorId('grid_charging_planned'));
     console.log('[Grid Charging] Sensor value:', gridChargingData.value);
@@ -3331,23 +3332,33 @@ async function updateGridChargingPlan() {
         console.error('[Grid Charging] Section element NOT FOUND!');
     }
 
-    // Update time range
+    // Update time range - VŽDY aktualizuj hodnoty (i když je sekce skrytá)
     const timeElement = document.getElementById('grid-charging-time');
-    if (timeElement && gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
-        console.log('[Grid Charging] Updating time:', gridChargingData.attributes.next_charging_time_range);
-        timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
+    if (timeElement) {
+        if (gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
+            console.log('[Grid Charging] Updating time:', gridChargingData.attributes.next_charging_time_range);
+            timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
+        } else {
+            console.log('[Grid Charging] Time attribute not found, attributes:', gridChargingData.attributes);
+            timeElement.textContent = '--';
+        }
     } else {
-        console.log('[Grid Charging] Time element or attribute not found');
+        console.error('[Grid Charging] Time element NOT FOUND!');
     }
 
-    // Update cost
+    // Update cost - VŽDY aktualizuj hodnoty (i když je sekce skrytá)
     const costElement = document.getElementById('grid-charging-cost');
-    if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
-        const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
-        console.log('[Grid Charging] Updating cost:', cost.toFixed(2) + ' Kč');
-        costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+    if (costElement) {
+        if (gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
+            const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
+            console.log('[Grid Charging] Updating cost:', cost.toFixed(2) + ' Kč');
+            costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+        } else {
+            console.log('[Grid Charging] Cost attribute not found, attributes:', gridChargingData.attributes);
+            costElement.textContent = '-- Kč';
+        }
     } else {
-        console.log('[Grid Charging] Cost element or attribute not found');
+        console.error('[Grid Charging] Cost element NOT FOUND!');
     }
 }
 
