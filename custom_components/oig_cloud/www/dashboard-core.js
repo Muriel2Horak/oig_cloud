@@ -2976,7 +2976,7 @@ async function loadNodeDetails() {
     } catch (e) {
         console.error('[Details] Error loading node details:', e);
     }
-    
+
     // FIX: Překreslit linky po načtení dat (může se změnit pozice elementů)
     drawConnections();
 }
@@ -3803,16 +3803,16 @@ function resetChartZoom() {
 // Adaptivní úprava detailu grafu podle úrovně zoomu
 function updateChartDetailLevel(chart) {
     if (!chart || !chart.scales || !chart.scales.x) return;
-    
+
     const xScale = chart.scales.x;
     const visibleRange = xScale.max - xScale.min; // v milisekundách
     const hoursVisible = visibleRange / (1000 * 60 * 60);
-    
+
     // Určit úroveň detailu
     let detailLevel = 'overview'; // celkový pohled (>24h)
     if (hoursVisible <= 24) detailLevel = 'day'; // denní pohled (6-24h)
     if (hoursVisible <= 6) detailLevel = 'detail'; // detailní pohled (<6h)
-    
+
     // Adaptivní nastavení legend
     if (chart.options.plugins.legend) {
         // Overview: kompaktní legenda
@@ -3831,13 +3831,13 @@ function updateChartDetailLevel(chart) {
             chart.options.plugins.legend.labels.font.size = 11;
         }
     }
-    
+
     // Adaptivní nastavení os Y
     const yAxes = ['y-price', 'y-solar', 'y-power'];
     yAxes.forEach(axisId => {
         const axis = chart.options.scales[axisId];
         if (!axis) return;
-        
+
         if (detailLevel === 'overview') {
             // Overview: menší titulky, skrýt některé
             axis.title.display = false; // Skrýt názvy os
@@ -3857,7 +3857,7 @@ function updateChartDetailLevel(chart) {
             axis.display = true;
         }
     });
-    
+
     // Adaptivní nastavení X osy
     if (chart.options.scales.x) {
         if (detailLevel === 'overview') {
@@ -3874,7 +3874,7 @@ function updateChartDetailLevel(chart) {
             chart.options.scales.x.time.displayFormats.hour = 'dd.MM HH:mm';
         }
     }
-    
+
     // Adaptivní zobrazení datalabels (popisky cen)
     // DŮLEŽITÉ: Použít originalPriceData pro výpočet extrémů (ne zoomovaná data!)
     chart.data.datasets.forEach((dataset, idx) => {
@@ -3882,21 +3882,21 @@ function updateChartDetailLevel(chart) {
             if (dataset.datalabels && originalPriceData && originalPriceData.length > 0) {
                 // Použít PŮVODNÍ dataset pro výpočet percentilů
                 const sorted = [...originalPriceData].sort((a, b) => a - b);
-                
+
                 if (detailLevel === 'overview') {
                     // Overview: místo zmetku čísel ukázat jen REPREZENTATIVNÍ body intervalů
                     // Najít bloky levných/drahých cen a ukázat průměr každého bloku
                     const top5 = sorted[Math.floor(sorted.length * 0.95)];
                     const bottom5 = sorted[Math.floor(sorted.length * 0.05)];
-                    
+
                     // Identifikovat bloky extrémních cen
                     const extremeBlocks = [];
                     let currentBlock = null;
-                    
+
                     originalPriceData.forEach((value, idx) => {
                         const isExtreme = value >= top5 || value <= bottom5;
                         const extremeType = value >= top5 ? 'high' : (value <= bottom5 ? 'low' : null);
-                        
+
                         if (isExtreme) {
                             if (!currentBlock || currentBlock.type !== extremeType || idx - currentBlock.endIdx > 1) {
                                 // Začátek nového bloku
@@ -3921,43 +3921,43 @@ function updateChartDetailLevel(chart) {
                         }
                     });
                     if (currentBlock) extremeBlocks.push(currentBlock);
-                    
+
                     // Zobrazit JEDEN reprezentativní bod na každý blok (uprostřed)
                     dataset.datalabels.display = (context) => {
                         const idx = context.dataIndex;
-                        const block = extremeBlocks.find(b => 
+                        const block = extremeBlocks.find(b =>
                             idx >= b.startIdx && idx <= b.endIdx
                         );
                         if (!block) return false;
-                        
+
                         // Ukázat label jen uprostřed bloku
                         const midIdx = Math.floor((block.startIdx + block.endIdx) / 2);
                         return idx === midIdx;
                     };
-                    
+
                     // Formátovat label: ukázat průměr celého bloku + rozsah
                     dataset.datalabels.formatter = (value, context) => {
                         const idx = context.dataIndex;
-                        const block = extremeBlocks.find(b => 
+                        const block = extremeBlocks.find(b =>
                             idx >= b.startIdx && idx <= b.endIdx
                         );
                         if (!block) return '';
-                        
+
                         const avg = block.values.reduce((a, b) => a + b, 0) / block.values.length;
                         const min = Math.min(...block.values);
                         const max = Math.max(...block.values);
                         const count = block.values.length;
-                        
+
                         // Ikona podle typu
                         const icon = block.type === 'high' ? '🔴' : '🟢';
-                        
+
                         // Formát: ikona + průměr (počet intervalů)
                         return `${icon} ${avg.toFixed(2)} Kč\n(${count}× 15min)`;
                     };
-                    
+
                     dataset.datalabels.font = { size: 10, weight: 'bold' };
                     dataset.datalabels.padding = 6;
-                    
+
                 } else if (detailLevel === 'detail') {
                     // Detail: top/bottom 20% z PŮVODNÍCH dat, jednotlivé hodnoty
                     const top20 = sorted[Math.floor(sorted.length * 0.8)];
@@ -3969,7 +3969,7 @@ function updateChartDetailLevel(chart) {
                     dataset.datalabels.formatter = (value) => `${value.toFixed(2)} Kč`;
                     dataset.datalabels.font = { size: 10, weight: 'bold' };
                     dataset.datalabels.padding = 4;
-                    
+
                 } else {
                     // Day: top/bottom 10% z PŮVODNÍCH dat, jednotlivé hodnoty
                     const top10 = sorted[Math.floor(sorted.length * 0.9)];
@@ -3985,7 +3985,7 @@ function updateChartDetailLevel(chart) {
             }
         }
     });
-    
+
     chart.update('none'); // Update bez animace
 }
 
@@ -4038,7 +4038,7 @@ function loadPricingData() {
             // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
             originalPriceData = spotPriceData;
-            
+
             // Identifikace top/bottom 10% cen z CELÉHO datasetu
             const sortedPrices = [...priceValues].sort((a, b) => a - b);
             const tenPercentCount = Math.max(1, Math.ceil(sortedPrices.length * 0.1));
@@ -4623,7 +4623,7 @@ function loadPricingData() {
                 }
             }
         });
-        
+
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
     }

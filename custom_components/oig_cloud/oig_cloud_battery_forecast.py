@@ -1320,6 +1320,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
                             interval_data["cost_czk"] = 0.0
+                            interval_data["battery_charge_kwh"] = 0.0
                             interval_data["note"] = (
                                 "Grid covers consumption, battery not charging"
                             )
@@ -1330,9 +1331,12 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.debug(
                         f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
                     )
+                    # I když je chyba, musíme update prev_battery_capacity
+                    prev_battery_capacity = battery_capacity
                     continue
 
-            # Uložit aktuální kapacitu pro další iteraci
+            # KRITICKÉ: Aktualizovat prev_battery_capacity VŽDY (i když grid_charge=0)!
+            # Jinak při mezerách v nabíjení dostáváme špatné capacity_increase
             prev_battery_capacity = battery_capacity
 
         return charging_intervals, total_energy, total_cost
