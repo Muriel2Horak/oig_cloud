@@ -1011,7 +1011,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._box_id = (
             list(coordinator.data.keys())[0] if coordinator.data else "unknown"
         )
-        self._attr_unique_id = f"{self._box_id}_{sensor_type}"  # BEZ prefixu oig_
+        self._attr_unique_id = f"oig_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
         # Načíst název ze sensor types
