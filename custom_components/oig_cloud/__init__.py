@@ -157,11 +157,11 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             key_entities = [
                 f"sensor.oig_{inverter_sn}_remaining_usable_capacity",  # vždy
             ]
-            
+
             # Přidat solar_forecast pouze pokud je zapnutý
             if entry.options.get("enable_solar_forecast", False):
                 key_entities.append(f"sensor.oig_{inverter_sn}_solar_forecast")
-            
+
             # Přidat battery_forecast pouze pokud je zapnutý
             if entry.options.get("enable_battery_prediction", False):
                 key_entities.append(f"sensor.oig_{inverter_sn}_battery_forecast")
@@ -169,11 +169,12 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             for entity_id in key_entities:
                 entity_state = hass.states.get(entity_id)
                 if entity_state:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"Dashboard entity check: {entity_id} = {entity_state.state}"
                     )
                 else:
-                    _LOGGER.warning(f"Dashboard entity missing: {entity_id}")
+                    # DEBUG místo WARNING - entity může chybět při startu (timing issue)
+                    _LOGGER.debug(f"Dashboard entity not yet available: {entity_id}")
         else:
             _LOGGER.warning("Dashboard: No coordinator data for entity checking")
 
