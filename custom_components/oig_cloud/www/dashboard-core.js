@@ -2972,6 +2972,9 @@ async function loadNodeDetails() {
     } catch (e) {
         console.error('[Details] Error loading node details:', e);
     }
+    
+    // FIX: Překreslit linky po načtení dat (může se změnit pozice elementů)
+    drawConnections();
 }
 
 // Show charge battery dialog
@@ -3652,8 +3655,22 @@ function init() {
     // Time update every second
     setInterval(updateTime, 1000);
 
-    // Redraw lines on resize
-    window.addEventListener('resize', drawConnections);
+    // Redraw lines on resize with debounce
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            drawConnections();
+        }, 100);
+    });
+
+    // FIX: Force layout stabilization after initial render
+    // Problém: Po restartu HA se někdy načítají CSS/HTML v jiném pořadí
+    // Řešení: Opakované překreslení po různých intervalech
+    setTimeout(() => drawConnections(), 100);   // První pokus po 100ms
+    setTimeout(() => drawConnections(), 500);   // Druhý pokus po 500ms
+    setTimeout(() => drawConnections(), 1000);  // Třetí pokus po 1s
+    setTimeout(() => drawConnections(), 2000);  // Finální po 2s
 
     // Mobile: Toggle node details on click (collapsed by default)
     if (window.innerWidth <= 768) {
