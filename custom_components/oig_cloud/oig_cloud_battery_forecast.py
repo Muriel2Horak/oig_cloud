@@ -1269,6 +1269,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         total_energy = 0.0
         total_cost = 0.0
         now = datetime.now()
+        # Zahrnout intervaly od (now - 10 minut) pro detekci probíhajícího nabíjení
+        time_threshold = now - timedelta(minutes=10)
 
         # Pro kontrolu, jestli se baterie nabíjí, potřebujeme předchozí kapacitu
         prev_battery_capacity = None
@@ -1281,8 +1283,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 timestamp_str = point.get("timestamp", "")
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
-                    # Pouze budoucí intervaly
-                    if timestamp > now:
+                    # Zahrnout intervaly od (now - 10min) pro detekci probíhajícího nabíjení
+                    if timestamp >= time_threshold:
                         spot_price_czk = point.get("spot_price_czk", 0)
 
                         # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
@@ -1343,13 +1345,34 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Vrátí stav senzoru - on/off jestli je nabíjení plánováno."""
+        """Vrátí stav senzoru - on/off jestli nabíjení PROBÍHÁ nebo brzy začne."""
         intervals, _, _ = self._calculate_charging_intervals()
-        # Kontrola, jestli existují intervaly kde se SKUTEČNĚ nabíjí baterie
-        has_actual_charging = any(
-            interval.get("is_charging_battery", False) for interval in intervals
-        )
-        return "on" if has_actual_charging else "off"
+
+        # Kontrola, jestli je aktuální čas v intervalu nabíjení (nebo 5 min před)
+        now = datetime.now()
+        offset_before = timedelta(minutes=5)  # Zapnout 5 min před začátkem
+        offset_after = timedelta(minutes=5)  # Vypnout 5 min po konci
+
+        for interval in intervals:
+            if not interval.get("is_charging_battery", False):
+                continue
+
+            try:
+                interval_time = datetime.fromisoformat(interval["timestamp"])
+                interval_start = interval_time
+                interval_end = interval_time + timedelta(minutes=15)  # 15min interval
+
+                # Je aktuální čas v rozsahu (interval_start - 5min) až (interval_end + 5min)?
+                if (
+                    (interval_start - offset_before)
+                    <= now
+                    <= (interval_end + offset_after)
+                ):
+                    return "on"
+            except (ValueError, TypeError):
+                continue
+
+        return "off"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

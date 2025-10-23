@@ -562,11 +562,29 @@ class ServiceShield:
 
         new_expected_set = frozenset(expected_entities.items())
 
-        # ߚ렊e už ve frontě stejná služba se stejným cílem?
-        if any(
-            q[0] == service_name and frozenset(q[2].items()) == new_expected_set
-            for q in self.queue
-        ):
+        # Debug: Vypsat frontu před kontrolou deduplikace
+        _LOGGER.info(f"[DEDUP DEBUG] Checking for duplicates:")
+        _LOGGER.info(f"[DEDUP DEBUG]   New service: {service_name}")
+        _LOGGER.info(f"[DEDUP DEBUG]   New params: {params}")
+        _LOGGER.info(f"[DEDUP DEBUG]   New expected: {expected_entities}")
+        _LOGGER.info(f"[DEDUP DEBUG]   Queue length: {len(self.queue)}")
+        for i, q in enumerate(self.queue):
+            _LOGGER.info(
+                f"[DEDUP DEBUG]   Queue[{i}]: service={q[0]}, params={q[1]}, expected={q[2]}"
+            )
+
+        # Čeká už ve frontě stejná služba se stejným cílem?
+        duplicate_found = False
+        for q in self.queue:
+            if q[0] == service_name and frozenset(q[2].items()) == new_expected_set:
+                duplicate_found = True
+                _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND!")
+                _LOGGER.info(
+                    f"[DEDUP DEBUG]   Matching: service={q[0]}, params={q[1]}, expected={q[2]}"
+                )
+                break
+
+        if duplicate_found:
             _LOGGER.info(
                 f"[INTERCEPT DEBUG] Service already in queue - returning early"
             )

@@ -3639,7 +3639,7 @@ function init() {
     // - Detail sensors -> debouncedLoadNodeDetails() (500ms debounce)
     // - Pricing sensors -> debouncedLoadPricingData() (300ms debounce)
     // - Shield sensors -> debouncedShieldMonitor() (100ms debounce)
-    
+
     // REMOVED: Polling-based updates (replaced by WebSocket events)
     // setInterval(loadData, 5000);  ❌ Nahrazeno event-driven
     // setInterval(loadNodeDetails, 30000);  ❌ Nahrazeno event-driven
@@ -3665,7 +3665,7 @@ function init() {
             detectAndApplyTheme();
         });
     }
-    
+
     // 3. Fallback: Check theme on visibility change (tab switch)
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
@@ -3756,6 +3756,13 @@ function switchTab(tabName) {
 
 // === PRICING CHARTS ===
 let loadPricingDataTimer = null;
+let priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
+let currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
+    cheapest: null,
+    expensive: null,
+    bestExport: null,
+    worstExport: null
+};
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
@@ -3821,15 +3828,23 @@ function resetChartZoom() {
     if (combinedChart) {
         combinedChart.resetZoom();
         currentZoomRange = null;  // Reset zoom state
+
+        // Odebrat zoom-active z aktivní karty
+        if (activeZoomCard) {
+            activeZoomCard.classList.remove('zoom-active');
+            activeZoomCard = null;
+        }
+
         updateChartDetailLevel(combinedChart);
     }
 }
 
 // Sledování aktuálního zoom stavu
 let currentZoomRange = null;
+let activeZoomCard = null; // Reference na aktuálně aktivní kartu
 
 // Toggle zoom: pokud není zoom -> zoom IN, pokud je zoom -> zoom OUT
-function zoomToTimeRange(startTime, endTime) {
+function zoomToTimeRange(startTime, endTime, cardElement = null) {
     if (!combinedChart) {
         console.log('[Zoom] Chart not available');
         return;
@@ -3849,6 +3864,13 @@ function zoomToTimeRange(startTime, endTime) {
         console.log('[Zoom] Already zoomed to this range -> ZOOM OUT');
         combinedChart.resetZoom();
         currentZoomRange = null;
+
+        // Odebrat zoom-active třídu z aktivní karty
+        if (activeZoomCard) {
+            activeZoomCard.classList.remove('zoom-active');
+            activeZoomCard = null;
+        }
+
         updateChartDetailLevel(combinedChart);
         return;
     }
@@ -3871,6 +3893,17 @@ function zoomToTimeRange(startTime, endTime) {
         // Uložit aktuální zoom
         currentZoomRange = { start: zoomStart, end: zoomEnd };
         console.log('[Zoom] Zoom IN applied successfully');
+
+        // Odebrat zoom-active ze všech karet
+        document.querySelectorAll('.stat-card.zoom-active').forEach(card => {
+            card.classList.remove('zoom-active');
+        });
+
+        // Přidat zoom-active na novou kartu
+        if (cardElement) {
+            cardElement.classList.add('zoom-active');
+            activeZoomCard = cardElement;
+        }
 
         // Aktualizovat detail level
         updateChartDetailLevel(combinedChart);
@@ -4310,48 +4343,38 @@ function loadPricingData() {
             // Nejlevnější 3h blok
             const cheapestBlock = findExtremePriceBlock(prices, true, 3);
             if (cheapestBlock) {
+                // Uložit do globální proměnné pro onClick handler
+                currentPriceBlocks.cheapest = cheapestBlock;
+
                 const priceEl = document.getElementById('cheapest-buy-price');
                 const timeEl = document.getElementById('cheapest-buy-time');
-                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
+
                 if (priceEl && timeEl) {
+                    // UPDATE DATA (tohle se děje při každém update)
                     priceEl.innerHTML = cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(cheapestBlock.start);
                     const endTime = new Date(cheapestBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)', cheapestBlock.start, cheapestBlock.end);
-
-                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
-                    if (cardEl) {
-                        cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = (e) => {
-                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
-                            zoomToTimeRange(cheapestBlock.start, cheapestBlock.end);
-                        };
-                    }
                 }
             }
 
             // Nejdražší 3h blok
             const expensiveBlock = findExtremePriceBlock(prices, false, 3);
             if (expensiveBlock) {
+                // Uložit do globální proměnné
+                currentPriceBlocks.expensive = expensiveBlock;
+
                 const priceEl = document.getElementById('expensive-buy-price');
                 const timeEl = document.getElementById('expensive-buy-time');
-                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
+
                 if (priceEl && timeEl) {
+                    // UPDATE DATA
                     priceEl.innerHTML = expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(expensiveBlock.start);
                     const endTime = new Date(expensiveBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)', expensiveBlock.start, expensiveBlock.end);
-
-                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
-                    if (cardEl) {
-                        cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = (e) => {
-                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
-                            zoomToTimeRange(expensiveBlock.start, expensiveBlock.end);
-                        };
-                    }
                 }
             }
         }
@@ -4393,48 +4416,32 @@ function loadPricingData() {
             // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
             const bestExportBlock = findExtremePriceBlock(prices, false, 3);
             if (bestExportBlock) {
+                currentPriceBlocks.bestExport = bestExportBlock;
+
                 const priceEl = document.getElementById('best-export-price');
                 const timeEl = document.getElementById('best-export-time');
-                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(bestExportBlock.start);
                     const endTime = new Date(bestExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
-
-                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
-                    if (cardEl) {
-                        cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = (e) => {
-                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
-                            zoomToTimeRange(bestExportBlock.start, bestExportBlock.end);
-                        };
-                    }
                 }
             }
 
             // Nejhorší prodej = NEJNIŽŠÍ cena (findLowest = true)
             const worstExportBlock = findExtremePriceBlock(prices, true, 3);
             if (worstExportBlock) {
+                currentPriceBlocks.worstExport = worstExportBlock;
+
                 const priceEl = document.getElementById('worst-export-price');
                 const timeEl = document.getElementById('worst-export-time');
-                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(worstExportBlock.start);
                     const endTime = new Date(worstExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
-
-                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
-                    if (cardEl) {
-                        cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = (e) => {
-                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
-                            zoomToTimeRange(worstExportBlock.start, worstExportBlock.end);
-                        };
-                    }
                 }
             }
         }
@@ -4809,6 +4816,16 @@ function loadPricingData() {
                             },
                             mode: 'x', // Zoom jen na X ose (časové ose)
                             onZoomComplete: function({chart}) {
+                                // Při manuálním zoomu (kolečko/drag) resetovat currentZoomRange
+                                // aby další klik na dlaždici fungoval správně
+                                currentZoomRange = null;
+
+                                // Odebrat zoom-active z aktivní karty
+                                if (activeZoomCard) {
+                                    activeZoomCard.classList.remove('zoom-active');
+                                    activeZoomCard = null;
+                                }
+
                                 updateChartDetailLevel(chart);
                             }
                         },
@@ -4817,6 +4834,15 @@ function loadPricingData() {
                             mode: 'x',
                             modifierKey: 'shift', // Pan s Shift+drag
                             onPanComplete: function({chart}) {
+                                // Při manuálním panu resetovat currentZoomRange
+                                currentZoomRange = null;
+
+                                // Odebrat zoom-active z aktivní karty
+                                if (activeZoomCard) {
+                                    activeZoomCard.classList.remove('zoom-active');
+                                    activeZoomCard = null;
+                                }
+
                                 updateChartDetailLevel(chart);
                             }
                         },
@@ -4901,5 +4927,74 @@ function loadPricingData() {
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
     }
+
+    // Attach card handlers only once
+    setupPriceCardHandlers();
+}
+
+/**
+ * Setup onClick handlers for price cards (one-time only)
+ * Handlers are attached once and survive innerHTML updates
+ */
+function setupPriceCardHandlers() {
+    if (priceCardHandlersAttached) {
+        console.log('[Card] Handlers already attached, skipping');
+        return;
+    }
+
+    // Cheapest buy card
+    const cheapestCard = document.getElementById('cheapest-buy-price')?.closest('.stat-card');
+    if (cheapestCard) {
+        cheapestCard.style.cursor = 'pointer';
+        cheapestCard.onclick = (e) => {
+            e.stopPropagation();
+            if (currentPriceBlocks.cheapest) {
+                console.log('[Card] Cheapest buy clicked, zooming to:', currentPriceBlocks.cheapest);
+                zoomToTimeRange(currentPriceBlocks.cheapest.start, currentPriceBlocks.cheapest.end, cheapestCard);
+            }
+        };
+    }
+
+    // Expensive buy card
+    const expensiveCard = document.getElementById('expensive-buy-price')?.closest('.stat-card');
+    if (expensiveCard) {
+        expensiveCard.style.cursor = 'pointer';
+        expensiveCard.onclick = (e) => {
+            e.stopPropagation();
+            if (currentPriceBlocks.expensive) {
+                console.log('[Card] Expensive buy clicked, zooming to:', currentPriceBlocks.expensive);
+                zoomToTimeRange(currentPriceBlocks.expensive.start, currentPriceBlocks.expensive.end, expensiveCard);
+            }
+        };
+    }
+
+    // Best export card
+    const bestExportCard = document.getElementById('best-export-price')?.closest('.stat-card');
+    if (bestExportCard) {
+        bestExportCard.style.cursor = 'pointer';
+        bestExportCard.onclick = (e) => {
+            e.stopPropagation();
+            if (currentPriceBlocks.bestExport) {
+                console.log('[Card] Best export clicked, zooming to:', currentPriceBlocks.bestExport);
+                zoomToTimeRange(currentPriceBlocks.bestExport.start, currentPriceBlocks.bestExport.end, bestExportCard);
+            }
+        };
+    }
+
+    // Worst export card
+    const worstExportCard = document.getElementById('worst-export-price')?.closest('.stat-card');
+    if (worstExportCard) {
+        worstExportCard.style.cursor = 'pointer';
+        worstExportCard.onclick = (e) => {
+            e.stopPropagation();
+            if (currentPriceBlocks.worstExport) {
+                console.log('[Card] Worst export clicked, zooming to:', currentPriceBlocks.worstExport);
+                zoomToTimeRange(currentPriceBlocks.worstExport.start, currentPriceBlocks.worstExport.end, worstExportCard);
+            }
+        };
+    }
+
+    priceCardHandlersAttached = true;
+    console.log('[Card] All onClick handlers attached (one-time setup)');
 }
 
