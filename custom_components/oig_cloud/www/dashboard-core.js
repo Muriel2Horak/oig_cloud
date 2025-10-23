@@ -4214,25 +4214,29 @@ function loadPricingData() {
             // Nejlevnější 3h blok
             const cheapestBlock = findExtremePriceBlock(prices, true, 3);
             if (cheapestBlock) {
-                document.getElementById('cheapest-buy-price').innerHTML =
-                    cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                const startTime = new Date(cheapestBlock.start);
-                const endTime = new Date(cheapestBlock.end);
-                document.getElementById('cheapest-buy-time').textContent =
-                    `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)');
+                const priceEl = document.getElementById('cheapest-buy-price');
+                const timeEl = document.getElementById('cheapest-buy-time');
+                if (priceEl && timeEl) {
+                    priceEl.innerHTML = cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                    const startTime = new Date(cheapestBlock.start);
+                    const endTime = new Date(cheapestBlock.end);
+                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
+                    createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)');
+                }
             }
 
             // Nejdražší 3h blok
             const expensiveBlock = findExtremePriceBlock(prices, false, 3);
             if (expensiveBlock) {
-                document.getElementById('expensive-buy-price').innerHTML =
-                    expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                const startTime = new Date(expensiveBlock.start);
-                const endTime = new Date(expensiveBlock.end);
-                document.getElementById('expensive-buy-time').textContent =
-                    `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)');
+                const priceEl = document.getElementById('expensive-buy-price');
+                const timeEl = document.getElementById('expensive-buy-time');
+                if (priceEl && timeEl) {
+                    priceEl.innerHTML = expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                    const startTime = new Date(expensiveBlock.start);
+                    const endTime = new Date(expensiveBlock.end);
+                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
+                    createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)');
+                }
             }
         }
     }
@@ -4271,25 +4275,29 @@ function loadPricingData() {
             // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
             const bestExportBlock = findExtremePriceBlock(prices, false, 3);
             if (bestExportBlock) {
-                document.getElementById('best-export-price').innerHTML =
-                    bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                const startTime = new Date(bestExportBlock.start);
-                const endTime = new Date(bestExportBlock.end);
-                document.getElementById('best-export-time').textContent =
-                    `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)');
+                const priceEl = document.getElementById('best-export-price');
+                const timeEl = document.getElementById('best-export-time');
+                if (priceEl && timeEl) {
+                    priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                    const startTime = new Date(bestExportBlock.start);
+                    const endTime = new Date(bestExportBlock.end);
+                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
+                    createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)');
+                }
             }
 
             // Nejhorší prodej = NEJNIŽŠÍ cena (findLowest = true)
             const worstExportBlock = findExtremePriceBlock(prices, true, 3);
             if (worstExportBlock) {
-                document.getElementById('worst-export-price').innerHTML =
-                    worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                const startTime = new Date(worstExportBlock.start);
-                const endTime = new Date(worstExportBlock.end);
-                document.getElementById('worst-export-time').textContent =
-                    `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)');
+                const priceEl = document.getElementById('worst-export-price');
+                const timeEl = document.getElementById('worst-export-time');
+                if (priceEl && timeEl) {
+                    priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                    const startTime = new Date(worstExportBlock.start);
+                    const endTime = new Date(worstExportBlock.end);
+                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
+                    createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)');
+                }
             }
         }
     }
