@@ -1,5 +1,9 @@
 const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
 
+// === GLOBAL VARIABLES FOR CHART DATA ===
+// Store complete dataset for extremes calculation regardless of zoom
+let originalPriceData = null;
+
 // === TOOLTIP POSITIONING ===
 
 // === CONTROL PANEL FUNCTIONS ===
@@ -3872,42 +3876,111 @@ function updateChartDetailLevel(chart) {
     }
     
     // Adaptivní zobrazení datalabels (popisky cen)
+    // DŮLEŽITÉ: Použít originalPriceData pro výpočet extrémů (ne zoomovaná data!)
     chart.data.datasets.forEach((dataset, idx) => {
         if (dataset.label && dataset.label.includes('Spotová cena')) {
-            if (dataset.datalabels) {
+            if (dataset.datalabels && originalPriceData && originalPriceData.length > 0) {
+                // Použít PŮVODNÍ dataset pro výpočet percentilů
+                const sorted = [...originalPriceData].sort((a, b) => a - b);
+                
                 if (detailLevel === 'overview') {
-                    // Overview: jen top 5% extrémů
+                    // Overview: místo zmetku čísel ukázat jen REPREZENTATIVNÍ body intervalů
+                    // Najít bloky levných/drahých cen a ukázat průměr každého bloku
+                    const top5 = sorted[Math.floor(sorted.length * 0.95)];
+                    const bottom5 = sorted[Math.floor(sorted.length * 0.05)];
+                    
+                    // Identifikovat bloky extrémních cen
+                    const extremeBlocks = [];
+                    let currentBlock = null;
+                    
+                    originalPriceData.forEach((value, idx) => {
+                        const isExtreme = value >= top5 || value <= bottom5;
+                        const extremeType = value >= top5 ? 'high' : (value <= bottom5 ? 'low' : null);
+                        
+                        if (isExtreme) {
+                            if (!currentBlock || currentBlock.type !== extremeType || idx - currentBlock.endIdx > 1) {
+                                // Začátek nového bloku
+                                if (currentBlock) extremeBlocks.push(currentBlock);
+                                currentBlock = {
+                                    type: extremeType,
+                                    startIdx: idx,
+                                    endIdx: idx,
+                                    values: [value]
+                                };
+                            } else {
+                                // Pokračování bloku
+                                currentBlock.endIdx = idx;
+                                currentBlock.values.push(value);
+                            }
+                        } else {
+                            // Konec bloku
+                            if (currentBlock) {
+                                extremeBlocks.push(currentBlock);
+                                currentBlock = null;
+                            }
+                        }
+                    });
+                    if (currentBlock) extremeBlocks.push(currentBlock);
+                    
+                    // Zobrazit JEDEN reprezentativní bod na každý blok (uprostřed)
                     dataset.datalabels.display = (context) => {
-                        const data = context.dataset.data;
-                        const value = data[context.dataIndex];
-                        const sorted = [...data].sort((a, b) => a - b);
-                        const top5 = sorted[Math.floor(sorted.length * 0.95)];
-                        const bottom5 = sorted[Math.floor(sorted.length * 0.05)];
-                        return value >= top5 || value <= bottom5;
+                        const idx = context.dataIndex;
+                        const block = extremeBlocks.find(b => 
+                            idx >= b.startIdx && idx <= b.endIdx
+                        );
+                        if (!block) return false;
+                        
+                        // Ukázat label jen uprostřed bloku
+                        const midIdx = Math.floor((block.startIdx + block.endIdx) / 2);
+                        return idx === midIdx;
                     };
-                    dataset.datalabels.font = { size: 9, weight: 'bold' };
+                    
+                    // Formátovat label: ukázat průměr celého bloku + rozsah
+                    dataset.datalabels.formatter = (value, context) => {
+                        const idx = context.dataIndex;
+                        const block = extremeBlocks.find(b => 
+                            idx >= b.startIdx && idx <= b.endIdx
+                        );
+                        if (!block) return '';
+                        
+                        const avg = block.values.reduce((a, b) => a + b, 0) / block.values.length;
+                        const min = Math.min(...block.values);
+                        const max = Math.max(...block.values);
+                        const count = block.values.length;
+                        
+                        // Ikona podle typu
+                        const icon = block.type === 'high' ? '🔴' : '🟢';
+                        
+                        // Formát: ikona + průměr (počet intervalů)
+                        return `${icon} ${avg.toFixed(2)} Kč\n(${count}× 15min)`;
+                    };
+                    
+                    dataset.datalabels.font = { size: 10, weight: 'bold' };
+                    dataset.datalabels.padding = 6;
+                    
                 } else if (detailLevel === 'detail') {
-                    // Detail: top/bottom 20% + všechny významné změny
+                    // Detail: top/bottom 20% z PŮVODNÍCH dat, jednotlivé hodnoty
+                    const top20 = sorted[Math.floor(sorted.length * 0.8)];
+                    const bottom20 = sorted[Math.floor(sorted.length * 0.2)];
                     dataset.datalabels.display = (context) => {
-                        const data = context.dataset.data;
-                        const value = data[context.dataIndex];
-                        const sorted = [...data].sort((a, b) => a - b);
-                        const top20 = sorted[Math.floor(sorted.length * 0.8)];
-                        const bottom20 = sorted[Math.floor(sorted.length * 0.2)];
+                        const value = context.dataset.data[context.dataIndex];
                         return value >= top20 || value <= bottom20;
                     };
+                    dataset.datalabels.formatter = (value) => `${value.toFixed(2)} Kč`;
                     dataset.datalabels.font = { size: 10, weight: 'bold' };
+                    dataset.datalabels.padding = 4;
+                    
                 } else {
-                    // Day: top/bottom 10%
+                    // Day: top/bottom 10% z PŮVODNÍCH dat, jednotlivé hodnoty
+                    const top10 = sorted[Math.floor(sorted.length * 0.9)];
+                    const bottom10 = sorted[Math.floor(sorted.length * 0.1)];
                     dataset.datalabels.display = (context) => {
-                        const data = context.dataset.data;
-                        const value = data[context.dataIndex];
-                        const sorted = [...data].sort((a, b) => a - b);
-                        const top10 = sorted[Math.floor(sorted.length * 0.9)];
-                        const bottom10 = sorted[Math.floor(sorted.length * 0.1)];
+                        const value = context.dataset.data[context.dataIndex];
                         return value >= top10 || value <= bottom10;
                     };
+                    dataset.datalabels.formatter = (value) => `${value.toFixed(2)} Kč`;
                     dataset.datalabels.font = { size: 9, weight: 'bold' };
+                    dataset.datalabels.padding = 4;
                 }
             }
         }
@@ -3962,14 +4035,17 @@ function loadPricingData() {
                 return new Date(timeStr);
             });
 
-            // Identifikace top/bottom 10% cen
+            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
+            const spotPriceData = prices.map(p => p.price);
+            originalPriceData = spotPriceData;
+            
+            // Identifikace top/bottom 10% cen z CELÉHO datasetu
             const sortedPrices = [...priceValues].sort((a, b) => a - b);
             const tenPercentCount = Math.max(1, Math.ceil(sortedPrices.length * 0.1));
             const bottomThreshold = sortedPrices[tenPercentCount - 1];
             const topThreshold = sortedPrices[sortedPrices.length - tenPercentCount];
 
             // Označení bodů v extrémech + chytré umístění labelů
-            const spotPriceData = prices.map(p => p.price);
             const pointRadii = spotPriceData.map(price => {
                 if (price <= bottomThreshold || price >= topThreshold) return 5;
                 return 0;
