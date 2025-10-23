@@ -3213,7 +3213,7 @@ function detectAndApplyTheme() {
 function initTooltips() {
     const tooltip = document.getElementById('global-tooltip');
     const arrow = document.getElementById('global-tooltip-arrow');
-    const entityValues = document.querySelectorAll('.entity-value[data-tooltip]');
+    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .detail-value[data-tooltip-html]');
 
     if (!tooltip || !arrow) {
         console.error('[Tooltips] Global tooltip elements not found!');
@@ -3223,10 +3223,16 @@ function initTooltips() {
     entityValues.forEach(element => {
         element.addEventListener('mouseenter', function() {
             const tooltipText = this.getAttribute('data-tooltip');
-            if (!tooltipText) return;
+            const tooltipHtml = this.getAttribute('data-tooltip-html');
 
-            // Nastavit text
-            tooltip.textContent = tooltipText;
+            if (!tooltipText && !tooltipHtml) return;
+
+            // Nastavit text nebo HTML
+            if (tooltipHtml) {
+                tooltip.innerHTML = tooltipHtml;
+            } else {
+                tooltip.textContent = tooltipText;
+            }
 
             // Získat pozici elementu v rámci viewportu
             const rect = this.getBoundingClientRect();
@@ -3356,62 +3362,98 @@ async function updateGridChargingPlan() {
         costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
     }
 
-    // Update start time with tooltip containing intervals table
+    // Update start time - relativní čas
     const startElement = document.getElementById('grid-charging-start');
     if (startElement && gridChargingData.attributes) {
         if (gridChargingData.attributes.next_charging_start) {
-            startElement.textContent = gridChargingData.attributes.next_charging_start;
+            // Get first charging interval to calculate relative time
+            const intervals = gridChargingData.attributes.charging_intervals || [];
+            const firstChargingInterval = intervals.find(i => i.is_charging_battery);
 
-            // Build tooltip HTML with intervals table
-            if (gridChargingData.attributes.charging_intervals && gridChargingData.attributes.charging_intervals.length > 0) {
-                const intervals = gridChargingData.attributes.charging_intervals;
-                const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
-                const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+            if (firstChargingInterval) {
+                const startTime = new Date(firstChargingInterval.timestamp);
+                const now = new Date();
+                const diffMs = startTime - now;
+                const diffMinutes = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMinutes / 60);
+                const remainingMinutes = diffMinutes % 60;
 
-                let tooltipHtml = `
-                    <div style="padding: 8px;">
-                        <strong>Plánované dobití:</strong> ${totalEnergy.toFixed(1)} kWh<br>
-                        <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
-                        <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border-secondary);">
-                        <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
-                            <thead>
-                                <tr style="border-bottom: 1px solid var(--border-primary);">
-                                    <th style="padding: 4px; text-align: left;">Čas</th>
-                                    <th style="padding: 4px; text-align: right;">kWh</th>
-                                    <th style="padding: 4px; text-align: right;">Kč</th>
-                                    <th style="padding: 4px; text-align: center;">⚡</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
+                let relativeText = '';
+                if (diffMinutes < 0) {
+                    relativeText = 'Probíhá';
+                } else if (diffMinutes < 60) {
+                    relativeText = `za ${diffMinutes} min`;
+                } else if (diffMinutes < 1440) { // méně než 24h
+                    if (remainingMinutes > 0) {
+                        relativeText = `za ${diffHours}h ${remainingMinutes}min`;
+                    } else {
+                        relativeText = `za ${diffHours}h`;
+                    }
+                } else {
+                    const days = Math.floor(diffHours / 24);
+                    relativeText = `za ${days}d`;
+                }
 
-                intervals.forEach((interval, index) => {
-                    if (!interval.is_charging_battery) return; // Skip non-charging intervals
-
-                    const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
-                    const energy = interval.energy_kwh ? interval.energy_kwh.toFixed(2) : '-';
-                    const cost = interval.cost_czk ? interval.cost_czk.toFixed(2) : '-';
-
-                    tooltipHtml += `
-                        <tr style="border-bottom: 1px solid var(--border-tertiary);">
-                            <td style="padding: 4px;">${time}</td>
-                            <td style="padding: 4px; text-align: right;">${energy}</td>
-                            <td style="padding: 4px; text-align: right;">${cost}</td>
-                            <td style="padding: 4px; text-align: center;">⚡</td>
-                        </tr>
-                    `;
-                });
-
-                tooltipHtml += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-
-                startElement.setAttribute('data-tooltip-html', tooltipHtml);
+                startElement.textContent = relativeText;
+                startElement.setAttribute('title', gridChargingData.attributes.next_charging_start);
+            } else {
+                startElement.textContent = gridChargingData.attributes.next_charging_start;
             }
         } else {
             startElement.textContent = '--';
+        }
+    }
+
+    // Build tooltip HTML with intervals table - na IKONĚ indikátoru
+    if (indicator && gridChargingData.attributes) {
+        if (gridChargingData.attributes.charging_intervals && gridChargingData.attributes.charging_intervals.length > 0) {
+            const intervals = gridChargingData.attributes.charging_intervals;
+            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+            const startTimeFormatted = gridChargingData.attributes.next_charging_start || '';
+
+            let tooltipHtml = `
+                <div style="padding: 8px;">
+                    <strong>Start:</strong> ${startTimeFormatted}<br>
+                    <strong>Plánované dobití:</strong> ${totalEnergy.toFixed(1)} kWh<br>
+                    <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+                    <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border-secondary);">
+                    <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-primary);">
+                                <th style="padding: 4px; text-align: left;">Čas</th>
+                                <th style="padding: 4px; text-align: right;">kWh</th>
+                                <th style="padding: 4px; text-align: right;">Kč</th>
+                                <th style="padding: 4px; text-align: center;">⚡</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            intervals.forEach((interval, index) => {
+                if (!interval.is_charging_battery) return; // Skip non-charging intervals
+
+                const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                const energy = interval.energy_kwh ? interval.energy_kwh.toFixed(2) : '-';
+                const cost = interval.cost_czk ? interval.cost_czk.toFixed(2) : '-';
+
+                tooltipHtml += `
+                    <tr style="border-bottom: 1px solid var(--border-tertiary);">
+                        <td style="padding: 4px;">${time}</td>
+                        <td style="padding: 4px; text-align: right;">${energy}</td>
+                        <td style="padding: 4px; text-align: right;">${cost}</td>
+                        <td style="padding: 4px; text-align: center;">⚡</td>
+                    </tr>
+                `;
+            });
+
+            tooltipHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            indicator.setAttribute('data-tooltip-html', tooltipHtml);
         }
     }
 }

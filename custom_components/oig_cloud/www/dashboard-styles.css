@@ -472,7 +472,7 @@
             backdrop-filter: blur(10px);
             z-index: 2;
             min-width: 130px;
-            max-width: 200px;
+            max-width: 220px;
         }
 
         .node:hover {
@@ -736,7 +736,7 @@
 
         .battery-grid-charging-indicator {
             position: absolute !important;
-            top: 33px !important;
+            top: 58px !important;
             right: 8px !important;
             font-size: 14px;
             line-height: 1;
