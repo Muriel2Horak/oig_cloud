@@ -40,33 +40,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání box_id (inverter_sn) - STEJNÁ LOGIKA jako OigCloudStatisticsSensor
-        # Priorita: coordinator.data > config_entry.data
-        self._data_key = None
-
-        if coordinator and coordinator.data:
-            # Získat první klíč z coordinator.data (to je box_id)
-            if isinstance(coordinator.data, dict) and coordinator.data:
-                first_key = next(iter(coordinator.data.keys()), None)
-                if first_key:
-                    self._data_key = first_key
-                    _LOGGER.debug(f"Got box_id from coordinator.data: {self._data_key}")
-
-        # Fallback: config_entry.data
+        # Získání box_id z config_entry (inverter_sn je vždy v config_entry.data)
+        self._data_key = config_entry.data.get("inverter_sn")
+        
         if not self._data_key:
-            if hasattr(coordinator, "config_entry") and coordinator.config_entry:
-                if (
-                    hasattr(coordinator.config_entry, "data")
-                    and coordinator.config_entry.data
-                ):
-                    self._data_key = coordinator.config_entry.data.get("inverter_sn")
-                    if self._data_key:
-                        _LOGGER.debug(
-                            f"Got box_id from config_entry.data: {self._data_key}"
-                        )
-
-        if not self._data_key:
-            _LOGGER.error("Cannot determine box_id for battery forecast sensor")
+            _LOGGER.error("Cannot determine box_id for battery forecast sensor - inverter_sn not in config_entry")
             raise ValueError("Cannot determine box_id for battery forecast sensor")
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
@@ -1013,13 +991,16 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._charging_intervals: List[Dict[str, Any]] = []
         self._total_energy_kwh = 0.0
         self._total_cost_czk = 0.0
-        
+
         # Načteme sensor config
         from .sensor_types import SENSOR_TYPES
+
         self._config = SENSOR_TYPES.get(sensor_type, {})
-        
+
         # Entity info
-        self._box_id = list(coordinator.data.keys())[0] if coordinator.data else "unknown"
+        self._box_id = (
+            list(coordinator.data.keys())[0] if coordinator.data else "unknown"
+        )
         self._attr_unique_id = f"oig_{self._box_id}_{sensor_type}"
         self._attr_name = self._config.get("name", sensor_type)
 
