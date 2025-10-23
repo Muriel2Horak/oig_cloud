@@ -3875,12 +3875,15 @@ function loadPricingData() {
 
         if (timelineData.length > 0 && prices.length > 0) {
             // ZOBRAZENÍ KAPACITY BATERIE:
-            // - Hlavní čára = battery_capacity_kwh (celková kapacita v čase)
-            // - Negativní bars DOLŮ od kapacity = solar + grid (vizuálně spojené s čárou)
+            // battery_capacity_kwh = CÍLOVÁ kapacita (kam se dostaneme)
+            // solar_charge_kwh = kolik přidal solar v tomto intervalu
+            // grid_charge_kwh = kolik přidala síť v tomto intervalu
+            // baseline = battery_capacity_kwh - solar - grid (odkud jsme vyšli)
 
-            const batteryCapacityData = [];  // Celková kapacita (hlavní čára)
-            const solarAddData = [];         // Solární přírůstek (negativní bar dolů od kapacity)
-            const gridAddData = [];          // Síťový přírůstek (negativní bar pod solar)
+            const batteryCapacityData = [];   // Cílová kapacita (linie navrch)
+            const baselineData = [];          // Předchozí kapacita (baseline pro stack)
+            const solarStackData = [];        // Solar přírůstek
+            const gridStackData = [];         // Grid přírůstek
 
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i];
@@ -3888,80 +3891,93 @@ function loadPricingData() {
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
-                    const batteryCapacity = timelineEntry.battery_capacity_kwh || 0;
-                    const solarCharge = timelineEntry.solar_charge_kwh || 0;  // OPRAVENO: solar_charge_kwh místo solar_production_kwh
+                    const targetCapacity = timelineEntry.battery_capacity_kwh || 0;
+                    const solarCharge = timelineEntry.solar_charge_kwh || 0;
                     const gridCharge = timelineEntry.grid_charge_kwh || 0;
 
-                    batteryCapacityData.push(batteryCapacity);
+                    // Baseline = odkud vyšli (cílová - přírůstky)
+                    const baseline = targetCapacity - solarCharge - gridCharge;
 
-                    // Pozitivní hodnoty = stacked area nahoru (zobrazí přírůstek)
-                    solarAddData.push(solarCharge > 0.01 ? solarCharge : 0);
-                    gridAddData.push(gridCharge > 0.01 ? gridCharge : 0);
+                    batteryCapacityData.push(targetCapacity);
+                    baselineData.push(baseline);
+                    solarStackData.push(solarCharge);
+                    gridStackData.push(gridCharge);
                 } else {
                     batteryCapacityData.push(null);
-                    solarAddData.push(null);
-                    gridAddData.push(null);
+                    baselineData.push(null);
+                    solarStackData.push(null);
+                    gridStackData.push(null);
                 }
-            }                    console.log('[Battery] Sample interval:', {
-                capacity: batteryCapacityData[0],
-                solar: solarAddData[0],
-                grid: gridAddData[0]
+            }
+
+            console.log('[Battery] Sample:', {
+                target: batteryCapacityData[0],
+                baseline: baselineData[0],
+                solar: solarStackData[0],
+                grid: gridStackData[0],
+                sum: baselineData[0] + solarStackData[0] + gridStackData[0]
             });
 
-            // Barvy pro vizualizaci - dobře viditelné ale ne overwhelming
+            // Barvy pro vizualizaci
             const batteryColors = {
-                capacity: { border: '#00bcd4', bg: 'rgba(0, 188, 212, 0.2)' },   // tyrkysová - kapacita
-                solar: { border: '#FDD835', bg: 'rgba(253, 216, 53, 0.6)' },     // žlutá - solár
-                grid: { border: '#42A5F5', bg: 'rgba(66, 165, 245, 0.7)' }       // modrá - síť
+                capacity: { border: '#00bcd4', bg: 'transparent' },              // tyrkysová linie
+                solar: { border: '#FDD835', bg: 'rgba(253, 216, 53, 0.8)' },    // žlutá - solár
+                grid: { border: '#42A5F5', bg: 'rgba(66, 165, 245, 0.8)' }      // modrá - síť
             };
 
-            // 1. Hlavní čára - celková kapacita baterie
+            // 1. Grid area (nejspodnější) - 0.3 kWh
+            if (gridStackData.some(v => v != null && v > 0)) {
+                datasets.push({
+                    label: 'Nabíjení ze sítě',
+                    data: gridStackData,
+                    backgroundColor: batteryColors.grid.bg,
+                    borderColor: batteryColors.grid.border,
+                    borderWidth: 1,
+                    type: 'line',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    yAxisID: 'y-solar',
+                    stack: 'charging',  // Stack group
+                    order: 4
+                });
+            }
+
+            // 2. Solar area (nad grid) - 0.7 kWh, Chart.js automaticky přidá nad grid
+            if (solarStackData.some(v => v != null && v > 0)) {
+                datasets.push({
+                    label: 'Nabíjení ze solaru',
+                    data: solarStackData,
+                    backgroundColor: batteryColors.solar.bg,
+                    borderColor: batteryColors.solar.border,
+                    borderWidth: 1,
+                    type: 'line',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    yAxisID: 'y-solar',
+                    stack: 'charging',  // STEJNÝ stack jako grid -> automaticky nad sebe
+                    order: 3
+                });
+            }
+
+            // 3. Hlavní čára - prognóza kapacity (BEZ stacku!)
             datasets.push({
-                label: 'Kapacita baterie',
+                label: 'Prognóza kapacity',
                 data: batteryCapacityData,
                 borderColor: batteryColors.capacity.border,
                 backgroundColor: batteryColors.capacity.bg,
                 borderWidth: 3,
-                fill: true,
+                fill: false,
                 type: 'line',
                 tension: 0.4,
-                pointRadius: 0,
+                pointRadius: 2,
                 pointHoverRadius: 5,
-                yAxisID: 'y-battery',
-                order: 1  // Navrch
+                yAxisID: 'y-solar',
+                order: 1  // Navrch všeho
             });
-
-            // 2. Floating bar nahoru - přírůstek ze solárů (od kapacity nahoru)
-            if (solarAddData.some(v => v != null)) {
-                datasets.push({
-                    label: 'Přírůstek ze solaru',
-                    data: solarAddData,
-                    backgroundColor: batteryColors.solar.bg,
-                    borderColor: batteryColors.solar.border,
-                    borderWidth: 1,
-                    type: 'bar',
-                    yAxisID: 'y-battery',
-                    order: 3,
-                    barPercentage: 0.8,
-                    categoryPercentage: 0.95
-                });
-            }
-
-            // 3. Floating bar nahoru - přírůstek ze sítě (nad solar bar)
-            if (gridAddData.some(v => v != null)) {
-                datasets.push({
-                    label: 'Přírůstek ze sítě',
-                    data: gridAddData,
-                    backgroundColor: batteryColors.grid.bg,
-                    borderColor: batteryColors.grid.border,
-                    borderWidth: 1,
-                    type: 'bar',
-                    yAxisID: 'y-battery',
-                    order: 2,
-                    barPercentage: 0.8,
-                    categoryPercentage: 0.95
-                });
-            }
         }
     }
 
@@ -4013,6 +4029,14 @@ function loadPricingData() {
                         grid: { color: 'rgba(66,165,245,0.2)' },
                         title: { display: true, text: 'Cena (Kč/kWh)', color: '#42a5f5' }
                     },
+                    'y-solar': {
+                        type: 'linear',
+                        position: 'left',
+                        stacked: true,  // POVOL STACKING pro grid + solar
+                        ticks: { color: '#00bcd4', callback: function(value) { return value.toFixed(1) + ' kWh'; } },
+                        grid: { display: false },
+                        title: { display: true, text: 'Kapacita baterie (kWh)', color: '#00bcd4' }
+                    },
                     'y-power': {
                         type: 'linear',
                         position: 'right',
@@ -4020,14 +4044,6 @@ function loadPricingData() {
                         ticks: { color: '#ffc107', callback: function(value) { return value.toFixed(2) + ' kW'; } },
                         grid: { display: false },
                         title: { display: true, text: 'Výkon (kW)', color: '#ffc107' }
-                    },
-                    'y-battery': {
-                        type: 'linear',
-                        position: 'right',
-                        offset: true,
-                        ticks: { color: '#00bcd4', callback: function(value) { return value.toFixed(1) + ' kWh'; } },
-                        grid: { display: false },
-                        title: { display: true, text: 'Kapacita baterie (kWh)', color: '#00bcd4' }
                     }
                 }
             }
