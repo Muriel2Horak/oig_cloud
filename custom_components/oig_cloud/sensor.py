@@ -37,6 +37,267 @@ except Exception as e:
     raise
 
 
+# ============================================================================
+# HELPER FUNCTIONS - Sensor Registry
+# ============================================================================
+
+
+def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
+    """
+    Vrátí set všech sensor_types které by měly být registrované
+    podle aktuální konfigurace entry.
+    
+    Používá se pro cleanup - senzory které nejsou v tomto setu jsou osiřelé.
+    """
+    expected = set()
+    
+    # Získáme statistics_enabled z hass.data
+    statistics_enabled = hass.data[DOMAIN][entry.entry_id].get("statistics_enabled", False)
+    
+    for sensor_type, config in SENSOR_TYPES.items():
+        category = config.get("sensor_type_category")
+        
+        # Základní kategorie (vždy aktivní)
+        if category in ["data", "computed", "shield", "notification"]:
+            expected.add(sensor_type)
+        
+        # Extended sensors (volitelné)
+        elif category == "extended" and entry.options.get("enable_extended_sensors", False):
+            expected.add(sensor_type)
+        
+        # Statistics sensors (volitelné)
+        elif category == "statistics" and statistics_enabled:
+            expected.add(sensor_type)
+        
+        # Solar forecast sensors (volitelné)
+        elif category == "solar_forecast" and entry.options.get("enable_solar_forecast", False):
+            expected.add(sensor_type)
+        
+        # Battery prediction sensors (volitelné)
+        elif category == "battery_prediction" and entry.options.get("enable_battery_prediction", False):
+            expected.add(sensor_type)
+        
+        # Grid charging plan sensors (volitelné, společně s battery_prediction)
+        elif category == "grid_charging_plan" and entry.options.get("enable_battery_prediction", False):
+            expected.add(sensor_type)
+        
+        # Pricing sensors (volitelné)
+        elif category == "pricing" and entry.options.get("enable_pricing", False):
+            expected.add(sensor_type)
+    
+    _LOGGER.debug(f"Expected {len(expected)} sensor types based on configuration")
+    return expected
+
+
+async def _cleanup_renamed_sensors(
+    entity_reg,
+    entry: ConfigEntry,
+    expected_sensor_types: set[str]
+) -> int:
+    """
+    Smaže senzory které už nejsou v konfiguraci (přejmenované/odstraněné).
+    
+    Args:
+        entity_reg: Entity registry z HA
+        entry: Config entry
+        expected_sensor_types: Set očekávaných sensor_types
+        
+    Returns:
+        Počet odstraněných senzorů
+    """
+    removed = 0
+    
+    # Známé přejmenování a deprecated senzory
+    deprecated_patterns = [
+        "_battery_prediction_",  # nahrazeno battery_forecast
+        "_old_",  # obecný pattern pro staré
+    ]
+    
+    from homeassistant.helpers import entity_registry as er
+    entries = er.async_entries_for_config_entry(entity_reg, entry.entry_id)
+    
+    for entity_entry in entries:
+        # Extrahuj sensor_type z entity_id
+        # Formát: sensor.oig_{box_id}_{sensor_type}
+        parts = entity_entry.entity_id.split("_")
+        if len(parts) < 3 or not entity_entry.entity_id.startswith("sensor.oig_"):
+            continue
+        
+        # Sensor type je vše po box_id
+        # sensor.oig_{box_id}_{zbytek} -> zbytek je sensor_type
+        # Najdeme index za "sensor.oig_" a box_id
+        prefix = "sensor.oig_"
+        if entity_entry.entity_id.startswith(prefix):
+            after_prefix = entity_entry.entity_id[len(prefix):]
+            parts_after = after_prefix.split("_", 1)  # Split pouze na box_id a zbytek
+            if len(parts_after) > 1:
+                sensor_type = parts_after[1]  # Vše za box_id
+            else:
+                continue
+        else:
+            continue
+        
+        # Check deprecated patterns
+        is_deprecated = any(pattern in entity_entry.entity_id for pattern in deprecated_patterns)
+        
+        # Check if sensor_type is expected
+        is_expected = sensor_type in expected_sensor_types
+        
+        if is_deprecated or not is_expected:
+            try:
+                _LOGGER.info(f"🗑️ Removing deprecated/renamed sensor: {entity_entry.entity_id} (type: {sensor_type})")
+                entity_reg.async_remove(entity_entry.entity_id)
+                removed += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to remove sensor {entity_entry.entity_id}: {e}")
+    
+    return removed
+
+
+async def _cleanup_removed_devices(
+    device_reg,
+    entity_reg,
+    entry: ConfigEntry,
+    coordinator
+) -> int:
+    """
+    Smaže zařízení pro Battery Boxy které už neexistují v coordinator.data.
+    
+    Args:
+        device_reg: Device registry z HA
+        entity_reg: Entity registry z HA
+        entry: Config entry
+        coordinator: Data coordinator
+        
+    Returns:
+        Počet odstraněných zařízení
+    """
+    if not coordinator or not coordinator.data:
+        return 0
+    
+    removed = 0
+    current_box_ids = set(coordinator.data.keys())
+    
+    from homeassistant.helpers import device_registry as dr
+    devices = dr.async_entries_for_config_entry(device_reg, entry.entry_id)
+    
+    for device in devices:
+        device_box_id = None
+        
+        # Extrahuj box_id z identifiers
+        for identifier in device.identifiers:
+            if identifier[0] in [DOMAIN, "oig_cloud_analytics", "oig_cloud_shield"]:
+                identifier_value = identifier[1]
+                # Odstraň suffix _shield/_analytics pokud existuje
+                device_box_id = identifier_value.replace("_shield", "").replace("_analytics", "")
+                break
+        
+        if device_box_id and device_box_id not in current_box_ids:
+            try:
+                _LOGGER.warning(f"🗑️ Removing device for non-existent box: {device.name} (box_id: {device_box_id})")
+                
+                # Smaž entity prvně
+                from homeassistant.helpers import entity_registry as er
+                entities = er.async_entries_for_device(entity_reg, device.id)
+                for entity in entities:
+                    entity_reg.async_remove(entity.entity_id)
+                    _LOGGER.debug(f"  Removed entity: {entity.entity_id}")
+                
+                device_reg.async_remove_device(device.id)
+                removed += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to remove device {device.name}: {e}")
+    
+    return removed
+
+
+async def _cleanup_empty_devices_internal(
+    device_reg,
+    entity_reg,
+    entry: ConfigEntry
+) -> int:
+    """
+    Smaže zařízení která nemají žádné entity.
+    
+    Args:
+        device_reg: Device registry z HA
+        entity_reg: Entity registry z HA
+        entry: Config entry
+        
+    Returns:
+        Počet odstraněných zařízení
+    """
+    removed = 0
+    
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    devices = dr.async_entries_for_config_entry(device_reg, entry.entry_id)
+    
+    for device in devices:
+        entities = er.async_entries_for_device(entity_reg, device.id)
+        
+        if not entities:
+            try:
+                _LOGGER.info(f"🗑️ Removing empty device: {device.name}")
+                device_reg.async_remove_device(device.id)
+                removed += 1
+            except Exception as e:
+                _LOGGER.error(f"Failed to remove empty device {device.name}: {e}")
+    
+    return removed
+
+
+async def _cleanup_all_orphaned_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator,
+    expected_sensor_types: set[str]
+) -> int:
+    """
+    Univerzální cleanup pro všechny typy osiřelých entit.
+    Sjednocuje 3 stávající cleanup funkce.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        coordinator: Data coordinator
+        expected_sensor_types: Set očekávaných sensor_types podle konfigurace
+        
+    Returns:
+        Celkový počet odstraněných položek (sensors + devices)
+    """
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    
+    _LOGGER.info("🧹 Starting comprehensive cleanup of orphaned entities")
+    
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+    
+    # 1. Cleanup starých/přejmenovaných senzorů
+    removed_sensors = await _cleanup_renamed_sensors(
+        entity_reg, entry, expected_sensor_types
+    )
+    
+    # 2. Cleanup osiřelých zařízení (neexistující Battery Boxy)
+    removed_devices = await _cleanup_removed_devices(
+        device_reg, entity_reg, entry, coordinator
+    )
+    
+    # 3. Cleanup prázdných zařízení (bez entit)
+    removed_empty = await _cleanup_empty_devices_internal(
+        device_reg, entity_reg, entry
+    )
+    
+    total_removed = removed_sensors + removed_devices + removed_empty
+    
+    _LOGGER.info(
+        f"✅ Cleanup completed: {removed_sensors} deprecated sensors, "
+        f"{removed_devices} orphaned devices, {removed_empty} empty devices "
+        f"(total: {total_removed} items removed)"
+    )
+    
+    return total_removed
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -58,14 +319,14 @@ async def async_setup_entry(
         f"Setting up sensors with coordinator data: {len(coordinator.data)} devices"
     )
 
-    # NOVÉ: Vyčistíme osiřelá zařízení (která už nejsou v coordinator.data)
-    await _cleanup_orphaned_devices(hass, entry, coordinator)
-
-    # Vyčistíme prázdná zařízení PŘED vytvořením nových senzorů
-    await _cleanup_empty_devices(hass, entry)
-
-    # NOVÉ: Vyčistíme staré battery_prediction senzory (nahrazeny battery_forecast)
-    await _cleanup_old_battery_prediction_sensors(hass, entry)
+    # === CLEANUP PŘED REGISTRACÍ ===
+    # Sestavíme seznam očekávaných sensor_types podle konfigurace
+    expected_sensor_types = _get_expected_sensor_types(hass, entry)
+    
+    # Univerzální cleanup - sjednocení 3 stávajících funkcí
+    await _cleanup_all_orphaned_entities(
+        hass, entry, coordinator, expected_sensor_types
+    )
 
     # 1. Basic sensors - only if data is available
     basic_sensors: List[Any] = []
@@ -475,6 +736,10 @@ async def async_setup_entry(
                     )
 
                     grid_charging_sensors: List[Any] = []
+                    
+                    # Získáme box_id z coordinator
+                    box_id = list(coordinator.data.keys())[0] if coordinator.data else "unknown"
+                    
                     for sensor_type, config in SENSOR_TYPES.items():
                         if config.get("sensor_type_category") == "grid_charging_plan":
                             sensor = OigCloudGridChargingPlanSensor(
@@ -610,8 +875,11 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
                 await coordinator.async_shutdown()
             _LOGGER.debug(f"Coordinator shut down for entry {config_entry.entry_id}")
 
-        # Vyčistíme prázdná zařízení
-        await _cleanup_empty_devices(hass, config_entry)
+        # Vyčistíme prázdná zařízení (použijeme novou interní funkci)
+        from homeassistant.helpers import device_registry as dr, entity_registry as er
+        device_reg = dr.async_get(hass)
+        entity_reg = er.async_get(hass)
+        await _cleanup_empty_devices_internal(device_reg, entity_reg, config_entry)
 
         # Vyčistíme data pro tuto config entry
         del hass.data[DOMAIN][config_entry.entry_id]
@@ -682,128 +950,12 @@ async def _cleanup_empty_devices(
     )
 
 
-async def _cleanup_orphaned_devices(
-    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
-) -> None:
-    """Clean up devices that no longer exist in coordinator.data (removed Battery Boxes)."""
-    from homeassistant.helpers import device_registry as dr, entity_registry as er
-
-    _LOGGER.info("Starting cleanup of orphaned devices (removed Battery Boxes)")
-
-    if not coordinator or not coordinator.data:
-        _LOGGER.debug("No coordinator data available, skipping orphaned device cleanup")
-        return
-
-    device_reg = dr.async_get(hass)
-    entity_reg = er.async_get(hass)
-
-    # Získej seznam aktuálních box_id z coordinator.data
-    current_box_ids = set(coordinator.data.keys())
-    _LOGGER.debug(f"Current box_ids in coordinator.data: {current_box_ids}")
-
-    # Najdeme všechna zařízení pro tuto config entry
-    devices = dr.async_entries_for_config_entry(device_reg, config_entry.entry_id)
-
-    removed_count = 0
-
-    for device in devices:
-        # Extrahuj box_id z device identifiers
-        # Identifiers: {(DOMAIN, "2206237016"), ...} nebo {(DOMAIN, "2206237016_shield"), ...}
-        device_box_id = None
-
-        for identifier in device.identifiers:
-            if identifier[0] == DOMAIN:
-                identifier_value = identifier[1]
-                # Odstraň suffix _shield nebo _analytics
-                device_box_id = identifier_value.replace("_shield", "").replace(
-                    "_analytics", ""
-                )
-                break
-
-        if not device_box_id:
-            _LOGGER.debug(
-                f"Could not extract box_id from device {device.name}, skipping"
-            )
-            continue
-
-        # Zkontroluj, jestli tento box_id stále existuje v coordinator.data
-        if device_box_id not in current_box_ids:
-            _LOGGER.warning(
-                f"Device {device.name} (box_id: {device_box_id}) no longer exists in coordinator data - removing"
-            )
-            try:
-                # Nejprve smažeme všechny entity tohoto zařízení
-                entities = er.async_entries_for_device(entity_reg, device.id)
-                for entity in entities:
-                    entity_reg.async_remove(entity.entity_id)
-                    _LOGGER.debug(f"Removed entity {entity.entity_id}")
-
-                # Pak smažeme samotné zařízení
-                device_reg.async_remove_device(device.id)
-                removed_count += 1
-                _LOGGER.info(
-                    f"Successfully removed orphaned device: {device.name} (box_id: {device_box_id})"
-                )
-            except Exception as e:
-                _LOGGER.error(f"Failed to remove orphaned device {device.name}: {e}")
-        else:
-            _LOGGER.debug(
-                f"Device {device.name} (box_id: {device_box_id}) still exists - keeping"
-            )
-
-    if removed_count > 0:
-        _LOGGER.info(
-            f"Orphaned device cleanup completed: removed {removed_count} devices"
-        )
-    else:
-        _LOGGER.debug("No orphaned devices found to remove")
-
-
-async def _cleanup_old_battery_prediction_sensors(
-    hass: HomeAssistant, config_entry: ConfigEntry
-) -> None:
-    """Clean up old battery_prediction sensors (replaced by battery_forecast)."""
-    from homeassistant.helpers import entity_registry as er
-
-    _LOGGER.info("Starting cleanup of old battery_prediction sensors")
-
-    entity_reg = er.async_get(hass)
-
-    # Pattern pro staré battery prediction senzory
-    # sensor.oig_{box_id}_battery_prediction_*
-    old_sensor_patterns = [
-        "_battery_prediction_current",
-        "_battery_prediction_8h",
-        "_battery_prediction_16h",
-        "_battery_prediction_24h",
-        "_battery_prediction_min",
-        "_battery_prediction_max",
-    ]
-
-    removed_count = 0
-
-    # Najít všechny entity pro tuto config entry
-    entries = er.async_entries_for_config_entry(entity_reg, config_entry.entry_id)
-
-    for entry in entries:
-        # Zkontrolovat jestli je to starý battery prediction senzor
-        for pattern in old_sensor_patterns:
-            if pattern in entry.entity_id:
-                try:
-                    entity_reg.async_remove(entry.entity_id)
-                    removed_count += 1
-                    _LOGGER.info(
-                        f"Removed old battery prediction sensor: {entry.entity_id}"
-                    )
-                except Exception as e:
-                    _LOGGER.error(
-                        f"Failed to remove battery prediction sensor {entry.entity_id}: {e}"
-                    )
-                break  # Přejít na další entry
-
-    if removed_count > 0:
-        _LOGGER.info(
-            f"Battery prediction cleanup completed: removed {removed_count} sensors"
-        )
-    else:
-        _LOGGER.debug("No old battery prediction sensors found to remove")
+# ============================================================================
+# DEPRECATED CLEANUP FUNCTIONS - Kept for reference, replaced by new system
+# ============================================================================
+# The following 3 functions have been replaced by:
+#   - _cleanup_all_orphaned_entities()
+#   - _cleanup_renamed_sensors()
+#   - _cleanup_removed_devices()
+#   - _cleanup_empty_devices_internal()
+# ============================================================================
