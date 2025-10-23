@@ -272,7 +272,6 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
     _LOGGER.info("🔍 Starting _migrate_entity_unique_ids function...")
     from homeassistant.helpers import entity_registry as er
-    from homeassistant.helpers.recorder import get_instance
     import re
 
     entity_registry = er.async_get(hass)
@@ -282,56 +281,43 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     _LOGGER.info(f"📊 Found {len(entities)} entities for config entry")
 
     # Fáze 1: Cleanup duplicitních entit
-    entities_by_base = {}  # base_entity_id -> [entities]
+    # Duplicita = entity_id má příponu _X, ale unique_id ji NEMÁ
+    # (tj. Home Assistant přidal příponu kvůli kolizi)
+    disabled_count = 0
     duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
 
     for entity in entities:
-        entity_id = entity.entity_id
-        match = duplicate_pattern.match(entity_id)
-
-        if match:
-            # Má příponu _2, _3, atd.
-            base_id = match.group(1)
-            entities_by_base.setdefault(base_id, []).append(entity)
-        else:
-            # Základní entity bez přípony
-            entities_by_base.setdefault(entity_id, []).append(entity)
-
-    disabled_count = 0
-
-    # Zpracujeme duplicity
-    for base_id, entity_list in entities_by_base.items():
-        if len(entity_list) <= 1:
-            continue
-
-        # Najdeme základní entitu (bez přípony)
-        base_entity = None
-        duplicates = []
-
-        for e in entity_list:
-            if e.entity_id == base_id:
-                base_entity = e
-            else:
-                duplicates.append(e)
-
-        # Pokud existuje základní entita, deaktivujeme duplicity
-        if base_entity and duplicates:
-            for dup in duplicates:
-                try:
-                    # Disable duplicitu (zachování dat)
-                    if not dup.disabled_by:
-                        entity_registry.async_update_entity(
-                            dup.entity_id,
-                            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-                        )
-                        disabled_count += 1
-                        _LOGGER.info(
-                            f"⏸️ Disabled duplicate entity: {dup.entity_id} (base: {base_id})"
-                        )
-                except Exception as e:
-                    _LOGGER.warning(
-                        f"⚠️ Failed to disable duplicate {dup.entity_id}: {e}"
+        entity_id_match = duplicate_pattern.match(entity.entity_id)
+        
+        if not entity_id_match:
+            continue  # entity_id nemá příponu, není to duplicita
+        
+        # entity_id má příponu - zkontrolujeme unique_id
+        suffix = entity_id_match.group(2)  # např. "_2", "_3"
+        
+        # Pokud unique_id NEMÁ stejnou příponu, je to duplicita vytvořená HA
+        if not entity.unique_id.endswith(suffix):
+            # Toto je skutečná duplicita - HA přidal příponu
+            try:
+                if not entity.disabled_by:
+                    entity_registry.async_update_entity(
+                        entity.entity_id,
+                        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
                     )
+                    disabled_count += 1
+                    _LOGGER.info(
+                        f"⏸️ Disabled duplicate entity: {entity.entity_id} "
+                        f"(unique_id={entity.unique_id} doesn't have {suffix})"
+                    )
+            except Exception as e:
+                _LOGGER.warning(
+                    f"⚠️ Failed to disable duplicate {entity.entity_id}: {e}"
+                )
+        else:
+            # unique_id má stejnou příponu - legitimní senzor
+            _LOGGER.debug(
+                f"✓ Entity {entity.entity_id} is legitimate (unique_id={entity.unique_id})"
+            )
 
     # Fáze 2: Migrace unique_id
     # Znovu načteme entity po cleanup
