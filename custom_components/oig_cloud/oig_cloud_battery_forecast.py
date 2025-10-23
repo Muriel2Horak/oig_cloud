@@ -796,61 +796,50 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             f"Smart charging: {len(critical_intervals)} critical intervals, need {energy_needed_for_target:.2f}kWh for target"
         )
 
-        # KROK 3: Sestavit seznam kandidátů pro nabíjení
-        # Kandidát = interval kde: cena OK, není špička, baterie se může nabít
-        charging_candidates = []
-        for i, point in enumerate(timeline):
-            price = point.get("spot_price_czk", float("inf"))
-            capacity = point.get("battery_capacity_kwh", 0)
-
-            # Filtr: cena musí být OK
-            if price > max_price or price > price_threshold:
-                continue
-
-            # Filtr: baterie nesmí být plná (ponecháme 1% rezervu)
-            if capacity >= max_capacity * 0.99:
-                continue
-
-            # Filtr: musí být prostor pro nabití (ne na konci timeboxu)
-            if i >= len(timeline) - 1:
-                continue
-
-            # Přidat kandidáta s metrikami
-            charging_candidates.append({
-                "index": i,
-                "price": price,
-                "capacity": capacity,
-                "timestamp": point.get("timestamp", ""),
-            })
-
-        if not charging_candidates:
-            _LOGGER.warning("No suitable charging candidates found!")
-            return timeline
-
-        # Seřadit kandidáty podle ceny (nejlevnější první)
-        charging_candidates.sort(key=lambda x: x["price"])
-
-        _LOGGER.debug(
-            f"Found {len(charging_candidates)} charging candidates, "
-            f"cheapest price: {charging_candidates[0]['price']:.2f}CZK, "
-            f"most expensive: {charging_candidates[-1]['price']:.2f}CZK"
-        )
-
-        # KROK 4: PRIORITA 1 - Opravit kritická místa (pod minimum)
+        # KROK 3: PRIORITA 1 - Opravit kritická místa (pod minimum)
         for critical_idx in critical_intervals:
-            # Najít nejlevnější kandidát PŘED kritickým místem
-            candidates_before = [
-                c for c in charging_candidates if c["index"] < critical_idx
-            ]
+            # Přestavět seznam kandidátů s aktuálními kapacitami
+            charging_candidates = []
+            for i, point in enumerate(timeline):
+                price = point.get("spot_price_czk", float("inf"))
+                capacity = point.get("battery_capacity_kwh", 0)
 
-            if not candidates_before:
+                # Filtr: cena musí být OK
+                if price > max_price or price > price_threshold:
+                    continue
+
+                # Filtr: baterie nesmí být plná
+                if capacity >= max_capacity * 0.99:
+                    continue
+
+                # Filtr: musí být PŘED kritickým místem
+                if i >= critical_idx:
+                    continue
+
+                # Filtr: musí být prostor pro nabití (ne na konci)
+                if i >= len(timeline) - 1:
+                    continue
+
+                charging_candidates.append(
+                    {
+                        "index": i,
+                        "price": price,
+                        "capacity": capacity,
+                        "timestamp": point.get("timestamp", ""),
+                    }
+                )
+
+            # Seřadit podle ceny (nejlevnější první)
+            charging_candidates.sort(key=lambda x: x["price"])
+
+            if not charging_candidates:
                 _LOGGER.warning(
-                    f"Cannot fix critical interval {critical_idx} - no candidates before"
+                    f"Cannot fix critical interval {critical_idx} - no suitable candidates before"
                 )
                 continue
 
             # Přidat nabíjení v nejlevnějším intervalu
-            best_candidate = candidates_before[0]
+            best_candidate = charging_candidates[0]
             idx = best_candidate["index"]
             old_charge = timeline[idx].get("grid_charge_kwh", 0)
             timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
@@ -863,14 +852,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # Přepočítat timeline od tohoto bodu
             self._recalculate_timeline_from_index(timeline, idx)
 
-            # Odstranit použitého kandidáta
-            charging_candidates.remove(best_candidate)
-
-        # KROK 5: PRIORITA 2 - Dosáhnout cílové kapacity na konci
+        # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci
         max_iterations = 100
         iteration = 0
 
-        while iteration < max_iterations and charging_candidates:
+        while iteration < max_iterations:
             # Zkontrolovat aktuální stav na konci
             current_final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
 
@@ -883,9 +869,41 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # Potřebujeme více energie
             shortage = target_capacity - current_final_capacity
 
-            # Najít nejlevnějšího zbývajícího kandidáta
+            # DŮLEŽITÉ: Přestavět seznam kandidátů s aktuálními kapacitami
+            charging_candidates = []
+            for i, point in enumerate(timeline):
+                price = point.get("spot_price_czk", float("inf"))
+                capacity = point.get("battery_capacity_kwh", 0)
+
+                # Filtr: cena musí být OK
+                if price > max_price or price > price_threshold:
+                    continue
+
+                # Filtr: baterie nesmí být plná (ponecháme 1% rezervu)
+                if capacity >= max_capacity * 0.99:
+                    continue
+
+                # Filtr: musí být prostor pro nabití (ne na konci)
+                if i >= len(timeline) - 1:
+                    continue
+
+                charging_candidates.append(
+                    {
+                        "index": i,
+                        "price": price,
+                        "capacity": capacity,
+                        "timestamp": point.get("timestamp", ""),
+                    }
+                )
+
+            # Seřadit podle ceny (nejlevnější první)
+            charging_candidates.sort(key=lambda x: x["price"])
+
+            # Najít nejlevnějšího kandidáta
             if not charging_candidates:
-                _LOGGER.warning("No more charging candidates available for target")
+                _LOGGER.warning(
+                    f"No more charging candidates available, shortage: {shortage:.2f}kWh"
+                )
                 break
 
             best_candidate = charging_candidates[0]
@@ -898,23 +916,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug(
                 f"Target charging: Adding {charge_per_interval:.2f}kWh at index {idx} "
                 f"(price {best_candidate['price']:.2f}CZK, timestamp {best_candidate['timestamp']}), "
-                f"shortage: {shortage:.2f}kWh"
+                f"shortage: {shortage:.2f}kWh, capacity before: {best_candidate['capacity']:.2f}kWh"
             )
 
-            # Přepočítat timeline
+            # Přepočítat timeline od tohoto bodu
             self._recalculate_timeline_from_index(timeline, idx)
-
-            # Zkontrolovat jestli se baterie v tomto intervalu skutečně nabíjí
-            new_capacity = timeline[idx].get("battery_capacity_kwh", 0)
-            if new_capacity >= max_capacity * 0.99:
-                # Baterie se naplnila, odstranit všechny následující kandidáty
-                charging_candidates = [
-                    c for c in charging_candidates if c["index"] < idx
-                ]
-                _LOGGER.debug(f"Battery full at index {idx}, removing later candidates")
-            else:
-                # Odstranit použitého kandidáta
-                charging_candidates.pop(0)
 
             iteration += 1
 
