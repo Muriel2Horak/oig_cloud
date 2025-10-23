@@ -3992,19 +3992,19 @@ function updateChartDetailLevel(chart) {
 // Najít extrémní blok cen (nejlevnější/nejdražší 3h období)
 function findExtremePriceBlock(prices, findLowest, blockHours = 3) {
     if (!prices || prices.length === 0) return null;
-    
+
     const blockSize = Math.floor((blockHours * 60) / 15); // 3h = 12 intervalů po 15min
     if (prices.length < blockSize) return null;
-    
+
     let extremeBlock = null;
     let extremeAvg = findLowest ? Infinity : -Infinity;
-    
+
     // Sliding window přes všechny možné bloky
     for (let i = 0; i <= prices.length - blockSize; i++) {
         const block = prices.slice(i, i + blockSize);
         const blockValues = block.map(p => p.price);
         const blockAvg = blockValues.reduce((a, b) => a + b, 0) / blockValues.length;
-        
+
         if ((findLowest && blockAvg < extremeAvg) || (!findLowest && blockAvg > extremeAvg)) {
             extremeAvg = blockAvg;
             extremeBlock = {
@@ -4017,7 +4017,7 @@ function findExtremePriceBlock(prices, findLowest, blockHours = 3) {
             };
         }
     }
-    
+
     return extremeBlock;
 }
 
@@ -4025,15 +4025,15 @@ function findExtremePriceBlock(prices, findLowest, blockHours = 3) {
 function createMiniPriceChart(canvasId, values, color) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     // Zničit existující graf
     if (canvas.chart) {
         canvas.chart.destroy();
     }
-    
+
     // Vytvořit nový mini graf
     canvas.chart = new Chart(ctx, {
         type: 'line',
@@ -4209,28 +4209,28 @@ function loadPricingData() {
                     padding: { top: 3, bottom: 3, left: 5, right: 5 }
                 }
             });
-            
+
             // === NOVÉ: Najít extrémní bloky pro karty ===
             // Nejlevnější 3h blok
             const cheapestBlock = findExtremePriceBlock(prices, true, 3);
             if (cheapestBlock) {
-                document.getElementById('cheapest-buy-price').innerHTML = 
+                document.getElementById('cheapest-buy-price').innerHTML =
                     cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                 const startTime = new Date(cheapestBlock.start);
                 const endTime = new Date(cheapestBlock.end);
-                document.getElementById('cheapest-buy-time').textContent = 
+                document.getElementById('cheapest-buy-time').textContent =
                     `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                 createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)');
             }
-            
+
             // Nejdražší 3h blok
             const expensiveBlock = findExtremePriceBlock(prices, false, 3);
             if (expensiveBlock) {
-                document.getElementById('expensive-buy-price').innerHTML = 
+                document.getElementById('expensive-buy-price').innerHTML =
                     expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                 const startTime = new Date(expensiveBlock.start);
                 const endTime = new Date(expensiveBlock.end);
-                document.getElementById('expensive-buy-time').textContent = 
+                document.getElementById('expensive-buy-time').textContent =
                     `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                 createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)');
             }
@@ -4266,28 +4266,28 @@ function loadPricingData() {
                 order: 1,
                 borderDash: [5, 5]
             });
-            
+
             // === NOVÉ: Extrémní bloky pro EXPORT (prodej) - OBRÁCENÁ LOGIKA ===
             // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
             const bestExportBlock = findExtremePriceBlock(prices, false, 3);
             if (bestExportBlock) {
-                document.getElementById('best-export-price').innerHTML = 
+                document.getElementById('best-export-price').innerHTML =
                     bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                 const startTime = new Date(bestExportBlock.start);
                 const endTime = new Date(bestExportBlock.end);
-                document.getElementById('best-export-time').textContent = 
+                document.getElementById('best-export-time').textContent =
                     `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                 createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)');
             }
-            
+
             // Nejhorší prodej = NEJNIŽŠÍ cena (findLowest = true)
             const worstExportBlock = findExtremePriceBlock(prices, true, 3);
             if (worstExportBlock) {
-                document.getElementById('worst-export-price').innerHTML = 
+                document.getElementById('worst-export-price').innerHTML =
                     worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                 const startTime = new Date(worstExportBlock.start);
                 const endTime = new Date(worstExportBlock.end);
-                document.getElementById('worst-export-time').textContent = 
+                document.getElementById('worst-export-time').textContent =
                     `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                 createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)');
             }

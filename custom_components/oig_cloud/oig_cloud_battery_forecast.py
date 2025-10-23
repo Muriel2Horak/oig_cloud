@@ -1356,43 +1356,79 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         """Atributy s detaily nabíjení."""
         intervals, total_energy, total_cost = self._calculate_charging_intervals()
 
-        # Najít první interval kde se skutečně nabíjí baterie
-        first_charging_interval = None
-        last_charging_interval = None
+        # Detekovat SOUVISLÉ BLOKY nabíjení (ne jen první a poslední bod!)
+        charging_blocks = []
+        current_block = None
+        
         for interval in intervals:
             if interval.get("is_charging_battery", False):
-                if first_charging_interval is None:
-                    first_charging_interval = interval
-                last_charging_interval = interval
+                timestamp = datetime.fromisoformat(interval["timestamp"])
+                
+                if current_block is None:
+                    # Začátek nového bloku
+                    current_block = {
+                        "start": timestamp,
+                        "end": timestamp + timedelta(minutes=15),
+                        "intervals": [interval]
+                    }
+                else:
+                    # Zkontrolovat, jestli navazuje na předchozí interval
+                    time_gap = (timestamp - current_block["end"]).total_seconds() / 60
+                    
+                    if time_gap <= 15:  # Max 15 minut = souvislý blok
+                        # Pokračování bloku
+                        current_block["end"] = timestamp + timedelta(minutes=15)
+                        current_block["intervals"].append(interval)
+                    else:
+                        # Mezera > 15 min → ukončit blok a začít nový
+                        charging_blocks.append(current_block)
+                        current_block = {
+                            "start": timestamp,
+                            "end": timestamp + timedelta(minutes=15),
+                            "intervals": [interval]
+                        }
+            else:
+                # Interval bez nabíjení → ukončit aktuální blok
+                if current_block is not None:
+                    charging_blocks.append(current_block)
+                    current_block = None
+        
+        # Nezapomenout přidat poslední blok
+        if current_block is not None:
+            charging_blocks.append(current_block)
 
-        # Připravit formátované časy pro UI
+        # Připravit formátované časy pro UI - ukázat PRVNÍ blok
         next_charging_start = None
         next_charging_end = None
         next_charging_duration = None
+        all_blocks_summary = None
 
-        if first_charging_interval and last_charging_interval:
-            try:
-                start_time = datetime.fromisoformat(
-                    first_charging_interval["timestamp"]
-                )
-                end_time = datetime.fromisoformat(last_charging_interval["timestamp"])
-                # Konec je + 15 minut (délka intervalu)
-                end_time = end_time + timedelta(minutes=15)
-
-                # Formátování pro zobrazení
-                next_charging_start = start_time.strftime("%d.%m. %H:%M")
-                next_charging_end = end_time.strftime("%d.%m. %H:%M")
-
-                # Délka nabíjení
-                duration = end_time - start_time
-                hours = int(duration.total_seconds() // 3600)
-                minutes = int((duration.total_seconds() % 3600) // 60)
-                next_charging_duration = (
-                    f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
-                )
-
-            except (ValueError, TypeError) as e:
-                _LOGGER.debug(f"Error formatting charging times: {e}")
+        if charging_blocks:
+            # První blok (nejbližší)
+            first_block = charging_blocks[0]
+            next_charging_start = first_block["start"].strftime("%d.%m. %H:%M")
+            next_charging_end = first_block["end"].strftime("%d.%m. %H:%M")
+            
+            # Délka prvního bloku
+            duration = first_block["end"] - first_block["start"]
+            hours = int(duration.total_seconds() // 3600)
+            minutes = int((duration.total_seconds() % 3600) // 60)
+            next_charging_duration = (
+                f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
+            )
+            
+            # Souhrn všech bloků (pro detailní zobrazení)
+            if len(charging_blocks) > 1:
+                blocks_summary = []
+                for block in charging_blocks:
+                    start_str = block["start"].strftime("%H:%M")
+                    end_str = block["end"].strftime("%H:%M")
+                    block_duration = block["end"] - block["start"]
+                    block_hours = int(block_duration.total_seconds() // 3600)
+                    block_mins = int((block_duration.total_seconds() % 3600) // 60)
+                    duration_str = f"{block_hours}h {block_mins}min" if block_hours > 0 else f"{block_mins}min"
+                    blocks_summary.append(f"{start_str}-{end_str} ({duration_str})")
+                all_blocks_summary = " | ".join(blocks_summary)
 
         return {
             "charging_intervals": intervals,
@@ -1403,7 +1439,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 1 for i in intervals if i.get("is_charging_battery", False)
             ),
             "is_charging_planned": len(intervals) > 0,
-            # Nové atributy pro UI
+            # Atributy pro první (nejbližší) blok
             "next_charging_start": next_charging_start,
             "next_charging_end": next_charging_end,
             "next_charging_duration": next_charging_duration,
@@ -1412,4 +1448,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 if next_charging_start
                 else None
             ),
+            # Nové: info o všech blocích
+            "charging_blocks_count": len(charging_blocks),
+            "all_charging_blocks": all_blocks_summary,  # např. "00:00-05:30 (5h 30min) | 16:00-16:15 (15min) | 21:45-23:45 (2h)"
         }
