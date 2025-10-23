@@ -4082,19 +4082,23 @@ function loadPricingData() {
         const currentPrice = spotSensor.attributes.current_price;
         if (currentPrice != null) {
             const spotCard = document.getElementById('current-spot-price');
-            spotCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-            // Make card clickable
-            spotCard.parentElement.style.cursor = 'pointer';
-            spotCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+            if (spotCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
+                spotCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                // Make card clickable
+                spotCard.parentElement.style.cursor = 'pointer';
+                spotCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+            }
         }
         if (prices.length > 0) {
             const priceValues = prices.map(p => p.price);
             const avg = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
             const avgCard = document.getElementById('avg-spot-today');
-            avgCard.innerHTML = avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-            // Make card clickable (same entity as current spot)
-            avgCard.parentElement.style.cursor = 'pointer';
-            avgCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+            if (avgCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
+                avgCard.innerHTML = avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                // Make card clickable (same entity as current spot)
+                avgCard.parentElement.style.cursor = 'pointer';
+                avgCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+            }
 
             // Use spot price timestamps as master timeline (includes today + tomorrow)
             // Keep as Date objects for proper time axis handling
@@ -4249,10 +4253,12 @@ function loadPricingData() {
         const currentPrice = exportSensor.attributes.current_price;
         if (currentPrice != null) {
             const exportCard = document.getElementById('current-export-price');
-            exportCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-            // Make card clickable
-            exportCard.parentElement.style.cursor = 'pointer';
-            exportCard.parentElement.onclick = () => openEntityDialog(exportEntityId);
+            if (exportCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
+                exportCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                // Make card clickable
+                exportCard.parentElement.style.cursor = 'pointer';
+                exportCard.parentElement.onclick = () => openEntityDialog(exportEntityId);
+            }
         }
         if (prices.length > 0) {
             datasets.push({
@@ -4309,10 +4315,12 @@ function loadPricingData() {
         const attrs = solarSensor.attributes;
         const todayTotal = attrs.today_total_kwh || 0;
         const solarCard = document.getElementById('today-forecast-total');
-        solarCard.innerHTML = todayTotal.toFixed(2) + ' <span class="stat-unit">kWh</span>';
-        // Make card clickable
-        solarCard.parentElement.style.cursor = 'pointer';
-        solarCard.parentElement.onclick = () => openEntityDialog(solarEntityId);
+        if (solarCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
+            solarCard.innerHTML = todayTotal.toFixed(2) + ' <span class="stat-unit">kWh</span>';
+            // Make card clickable
+            solarCard.parentElement.style.cursor = 'pointer';
+            solarCard.parentElement.onclick = () => openEntityDialog(solarEntityId);
+        }
 
         const todayTotal_kw = attrs.today_hourly_total_kw || {};
         const tomorrowTotal_kw = attrs.tomorrow_hourly_total_kw || {};
