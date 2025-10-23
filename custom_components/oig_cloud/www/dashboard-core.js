@@ -3334,14 +3334,20 @@ async function updateGridChargingPlan() {
     // Update time range
     const timeElement = document.getElementById('grid-charging-time');
     if (timeElement && gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
-        timeElement.textContent = '📅 ' + gridChargingData.attributes.next_charging_time_range;
+        console.log('[Grid Charging] Updating time:', gridChargingData.attributes.next_charging_time_range);
+        timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
+    } else {
+        console.log('[Grid Charging] Time element or attribute not found');
     }
 
     // Update cost
     const costElement = document.getElementById('grid-charging-cost');
     if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
         const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
-        costElement.textContent = '💰 ~' + cost.toFixed(2) + ' Kč';
+        console.log('[Grid Charging] Updating cost:', cost.toFixed(2) + ' Kč');
+        costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+    } else {
+        console.log('[Grid Charging] Cost element or attribute not found');
     }
 }
 

@@ -235,60 +235,64 @@
                 <div class="node-details">
                     <div class="detail-group">
                         <div class="detail-subheader">⚡ Energie</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <!-- Nabíjení (levý sloupec) -->
-                            <div>
-                                <div class="detail-row">
-                                    <span class="detail-label">Nabíjení:</span>
-                                    <span class="detail-value entity-value" id="battery-charge-total"
-                                          data-entity="computed_batt_charge_energy_today"
-                                          data-tooltip="Nabito dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">└ z FVE:</span>
-                                    <span class="detail-value entity-value" id="battery-charge-solar"
-                                          data-entity="computed_batt_charge_fve_energy_today"
-                                          data-tooltip="Nabito z FVE dnes"
-                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">-- kWh</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span class="detail-label">└ ze sítě:</span>
-                                    <span class="detail-value entity-value" id="battery-charge-grid"
-                                          data-entity="computed_batt_charge_grid_energy_today"
-                                          data-tooltip="Nabito ze sítě dnes"
-                                          onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">-- kWh</span>
-                                </div>
+                        
+                        <!-- Nabíjení -->
+                        <div class="detail-row">
+                            <span class="detail-label">Nabíjení:</span>
+                            <span class="detail-value entity-value" id="battery-charge-total"
+                                  data-entity="computed_batt_charge_energy_today"
+                                  data-tooltip="Nabito dnes celkem"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">└ z FVE:</span>
+                            <span class="detail-value entity-value" id="battery-charge-solar"
+                                  data-entity="computed_batt_charge_fve_energy_today"
+                                  data-tooltip="Nabito z FVE dnes"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">-- kWh</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">└ ze sítě:</span>
+                            <span class="detail-value entity-value" id="battery-charge-grid"
+                                  data-entity="computed_batt_charge_grid_energy_today"
+                                  data-tooltip="Nabito ze sítě dnes"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">-- kWh</span>
+                        </div>
+                        
+                        <!-- Vybíjení -->
+                        <div class="detail-row" style="margin-top: 10px;">
+                            <span class="detail-label">Vybíjení:</span>
+                            <span class="detail-value entity-value" id="battery-discharge-total"
+                                  data-entity="computed_batt_discharge_energy_today"
+                                  data-tooltip="Vybito dnes celkem"
+                                  onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
+                        </div>
+                        
+                        <!-- Grid Charging Plan -->
+                        <div class="grid-charging-plan-section" id="grid-charging-plan-section" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-tertiary);">
+                            <div class="detail-row">
+                                <span class="detail-label">⚡ Plánované nabíjení:</span>
                             </div>
-                            <!-- Vybíjení (pravý sloupec) -->
-                            <div>
+                            <div style="margin-top: 8px; padding-left: 20px;">
                                 <div class="detail-row">
-                                    <span class="detail-label">Vybíjení:</span>
-                                    <span class="detail-value entity-value" id="battery-discharge-total"
-                                          data-entity="computed_batt_discharge_energy_today"
-                                          data-tooltip="Vybito dnes celkem"
-                                          onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
+                                    <span class="detail-label">Čas:</span>
+                                    <span class="detail-value entity-value" id="grid-charging-time"
+                                         data-entity="grid_charging_planned"
+                                         data-attribute="next_charging_time_range"
+                                         style="cursor: pointer;"
+                                         onclick="showGridChargingPopup()">--</span>
                                 </div>
-                                <!-- Grid Charging Plan -->
-                                <div class="detail-row grid-charging-plan-section" id="grid-charging-plan-section" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-tertiary);">
-                                    <span class="detail-label" style="display: flex; align-items: center; gap: 5px;">
-                                        <span>⚡ Plánované nabíjení:</span>
-                                    </span>
-                                    <div style="margin-top: 8px;">
-                                        <div class="entity-value" id="grid-charging-time"
-                                             data-entity="grid_charging_planned"
-                                             data-attribute="next_charging_time_range"
-                                             style="font-size: 0.95em; color: var(--text-secondary); cursor: pointer;"
-                                             onclick="showGridChargingPopup()">📅 --</div>
-                                        <div class="entity-value" id="grid-charging-cost"
-                                             data-entity="grid_charging_planned"
-                                             data-attribute="total_cost_czk"
-                                             style="font-size: 0.95em; color: var(--text-secondary); margin-top: 4px;">💰 -- Kč</div>
-                                        <div style="font-size: 0.85em; color: var(--text-tertiary); margin-top: 8px; cursor: pointer;"
-                                             onclick="showGridChargingPopup()">
-                                            🔍 Klikni pro detail intervalů
-                                        </div>
-                                    </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Cena:</span>
+                                    <span class="detail-value entity-value" id="grid-charging-cost"
+                                         data-entity="grid_charging_planned"
+                                         data-attribute="total_cost_czk"
+                                         style="cursor: pointer;"
+                                         onclick="showGridChargingPopup()">-- Kč</span>
+                                </div>
+                                <div style="font-size: 0.85em; color: var(--text-tertiary); margin-top: 8px; cursor: pointer;"
+                                     onclick="showGridChargingPopup()">
+                                    🔍 Klikni pro detail intervalů
                                 </div>
                             </div>
                         </div>
