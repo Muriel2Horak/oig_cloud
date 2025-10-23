@@ -472,7 +472,7 @@
             backdrop-filter: blur(10px);
             z-index: 2;
             min-width: 130px;
-            max-width: 220px;
+            max-width: 250px;
         }
 
         .node:hover {

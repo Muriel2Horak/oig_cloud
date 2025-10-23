@@ -233,10 +233,10 @@
                 <div class="node-status" id="battery-status">--</div>
                 <div class="node-details">
                     <div class="detail-group">
-                        <div class="detail-subheader">⚡ Energie</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <!-- Nabíjení + Vybíjení (levý sloupec) -->
+                            <!-- ENERGIE sloupec -->
                             <div>
+                                <div class="detail-subheader">⚡ Energie</div>
                                 <div class="detail-row">
                                     <span class="detail-label">Nabíjení:</span>
                                     <span class="detail-value entity-value" id="battery-charge-total"
@@ -267,22 +267,20 @@
                                 </div>
                             </div>
 
-                            <!-- Plánované nabíjení (pravý sloupec) -->
+                            <!-- PLÁNOVANÉ sloupec -->
                             <div>
+                                <div class="detail-subheader">🔌 Plánované</div>
                                 <div class="grid-charging-plan-section" id="grid-charging-plan-section" style="display: none;">
                                     <div class="detail-row">
-                                        <span class="detail-label">⚡ Plánované:</span>
-                                    </div>
-                                    <div class="detail-row">
-                                        <span class="detail-label">└ Dobití:</span>
+                                        <span class="detail-label">Dobití:</span>
                                         <span class="detail-value" id="grid-charging-energy">-- kWh</span>
                                     </div>
                                     <div class="detail-row">
-                                        <span class="detail-label">└ Cena:</span>
+                                        <span class="detail-label">Cena:</span>
                                         <span class="detail-value" id="grid-charging-cost">-- Kč</span>
                                     </div>
                                     <div class="detail-row">
-                                        <span class="detail-label">└ Start:</span>
+                                        <span class="detail-label">Start:</span>
                                         <span class="detail-value" id="grid-charging-start">--</span>
                                     </div>
                                 </div>
