@@ -1,7 +1,7 @@
 # 📋 Sensor Registry Refactor - Summary
 
-**Větev:** `feature/sensor-registry-refactor`  
-**Datum:** 23. října 2025  
+**Větev:** `feature/sensor-registry-refactor`
+**Datum:** 23. října 2025
 **Status:** ✅ Návrh schválen, ready to implement
 
 ---
@@ -230,8 +230,8 @@ git branch -D feature/sensor-registry-refactor
 
 ## 📞 Kontakt
 
-**Implementace:** AI Assistant  
-**Testing:** Martin Horák  
+**Implementace:** AI Assistant
+**Testing:** Martin Horák
 **Dokumentace:** docs/SENSOR_REFACTOR_*.md
 
 **Při problémech:**
@@ -243,8 +243,8 @@ git branch -D feature/sensor-registry-refactor
 
 ## ✅ Sign-off
 
-**Návrh schválen:** ✅ Martin Horák  
-**Implementace může začít:** ✅ ANO  
+**Návrh schválen:** ✅ Martin Horák
+**Implementace může začít:** ✅ ANO
 **Datum:** 23. října 2025
 
 **Kritické požadavky potvrzeny:**

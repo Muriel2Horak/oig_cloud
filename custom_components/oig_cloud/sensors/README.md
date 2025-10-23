@@ -180,7 +180,7 @@ device_info = get_device_info_for_sensor(
 def test_all_sensors_have_device_mapping():
     """Všechny senzory musí mít device_mapping."""
     from custom_components.oig_cloud.sensors.sensor_types import SENSOR_TYPES
-    
+
     for sensor_type, config in SENSOR_TYPES.items():
         assert "device_mapping" in config, f"{sensor_type} nemá device_mapping"
         assert config["device_mapping"] in ["main", "analytics", "shield"]
@@ -205,12 +205,12 @@ CATEGORY_TO_DEVICE = {
 def test_device_mapping_matches_category():
     """Device mapping musí odpovídat kategorii."""
     from custom_components.oig_cloud.sensors.sensor_types import SENSOR_TYPES
-    
+
     for sensor_type, config in SENSOR_TYPES.items():
         category = config.get("sensor_type_category")
         expected = CATEGORY_TO_DEVICE[category]
         actual = config.get("device_mapping")
-        
+
         assert actual == expected, (
             f"{sensor_type}: expected device_mapping='{expected}' "
             f"for category='{category}', got '{actual}'"
@@ -240,6 +240,6 @@ Helper funkce použije fallback na `"main"`. Ale doporuč ujeme vždy explicitn�
 
 ---
 
-**Verze:** Fáze 2 Device Mapping Refactor  
-**Datum:** 23. října 2025  
+**Verze:** Fáze 2 Device Mapping Refactor
+**Datum:** 23. října 2025
 **Autor:** OIG Cloud Integration Team
