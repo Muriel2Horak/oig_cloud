@@ -280,54 +280,70 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     _LOGGER.info(f"📊 Found {len(entities)} entities for config entry")
 
-    # Fáze 1: Cleanup duplicitních entit
-    # Duplicita = entity_id má příponu _X, ale unique_id ji NEMÁ
-    # (tj. Home Assistant přidal příponu kvůli kolizi)
-    disabled_count = 0
-    duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
-
-    for entity in entities:
-        entity_id_match = duplicate_pattern.match(entity.entity_id)
-        
-        if not entity_id_match:
-            continue  # entity_id nemá příponu, není to duplicita
-        
-        # entity_id má příponu - zkontrolujeme unique_id
-        suffix = entity_id_match.group(2)  # např. "_2", "_3"
-        
-        # Pokud unique_id NEMÁ stejnou příponu, je to duplicita vytvořená HA
-        if not entity.unique_id.endswith(suffix):
-            # Toto je skutečná duplicita - HA přidal příponu
-            try:
-                if not entity.disabled_by:
-                    entity_registry.async_update_entity(
-                        entity.entity_id,
-                        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-                    )
-                    disabled_count += 1
-                    _LOGGER.info(
-                        f"⏸️ Disabled duplicate entity: {entity.entity_id} "
-                        f"(unique_id={entity.unique_id} doesn't have {suffix})"
-                    )
-            except Exception as e:
-                _LOGGER.warning(
-                    f"⚠️ Failed to disable duplicate {entity.entity_id}: {e}"
-                )
-        else:
-            # unique_id má stejnou příponu - legitimní senzor
-            _LOGGER.debug(
-                f"✓ Entity {entity.entity_id} is legitimate (unique_id={entity.unique_id})"
-            )
-
-    # Fáze 2: Migrace unique_id
-    # Znovu načteme entity po cleanup
-    entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-
     migrated_count = 0
     skipped_count = 0
+    removed_count = 0
+    enabled_count = 0
 
+    # Projdeme všechny entity a upravíme je
     for entity in entities:
         old_unique_id = entity.unique_id
+        entity_id = entity.entity_id
+
+        # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
+        if old_unique_id.startswith("oig_cloud_"):
+            # Pokud je disabled, enable ji (to jsou správné entity co jsme omylem vypnuli)
+            if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
+                try:
+                    entity_registry.async_update_entity(entity_id, disabled_by=None)
+                    enabled_count += 1
+                    _LOGGER.info(f"✅ Re-enabled correct entity: {entity_id}")
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Failed to enable {entity_id}: {e}")
+            skipped_count += 1
+            continue
+
+        # 2. Má starý formát unique_id - potřebuje migraci
+        # Zjistíme, jestli entity_id má příponu _X (znamená duplicitu)
+        duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
+        entity_id_match = duplicate_pattern.match(entity_id)
+
+        if entity_id_match:
+            suffix = entity_id_match.group(2)  # např. "_2", "_3"
+
+            # Pokud unique_id nemá příponu, ale entity_id ano = duplicita
+            # Tyto entity SMAŽEME (ne jen disable)
+            if not old_unique_id.endswith(suffix):
+                try:
+                    entity_registry.async_remove(entity_id)
+                    removed_count += 1
+                    _LOGGER.info(
+                        f"🗑️ Removed duplicate entity: {entity_id} "
+                        f"(unique_id={old_unique_id} doesn't match entity_id suffix)"
+                    )
+                    continue
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Failed to remove {entity_id}: {e}")
+                    continue
+
+        # 3. Migrace unique_id na nový formát
+        if old_unique_id.startswith("oig_") and not old_unique_id.startswith(
+            "oig_cloud_"
+        ):
+            # Formát oig_{boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
+            new_unique_id = f"oig_cloud_{old_unique_id[4:]}"
+        else:
+            # Formát {boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
+            new_unique_id = f"oig_cloud_{old_unique_id}"
+
+        try:
+            entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
+            migrated_count += 1
+            _LOGGER.info(
+                f"✅ Migrated entity {entity_id}: {old_unique_id} -> {new_unique_id}"
+            )
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Failed to migrate {entity_id}: {e}")
 
         # Přeskočíme entity, které už mají správný formát
         if old_unique_id.startswith("oig_cloud_"):
@@ -353,39 +369,61 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                 f"✅ Migrated entity {entity.entity_id}: {old_unique_id} -> {new_unique_id}"
             )
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to migrate {entity.entity_id}: {e}")
+            _LOGGER.warning(f"⚠️ Failed to migrate {entity_id}: {e}")
 
     # Summary
-    if disabled_count > 0:
-        message_parts = [
-            f"**Deaktivováno {disabled_count} duplicitních entit** (s příponami _2, _3, atd.)\n\n"
-            f"**Co to znamená:**\n"
-            f"- Duplicity jsou vypnuté, ale jejich data zůstávají\n"
-            f"- Aktivní zůstaly pouze základní entity (bez přípony)\n"
-            f"- Za pár dní se stará data automaticky rotují\n\n"
-            f"**Co můžete udělat:**\n"
-            f"1. Nic - duplicity časem zastarají (doporučeno)\n"
-            f"2. Smazat je v Nastavení → Zařízení & Služby → Entity (zapnout 'Zobrazit zakázané')\n"
-            f"3. Pokud má duplicita důležitá data, můžete ji znovu povolit\n\n"
+    _LOGGER.info(
+        f"📊 Migration summary: migrated={migrated_count}, removed={removed_count}, "
+        f"enabled={enabled_count}, skipped={skipped_count}"
+    )
+
+    if removed_count > 0 or migrated_count > 0:
+        message_parts = []
+
+        if removed_count > 0:
+            message_parts.append(
+                f"**Odstraněno {removed_count} duplicitních entit**\n"
+                f"Byly to staré kolize s nesprávným unique_id.\n\n"
+            )
+
+        if migrated_count > 0:
+            message_parts.append(
+                f"**Migrováno {migrated_count} entit na nový formát unique_id**\n"
+                f"Všechny OIG entity nyní používají standardní formát `oig_cloud_*`.\n\n"
+            )
+
+        if enabled_count > 0:
+            message_parts.append(
+                f"**Povoleno {enabled_count} správných entit**\n"
+                f"Entity s novým formátem byly znovu aktivovány.\n\n"
+            )
+
+        message_parts.append(
+            f"**Co se stalo:**\n"
+            f"- Staré entity se přeregistrovaly s novým unique_id\n"
+            f"- Duplicity byly odstraněny\n"
+            f"- Všechny entity by měly fungovat normálně\n\n"
+            f"**Pokud něco nefunguje:**\n"
+            f"Reload integrace v Nastavení → Zařízení & Služby → OIG Cloud\n\n"
             f"Toto je jednorázová migrace po aktualizaci integrace."
-        ]
+        )
 
         await hass.services.async_call(
             "persistent_notification",
             "create",
             {
-                "title": "OIG Cloud: Duplicitní entity deaktivovány",
+                "title": "OIG Cloud: Migrace entit dokončena",
                 "message": "".join(message_parts),
-                "notification_id": "oig_cloud_duplicate_cleanup",
+                "notification_id": "oig_cloud_migration_complete",
             },
         )
 
-        _LOGGER.warning(
-            f"⏸️ Disabled {disabled_count} duplicate entities. "
-            f"Check persistent notification for details."
-        )
     if migrated_count > 0:
         _LOGGER.info(f"🔄 Migrated {migrated_count} entities to new unique_id format")
+    if removed_count > 0:
+        _LOGGER.warning(f"🗑️ Removed {removed_count} duplicate entities")
+    if enabled_count > 0:
+        _LOGGER.info(f"✅ Re-enabled {enabled_count} correct entities")
     if skipped_count > 0:
         _LOGGER.debug(f"⏭️ Skipped {skipped_count} entities (already in correct format)")
 
