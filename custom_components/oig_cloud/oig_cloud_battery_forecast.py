@@ -1129,7 +1129,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Atributy s detaily nabíjení."""
         intervals, total_energy, total_cost = self._calculate_charging_intervals()
-        
+
         # Najít první interval kde se skutečně nabíjí baterie
         first_charging_interval = None
         last_charging_interval = None
@@ -1138,29 +1138,33 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 if first_charging_interval is None:
                     first_charging_interval = interval
                 last_charging_interval = interval
-        
+
         # Připravit formátované časy pro UI
         next_charging_start = None
         next_charging_end = None
         next_charging_duration = None
-        
+
         if first_charging_interval and last_charging_interval:
             try:
-                start_time = datetime.fromisoformat(first_charging_interval["timestamp"])
+                start_time = datetime.fromisoformat(
+                    first_charging_interval["timestamp"]
+                )
                 end_time = datetime.fromisoformat(last_charging_interval["timestamp"])
                 # Konec je + 15 minut (délka intervalu)
                 end_time = end_time + timedelta(minutes=15)
-                
+
                 # Formátování pro zobrazení
                 next_charging_start = start_time.strftime("%d.%m. %H:%M")
                 next_charging_end = end_time.strftime("%H:%M")
-                
+
                 # Délka nabíjení
                 duration = end_time - start_time
                 hours = int(duration.total_seconds() // 3600)
                 minutes = int((duration.total_seconds() % 3600) // 60)
-                next_charging_duration = f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
-                
+                next_charging_duration = (
+                    f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
+                )
+
             except (ValueError, TypeError) as e:
                 _LOGGER.debug(f"Error formatting charging times: {e}")
 
@@ -1177,5 +1181,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             "next_charging_start": next_charging_start,
             "next_charging_end": next_charging_end,
             "next_charging_duration": next_charging_duration,
-            "next_charging_time_range": f"{next_charging_start} - {next_charging_end}" if next_charging_start else None,
+            "next_charging_time_range": (
+                f"{next_charging_start} - {next_charging_end}"
+                if next_charging_start
+                else None
+            ),
         }

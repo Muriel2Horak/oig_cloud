@@ -3305,25 +3305,25 @@ function initTooltips() {
 async function updateGridChargingPlan() {
     const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
     const isPlanned = gridChargingData.value === 'on';
-    
+
     // Show/hide indicator in battery card header
     const indicator = document.getElementById('battery-grid-charging-indicator');
     if (indicator) {
         indicator.style.display = isPlanned ? 'block' : 'none';
     }
-    
+
     // Show/hide section in battery details
     const section = document.getElementById('grid-charging-plan-section');
     if (section) {
         section.style.display = isPlanned ? 'block' : 'none';
     }
-    
+
     // Update time range
     const timeElement = document.getElementById('grid-charging-time');
     if (timeElement && gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
         timeElement.textContent = '📅 ' + gridChargingData.attributes.next_charging_time_range;
     }
-    
+
     // Update cost
     const costElement = document.getElementById('grid-charging-cost');
     if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
@@ -3338,11 +3338,11 @@ function showGridChargingPopup() {
             showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
             return;
         }
-        
+
         const intervals = gridChargingData.attributes.charging_intervals;
         const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
         const totalCost = gridChargingData.attributes.total_cost_czk || 0;
-        
+
         // Build table HTML
         let tableHtml = `
             <div style="margin-bottom: 15px;">
@@ -3360,7 +3360,7 @@ function showGridChargingPopup() {
                 </thead>
                 <tbody>
         `;
-        
+
         intervals.forEach((interval, index) => {
             const rowBg = index % 2 === 0 ? 'var(--bg-tertiary)' : 'transparent';
             const isCharging = interval.is_charging_battery;
@@ -3368,7 +3368,7 @@ function showGridChargingPopup() {
             const statusText = isCharging ? 'Nabíjí' : interval.note || 'Baterie plná';
             const energyText = interval.grid_charge_kwh ? interval.grid_charge_kwh.toFixed(2) + ' kWh' : '-';
             const costText = interval.grid_charge_cost ? '~' + interval.grid_charge_cost.toFixed(2) + ' Kč' : '-';
-            
+
             tableHtml += `
                 <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-tertiary);">
                     <td style="padding: 8px;">${interval.time_from} - ${interval.time_to}</td>
@@ -3378,12 +3378,12 @@ function showGridChargingPopup() {
                 </tr>
             `;
         });
-        
+
         tableHtml += `
                 </tbody>
             </table>
         `;
-        
+
         showDialog('⚡ Plánované nabíjení ze sítě', tableHtml);
     });
 }
@@ -4151,94 +4151,4 @@ function loadPricingData() {
             }
         });
     }
-
-    // Načíst a zobrazit plánované nabíjení ze sítě
-    loadGridChargingData(hass, boxId);
-}
-
-function loadGridChargingData(hass, boxId) {
-    const gridChargingEntityId = `sensor.oig_${boxId}_grid_charging_planned`;
-    const gridChargingSensor = hass.states[gridChargingEntityId];
-
-    console.log('[Grid Charging] Entity ID:', gridChargingEntityId);
-    console.log('[Grid Charging] Sensor found:', gridChargingSensor ? 'YES' : 'NO');
-    if (gridChargingSensor) {
-        console.log('[Grid Charging] State:', gridChargingSensor.state);
-        console.log('[Grid Charging] Attributes:', gridChargingSensor.attributes);
-    }
-
-    const cardElement = document.getElementById('grid-charging-card');
-    const tableContainer = document.getElementById('grid-charging-table-container');
-
-    if (!gridChargingSensor || !gridChargingSensor.attributes) {
-        // Senzor neexistuje nebo nemá data
-        console.log('[Grid Charging] Hiding card - sensor not found or no attributes');
-        cardElement.style.display = 'none';
-        tableContainer.style.display = 'none';
-        return;
-    }
-
-    const isCharging = gridChargingSensor.state === 'on';
-    const chargingIntervals = gridChargingSensor.attributes.charging_intervals || [];
-    const totalEnergyKwh = gridChargingSensor.attributes.total_energy_kwh || 0;
-    const totalCostCzk = gridChargingSensor.attributes.total_cost_czk || 0;
-
-    if (!isCharging || chargingIntervals.length === 0) {
-        cardElement.style.display = 'none';
-        tableContainer.style.display = 'none';
-        return;
-    }
-
-    // Zobrazit summary kartu
-    cardElement.style.display = 'block';
-    const summaryDiv = document.getElementById('grid-charging-total');
-    const costDiv = document.getElementById('grid-charging-cost');
-
-    summaryDiv.innerHTML = `${chargingIntervals.length} interval${chargingIntervals.length > 1 ? 'y' : ''} • ${totalEnergyKwh.toFixed(2)} kWh`;
-    costDiv.innerHTML = `Celková cena: <strong>${totalCostCzk.toFixed(2)} Kč</strong>`;
-
-    // Zobrazit tabulku s detaily
-    tableContainer.style.display = 'block';
-    const tableBody = document.getElementById('grid-charging-table-body');
-    tableBody.innerHTML = ''; // Vyčistit
-
-    chargingIntervals.forEach(interval => {
-        const row = document.createElement('tr');
-        row.style.borderBottom = '1px solid var(--border-primary)';
-
-        const timestamp = new Date(interval.timestamp);
-        const timeStr = timestamp.toLocaleString('cs-CZ', {
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        row.innerHTML = `
-            <td style="padding: 8px; color: var(--text-primary);">${timeStr}</td>
-            <td style="padding: 8px; text-align: right; color: var(--text-primary);">${interval.energy_kwh.toFixed(3)}</td>
-            <td style="padding: 8px; text-align: right; color: var(--text-primary);">${interval.spot_price_czk.toFixed(2)}</td>
-            <td style="padding: 8px; text-align: right; color: var(--text-primary); font-weight: bold;">${interval.cost_czk.toFixed(2)}</td>
-        `;
-
-        tableBody.appendChild(row);
-    });
-
-    // Přidat celkový řádek
-    const totalRow = document.createElement('tr');
-    totalRow.style.borderTop = '2px solid var(--border-primary)';
-    totalRow.style.fontWeight = 'bold';
-    totalRow.innerHTML = `
-        <td style="padding: 10px; color: var(--text-primary);">CELKEM</td>
-        <td style="padding: 10px; text-align: right; color: var(--text-primary);">${totalEnergyKwh.toFixed(3)}</td>
-        <td style="padding: 10px; text-align: right; color: var(--text-secondary);">—</td>
-        <td style="padding: 10px; text-align: right; color: var(--text-primary);">${totalCostCzk.toFixed(2)}</td>
-    `;
-    tableBody.appendChild(totalRow);
-
-    // Kliknutí na kartu = scroll k tabulce
-    cardElement.style.cursor = 'pointer';
-    cardElement.onclick = () => {
-        tableContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    };
 }
