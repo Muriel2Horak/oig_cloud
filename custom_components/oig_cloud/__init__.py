@@ -278,14 +278,14 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     # Najdeme všechny OIG entity pro tento config entry
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
 
-    # Fáze 1: Cleanup duplicitních entit (_2, _3, atd.)
+    # Fáze 1: Označení duplicitních entit jako disabled (_2, _3, atd.)
     entities_by_base = {}  # base_entity_id -> [entities]
-    duplicate_pattern = re.compile(r'^(.+?)(_\d+)$')
-    
+    duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
+
     for entity in entities:
         entity_id = entity.entity_id
         match = duplicate_pattern.match(entity_id)
-        
+
         if match:
             # Má příponu _2, _3, atd.
             base_id = match.group(1)
@@ -293,38 +293,51 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         else:
             # Základní entity bez přípony
             entities_by_base.setdefault(entity_id, []).append(entity)
-    
-    removed_count = 0
-    
-    # Odstraníme duplicity, pokud existuje základní entita
+
+    disabled_count = 0
+
+    # Označíme duplicity jako disabled, pokud existuje základní entita
     for base_id, entity_list in entities_by_base.items():
         if len(entity_list) <= 1:
             continue
-            
+
         # Najdeme základní entitu (bez přípony)
         base_entity = None
         duplicates = []
-        
+
         for e in entity_list:
             if e.entity_id == base_id:
                 base_entity = e
             else:
                 duplicates.append(e)
-        
-        # Pokud existuje základní entita, smažeme duplicity
+
+        # Pokud existuje základní entita, disable duplicity
         if base_entity and duplicates:
             for dup in duplicates:
                 try:
-                    entity_registry.async_remove(dup.entity_id)
-                    removed_count += 1
-                    _LOGGER.info(f"🗑️ Removed duplicate entity: {dup.entity_id} (base: {base_id})")
+                    # Nemazat - jen disable, aby uživatel o data nepřišel
+                    if not dup.disabled_by:
+                        entity_registry.async_update_entity(
+                            dup.entity_id,
+                            disabled_by=er.RegistryEntryDisabler.INTEGRATION
+                        )
+                        disabled_count += 1
+                        _LOGGER.info(
+                            f"⏸️ Disabled duplicate entity: {dup.entity_id} (base exists: {base_id})"
+                        )
                 except Exception as e:
-                    _LOGGER.warning(f"⚠️ Failed to remove duplicate {dup.entity_id}: {e}")
+                    _LOGGER.warning(f"⚠️ Failed to disable duplicate {dup.entity_id}: {e}")
+                        f"🗑️ Removed duplicate entity: {dup.entity_id} (base: {base_id})"
+                    )
+                except Exception as e:
+                    _LOGGER.warning(
+                        f"⚠️ Failed to remove duplicate {dup.entity_id}: {e}"
+                    )
 
     # Fáze 2: Migrace unique_id
     # Znovu načteme entity po cleanup
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    
+
     migrated_count = 0
     skipped_count = 0
 
@@ -337,7 +350,9 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             continue
 
         # Migrace formátů unique_id
-        if old_unique_id.startswith("oig_") and not old_unique_id.startswith("oig_cloud_"):
+        if old_unique_id.startswith("oig_") and not old_unique_id.startswith(
+            "oig_cloud_"
+        ):
             # Formát oig_{boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
             new_unique_id = f"oig_cloud_{old_unique_id[4:]}"
         else:
@@ -356,8 +371,11 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             _LOGGER.warning(f"⚠️ Failed to migrate {entity.entity_id}: {e}")
 
     # Summary
-    if removed_count > 0:
-        _LOGGER.info(f"🗑️ Removed {removed_count} duplicate entities")
+    if disabled_count > 0:
+        _LOGGER.warning(
+            f"⏸️ Disabled {disabled_count} duplicate entities. "
+            f"You can manually delete them in Settings -> Devices & Services -> Entities (show disabled)"
+        )
     if migrated_count > 0:
         _LOGGER.info(f"🔄 Migrated {migrated_count} entities to new unique_id format")
     if skipped_count > 0:
