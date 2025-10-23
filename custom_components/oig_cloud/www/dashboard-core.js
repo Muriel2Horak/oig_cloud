@@ -3314,11 +3314,15 @@ async function updateGridChargingPlan() {
     console.log('[Grid Charging] Is planned:', isPlanned);
     console.log('[Grid Charging] Attributes:', gridChargingData.attributes);
 
-    // Show/hide indicator in battery card header
+    // Update indicator in battery card - always visible, but with active/inactive state
     const indicator = document.getElementById('battery-grid-charging-indicator');
     if (indicator) {
-        console.log('[Grid Charging] Indicator found, setting display to:', isPlanned ? 'block' : 'none');
-        indicator.style.display = isPlanned ? 'block' : 'none';
+        console.log('[Grid Charging] Indicator found, setting active class:', isPlanned);
+        if (isPlanned) {
+            indicator.classList.add('active');
+        } else {
+            indicator.classList.remove('active');
+        }
     } else {
         console.error('[Grid Charging] Indicator element NOT FOUND!');
     }
@@ -3346,11 +3350,11 @@ async function updateGridChargingPlan() {
         costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
     }
 
-    // Update time with tooltip containing intervals table
-    const timeElement = document.getElementById('grid-charging-time');
-    if (timeElement && gridChargingData.attributes) {
-        if (gridChargingData.attributes.next_charging_time_range) {
-            timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
+    // Update start time with tooltip containing intervals table
+    const startElement = document.getElementById('grid-charging-start');
+    if (startElement && gridChargingData.attributes) {
+        if (gridChargingData.attributes.next_charging_start) {
+            startElement.textContent = gridChargingData.attributes.next_charging_start;
 
             // Build tooltip HTML with intervals table
             if (gridChargingData.attributes.charging_intervals && gridChargingData.attributes.charging_intervals.length > 0) {
@@ -3398,10 +3402,10 @@ async function updateGridChargingPlan() {
                     </div>
                 `;
 
-                timeElement.setAttribute('data-tooltip-html', tooltipHtml);
+                startElement.setAttribute('data-tooltip-html', tooltipHtml);
             }
         } else {
-            timeElement.textContent = '--';
+            startElement.textContent = '--';
         }
     }
 }

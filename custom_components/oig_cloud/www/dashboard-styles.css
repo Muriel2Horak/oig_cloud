@@ -736,23 +736,35 @@
 
         .battery-grid-charging-indicator {
             position: absolute !important;
-            top: 8px !important;
-            right: 60px !important;
+            top: 33px !important;
+            right: 8px !important;
             font-size: 16px;
             line-height: 1;
             z-index: 10;
             cursor: pointer;
             transition: all 0.3s ease;
             margin: 0 !important;
-            padding: 4px 6px;
-            background: var(--status-charging-bg);
+            padding: 4px 8px;
             border-radius: 6px;
+            /* Default OFF state - šedá, průhledná */
+            background: rgba(100, 100, 100, 0.2);
+            border: 1px solid rgba(150, 150, 150, 0.3);
+            opacity: 0.5;
+        }
+
+        /* Active ON state - zelená, animovaná */
+        .battery-grid-charging-indicator.active {
+            background: var(--status-charging-bg);
             border: 1px solid var(--status-charging-text);
+            opacity: 1;
             animation: pulse-charging 2s ease-in-out infinite;
         }
 
         .battery-grid-charging-indicator:hover {
             transform: scale(1.1);
+        }
+
+        .battery-grid-charging-indicator.active:hover {
             box-shadow: 0 0 10px var(--status-charging-text);
         }
 
