@@ -1350,8 +1350,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         # Kontrola, jestli je aktuální čas v intervalu nabíjení (nebo 5 min před)
         now = datetime.now()
-        offset_before = timedelta(minutes=5)  # Zapnout 5 min před začátkem
-        offset_after = timedelta(minutes=5)  # Vypnout 5 min po konci
+        offset_before_start = timedelta(minutes=5)  # Zapnout 5 min před začátkem
+        offset_before_end = timedelta(minutes=5)    # Vypnout 5 min před koncem
 
         for interval in intervals:
             if not interval.get("is_charging_battery", False):
@@ -1362,11 +1362,12 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 interval_start = interval_time
                 interval_end = interval_time + timedelta(minutes=15)  # 15min interval
 
-                # Je aktuální čas v rozsahu (interval_start - 5min) až (interval_end + 5min)?
+                # Je aktuální čas v rozsahu (interval_start - 5min) až (interval_end - 5min)?
+                # Zapnout 5 min PŘED začátkem, vypnout 5 min PŘED koncem
                 if (
-                    (interval_start - offset_before)
+                    (interval_start - offset_before_start)
                     <= now
-                    <= (interval_end + offset_after)
+                    <= (interval_end - offset_before_end)
                 ):
                     return "on"
             except (ValueError, TypeError):
