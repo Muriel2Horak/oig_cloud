@@ -284,15 +284,39 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     skipped_count = 0
     removed_count = 0
     enabled_count = 0
+    renamed_count = 0
 
     # Projdeme všechny entity a upravíme je
     for entity in entities:
         old_unique_id = entity.unique_id
         entity_id = entity.entity_id
+        duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
 
         # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
         if old_unique_id.startswith("oig_cloud_"):
-            # Pokud je disabled, enable ji (to jsou správné entity co jsme omylem vypnuli)
+            # Zkontrolujeme, jestli entity_id má příponu, ale unique_id ne
+            entity_id_match = duplicate_pattern.match(entity_id)
+            if entity_id_match:
+                suffix = entity_id_match.group(2)
+                base_entity_id = entity_id_match.group(1)
+                
+                # Pokud unique_id nemá příponu, ale entity_id ano, přejmenujeme
+                if not old_unique_id.endswith(suffix):
+                    try:
+                        # Zkusíme přejmenovat entity_id (odstraníme příponu)
+                        entity_registry.async_update_entity(
+                            entity_id,
+                            new_entity_id=base_entity_id
+                        )
+                        renamed_count += 1
+                        _LOGGER.info(
+                            f"🔄 Renamed entity: {entity_id} -> {base_entity_id}"
+                        )
+                        entity_id = base_entity_id  # Aktualizujeme pro další kontroly
+                    except Exception as e:
+                        _LOGGER.warning(f"⚠️ Failed to rename {entity_id}: {e}")
+            
+            # Pokud je disabled, enable ji
             if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
                 try:
                     entity_registry.async_update_entity(entity_id, disabled_by=None)
@@ -300,12 +324,12 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                     _LOGGER.info(f"✅ Re-enabled correct entity: {entity_id}")
                 except Exception as e:
                     _LOGGER.warning(f"⚠️ Failed to enable {entity_id}: {e}")
+            
             skipped_count += 1
             continue
 
         # 2. Má starý formát unique_id - potřebuje migraci
         # Zjistíme, jestli entity_id má příponu _X (znamená duplicitu)
-        duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
         entity_id_match = duplicate_pattern.match(entity_id)
 
         if entity_id_match:
@@ -374,11 +398,17 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     # Summary
     _LOGGER.info(
         f"📊 Migration summary: migrated={migrated_count}, removed={removed_count}, "
-        f"enabled={enabled_count}, skipped={skipped_count}"
+        f"renamed={renamed_count}, enabled={enabled_count}, skipped={skipped_count}"
     )
 
-    if removed_count > 0 or migrated_count > 0:
+    if removed_count > 0 or migrated_count > 0 or renamed_count > 0:
         message_parts = []
+
+        if renamed_count > 0:
+            message_parts.append(
+                f"**Přejmenováno {renamed_count} entit**\n"
+                f"Entity s příponami (_2, _3) byly přejmenovány na správné názvy.\n\n"
+            )
 
         if removed_count > 0:
             message_parts.append(
@@ -418,6 +448,8 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             },
         )
 
+    if renamed_count > 0:
+        _LOGGER.info(f"🔄 Renamed {renamed_count} entities to correct entity_id")
     if migrated_count > 0:
         _LOGGER.info(f"🔄 Migrated {migrated_count} entities to new unique_id format")
     if removed_count > 0:
