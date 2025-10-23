@@ -104,8 +104,25 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             else "OIG Cloud Dashboard"
         )
 
-        # OPRAVA: Přidat parametry pro debugging do URL
-        dashboard_url = f"/oig_cloud_static/dashboard.html?entry_id={entry.entry_id}&inverter_sn={inverter_sn}"
+        # Cache-busting: Přidat verzi + timestamp k URL pro vymazání browseru cache
+        import os
+        import json
+        import time
+
+        manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+        version = "unknown"
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+                version = manifest.get("version", "unknown")
+        except Exception as e:
+            _LOGGER.warning(f"Could not load version from manifest: {e}")
+
+        # Přidat timestamp pro cache-busting při každém restartu
+        cache_bust = int(time.time())
+
+        # OPRAVA: Přidat parametry včetně v= a t= pro cache-busting
+        dashboard_url = f"/oig_cloud_static/dashboard.html?entry_id={entry.entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
 
         _LOGGER.info(f"Dashboard URL: {dashboard_url}")
 
