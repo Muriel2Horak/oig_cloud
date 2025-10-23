@@ -843,21 +843,10 @@ async def async_setup_entry(
 
                     grid_charging_sensors: List[Any] = []
 
-                    # Získáme box_id z coordinator
-                    box_id = (
-                        list(coordinator.data.keys())[0]
-                        if coordinator.data
-                        else "unknown"
-                    )
-
                     for sensor_type, config in SENSOR_TYPES.items():
                         if config.get("sensor_type_category") == "grid_charging_plan":
                             sensor = OigCloudGridChargingPlanSensor(
-                                hass,
-                                entry,
-                                box_id,
-                                sensor_type,
-                                analytics_device_info,
+                                coordinator, sensor_type, analytics_device_info
                             )
                             grid_charging_sensors.append(sensor)
                             _LOGGER.debug(

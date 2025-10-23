@@ -997,22 +997,31 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
 
-class OigCloudGridChargingPlanSensor(OigCloudDataSensor):
+class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     """Sensor pro plánované nabíjení ze sítě - odvozený z battery_forecast."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
-        entry: ConfigEntry,
-        box_id: str,
+        coordinator: Any,
         sensor_type: str,
         device_info: Dict[str, Any],
     ) -> None:
         """Initialize sensor."""
-        super().__init__(hass, entry, box_id, sensor_type, device_info)
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._attr_device_info = device_info
         self._charging_intervals: List[Dict[str, Any]] = []
         self._total_energy_kwh = 0.0
         self._total_cost_czk = 0.0
+        
+        # Načteme sensor config
+        from .sensor_types import SENSOR_TYPES
+        self._config = SENSOR_TYPES.get(sensor_type, {})
+        
+        # Entity info
+        self._box_id = list(coordinator.data.keys())[0] if coordinator.data else "unknown"
+        self._attr_unique_id = f"oig_{self._box_id}_{sensor_type}"
+        self._attr_name = self._config.get("name", sensor_type)
 
     @property
     def state(self) -> Optional[float]:
