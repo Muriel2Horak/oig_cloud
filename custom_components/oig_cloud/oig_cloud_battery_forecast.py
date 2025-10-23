@@ -712,39 +712,6 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return optimized_timeline
 
         except Exception as e:
-
-            # Identifikovat špičky podle percentilu
-            prices = [
-                point.get("spot_price_czk", 0)
-                for point in timeline_data
-                if point.get("spot_price_czk") is not None
-            ]
-            if not prices:
-                _LOGGER.warning("No price data available for optimization")
-                return timeline_data
-
-            price_threshold = np.percentile(prices, peak_percentile)
-            _LOGGER.debug(
-                f"Price threshold (percentile {peak_percentile}%): {price_threshold:.2f} CZK/kWh"
-            )
-
-            # Kopie timeline pro úpravy
-            optimized_timeline = [dict(point) for point in timeline_data]
-
-            # NOVÝ PŘÍSTUP: Chytrý plán nabíjení
-            optimized_timeline = self._smart_charging_plan(
-                optimized_timeline,
-                min_capacity_kwh,
-                target_capacity_kwh,
-                max_charging_price,
-                price_threshold,
-                charging_power_kw,
-                max_capacity,
-            )
-
-            return optimized_timeline
-
-        except Exception as e:
             _LOGGER.error(f"Error in grid charging optimization: {e}", exc_info=True)
             return timeline_data
 
@@ -783,17 +750,26 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # KROK 1: Najít intervaly kde baterie klesne pod minimum
         critical_intervals = []
+        min_capacity_in_timeline = float("inf")
+        min_capacity_timestamp = None
+        
         for i, point in enumerate(timeline):
             capacity = point.get("battery_capacity_kwh", 0)
             if capacity < min_capacity:
                 critical_intervals.append(i)
+            if capacity < min_capacity_in_timeline:
+                min_capacity_in_timeline = capacity
+                min_capacity_timestamp = point.get("timestamp", "unknown")
 
         # KROK 2: Spočítat kolik energie potřebujeme na konci
         final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
         energy_needed_for_target = max(0, target_capacity - final_capacity)
 
         _LOGGER.info(
-            f"Smart charging: {len(critical_intervals)} critical intervals, need {energy_needed_for_target:.2f}kWh for target"
+            f"Smart charging: {len(critical_intervals)} critical intervals, "
+            f"min_capacity_in_timeline: {min_capacity_in_timeline:.2f}kWh @ {min_capacity_timestamp}, "
+            f"min_threshold: {min_capacity:.2f}kWh, "
+            f"need {energy_needed_for_target:.2f}kWh for target"
         )
 
         # KROK 3: PRIORITA 1 - Opravit kritická místa (pod minimum)
