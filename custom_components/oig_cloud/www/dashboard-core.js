@@ -3796,28 +3796,63 @@ function getBoxId() {
 function resetChartZoom() {
     if (combinedChart) {
         combinedChart.resetZoom();
+        currentZoomRange = null;  // Reset zoom state
         updateChartDetailLevel(combinedChart);
     }
 }
 
-// Zoomovat graf na konkrétní časový rozsah (z karty)
+// Sledování aktuálního zoom stavu
+let currentZoomRange = null;
+
+// Toggle zoom: pokud není zoom -> zoom IN, pokud je zoom -> zoom OUT
 function zoomToTimeRange(startTime, endTime) {
-    if (!combinedChart) return;
-    
-    // Převést ISO string na Date objekty
+    if (!combinedChart) {
+        console.log('[Zoom] Chart not available');
+        return;
+    }
+
+    // Zkontrolovat jestli je už zazoomováno na tento rozsah
     const start = new Date(startTime);
     const end = new Date(endTime);
-    
-    // Přidat trochu marginu (15 min před a po)
     const marginMs = 15 * 60 * 1000;
     const zoomStart = start.getTime() - marginMs;
     const zoomEnd = end.getTime() + marginMs;
-    
-    // Aplikovat zoom
-    combinedChart.zoomScale('x', { min: zoomStart, max: zoomEnd }, 'default');
-    
-    // Aktualizovat detail level
-    updateChartDetailLevel(combinedChart);
+
+    // Pokud už je zazoomováno na tento interval -> ZOOM OUT (reset)
+    if (currentZoomRange && 
+        Math.abs(currentZoomRange.start - zoomStart) < 60000 && 
+        Math.abs(currentZoomRange.end - zoomEnd) < 60000) {
+        console.log('[Zoom] Already zoomed to this range -> ZOOM OUT');
+        combinedChart.resetZoom();
+        currentZoomRange = null;
+        updateChartDetailLevel(combinedChart);
+        return;
+    }
+
+    // ZOOM IN na nový interval
+    console.log('[Zoom] ZOOM IN to range:', startTime, '->', endTime);
+
+    try {
+        // Resetovat nejdříve aby zoom fungoval správně
+        combinedChart.resetZoom('none');
+        
+        // Pak zoomovat
+        combinedChart.zoom({
+            x: {
+                min: zoomStart,
+                max: zoomEnd
+            }
+        });
+        
+        // Uložit aktuální zoom
+        currentZoomRange = { start: zoomStart, end: zoomEnd };
+        console.log('[Zoom] Zoom IN applied successfully');
+        
+        // Aktualizovat detail level
+        updateChartDetailLevel(combinedChart);
+    } catch (error) {
+        console.error('[Zoom] Error:', error);
+    }
 }
 
 // Adaptivní úprava detailu grafu podle úrovně zoomu
@@ -3896,39 +3931,12 @@ function updateChartDetailLevel(chart) {
     }
 
     // Adaptivní zobrazení datalabels (popisky cen)
-    // DŮLEŽITÉ: Použít originalPriceData pro výpočet extrémů (ne zoomovaná data!)
+    // ČISTÝ GRAF - žádné labely, žádné kuličky, vše v mini grafech
     chart.data.datasets.forEach((dataset, idx) => {
         if (dataset.label && dataset.label.includes('Spotová cena')) {
-            if (dataset.datalabels && originalPriceData && originalPriceData.length > 0) {
-                // Použít PŮVODNÍ dataset pro výpočet percentilů
-                const sorted = [...originalPriceData].sort((a, b) => a - b);
-
-                if (detailLevel === 'overview') {
-                    // Overview: ŽÁDNÉ labely - detail je v mini grafech v kartách
-                    dataset.datalabels.display = false;                } else if (detailLevel === 'detail') {
-                    // Detail: top/bottom 20% z PŮVODNÍCH dat, jednotlivé hodnoty
-                    const top20 = sorted[Math.floor(sorted.length * 0.8)];
-                    const bottom20 = sorted[Math.floor(sorted.length * 0.2)];
-                    dataset.datalabels.display = (context) => {
-                        const value = context.dataset.data[context.dataIndex];
-                        return value >= top20 || value <= bottom20;
-                    };
-                    dataset.datalabels.formatter = (value) => `${value.toFixed(2)} Kč`;
-                    dataset.datalabels.font = { size: 10, weight: 'bold' };
-                    dataset.datalabels.padding = 4;
-
-                } else {
-                    // Day: top/bottom 10% z PŮVODNÍCH dat, jednotlivé hodnoty
-                    const top10 = sorted[Math.floor(sorted.length * 0.9)];
-                    const bottom10 = sorted[Math.floor(sorted.length * 0.1)];
-                    dataset.datalabels.display = (context) => {
-                        const value = context.dataset.data[context.dataIndex];
-                        return value >= top10 || value <= bottom10;
-                    };
-                    dataset.datalabels.formatter = (value) => `${value.toFixed(2)} Kč`;
-                    dataset.datalabels.font = { size: 9, weight: 'bold' };
-                    dataset.datalabels.padding = 4;
-                }
+            if (dataset.datalabels) {
+                // VYPNOUT všechny labely - úplně čistý graf
+                dataset.datalabels.display = false;
             }
         }
     });
@@ -4012,26 +4020,26 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
             const ctx = chart.ctx;
             const xAxis = chart.scales.x;
             const yAxis = chart.scales.y;
-            
+
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 2]);
-            
+
             // Start čára (první bod)
             const x1 = xAxis.getPixelForValue(0);
             ctx.beginPath();
             ctx.moveTo(x1, yAxis.top);
             ctx.lineTo(x1, yAxis.bottom);
             ctx.stroke();
-            
+
             // End čára (poslední bod)
             const x2 = xAxis.getPixelForValue(values.length - 1);
             ctx.beginPath();
             ctx.moveTo(x2, yAxis.top);
             ctx.lineTo(x2, yAxis.bottom);
             ctx.stroke();
-            
+
             ctx.restore();
         }
     };
@@ -4126,7 +4134,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
         },
         plugins: [verticalLinesPlugin]
     });
-    
+
     // Uložit časy pro zoom funkci
     canvas.dataset.startTime = startTime;
     canvas.dataset.endTime = endTime;
@@ -4287,7 +4295,7 @@ function loadPricingData() {
                     const endTime = new Date(cheapestBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)', cheapestBlock.start, cheapestBlock.end);
-                    
+
                     // Kliknutelná karta - zoomuje na interval
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
@@ -4308,7 +4316,7 @@ function loadPricingData() {
                     const endTime = new Date(expensiveBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)', expensiveBlock.start, expensiveBlock.end);
-                    
+
                     // Kliknutelná karta - zoomuje na interval
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
@@ -4364,7 +4372,7 @@ function loadPricingData() {
                     const endTime = new Date(bestExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
-                    
+
                     // Kliknutelná karta - zoomuje na interval
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
@@ -4385,7 +4393,7 @@ function loadPricingData() {
                     const endTime = new Date(worstExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
-                    
+
                     // Kliknutelná karta - zoomuje na interval
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
