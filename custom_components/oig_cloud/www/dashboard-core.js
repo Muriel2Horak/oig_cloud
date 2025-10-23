@@ -141,6 +141,28 @@ function subscribeToShield() {
             }
         }, 'state_changed');
 
+        // Subscribe to theme changes (HA events)
+        hass.connection.subscribeEvents((event) => {
+            console.log('[Theme] HA theme event:', event);
+            detectAndApplyTheme();
+        }, 'themes_updated');
+
+        // Subscribe to frontend set theme event
+        hass.connection.subscribeEvents((event) => {
+            console.log('[Theme] Frontend theme changed:', event);
+            detectAndApplyTheme();
+        }, 'frontend_set_theme');
+
+        // Subscribe to connection state changes (reconnect after HA restart)
+        hass.connection.addEventListener('ready', () => {
+            console.log('[Connection] WebSocket reconnected - refreshing all data');
+            forceFullRefresh();
+        });
+
+        hass.connection.addEventListener('disconnected', () => {
+            console.warn('[Connection] WebSocket disconnected');
+        });
+
         console.log('[Shield] Successfully subscribed to state changes');
     } catch (e) {
         console.error('[Shield] Failed to subscribe:', e);
@@ -3611,26 +3633,20 @@ function init() {
     // Start initial load with delay
     setTimeout(tryInitialShieldLoad, 1000);
 
-    // REMOVED: Old polling-based approach - now using WebSocket + initial load
-    // setTimeout(() => {
-    //     monitorShieldActivity();
-    // }, 2000);
+    // === EVENT-DRIVEN ARCHITECTURE ===
+    // Veškeré updates jsou řízeny přes WebSocket subscriptions v subscribeToShield()
+    // - Data sensors -> debouncedLoadData() (200ms debounce)
+    // - Detail sensors -> debouncedLoadNodeDetails() (500ms debounce)
+    // - Pricing sensors -> debouncedLoadPricingData() (300ms debounce)
+    // - Shield sensors -> debouncedShieldMonitor() (100ms debounce)
+    
+    // REMOVED: Polling-based updates (replaced by WebSocket events)
+    // setInterval(loadData, 5000);  ❌ Nahrazeno event-driven
+    // setInterval(loadNodeDetails, 30000);  ❌ Nahrazeno event-driven
+    // setInterval(detectAndApplyTheme, 5000);  ❌ Nahrazeno event-driven
 
-    // OPTIMIZED: Primary values update every 5s (partial updates)
-    setInterval(loadData, 5000);
-
-    // OPTIMIZED: Details update every 30s (less frequent, full refresh)
-    setInterval(() => {
-        loadNodeDetails();
-    }, 30000);
-
-    // Sledovat změny tématu
-    // 1. Při každé aktualizaci dat (5s interval)
-    setInterval(() => {
-        detectAndApplyTheme();
-    }, 5000);
-
-    // 2. Event listener pro změny v parent okně (okamžitá reakce)
+    // Theme detection - pouze event listeners (NO POLLING)
+    // 1. Parent window theme changes
     try {
         if (parent && parent.addEventListener) {
             parent.addEventListener('theme-changed', () => {
@@ -3642,13 +3658,21 @@ function init() {
         console.warn('[Theme] Cannot listen to parent events:', e);
     }
 
-    // 3. Fallback - sledovat system preference změny
+    // 2. System preference changes
     if (window.matchMedia) {
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
             console.log('[Theme] System preference changed');
             detectAndApplyTheme();
         });
     }
+    
+    // 3. Fallback: Check theme on visibility change (tab switch)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            console.log('[Theme] Tab became visible, checking theme');
+            detectAndApplyTheme();
+        }
+    });
 
     // REMOVED: Backup shield monitoring - WebSocket events handle all updates in real-time
     // setInterval(() => {
