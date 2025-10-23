@@ -358,11 +358,54 @@ async def async_setup_entry(
         hass, entry, coordinator, expected_sensor_types
     )
 
-    # 1. Basic sensors - only if data is available
+    # === DEVICE INFO OBJEKTY ===
+    # Vytvoříme device_info objekty jednou pro všechny senzory
+    inverter_sn = "unknown"
+    if coordinator.data:
+        inverter_sn = list(coordinator.data.keys())[0]
+    elif hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
+        inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
+
+    # Main OIG Device
+    main_device_info: Dict[str, Any] = {
+        "identifiers": {(DOMAIN, inverter_sn)},
+        "name": f"OIG Cloud {inverter_sn}",
+        "manufacturer": "OIG",
+        "model": "Cloud Inverter",
+    }
+
+    # Analytics & Predictions Device
+    analytics_device_info: Dict[str, Any] = {
+        "identifiers": {("oig_cloud_analytics", inverter_sn)},
+        "name": f"Analytics & Predictions {inverter_sn}",
+        "manufacturer": "OIG",
+        "model": "Analytics Module",
+        "via_device": (DOMAIN, inverter_sn),
+        "entry_type": "service",
+    }
+
+    # ServiceShield Device
+    shield_device_info: Dict[str, Any] = {
+        "identifiers": {("oig_cloud_shield", inverter_sn)},
+        "name": f"ServiceShield {inverter_sn}",
+        "manufacturer": "OIG",
+        "model": "Shield Monitor",
+        "via_device": (DOMAIN, inverter_sn),
+        "entry_type": "service",
+    }
+
+    _LOGGER.debug(f"Created device_info objects for box_id: {inverter_sn}")
+
+    # ================================================================
+    # SECTION 1: BASIC DATA SENSORS (kategorie: "data")
+    # ================================================================
+    # Základní senzory s daty z API - vždy aktivní
+    # Device: main_device_info (OIG Cloud {box_id})
+    # Třída: OigCloudDataSensor
+    # ================================================================
     basic_sensors: List[Any] = []
 
     try:
-        # OPRAVA: Pouze data senzory, ne extended
         data_sensors = {
             k: v
             for k, v in SENSOR_TYPES.items()
@@ -403,11 +446,16 @@ async def async_setup_entry(
     except Exception as e:
         _LOGGER.error(f"Error initializing basic sensors: {e}", exc_info=True)
 
-    # 2. Computed sensors - with data check
+    # ================================================================
+    # SECTION 2: COMPUTED SENSORS (kategorie: "computed")
+    # ================================================================
+    # Vypočítané hodnoty z existujících dat - vždy aktivní
+    # Device: main_device_info (OIG Cloud {box_id})
+    # Třída: OigCloudComputedSensor
+    # ================================================================
     computed_sensors: List[Any] = []
     try:
         if coordinator.data is not None:
-            # OPRAVA: Hledáme computed senzory ve VŠECH sensor types
             computed_sensor_types = {
                 k: v
                 for k, v in SENSOR_TYPES.items()
@@ -455,7 +503,13 @@ async def async_setup_entry(
     except Exception as e:
         _LOGGER.error(f"Error initializing computed sensors: {e}", exc_info=True)
 
-    # 3. Extended sensors - only if enabled and data available
+    # ================================================================
+    # SECTION 3: EXTENDED SENSORS (kategorie: "extended")
+    # ================================================================
+    # Rozšířené metriky - volitelné (enable_extended_sensors flag)
+    # Device: main_device_info (OIG Cloud {box_id})
+    # Třída: OigCloudDataSensor (s extended=True)
+    # ================================================================
     extended_sensors_enabled = entry.options.get("enable_extended_sensors", False)
     _LOGGER.debug(f"Extended sensors enabled from options: {extended_sensors_enabled}")
 
@@ -509,7 +563,13 @@ async def async_setup_entry(
     else:
         _LOGGER.info("Extended sensors disabled - skipping creation")
 
-    # 4. Statistics sensors - only if enabled and data available
+    # ================================================================
+    # SECTION 4: STATISTICS SENSORS (kategorie: "statistics")
+    # ================================================================
+    # Historická statistika - volitelné (enable_statistics flag)
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třída: OigCloudStatisticsSensor
+    # ================================================================
     statistics_enabled = hass.data[DOMAIN][entry.entry_id].get(
         "statistics_enabled", False
     )
@@ -517,22 +577,6 @@ async def async_setup_entry(
     _LOGGER.info(
         f"Statistics check: option={statistics_option}, hass.data={statistics_enabled}"
     )
-
-    # OPRAVA: Vytvoříme analytics_device_info jednou pro všechny analytics/statistics senzory
-    inverter_sn = "unknown"
-    if coordinator.data:
-        inverter_sn = list(coordinator.data.keys())[0]
-    elif hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
-        inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-
-    analytics_device_info: Dict[str, Any] = {
-        "identifiers": {("oig_cloud_analytics", inverter_sn)},
-        "name": f"Analytics & Predictions {inverter_sn}",
-        "manufacturer": "OIG",
-        "model": "Analytics Module",
-        "via_device": ("oig_cloud", inverter_sn),
-        "entry_type": "service",
-    }
 
     if statistics_enabled:
         try:
@@ -578,9 +622,13 @@ async def async_setup_entry(
     else:
         _LOGGER.info("Statistics sensors disabled - skipping creation")
 
-    # 4b. Battery helper sensors - REMOVED (no longer used)
-
-    # 5. Solar forecast sensors - only if enabled
+    # ================================================================
+    # SECTION 5: SOLAR FORECAST SENSORS (kategorie: "solar_forecast")
+    # ================================================================
+    # Solární předpovědi - volitelné (enable_solar_forecast flag)
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třída: OigCloudSolarForecastSensor
+    # ================================================================
     if entry.options.get("enable_solar_forecast", False):
         try:
             from .oig_cloud_solar_forecast import OigCloudSolarForecastSensor
@@ -616,7 +664,13 @@ async def async_setup_entry(
         except Exception as e:
             _LOGGER.error(f"Error initializing solar forecast sensors: {e}")
 
-    # 6. ServiceShield sensors - vždy aktivní (nativní součást integrace)
+    # ================================================================
+    # SECTION 6: SERVICESHIELD SENSORS (kategorie: "shield")
+    # ================================================================
+    # ServiceShield monitoring - vždy aktivní (nativní součást)
+    # Device: shield_device_info (ServiceShield {box_id})
+    # Třída: OigCloudShieldSensor
+    # ================================================================
     try:
         if coordinator.data is not None and SENSOR_TYPES:
             from .oig_cloud_shield_sensor import OigCloudShieldSensor
@@ -660,12 +714,17 @@ async def async_setup_entry(
     except Exception as e:
         _LOGGER.error(f"Error initializing ServiceShield sensors: {e}")
 
-    # 7. Notification sensors - jednoduše jako ostatní senzory
+    # ================================================================
+    # SECTION 7: NOTIFICATION SENSORS (kategorie: "notification")
+    # ================================================================
+    # Systémové notifikace - vždy aktivní
+    # Device: main_device_info (OIG Cloud {box_id})
+    # Třída: OigCloudDataSensor (s notification=True)
+    # ================================================================
     try:
         if coordinator.data is not None and SENSOR_TYPES:
             from .oig_cloud_data_sensor import OigCloudDataSensor
 
-            # Notification senzory vytvoříme jednoduše, bez složitého setup
             notification_sensors: List[Any] = []
             notification_sensor_types = {
                 k: v
@@ -715,10 +774,16 @@ async def async_setup_entry(
     except Exception as e:
         _LOGGER.error(f"Error initializing notification sensors: {e}")
 
-    # 8. Battery Prediction sensors - pouze pokud je povolen
+    # ================================================================
+    # SECTION 8: BATTERY PREDICTION SENSORS (kategorie: "battery_prediction")
+    # ================================================================
+    # Predikce baterie - volitelné (enable_battery_prediction flag)
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třída: OigCloudBatteryForecastSensor
+    # ================================================================
     battery_prediction_enabled = entry.options.get(
         "enable_battery_prediction", False
-    )  # OPRAVA: změna z True na False
+    )
     _LOGGER.info(f"Battery prediction enabled: {battery_prediction_enabled}")
 
     if battery_prediction_enabled:
@@ -800,7 +865,13 @@ async def async_setup_entry(
     else:
         _LOGGER.info("Battery prediction sensors disabled - skipping creation")
 
-    # 9. Pricing and Spot Prices sensors - SJEDNOCENO pod enable_pricing flag
+    # ================================================================
+    # SECTION 9: PRICING & SPOT PRICE SENSORS (kategorie: "pricing")
+    # ================================================================
+    # Spotové ceny elektřiny - volitelné (enable_pricing flag)
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třídy: OigCloudAnalyticsSensor, SpotPrice15MinSensor, ExportPrice15MinSensor
+    # ================================================================
     pricing_enabled = entry.options.get("enable_pricing", False)
     _LOGGER.info(f"Pricing and spot prices enabled: {pricing_enabled}")
 
