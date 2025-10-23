@@ -4051,7 +4051,8 @@ function createMiniPriceChart(canvasId, values, color) {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
+            maintainAspectRatio: true,  // ✅ ZMĚNĚNO na true
+            aspectRatio: 3,  // ✅ PŘIDÁNO - poměr šířka:výška 3:1 (široký graf)
             plugins: {
                 legend: { display: false },
                 tooltip: { enabled: false },
@@ -4060,6 +4061,9 @@ function createMiniPriceChart(canvasId, values, color) {
             scales: {
                 x: { display: false },
                 y: { display: false }
+            },
+            layout: {
+                padding: 0  // ✅ PŘIDÁNO - žádné padding
             }
         }
     });
