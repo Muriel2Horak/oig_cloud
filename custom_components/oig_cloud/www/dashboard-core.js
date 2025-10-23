@@ -3884,81 +3884,8 @@ function updateChartDetailLevel(chart) {
                 const sorted = [...originalPriceData].sort((a, b) => a - b);
 
                 if (detailLevel === 'overview') {
-                    // Overview: místo zmetku čísel ukázat jen REPREZENTATIVNÍ body intervalů
-                    // Najít bloky levných/drahých cen a ukázat průměr každého bloku
-                    const top5 = sorted[Math.floor(sorted.length * 0.95)];
-                    const bottom5 = sorted[Math.floor(sorted.length * 0.05)];
-
-                    // Identifikovat bloky extrémních cen
-                    const extremeBlocks = [];
-                    let currentBlock = null;
-
-                    originalPriceData.forEach((value, idx) => {
-                        const isExtreme = value >= top5 || value <= bottom5;
-                        const extremeType = value >= top5 ? 'high' : (value <= bottom5 ? 'low' : null);
-
-                        if (isExtreme) {
-                            if (!currentBlock || currentBlock.type !== extremeType || idx - currentBlock.endIdx > 1) {
-                                // Začátek nového bloku
-                                if (currentBlock) extremeBlocks.push(currentBlock);
-                                currentBlock = {
-                                    type: extremeType,
-                                    startIdx: idx,
-                                    endIdx: idx,
-                                    values: [value]
-                                };
-                            } else {
-                                // Pokračování bloku
-                                currentBlock.endIdx = idx;
-                                currentBlock.values.push(value);
-                            }
-                        } else {
-                            // Konec bloku
-                            if (currentBlock) {
-                                extremeBlocks.push(currentBlock);
-                                currentBlock = null;
-                            }
-                        }
-                    });
-                    if (currentBlock) extremeBlocks.push(currentBlock);
-
-                    // Zobrazit JEDEN reprezentativní bod na každý blok (uprostřed)
-                    dataset.datalabels.display = (context) => {
-                        const idx = context.dataIndex;
-                        const block = extremeBlocks.find(b =>
-                            idx >= b.startIdx && idx <= b.endIdx
-                        );
-                        if (!block) return false;
-
-                        // Ukázat label jen uprostřed bloku
-                        const midIdx = Math.floor((block.startIdx + block.endIdx) / 2);
-                        return idx === midIdx;
-                    };
-
-                    // Formátovat label: ukázat průměr celého bloku + rozsah
-                    dataset.datalabels.formatter = (value, context) => {
-                        const idx = context.dataIndex;
-                        const block = extremeBlocks.find(b =>
-                            idx >= b.startIdx && idx <= b.endIdx
-                        );
-                        if (!block) return '';
-
-                        const avg = block.values.reduce((a, b) => a + b, 0) / block.values.length;
-                        const min = Math.min(...block.values);
-                        const max = Math.max(...block.values);
-                        const count = block.values.length;
-
-                        // Ikona podle typu
-                        const icon = block.type === 'high' ? '🔴' : '🟢';
-
-                        // Formát: ikona + průměr (počet intervalů)
-                        return `${icon} ${avg.toFixed(2)} Kč\n(${count}× 15min)`;
-                    };
-
-                    dataset.datalabels.font = { size: 10, weight: 'bold' };
-                    dataset.datalabels.padding = 6;
-
-                } else if (detailLevel === 'detail') {
+                    // Overview: ŽÁDNÉ labely - detail je v mini grafech v kartách
+                    dataset.datalabels.display = false;                } else if (detailLevel === 'detail') {
                     // Detail: top/bottom 20% z PŮVODNÍCH dat, jednotlivé hodnoty
                     const top20 = sorted[Math.floor(sorted.length * 0.8)];
                     const bottom20 = sorted[Math.floor(sorted.length * 0.2)];
@@ -4034,11 +3961,35 @@ function createMiniPriceChart(canvasId, values, color) {
         canvas.chart.destroy();
     }
 
-    // Vytvořit nový mini graf
+    // Vypočítat statistiky pro detekci razantních změn
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const threshold = range * 0.25; // Razantní změna = >25% rozsahu
+
+    // Detekovat body s razantní změnou
+    const significantPoints = [];
+    values.forEach((value, idx) => {
+        // Porovnat s průměrem a sousedy
+        const prevValue = idx > 0 ? values[idx - 1] : value;
+        const nextValue = idx < values.length - 1 ? values[idx + 1] : value;
+        const change = Math.max(Math.abs(value - prevValue), Math.abs(value - nextValue));
+
+        // Nebo extrémy (top/bottom 20%)
+        const isExtreme = value >= max - threshold || value <= min + threshold;
+        const isBigChange = change > threshold;
+
+        if (isExtreme || isBigChange) {
+            significantPoints.push(idx);
+        }
+    });
+
+    // Vytvořit nový interaktivní mini graf
     canvas.chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: values.map((_, i) => ''),
+            labels: values.map((_, i) => `${i * 15}min`),
             datasets: [{
                 data: values,
                 borderColor: color,
@@ -4046,24 +3997,80 @@ function createMiniPriceChart(canvasId, values, color) {
                 borderWidth: 2,
                 fill: true,
                 tension: 0.3,
-                pointRadius: 0
+                pointRadius: (context) => {
+                    // Větší body pro razantní změny
+                    return significantPoints.includes(context.dataIndex) ? 4 : 0;
+                },
+                pointBackgroundColor: color,
+                pointBorderColor: '#fff',
+                pointBorderWidth: 1,
+                pointHoverRadius: 6
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,  // ✅ ZMĚNĚNO na true
-            aspectRatio: 3,  // ✅ PŘIDÁNO - poměr šířka:výška 3:1 (široký graf)
+            maintainAspectRatio: true,
+            aspectRatio: 3,
             plugins: {
                 legend: { display: false },
-                tooltip: { enabled: false },
-                datalabels: { display: false }
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    padding: 8,
+                    displayColors: false,
+                    callbacks: {
+                        title: (items) => `+${items[0].label}`,
+                        label: (item) => `${item.parsed.y.toFixed(2)} Kč/kWh`
+                    }
+                },
+                datalabels: {
+                    display: (context) => {
+                        // Ukázat labely jen pro razantní změny
+                        return significantPoints.includes(context.dataIndex);
+                    },
+                    align: 'top',
+                    offset: 4,
+                    color: '#fff',
+                    font: { size: 8, weight: 'bold' },
+                    formatter: (value) => value.toFixed(2),
+                    backgroundColor: color.replace('1)', '0.8)'),
+                    borderRadius: 3,
+                    padding: { top: 2, bottom: 2, left: 4, right: 4 }
+                },
+                zoom: {
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                        modifierKey: 'shift'
+                    },
+                    zoom: {
+                        wheel: {
+                            enabled: true,
+                            speed: 0.1
+                        },
+                        drag: {
+                            enabled: true,
+                            backgroundColor: 'rgba(33, 150, 243, 0.3)'
+                        },
+                        mode: 'x'
+                    }
+                }
             },
             scales: {
                 x: { display: false },
-                y: { display: false }
+                y: {
+                    display: false,
+                    grace: '10%'  // Trochu prostoru kolem dat
+                }
             },
             layout: {
-                padding: 0  // ✅ PŘIDÁNO - žádné padding
+                padding: 0
+            },
+            interaction: {
+                mode: 'nearest',
+                intersect: false
             }
         }
     });
