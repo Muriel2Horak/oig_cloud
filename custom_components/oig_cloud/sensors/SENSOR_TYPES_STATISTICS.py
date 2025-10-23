@@ -303,11 +303,11 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name_cs": "Plánované nabíjení ze sítě",
         "unit": UnitOfEnergy.KILO_WATT_HOUR,
         "icon": "mdi:battery-charging",
-        "device_class": SensorDeviceClass.ENERGY,
+        "device_class": None,  # Žádná device class pro custom sensor
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "grid_charging_plan",
         "device_mapping": "analytics",  # Specializovaný senzor
-        "entity_category": EntityCategory.DIAGNOSTIC,
+        "entity_category": None,  # Hlavní senzor, ne diagnostic
         "description": "Celková energie k nabití ze sítě (kWh). Atributy obsahují intervaly nabíjení a celkovou cenu.",
     },
 }
