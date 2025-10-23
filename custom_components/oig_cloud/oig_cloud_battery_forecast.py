@@ -774,63 +774,75 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             f"need {energy_needed_for_target:.2f}kWh for target"
         )
 
-        # KROK 3: PRIORITA 1 - Opravit kritická místa (pod minimum)
-        for critical_idx in critical_intervals:
-            # Přestavět seznam kandidátů s aktuálními kapacitami
-            charging_candidates = []
-            for i, point in enumerate(timeline):
-                price = point.get("spot_price_czk", float("inf"))
-                capacity = point.get("battery_capacity_kwh", 0)
-
-                # Filtr: cena musí být OK
-                if price > max_price or price > price_threshold:
-                    continue
-
-                # Filtr: baterie nesmí být plná
-                if capacity >= max_capacity * 0.99:
-                    continue
-
-                # Filtr: musí být PŘED kritickým místem
-                if i >= critical_idx:
-                    continue
-
-                # Filtr: musí být prostor pro nabití (ne na konci)
-                if i >= len(timeline) - 1:
-                    continue
-
-                charging_candidates.append(
-                    {
+        # KROK 3: PRIORITA 1 - Opravit kritická místa (minimální nabíjení)
+        # Najít první kritické místo
+        if critical_intervals:
+            first_critical = critical_intervals[0]
+            
+            _LOGGER.info(
+                f"First critical interval at index {first_critical}, "
+                f"capacity: {timeline[first_critical].get('battery_capacity_kwh', 0):.2f}kWh"
+            )
+            
+            # Spočítat kolik energie potřebujeme pro dosažení min_capacity v prvním kritickém místě
+            critical_capacity = timeline[first_critical].get("battery_capacity_kwh", 0)
+            energy_needed = min_capacity - critical_capacity
+            
+            if energy_needed > 0:
+                _LOGGER.info(f"Need {energy_needed:.2f}kWh to reach minimum at critical point")
+                
+                # Najít nejlevnější intervaly PŘED kritickým místem
+                charging_candidates = []
+                for i in range(first_critical):
+                    point = timeline[i]
+                    price = point.get("spot_price_czk", float("inf"))
+                    capacity = point.get("battery_capacity_kwh", 0)
+                    
+                    # Filtr: cena musí být OK
+                    if price > max_price:
+                        continue
+                    
+                    # Filtr: baterie nesmí být plná
+                    if capacity >= max_capacity * 0.99:
+                        continue
+                    
+                    charging_candidates.append({
                         "index": i,
                         "price": price,
                         "capacity": capacity,
                         "timestamp": point.get("timestamp", ""),
-                    }
-                )
+                    })
+                
+                # Seřadit podle ceny
+                charging_candidates.sort(key=lambda x: x["price"])
+                
+                # Přidat nabíjení postupně dokud nedosáhneme min_capacity
+                added_energy = 0
+                while added_energy < energy_needed and charging_candidates:
+                    best = charging_candidates.pop(0)
+                    idx = best["index"]
+                    
+                    old_charge = timeline[idx].get("grid_charge_kwh", 0)
+                    timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
+                    added_energy += charge_per_interval
+                    
+                    _LOGGER.debug(
+                        f"Critical fix: Adding {charge_per_interval:.2f}kWh at index {idx} "
+                        f"(price {best['price']:.2f}CZK), total added: {added_energy:.2f}kWh"
+                    )
+                    
+                    # Přepočítat timeline
+                    self._recalculate_timeline_from_index(timeline, idx)
+                    
+                    # Zkontrolovat jestli jsme vyřešili kritické místo
+                    new_critical_capacity = timeline[first_critical].get("battery_capacity_kwh", 0)
+                    if new_critical_capacity >= min_capacity:
+                        _LOGGER.info(
+                            f"Critical interval fixed: capacity now {new_critical_capacity:.2f}kWh >= {min_capacity:.2f}kWh"
+                        )
+                        break
 
-            # Seřadit podle ceny (nejlevnější první)
-            charging_candidates.sort(key=lambda x: x["price"])
-
-            if not charging_candidates:
-                _LOGGER.warning(
-                    f"Cannot fix critical interval {critical_idx} - no suitable candidates before"
-                )
-                continue
-
-            # Přidat nabíjení v nejlevnějším intervalu
-            best_candidate = charging_candidates[0]
-            idx = best_candidate["index"]
-            old_charge = timeline[idx].get("grid_charge_kwh", 0)
-            timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
-
-            _LOGGER.debug(
-                f"Critical fix: Adding {charge_per_interval:.2f}kWh at index {idx} "
-                f"(price {best_candidate['price']:.2f}CZK) for critical interval {critical_idx}"
-            )
-
-            # Přepočítat timeline od tohoto bodu
-            self._recalculate_timeline_from_index(timeline, idx)
-
-        # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci
+        # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci (v levných hodinách)
         max_iterations = 100
         iteration = 0
 
@@ -853,8 +865,8 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 price = point.get("spot_price_czk", float("inf"))
                 capacity = point.get("battery_capacity_kwh", 0)
 
-                # Filtr: cena musí být OK
-                if price > max_price or price > price_threshold:
+                # Filtr: cena musí být pod max_price (NE price_threshold - to jen pro kritická místa)
+                if price > max_price:
                     continue
 
                 # Filtr: baterie nesmí být plná (ponecháme 1% rezervu)
