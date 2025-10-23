@@ -1359,22 +1359,22 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         # Detekovat SOUVISLÉ BLOKY nabíjení (ne jen první a poslední bod!)
         charging_blocks = []
         current_block = None
-        
+
         for interval in intervals:
             if interval.get("is_charging_battery", False):
                 timestamp = datetime.fromisoformat(interval["timestamp"])
-                
+
                 if current_block is None:
                     # Začátek nového bloku
                     current_block = {
                         "start": timestamp,
                         "end": timestamp + timedelta(minutes=15),
-                        "intervals": [interval]
+                        "intervals": [interval],
                     }
                 else:
                     # Zkontrolovat, jestli navazuje na předchozí interval
                     time_gap = (timestamp - current_block["end"]).total_seconds() / 60
-                    
+
                     if time_gap <= 15:  # Max 15 minut = souvislý blok
                         # Pokračování bloku
                         current_block["end"] = timestamp + timedelta(minutes=15)
@@ -1385,14 +1385,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         current_block = {
                             "start": timestamp,
                             "end": timestamp + timedelta(minutes=15),
-                            "intervals": [interval]
+                            "intervals": [interval],
                         }
             else:
                 # Interval bez nabíjení → ukončit aktuální blok
                 if current_block is not None:
                     charging_blocks.append(current_block)
                     current_block = None
-        
+
         # Nezapomenout přidat poslední blok
         if current_block is not None:
             charging_blocks.append(current_block)
@@ -1408,7 +1408,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             first_block = charging_blocks[0]
             next_charging_start = first_block["start"].strftime("%d.%m. %H:%M")
             next_charging_end = first_block["end"].strftime("%d.%m. %H:%M")
-            
+
             # Délka prvního bloku
             duration = first_block["end"] - first_block["start"]
             hours = int(duration.total_seconds() // 3600)
@@ -1416,7 +1416,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             next_charging_duration = (
                 f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
             )
-            
+
             # Souhrn všech bloků (pro detailní zobrazení)
             if len(charging_blocks) > 1:
                 blocks_summary = []
@@ -1426,7 +1426,11 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     block_duration = block["end"] - block["start"]
                     block_hours = int(block_duration.total_seconds() // 3600)
                     block_mins = int((block_duration.total_seconds() % 3600) // 60)
-                    duration_str = f"{block_hours}h {block_mins}min" if block_hours > 0 else f"{block_mins}min"
+                    duration_str = (
+                        f"{block_hours}h {block_mins}min"
+                        if block_hours > 0
+                        else f"{block_mins}min"
+                    )
                     blocks_summary.append(f"{start_str}-{end_str} ({duration_str})")
                 all_blocks_summary = " | ".join(blocks_summary)
 
