@@ -3775,7 +3775,128 @@ function getBoxId() {
 function resetChartZoom() {
     if (combinedChart) {
         combinedChart.resetZoom();
+        updateChartDetailLevel(combinedChart);
     }
+}
+
+// Adaptivní úprava detailu grafu podle úrovně zoomu
+function updateChartDetailLevel(chart) {
+    if (!chart || !chart.scales || !chart.scales.x) return;
+    
+    const xScale = chart.scales.x;
+    const visibleRange = xScale.max - xScale.min; // v milisekundách
+    const hoursVisible = visibleRange / (1000 * 60 * 60);
+    
+    // Určit úroveň detailu
+    let detailLevel = 'overview'; // celkový pohled (>24h)
+    if (hoursVisible <= 24) detailLevel = 'day'; // denní pohled (6-24h)
+    if (hoursVisible <= 6) detailLevel = 'detail'; // detailní pohled (<6h)
+    
+    // Adaptivní nastavení legend
+    if (chart.options.plugins.legend) {
+        // Overview: kompaktní legenda
+        if (detailLevel === 'overview') {
+            chart.options.plugins.legend.labels.padding = 10;
+            chart.options.plugins.legend.labels.font.size = 11;
+        }
+        // Detail: větší legenda
+        else if (detailLevel === 'detail') {
+            chart.options.plugins.legend.labels.padding = 12;
+            chart.options.plugins.legend.labels.font.size = 12;
+        }
+        // Day: střední
+        else {
+            chart.options.plugins.legend.labels.padding = 10;
+            chart.options.plugins.legend.labels.font.size = 11;
+        }
+    }
+    
+    // Adaptivní nastavení os Y
+    const yAxes = ['y-price', 'y-solar', 'y-power'];
+    yAxes.forEach(axisId => {
+        const axis = chart.options.scales[axisId];
+        if (!axis) return;
+        
+        if (detailLevel === 'overview') {
+            // Overview: menší titulky, skrýt některé
+            axis.title.display = false; // Skrýt názvy os
+            axis.ticks.font.size = 10;
+            if (axisId === 'y-solar') axis.display = false; // Skrýt střední osu
+        } else if (detailLevel === 'detail') {
+            // Detail: plné titulky
+            axis.title.display = true;
+            axis.title.font.size = 12;
+            axis.ticks.font.size = 11;
+            axis.display = true;
+        } else {
+            // Day: střední velikost
+            axis.title.display = true;
+            axis.title.font.size = 11;
+            axis.ticks.font.size = 10;
+            axis.display = true;
+        }
+    });
+    
+    // Adaptivní nastavení X osy
+    if (chart.options.scales.x) {
+        if (detailLevel === 'overview') {
+            chart.options.scales.x.ticks.maxTicksLimit = 12;
+            chart.options.scales.x.ticks.font.size = 10;
+        } else if (detailLevel === 'detail') {
+            chart.options.scales.x.ticks.maxTicksLimit = 24;
+            chart.options.scales.x.ticks.font.size = 11;
+            // V detailu ukázat i minuty
+            chart.options.scales.x.time.displayFormats.hour = 'HH:mm';
+        } else {
+            chart.options.scales.x.ticks.maxTicksLimit = 16;
+            chart.options.scales.x.ticks.font.size = 10;
+            chart.options.scales.x.time.displayFormats.hour = 'dd.MM HH:mm';
+        }
+    }
+    
+    // Adaptivní zobrazení datalabels (popisky cen)
+    chart.data.datasets.forEach((dataset, idx) => {
+        if (dataset.label && dataset.label.includes('Spotová cena')) {
+            if (dataset.datalabels) {
+                if (detailLevel === 'overview') {
+                    // Overview: jen top 5% extrémů
+                    dataset.datalabels.display = (context) => {
+                        const data = context.dataset.data;
+                        const value = data[context.dataIndex];
+                        const sorted = [...data].sort((a, b) => a - b);
+                        const top5 = sorted[Math.floor(sorted.length * 0.95)];
+                        const bottom5 = sorted[Math.floor(sorted.length * 0.05)];
+                        return value >= top5 || value <= bottom5;
+                    };
+                    dataset.datalabels.font = { size: 9, weight: 'bold' };
+                } else if (detailLevel === 'detail') {
+                    // Detail: top/bottom 20% + všechny významné změny
+                    dataset.datalabels.display = (context) => {
+                        const data = context.dataset.data;
+                        const value = data[context.dataIndex];
+                        const sorted = [...data].sort((a, b) => a - b);
+                        const top20 = sorted[Math.floor(sorted.length * 0.8)];
+                        const bottom20 = sorted[Math.floor(sorted.length * 0.2)];
+                        return value >= top20 || value <= bottom20;
+                    };
+                    dataset.datalabels.font = { size: 10, weight: 'bold' };
+                } else {
+                    // Day: top/bottom 10%
+                    dataset.datalabels.display = (context) => {
+                        const data = context.dataset.data;
+                        const value = data[context.dataIndex];
+                        const sorted = [...data].sort((a, b) => a - b);
+                        const top10 = sorted[Math.floor(sorted.length * 0.9)];
+                        const bottom10 = sorted[Math.floor(sorted.length * 0.1)];
+                        return value >= top10 || value <= bottom10;
+                    };
+                    dataset.datalabels.font = { size: 9, weight: 'bold' };
+                }
+            }
+        }
+    });
+    
+    chart.update('none'); // Update bez animace
 }
 
 function loadPricingData() {
@@ -4248,10 +4369,12 @@ function loadPricingData() {
                     legend: {
                         labels: {
                             color: '#ffffff',
-                            font: { size: 12, weight: '500' },
-                            padding: 15,
+                            font: { size: 11, weight: '500' },
+                            padding: 10,
                             usePointStyle: true,
-                            pointStyle: 'circle'
+                            pointStyle: 'circle',
+                            boxWidth: 12,
+                            boxHeight: 12
                         },
                         position: 'top'
                     },
@@ -4260,8 +4383,8 @@ function loadPricingData() {
                         titleColor: '#ffffff',
                         bodyColor: '#ffffff',
                         titleFont: { size: 13, weight: 'bold' },
-                        bodyFont: { size: 12 },
-                        padding: 12,
+                        bodyFont: { size: 11 },
+                        padding: 10,
                         cornerRadius: 6,
                         displayColors: true,
                         callbacks: {
@@ -4277,6 +4400,25 @@ function loadPricingData() {
                                     });
                                 }
                                 return '';
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    // Formátování podle typu datasetu
+                                    if (context.dataset.yAxisID === 'y-price') {
+                                        label += context.parsed.y.toFixed(2) + ' Kč/kWh';
+                                    } else if (context.dataset.yAxisID === 'y-solar') {
+                                        label += context.parsed.y.toFixed(2) + ' kWh';
+                                    } else if (context.dataset.yAxisID === 'y-power') {
+                                        label += context.parsed.y.toFixed(2) + ' kW';
+                                    } else {
+                                        label += context.parsed.y;
+                                    }
+                                }
+                                return label;
                             }
                         }
                     },
@@ -4298,12 +4440,18 @@ function loadPricingData() {
                             pinch: {
                                 enabled: true // Touch zoom pro mobily
                             },
-                            mode: 'x' // Zoom jen na X ose (časové ose)
+                            mode: 'x', // Zoom jen na X ose (časové ose)
+                            onZoomComplete: function({chart}) {
+                                updateChartDetailLevel(chart);
+                            }
                         },
                         pan: {
                             enabled: true,
                             mode: 'x',
-                            modifierKey: 'shift' // Pan s Shift+drag
+                            modifierKey: 'shift', // Pan s Shift+drag
+                            onPanComplete: function({chart}) {
+                                updateChartDetailLevel(chart);
+                            }
                         },
                         limits: {
                             x: { minRange: 3600000 } // Min 1 hodina (v milisekundách)
@@ -4382,5 +4530,9 @@ function loadPricingData() {
                 }
             }
         });
+        
+        // Inicializace detailu pro nový graf
+        updateChartDetailLevel(combinedChart);
     }
 }
+

@@ -577,18 +577,19 @@
             </div>
         </div>
 
-        <div class="chart-container" style="height: 550px;">
+        <!-- Nápověda ovládání mimo graf -->
+        <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 15px; margin-bottom: 15px; text-align: center;">
+            <span style="opacity: 0.7; font-size: 0.85em;">
+                � <strong>Ovládání grafu:</strong> Myší označte oblast pro zoom • Kolečkem zoom in/out • Shift+tažení = posun
+            </span>
+            <button onclick="resetChartZoom()" style="background: rgba(33,150,243,0.2); border: 1px solid rgba(33,150,243,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; margin-left: 15px;">
+                🔍 Reset Zoom
+            </button>
+        </div>
+
+        <div class="chart-container" style="height: 520px;">
             <div class="chart-title">
-                📊 Ceny elektřiny, ☀️ Solární předpověď & 🔋 Stav baterie
-                <button onclick="resetChartZoom()" style="float: right; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-top: -3px;">
-                    🔍 Reset Zoom
-                </button>
-            </div>
-            <div class="chart-subtitle" style="text-align: center; opacity: 0.7; font-size: 0.9em; margin-top: -10px; margin-bottom: 5px;">
-                Modrá = cena nákupu • Zelená = výkupní cena • Žlutá/Oranžová = solární výkon • Šedá = kapacita baterie
-            </div>
-            <div class="chart-help" style="text-align: center; opacity: 0.5; font-size: 0.8em; margin-bottom: 10px;">
-                💡 Myší označte oblast pro zoom • Kolečkem myši zoom in/out • Shift + přetažení = posun grafu
+                � Ceny elektřiny & Předpovědi
             </div>
             <div class="chart-wrapper"><canvas id="combined-chart"></canvas></div>
         </div>
