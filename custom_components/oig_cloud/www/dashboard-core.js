@@ -3800,6 +3800,26 @@ function resetChartZoom() {
     }
 }
 
+// Zoomovat graf na konkrétní časový rozsah (z karty)
+function zoomToTimeRange(startTime, endTime) {
+    if (!combinedChart) return;
+    
+    // Převést ISO string na Date objekty
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    
+    // Přidat trochu marginu (15 min před a po)
+    const marginMs = 15 * 60 * 1000;
+    const zoomStart = start.getTime() - marginMs;
+    const zoomEnd = end.getTime() + marginMs;
+    
+    // Aplikovat zoom
+    combinedChart.zoomScale('x', { min: zoomStart, max: zoomEnd }, 'default');
+    
+    // Aktualizovat detail level
+    updateChartDetailLevel(combinedChart);
+}
+
 // Adaptivní úprava detailu grafu podle úrovně zoomu
 function updateChartDetailLevel(chart) {
     if (!chart || !chart.scales || !chart.scales.x) return;
@@ -3949,7 +3969,7 @@ function findExtremePriceBlock(prices, findLowest, blockHours = 3) {
 }
 
 // Vytvořit mini graf pro cenový blok
-function createMiniPriceChart(canvasId, values, color) {
+function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -3984,6 +4004,37 @@ function createMiniPriceChart(canvasId, values, color) {
             significantPoints.push(idx);
         }
     });
+
+    // Plugin pro svislé čáry označující start/end
+    const verticalLinesPlugin = {
+        id: 'verticalLines',
+        afterDraw: (chart) => {
+            const ctx = chart.ctx;
+            const xAxis = chart.scales.x;
+            const yAxis = chart.scales.y;
+            
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 2]);
+            
+            // Start čára (první bod)
+            const x1 = xAxis.getPixelForValue(0);
+            ctx.beginPath();
+            ctx.moveTo(x1, yAxis.top);
+            ctx.lineTo(x1, yAxis.bottom);
+            ctx.stroke();
+            
+            // End čára (poslední bod)
+            const x2 = xAxis.getPixelForValue(values.length - 1);
+            ctx.beginPath();
+            ctx.moveTo(x2, yAxis.top);
+            ctx.lineTo(x2, yAxis.bottom);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+    };
 
     // Vytvořit nový interaktivní mini graf
     canvas.chart = new Chart(ctx, {
@@ -4072,8 +4123,13 @@ function createMiniPriceChart(canvasId, values, color) {
                 mode: 'nearest',
                 intersect: false
             }
-        }
+        },
+        plugins: [verticalLinesPlugin]
     });
+    
+    // Uložit časy pro zoom funkci
+    canvas.dataset.startTime = startTime;
+    canvas.dataset.endTime = endTime;
 }
 
 function loadPricingData() {
@@ -4136,16 +4192,9 @@ function loadPricingData() {
             const bottomThreshold = sortedPrices[tenPercentCount - 1];
             const topThreshold = sortedPrices[sortedPrices.length - tenPercentCount];
 
-            // Označení bodů v extrémech + chytré umístění labelů
-            const pointRadii = spotPriceData.map(price => {
-                if (price <= bottomThreshold || price >= topThreshold) return 5;
-                return 0;
-            });
-            const pointColors = spotPriceData.map(price => {
-                if (price <= bottomThreshold) return '#4CAF50'; // zelená pro nejnižší
-                if (price >= topThreshold) return '#F44336'; // červená pro nejvyšší
-                return '#42a5f5';
-            });
+            // ODSTRANIT tečky u extrémů - čistý graf
+            const pointRadii = spotPriceData.map(price => 0);  // Všechny body neviditelné
+            const pointColors = spotPriceData.map(price => '#42a5f5');  // Jednotná barva
 
             // Detekce pozic extrémů pro chytré rozložení labelů
             const extremeIndices = [];
@@ -4231,12 +4280,19 @@ function loadPricingData() {
             if (cheapestBlock) {
                 const priceEl = document.getElementById('cheapest-buy-price');
                 const timeEl = document.getElementById('cheapest-buy-time');
+                const cardEl = priceEl?.parentElement?.parentElement;
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(cheapestBlock.start);
                     const endTime = new Date(cheapestBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                    createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)');
+                    createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)', cheapestBlock.start, cheapestBlock.end);
+                    
+                    // Kliknutelná karta - zoomuje na interval
+                    if (cardEl) {
+                        cardEl.style.cursor = 'pointer';
+                        cardEl.onclick = () => zoomToTimeRange(cheapestBlock.start, cheapestBlock.end);
+                    }
                 }
             }
 
@@ -4245,12 +4301,19 @@ function loadPricingData() {
             if (expensiveBlock) {
                 const priceEl = document.getElementById('expensive-buy-price');
                 const timeEl = document.getElementById('expensive-buy-time');
+                const cardEl = priceEl?.parentElement?.parentElement;
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(expensiveBlock.start);
                     const endTime = new Date(expensiveBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                    createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)');
+                    createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)', expensiveBlock.start, expensiveBlock.end);
+                    
+                    // Kliknutelná karta - zoomuje na interval
+                    if (cardEl) {
+                        cardEl.style.cursor = 'pointer';
+                        cardEl.onclick = () => zoomToTimeRange(expensiveBlock.start, expensiveBlock.end);
+                    }
                 }
             }
         }
@@ -4294,12 +4357,19 @@ function loadPricingData() {
             if (bestExportBlock) {
                 const priceEl = document.getElementById('best-export-price');
                 const timeEl = document.getElementById('best-export-time');
+                const cardEl = priceEl?.parentElement?.parentElement;
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(bestExportBlock.start);
                     const endTime = new Date(bestExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                    createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)');
+                    createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
+                    
+                    // Kliknutelná karta - zoomuje na interval
+                    if (cardEl) {
+                        cardEl.style.cursor = 'pointer';
+                        cardEl.onclick = () => zoomToTimeRange(bestExportBlock.start, bestExportBlock.end);
+                    }
                 }
             }
 
@@ -4308,12 +4378,19 @@ function loadPricingData() {
             if (worstExportBlock) {
                 const priceEl = document.getElementById('worst-export-price');
                 const timeEl = document.getElementById('worst-export-time');
+                const cardEl = priceEl?.parentElement?.parentElement;
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(worstExportBlock.start);
                     const endTime = new Date(worstExportBlock.end);
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
-                    createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)');
+                    createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
+                    
+                    // Kliknutelná karta - zoomuje na interval
+                    if (cardEl) {
+                        cardEl.style.cursor = 'pointer';
+                        cardEl.onclick = () => zoomToTimeRange(worstExportBlock.start, worstExportBlock.end);
+                    }
                 }
             }
         }
