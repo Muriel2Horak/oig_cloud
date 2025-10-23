@@ -23,6 +23,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "sampling_minutes": 10,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "description": "Medián celkového odběru domácnosti za posledních 10 minut",
     },
     # Víkend vs všední den odběr po časových úsecích
@@ -39,6 +40,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_8_12_weekday": {
         "name": "Average Load 8-12h Weekday",
@@ -53,6 +55,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_12_16_weekday": {
         "name": "Average Load 12-16h Weekday",
@@ -67,6 +70,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_16_22_weekday": {
         "name": "Average Load 16-22h Weekday",
@@ -81,6 +85,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_22_6_weekday": {
         "name": "Average Load 22-6h Weekday",
@@ -95,6 +100,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     # Víkendové varianty
     "load_avg_6_8_weekend": {
@@ -110,6 +116,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_8_12_weekend": {
         "name": "Average Load 8-12h Weekend",
@@ -124,6 +131,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_12_16_weekend": {
         "name": "Average Load 12-16h Weekend",
@@ -138,6 +146,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 500,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_16_22_weekend": {
         "name": "Average Load 16-22h Weekend",
@@ -152,6 +161,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     "load_avg_22_6_weekend": {
         "name": "Average Load 22-6h Weekend",
@@ -166,6 +176,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "max_age_days": 30,
         "sampling_size": 1000,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
     },
     # Predikční senzory - ODSTRANĚNO: battery_prediction_discharge_time, battery_prediction_needed_capacity, battery_prediction_morning_soc
     # Tyto senzory byly nahrazeny battery_forecast sensorem
@@ -179,6 +190,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "energy_diff",
         "source_sensor": "computed_batt_charge_energy_today",
         "description": "Reálné nabíjení baterie za poslední hodinu",
@@ -192,6 +204,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "energy_diff",
         "source_sensor": "computed_batt_discharge_energy_today",
         "description": "Reálné vybíjení baterie za poslední hodinu",
@@ -205,6 +218,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "power_integral",
         "source_sensor": "actual_fv_total",
         "description": "Reálná celková výroba FVE za poslední hodinu",
@@ -218,6 +232,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "power_integral",
         "source_sensor": "actual_aco_p",
         "description": "Reálná spotřeba za poslední hodinu",
@@ -231,6 +246,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "energy_diff",
         "source_sensor": "boiler_day_w",
         "description": "Reálná spotřeba bojleru za poslední hodinu",
@@ -245,6 +261,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "power_integral",
         "source_sensor": "actual_fv_p1",
         "description": "Reálná výroba FVE string 1 za poslední hodinu",
@@ -258,6 +275,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "statistics",
+        "device_mapping": "analytics",
         "hourly_data_type": "power_integral",
         "source_sensor": "actual_fv_p2",
         "description": "Reálná výroba FVE string 2 za poslední hodinu",
@@ -275,7 +293,8 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-charging-80",
         "device_class": SensorDeviceClass.ENERGY_STORAGE,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "battery_prediction",  # Hlavní senzor - vytváří OigCloudBatteryForecastSensor
+        "sensor_type_category": "battery_prediction",
+        "device_mapping": "analytics",  # Hlavní senzor - vytváří OigCloudBatteryForecastSensor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Aktuální predikovaná kapacita baterie (kWh). Atributy obsahují kompletní timeline predikce.",
     },
@@ -286,7 +305,8 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:battery-charging",
         "device_class": SensorDeviceClass.ENERGY,
         "state_class": SensorStateClass.MEASUREMENT,
-        "sensor_type_category": "grid_charging_plan",  # Specializovaný senzor
+        "sensor_type_category": "grid_charging_plan",
+        "device_mapping": "analytics",  # Specializovaný senzor
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Celková energie k nabití ze sítě (kWh). Atributy obsahují intervaly nabíjení a celkovou cenu.",
     },

@@ -14,6 +14,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "requires": ["boiler"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_current_w": {
         "name": "Boiler - Current Energy (Computed)",
@@ -25,6 +26,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "requires": ["boiler"],
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "boiler_day_w": {
         "name": "Boiler - Today Energy",
@@ -36,6 +38,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "requires": ["boiler"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_manual_mode": {
         "name": "Boiler - Manual mode",
@@ -48,6 +51,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_ssr1": {
         "name": "Boiler - SSR Rele 1",
@@ -60,6 +64,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_ssr2": {
         "name": "Boiler - SSR Rele 2",
@@ -72,6 +77,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_ssr3": {
         "name": "Boiler - SSR Rele 3",
@@ -84,6 +90,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_is_use": {
         "name": "Boiler - is use",
@@ -96,6 +103,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "boiler_install_power": {
         "name": "Boiler - install power",
@@ -107,5 +115,6 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "node_key": "p_set",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
 }

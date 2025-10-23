@@ -15,6 +15,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální spotová cena elektřiny v CZK/kWh",
     },
     "spot_price_current_eur_mwh": {
@@ -27,6 +28,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální spotová cena elektřiny v EUR/MWh",
     },
     "spot_price_today_avg": {
@@ -39,6 +41,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Průměrná spotová cena elektřiny pro dnešní den",
     },
     "spot_price_today_min": {
@@ -51,6 +54,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Minimální spotová cena elektřiny pro dnešní den",
     },
     "spot_price_today_max": {
@@ -63,6 +67,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Maximální spotová cena elektřiny pro dnešní den",
     },
     "spot_price_tomorrow_avg": {
@@ -75,6 +80,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Průměrná spotová cena elektřiny pro zítřejší den",
     },
     "spot_price_hourly_all": {
@@ -87,6 +93,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Všechny dostupné hodinové spotové ceny",
     },
     "eur_czk_exchange_rate": {
@@ -99,6 +106,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "exchange_rate",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální kurz EUR/CZK z ČNB pro přepočet spotových cen",
     },
     "current_tariff": {
@@ -111,6 +119,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "tariff",
         "pricing_type": "tariff",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální tarifní pásmo NT/VT podle času a dne v týdnu",
     },
     "spot_price_current_15min": {
@@ -123,6 +132,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price_15min",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální finální cena elektřiny s 15minutovým intervalem včetně distribuce a DPH",
     },
     "export_price_current_15min": {
@@ -135,6 +145,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "export_price",
         "pricing_type": "export_price_15min",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Aktuální výkupní cena elektřiny s 15minutovým intervalem BEZ distribuce a BEZ DPH",
     },
     "adjusted_spot_electricity_prices": {
@@ -147,6 +158,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "category": "spot_price",
         "pricing_type": "spot_price",
         "sensor_type_category": "pricing",
+        "device_mapping": "analytics",
         "description": "Spotové ceny s peak/off-peak označením pro optimalizaci nabíjení",
     },
 }

@@ -298,6 +298,36 @@ async def _cleanup_all_orphaned_entities(
     return total_removed
 
 
+def get_device_info_for_sensor(
+    sensor_config: Dict[str, Any],
+    box_id: str,
+    main_device_info: Dict[str, Any],
+    analytics_device_info: Dict[str, Any],
+    shield_device_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Vrací správný device_info pro senzor podle device_mapping.
+    
+    Args:
+        sensor_config: Konfigurace senzoru obsahující device_mapping
+        box_id: ID Battery Boxu
+        main_device_info: Device info pro hlavní OIG zařízení
+        analytics_device_info: Device info pro Analytics & Predictions
+        shield_device_info: Device info pro ServiceShield
+    
+    Returns:
+        Device info dictionary pro senzor
+    """
+    device_mapping = sensor_config.get("device_mapping", "main")
+    
+    if device_mapping == "analytics":
+        return analytics_device_info
+    elif device_mapping == "shield":
+        return shield_device_info
+    else:  # "main" nebo jiná hodnota (fallback na main)
+        return main_device_info
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:

@@ -15,6 +15,7 @@ SENSOR_TYPES_SHIELD: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:shield-check",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "shield",
+        "device_mapping": "shield",
     },
     "service_shield_queue": {
         "name": "ServiceShield Queue",
@@ -25,6 +26,7 @@ SENSOR_TYPES_SHIELD: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:format-list-numbered",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "shield",
+        "device_mapping": "shield",
     },
     "service_shield_activity": {
         "name": "ServiceShield Activity",
@@ -35,5 +37,6 @@ SENSOR_TYPES_SHIELD: Dict[str, Dict[str, Any]] = {
         "icon": "mdi:cog",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "shield",
+        "device_mapping": "shield",
     },
 }

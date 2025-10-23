@@ -19,6 +19,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_battery_current": {
         "name": "Extended Battery Current",
@@ -29,6 +30,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_battery_capacity": {
         "name": "Extended Battery Capacity",
@@ -39,6 +41,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_battery_temperature": {
         "name": "Extended Battery Temperature",
@@ -50,6 +53,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "usable_battery_capacity": {
         "name": "Usable Battery Capacity",
@@ -60,6 +64,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "missing_battery_kwh": {
         "name": "Missing Energy to 100%",
@@ -70,6 +75,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "remaining_usable_capacity": {
         "name": "Remaining Usable Capacity",
@@ -80,6 +86,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "time_to_full": {
         "name": "Time to Full",
@@ -90,6 +97,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "time_to_empty": {
         "name": "Time to Empty",
@@ -100,5 +108,6 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
 }

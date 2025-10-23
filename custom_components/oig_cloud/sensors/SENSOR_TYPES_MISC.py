@@ -14,6 +14,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "real_data_update": {
         "name": "Real Data Update",
@@ -23,6 +24,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
     "invertor_prm1_p_max_feed_grid": {
         "name": "Max Feed to Grid",
@@ -34,6 +36,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "invertor_prms_to_grid": {
         "name": "Grid Delivery",
@@ -46,6 +49,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "options": ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "installed_battery_capacity_kwh": {
         "name": "Installed Battery Capacity",
@@ -57,6 +61,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "node_key": "p_bat",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "installed_fve_power_wp": {
         "name": "Installed FVE Power",
@@ -68,6 +73,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "node_key": "p_fve",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "box_prms_crct": {
         "name": "Distribution Emergency Control",
@@ -80,6 +86,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     # Notification sensors - nová kategorie
     "latest_notification": {
@@ -90,6 +97,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "notification",
+        "device_mapping": "main",
         "icon": "mdi:bell",
     },
     "bypass_status": {
@@ -101,6 +109,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "options": ["Ne", "Ano"],
         "sensor_type_category": "notification",
+        "device_mapping": "main",
         "icon": "mdi:power-settings",
     },
     "notification_count_error": {
@@ -111,6 +120,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "notification",
+        "device_mapping": "main",
         "icon": "mdi:alert-circle",
     },
     "notification_count_warning": {
@@ -121,6 +131,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "notification",
+        "device_mapping": "main",
         "icon": "mdi:alert",
     },
     "notification_count_unread": {
@@ -131,6 +142,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "notification",
+        "device_mapping": "main",
         "icon": "mdi:bell-badge",
     },
 }

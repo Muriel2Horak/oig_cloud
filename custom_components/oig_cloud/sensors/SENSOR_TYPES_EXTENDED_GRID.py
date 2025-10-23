@@ -13,6 +13,7 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_grid_power": {
         "name": "Extended Grid Power",
@@ -23,6 +24,7 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_grid_consumption": {
         "name": "Extended Grid Consumption",
@@ -33,6 +35,7 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
     "extended_grid_delivery": {
         "name": "Extended Grid Delivery",
@@ -43,5 +46,6 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",
+        "device_mapping": "main",
     },
 }
