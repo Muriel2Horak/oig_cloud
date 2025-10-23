@@ -67,7 +67,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         self._attr_name = name_cs or name_en or sensor_type
 
         # OPRAVA: Entity ID používá sensor_type (anglický klíč) a _box_id podle vzoru
-        self._attr_unique_id = f"{self._data_key}_{sensor_type}"
+        # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
+        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
         self._box_id = self._data_key
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 

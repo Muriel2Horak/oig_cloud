@@ -64,7 +64,8 @@ class OigCloudComputedSensor(SensorEntity, RestoreEntity):
         # Preferujeme český název, fallback na anglický, fallback na sensor_type
         self._attr_name = name_cs or name_en or sensor_type.replace("_", " ").title()
 
-        self._attr_unique_id = f"{self._data_key}_{sensor_type}"
+        # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
+        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
         self._attr_icon = self._sensor_config.get("icon")
         self._attr_native_unit_of_measurement = self._sensor_config.get("unit")
 

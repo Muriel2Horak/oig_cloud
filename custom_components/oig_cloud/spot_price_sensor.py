@@ -324,8 +324,8 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Jedinečné ID senzoru."""
         if self.coordinator.data:
             box_id = list(self.coordinator.data.keys())[0]
-            return f"{box_id}_{self._sensor_type}"
-        return f"export_price_{self._sensor_type}"
+            return f"oig_cloud_{box_id}_{self._sensor_type}"
+        return f"oig_cloud_export_price_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:
@@ -715,8 +715,8 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Jedinečné ID senzoru."""
         if self.coordinator.data:
             box_id = list(self.coordinator.data.keys())[0]
-            return f"{box_id}_{self._sensor_type}"
-        return f"spot_price_{self._sensor_type}"
+            return f"oig_cloud_{box_id}_{self._sensor_type}"
+        return f"oig_cloud_spot_price_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:
@@ -1126,8 +1126,8 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         """Jedinečné ID senzoru."""
         if self.coordinator.data:
             box_id = list(self.coordinator.data.keys())[0]
-            return f"{box_id}_{self._sensor_type}"
-        return f"spot_price_{self._sensor_type}"
+            return f"oig_cloud_{box_id}_{self._sensor_type}"
+        return f"oig_cloud_spot_price_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:

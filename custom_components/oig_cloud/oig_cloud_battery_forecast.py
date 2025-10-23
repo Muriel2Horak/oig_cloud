@@ -59,6 +59,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
         self._box_id = self._data_key
+        # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
         self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         self._attr_icon = "mdi:battery-charging-60"
@@ -1011,6 +1012,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._box_id = (
             list(coordinator.data.keys())[0] if coordinator.data else "unknown"
         )
+        # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
         self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 

@@ -268,6 +268,102 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         _LOGGER.debug(f"Panel removal handled gracefully: {e}")
 
 
+async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
+    from homeassistant.helpers import entity_registry as er
+    import re
+
+    entity_registry = er.async_get(hass)
+
+    # Najdeme všechny OIG entity pro tento config entry
+    entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+
+    # Fáze 1: Cleanup duplicitních entit (_2, _3, atd.)
+    entities_by_base = {}  # base_entity_id -> [entities]
+    duplicate_pattern = re.compile(r'^(.+?)(_\d+)$')
+    
+    for entity in entities:
+        entity_id = entity.entity_id
+        match = duplicate_pattern.match(entity_id)
+        
+        if match:
+            # Má příponu _2, _3, atd.
+            base_id = match.group(1)
+            entities_by_base.setdefault(base_id, []).append(entity)
+        else:
+            # Základní entity bez přípony
+            entities_by_base.setdefault(entity_id, []).append(entity)
+    
+    removed_count = 0
+    
+    # Odstraníme duplicity, pokud existuje základní entita
+    for base_id, entity_list in entities_by_base.items():
+        if len(entity_list) <= 1:
+            continue
+            
+        # Najdeme základní entitu (bez přípony)
+        base_entity = None
+        duplicates = []
+        
+        for e in entity_list:
+            if e.entity_id == base_id:
+                base_entity = e
+            else:
+                duplicates.append(e)
+        
+        # Pokud existuje základní entita, smažeme duplicity
+        if base_entity and duplicates:
+            for dup in duplicates:
+                try:
+                    entity_registry.async_remove(dup.entity_id)
+                    removed_count += 1
+                    _LOGGER.info(f"🗑️ Removed duplicate entity: {dup.entity_id} (base: {base_id})")
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Failed to remove duplicate {dup.entity_id}: {e}")
+
+    # Fáze 2: Migrace unique_id
+    # Znovu načteme entity po cleanup
+    entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    
+    migrated_count = 0
+    skipped_count = 0
+
+    for entity in entities:
+        old_unique_id = entity.unique_id
+
+        # Přeskočíme entity, které už mají správný formát
+        if old_unique_id.startswith("oig_cloud_"):
+            skipped_count += 1
+            continue
+
+        # Migrace formátů unique_id
+        if old_unique_id.startswith("oig_") and not old_unique_id.startswith("oig_cloud_"):
+            # Formát oig_{boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
+            new_unique_id = f"oig_cloud_{old_unique_id[4:]}"
+        else:
+            # Formát {boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
+            new_unique_id = f"oig_cloud_{old_unique_id}"
+
+        try:
+            entity_registry.async_update_entity(
+                entity.entity_id, new_unique_id=new_unique_id
+            )
+            migrated_count += 1
+            _LOGGER.info(
+                f"✅ Migrated entity {entity.entity_id}: {old_unique_id} -> {new_unique_id}"
+            )
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Failed to migrate {entity.entity_id}: {e}")
+
+    # Summary
+    if removed_count > 0:
+        _LOGGER.info(f"🗑️ Removed {removed_count} duplicate entities")
+    if migrated_count > 0:
+        _LOGGER.info(f"🔄 Migrated {migrated_count} entities to new unique_id format")
+    if skipped_count > 0:
+        _LOGGER.debug(f"⏭️ Skipped {skipped_count} entities (already in correct format)")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("[OIG SETUP] Starting OIG Cloud setup")
@@ -275,7 +371,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(f"Config data keys: {list(entry.data.keys())}")
     _LOGGER.debug(f"Config options keys: {list(entry.options.keys())}")
 
-    # MIGRACE: enable_spot_prices -> enable_pricing
+    # MIGRACE 1: enable_spot_prices -> enable_pricing
     if "enable_spot_prices" in entry.options:
         _LOGGER.info("🔄 Migrating enable_spot_prices to enable_pricing")
         new_options = dict(entry.options)
@@ -291,6 +387,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Aktualizujeme entry
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
+
+    # MIGRACE 2: Unique ID formát pro všechny entity
+    try:
+        await _migrate_entity_unique_ids(hass, entry)
+    except Exception as e:
+        _LOGGER.warning(f"Entity unique_id migration failed (non-critical): {e}")
 
     # Inicializace hass.data struktury pro tento entry PŘED použitím
     hass.data.setdefault(DOMAIN, {})
