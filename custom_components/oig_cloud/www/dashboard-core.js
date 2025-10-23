@@ -3332,33 +3332,77 @@ async function updateGridChargingPlan() {
         console.error('[Grid Charging] Section element NOT FOUND!');
     }
 
-    // Update time range - VŽDY aktualizuj hodnoty (i když je sekce skrytá)
-    const timeElement = document.getElementById('grid-charging-time');
-    if (timeElement) {
-        if (gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
-            console.log('[Grid Charging] Updating time:', gridChargingData.attributes.next_charging_time_range);
-            timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
-        } else {
-            console.log('[Grid Charging] Time attribute not found, attributes:', gridChargingData.attributes);
-            timeElement.textContent = '--';
-        }
-    } else {
-        console.error('[Grid Charging] Time element NOT FOUND!');
+    // Update energy (total_energy_kwh)
+    const energyElement = document.getElementById('grid-charging-energy');
+    if (energyElement && gridChargingData.attributes && gridChargingData.attributes.total_energy_kwh !== undefined) {
+        const energy = parseFloat(gridChargingData.attributes.total_energy_kwh);
+        energyElement.textContent = energy.toFixed(1) + ' kWh';
     }
 
-    // Update cost - VŽDY aktualizuj hodnoty (i když je sekce skrytá)
+    // Update cost
     const costElement = document.getElementById('grid-charging-cost');
-    if (costElement) {
-        if (gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
-            const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
-            console.log('[Grid Charging] Updating cost:', cost.toFixed(2) + ' Kč');
-            costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+    if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
+        const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
+        costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+    }
+
+    // Update time with tooltip containing intervals table
+    const timeElement = document.getElementById('grid-charging-time');
+    if (timeElement && gridChargingData.attributes) {
+        if (gridChargingData.attributes.next_charging_time_range) {
+            timeElement.textContent = gridChargingData.attributes.next_charging_time_range;
+
+            // Build tooltip HTML with intervals table
+            if (gridChargingData.attributes.charging_intervals && gridChargingData.attributes.charging_intervals.length > 0) {
+                const intervals = gridChargingData.attributes.charging_intervals;
+                const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+                const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+
+                let tooltipHtml = `
+                    <div style="padding: 8px;">
+                        <strong>Plánované dobití:</strong> ${totalEnergy.toFixed(1)} kWh<br>
+                        <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+                        <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border-secondary);">
+                        <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border-primary);">
+                                    <th style="padding: 4px; text-align: left;">Čas</th>
+                                    <th style="padding: 4px; text-align: right;">kWh</th>
+                                    <th style="padding: 4px; text-align: right;">Kč</th>
+                                    <th style="padding: 4px; text-align: center;">⚡</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                intervals.forEach((interval, index) => {
+                    if (!interval.is_charging_battery) return; // Skip non-charging intervals
+
+                    const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const energy = interval.energy_kwh ? interval.energy_kwh.toFixed(2) : '-';
+                    const cost = interval.cost_czk ? interval.cost_czk.toFixed(2) : '-';
+
+                    tooltipHtml += `
+                        <tr style="border-bottom: 1px solid var(--border-tertiary);">
+                            <td style="padding: 4px;">${time}</td>
+                            <td style="padding: 4px; text-align: right;">${energy}</td>
+                            <td style="padding: 4px; text-align: right;">${cost}</td>
+                            <td style="padding: 4px; text-align: center;">⚡</td>
+                        </tr>
+                    `;
+                });
+
+                tooltipHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                timeElement.setAttribute('data-tooltip-html', tooltipHtml);
+            }
         } else {
-            console.log('[Grid Charging] Cost attribute not found, attributes:', gridChargingData.attributes);
-            costElement.textContent = '-- Kč';
+            timeElement.textContent = '--';
         }
-    } else {
-        console.error('[Grid Charging] Cost element NOT FOUND!');
     }
 }
 

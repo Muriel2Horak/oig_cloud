@@ -1155,7 +1155,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
                 # Formátování pro zobrazení
                 next_charging_start = start_time.strftime("%d.%m. %H:%M")
-                next_charging_end = end_time.strftime("%H:%M")
+                next_charging_end = end_time.strftime("%d.%m. %H:%M")
 
                 # Délka nabíjení
                 duration = end_time - start_time
