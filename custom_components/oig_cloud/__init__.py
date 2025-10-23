@@ -270,6 +270,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
+    _LOGGER.info("🔍 Starting _migrate_entity_unique_ids function...")
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.recorder import get_instance
     import re
@@ -278,6 +279,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
 
     # Najdeme všechny OIG entity pro tento config entry
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    _LOGGER.info(f"📊 Found {len(entities)} entities for config entry")
 
     # Fáze 1: Cleanup duplicitních entit
     entities_by_base = {}  # base_entity_id -> [entities]
@@ -320,14 +322,16 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                     if not dup.disabled_by:
                         entity_registry.async_update_entity(
                             dup.entity_id,
-                            disabled_by=er.RegistryEntryDisabler.INTEGRATION
+                            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
                         )
                         disabled_count += 1
                         _LOGGER.info(
                             f"⏸️ Disabled duplicate entity: {dup.entity_id} (base: {base_id})"
                         )
                 except Exception as e:
-                    _LOGGER.warning(f"⚠️ Failed to disable duplicate {dup.entity_id}: {e}")
+                    _LOGGER.warning(
+                        f"⚠️ Failed to disable duplicate {dup.entity_id}: {e}"
+                    )
 
     # Fáze 2: Migrace unique_id
     # Znovu načteme entity po cleanup
@@ -379,7 +383,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             f"3. Pokud má duplicita důležitá data, můžete ji znovu povolit\n\n"
             f"Toto je jednorázová migrace po aktualizaci integrace."
         ]
-        
+
         await hass.services.async_call(
             "persistent_notification",
             "create",
@@ -389,7 +393,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                 "notification_id": "oig_cloud_duplicate_cleanup",
             },
         )
-        
+
         _LOGGER.warning(
             f"⏸️ Disabled {disabled_count} duplicate entities. "
             f"Check persistent notification for details."
@@ -425,10 +429,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
 
     # MIGRACE 2: Unique ID formát pro všechny entity
+    _LOGGER.info("🔄 Starting entity unique_id migration...")
     try:
         await _migrate_entity_unique_ids(hass, entry)
+        _LOGGER.info("✅ Entity unique_id migration completed")
     except Exception as e:
-        _LOGGER.warning(f"Entity unique_id migration failed (non-critical): {e}")
+        _LOGGER.error(f"❌ Entity unique_id migration failed: {e}", exc_info=True)
 
     # Inicializace hass.data struktury pro tento entry PŘED použitím
     hass.data.setdefault(DOMAIN, {})
