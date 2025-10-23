@@ -212,6 +212,12 @@
                     <span class="battery-temp-icon" id="battery-temp-icon">🌡️</span>
                     <span id="battery-temp-value">-- °C</span>
                 </div>
+                <!-- Grid Charging Indicator -->
+                <div class="battery-grid-charging-indicator entity-value" id="battery-grid-charging-indicator"
+                     data-entity="grid_charging_planned"
+                     data-tooltip="Plánované nabíjení ze sítě"
+                     onclick="showGridChargingPopup()"
+                     style="display: none;">⚡🔌</div>
                 <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
                 <div class="node-label">Baterie</div>
                 <div class="node-value entity-value" id="battery-soc"
@@ -262,6 +268,27 @@
                                           data-entity="computed_batt_discharge_energy_today"
                                           data-tooltip="Vybito dnes celkem"
                                           onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">-- kWh</span>
+                                </div>
+                                <!-- Grid Charging Plan -->
+                                <div class="detail-row grid-charging-plan-section" id="grid-charging-plan-section" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-tertiary);">
+                                    <span class="detail-label" style="display: flex; align-items: center; gap: 5px;">
+                                        <span>⚡ Plánované nabíjení:</span>
+                                    </span>
+                                    <div style="margin-top: 8px;">
+                                        <div class="entity-value" id="grid-charging-time"
+                                             data-entity="grid_charging_planned"
+                                             data-attribute="next_charging_time_range"
+                                             style="font-size: 0.95em; color: var(--text-secondary); cursor: pointer;"
+                                             onclick="showGridChargingPopup()">📅 --</div>
+                                        <div class="entity-value" id="grid-charging-cost"
+                                             data-entity="grid_charging_planned"
+                                             data-attribute="total_cost_czk"
+                                             style="font-size: 0.95em; color: var(--text-secondary); margin-top: 4px;">💰 -- Kč</div>
+                                        <div style="font-size: 0.85em; color: var(--text-tertiary); margin-top: 8px; cursor: pointer;"
+                                             onclick="showGridChargingPopup()">
+                                            🔍 Klikni pro detail intervalů
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

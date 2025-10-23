@@ -2702,6 +2702,9 @@ async function loadNodeDetails() {
         updateElementIfChanged('battery-charge-grid', formatEnergy(battChargeGrid.value || 0));
         updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
 
+        // Grid charging plan
+        await updateGridChargingPlan();
+
         // === GRID DETAILS ===
         const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
         const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
@@ -3295,6 +3298,94 @@ function initTooltips() {
     });
 
     console.log('[Tooltips] Initialized for', entityValues.length, 'elements');
+}
+
+// === GRID CHARGING PLAN FUNCTIONS ===
+
+async function updateGridChargingPlan() {
+    const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
+    const isPlanned = gridChargingData.value === 'on';
+    
+    // Show/hide indicator in battery card header
+    const indicator = document.getElementById('battery-grid-charging-indicator');
+    if (indicator) {
+        indicator.style.display = isPlanned ? 'block' : 'none';
+    }
+    
+    // Show/hide section in battery details
+    const section = document.getElementById('grid-charging-plan-section');
+    if (section) {
+        section.style.display = isPlanned ? 'block' : 'none';
+    }
+    
+    // Update time range
+    const timeElement = document.getElementById('grid-charging-time');
+    if (timeElement && gridChargingData.attributes && gridChargingData.attributes.next_charging_time_range) {
+        timeElement.textContent = '📅 ' + gridChargingData.attributes.next_charging_time_range;
+    }
+    
+    // Update cost
+    const costElement = document.getElementById('grid-charging-cost');
+    if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
+        const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
+        costElement.textContent = '💰 ~' + cost.toFixed(2) + ' Kč';
+    }
+}
+
+function showGridChargingPopup() {
+    getSensor(getSensorId('grid_charging_planned')).then(gridChargingData => {
+        if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
+            showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
+            return;
+        }
+        
+        const intervals = gridChargingData.attributes.charging_intervals;
+        const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+        const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+        
+        // Build table HTML
+        let tableHtml = `
+            <div style="margin-bottom: 15px;">
+                <strong>Celková energie:</strong> ${totalEnergy.toFixed(2)} kWh<br>
+                <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-primary);">
+                        <th style="padding: 8px; text-align: left;">Čas</th>
+                        <th style="padding: 8px; text-align: right;">Energie</th>
+                        <th style="padding: 8px; text-align: right;">Cena</th>
+                        <th style="padding: 8px; text-align: center;">Stav</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        intervals.forEach((interval, index) => {
+            const rowBg = index % 2 === 0 ? 'var(--bg-tertiary)' : 'transparent';
+            const isCharging = interval.is_charging_battery;
+            const statusIcon = isCharging ? '⚡' : '🔋';
+            const statusText = isCharging ? 'Nabíjí' : interval.note || 'Baterie plná';
+            const energyText = interval.grid_charge_kwh ? interval.grid_charge_kwh.toFixed(2) + ' kWh' : '-';
+            const costText = interval.grid_charge_cost ? '~' + interval.grid_charge_cost.toFixed(2) + ' Kč' : '-';
+            
+            tableHtml += `
+                <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-tertiary);">
+                    <td style="padding: 8px;">${interval.time_from} - ${interval.time_to}</td>
+                    <td style="padding: 8px; text-align: right;">${energyText}</td>
+                    <td style="padding: 8px; text-align: right;">${costText}</td>
+                    <td style="padding: 8px; text-align: center;" title="${statusText}">${statusIcon}</td>
+                </tr>
+            `;
+        });
+        
+        tableHtml += `
+                </tbody>
+            </table>
+        `;
+        
+        showDialog('⚡ Plánované nabíjení ze sítě', tableHtml);
+    });
 }
 
 // === INITIALIZATION ===
