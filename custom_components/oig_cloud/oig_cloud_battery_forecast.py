@@ -40,12 +40,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání box_id z config_entry (inverter_sn je vždy v config_entry.data)
-        self._data_key = config_entry.data.get("inverter_sn")
-        
-        if not self._data_key:
-            _LOGGER.error("Cannot determine box_id for battery forecast sensor - inverter_sn not in config_entry")
-            raise ValueError("Cannot determine box_id for battery forecast sensor")
+        # Získání box_id z coordinator.data (stejně jako v sensor.py řádek 377)
+        # Coordinator vždy má data po async_config_entry_first_refresh()
+        self._data_key = "unknown"
+        if coordinator and coordinator.data and isinstance(coordinator.data, dict) and coordinator.data:
+            self._data_key = list(coordinator.data.keys())[0]
+            _LOGGER.debug(f"Got box_id from coordinator.data: {self._data_key}")
+        else:
+            _LOGGER.warning("Battery forecast sensor: coordinator has no data, using box_id='unknown'")
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
         self._box_id = self._data_key
