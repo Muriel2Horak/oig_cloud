@@ -3369,10 +3369,13 @@ async function updateGridChargingPlan() {
     }
 
     // Show/hide section in battery details
+    // OPRAVA: Zobrazit když existují intervaly (ne jen když sensor je ON)
     const section = document.getElementById('grid-charging-plan-section');
     if (section) {
-        console.log('[Grid Charging] Section found, setting display to:', isPlanned ? 'block' : 'none');
-        section.style.display = isPlanned ? 'block' : 'none';
+        const hasIntervals = gridChargingData.attributes?.charging_intervals?.length > 0;
+        const shouldShow = hasIntervals; // Zobrazit když jsou plánované intervaly
+        console.log('[Grid Charging] Section found, hasIntervals:', hasIntervals, 'shouldShow:', shouldShow);
+        section.style.display = shouldShow ? 'block' : 'none';
     } else {
         console.error('[Grid Charging] Section element NOT FOUND!');
     }
