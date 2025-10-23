@@ -3819,8 +3819,8 @@ function zoomToTimeRange(startTime, endTime) {
     const zoomEnd = end.getTime() + marginMs;
 
     // Pokud už je zazoomováno na tento interval -> ZOOM OUT (reset)
-    if (currentZoomRange && 
-        Math.abs(currentZoomRange.start - zoomStart) < 60000 && 
+    if (currentZoomRange &&
+        Math.abs(currentZoomRange.start - zoomStart) < 60000 &&
         Math.abs(currentZoomRange.end - zoomEnd) < 60000) {
         console.log('[Zoom] Already zoomed to this range -> ZOOM OUT');
         combinedChart.resetZoom();
@@ -3835,7 +3835,7 @@ function zoomToTimeRange(startTime, endTime) {
     try {
         // Resetovat nejdříve aby zoom fungoval správně
         combinedChart.resetZoom('none');
-        
+
         // Pak zoomovat
         combinedChart.zoom({
             x: {
@@ -3843,11 +3843,11 @@ function zoomToTimeRange(startTime, endTime) {
                 max: zoomEnd
             }
         });
-        
+
         // Uložit aktuální zoom
         currentZoomRange = { start: zoomStart, end: zoomEnd };
         console.log('[Zoom] Zoom IN applied successfully');
-        
+
         // Aktualizovat detail level
         updateChartDetailLevel(combinedChart);
     } catch (error) {
@@ -4288,7 +4288,7 @@ function loadPricingData() {
             if (cheapestBlock) {
                 const priceEl = document.getElementById('cheapest-buy-price');
                 const timeEl = document.getElementById('cheapest-buy-time');
-                const cardEl = priceEl?.parentElement?.parentElement;
+                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = cheapestBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(cheapestBlock.start);
@@ -4296,10 +4296,13 @@ function loadPricingData() {
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('cheapest-buy-chart', cheapestBlock.values, 'rgba(76, 175, 80, 1)', cheapestBlock.start, cheapestBlock.end);
 
-                    // Kliknutelná karta - zoomuje na interval
+                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = () => zoomToTimeRange(cheapestBlock.start, cheapestBlock.end);
+                        cardEl.onclick = (e) => {
+                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
+                            zoomToTimeRange(cheapestBlock.start, cheapestBlock.end);
+                        };
                     }
                 }
             }
@@ -4309,7 +4312,7 @@ function loadPricingData() {
             if (expensiveBlock) {
                 const priceEl = document.getElementById('expensive-buy-price');
                 const timeEl = document.getElementById('expensive-buy-time');
-                const cardEl = priceEl?.parentElement?.parentElement;
+                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = expensiveBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(expensiveBlock.start);
@@ -4317,10 +4320,13 @@ function loadPricingData() {
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('expensive-buy-chart', expensiveBlock.values, 'rgba(244, 67, 54, 1)', expensiveBlock.start, expensiveBlock.end);
 
-                    // Kliknutelná karta - zoomuje na interval
+                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = () => zoomToTimeRange(expensiveBlock.start, expensiveBlock.end);
+                        cardEl.onclick = (e) => {
+                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
+                            zoomToTimeRange(expensiveBlock.start, expensiveBlock.end);
+                        };
                     }
                 }
             }
@@ -4365,7 +4371,7 @@ function loadPricingData() {
             if (bestExportBlock) {
                 const priceEl = document.getElementById('best-export-price');
                 const timeEl = document.getElementById('best-export-time');
-                const cardEl = priceEl?.parentElement?.parentElement;
+                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(bestExportBlock.start);
@@ -4373,10 +4379,13 @@ function loadPricingData() {
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
 
-                    // Kliknutelná karta - zoomuje na interval
+                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = () => zoomToTimeRange(bestExportBlock.start, bestExportBlock.end);
+                        cardEl.onclick = (e) => {
+                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
+                            zoomToTimeRange(bestExportBlock.start, bestExportBlock.end);
+                        };
                     }
                 }
             }
@@ -4386,7 +4395,7 @@ function loadPricingData() {
             if (worstExportBlock) {
                 const priceEl = document.getElementById('worst-export-price');
                 const timeEl = document.getElementById('worst-export-time');
-                const cardEl = priceEl?.parentElement?.parentElement;
+                const cardEl = priceEl?.parentElement;  // .stat-card je přímo parentElement
                 if (priceEl && timeEl) {
                     priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                     const startTime = new Date(worstExportBlock.start);
@@ -4394,10 +4403,13 @@ function loadPricingData() {
                     timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', {day: '2-digit', month: '2-digit'})} ${startTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})} - ${endTime.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}`;
                     createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
 
-                    // Kliknutelná karta - zoomuje na interval
+                    // Kliknutelná karta - zoomuje VELKÝ graf pod kartami
                     if (cardEl) {
                         cardEl.style.cursor = 'pointer';
-                        cardEl.onclick = () => zoomToTimeRange(worstExportBlock.start, worstExportBlock.end);
+                        cardEl.onclick = (e) => {
+                            e.stopPropagation();  // Zastavit propagaci aby se nezaseklo v mini grafu
+                            zoomToTimeRange(worstExportBlock.start, worstExportBlock.end);
+                        };
                     }
                 }
             }
