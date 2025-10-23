@@ -3533,6 +3533,17 @@ function getGridColor() {
     return isLightTheme() ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
 }
 
+// Convert Date to local ISO string (without timezone conversion to UTC)
+function toLocalISOString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
 function getBoxId() {
     const hass = getHass();
     if (!hass || !hass.states) return null;
@@ -3753,8 +3764,8 @@ function loadPricingData() {
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i]; // Now a Date object
 
-                // Create ISO timestamp key for solar data lookup
-                const isoKey = timeLabel.toISOString().substring(0, 19); // "2025-10-22T14:30:00"
+                // Create ISO timestamp key for solar data lookup (LOCAL TIME!)
+                const isoKey = toLocalISOString(timeLabel);
 
                 // For solar data, we need to interpolate from hourly values
                 const hour = timeLabel.getHours();
@@ -3763,11 +3774,11 @@ function loadPricingData() {
                 // Create current and next hour timestamps for interpolation
                 const currentHourDate = new Date(timeLabel);
                 currentHourDate.setMinutes(0, 0, 0);
-                const currentHourKey = currentHourDate.toISOString().substring(0, 19);
+                const currentHourKey = toLocalISOString(currentHourDate);
 
                 const nextHourDate = new Date(currentHourDate);
                 nextHourDate.setHours(hour + 1);
-                const nextHourKey = nextHourDate.toISOString().substring(0, 19);
+                const nextHourKey = toLocalISOString(nextHourDate);
 
                 // Get values for interpolation from merged data
                 const s1_current = allSolarData.string1[currentHourKey] || 0;
@@ -3874,6 +3885,14 @@ function loadPricingData() {
         const prices = spotSensor.attributes.prices || []; // Original ISO timestamps
 
         if (timelineData.length > 0 && prices.length > 0) {
+            // EXTEND allLabels with battery forecast timestamps (union)
+            const batteryTimestamps = timelineData.map(t => new Date(t.timestamp));
+            const priceTimestamps = allLabels; // already Date objects
+            
+            // Merge and dedupe timestamps
+            const allTimestamps = new Set([...priceTimestamps, ...batteryTimestamps].map(d => d.getTime()));
+            allLabels = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
+
             // ZOBRAZENÍ KAPACITY BATERIE:
             // battery_capacity_kwh = CÍLOVÁ kapacita (kam se dostaneme)
             // solar_charge_kwh = kolik přidal solar v tomto intervalu
@@ -3887,7 +3906,8 @@ function loadPricingData() {
 
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i];
-                const isoKey = timeLabel.toISOString().substring(0, 19);
+                const isoKey = toLocalISOString(timeLabel);
+                
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
@@ -3909,14 +3929,6 @@ function loadPricingData() {
                     gridStackData.push(null);
                 }
             }
-
-            console.log('[Battery] Sample:', {
-                target: batteryCapacityData[0],
-                baseline: baselineData[0],
-                solar: solarStackData[0],
-                grid: gridStackData[0],
-                sum: baselineData[0] + solarStackData[0] + gridStackData[0]
-            });
 
             // Barvy pro vizualizaci
             const batteryColors = {
