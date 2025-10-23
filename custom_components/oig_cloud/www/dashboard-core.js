@@ -3304,19 +3304,31 @@ function initTooltips() {
 // === GRID CHARGING PLAN FUNCTIONS ===
 
 async function updateGridChargingPlan() {
-    const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
+    const gridChargingData = await getSensorString(getSensorId('grid_charging_planned'));
     const isPlanned = gridChargingData.value === 'on';
+    
+    console.log('[Grid Charging] updateGridChargingPlan() called');
+    console.log('[Grid Charging] Sensor ID:', getSensorId('grid_charging_planned'));
+    console.log('[Grid Charging] Sensor value:', gridChargingData.value);
+    console.log('[Grid Charging] Is planned:', isPlanned);
+    console.log('[Grid Charging] Attributes:', gridChargingData.attributes);
 
     // Show/hide indicator in battery card header
     const indicator = document.getElementById('battery-grid-charging-indicator');
     if (indicator) {
+        console.log('[Grid Charging] Indicator found, setting display to:', isPlanned ? 'block' : 'none');
         indicator.style.display = isPlanned ? 'block' : 'none';
+    } else {
+        console.error('[Grid Charging] Indicator element NOT FOUND!');
     }
 
     // Show/hide section in battery details
     const section = document.getElementById('grid-charging-plan-section');
     if (section) {
+        console.log('[Grid Charging] Section found, setting display to:', isPlanned ? 'block' : 'none');
         section.style.display = isPlanned ? 'block' : 'none';
+    } else {
+        console.error('[Grid Charging] Section element NOT FOUND!');
     }
 
     // Update time range
@@ -3334,7 +3346,7 @@ async function updateGridChargingPlan() {
 }
 
 function showGridChargingPopup() {
-    getSensor(getSensorId('grid_charging_planned')).then(gridChargingData => {
+    getSensorString(getSensorId('grid_charging_planned')).then(gridChargingData => {
         if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
             showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
             return;
