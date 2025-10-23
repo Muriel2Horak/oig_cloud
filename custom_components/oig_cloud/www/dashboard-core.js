@@ -2555,9 +2555,11 @@ async function loadData() {
     const bypassStatusData = await getSensorString(getSensorId('bypass_status'));
     const bypassStatus = bypassStatusData.value || 'off';
     const bypassIndicator = document.getElementById('inverter-bypass-indicator');
+    const bypassLabel = document.getElementById('inverter-bypass-label');
     const bypassIconElement = document.getElementById('inverter-bypass-icon');
     let bypassIcon, bypassClass;
-    if (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1') {
+    const isBypassActive = bypassStatus.toLowerCase() === 'on' || bypassStatus === '1';
+    if (isBypassActive) {
         bypassIcon = '🔴';
         bypassClass = 'inverter-bypass-indicator bypass-warning';
     } else {
@@ -2570,6 +2572,10 @@ async function loadData() {
         }
         if (bypassIndicator) {
             bypassIndicator.className = bypassClass;
+        }
+        // Show/hide bypass label
+        if (bypassLabel) {
+            bypassLabel.style.display = isBypassActive ? 'block' : 'none';
         }
         previousValues['inverter-bypass-icon'] = bypassIcon;
     }
