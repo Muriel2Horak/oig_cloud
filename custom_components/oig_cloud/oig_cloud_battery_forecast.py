@@ -1056,14 +1056,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         total_energy = 0.0
         total_cost = 0.0
         now = datetime.now()
-        
+
         # Pro kontrolu, jestli se baterie nabíjí, potřebujeme předchozí kapacitu
         prev_battery_capacity = None
 
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
             battery_capacity = point.get("battery_capacity_kwh", 0)
-            
+
             if grid_charge_kwh > 0:
                 timestamp_str = point.get("timestamp", "")
                 try:
@@ -1071,13 +1071,15 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     # Pouze budoucí intervaly
                     if timestamp > now:
                         spot_price_czk = point.get("spot_price_czk", 0)
-                        
+
                         # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
                         # (kapacita roste oproti předchozímu bodu)
                         is_actually_charging = False
                         if prev_battery_capacity is not None:
-                            is_actually_charging = battery_capacity > prev_battery_capacity
-                        
+                            is_actually_charging = (
+                                battery_capacity > prev_battery_capacity
+                            )
+
                         # Přidat interval do seznamu (všechny s grid_charge > 0)
                         interval_data = {
                             "timestamp": timestamp_str,
@@ -1086,7 +1088,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             "battery_capacity_kwh": round(battery_capacity, 2),
                             "is_charging_battery": is_actually_charging,
                         }
-                        
+
                         # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu
                         if is_actually_charging:
                             cost_czk = grid_charge_kwh * spot_price_czk
@@ -1096,16 +1098,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
                             interval_data["cost_czk"] = 0.0
-                            interval_data["note"] = "Grid covers consumption, battery not charging"
-                        
+                            interval_data["note"] = (
+                                "Grid covers consumption, battery not charging"
+                            )
+
                         charging_intervals.append(interval_data)
-                        
+
                 except (ValueError, TypeError) as e:
                     _LOGGER.debug(
                         f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
                     )
                     continue
-            
+
             # Uložit aktuální kapacitu pro další iteraci
             prev_battery_capacity = battery_capacity
 
@@ -1125,6 +1129,40 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Atributy s detaily nabíjení."""
         intervals, total_energy, total_cost = self._calculate_charging_intervals()
+        
+        # Najít první interval kde se skutečně nabíjí baterie
+        first_charging_interval = None
+        last_charging_interval = None
+        for interval in intervals:
+            if interval.get("is_charging_battery", False):
+                if first_charging_interval is None:
+                    first_charging_interval = interval
+                last_charging_interval = interval
+        
+        # Připravit formátované časy pro UI
+        next_charging_start = None
+        next_charging_end = None
+        next_charging_duration = None
+        
+        if first_charging_interval and last_charging_interval:
+            try:
+                start_time = datetime.fromisoformat(first_charging_interval["timestamp"])
+                end_time = datetime.fromisoformat(last_charging_interval["timestamp"])
+                # Konec je + 15 minut (délka intervalu)
+                end_time = end_time + timedelta(minutes=15)
+                
+                # Formátování pro zobrazení
+                next_charging_start = start_time.strftime("%d.%m. %H:%M")
+                next_charging_end = end_time.strftime("%H:%M")
+                
+                # Délka nabíjení
+                duration = end_time - start_time
+                hours = int(duration.total_seconds() // 3600)
+                minutes = int((duration.total_seconds() % 3600) // 60)
+                next_charging_duration = f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
+                
+            except (ValueError, TypeError) as e:
+                _LOGGER.debug(f"Error formatting charging times: {e}")
 
         return {
             "charging_intervals": intervals,
@@ -1135,4 +1173,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 1 for i in intervals if i.get("is_charging_battery", False)
             ),
             "is_charging_planned": len(intervals) > 0,
+            # Nové atributy pro UI
+            "next_charging_start": next_charging_start,
+            "next_charging_end": next_charging_end,
+            "next_charging_duration": next_charging_duration,
+            "next_charging_time_range": f"{next_charging_start} - {next_charging_end}" if next_charging_start else None,
         }
