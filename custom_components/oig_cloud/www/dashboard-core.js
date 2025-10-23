@@ -104,6 +104,7 @@ function subscribeToShield() {
                     entityId.includes('ac_out_') ||             // House phases
                     entityId.includes('spot_price') ||          // Grid pricing
                     entityId.includes('current_tariff') ||      // Tariff
+                    entityId.includes('grid_charging_planned') || // Grid charging plan
                     entityId.includes('notification_count')) {  // Notifications
                     console.log(`[Details] Sensor changed: ${entityId}`);
                     debouncedLoadNodeDetails(); // Trigger details update (debounced)
