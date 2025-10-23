@@ -553,23 +553,17 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         try:
             _LOGGER.debug("🔋 Starting battery forecast calculation in coordinator")
 
+            # KRITICKÁ KONTROLA: Coordinator MUSÍ mít data před vytvořením battery forecast sensoru
+            if not self.data or not isinstance(self.data, dict) or not self.data:
+                _LOGGER.debug("🔋 Coordinator has no data yet, skipping battery forecast calculation")
+                return
+
             # Importujeme battery forecast třídu
             from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
 
-            # Debug: Zkontrolovat config_entry
-            _LOGGER.debug(
-                f"🔍 Coordinator config_entry: {self.config_entry}, "
-                f"has data: {hasattr(self.config_entry, 'data') if self.config_entry else False}, "
-                f"data keys: {list(self.config_entry.data.keys()) if self.config_entry and hasattr(self.config_entry, 'data') else []}"
-            )
-
-            # Získat inverter_sn z config_entry
-            inverter_sn: str = (
-                self.config_entry.data.get("inverter_sn", "unknown")
-                if self.config_entry
-                else "unknown"
-            )
-            _LOGGER.debug(f"🔍 Inverter SN from config_entry: {inverter_sn}")
+            # Získat inverter_sn z coordinator.data (stejně jako v sensor.py)
+            inverter_sn: str = list(self.data.keys())[0]
+            _LOGGER.debug(f"🔍 Inverter SN from coordinator.data: {inverter_sn}")
 
             # Vytvořit device_info pro Analytics Module
             from .const import DOMAIN

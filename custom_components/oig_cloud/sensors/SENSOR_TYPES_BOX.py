@@ -14,6 +14,7 @@ SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "box_prms_mode": {
         "name": "Operation Mode",
@@ -25,6 +26,7 @@ SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "box_temp": {
         "name": "Temperature",
@@ -36,5 +38,6 @@ SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
 }

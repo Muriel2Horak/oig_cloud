@@ -13,6 +13,7 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_key": "fv_ad",
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "dc_in_fv_p1": {
         "name": "Panels Output String 1",
@@ -23,6 +24,7 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_key": "fv_p1",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "dc_in_fv_p2": {
         "name": "Panels Output String 2",
@@ -33,6 +35,7 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_key": "fv_p2",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "dc_in_fv_proc": {
         "name": "Panels Output Percent",
@@ -43,6 +46,7 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_key": "fv_proc",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "dc_in_fv_total": {
         "name": "Panels Output Total",
@@ -53,5 +57,6 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
 }

@@ -15,6 +15,7 @@ SENSOR_TYPES_SOLAR_FORECAST: Dict[str, Dict[str, Any]] = {
         "entity_category": None,
         "suggested_display_precision": 2,
         "sensor_type_category": "solar_forecast",
+        "device_mapping": "analytics",
     },
     "solar_forecast_string1": {
         "name": "Solar Forecast String 1",
@@ -26,6 +27,7 @@ SENSOR_TYPES_SOLAR_FORECAST: Dict[str, Dict[str, Any]] = {
         "entity_category": None,
         "suggested_display_precision": 2,
         "sensor_type_category": "solar_forecast",
+        "device_mapping": "analytics",
     },
     "solar_forecast_string2": {
         "name": "Solar Forecast String 2",
@@ -37,5 +39,6 @@ SENSOR_TYPES_SOLAR_FORECAST: Dict[str, Dict[str, Any]] = {
         "entity_category": None,
         "suggested_display_precision": 2,
         "sensor_type_category": "solar_forecast",
+        "device_mapping": "analytics",
     },
 }

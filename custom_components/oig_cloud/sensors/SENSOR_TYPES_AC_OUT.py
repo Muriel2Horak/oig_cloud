@@ -14,6 +14,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "node_key": "aco_p",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "ac_out_aco_pr": {
         "name": "Load Line 1",
@@ -24,6 +25,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "node_key": "aco_pr",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "ac_out_aco_ps": {
         "name": "Load Line 2",
@@ -34,6 +36,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "node_key": "aco_ps",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "ac_out_aco_pt": {
         "name": "Load Line 3",
@@ -44,6 +47,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "node_key": "aco_pt",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
     "ac_out_en_day": {
         "name": "Consumption Today",
@@ -54,5 +58,6 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "node_key": "en_day",
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "sensor_type_category": "data",
+        "device_mapping": "main",
     },
 }
