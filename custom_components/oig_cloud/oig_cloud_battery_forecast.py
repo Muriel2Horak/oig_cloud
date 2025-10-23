@@ -754,7 +754,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         critical_intervals = []
         min_capacity_in_timeline = float("inf")
         min_capacity_timestamp = None
-        
+
         for i, point in enumerate(timeline):
             capacity = point.get("battery_capacity_kwh", 0)
             if capacity < min_capacity:
@@ -778,64 +778,70 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Najít první kritické místo
         if critical_intervals:
             first_critical = critical_intervals[0]
-            
+
             _LOGGER.info(
                 f"First critical interval at index {first_critical}, "
                 f"capacity: {timeline[first_critical].get('battery_capacity_kwh', 0):.2f}kWh"
             )
-            
+
             # Spočítat kolik energie potřebujeme pro dosažení min_capacity v prvním kritickém místě
             critical_capacity = timeline[first_critical].get("battery_capacity_kwh", 0)
             energy_needed = min_capacity - critical_capacity
-            
+
             if energy_needed > 0:
-                _LOGGER.info(f"Need {energy_needed:.2f}kWh to reach minimum at critical point")
-                
+                _LOGGER.info(
+                    f"Need {energy_needed:.2f}kWh to reach minimum at critical point"
+                )
+
                 # Najít nejlevnější intervaly PŘED kritickým místem
                 charging_candidates = []
                 for i in range(first_critical):
                     point = timeline[i]
                     price = point.get("spot_price_czk", float("inf"))
                     capacity = point.get("battery_capacity_kwh", 0)
-                    
+
                     # Filtr: cena musí být OK
                     if price > max_price:
                         continue
-                    
+
                     # Filtr: baterie nesmí být plná
                     if capacity >= max_capacity * 0.99:
                         continue
-                    
-                    charging_candidates.append({
-                        "index": i,
-                        "price": price,
-                        "capacity": capacity,
-                        "timestamp": point.get("timestamp", ""),
-                    })
-                
+
+                    charging_candidates.append(
+                        {
+                            "index": i,
+                            "price": price,
+                            "capacity": capacity,
+                            "timestamp": point.get("timestamp", ""),
+                        }
+                    )
+
                 # Seřadit podle ceny
                 charging_candidates.sort(key=lambda x: x["price"])
-                
+
                 # Přidat nabíjení postupně dokud nedosáhneme min_capacity
                 added_energy = 0
                 while added_energy < energy_needed and charging_candidates:
                     best = charging_candidates.pop(0)
                     idx = best["index"]
-                    
+
                     old_charge = timeline[idx].get("grid_charge_kwh", 0)
                     timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
                     added_energy += charge_per_interval
-                    
+
                     _LOGGER.debug(
                         f"Critical fix: Adding {charge_per_interval:.2f}kWh at index {idx} "
                         f"(price {best['price']:.2f}CZK), total added: {added_energy:.2f}kWh"
                     )
-                    
+
                     # Přepočítat timeline
                     self._recalculate_timeline_from_index(timeline, idx)
-                    
+
                     # Zkontrolovat jestli jsme vyřešili kritické místo
-                    new_critical_capacity = timeline[first_critical].get("battery_capacity_kwh", 0)
+                    new_critical_capacity = timeline[first_critical].get(
+                        "battery_capacity_kwh", 0
+                    )
                     if new_critical_capacity >= min_capacity:
                         _LOGGER.info(
                             f"Critical interval fixed: capacity now {new_critical_capacity:.2f}kWh >= {min_capacity:.2f}kWh"
@@ -845,6 +851,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci (v levných hodinách)
         max_iterations = 100
         iteration = 0
+        used_intervals = set()  # Sledovat použité intervaly
 
         while iteration < max_iterations:
             # Zkontrolovat aktuální stav na konci
@@ -864,6 +871,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             for i, point in enumerate(timeline):
                 price = point.get("spot_price_czk", float("inf"))
                 capacity = point.get("battery_capacity_kwh", 0)
+                existing_charge = point.get("grid_charge_kwh", 0)
 
                 # Filtr: cena musí být pod max_price (NE price_threshold - to jen pro kritická místa)
                 if price > max_price:
@@ -877,12 +885,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 if i >= len(timeline) - 1:
                     continue
 
+                # KRITICKÝ FILTR: Max 1× charge_per_interval per interval (fyzikální limit!)
+                # S 2.8 kW můžeme nabít max 0.7 kWh za 15 min
+                if existing_charge >= charge_per_interval * 0.99:  # tolerance
+                    continue
+
                 charging_candidates.append(
                     {
                         "index": i,
                         "price": price,
                         "capacity": capacity,
                         "timestamp": point.get("timestamp", ""),
+                        "existing_charge": existing_charge,
                     }
                 )
 
@@ -1274,15 +1288,20 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
                         # (kapacita roste oproti předchozímu bodu)
                         is_actually_charging = False
+                        actual_battery_charge = 0.0  # Skutečný přírůstek kapacity
+
                         if prev_battery_capacity is not None:
-                            is_actually_charging = (
-                                battery_capacity > prev_battery_capacity
-                            )
+                            capacity_increase = battery_capacity - prev_battery_capacity
+                            is_actually_charging = capacity_increase > 0.01  # tolerance
+                            if is_actually_charging:
+                                actual_battery_charge = capacity_increase
 
                         # Přidat interval do seznamu (všechny s grid_charge > 0)
                         interval_data = {
                             "timestamp": timestamp_str,
-                            "energy_kwh": round(grid_charge_kwh, 3),
+                            "energy_kwh": round(
+                                grid_charge_kwh, 3
+                            ),  # Celková grid energie
                             "spot_price_czk": round(spot_price_czk, 2),
                             "battery_capacity_kwh": round(battery_capacity, 2),
                             "is_charging_battery": is_actually_charging,
@@ -1290,9 +1309,13 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
                         # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu
                         if is_actually_charging:
-                            cost_czk = grid_charge_kwh * spot_price_czk
+                            # Cena za skutečnou energii do baterie (ne celý grid)
+                            cost_czk = actual_battery_charge * spot_price_czk
                             interval_data["cost_czk"] = round(cost_czk, 2)
-                            total_energy += grid_charge_kwh
+                            interval_data["battery_charge_kwh"] = round(
+                                actual_battery_charge, 3
+                            )
+                            total_energy += actual_battery_charge
                             total_cost += cost_czk
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
