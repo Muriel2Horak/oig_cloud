@@ -1004,7 +1004,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             list(coordinator.data.keys())[0] if coordinator.data else "unknown"
         )
         self._attr_unique_id = f"oig_{self._box_id}_{sensor_type}"
-        self._attr_name = self._config.get("name", sensor_type)
+        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+        self._attr_name = self._config.get("name", sensor_type)"
+        
+        # Nastavit vlastnosti senzoru
+        self._attr_native_unit_of_measurement = self._config.get("unit")
+        self._attr_icon = self._config.get("icon", "mdi:battery-charging")
+        self._attr_device_class = self._config.get("device_class")
+        self._attr_state_class = self._config.get("state_class")
 
     @property
     def state(self) -> Optional[float]:
