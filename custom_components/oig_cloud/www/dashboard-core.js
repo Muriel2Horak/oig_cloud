@@ -3771,6 +3771,13 @@ function getBoxId() {
     return null;
 }
 
+// Reset zoom grafu na původní rozsah
+function resetChartZoom() {
+    if (combinedChart) {
+        combinedChart.resetZoom();
+    }
+}
+
 function loadPricingData() {
     const hass = getHass();
     if (!hass || !hass.states) return;
@@ -3844,20 +3851,21 @@ function loadPricingData() {
             });
 
             datasets.push({
-                label: 'Spotová cena nákupu',
+                label: '📊 Spotová cena nákupu',
                 data: spotPriceData,
-                borderColor: '#42a5f5',
-                backgroundColor: 'rgba(66,165,245,0.1)',
-                borderWidth: 2,
+                borderColor: '#2196F3',
+                backgroundColor: 'rgba(33, 150, 243, 0.15)',
+                borderWidth: 3,
                 fill: false,
                 tension: 0.4,
                 type: 'line',
                 yAxisID: 'y-price',
                 pointRadius: pointRadii,
-                pointHoverRadius: 6,
+                pointHoverRadius: 7,
                 pointBackgroundColor: pointColors,
                 pointBorderColor: pointColors,
                 pointBorderWidth: 2,
+                order: 1,
                 // Datalabels s chytrým umístěním
                 datalabels: {
                     display: (context) => {
@@ -3897,15 +3905,18 @@ function loadPricingData() {
                         }
                         return 8;
                     },
-                    formatter: (value) => value.toFixed(2),
+                    formatter: (value) => value.toFixed(2) + ' Kč',
                     color: (context) => {
                         const price = context.dataset.data[context.dataIndex];
-                        return price <= bottomThreshold ? '#4CAF50' : '#F44336';
+                        return price <= bottomThreshold ? '#ffffff' : '#ffffff';
                     },
-                    font: { size: 9, weight: 'bold' },
-                    backgroundColor: 'rgba(0,0,0,0.75)',
-                    borderRadius: 3,
-                    padding: { top: 2, bottom: 2, left: 4, right: 4 }
+                    font: { size: 10, weight: 'bold' },
+                    backgroundColor: (context) => {
+                        const price = context.dataset.data[context.dataIndex];
+                        return price <= bottomThreshold ? 'rgba(76, 175, 80, 0.9)' : 'rgba(244, 67, 54, 0.9)';
+                    },
+                    borderRadius: 4,
+                    padding: { top: 3, bottom: 3, left: 5, right: 5 }
                 }
             });
         }
@@ -3926,17 +3937,19 @@ function loadPricingData() {
         }
         if (prices.length > 0) {
             datasets.push({
-                label: 'Výkupní cena',
+                label: '💰 Výkupní cena',
                 data: prices.map(p => p.price),
-                borderColor: '#66bb6a',
-                backgroundColor: 'rgba(102,187,106,0.1)',
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 187, 106, 0.15)',
                 borderWidth: 2,
                 fill: false,
                 type: 'line',
                 tension: 0.4,
                 yAxisID: 'y-price',
                 pointRadius: 0,
-                pointHoverRadius: 4
+                pointHoverRadius: 5,
+                order: 1,
+                borderDash: [5, 5]
             });
         }
     }
@@ -4015,73 +4028,77 @@ function loadPricingData() {
             const hasString2 = string2Data.some(v => v != null && v > 0);
             const stringCount = (hasString1 ? 1 : 0) + (hasString2 ? 1 : 0);
 
-            // Jemné sluneční barvy - velmi průhledné pozadí
+            // Jasné sluneční barvy pro lepší viditelnost
             const solarColors = {
-                string1: { border: 'rgba(255, 213, 79, 0.3)', bg: 'rgba(255, 213, 79, 0.08)' },  // světle žlutá, velmi průhledná
-                string2: { border: 'rgba(255, 183, 77, 0.3)', bg: 'rgba(255, 183, 77, 0.08)' }   // světle oranžová, velmi průhledná
+                string1: { border: 'rgba(255, 193, 7, 0.8)', bg: 'rgba(255, 193, 7, 0.2)' },  // zlatá žlutá
+                string2: { border: 'rgba(255, 152, 0, 0.8)', bg: 'rgba(255, 152, 0, 0.2)' }   // oranžová
             };
 
             if (stringCount === 1) {
                 // Pouze 1 string aktivní - zobrazit jen ten jeden (bez celkového součtu)
                 if (hasString1) {
                     datasets.push({
-                        label: 'Solar forecast',
+                        label: '☀️ Solární předpověď',
                         data: string1Data,
                         borderColor: solarColors.string1.border,
                         backgroundColor: solarColors.string1.bg,
-                        borderWidth: 1,
+                        borderWidth: 2,
                         fill: 'origin',
                         tension: 0.4,
                         type: 'line',
                         yAxisID: 'y-power',
                         pointRadius: 0,
-                        pointHoverRadius: 4
+                        pointHoverRadius: 5,
+                        order: 2
                     });
                 } else if (hasString2) {
                     datasets.push({
-                        label: 'Solar forecast',
+                        label: '☀️ Solární předpověď',
                         data: string2Data,
                         borderColor: solarColors.string2.border,
                         backgroundColor: solarColors.string2.bg,
-                        borderWidth: 1,
+                        borderWidth: 2,
                         fill: 'origin',
                         tension: 0.4,
                         type: 'line',
                         yAxisID: 'y-power',
                         pointRadius: 0,
-                        pointHoverRadius: 4
+                        pointHoverRadius: 5,
+                        order: 2
                     });
                 }
             } else if (stringCount === 2) {
                 // Oba stringy - zobrazit jako stacked area chart
                 datasets.push({
-                    label: 'String 2',
+                    label: '☀️ String 2',
                     data: string2Data,
                     borderColor: solarColors.string2.border,
                     backgroundColor: solarColors.string2.bg,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                     fill: 'origin',
                     tension: 0.4,
                     type: 'line',
                     yAxisID: 'y-power',
                     stack: 'solar',
                     pointRadius: 0,
-                    pointHoverRadius: 4
+                    pointHoverRadius: 5,
+                    order: 2
                 });
 
                 datasets.push({
-                    label: 'String 1',
+                    label: '☀️ String 1',
                     data: string1Data,
                     borderColor: solarColors.string1.border,
                     backgroundColor: solarColors.string1.bg,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                     fill: '-1',  // stack on previous dataset
                     tension: 0.4,
                     type: 'line',
                     yAxisID: 'y-power',
                     stack: 'solar',
                     pointRadius: 0,
-                    pointHoverRadius: 4
+                    pointHoverRadius: 5,
+                    order: 2
                 });
                 // Bez celkového součtu - stacked area chart ukazuje celkovou výšku
             }
@@ -4147,18 +4164,18 @@ function loadPricingData() {
                 }
             }
 
-            // Barvy pro vizualizaci - zvýšená viditelnost
+            // Vylepšené barvy pro viditelnost kapacity baterie
             const batteryColors = {
-                baseline: { border: '#90A4AE', bg: 'rgba(144, 164, 174, 0.15)' }, // šedá - zbývající kapacita (tlustá čára nahoře)
-                solar: { border: 'transparent', bg: 'rgba(255, 152, 0, 0.4)' },   // oranžová - solár (viditelnější)
-                grid: { border: 'transparent', bg: 'rgba(25, 118, 210, 0.4)' }    // modrá - síť (viditelnější)
+                baseline: { border: '#78909C', bg: 'rgba(120, 144, 156, 0.25)' }, // šedá - zbývající kapacita
+                solar: { border: 'transparent', bg: 'rgba(255, 167, 38, 0.6)' },   // výrazná oranžová - solár
+                grid: { border: 'transparent', bg: 'rgba(33, 150, 243, 0.6)' }    // výrazná modrá - síť
             };
 
             // POŘADÍ DATASETŮ určuje pořadí ve stacku (první = dole, poslední = nahoře)
             // 1. Grid area (dole) - nabíjení ze sítě, BEZ borderu
             if (gridStackData.some(v => v != null && v > 0)) {
                 datasets.push({
-                    label: 'Nabíjení ze sítě',
+                    label: '⚡ Nabíjení ze sítě',
                     data: gridStackData,
                     backgroundColor: batteryColors.grid.bg,
                     borderColor: batteryColors.grid.border,
@@ -4167,16 +4184,17 @@ function loadPricingData() {
                     fill: true,
                     tension: 0.4,
                     pointRadius: 0,
-                    pointHoverRadius: 4,
+                    pointHoverRadius: 5,
                     yAxisID: 'y-solar',
-                    stack: 'charging'
+                    stack: 'charging',
+                    order: 3
                 });
             }
 
             // 2. Solar area (uprostřed) - nabíjení ze solaru, BEZ borderu
             if (solarStackData.some(v => v != null && v > 0)) {
                 datasets.push({
-                    label: 'Nabíjení ze solaru',
+                    label: '☀️ Nabíjení ze solaru',
                     data: solarStackData,
                     backgroundColor: batteryColors.solar.bg,
                     borderColor: batteryColors.solar.border,
@@ -4185,15 +4203,16 @@ function loadPricingData() {
                     fill: true,
                     tension: 0.4,
                     pointRadius: 0,
-                    pointHoverRadius: 4,
+                    pointHoverRadius: 5,
                     yAxisID: 'y-solar',
-                    stack: 'charging'
+                    stack: 'charging',
+                    order: 3
                 });
             }
 
             // 3. Baseline area (nahoře) - zbývající kapacita s TLUSTOU ČÁROU
             datasets.push({
-                label: 'Zbývající kapacita',
+                label: '🔋 Zbývající kapacita',
                 data: baselineData,
                 backgroundColor: batteryColors.baseline.bg,
                 borderColor: batteryColors.baseline.border,
@@ -4202,9 +4221,10 @@ function loadPricingData() {
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
-                pointHoverRadius: 4,
+                pointHoverRadius: 5,
                 yAxisID: 'y-solar',
-                stack: 'charging'
+                stack: 'charging',
+                order: 3
             });
         }
     }
@@ -4225,10 +4245,69 @@ function loadPricingData() {
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { labels: { color: '#ffffff', font: { size: 11 } } },
-                    tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#ffffff', bodyColor: '#ffffff' },
+                    legend: {
+                        labels: {
+                            color: '#ffffff',
+                            font: { size: 12, weight: '500' },
+                            padding: 15,
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        },
+                        position: 'top'
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.9)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        titleFont: { size: 13, weight: 'bold' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 6,
+                        displayColors: true,
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                if (tooltipItems.length > 0) {
+                                    const date = new Date(tooltipItems[0].parsed.x);
+                                    return date.toLocaleString('cs-CZ', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    });
+                                }
+                                return '';
+                            }
+                        }
+                    },
                     datalabels: {
                         display: false // Vypnout globálně, povolit jen pro specifické datasety
+                    },
+                    zoom: {
+                        zoom: {
+                            wheel: {
+                                enabled: true,
+                                modifierKey: null // Zoom kolečkem bez modifikátorů
+                            },
+                            drag: {
+                                enabled: true, // Drag-to-zoom jako v Grafaně
+                                backgroundColor: 'rgba(33, 150, 243, 0.3)',
+                                borderColor: 'rgba(33, 150, 243, 0.8)',
+                                borderWidth: 2
+                            },
+                            pinch: {
+                                enabled: true // Touch zoom pro mobily
+                            },
+                            mode: 'x' // Zoom jen na X ose (časové ose)
+                        },
+                        pan: {
+                            enabled: true,
+                            mode: 'x',
+                            modifierKey: 'shift' // Pan s Shift+drag
+                        },
+                        limits: {
+                            x: { minRange: 3600000 } // Min 1 hodina (v milisekundách)
+                        }
                     }
                 },
                 scales: {
@@ -4245,33 +4324,60 @@ function loadPricingData() {
                             color: getTextColor(),
                             maxRotation: 45,
                             minRotation: 45,
-                            font: { size: 10 },
+                            font: { size: 11 },
                             maxTicksLimit: 20
                         },
-                        grid: { color: getGridColor() }
+                        grid: { color: getGridColor(), lineWidth: 1 }
                     },
                     'y-price': {
                         type: 'linear',
                         position: 'left',
-                        ticks: { color: '#42a5f5', callback: function(value) { return value.toFixed(2) + ' Kč'; } },
-                        grid: { color: 'rgba(66,165,245,0.2)' },
-                        title: { display: true, text: 'Cena (Kč/kWh)', color: '#42a5f5' }
+                        ticks: {
+                            color: '#2196F3',
+                            font: { size: 11, weight: '500' },
+                            callback: function(value) { return value.toFixed(2) + ' Kč'; }
+                        },
+                        grid: { color: 'rgba(33, 150, 243, 0.15)', lineWidth: 1 },
+                        title: {
+                            display: true,
+                            text: '💰 Cena (Kč/kWh)',
+                            color: '#2196F3',
+                            font: { size: 13, weight: 'bold' }
+                        }
                     },
                     'y-solar': {
                         type: 'linear',
                         position: 'left',
                         stacked: true,  // POVOL STACKING pro grid + solar
-                        ticks: { color: '#00bcd4', callback: function(value) { return value.toFixed(1) + ' kWh'; } },
+                        ticks: {
+                            color: '#78909C',
+                            font: { size: 11, weight: '500' },
+                            callback: function(value) { return value.toFixed(1) + ' kWh'; }
+                        },
                         grid: { display: false },
-                        title: { display: true, text: 'Kapacita baterie (kWh)', color: '#00bcd4' }
+                        title: {
+                            display: true,
+                            text: '🔋 Kapacita baterie (kWh)',
+                            color: '#78909C',
+                            font: { size: 13, weight: 'bold' }
+                        }
                     },
                     'y-power': {
                         type: 'linear',
                         position: 'right',
                         stacked: true,
-                        ticks: { color: '#ffc107', callback: function(value) { return value.toFixed(2) + ' kW'; } },
+                        ticks: {
+                            color: '#FFA726',
+                            font: { size: 11, weight: '500' },
+                            callback: function(value) { return value.toFixed(2) + ' kW'; }
+                        },
                         grid: { display: false },
-                        title: { display: true, text: 'Výkon (kW)', color: '#ffc107' }
+                        title: {
+                            display: true,
+                            text: '☀️ Výkon (kW)',
+                            color: '#FFA726',
+                            font: { size: 13, weight: 'bold' }
+                        }
                     }
                 }
             }
