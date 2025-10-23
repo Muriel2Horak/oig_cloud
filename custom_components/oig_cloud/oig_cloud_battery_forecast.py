@@ -999,9 +999,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._sensor_type = sensor_type
         self._attr_device_info = device_info
-        self._charging_intervals: List[Dict[str, Any]] = []
-        self._total_energy_kwh = 0.0
-        self._total_cost_czk = 0.0
 
         # Načteme sensor config
         from .sensor_types import SENSOR_TYPES
@@ -1038,54 +1035,19 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         if state_class:
             self._attr_state_class = SensorStateClass(state_class)
 
-        # Inicializace hodnot
-        self._charging_intervals: List[Dict[str, Any]] = []
-        self._total_energy_kwh: float = 0.0
-        self._total_cost_czk: float = 0.0
+    def _calculate_charging_intervals(self) -> tuple[List[Dict[str, Any]], float, float]:
+        """Vypočítá intervaly nabíjení ze sítě z battery_forecast dat."""
+        # Načíst battery_forecast data z coordinátoru
+        if not self.coordinator.data:
+            return [], 0.0, 0.0
 
-    @property
-    def native_value(self) -> float:
-        """Vrátí stav senzoru - celková energie k nabití."""
-        return round(self._total_energy_kwh, 2) if self._total_energy_kwh > 0 else 0.0
+        battery_forecast = self.coordinator.data.get("battery_forecast")
+        if not battery_forecast or not isinstance(battery_forecast, dict):
+            return [], 0.0, 0.0
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Atributy s detaily nabíjení."""
-        return {
-            "charging_intervals": self._charging_intervals,
-            "total_energy_kwh": round(self._total_energy_kwh, 2),
-            "total_cost_czk": round(self._total_cost_czk, 2),
-            "interval_count": len(self._charging_intervals),
-            "is_charging_planned": len(self._charging_intervals) > 0,
-        }
-
-    async def async_update(self) -> None:
-        """Aktualizace dat ze battery_forecast sensoru."""
-        await super().async_update()
-
-        # Načíst battery forecast sensor
-        battery_forecast_id = f"sensor.oig_{self._box_id}_battery_forecast"
-        spot_price_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
-
-        battery_state = self.hass.states.get(battery_forecast_id)
-        spot_price_state = self.hass.states.get(spot_price_id)
-
-        if not battery_state or not battery_state.attributes:
-            _LOGGER.debug(
-                f"Battery forecast sensor {battery_forecast_id} not found or no attributes"
-            )
-            self._charging_intervals = []
-            self._total_energy_kwh = 0.0
-            self._total_cost_czk = 0.0
-            return
-
-        # Načíst timeline data
-        timeline_data = battery_state.attributes.get("timeline_data", [])
+        timeline_data = battery_forecast.get("timeline_data", [])
         if not timeline_data:
-            self._charging_intervals = []
-            self._total_energy_kwh = 0.0
-            self._total_cost_czk = 0.0
-            return
+            return [], 0.0, 0.0
 
         # Extrahovat intervaly s plánovaným nabíjením ze sítě
         charging_intervals = []
@@ -1116,16 +1078,28 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         total_energy += grid_charge_kwh
                         total_cost += cost_czk
                 except (ValueError, TypeError) as e:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
                     )
                     continue
 
-        self._charging_intervals = charging_intervals
-        self._total_energy_kwh = total_energy
-        self._total_cost_czk = total_cost
+        return charging_intervals, total_energy, total_cost
 
-        _LOGGER.debug(
-            f"Grid charging plan: intervals={len(charging_intervals)}, "
-            f"energy={total_energy:.2f} kWh, cost={total_cost:.2f} Kč"
-        )
+    @property
+    def native_value(self) -> float:
+        """Vrátí stav senzoru - celková energie k nabití."""
+        intervals, total_energy, _ = self._calculate_charging_intervals()
+        return round(total_energy, 2) if total_energy > 0 else 0.0
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Atributy s detaily nabíjení."""
+        intervals, total_energy, total_cost = self._calculate_charging_intervals()
+        
+        return {
+            "charging_intervals": intervals,
+            "total_energy_kwh": round(total_energy, 2),
+            "total_cost_czk": round(total_cost, 2),
+            "interval_count": len(intervals),
+            "is_charging_planned": len(intervals) > 0,
+        }
