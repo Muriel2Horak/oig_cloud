@@ -5618,30 +5618,24 @@ function loadPricingData() {
             }
         });
 
-        // OPRAVA: Inicializace zoom podle timeline dat z battery forecast
-        // Pokud máme timeline rozsah, použij ho. Jinak fallback na aktuální čas ± 12h
-        if (initialZoomStart && initialZoomEnd) {
-            combinedChart.options.scales.x.min = initialZoomStart;
-            combinedChart.options.scales.x.max = initialZoomEnd;
-            console.log('[Pricing] Initial zoom from timeline:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
-        } else {
-            // Fallback: aktuální čas ± 12h
-            const now = new Date();
-            const nowTime = now.getTime();
-            const twelveHours = 12 * 60 * 60 * 1000;
-
-            combinedChart.options.scales.x.min = nowTime - twelveHours;
-            combinedChart.options.scales.x.max = nowTime + twelveHours;
-            console.log('[Pricing] Initial zoom fallback (±12h from now):', new Date(nowTime - twelveHours), 'to', new Date(nowTime + twelveHours));
-        }
-
-        // DŮLEŽITÉ: Aplikovat zoom okamžitě pomocí update()
-        // Bez update() Chart.js čeká na další tick a zobrazí se default view
-        combinedChart.update('none'); // 'none' = bez animace, okamžitě
-        console.log('[Pricing] Initial zoom applied immediately');
-
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
+        
+        // OPRAVA: Nastavit zoom asynchronně PO dokončení inicializace Chart.js
+        // Chart.js zoom plugin se inicializuje asynchronně a přepisuje naše nastavení
+        // Použijeme requestAnimationFrame aby se zoom aplikoval až po prvním renderu
+        if (initialZoomStart && initialZoomEnd) {
+            requestAnimationFrame(() => {
+                if (!combinedChart) return; // Safety check
+                
+                combinedChart.options.scales.x.min = initialZoomStart;
+                combinedChart.options.scales.x.max = initialZoomEnd;
+                combinedChart.update('none'); // Aplikovat okamžitě bez animace
+                
+                console.log('[Pricing] Initial zoom applied after first render:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
+                updateChartDetailLevel(combinedChart);
+            });
+        }
     }
 
     // Attach card handlers only once
