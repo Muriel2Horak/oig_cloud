@@ -166,7 +166,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
             await store.async_save(config)
 
-            _LOGGER.info(f"Dashboard tiles config saved successfully: {len(config.get('tiles_left', []))} left, {len(config.get('tiles_right', []))} right")
+            _LOGGER.info(
+                f"Dashboard tiles config saved successfully: {len(config.get('tiles_left', []))} left, {len(config.get('tiles_right', []))} right"
+            )
 
         except json.JSONDecodeError as e:
             _LOGGER.error(f"Invalid JSON in dashboard tiles config: {e}")
@@ -193,7 +195,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=vol.Schema({vol.Required("config"): cv.string}),
         )
         _LOGGER.debug("Registered save_dashboard_tiles service")
-
 
 
 async def async_setup_entry_services_with_shield(

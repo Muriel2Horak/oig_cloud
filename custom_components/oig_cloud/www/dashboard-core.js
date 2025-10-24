@@ -5132,7 +5132,7 @@ function toggleTilesVisibility() {
     }
 
     tileManager.toggleVisibility();
-    
+
     const section = document.querySelector('.custom-tiles-section');
     if (section) {
         section.style.display = tileManager.isVisible() ? 'block' : 'none';
@@ -5153,7 +5153,7 @@ function resetAllTiles() {
     }
 
     tileManager.reset();
-    
+
     // Reset UI inputs
     document.getElementById('tiles-left-count').value = 6;
     document.getElementById('tiles-right-count').value = 6;
@@ -5163,10 +5163,12 @@ function resetAllTiles() {
  * Update tile controls UI (inputs visibility toggle button)
  */
 function updateTileControlsUI() {
+    if (!tileManager) return;
+
     // Update inputs
     const leftInput = document.getElementById('tiles-left-count');
     const rightInput = document.getElementById('tiles-right-count');
-    
+
     if (leftInput) {
         leftInput.value = tileManager.getTileCount('left');
     }
@@ -5177,7 +5179,19 @@ function updateTileControlsUI() {
     // Update visibility
     const section = document.querySelector('.custom-tiles-section');
     if (section) {
-        section.style.display = tileManager.isVisible() ? 'block' : 'none';
+        const isVisible = tileManager.isVisible();
+        section.style.display = isVisible ? 'block' : 'none';
+        console.log(`[Tiles] Section visibility updated: ${isVisible}`);
+    }
+
+    // Update toggle button text
+    const toggleBtn = document.getElementById('btn-tiles-toggle');
+    if (toggleBtn && tileManager.isVisible()) {
+        toggleBtn.style.background = 'rgba(76, 175, 80, 0.2)';
+        toggleBtn.style.borderColor = 'rgba(76, 175, 80, 0.5)';
+    } else if (toggleBtn) {
+        toggleBtn.style.background = 'var(--button-bg)';
+        toggleBtn.style.borderColor = 'var(--button-border)';
     }
 }
 
@@ -5208,7 +5222,7 @@ function renderTilesBlock(side) {
 
     // Get tile count for this side
     const tileCount = tileManager.getTileCount(side);
-    
+
     // Hide block if count is 0
     if (tileCount === 0) {
         blockElement.style.display = 'none';

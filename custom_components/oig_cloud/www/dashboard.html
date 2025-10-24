@@ -93,61 +93,39 @@
                 </div>
             </div>
 
-            <!-- Custom Tiles Settings -->
-            <div class="control-section">
-                <h4>📊 Vlastní dlaždice
-                    <span class="info-bubble" onclick="event.stopPropagation()">❓
-                        <span class="info-bubble-tooltip">
-                            <strong>Vlastní dlaždice</strong>
-                            Přidejte si vlastní entity nebo tlačítka pod hlavní dashboard. Můžete zobrazit teploty, spotřeby, nebo ovládat zařízení.
-                            <ul>
-                                <li><strong>Entity:</strong> Zobrazí hodnotu senzoru</li>
-                                <li><strong>Tlačítka:</strong> Přepínají zařízení (světla, zásuvky)</li>
-                            </ul>
-                            Nastavte počet dlaždic pro levý a pravý blok (0-6 každý).
-                        </span>
-                    </span>
-                </h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                    <div>
-                        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-                            Levý blok (0-6):
-                        </label>
-                        <input type="number" 
-                               id="tiles-left-count" 
-                               min="0" 
-                               max="6" 
-                               value="6"
-                               onchange="updateTileCount('left', this.value)"
-                               style="width: 100%; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 6px; color: var(--text-primary);">
+            <!-- Custom Tiles Settings - KOMPAKTNÍ -->
+            <div class="control-section" style="padding: 10px 15px;">
+                <h4 style="margin-bottom: 8px; font-size: 14px;">📊 Vlastní dlaždice</h4>
+                <div style="display: grid; grid-template-columns: 80px 80px 1fr; gap: 8px; align-items: center;">
+                    <input type="number"
+                           id="tiles-left-count"
+                           min="0"
+                           max="6"
+                           value="6"
+                           onchange="updateTileCount('left', this.value)"
+                           title="Počet dlaždic vlevo (0-6)"
+                           style="width: 100%; padding: 6px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; color: var(--text-primary); text-align: center;">
+                    <input type="number"
+                           id="tiles-right-count"
+                           min="0"
+                           max="6"
+                           value="6"
+                           onchange="updateTileCount('right', this.value)"
+                           title="Počet dlaždic vpravo (0-6)"
+                           style="width: 100%; padding: 6px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; color: var(--text-primary); text-align: center;">
+                    <div style="display: flex; gap: 6px;">
+                        <button onclick="toggleTilesVisibility()"
+                                id="btn-tiles-toggle"
+                                style="flex: 1; padding: 6px 8px; background: var(--button-bg); border: 1px solid var(--button-border); border-radius: 4px; cursor: pointer; font-size: 12px; color: var(--text-primary);"
+                                title="Zobrazit/skrýt sekci">
+                            👁️
+                        </button>
+                        <button onclick="resetAllTiles()"
+                                style="flex: 1; padding: 6px 8px; background: rgba(244, 67, 54, 0.2); border: 1px solid rgba(244, 67, 54, 0.5); border-radius: 4px; cursor: pointer; font-size: 12px; color: var(--text-primary);"
+                                title="Smazat všechny dlaždice">
+                            🗑️
+                        </button>
                     </div>
-                    <div>
-                        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-                            Pravý blok (0-6):
-                        </label>
-                        <input type="number" 
-                               id="tiles-right-count" 
-                               min="0" 
-                               max="6" 
-                               value="6"
-                               onchange="updateTileCount('right', this.value)"
-                               style="width: 100%; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 6px; color: var(--text-primary);">
-                    </div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button onclick="toggleTilesVisibility()" 
-                            id="btn-tiles-toggle"
-                            class="button-group"
-                            style="flex: 1; padding: 8px; background: var(--button-bg); border: 1px solid var(--button-border); border-radius: 6px; cursor: pointer; font-size: 13px;"
-                            title="Zobrazit/skrýt sekci vlastních dlaždic">
-                        👁️ Zobrazit/Skrýt
-                    </button>
-                    <button onclick="resetAllTiles()" 
-                            class="button-group"
-                            style="flex: 1; padding: 8px; background: rgba(244, 67, 54, 0.2); border: 1px solid rgba(244, 67, 54, 0.5); border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-primary);"
-                            title="Smazat všechny dlaždice a vrátit na výchozí">
-                        🗑️ Reset
-                    </button>
                 </div>
             </div>
 

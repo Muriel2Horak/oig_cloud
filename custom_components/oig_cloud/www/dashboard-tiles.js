@@ -27,10 +27,10 @@ class DashboardTileManager {
 
         // Default konfigurace - 6 prázdných dlaždic na každé straně
         const defaultConfig = this.getDefaultConfig();
-        
+
         // Pokusit se načíst z HA storage (async, takže to může trvat)
         this.loadFromHAStorage();
-        
+
         return defaultConfig;
     }
 
@@ -49,7 +49,7 @@ class DashboardTileManager {
             // const result = await hass.callWS({
             //     type: 'oig_cloud/get_dashboard_tiles'
             // });
-            
+
             console.log('ℹ️ HA storage load not yet implemented');
         } catch (e) {
             console.error('❌ Failed to load from HA storage:', e);
@@ -65,7 +65,7 @@ class DashboardTileManager {
             tiles_right: Array(6).fill(null),
             left_count: 6,
             right_count: 6,
-            visible: true,
+            visible: true,  // ZMĚNĚNO: Default je nyní TRUE (viditelné)
             version: 1
         };
     }
@@ -186,7 +186,11 @@ class DashboardTileManager {
      * Sync konfigurace do Home Assistant
      */
     async syncToHA() {
-        const hass = window.hass || this.hass;
+        // Try multiple methods to get hass
+        const hass = (typeof getHass === 'function' ? getHass() : null) || 
+                     window.hass || 
+                     this.hass;
+                     
         if (!hass) {
             console.warn('⚠️ Cannot sync to HA: hass not available');
             return;
@@ -194,12 +198,12 @@ class DashboardTileManager {
 
         try {
             console.log('☁️ Syncing config to HA...');
-            
+
             // Volání služby s celou konfigurací jako JSON string
             await hass.callService('oig_cloud', 'save_dashboard_tiles', {
                 config: JSON.stringify(this.config)
             });
-            
+
             console.log('✅ Config synced to HA successfully');
         } catch (e) {
             console.error('❌ Failed to sync to HA:', e);
