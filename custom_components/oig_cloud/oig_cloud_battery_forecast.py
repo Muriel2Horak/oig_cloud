@@ -190,8 +190,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "✅ Battery forecast data saved to coordinator - grid_charging_planned will update"
                 )
 
-                # Trigger update všech coordinator sensorů (včetně grid_charging_planned)
-                self.coordinator.async_set_updated_data(self.coordinator.data)
+                # Data jsou už v coordinator.battery_forecast_data
+                # Grid charging sensor je závislý na coordinator update cycle
+                # NEMĚNÍME coordinator.data - jen přidáváme battery_forecast_data
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
