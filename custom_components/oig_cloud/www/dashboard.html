@@ -218,7 +218,22 @@
                      data-entity="grid_charging_planned">
                     <span style="font-size: 12px;">⚡🔌</span>
                 </div>
-                <div class="node-icon battery-icon-dynamic" id="battery-icon-dynamic">🔋</div>
+                <div class="node-icon">
+                    <svg class="battery-icon-svg" id="battery-icon-svg" viewBox="0 0 50 80" width="50" height="80">
+                        <!-- Baterie obrys -->
+                        <rect x="5" y="10" width="40" height="60" rx="4" ry="4" 
+                              class="battery-outline" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <!-- Terminál nahoře -->
+                        <rect x="18" y="2" width="14" height="8" rx="2" ry="2" 
+                              class="battery-terminal" fill="currentColor"/>
+                        <!-- Vyplnění baterie (zdola nahoru) -->
+                        <rect x="8" y="13" width="34" height="54" rx="2" ry="2" 
+                              id="battery-fill" class="battery-fill"/>
+                        <!-- Grid charging blesk (skrytý, zobrazí se při nabíjení ze sítě) -->
+                        <text x="25" y="45" class="battery-lightning" id="battery-lightning" 
+                              text-anchor="middle" dominant-baseline="middle">⚡</text>
+                    </svg>
+                </div>
                 <div class="node-label">Baterie</div>
                 <div class="node-value entity-value" id="battery-soc"
                      data-entity="batt_bat_c"
@@ -228,9 +243,6 @@
                      data-entity="batt_batt_comp_p"
                      data-tooltip="Aktuální výkon baterie"
                      onclick="openEntityDialog(getSensorId('batt_batt_comp_p'))">-- W</div>
-                <div class="battery-gauge">
-                    <div class="battery-gauge-fill" id="battery-gauge"></div>
-                </div>
                 <div class="node-status" id="battery-status">--</div>
                 <div class="node-details">
                     <div class="detail-group">

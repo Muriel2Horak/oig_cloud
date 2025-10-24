@@ -1749,23 +1749,56 @@
             font-size: 9px;
         }
 
-        /* Battery Gauge */
-        .battery-gauge {
-            width: 100%;
-            height: 8px;
-            background: var(--button-bg);
-            border-radius: 4px;
-            margin-top: 6px;
-            margin-bottom: 4px;
-            overflow: hidden;
-            position: relative;
+        /* Battery SVG Icon */
+        .battery-icon-svg {
+            display: block;
+            margin: 0 auto;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
         }
 
-        .battery-gauge-fill {
-            height: 100%;
-            background: var(--battery-gauge-gradient);
-            border-radius: 4px;
-            transition: width 0.5s ease, background 0.5s ease;
+        .battery-outline {
+            stroke: var(--text-primary);
+        }
+
+        .battery-terminal {
+            fill: var(--text-primary);
+        }
+
+        .battery-fill {
+            fill: #666;
+            transition: height 0.8s ease, fill 0.5s ease, y 0.8s ease;
+            transform-origin: bottom;
+        }
+
+        /* Stavy baterie */
+        .battery-fill.charging {
+            fill: #4caf50;
+        }
+
+        .battery-fill.discharging {
+            fill: #ff5722;
+        }
+
+        .battery-fill.idle {
+            fill: #757575;
+        }
+
+        /* Grid charging blesk */
+        .battery-lightning {
+            fill: #ffd700;
+            font-size: 24px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .battery-lightning.active {
+            opacity: 1;
+            animation: lightning-blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes lightning-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
 
         /* Warning-capable values (Bypass, Distribution) */
@@ -3244,9 +3277,13 @@
             color: #f57c00;
         }
 
-        /* Battery gauge */
-        body.light-theme .battery-gauge {
-            background: rgba(0, 0, 0, 0.1);
+        /* Battery SVG - light theme */
+        body.light-theme .battery-outline {
+            stroke: #1a1a1a;
+        }
+
+        body.light-theme .battery-terminal {
+            fill: #1a1a1a;
         }
 
         /* Phase displays */
