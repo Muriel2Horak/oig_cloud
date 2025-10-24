@@ -3737,6 +3737,9 @@ function init() {
             node.style.cursor = 'pointer';
         });
     }
+
+    // === CUSTOM TILES INITIALIZATION ===
+    initCustomTiles();
 }
 
 // Wait for DOM
@@ -5068,4 +5071,309 @@ function setupPriceCardHandlers() {
     priceCardHandlersAttached = true;
     console.log('[Card] Event delegation handler attached successfully');
 }
+
+// === CUSTOM TILES RENDERING ===
+
+let tileManager = null;
+let tileDialog = null;
+
+/**
+ * Initialize custom tiles system
+ */
+function initCustomTiles() {
+    console.log('[Tiles] Initializing custom tiles system...');
+
+    // Initialize tile manager
+    tileManager = new DashboardTileManager();
+    window.tileManager = tileManager; // Export for dialog access
+
+    // Initialize tile dialog
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Tiles] Cannot initialize dialog - no HA connection');
+        setTimeout(initCustomTiles, 1000); // Retry
+        return;
+    }
+
+    tileDialog = new TileConfigDialog(hass, tileManager);
+    window.tileDialog = tileDialog; // Export for onclick handlers
+
+    // Listen for config changes
+    tileManager.addChangeListener(() => {
+        console.log('[Tiles] Config changed, re-rendering...');
+        renderAllTiles();
+        updateTileControlsUI();
+    });
+
+    // Initial render
+    renderAllTiles();
+    updateTileControlsUI();
+}
+
+/**
+ * Update tile count from UI input
+ */
+function updateTileCount(side, value) {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    tileManager.setTileCount(side, value);
+}
+
+/**
+ * Toggle tiles section visibility
+ */
+function toggleTilesVisibility() {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    tileManager.toggleVisibility();
+    
+    const section = document.querySelector('.custom-tiles-section');
+    if (section) {
+        section.style.display = tileManager.isVisible() ? 'block' : 'none';
+    }
+}
+
+/**
+ * Reset all tiles to default
+ */
+function resetAllTiles() {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    if (!confirm('Opravdu smazat všechny dlaždice a vrátit nastavení na výchozí?')) {
+        return;
+    }
+
+    tileManager.reset();
+    
+    // Reset UI inputs
+    document.getElementById('tiles-left-count').value = 6;
+    document.getElementById('tiles-right-count').value = 6;
+}
+
+/**
+ * Update tile controls UI (inputs visibility toggle button)
+ */
+function updateTileControlsUI() {
+    // Update inputs
+    const leftInput = document.getElementById('tiles-left-count');
+    const rightInput = document.getElementById('tiles-right-count');
+    
+    if (leftInput) {
+        leftInput.value = tileManager.getTileCount('left');
+    }
+    if (rightInput) {
+        rightInput.value = tileManager.getTileCount('right');
+    }
+
+    // Update visibility
+    const section = document.querySelector('.custom-tiles-section');
+    if (section) {
+        section.style.display = tileManager.isVisible() ? 'block' : 'none';
+    }
+}
+
+/**
+ * Render all tiles (both blocks)
+ */
+function renderAllTiles() {
+    renderTilesBlock('left');
+    renderTilesBlock('right');
+}
+
+/**
+ * Render one tiles block
+ * @param {string} side - 'left' or 'right'
+ */
+function renderTilesBlock(side) {
+    const blockElement = document.getElementById(`tiles-${side}`);
+    if (!blockElement) {
+        console.warn(`[Tiles] Block element not found: tiles-${side}`);
+        return;
+    }
+
+    const gridElement = blockElement.querySelector('.tiles-grid');
+    if (!gridElement) {
+        console.warn(`[Tiles] Grid element not found in tiles-${side}`);
+        return;
+    }
+
+    // Get tile count for this side
+    const tileCount = tileManager.getTileCount(side);
+    
+    // Hide block if count is 0
+    if (tileCount === 0) {
+        blockElement.style.display = 'none';
+        return;
+    } else {
+        blockElement.style.display = 'block';
+    }
+
+    // Get configuration
+    const tiles = tileManager.getTiles(side);
+
+    // Render tiles up to count
+    gridElement.innerHTML = '';
+    for (let i = 0; i < tileCount; i++) {
+        const tileConfig = tiles[i];
+        const tileElement = renderTile(side, i, tileConfig);
+        gridElement.appendChild(tileElement);
+    }
+
+    console.log(`[Tiles] Rendered ${side} block with ${tileCount} slots (${tiles.filter(t => t !== null).length} configured)`);
+}
+
+/**
+ * Render single tile
+ * @param {string} side - 'left' or 'right'
+ * @param {number} index - Tile index (0-5)
+ * @param {object|null} config - Tile configuration
+ * @returns {HTMLElement} - Tile element
+ */
+function renderTile(side, index, config) {
+    const tile = document.createElement('div');
+    tile.className = 'dashboard-tile';
+    tile.dataset.side = side;
+    tile.dataset.index = index.toString();
+
+    if (!config) {
+        // Placeholder tile
+        tile.classList.add('tile-placeholder');
+        tile.innerHTML = `
+            <div class="tile-placeholder-content" onclick="window.tileDialog.open(${index}, '${side}')">
+                <div class="tile-placeholder-icon">➕</div>
+                <div class="tile-placeholder-text">Přidat dlaždici</div>
+            </div>
+        `;
+    } else if (config.type === 'entity') {
+        // Entity tile
+        tile.classList.add('tile-entity');
+        tile.innerHTML = renderEntityTile(config);
+    } else if (config.type === 'button') {
+        // Button tile
+        tile.classList.add('tile-button');
+        tile.innerHTML = renderButtonTile(config);
+    }
+
+    // Add remove button (visible on hover)
+    if (config) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'tile-remove';
+        removeBtn.innerHTML = '✕';
+        removeBtn.title = 'Odstranit dlaždici';
+        removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (confirm('Opravdu odstranit tuto dlaždici?')) {
+                tileManager.removeTile(side, index);
+            }
+        };
+        tile.appendChild(removeBtn);
+    }
+
+    return tile;
+}
+
+/**
+ * Render entity tile content
+ * @param {object} config - Entity tile config
+ * @returns {string} - HTML string
+ */
+function renderEntityTile(config) {
+    const hass = getHass();
+    if (!hass || !hass.states) {
+        return '<div class="tile-error">HA nedostupné</div>';
+    }
+
+    const state = hass.states[config.entity_id];
+    if (!state) {
+        return `<div class="tile-error">Entita nenalezena:<br>${config.entity_id}</div>`;
+    }
+
+    const label = config.label || state.attributes.friendly_name || config.entity_id;
+    const icon = config.icon || state.attributes.icon || '📊';
+    const value = state.state;
+    const unit = state.attributes.unit_of_measurement || '';
+    const color = config.color || '#03A9F4';
+
+    return `
+        <div class="tile-content" style="border-left: 3px solid ${color};">
+            <div class="tile-icon" style="color: ${color};">${icon}</div>
+            <div class="tile-label">${label}</div>
+            <div class="tile-value">${value} ${unit}</div>
+        </div>
+    `;
+}
+
+/**
+ * Render button tile content
+ * @param {object} config - Button tile config
+ * @returns {string} - HTML string
+ */
+function renderButtonTile(config) {
+    const hass = getHass();
+    if (!hass || !hass.states) {
+        return '<div class="tile-error">HA nedostupné</div>';
+    }
+
+    const state = hass.states[config.entity_id];
+    if (!state) {
+        return `<div class="tile-error">Entita nenalezena:<br>${config.entity_id}</div>`;
+    }
+
+    const label = config.label || state.attributes.friendly_name || config.entity_id;
+    const icon = config.icon || state.attributes.icon || '🔘';
+    const color = config.color || '#FFC107';
+    const action = config.action || 'toggle';
+    const isOn = state.state === 'on';
+
+    const buttonClass = isOn ? 'tile-button-active' : 'tile-button-inactive';
+
+    return `
+        <div class="tile-content ${buttonClass}"
+             style="border-left: 3px solid ${color};"
+             onclick="executeTileButtonAction('${config.entity_id}', '${action}')">
+            <div class="tile-icon" style="color: ${color};">${icon}</div>
+            <div class="tile-label">${label}</div>
+            <div class="tile-state">${isOn ? 'ON' : 'OFF'}</div>
+        </div>
+    `;
+}
+
+/**
+ * Execute button action
+ * @param {string} entityId - Entity ID
+ * @param {string} action - Action (toggle, turn_on, turn_off)
+ */
+function executeTileButtonAction(entityId, action) {
+    const hass = getHass();
+    if (!hass) {
+        console.error('[Tiles] Cannot execute action - no HA connection');
+        return;
+    }
+
+    const domain = entityId.split('.')[0];
+    const service = action === 'toggle' ? 'toggle' : action;
+
+    console.log(`[Tiles] Calling ${domain}.${service} on ${entityId}`);
+
+    hass.callService(domain, service, { entity_id: entityId })
+        .then(() => {
+            console.log(`[Tiles] Service call successful`);
+            // Re-render tiles after state change (debounced)
+            setTimeout(renderAllTiles, 500);
+        })
+        .catch((err) => {
+            console.error(`[Tiles] Service call failed:`, err);
+            alert(`Chyba při volání služby: ${err.message}`);
+        });
+}
+
 

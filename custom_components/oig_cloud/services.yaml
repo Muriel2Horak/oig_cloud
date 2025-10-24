@@ -197,3 +197,20 @@ update_solar_forecast:
           filter:
             integration: oig_cloud
             domain: sensor
+
+# Dashboard tiles persistence
+save_dashboard_tiles:
+  name: "💾 Uložit konfiguraci dlaždic"
+  description: |
+    Uloží konfiguraci vlastních dlaždic z OIG Dashboard do integrace.
+    Používá se automaticky dashboardem pro synchronizaci mezi prohlížeči/zařízeními.
+    Můžete volat i manuálně pro zálohu konfigurace.
+  fields:
+    config:
+      name: "Konfigurace dlaždic"
+      description: "JSON string s konfigurací dlaždic (tiles_left, tiles_right, counts, visibility)"
+      required: true
+      example: '{"tiles_left": [], "tiles_right": [], "left_count": 6, "right_count": 6, "visible": true, "version": 1}'
+      selector:
+        text:
+          multiline: true

@@ -109,6 +109,9 @@ FORMAT_BATTERY = {"Nenabíjet": 0, "Nabíjet": 1}
 
 tracer = trace.get_tracer(__name__)
 
+# Storage key pro dashboard tiles
+STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
+
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Nastavení základních služeb pro OIG Cloud."""
@@ -135,6 +138,43 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             else:
                 _LOGGER.debug(f"Config entry {entry_id} nemá solární předpověď")
 
+    async def handle_save_dashboard_tiles(call: ServiceCall) -> None:
+        """Zpracování služby pro uložení konfigurace dashboard tiles."""
+        import json
+
+        config_str = call.data.get("config")
+        if not config_str:
+            _LOGGER.error("Dashboard tiles config is empty")
+            return
+
+        try:
+            # Validace JSON
+            config = json.loads(config_str)
+
+            # Základní validace struktury
+            if not isinstance(config, dict):
+                raise ValueError("Config must be a JSON object")
+
+            required_keys = ["tiles_left", "tiles_right", "version"]
+            for key in required_keys:
+                if key not in config:
+                    raise ValueError(f"Missing required key: {key}")
+
+            # Uložení do HA storage
+            from homeassistant.helpers.storage import Store
+
+            store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+            await store.async_save(config)
+
+            _LOGGER.info(f"Dashboard tiles config saved successfully: {len(config.get('tiles_left', []))} left, {len(config.get('tiles_right', []))} right")
+
+        except json.JSONDecodeError as e:
+            _LOGGER.error(f"Invalid JSON in dashboard tiles config: {e}")
+        except ValueError as e:
+            _LOGGER.error(f"Invalid dashboard tiles config structure: {e}")
+        except Exception as e:
+            _LOGGER.error(f"Failed to save dashboard tiles config: {e}")
+
     # Registrace služby pouze pokud ještě není registrovaná
     if not hass.services.has_service(DOMAIN, "update_solar_forecast"):
         hass.services.async_register(
@@ -144,6 +184,16 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=SOLAR_FORECAST_UPDATE_SCHEMA,
         )
         _LOGGER.debug(f"Zaregistrovány základní služby pro {DOMAIN}")
+
+    if not hass.services.has_service(DOMAIN, "save_dashboard_tiles"):
+        hass.services.async_register(
+            DOMAIN,
+            "save_dashboard_tiles",
+            handle_save_dashboard_tiles,
+            schema=vol.Schema({vol.Required("config"): cv.string}),
+        )
+        _LOGGER.debug("Registered save_dashboard_tiles service")
+
 
 
 async def async_setup_entry_services_with_shield(
@@ -602,6 +652,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     """Odregistrace služeb při unload integrace."""
     services_to_remove = [
         "update_solar_forecast",
+        "save_dashboard_tiles",
         "set_box_mode",
         "set_grid_delivery",
         "set_boiler_mode",
