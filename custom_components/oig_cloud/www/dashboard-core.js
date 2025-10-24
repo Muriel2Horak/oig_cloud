@@ -3880,18 +3880,26 @@ function zoomToTimeRange(startTime, endTime, cardElement = null) {
 
     // ZOOM IN na nový interval
     console.log('[Zoom] ZOOM IN to range:', startTime, '->', endTime);
+    console.log('[Zoom] Start Date:', start, 'timestamp:', zoomStart);
+    console.log('[Zoom] End Date:', end, 'timestamp:', zoomEnd);
+    console.log('[Zoom] Time range (ms):', zoomEnd - zoomStart, 'hours:', (zoomEnd - zoomStart) / 3600000);
 
     try {
         // Resetovat nejdříve aby zoom fungoval správně
         combinedChart.resetZoom('none');
 
-        // Pak zoomovat
+        // OPRAVA: Chart.js zoom očekává timestamp v milisekundách
+        // ale musí být v UTC timezone, ne local time
         combinedChart.zoom({
             x: {
                 min: zoomStart,
                 max: zoomEnd
             }
         });
+
+        // Debug: Co Chart.js vidí na ose X
+        console.log('[Zoom] Chart X scale min:', combinedChart.scales.x.min);
+        console.log('[Zoom] Chart X scale max:', combinedChart.scales.x.max);
 
         // Uložit aktuální zoom
         currentZoomRange = { start: zoomStart, end: zoomEnd };
@@ -4939,7 +4947,7 @@ function setupPriceCardHandlers() {
     // Nastavit cursor pointer na všechny cenové karty (pokud existují)
     const cardIds = [
         'cheapest-buy-price',
-        'expensive-buy-price', 
+        'expensive-buy-price',
         'best-export-price',
         'worst-export-price'
     ];
