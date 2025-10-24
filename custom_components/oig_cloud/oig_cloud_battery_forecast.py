@@ -1358,7 +1358,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         # DŮLEŽITÉ: battery_capacity v timeline je PŘED grid charge!
                         # Musíme přičíst grid_charge_kwh pro správné porovnání
                         is_actually_charging = False
-                        actual_battery_charge = 0.0  # Skutečný přírůstek kapacity
 
                         if prev_battery_capacity is not None:
                             # Kapacita PO grid charge = kapacita před + grid charge
@@ -1366,9 +1365,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             capacity_increase = (
                                 capacity_after_charging - prev_battery_capacity
                             )
-                            is_actually_charging = capacity_increase > 0.01  # tolerance
-                            if is_actually_charging:
-                                actual_battery_charge = capacity_increase
+                            # Pokud kapacita vzrostla, baterie se nabíjí
+                            # (tolerance 0.01 kWh pro zaokrouhlovací chyby)
+                            is_actually_charging = capacity_increase > 0.01
 
                         # Přidat interval do seznamu (všechny s grid_charge > 0)
                         interval_data = {
@@ -1383,13 +1382,15 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
                         # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu
                         if is_actually_charging:
-                            # Cena za skutečnou energii do baterie (ne celý grid)
-                            cost_czk = actual_battery_charge * spot_price_czk
+                            # Grid energie jde do baterie (grid_charge_kwh)
+                            # Může pokrýt i současnou spotřebu, ale to nás nezajímá
+                            # Chceme vědět kolik energie šlo DO BATERIE
+                            cost_czk = grid_charge_kwh * spot_price_czk
                             interval_data["cost_czk"] = round(cost_czk, 2)
                             interval_data["battery_charge_kwh"] = round(
-                                actual_battery_charge, 3
-                            )
-                            total_energy += actual_battery_charge
+                                grid_charge_kwh, 3
+                            )  # Energie z gridu
+                            total_energy += grid_charge_kwh
                             total_cost += cost_czk
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
