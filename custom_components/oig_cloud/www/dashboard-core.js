@@ -5608,6 +5608,18 @@ function loadPricingData() {
             }
         });
 
+        // OPRAVA: Inicializace zoom na aktuální čas ± 12h
+        // Aby graf nezačínal na začátku dat, ale okolo aktuálního času
+        const now = new Date();
+        const nowTime = now.getTime();
+        const twelveHours = 12 * 60 * 60 * 1000;
+        
+        // Nastavit výchozí zoom na aktuální čas ± 12h
+        combinedChart.options.scales.x.min = nowTime - twelveHours;
+        combinedChart.options.scales.x.max = nowTime + twelveHours;
+        
+        console.log('[Pricing] Initial zoom set:', new Date(nowTime - twelveHours), 'to', new Date(nowTime + twelveHours));
+
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
     }
