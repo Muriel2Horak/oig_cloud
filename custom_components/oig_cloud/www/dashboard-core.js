@@ -3865,7 +3865,12 @@ function zoomToTimeRange(startTime, endTime, cardElement = null) {
         Math.abs(currentZoomRange.start - zoomStart) < 60000 &&
         Math.abs(currentZoomRange.end - zoomEnd) < 60000) {
         console.log('[Zoom] Already zoomed to this range -> ZOOM OUT');
-        combinedChart.resetZoom();
+        
+        // Reset zoom: odstranit scale limits
+        delete combinedChart.options.scales.x.min;
+        delete combinedChart.options.scales.x.max;
+        combinedChart.update('none');
+        
         currentZoomRange = null;
 
         // Odebrat zoom-active třídu z aktivní karty
@@ -3880,26 +3885,20 @@ function zoomToTimeRange(startTime, endTime, cardElement = null) {
 
     // ZOOM IN na nový interval
     console.log('[Zoom] ZOOM IN to range:', startTime, '->', endTime);
-    console.log('[Zoom] Start Date:', start, 'timestamp:', zoomStart);
-    console.log('[Zoom] End Date:', end, 'timestamp:', zoomEnd);
-    console.log('[Zoom] Time range (ms):', zoomEnd - zoomStart, 'hours:', (zoomEnd - zoomStart) / 3600000);
+    console.log('[Zoom] Calculated zoom:', new Date(zoomStart), '->', new Date(zoomEnd));
 
     try {
-        // Resetovat nejdříve aby zoom fungoval správně
-        combinedChart.resetZoom('none');
+        // OPRAVA: zoom() metoda nefunguje správně pro absolutní rozsah
+        // Místo toho nastavíme přímo scale limits a zavoláme update()
+        
+        // Nastavit min/max na scale
+        combinedChart.options.scales.x.min = zoomStart;
+        combinedChart.options.scales.x.max = zoomEnd;
+        
+        // Aplikovat změny
+        combinedChart.update('none'); // 'none' = bez animace, okamžitě
 
-        // OPRAVA: Chart.js zoom očekává timestamp v milisekundách
-        // ale musí být v UTC timezone, ne local time
-        combinedChart.zoom({
-            x: {
-                min: zoomStart,
-                max: zoomEnd
-            }
-        });
-
-        // Debug: Co Chart.js vidí na ose X
-        console.log('[Zoom] Chart X scale min:', combinedChart.scales.x.min);
-        console.log('[Zoom] Chart X scale max:', combinedChart.scales.x.max);
+        console.log('[Zoom] Chart X scale after update - min:', combinedChart.scales.x.min, 'max:', combinedChart.scales.x.max);
 
         // Uložit aktuální zoom
         currentZoomRange = { start: zoomStart, end: zoomEnd };
