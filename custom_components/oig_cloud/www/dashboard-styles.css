@@ -3380,7 +3380,7 @@
     padding: 6px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     pointer-events: auto; /* Bloky jsou klikatelné */
-    width: 280px;
+    width: 350px; /* Širší - 280px → 350px */
 }
 
 /* Levý blok - levý horní roh */
@@ -3494,6 +3494,16 @@
 .tile-support-bottom-left {
     bottom: 2px;
     left: 2px;
+}
+
+.tile-support-top-right {
+    top: 2px;
+    right: 2px;
+}
+
+.tile-support-bottom-right {
+    bottom: 2px;
+    right: 2px;
 }
 
 .tile-support .support-icon {

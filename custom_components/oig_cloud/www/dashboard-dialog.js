@@ -93,14 +93,14 @@ class TileConfigDialog {
                         <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-primary);">
 
                         <div class="form-group">
-                            <label>🔹 Podpůrná entita 1 (levý horní roh, volitelné):</label>
+                            <label>🔹 Podpůrná entita 1 (pravý horní roh, volitelné):</label>
                             <select id="support-entity-1" class="form-input">
                                 <option value="">-- Žádná --</option>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label>🔹 Podpůrná entita 2 (levý dolní roh, volitelné):</label>
+                            <label>🔹 Podpůrná entita 2 (pravý dolní roh, volitelné):</label>
                             <select id="support-entity-2" class="form-input">
                                 <option value="">-- Žádná --</option>
                             </select>
@@ -414,8 +414,8 @@ class TileConfigDialog {
             
             // Podporné entity
             if (tileConfig.support_entities) {
-                document.getElementById('support-entity-1').value = tileConfig.support_entities.top_left || '';
-                document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_left || '';
+                document.getElementById('support-entity-1').value = tileConfig.support_entities.top_right || '';
+                document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_right || '';
             }
 
         } else if (tileConfig.type === 'button') {
@@ -479,8 +479,8 @@ class TileConfigDialog {
             icon: icon || null,
             color: color,
             support_entities: {
-                top_left: supportEntity1 || null,
-                bottom_left: supportEntity2 || null
+                top_right: supportEntity1 || null,
+                bottom_right: supportEntity2 || null
             }
         };
     }

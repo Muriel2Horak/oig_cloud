@@ -5320,40 +5320,81 @@ function renderEntityTile(config) {
 
     const label = config.label || state.attributes.friendly_name || config.entity_id;
     const icon = config.icon || state.attributes.icon || '📊';
-    const value = state.state;
-    const unit = state.attributes.unit_of_measurement || '';
+    let value = state.state;
+    let unit = state.attributes.unit_of_measurement || '';
     const color = config.color || '#03A9F4';
+
+    // Konverze W/Wh na kW/kWh pokud >= 1000
+    if (unit === 'W' || unit === 'Wh') {
+        const numValue = parseFloat(value);
+        if (!isNaN(numValue)) {
+            if (Math.abs(numValue) >= 1000) {
+                value = (numValue / 1000).toFixed(1);
+                unit = unit === 'W' ? 'kW' : 'kWh';
+            } else {
+                value = Math.round(numValue);
+            }
+        }
+    }
 
     // Podporné entity
     let supportHtml = '';
     if (config.support_entities) {
-        // Top left
-        if (config.support_entities.top_left) {
-            const topLeftState = hass.states[config.support_entities.top_left];
-            if (topLeftState) {
-                const topLeftValue = topLeftState.state;
-                const topLeftUnit = topLeftState.attributes.unit_of_measurement || '';
-                const topLeftIcon = topLeftState.attributes.icon || '';
+        // Top right
+        if (config.support_entities.top_right) {
+            const topRightState = hass.states[config.support_entities.top_right];
+            if (topRightState) {
+                let topRightValue = topRightState.state;
+                let topRightUnit = topRightState.attributes.unit_of_measurement || '';
+                const topRightIcon = topRightState.attributes.icon || '';
+                
+                // Konverze W/Wh na kW/kWh
+                if (topRightUnit === 'W' || topRightUnit === 'Wh') {
+                    const numValue = parseFloat(topRightValue);
+                    if (!isNaN(numValue)) {
+                        if (Math.abs(numValue) >= 1000) {
+                            topRightValue = (numValue / 1000).toFixed(1);
+                            topRightUnit = topRightUnit === 'W' ? 'kW' : 'kWh';
+                        } else {
+                            topRightValue = Math.round(numValue);
+                        }
+                    }
+                }
+                
                 supportHtml += `
-                    <div class="tile-support tile-support-top-left">
-                        <span class="support-icon">${topLeftIcon}</span>
-                        <span class="support-value">${topLeftValue}${topLeftUnit}</span>
+                    <div class="tile-support tile-support-top-right">
+                        <span class="support-icon">${topRightIcon}</span>
+                        <span class="support-value">${topRightValue}${topRightUnit}</span>
                     </div>
                 `;
             }
         }
         
-        // Bottom left
-        if (config.support_entities.bottom_left) {
-            const bottomLeftState = hass.states[config.support_entities.bottom_left];
-            if (bottomLeftState) {
-                const bottomLeftValue = bottomLeftState.state;
-                const bottomLeftUnit = bottomLeftState.attributes.unit_of_measurement || '';
-                const bottomLeftIcon = bottomLeftState.attributes.icon || '';
+        // Bottom right
+        if (config.support_entities.bottom_right) {
+            const bottomRightState = hass.states[config.support_entities.bottom_right];
+            if (bottomRightState) {
+                let bottomRightValue = bottomRightState.state;
+                let bottomRightUnit = bottomRightState.attributes.unit_of_measurement || '';
+                const bottomRightIcon = bottomRightState.attributes.icon || '';
+                
+                // Konverze W/Wh na kW/kWh
+                if (bottomRightUnit === 'W' || bottomRightUnit === 'Wh') {
+                    const numValue = parseFloat(bottomRightValue);
+                    if (!isNaN(numValue)) {
+                        if (Math.abs(numValue) >= 1000) {
+                            bottomRightValue = (numValue / 1000).toFixed(1);
+                            bottomRightUnit = bottomRightUnit === 'W' ? 'kW' : 'kWh';
+                        } else {
+                            bottomRightValue = Math.round(numValue);
+                        }
+                    }
+                }
+                
                 supportHtml += `
-                    <div class="tile-support tile-support-bottom-left">
-                        <span class="support-icon">${bottomLeftIcon}</span>
-                        <span class="support-value">${bottomLeftValue}${bottomLeftUnit}</span>
+                    <div class="tile-support tile-support-bottom-right">
+                        <span class="support-icon">${bottomRightIcon}</span>
+                        <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
                     </div>
                 `;
             }
