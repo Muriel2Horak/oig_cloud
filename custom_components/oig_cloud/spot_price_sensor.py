@@ -648,10 +648,6 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                         else dt_naive
                     )
 
-                    # OPRAVA: Přeskočit uplynulé intervaly
-                    if dt < now:
-                        continue
-
                     # Vypočítat finální cenu pro tento interval
                     final_price = self._calculate_final_price_15min(spot_price_czk, dt)
                     tariff = self._get_tariff_for_datetime(dt)
