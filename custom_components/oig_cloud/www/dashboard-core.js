@@ -95,6 +95,7 @@ function subscribeToShield() {
                     entityId.includes('extended_battery_voltage') || // Battery voltage
                     entityId.includes('box_temp') ||            // Inverter temp
                     entityId.includes('bypass_status') ||       // Bypass status
+                    entityId.includes('chmu_warning_level') ||  // ČHMÚ weather warning
                     entityId.includes('real_data_update')) {    // Real data update
                     console.log(`[Data] Sensor changed: ${entityId}`, event.data.new_state?.state);
                     debouncedLoadData(); // Trigger data update immediately (debounced)
@@ -3098,6 +3099,9 @@ async function loadData() {
         await loadNodeDetails(); // Wait for details on first load
         previousValues['node-details-loaded'] = true;
     }
+    
+    // Update ČHMÚ weather warning badge
+    updateChmuWarningBadge();
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -6317,6 +6321,274 @@ function executeTileButtonAction(entityId, action) {
             console.error(`[Tiles] Service call failed:`, err);
             alert(`Chyba při volání služby: ${err.message}`);
         });
+}
+
+// === ČHMÚ WEATHER WARNING FUNCTIONS ===
+
+let chmuWarningData = null;
+
+// Update ČHMÚ warning badge
+function updateChmuWarningBadge() {
+    if (!hass) return;
+
+    const localSensorId = `sensor.${INVERTER_SN}_chmu_warning_level`;
+    const globalSensorId = `sensor.${INVERTER_SN}_chmu_warning_level_global`;
+    
+    const localSensor = hass.states[localSensorId];
+    const globalSensor = hass.states[globalSensorId];
+
+    if (!localSensor) {
+        console.log('[ČHMÚ] Local sensor not found:', localSensorId);
+        return;
+    }
+
+    const badge = document.getElementById('chmu-warning-badge');
+    const icon = document.getElementById('chmu-icon');
+    const text = document.getElementById('chmu-text');
+
+    if (!badge || !icon || !text) return;
+
+    const severity = parseInt(localSensor.state) || 0;
+    const attrs = localSensor.attributes || {};
+    
+    // Store data for modal
+    chmuWarningData = {
+        local: localSensor,
+        global: globalSensor,
+        severity: severity
+    };
+
+    // Remove all severity classes
+    badge.className = 'chmu-warning-badge';
+    badge.classList.add(`severity-${severity}`);
+
+    // Update icon and text based on severity
+    if (severity === 0) {
+        icon.textContent = '✓';
+        text.textContent = 'Bez výstrah';
+    } else {
+        const warningCount = attrs.warning_count || 1;
+        
+        if (severity >= 3) {
+            icon.textContent = '🚨';
+        } else {
+            icon.textContent = '⚠️';
+        }
+        
+        const severityNames = {
+            1: 'Žluté varování',
+            2: 'Oranžové varování',
+            3: 'Červené varování',
+            4: 'Fialové varování'
+        };
+        
+        text.textContent = `${warningCount}× ${severityNames[severity]}`;
+    }
+}
+
+// Toggle ČHMÚ warning modal
+function toggleChmuWarningModal() {
+    const modal = document.getElementById('chmu-modal');
+    if (!modal) return;
+
+    if (modal.classList.contains('active')) {
+        closeChmuWarningModal();
+    } else {
+        openChmuWarningModal();
+    }
+}
+
+// Open ČHMÚ warning modal
+function openChmuWarningModal() {
+    const modal = document.getElementById('chmu-modal');
+    const modalBody = document.getElementById('chmu-modal-body');
+    
+    if (!modal || !modalBody || !chmuWarningData) return;
+
+    modal.classList.add('active');
+    
+    // Render modal content
+    renderChmuWarningModal(modalBody);
+}
+
+// Close ČHMÚ warning modal
+function closeChmuWarningModal(event) {
+    const modal = document.getElementById('chmu-modal');
+    if (!modal) return;
+    
+    // If event is provided, check if we clicked outside the content
+    if (event && event.target !== modal) return;
+    
+    modal.classList.remove('active');
+}
+
+// Render ČHMÚ warning modal content
+function renderChmuWarningModal(container) {
+    if (!chmuWarningData || !container) return;
+
+    const { local, global } = chmuWarningData;
+    const attrs = local.attributes || {};
+    const severity = parseInt(local.state) || 0;
+
+    // If no warnings
+    if (severity === 0) {
+        container.innerHTML = `
+            <div class="chmu-no-warnings">
+                <div class="chmu-no-warnings-icon">☀️</div>
+                <h4>Žádná meteorologická výstraha</h4>
+                <p>V současné době nejsou aktivní žádná varování pro váš region.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Get warnings array
+    const warnings = attrs.warnings || [];
+    
+    if (warnings.length === 0) {
+        container.innerHTML = `
+            <div class="chmu-no-warnings">
+                <div class="chmu-no-warnings-icon">❓</div>
+                <h4>Data nejsou k dispozici</h4>
+                <p>Varování byla detekována, ale detaily nejsou dostupné.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Render all warnings
+    let html = '';
+    
+    warnings.forEach((warning, index) => {
+        const wSeverity = warning.severity_level || 1;
+        const eventType = warning.event_type || warning.event || 'Varování';
+        const onset = warning.onset ? formatChmuDateTime(warning.onset) : '--';
+        const expires = warning.expires ? formatChmuDateTime(warning.expires) : '--';
+        const etaHours = warning.eta_hours !== undefined ? warning.eta_hours : null;
+        const areas = warning.areas || [];
+        const description = warning.description || '';
+        const instruction = warning.instruction || '';
+        const urgency = warning.urgency || '';
+        const certainty = warning.certainty || '';
+
+        const icon = getWarningIcon(eventType);
+        const severityLabel = getSeverityLabel(wSeverity);
+        const areaNames = areas.map(a => a.name || a).join(', ') || 'Není specifikováno';
+
+        let etaText = '';
+        if (etaHours !== null) {
+            if (etaHours <= 0) {
+                etaText = '<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Status</div><div class="chmu-info-value" style="color: #ef4444; font-weight: 700;">PROBÍHÁ NYNÍ</div></div></div>';
+            } else if (etaHours < 24) {
+                etaText = `<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Začátek za</div><div class="chmu-info-value">${Math.round(etaHours)} hodin</div></div></div>`;
+            }
+        }
+
+        html += `
+            <div class="chmu-warning-item severity-${wSeverity}">
+                <div class="chmu-warning-header">
+                    <div class="chmu-warning-icon">${icon}</div>
+                    <div class="chmu-warning-title">
+                        <h4>${eventType}</h4>
+                        <span class="chmu-warning-severity severity-${wSeverity}">${severityLabel}</span>
+                    </div>
+                </div>
+                
+                <div class="chmu-warning-info">
+                    <div class="chmu-info-item">
+                        <div class="chmu-info-icon">📍</div>
+                        <div class="chmu-info-content">
+                            <div class="chmu-info-label">Oblast</div>
+                            <div class="chmu-info-value">${areaNames}</div>
+                        </div>
+                    </div>
+                    <div class="chmu-info-item">
+                        <div class="chmu-info-icon">⏰</div>
+                        <div class="chmu-info-content">
+                            <div class="chmu-info-label">Začátek</div>
+                            <div class="chmu-info-value">${onset}</div>
+                        </div>
+                    </div>
+                    <div class="chmu-info-item">
+                        <div class="chmu-info-icon">⏳</div>
+                        <div class="chmu-info-content">
+                            <div class="chmu-info-label">Konec</div>
+                            <div class="chmu-info-value">${expires}</div>
+                        </div>
+                    </div>
+                    ${etaText}
+                </div>
+                
+                ${description ? `
+                    <div class="chmu-warning-description">
+                        <strong>📋 Popis</strong>
+                        <p>${description}</p>
+                    </div>
+                ` : ''}
+                
+                ${instruction ? `
+                    <div class="chmu-warning-description">
+                        <strong>💡 Doporučení</strong>
+                        <p>${instruction}</p>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+// Get icon for warning type
+function getWarningIcon(eventType) {
+    const icons = {
+        'Vítr': '🌪️',
+        'Silný vítr': '💨',
+        'Déšť': '🌧️',
+        'Silný déšť': '⛈️',
+        'Sníh': '❄️',
+        'Sněžení': '🌨️',
+        'Bouřky': '⛈️',
+        'Mráz': '🥶',
+        'Vedro': '🌡️',
+        'Mlha': '🌫️',
+        'Náledí': '🧊',
+        'Laviny': '⚠️'
+    };
+    
+    for (const [key, icon] of Object.entries(icons)) {
+        if (eventType.includes(key)) return icon;
+    }
+    
+    return '⚠️';
+}
+
+// Get severity label
+function getSeverityLabel(severity) {
+    const labels = {
+        1: 'Minor',
+        2: 'Moderate',
+        3: 'Severe',
+        4: 'Extreme'
+    };
+    return labels[severity] || 'Unknown';
+}
+
+// Format ČHMÚ datetime
+function formatChmuDateTime(isoString) {
+    if (!isoString) return '--';
+    
+    try {
+        const date = new Date(isoString);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        
+        return `${day}.${month}. ${hours}:${minutes}`;
+    } catch (e) {
+        return isoString;
+    }
 }
 
 

@@ -21,8 +21,28 @@
     <div class="container">
         <div class="header">
             <h1>⚡ Energetické Toky</h1>
+            
+            <!-- ČHMÚ Weather Warning Badge -->
+            <div class="chmu-warning-badge" id="chmu-warning-badge" onclick="toggleChmuWarningModal()">
+                <span class="chmu-icon" id="chmu-icon">✓</span>
+                <span class="chmu-text" id="chmu-text">Bez výstrah</span>
+            </div>
+            
             <div class="time" id="current-time">--:--:--</div>
             <div class="last-update" id="last-update-header">Aktualizováno: --</div>
+        </div>
+
+        <!-- ČHMÚ Warning Modal -->
+        <div class="chmu-modal" id="chmu-modal" onclick="closeChmuWarningModal(event)">
+            <div class="chmu-modal-content" onclick="event.stopPropagation()">
+                <div class="chmu-modal-header">
+                    <h3 id="chmu-modal-title">🌦️ Meteorologická Výstraha ČHMÚ</h3>
+                    <button class="chmu-modal-close" onclick="closeChmuWarningModal()">&times;</button>
+                </div>
+                <div class="chmu-modal-body" id="chmu-modal-body">
+                    <!-- Dynamicky generováno JS -->
+                </div>
+            </div>
         </div>
 
         <!-- Tabs -->

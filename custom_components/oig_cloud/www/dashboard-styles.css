@@ -430,6 +430,333 @@
             font-style: italic;
         }
 
+        /* ČHMÚ Weather Warning Badge */
+        .chmu-warning-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .chmu-warning-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .chmu-warning-badge.severity-0 {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .chmu-warning-badge.severity-1 {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #78350f;
+        }
+
+        .chmu-warning-badge.severity-2 {
+            background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+            color: white;
+        }
+
+        .chmu-warning-badge.severity-3 {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        .chmu-warning-badge.severity-4 {
+            background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+            color: white;
+            animation: pulse-warning 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%, 100% {
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+            50% {
+                box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+            }
+        }
+
+        .chmu-icon {
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+        }
+
+        .chmu-text {
+            white-space: nowrap;
+        }
+
+        /* ČHMÚ Warning Modal */
+        .chmu-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .chmu-modal.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .chmu-modal-content {
+            background: var(--card-background);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .chmu-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--header-gradient);
+        }
+
+        .chmu-modal-header h3 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .chmu-modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .chmu-modal-close:hover {
+            background: rgba(0, 0, 0, 0.1);
+            transform: rotate(90deg);
+        }
+
+        .chmu-modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            max-height: calc(80vh - 80px);
+        }
+
+        .chmu-warning-item {
+            background: var(--node-background);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .chmu-warning-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .chmu-warning-item.severity-1 {
+            border-left-color: #fbbf24;
+        }
+
+        .chmu-warning-item.severity-2 {
+            border-left-color: #fb923c;
+        }
+
+        .chmu-warning-item.severity-3 {
+            border-left-color: #ef4444;
+        }
+
+        .chmu-warning-item.severity-4 {
+            border-left-color: #a855f7;
+        }
+
+        .chmu-warning-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .chmu-warning-icon {
+            font-size: 32px;
+        }
+
+        .chmu-warning-title {
+            flex: 1;
+        }
+
+        .chmu-warning-title h4 {
+            margin: 0 0 4px 0;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .chmu-warning-severity {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .chmu-warning-severity.severity-1 {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .chmu-warning-severity.severity-2 {
+            background: #fed7aa;
+            color: #7c2d12;
+        }
+
+        .chmu-warning-severity.severity-3 {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .chmu-warning-severity.severity-4 {
+            background: #f3e8ff;
+            color: #6b21a8;
+        }
+
+        .chmu-warning-info {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .chmu-info-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .chmu-info-icon {
+            font-size: 16px;
+            margin-top: 2px;
+        }
+
+        .chmu-info-content {
+            flex: 1;
+        }
+
+        .chmu-info-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 600;
+            opacity: 0.6;
+            margin-bottom: 2px;
+        }
+
+        .chmu-info-value {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .chmu-warning-description {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .chmu-warning-description p {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-color);
+        }
+
+        .chmu-warning-description p:last-child {
+            margin-bottom: 0;
+        }
+
+        .chmu-warning-description strong {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            opacity: 0.7;
+            margin-bottom: 6px;
+        }
+
+        .chmu-no-warnings {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .chmu-no-warnings-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .chmu-no-warnings h4 {
+            margin: 0 0 8px 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .chmu-no-warnings p {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
         /* Energy Flow Canvas */
         .flow-canvas {
             position: relative;
@@ -4303,6 +4630,33 @@
 
     .icon-category-grid {
         grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    }
+    
+    /* ČHMÚ Warning - mobile responsiveness */
+    .header {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .chmu-warning-badge {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+        padding: 10px 16px;
+    }
+    
+    .chmu-text {
+        white-space: normal;
+        text-align: center;
+    }
+    
+    .chmu-modal-content {
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .chmu-warning-info {
+        grid-template-columns: 1fr;
     }
 }
 
