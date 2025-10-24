@@ -2388,7 +2388,7 @@ async function loadData() {
 
     // Update SVG battery fill (animated) - s gradientem podle SoC
     const batteryFill = document.getElementById('battery-fill');
-    
+
     // Update fill height if SoC changed
     const previousSoC = previousValues['battery-gauge-width'];
     if (previousSoC === undefined || Math.abs(previousSoC - batterySoC) > 0.5) {
@@ -2399,14 +2399,14 @@ async function loadData() {
 
         batteryFill.setAttribute('height', fillHeight);
         batteryFill.setAttribute('y', fillY);
-        
+
         previousValues['battery-gauge-width'] = batterySoC;
     }
-    
+
     // Add charging animation if charging
     const previousPower = previousValues['battery-power-state'];
     const isCharging = batteryPower > 10;
-    
+
     if (previousPower !== isCharging) {
         if (isCharging) {
             batteryFill.classList.add('charging');

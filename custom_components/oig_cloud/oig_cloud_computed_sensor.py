@@ -185,6 +185,11 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         try:
             bat_p = float(pv_data["box_prms"]["p_bat"])
+            
+            # Získat bat_min z batt_prms (minimální nabití v %)
+            bat_min_percent = float(pv_data.get("batt_prms", {}).get("bat_min", 20))
+            # Využitelná kapacita = 100% - bat_min%
+            usable_percent = (100 - bat_min_percent) / 100
 
             # OPRAVA: Kontrola actual pouze pro tyto hodnoty
             if "actual" not in pv_data:
@@ -199,7 +204,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
             # 1. Využitelná kapacita baterie
             if self._sensor_type == "usable_battery_capacity":
-                value = round((bat_p * 0.8) / 1000, 2)
+                value = round((bat_p * usable_percent) / 1000, 2)
                 return value
 
             # 2. Kolik kWh chybí do 100%
@@ -208,7 +213,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 return value
             # 3. Zbývající využitelná kapacita
             if self._sensor_type == "remaining_usable_capacity":
-                usable = bat_p * 0.8
+                usable = bat_p * usable_percent
                 missing = bat_p * (1 - bat_c / 100)
                 value = round((usable - missing) / 1000, 2)
                 return value
@@ -225,7 +230,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
             # 5. Doba do vybití
             if self._sensor_type == "time_to_empty":
-                usable = bat_p * 0.8
+                usable = bat_p * usable_percent
                 missing = bat_p * (1 - bat_c / 100)
                 remaining = usable - missing
 

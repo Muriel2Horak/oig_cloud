@@ -27,6 +27,18 @@ SENSOR_TYPES_BATT: Dict[str, Dict[str, Any]] = {
         "sensor_type_category": "data",
         "device_mapping": "main",
     },
+    "batt_bat_min": {
+        "name": "Battery Minimum SOC",
+        "name_cs": "Minimální nabití baterie (nastavení)",
+        "device_class": SensorDeviceClass.BATTERY,
+        "unit_of_measurement": PERCENTAGE,
+        "node_id": "batt_prms",
+        "node_key": "bat_min",
+        "state_class": SensorStateClass.MEASUREMENT,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "sensor_type_category": "data",
+        "device_mapping": "main",
+    },
     # Výkon oddělený na nabíjení a vybíjení
     "batt_batt_comp_p_charge": {
         "name": "Battery Charge Power",
