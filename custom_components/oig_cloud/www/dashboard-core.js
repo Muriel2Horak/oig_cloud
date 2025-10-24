@@ -5230,6 +5230,10 @@ function loadPricingData() {
 
     console.log('[Pricing] Battery forecast sensor:', batteryForecastEntityId, batteryForecastSensor ? 'FOUND' : 'NOT FOUND');
 
+    // Uchovej timeline rozsah pro výchozí zoom grafu
+    let initialZoomStart = null;
+    let initialZoomEnd = null;
+
     if (batteryForecastSensor && batteryForecastSensor.attributes && spotSensor && spotSensor.attributes) {
         const timelineData = batteryForecastSensor.attributes.timeline_data || [];
         console.log('[Pricing] Timeline data length:', timelineData.length);
@@ -5238,8 +5242,14 @@ function loadPricingData() {
         const prices = spotSensor.attributes.prices || []; // Original ISO timestamps
 
         if (timelineData.length > 0 && prices.length > 0) {
+            // ULOŽIT ROZSAH TIMELINE PRO VÝCHOZÍ ZOOM
+            const timelineTimestamps = timelineData.map(t => new Date(t.timestamp));
+            initialZoomStart = timelineTimestamps[0].getTime();
+            initialZoomEnd = timelineTimestamps[timelineTimestamps.length - 1].getTime();
+            console.log('[Pricing] Timeline range for initial zoom:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
+            
             // EXTEND allLabels with battery forecast timestamps (union)
-            const batteryTimestamps = timelineData.map(t => new Date(t.timestamp));
+            const batteryTimestamps = timelineTimestamps;
             const priceTimestamps = allLabels; // already Date objects
 
             // Merge and dedupe timestamps
@@ -5608,17 +5618,22 @@ function loadPricingData() {
             }
         });
 
-        // OPRAVA: Inicializace zoom na aktuální čas ± 12h
-        // Aby graf nezačínal na začátku dat, ale okolo aktuálního času
-        const now = new Date();
-        const nowTime = now.getTime();
-        const twelveHours = 12 * 60 * 60 * 1000;
-        
-        // Nastavit výchozí zoom na aktuální čas ± 12h
-        combinedChart.options.scales.x.min = nowTime - twelveHours;
-        combinedChart.options.scales.x.max = nowTime + twelveHours;
-        
-        console.log('[Pricing] Initial zoom set:', new Date(nowTime - twelveHours), 'to', new Date(nowTime + twelveHours));
+        // OPRAVA: Inicializace zoom podle timeline dat z battery forecast
+        // Pokud máme timeline rozsah, použij ho. Jinak fallback na aktuální čas ± 12h
+        if (initialZoomStart && initialZoomEnd) {
+            combinedChart.options.scales.x.min = initialZoomStart;
+            combinedChart.options.scales.x.max = initialZoomEnd;
+            console.log('[Pricing] Initial zoom from timeline:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
+        } else {
+            // Fallback: aktuální čas ± 12h
+            const now = new Date();
+            const nowTime = now.getTime();
+            const twelveHours = 12 * 60 * 60 * 1000;
+            
+            combinedChart.options.scales.x.min = nowTime - twelveHours;
+            combinedChart.options.scales.x.max = nowTime + twelveHours;
+            console.log('[Pricing] Initial zoom fallback (±12h from now):', new Date(nowTime - twelveHours), 'to', new Date(nowTime + twelveHours));
+        }
 
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
