@@ -596,12 +596,15 @@
         </div>
 
         <!-- Nápověda ovládání mimo graf -->
-        <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 15px; margin-bottom: 15px; text-align: center;">
+        <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 15px; margin-bottom: 15px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
             <span style="opacity: 0.7; font-size: 0.85em;">
-                � <strong>Ovládání grafu:</strong> Myší označte oblast pro zoom • Kolečkem zoom in/out • Shift+tažení = posun
+                💡 <strong>Ovládání grafu:</strong> Myší označte oblast pro zoom • Kolečkem zoom in/out • Shift+tažení = posun
             </span>
-            <button onclick="resetChartZoom()" style="background: rgba(33,150,243,0.2); border: 1px solid rgba(33,150,243,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; margin-left: 15px;">
+            <button onclick="resetChartZoom()" style="background: rgba(33,150,243,0.2); border: 1px solid rgba(33,150,243,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
                 🔍 Reset Zoom
+            </button>
+            <button id="datalabel-toggle-btn" onclick="toggleDatalabelMode()" style="background: rgba(76,175,80,0.2); border: 1px solid rgba(76,175,80,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
+                � Ceny: <span id="datalabel-mode-text">Auto</span>
             </button>
         </div>
 
