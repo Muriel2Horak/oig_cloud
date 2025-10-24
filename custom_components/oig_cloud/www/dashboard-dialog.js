@@ -78,7 +78,9 @@ class TileConfigDialog {
                                 <input type="text"
                                        id="entity-icon"
                                        class="form-input"
-                                       placeholder="mdi:fridge">
+                                       placeholder="🔍 Hledat ikonu... (např. fridge)"
+                                       oninput="window.tileDialog.searchIcons(this.value)">
+                                <div id="icon-suggestions" class="icon-suggestions" style="display: none;"></div>
                             </div>
 
                             <div class="form-group">
@@ -94,16 +96,24 @@ class TileConfigDialog {
 
                         <div class="form-group">
                             <label>🔹 Podpůrná entita 1 (pravý horní roh, volitelné):</label>
-                            <select id="support-entity-1" class="form-input">
-                                <option value="">-- Žádná --</option>
-                            </select>
+                            <input type="text"
+                                   id="support-entity-1-search"
+                                   class="form-input"
+                                   placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
+                                   oninput="window.tileDialog.filterSupportEntities(1, this.value)">
+                            <div id="support-entity-1-list" class="entity-list support-entity-list" style="display: none;"></div>
+                            <input type="hidden" id="support-entity-1" value="">
                         </div>
 
                         <div class="form-group">
                             <label>🔹 Podpůrná entita 2 (pravý dolní roh, volitelné):</label>
-                            <select id="support-entity-2" class="form-input">
-                                <option value="">-- Žádná --</option>
-                            </select>
+                            <input type="text"
+                                   id="support-entity-2-search"
+                                   class="form-input"
+                                   placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
+                                   oninput="window.tileDialog.filterSupportEntities(2, this.value)">
+                            <div id="support-entity-2-list" class="entity-list support-entity-list" style="display: none;"></div>
+                            <input type="hidden" id="support-entity-2" value="">
                         </div>
                     </div>
 
@@ -254,7 +264,7 @@ class TileConfigDialog {
     populateEntityLists() {
         this.populateEntityList();
         this.populateButtonEntityList();
-        this.populateSupportEntitySelects(); // Naplnit selecty pro podpůrné entity
+        this.populateSupportEntityLists(); // Naplnit listy pro podpůrné entity
     }
 
     /**
@@ -325,29 +335,127 @@ class TileConfigDialog {
     /**
      * Naplnit selecty pro podpůrné entity
      */
-    populateSupportEntitySelects() {
-        const supportEntity1 = document.getElementById('support-entity-1');
-        const supportEntity2 = document.getElementById('support-entity-2');
-        
-        if (!supportEntity1 || !supportEntity2) return;
-
-        // Všechny senzory a binary senzory
-        const entities = Object.keys(this.hass.states)
+    /**
+     * Naplnit listy pro podpůrné entity
+     */
+    populateSupportEntityLists() {
+        // Listy se naplní dynamicky při psaní, zde jen inicializace
+        this.supportEntities = Object.keys(this.hass.states)
             .filter(id => id.startsWith('sensor.') || id.startsWith('binary_sensor.'))
             .sort((a, b) => {
                 const nameA = this.hass.states[a].attributes.friendly_name || a;
                 const nameB = this.hass.states[b].attributes.friendly_name || b;
                 return nameA.localeCompare(nameB);
             });
+    }
 
-        const options = '<option value="">-- Žádná --</option>' +
-            entities.map(entityId => {
-                const name = this.hass.states[entityId].attributes.friendly_name || entityId;
-                return `<option value="${entityId}">${name}</option>`;
-            }).join('');
+    /**
+     * Filtrovat podporné entity podle hledaného textu
+     */
+    filterSupportEntities(number, searchText) {
+        const listDiv = document.getElementById(`support-entity-${number}-list`);
+        const hiddenInput = document.getElementById(`support-entity-${number}`);
+        
+        if (!searchText.trim()) {
+            listDiv.style.display = 'none';
+            hiddenInput.value = '';
+            return;
+        }
 
-        supportEntity1.innerHTML = options;
-        supportEntity2.innerHTML = options;
+        const search = searchText.toLowerCase();
+        const filtered = this.supportEntities.filter(entityId => {
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+            return name.includes(search) || entityId.toLowerCase().includes(search);
+        });
+
+        if (filtered.length === 0) {
+            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
+            listDiv.style.display = 'block';
+            return;
+        }
+
+        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
+            const state = this.hass.states[entityId];
+            const name = state.attributes.friendly_name || entityId;
+            const value = state.state;
+            const unit = state.attributes.unit_of_measurement || '';
+            
+            return `
+                <div class="entity-item support-entity-item" 
+                     data-entity-id="${entityId}"
+                     onclick="window.tileDialog.selectSupportEntity(${number}, '${entityId}', '${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">
+                    <div class="entity-item-name">${name}</div>
+                    <div class="entity-item-value">${value} ${unit}</div>
+                </div>
+            `;
+        }).join('');
+        
+        listDiv.style.display = 'block';
+    }
+
+    /**
+     * Vybrat podpornou entitu
+     */
+    selectSupportEntity(number, entityId, entityName) {
+        const searchInput = document.getElementById(`support-entity-${number}-search`);
+        const hiddenInput = document.getElementById(`support-entity-${number}`);
+        const listDiv = document.getElementById(`support-entity-${number}-list`);
+        
+        searchInput.value = entityName;
+        hiddenInput.value = entityId;
+        listDiv.style.display = 'none';
+        
+        console.log(`✅ Selected support entity ${number}: ${entityId}`);
+    }
+
+    /**
+     * Vyhledávání ikon
+     */
+    searchIcons(searchText) {
+        const suggestionsDiv = document.getElementById('icon-suggestions');
+        const iconInput = document.getElementById('entity-icon');
+        
+        if (!searchText.trim() || searchText.startsWith('mdi:')) {
+            suggestionsDiv.style.display = 'none';
+            return;
+        }
+
+        // Základní populární ikony
+        const commonIcons = [
+            'fridge', 'lightbulb', 'fan', 'thermometer', 'water-percent', 'power-plug',
+            'lightning-bolt', 'home', 'weather-sunny', 'weather-night', 'battery',
+            'battery-charging', 'flash', 'fire', 'snowflake', 'air-conditioner',
+            'washing-machine', 'dishwasher', 'stove', 'microwave', 'television',
+            'speaker', 'router-wireless', 'garage', 'door', 'window-closed',
+            'blinds', 'cctv', 'alarm-light', 'bell', 'motion-sensor',
+            'water-boiler', 'radiator', 'hvac', 'heat-pump', 'solar-panel',
+            'car-electric', 'ev-station', 'meter-electric', 'meter-gas', 'gauge'
+        ];
+
+        const search = searchText.toLowerCase();
+        const filtered = commonIcons.filter(icon => icon.includes(search));
+
+        if (filtered.length === 0) {
+            suggestionsDiv.style.display = 'none';
+            return;
+        }
+
+        suggestionsDiv.innerHTML = filtered.slice(0, 10).map(icon => `
+            <div class="icon-suggestion-item" onclick="window.tileDialog.selectIcon('mdi:${icon}')">
+                <span class="icon-preview">mdi:${icon}</span>
+            </div>
+        `).join('');
+        
+        suggestionsDiv.style.display = 'block';
+    }
+
+    /**
+     * Vybrat ikonu
+     */
+    selectIcon(icon) {
+        document.getElementById('entity-icon').value = icon;
+        document.getElementById('icon-suggestions').style.display = 'none';
     }
 
     /**
@@ -412,10 +520,22 @@ class TileConfigDialog {
             document.getElementById('entity-icon').value = tileConfig.icon || '';
             document.getElementById('entity-color').value = tileConfig.color || '#03A9F4';
             
-            // Podporné entity
+            // Podporné entity - nastavit hidden input a zobrazit název v search
             if (tileConfig.support_entities) {
-                document.getElementById('support-entity-1').value = tileConfig.support_entities.top_right || '';
-                document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_right || '';
+                if (tileConfig.support_entities.top_right) {
+                    const entity1 = this.hass.states[tileConfig.support_entities.top_right];
+                    if (entity1) {
+                        document.getElementById('support-entity-1').value = tileConfig.support_entities.top_right;
+                        document.getElementById('support-entity-1-search').value = entity1.attributes.friendly_name || tileConfig.support_entities.top_right;
+                    }
+                }
+                if (tileConfig.support_entities.bottom_right) {
+                    const entity2 = this.hass.states[tileConfig.support_entities.bottom_right];
+                    if (entity2) {
+                        document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_right;
+                        document.getElementById('support-entity-2-search').value = entity2.attributes.friendly_name || tileConfig.support_entities.bottom_right;
+                    }
+                }
             }
 
         } else if (tileConfig.type === 'button') {
