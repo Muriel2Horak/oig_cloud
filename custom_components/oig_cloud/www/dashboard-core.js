@@ -3057,6 +3057,7 @@ async function loadData() {
     const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
 
     // OPRAVA BUG #4: Volat animateFlow() jen pokud se hodnoty skutečně změnily
+    // NEBO pokud je nastaven flag needsFlowReinitialize (po přepnutí tabu)
     const currentPowerValues = {
         solarPower,
         solarPerc,
@@ -3073,8 +3074,13 @@ async function loadData() {
             Math.abs(currentPowerValues[key] - (lastPowerValues[key] || 0)) > 0.1
         );
 
-    if (powerChanged) {
-        console.log('[Animation] Power values changed, updating flow');
+    if (powerChanged || needsFlowReinitialize) {
+        if (needsFlowReinitialize) {
+            console.log('[Animation] Flow reinitialize flag set, forcing animation update');
+            needsFlowReinitialize = false; // Reset flag
+        } else {
+            console.log('[Animation] Power values changed, updating flow');
+        }
         lastPowerValues = currentPowerValues;
 
         // Animate particles (kontinuálně běžící s aktualizací rychlosti)
@@ -4193,6 +4199,7 @@ if (document.readyState === 'loading') {
 
 // === TAB SWITCHING ===
 let pricingTabActive = false;
+let needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
 
 function switchTab(tabName) {
     // Remove active from all tabs and contents
@@ -4216,37 +4223,73 @@ function switchTab(tabName) {
 
     // OPRAVA: Při přepnutí na tab toky, překreslit connections a restartovat particles
     if (tabName === 'toky') {
-        console.log('[Tab] Switching to toky tab - redrawing connections and restarting particles');
+        console.log('[Tab] ========== SWITCHING TO TOKY TAB ==========');
+        console.log('[Tab] Event:', event);
+        console.log('[Tab] Tab content element:', document.getElementById('toky-tab'));
 
         // 1. Zastavit všechny particle flows
         Object.keys(particleFlows).forEach(key => {
             particleFlows[key].active = false;
         });
+        console.log('[Tab] ✓ Particle flows stopped');
 
         // 2. Odstranit všechny existující částice
         const particlesContainer = document.getElementById('particles');
         if (particlesContainer) {
             particlesContainer.innerHTML = '';
+            console.log('[Tab] ✓ Particles cleared');
+        } else {
+            console.error('[Tab] ✗ Particles container NOT FOUND!');
         }
 
+        // DŮLEŽITÉ: Počkat až se tab zobrazí a DOM se vykreslí
         setTimeout(() => {
-            // 3. Invalidovat cache a překreslit čáry
+            console.log('[Tab] --- Timeout fired, starting redraw ---');
+
+            const flowTab = document.getElementById('toky-tab');
+            console.log('[Tab] Flow tab visible?', flowTab && flowTab.classList.contains('active'));
+            console.log('[Tab] Flow tab offsetHeight:', flowTab?.offsetHeight);
+
+            // 3. Invalidovat cache pozic
             cachedNodeCenters = null;
             lastLayoutHash = null;
-            getNodeCenters(); // Vytvoří nový cache
-            drawConnections(); // Překreslí čáry
+            console.log('[Tab] ✓ Cache invalidated');
 
-            // 4. Restartovat particles s aktuálními power hodnotami
-            if (lastPowerValues) {
-                console.log('[Tab] Restarting particle animations with last power values');
-                animateFlow(lastPowerValues);
+            // 4. Force browser reflow aby DOM byl stabilní
+            if (flowTab) {
+                const reflow = flowTab.offsetHeight; // Trigger reflow
+                console.log('[Tab] ✓ Browser reflow triggered:', reflow, 'px');
             }
-        }, 100);
+
+            // 5. Načíst fresh pozice node elementů
+            console.log('[Tab] Getting node centers...');
+            getNodeCenters();
+            console.log('[Tab] ✓ Node centers cached:', cachedNodeCenters);
+
+            // 6. Překreslit čáry (teď už máme správné pozice)
+            console.log('[Tab] Drawing connections...');
+            drawConnections();
+            console.log('[Tab] ✓ Connections drawn');
+
+            // 7. Nastavit flag pro vynucené restartování animací
+            needsFlowReinitialize = true;
+            console.log('[Tab] Flag needsFlowReinitialize set to TRUE');
+
+            // 8. Načíst aktuální data a restartovat particles
+            console.log('[Tab] Loading fresh data for animations...');
+            loadData(); // Načte data a zavolá animateFlow() s aktuálními hodnotami
+            console.log('[Tab] ========== TOKY TAB SWITCH COMPLETE ==========');
+        }, 150); // Delší timeout aby se DOM stihl vykreslit
     }
 
     // Load data when entering pricing tab
     if (tabName === 'pricing') {
-        setTimeout(() => loadPricingData(), 100);
+        console.log('[Tab] ========== SWITCHING TO PRICING TAB ==========');
+        // Počkat až se tab zobrazí a canvas bude viditelný
+        setTimeout(() => {
+            console.log('[Pricing] Tab visible, loading pricing data...');
+            loadPricingData();
+        }, 150); // Stejný timeout jako u Toky pro konzistenci
     }
 }
 
@@ -4848,21 +4891,25 @@ function loadPricingData() {
             }
 
             // Use spot price timestamps as master timeline (includes today + tomorrow)
-            // Keep as Date objects for proper time axis handling
+            // OPRAVA: Parsovat ISO timestamps jako LOKÁLNÍ čas, ne UTC
             allLabels = prices.map(p => {
-                // Pouze ISO timestamp formát
                 const timeStr = p.timestamp;
+                if (!timeStr) return new Date();
 
-                if (!timeStr) {
-                    console.warn('No timestamp found in price data:', p);
+                // Parse as LOCAL time (not UTC)
+                try {
+                    const [datePart, timePart] = timeStr.split('T');
+                    if (!datePart || !timePart) return new Date();
+
+                    const [year, month, day] = datePart.split('-').map(Number);
+                    const [hour, minute, second = 0] = timePart.split(':').map(Number);
+
+                    return new Date(year, month - 1, day, hour, minute, second);
+                } catch (error) {
+                    console.error('[Pricing] Error parsing timestamp:', timeStr, error);
                     return new Date();
                 }
-
-                // p.timestamp je ISO format "2025-10-22T18:30:00"
-                return new Date(timeStr);
-            });
-
-            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
+            });            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
             originalPriceData = spotPriceData;
 
@@ -5293,6 +5340,27 @@ function loadPricingData() {
 
     // Create/update combined chart
     const ctx = document.getElementById('combined-chart');
+    
+    // OPRAVA: Kontrola jestli je canvas viditelný (pricing tab aktivní)
+    // Pokud není, odložit vytvoření grafu
+    if (!ctx) {
+        console.warn('[Pricing] Canvas element not found, deferring chart creation');
+        return;
+    }
+    
+    const isVisible = ctx.offsetParent !== null;
+    if (!isVisible && !combinedChart) {
+        console.warn('[Pricing] Canvas not visible yet, deferring chart creation');
+        // Zkusit znovu za chvíli
+        setTimeout(() => {
+            if (pricingTabActive) {
+                console.log('[Pricing] Retrying chart creation after visibility delay');
+                loadPricingData();
+            }
+        }, 200);
+        return;
+    }
+    
     if (combinedChart) {
         // OPTIMALIZACE: Místo přenastavení celého datasetu aktualizujeme jen labely a data
         const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
@@ -5443,19 +5511,15 @@ function loadPricingData() {
                 },
                 scales: {
                     x: {
-                        type: 'time',
+                        // KRITICKÁ ZMĚNA: 'timeseries' místo 'time' pro lepší timezone handling
+                        // timeseries používá data.labels přímo bez UTC konverze
+                        type: 'timeseries',
                         time: {
                             unit: 'hour',
                             displayFormats: {
                                 hour: 'dd.MM HH:mm'
                             },
                             tooltipFormat: 'dd.MM.yyyy HH:mm'
-                        },
-                        adapters: {
-                            date: {
-                                // OPRAVA: Použít lokální timezone místo UTC
-                                zone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                            }
                         },
                         ticks: {
                             color: getTextColor(),
