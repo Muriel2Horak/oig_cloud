@@ -434,9 +434,9 @@
         .flow-canvas {
             position: relative;
             width: 100%;
-            max-width: 900px; /* Zúžení pro kompaktnější zobrazení */
-            margin: 0 auto; /* Vycentrování */
-            height: 850px; /* Původní výška zachována */
+            max-width: 100%; /* Celá šířka - bylo 900px */
+            margin: 0 auto;
+            height: 850px;
         }
 
         /* SVG for connections */
