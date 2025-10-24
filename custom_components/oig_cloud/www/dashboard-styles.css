@@ -3359,18 +3359,18 @@
 
 /* === CUSTOM TILES === */
 .custom-tiles-section {
-    margin: 8px auto;
-    padding: 0;
-    background: transparent;
-    border: none;
-    max-width: 700px; /* Menší max šířka */
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none; /* Umožní klikání přes sekci na flow pod ní */
+    z-index: 10;
 }
 
 .tiles-container {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 280px)); /* Max 280px na blok - vejde se nad karty */
-    gap: 20px; /* Větší gap mezi bloky */
-    justify-content: center;
+    display: flex;
+    justify-content: space-between;
+    padding: 15px;
 }
 
 .tiles-block {
@@ -3378,7 +3378,19 @@
     border-radius: 6px;
     border: 1px solid var(--border-primary);
     padding: 6px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    pointer-events: auto; /* Bloky jsou klikatelné */
+    width: 280px;
+}
+
+/* Levý blok - levý horní roh */
+#tiles-left {
+    margin-right: auto;
+}
+
+/* Pravý blok - pravý horní roh */
+#tiles-right {
+    margin-left: auto;
 }
 
 .block-label {
