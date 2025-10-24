@@ -230,6 +230,13 @@ class ServiceShield:
         for service_info in self.pending.values():
             entity_ids.extend(service_info.get("entities", {}).keys())
 
+            # Přidat power monitor entity pokud existuje
+            power_monitor = service_info.get("power_monitor")
+            if power_monitor:
+                power_entity = power_monitor.get("entity_id")
+                if power_entity and power_entity not in entity_ids:
+                    entity_ids.append(power_entity)
+
         if not entity_ids:
             _LOGGER.debug("[OIG Shield] Žádné entity ke sledování")
             return
@@ -744,12 +751,53 @@ class ServiceShield:
             state = self.hass.states.get(entity_id)
             original_states[entity_id] = state.state if state else None
 
+        # Příprava power monitoring pro set_box_mode
+        power_monitor = None
+        if service_name == "oig_cloud.set_box_mode":
+            # Získat box_id z konfigurace
+            box_id = None
+            if self.hass.data.get("oig_cloud"):
+                for entry_id, entry_data in self.hass.data["oig_cloud"].items():
+                    if entry_data.get("service_shield") == self:
+                        coordinator = entry_data.get("coordinator")
+                        if coordinator and coordinator.data:
+                            box_id = list(coordinator.data.keys())[0]
+                            break
+
+            if box_id:
+                power_entity = f"sensor.oig_{box_id}_actual_aci_wtotal"
+                power_state = self.hass.states.get(power_entity)
+
+                if power_state and power_state.state not in ["unknown", "unavailable"]:
+                    try:
+                        current_power = float(power_state.state)
+                        target_mode = data.get("value", "").upper()
+
+                        power_monitor = {
+                            "entity_id": power_entity,
+                            "baseline_power": current_power,
+                            "last_power": current_power,
+                            "target_mode": target_mode,
+                            "is_going_to_home_ups": "HOME UPS" in target_mode,
+                            "threshold_kw": 2.5,
+                            "started_at": datetime.now(),
+                        }
+                        _LOGGER.info(
+                            f"[OIG Shield] Power monitor aktivní pro {service_name}: "
+                            f"baseline={current_power}W, target={target_mode}"
+                        )
+                    except (ValueError, TypeError) as e:
+                        _LOGGER.warning(
+                            f"[OIG Shield] Nelze inicializovat power monitor: {e}"
+                        )
+
         # OPRAVA: Přidáme do pending PŘED voláním API, aby se okamžitě zobrazilo ve frontě
         self.pending[service_name] = {
             "entities": expected_entities,
             "original_states": original_states,
             "params": data,
             "called_at": datetime.now(),
+            "power_monitor": power_monitor,  # Nový field pro sledování výkonu
         }
 
         # OPRAVA: Nastavíme running AŽ NYNÍ, aby se okamžitě zobrazilo
@@ -913,6 +961,95 @@ class ServiceShield:
                     finished.append(service_name)
                     continue
 
+                # NOVÁ LOGIKA: Kontrola power monitor (alternativa k entity check)
+                power_completed = False
+                power_monitor = info.get("power_monitor")
+                if power_monitor:
+                    power_entity = power_monitor["entity_id"]
+                    power_state = self.hass.states.get(power_entity)
+
+                    if power_state and power_state.state not in [
+                        "unknown",
+                        "unavailable",
+                    ]:
+                        try:
+                            current_power = float(power_state.state)
+                            last_power = power_monitor["last_power"]
+                            is_going_to_home_ups = power_monitor["is_going_to_home_ups"]
+                            threshold_w = (
+                                power_monitor["threshold_kw"] * 1000
+                            )  # 2.5kW → 2500W
+
+                            # Rozdíl mezi aktuální a poslední hodnotou (po sobě jdoucí updaty)
+                            power_delta = current_power - last_power
+
+                            _LOGGER.debug(
+                                f"[OIG Shield] Power monitor: current={current_power}W, "
+                                f"last={last_power}W, delta={power_delta}W, "
+                                f"threshold=±{threshold_w}W, going_to_ups={is_going_to_home_ups}"
+                            )
+
+                            # Aktualizovat last_power pro příští check
+                            power_monitor["last_power"] = current_power
+
+                            # Detekce skoku
+                            if is_going_to_home_ups and power_delta >= threshold_w:
+                                _LOGGER.info(
+                                    f"[OIG Shield] ✅ POWER JUMP DETECTED! Nárůst {power_delta}W "
+                                    f"(>= {threshold_w}W) → HOME UPS aktivní"
+                                )
+                                power_completed = True
+                            elif (
+                                not is_going_to_home_ups and power_delta <= -threshold_w
+                            ):
+                                _LOGGER.info(
+                                    f"[OIG Shield] ✅ POWER DROP DETECTED! Pokles {power_delta}W "
+                                    f"(<= -{threshold_w}W) → HOME UPS vypnutý"
+                                )
+                                power_completed = True
+                        except (ValueError, TypeError) as e:
+                            _LOGGER.warning(
+                                f"[OIG Shield] Chyba při parsování power hodnoty: {e}"
+                            )
+
+                # Pokud power monitor detekoval dokončení, přeskočíme klasickou kontrolu entit
+                if power_completed:
+                    _LOGGER.info(
+                        f"[SHIELD CHECK] ✅✅✅ Služba {service_name} dokončena pomocí POWER MONITOR!"
+                    )
+                    await self._log_event(
+                        "completed",
+                        service_name,
+                        {
+                            "params": info["params"],
+                            "entities": info["entities"],
+                            "original_states": info.get("original_states", {}),
+                        },
+                        reason="Detekován skok výkonu (power monitor)",
+                    )
+                    await self._log_telemetry(
+                        "completed",
+                        service_name,
+                        {
+                            "params": info["params"],
+                            "entities": info["entities"],
+                            "completion_method": "power_monitor",
+                        },
+                    )
+                    await self._log_event(
+                        "released",
+                        service_name,
+                        {
+                            "params": info["params"],
+                            "entities": info["entities"],
+                            "original_states": info.get("original_states", {}),
+                        },
+                        reason="Semafor uvolněn – služba dokončena (power monitor)",
+                    )
+                    finished.append(service_name)
+                    continue
+
+                # KLASICKÁ LOGIKA: Kontrola změny entity
                 all_ok = True
                 _LOGGER.info(
                     f"[SHIELD CHECK] Služba: {service_name}, entities: {info['entities']}"
