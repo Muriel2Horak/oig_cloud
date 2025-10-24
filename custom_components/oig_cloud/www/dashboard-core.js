@@ -4910,7 +4910,7 @@ function loadPricingData() {
                     return new Date();
                 }
             });
-            
+
             // DEBUG: Zkontrolovat první a poslední timestamp
             if (prices.length > 0) {
                 console.log('[Pricing] Raw first timestamp:', prices[0].timestamp);
@@ -4918,7 +4918,7 @@ function loadPricingData() {
                 console.log('[Pricing] Raw last timestamp:', prices[prices.length - 1].timestamp);
                 console.log('[Pricing] Parsed last label:', allLabels[allLabels.length - 1]);
             }
-            
+
             // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
             originalPriceData = spotPriceData;
@@ -5247,7 +5247,7 @@ function loadPricingData() {
             initialZoomStart = timelineTimestamps[0].getTime();
             initialZoomEnd = timelineTimestamps[timelineTimestamps.length - 1].getTime();
             console.log('[Pricing] Timeline range for initial zoom:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
-            
+
             // EXTEND allLabels with battery forecast timestamps (union)
             const batteryTimestamps = timelineTimestamps;
             const priceTimestamps = allLabels; // already Date objects
@@ -5422,7 +5422,7 @@ function loadPricingData() {
             console.log('[Pricing] Current time:', new Date());
             console.log('[Pricing] Time offset (hours):', (new Date() - allLabels[0]) / (1000 * 60 * 60));
         }
-        
+
         combinedChart = new Chart(ctx, {
             type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
             data: { labels: allLabels, datasets: datasets },
@@ -5629,11 +5629,16 @@ function loadPricingData() {
             const now = new Date();
             const nowTime = now.getTime();
             const twelveHours = 12 * 60 * 60 * 1000;
-            
+
             combinedChart.options.scales.x.min = nowTime - twelveHours;
             combinedChart.options.scales.x.max = nowTime + twelveHours;
             console.log('[Pricing] Initial zoom fallback (±12h from now):', new Date(nowTime - twelveHours), 'to', new Date(nowTime + twelveHours));
         }
+
+        // DŮLEŽITÉ: Aplikovat zoom okamžitě pomocí update()
+        // Bez update() Chart.js čeká na další tick a zobrazí se default view
+        combinedChart.update('none'); // 'none' = bez animace, okamžitě
+        console.log('[Pricing] Initial zoom applied immediately');
 
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
