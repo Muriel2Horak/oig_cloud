@@ -5095,7 +5095,7 @@ function initCustomTiles() {
     if (!tileManager) {
         tileManager = new DashboardTileManager();
         window.tileManager = tileManager; // Export for dialog access
-        
+
         // Listen for config changes
         tileManager.addChangeListener(() => {
             console.log('[Tiles] Config changed, re-rendering...');
@@ -5113,7 +5113,7 @@ function initCustomTiles() {
     // Initial render
     renderAllTiles();
     updateTileControlsUI();
-    
+
     console.log('[Tiles] Initialization complete');
 }
 

@@ -187,10 +187,10 @@ class DashboardTileManager {
      */
     async syncToHA() {
         // Try multiple methods to get hass
-        const hass = (typeof getHass === 'function' ? getHass() : null) || 
-                     window.hass || 
+        const hass = (typeof getHass === 'function' ? getHass() : null) ||
+                     window.hass ||
                      this.hass;
-                     
+
         if (!hass) {
             console.warn('⚠️ Cannot sync to HA: hass not available');
             return;
