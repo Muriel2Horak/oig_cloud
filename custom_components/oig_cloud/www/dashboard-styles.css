@@ -3359,17 +3359,17 @@
 
 /* === CUSTOM TILES === */
 .custom-tiles-section {
-    margin: 10px auto;
+    margin: 8px auto;
     padding: 0;
     background: transparent;
     border: none;
-    max-width: 900px; /* Omezit šířku */
+    max-width: 700px; /* Menší max šířka */
 }
 
 .tiles-container {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 400px)); /* Max 400px na blok */
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 280px)); /* Max 280px na blok - vejde se nad karty */
+    gap: 20px; /* Větší gap mezi bloky */
     justify-content: center;
 }
 
@@ -3377,25 +3377,25 @@
     background: var(--bg-secondary);
     border-radius: 6px;
     border: 1px solid var(--border-primary);
-    padding: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    padding: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .block-label {
-    font-size: 9px;
+    font-size: 8px;
     color: var(--text-secondary);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     font-weight: 600;
     text-align: center;
-    opacity: 0.7;
+    opacity: 0.6;
     letter-spacing: 0.5px;
     text-transform: uppercase;
 }
 
 .tiles-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(2, 1fr); /* 2 sloupce místo 3 */
+    gap: 5px;
 }
 
 /* Tile base */
@@ -3404,8 +3404,8 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border-primary);
     border-radius: 4px;
-    min-height: 55px; /* Menší výška */
-    max-height: 55px;
+    min-height: 45px; /* Ještě menší výška */
+    max-height: 45px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3433,25 +3433,25 @@
 
 .tile-placeholder-content {
     text-align: center;
-    padding: 8px;
+    padding: 6px;
     width: 100%;
 }
 
 .tile-placeholder-icon {
-    font-size: 18px; /* Menší ikona */
-    margin-bottom: 2px;
+    font-size: 16px; /* Menší ikona */
+    margin-bottom: 1px;
     opacity: 0.5;
 }
 
 .tile-placeholder-text {
-    font-size: 8px; /* Menší text */
+    font-size: 7px; /* Menší text */
     color: var(--text-secondary);
     opacity: 0.6;
 }
 
 /* Entity tile */
 .tile-entity .tile-content {
-    padding: 6px 8px;
+    padding: 5px 6px;
     width: 100%;
     height: 100%;
     display: flex;
@@ -3460,14 +3460,14 @@
 }
 
 .tile-icon {
-    font-size: 16px; /* Menší ikona */
-    margin-bottom: 2px;
+    font-size: 14px; /* Menší ikona */
+    margin-bottom: 1px;
 }
 
 .tile-label {
-    font-size: 8px; /* Menší text */
+    font-size: 7px; /* Menší text */
     color: var(--text-secondary);
-    margin-bottom: 2px;
+    margin-bottom: 1px;
     line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3475,14 +3475,14 @@
 }
 
 .tile-value {
-    font-size: 13px; /* Menší hodnota */
+    font-size: 12px; /* Menší hodnota */
     font-weight: 700;
     color: var(--text-primary);
 }
 
 /* Button tile */
 .tile-button .tile-content {
-    padding: 6px 8px;
+    padding: 5px 6px;
     width: 100%;
     height: 100%;
     display: flex;
@@ -3510,24 +3510,24 @@
 }
 
 .tile-state {
-    font-size: 8px; /* Menší text */
+    font-size: 7px; /* Menší text */
     font-weight: 600;
-    margin-top: 2px;
+    margin-top: 1px;
     opacity: 0.8;
 }
 
 /* Remove button */
 .tile-remove {
     position: absolute;
-    top: 2px;
-    right: 2px;
+    top: 1px;
+    right: 1px;
     background: rgba(244, 67, 54, 0.9);
     color: white;
     border: none;
     border-radius: 50%;
-    width: 16px; /* Menší */
-    height: 16px;
-    font-size: 10px; /* Menší */
+    width: 14px; /* Menší */
+    height: 14px;
+    font-size: 9px; /* Menší */
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s;

@@ -61,10 +61,10 @@ class DashboardTileManager {
      */
     getDefaultConfig() {
         return {
-            tiles_left: Array(6).fill(null),
-            tiles_right: Array(6).fill(null),
-            left_count: 6,
-            right_count: 6,
+            tiles_left: Array(4).fill(null),  // 2×2 grid = 4 dlaždice
+            tiles_right: Array(4).fill(null), // 2×2 grid = 4 dlaždice
+            left_count: 4,
+            right_count: 4,
             visible: true,  // ZMĚNĚNO: Default je nyní TRUE (viditelné)
             version: 1
         };
@@ -286,7 +286,7 @@ class DashboardTileManager {
      */
     setTileCount(side, count) {
         const parsedCount = parseInt(count);
-        if (isNaN(parsedCount) || parsedCount < 0 || parsedCount > 6) {
+        if (isNaN(parsedCount) || parsedCount < 0 || parsedCount > 4) {  // Max 4 pro 2×2 grid
             console.error(`❌ Invalid tile count: ${count}`);
             return;
         }
