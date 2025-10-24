@@ -464,21 +464,47 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """Získat všechny load_avg senzory."""
         if not self._hass:
+            _LOGGER.warning("_get_load_avg_sensors: hass not available")
             return {}
 
         load_sensors = {}
+        total_checked = 0
 
-        # Najít všechny load_avg senzory
+        # OPRAVA: Hledat podle time_range atributu, ne podle entity_id
+        # Entity mají české názvy (průměrný_odběr), ne sensor_type (load_avg)
         for entity_id in self._hass.states.async_entity_ids("sensor"):
-            if "load_avg_" in entity_id:
-                state = self._hass.states.get(entity_id)
-                if state and state.state not in ["unknown", "unavailable"]:
+            # Filtrovat jen naše senzory (oig_)
+            if f"oig_{self._box_id}_" not in entity_id:
+                continue
+
+            state = self._hass.states.get(entity_id)
+            if not state:
+                continue
+
+            # Zkontrolovat jestli má time_range atribut (= je to load_avg sensor)
+            attrs = state.attributes
+            if "time_range" not in attrs or "day_type" not in attrs:
+                continue
+
+            total_checked += 1
+            _LOGGER.debug(
+                f"Checking {entity_id}: state={state.state}, time_range={attrs.get('time_range')}"
+            )
+
+            if state.state not in ["unknown", "unavailable"]:
+                try:
                     load_sensors[entity_id] = {
                         "value": float(state.state),
-                        "attributes": dict(state.attributes),
+                        "attributes": dict(attrs),
                     }
+                except (ValueError, TypeError) as e:
+                    _LOGGER.warning(
+                        f"Failed to parse {entity_id} value '{state.state}': {e}"
+                    )
 
-        _LOGGER.info(f"Found {len(load_sensors)} load_avg sensors")
+        _LOGGER.info(
+            f"Found {len(load_sensors)} valid load_avg sensors (checked {total_checked} total)"
+        )
         if len(load_sensors) > 0:
             # Log first sensor for debugging
             first_sensor = list(load_sensors.keys())[0]
@@ -552,6 +578,15 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         Returns:
             Load average v kWh za 15 minut
         """
+        # OPRAVA: Pokud je slovník prázdný, logovat a vrátit fallback
+        if not load_avg_sensors:
+            if not hasattr(self, "_empty_load_sensors_logged"):
+                _LOGGER.warning(
+                    "load_avg_sensors dictionary is empty - no statistics sensors available"
+                )
+                self._empty_load_sensors_logged = True
+            return 0.125  # 500W fallback
+
         # Zjistit den v týdnu (0=pondělí, 6=neděle)
         is_weekend = timestamp.weekday() >= 5
         day_type = "weekend" if is_weekend else "weekday"
