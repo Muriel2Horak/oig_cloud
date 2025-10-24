@@ -214,3 +214,13 @@ save_dashboard_tiles:
       selector:
         text:
           multiline: true
+
+get_dashboard_tiles:
+  name: "📥 Načíst konfiguraci dlaždic"
+  description: |
+    Načte uloženou konfiguraci vlastních dlaždic z integrace.
+    Používá se automaticky dashboardem při inicializaci pro synchronizaci mezi prohlížeči/zařízeními.
+  response:
+    config:
+      description: "JSON objekt s konfigurací dlaždic, nebo null pokud žádná konfigurace neexistuje"
+      example: '{"tiles_left": [], "tiles_right": [], "left_count": 6, "right_count": 6, "visible": true, "version": 1}'

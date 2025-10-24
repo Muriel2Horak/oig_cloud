@@ -1416,6 +1416,61 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         return charging_intervals, total_energy, total_cost
 
+    def _get_dynamic_offset(self, from_mode: str, to_mode: str) -> float:
+        """Získá dynamický offset z ModeTransitionTracker.
+
+        Args:
+            from_mode: Zdrojový režim (např. "Home 1")
+            to_mode: Cílový režim (např. "Home UPS")
+
+        Returns:
+            Offset v sekundách (fallback 300s = 5 minut pokud tracker není dostupný)
+        """
+        try:
+            # Import DOMAIN
+            from .const import DOMAIN
+
+            # Získat ServiceShield z hass.data
+            if not self._hass or not hasattr(self, "_config_entry"):
+                _LOGGER.warning(
+                    "[BatteryForecast] Missing hass or config_entry for dynamic offset"
+                )
+                return 300.0  # Fallback 5 minut
+
+            entry_data = self._hass.data.get(DOMAIN, {}).get(
+                self._config_entry.entry_id
+            )
+            if not entry_data:
+                _LOGGER.debug("[BatteryForecast] No entry data for dynamic offset")
+                return 300.0
+
+            service_shield = entry_data.get("service_shield")
+            if not service_shield or not hasattr(service_shield, "mode_tracker"):
+                _LOGGER.debug(
+                    "[BatteryForecast] ServiceShield or mode_tracker not available"
+                )
+                return 300.0
+
+            mode_tracker = service_shield.mode_tracker
+            if not mode_tracker:
+                _LOGGER.debug("[BatteryForecast] Mode tracker not initialized")
+                return 300.0
+
+            # Získat doporučený offset
+            offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
+
+            _LOGGER.debug(
+                f"[BatteryForecast] Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s"
+            )
+
+            return offset_seconds
+
+        except Exception as e:
+            _LOGGER.warning(
+                f"[BatteryForecast] Error getting dynamic offset, using fallback: {e}"
+            )
+            return 300.0  # Fallback 5 minut
+
     @property
     def native_value(self) -> str:
         """Vrátí stav senzoru - on/off jestli nabíjení PROBÍHÁ nebo brzy začne."""
@@ -1423,8 +1478,13 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         # Najít souvislé bloky nabíjení a kontrolovat, jestli jsme v některém
         now = datetime.now()
-        offset_before_start = timedelta(minutes=5)  # Zapnout 5 min před začátkem
-        offset_before_end = timedelta(minutes=5)  # Vypnout 5 min před koncem
+
+        # Získat dynamické offsety z ModeTransitionTracker
+        offset_before_start_seconds = self._get_dynamic_offset("Home 1", "Home UPS")
+        offset_before_end_seconds = self._get_dynamic_offset("Home UPS", "Home 1")
+
+        offset_before_start = timedelta(seconds=offset_before_start_seconds)
+        offset_before_end = timedelta(seconds=offset_before_end_seconds)
 
         # Projít intervaly a vytvořit bloky
         charging_blocks = []

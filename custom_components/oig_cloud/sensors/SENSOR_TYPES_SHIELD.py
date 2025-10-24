@@ -39,4 +39,17 @@ SENSOR_TYPES_SHIELD: Dict[str, Dict[str, Any]] = {
         "sensor_type_category": "shield",
         "device_mapping": "shield",
     },
+    "mode_reaction_time": {
+        "name": "Box Mode Reaction Time",
+        "name_cs": "Doba reakce změny režimu",
+        "unit_of_measurement": "s",
+        "device_class": SensorDeviceClass.DURATION,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "icon": "mdi:timer-outline",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "sensor_type_category": "shield",
+        "device_mapping": "shield",
+        "description": "Průměrná doba reakce střídače na změnu režimu",
+        "description_cs": "Měří jak dlouho trvá změna režimu (např. Home 1 → Home UPS). Používá se pro dynamické offsety při plánovaném nabíjení.",
+    },
 }

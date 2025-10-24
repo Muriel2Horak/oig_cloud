@@ -16,7 +16,10 @@ from homeassistant.components.sensor import (
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_time_interval,
+    async_track_time_change,
+)
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -168,13 +171,17 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 f"[{self.entity_id}] Set up hourly tracking for sensor: {self._sensor_type}"
             )
         elif hasattr(self, "_time_range") and self._time_range is not None:
-            # Intervalové senzory - kontrola konce intervalů každých 15 minut
-            async_track_time_interval(
-                self.hass, self._check_interval_end, timedelta(minutes=15)
+            # Intervalové senzory - výpočet statistik jednou denně ve 2:00
+            from homeassistant.helpers.event import async_track_time_change
+
+            async_track_time_change(
+                self.hass, self._daily_statistics_update, hour=2, minute=0, second=0
             )
             _LOGGER.debug(
-                f"[{self.entity_id}] Set up interval tracking for time range: {self._time_range}"
+                f"[{self.entity_id}] Set up daily statistics calculation at 2:00 for time range: {self._time_range}"
             )
+            # První výpočet po startu
+            await self._daily_statistics_update(None)
 
     async def _load_statistics_data(self) -> None:
         """Načte statistická data z persistentního úložiště."""
@@ -524,64 +531,55 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         except Exception as e:
             _LOGGER.error(f"[{self.entity_id}] Error in hourly check: {e}")
 
-    async def _check_interval_end(self, now: datetime) -> None:
-        """Kontroluje konec intervalů a ukládá statistiky."""
+    async def _daily_statistics_update(self, now: Optional[datetime]) -> None:
+        """Denní aktualizace intervalových statistik z recorder dat."""
         if not hasattr(self, "_time_range") or not self._time_range:
             return
 
         try:
-            start_hour, end_hour = self._time_range
-            current_hour = now.hour
+            _LOGGER.info(f"[{self.entity_id}] Starting daily statistics calculation")
 
-            # Kontrola konce intervalu
-            is_interval_end = False
-            if end_hour > start_hour:
-                # Normální interval (např. 6-8)
-                is_interval_end = current_hour == end_hour and now.minute < 15
-            else:
-                # Interval přes půlnoc (např. 22-6)
-                is_interval_end = current_hour == end_hour and now.minute < 15
+            # Spočítat medián z posledních 30 dní
+            new_value = await self._calculate_interval_statistics_from_history()
 
-            # Kontrola typu dne
-            if is_interval_end:
-                is_correct_day_type = self._is_correct_day_type(now)
-                if not is_correct_day_type:
-                    return
+            if new_value is not None:
+                # Uložit vypočítanou hodnotu
+                date_key = datetime.now().strftime("%Y-%m-%d")
+                if date_key not in self._interval_data:
+                    self._interval_data[date_key] = []
 
-                # Získání dat z základního mediánového senzoru
-                median_values = await self._get_interval_median_data(
-                    start_hour, end_hour, now
+                # Přidat novou hodnotu
+                self._interval_data[date_key] = [new_value]
+
+                # Vyčistit staré záznamy (starší než max_age_days + 1 den buffer)
+                max_days = getattr(self, "_max_age_days", 14)
+                cutoff_date = (datetime.now() - timedelta(days=max_days + 1)).strftime(
+                    "%Y-%m-%d"
                 )
-                if median_values:
-                    # Výpočet mediánu z intervalu
-                    interval_median = median(median_values)
+                self._interval_data = {
+                    k: v for k, v in self._interval_data.items() if k >= cutoff_date
+                }
 
-                    # Uložení do historických dat
-                    date_key = now.strftime("%Y-%m-%d")
-                    if date_key not in self._interval_data:
-                        self._interval_data[date_key] = []
+                # Uložit data
+                await self._save_statistics_data()
 
-                    self._interval_data[date_key].append(interval_median)
+                # Aktualizovat stav senzoru
+                self.async_write_ha_state()
 
-                    # Omezení na posledních 30 hodnot
-                    if len(self._interval_data[date_key]) > 30:
-                        self._interval_data[date_key] = self._interval_data[date_key][
-                            -30:
-                        ]
-
-                    # Uložení dat
-                    await self._save_statistics_data()
-
-                    # Aktualizace stavu senzoru
-                    self.async_write_ha_state()
-
-                    _LOGGER.info(
-                        f"[{self.entity_id}] Saved interval median: {interval_median:.1f}W "
-                        f"for {start_hour}-{end_hour}h on {date_key}"
-                    )
+                _LOGGER.info(
+                    f"[{self.entity_id}] Daily statistics updated: {new_value:.1f}W "
+                    f"for interval {self._time_range}"
+                )
+            else:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Daily statistics calculation returned None"
+                )
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error checking interval end: {e}")
+            _LOGGER.error(
+                f"[{self.entity_id}] Error in daily statistics update: {e}",
+                exc_info=True,
+            )
 
     def _is_correct_day_type(self, dt: datetime) -> bool:
         """Kontroluje zda je správný typ dne (weekday/weekend)."""
@@ -595,16 +593,187 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         return True
 
-    async def _get_interval_median_data(
-        self, start_hour: int, end_hour: int, end_time: datetime
-    ) -> List[float]:
+    async def _calculate_interval_statistics_from_history(self) -> Optional[float]:
+        """
+        Vypočítá statistiku intervalu z historických dat recorder.
+
+        Algoritmus:
+        1. Načte data z recorder za posledních 30 dní
+        2. Pro každý den vypočítá průměr/medián v daném časovém intervalu
+        3. Z těchto 30 denních hodnot spočítá celkový medián
+
+        Returns:
+            Medián spotřeby v W pro daný interval, nebo None
+        """
+        if not hasattr(self, "_time_range") or not self._time_range:
+            return None
+
+        try:
+            from homeassistant.components import recorder
+            from homeassistant.components.recorder import history
+
+            start_hour, end_hour = self._time_range
+            # Zajistit že jsou to int hodnoty
+            start_hour = int(start_hour)
+            end_hour = int(end_hour)
+            source_entity_id = f"sensor.oig_{self._data_key}_actual_aco_p"
+
+            # Časový rozsah - použít max_age_days z konfigurace
+            max_days = getattr(self, "_max_age_days", 14)
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=max_days)
+
+            _LOGGER.debug(
+                f"[{self.entity_id}] Loading history for {source_entity_id} "
+                f"from {start_time.date()} to {end_time.date()}"
+            )
+
+            # Načíst všechna historická data
+            states = await self.hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self.hass,
+                start_time,
+                end_time,
+                source_entity_id,
+            )
+
+            if source_entity_id not in states or not states[source_entity_id]:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] No historical data found for {source_entity_id}"
+                )
+                return None
+
+            # Seskupit data podle dnů
+            daily_medians = []
+
+            # Projít každý z posledních N dní (podle max_age_days)
+            for days_ago in range(max_days):
+                day_date = (end_time - timedelta(days=days_ago)).date()
+
+                # Kontrola typu dne (weekday/weekend)
+                day_datetime = datetime.combine(day_date, datetime.min.time())
+                is_weekend = day_datetime.weekday() >= 5
+
+                # Přeskočit dny které nesedí s day_type
+                if hasattr(self, "_day_type"):
+                    if self._day_type == "weekend" and not is_weekend:
+                        continue
+                    elif self._day_type == "weekday" and is_weekend:
+                        continue
+
+                # Vyfiltrovat data pro tento den v daném časovém intervalu
+                day_values = []
+
+                for state in states[source_entity_id]:
+                    state_time = state.last_updated.replace(tzinfo=None)
+
+                    # Je to správný den?
+                    if state_time.date() != day_date:
+                        continue
+
+                    # Je to ve správném časovém intervalu?
+                    hour = state_time.hour
+
+                    if end_hour > start_hour:
+                        # Normální interval (např. 6-8, 16-22)
+                        if not (start_hour <= hour < end_hour):
+                            continue
+                    else:
+                        # Interval přes půlnoc (např. 22-6)
+                        if not (hour >= start_hour or hour < end_hour):
+                            continue
+
+                    # Přidat hodnotu
+                    if state.state not in ("unavailable", "unknown", None):
+                        try:
+                            value = float(state.state)
+                            if value >= 0:  # Ignorovat záporné hodnoty
+                                day_values.append(value)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Spočítat medián pro tento den
+                if day_values:
+                    day_median = median(day_values)
+                    daily_medians.append(day_median)
+                    _LOGGER.debug(
+                        f"[{self.entity_id}] Day {day_date}: {len(day_values)} values, median={day_median:.1f}W"
+                    )
+
+            # Spočítat celkový medián z denních mediánů
+            if daily_medians:
+                result = median(daily_medians)
+                _LOGGER.info(
+                    f"[{self.entity_id}] Calculated interval median: {result:.1f}W "
+                    f"from {len(daily_medians)} days (out of {max_days})"
+                )
+                return round(result, 1)
+            else:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] No valid data found for calculation"
+                )
+                return None
+
+        except Exception as e:
+            _LOGGER.error(
+                f"[{self.entity_id}] Error calculating interval statistics: {e}",
+                exc_info=True,
+            )
+            return None
         """Získá mediánová data z základního senzoru pro daný interval."""
         try:
             # Najdeme základní mediánový senzor
             median_entity_id = f"sensor.oig_{self._data_key}_battery_load_median"
 
-            # Získáme jeho historická data (implementace závisí na dostupnosti historie)
-            # Pro teď použijeme aktuální hodnotu jako aproximaci
+            # Vypočítat časy intervalu
+            # end_time je konec intervalu (např. 22:00)
+            # Interval je např. 16-22, takže potřebujeme data od 16:00 do 22:00
+
+            # Začátek intervalu
+            if end_hour > start_hour:
+                # Normální interval (např. 6-8, 16-22)
+                hours_diff = end_hour - start_hour
+                interval_start = end_time - timedelta(hours=hours_diff)
+            else:
+                # Interval přes půlnoc (např. 22-6)
+                hours_diff = (24 - start_hour) + end_hour
+                interval_start = end_time - timedelta(hours=hours_diff)
+
+            # Načíst historická data z HA databáze
+            from homeassistant.components import history
+
+            _LOGGER.debug(
+                f"[{self.entity_id}] Loading history for {median_entity_id} "
+                f"from {interval_start.strftime('%H:%M')} to {end_time.strftime('%H:%M')}"
+            )
+
+            # Načíst historii (vrací list of states)
+            states = await self.hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self.hass,
+                interval_start,
+                end_time,
+                median_entity_id,
+            )
+
+            # Extrahovat hodnoty
+            values = []
+            if median_entity_id in states:
+                for state in states[median_entity_id]:
+                    if state.state not in ("unavailable", "unknown", None):
+                        try:
+                            values.append(float(state.state))
+                        except (ValueError, TypeError):
+                            pass
+
+            _LOGGER.debug(
+                f"[{self.entity_id}] Loaded {len(values)} historical values from interval"
+            )
+
+            if values:
+                return values
+
+            # Fallback - pokud nemáme historii, použijeme aktuální hodnotu
             median_sensor = self.hass.states.get(median_entity_id)
             if median_sensor and median_sensor.state not in (
                 "unavailable",
@@ -613,17 +782,25 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             ):
                 try:
                     current_median = float(median_sensor.state)
-                    return [current_median]  # Zjednodušená implementace
+                    _LOGGER.warning(
+                        f"[{self.entity_id}] No historical data, using current value: {current_median:.1f}W"
+                    )
+                    return [current_median]
                 except (ValueError, TypeError):
                     pass
 
             # Fallback - přímé vzorkování ze source senzoru
             source_value = self._get_actual_load_value()
             if source_value is not None:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Using source sensor value as fallback: {source_value:.1f}W"
+                )
                 return [source_value]
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error getting interval data: {e}")
+            _LOGGER.error(
+                f"[{self.entity_id}] Error getting interval data: {e}", exc_info=True
+            )
 
         return []
 

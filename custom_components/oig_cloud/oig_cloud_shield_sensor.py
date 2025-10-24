@@ -50,12 +50,6 @@ class OigCloudShieldSensor(OigCloudSensor):
     """Senzor pro ServiceShield monitoring - REAL-TIME bez coordinator delay."""
 
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
-        # PŘESKOČÍME parent init pro ServiceShield senzory
-        if not sensor_type.startswith("service_shield"):
-            raise ValueError(
-                f"OigCloudShieldSensor can only handle service_shield sensors, got: {sensor_type}"
-            )
-
         # KRITICKÁ OPRAVA: Shield senzory NESMÍ dědit z CoordinatorEntity!
         # CoordinatorEntity má built-in debounce (30s interval), který zpozdí updates.
         # Shield senzory potřebují OKAMŽITÉ updaty (<100ms), proto používáme jen SensorEntity.
@@ -196,6 +190,20 @@ class OigCloudShieldSensor(OigCloudSensor):
                 queue = getattr(shield, "queue", [])
                 pending = getattr(shield, "pending", {})
                 return len(queue) + len(pending)
+            elif self._sensor_type == "mode_reaction_time":
+                # Průměrná doba reakce napříč všemi scénáři
+                if shield.mode_tracker:
+                    stats = shield.mode_tracker.get_statistics()
+                    if stats:
+                        # Spočítat průměrný medián ze všech scénářů
+                        medians = [
+                            s["median_seconds"]
+                            for s in stats.values()
+                            if "median_seconds" in s
+                        ]
+                        if medians:
+                            return round(sum(medians) / len(medians), 1)
+                return None
             elif self._sensor_type == "service_shield_activity":
                 running = getattr(shield, "running", None)
                 if running:
@@ -421,6 +429,15 @@ class OigCloudShieldSensor(OigCloudSensor):
                     "queue_length": len(queue),
                     "running_count": len(pending),
                 }
+
+                # Speciální atributy pro mode_reaction_time
+                if self._sensor_type == "mode_reaction_time" and shield.mode_tracker:
+                    stats = shield.mode_tracker.get_statistics()
+                    base_attrs["scenarios"] = stats
+                    base_attrs["total_samples"] = sum(
+                        s.get("samples", 0) for s in stats.values()
+                    )
+                    base_attrs["tracked_scenarios"] = len(stats)
 
                 attrs.update(base_attrs)
 

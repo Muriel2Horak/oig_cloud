@@ -177,6 +177,25 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         except Exception as e:
             _LOGGER.error(f"Failed to save dashboard tiles config: {e}")
 
+    async def handle_get_dashboard_tiles(call: ServiceCall) -> dict:
+        """Služba pro načtení konfigurace dashboard tiles."""
+        try:
+            from homeassistant.helpers.storage import Store
+
+            store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+            config = await store.async_load()
+
+            if config:
+                _LOGGER.info("Dashboard tiles config loaded from storage")
+                return {"config": config}
+            else:
+                _LOGGER.info("No dashboard tiles config found in storage")
+                return {"config": None}
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to load dashboard tiles config: {e}")
+            return {"config": None}
+
     # Registrace služby pouze pokud ještě není registrovaná
     if not hass.services.has_service(DOMAIN, "update_solar_forecast"):
         hass.services.async_register(
@@ -195,6 +214,16 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=vol.Schema({vol.Required("config"): cv.string}),
         )
         _LOGGER.debug("Registered save_dashboard_tiles service")
+
+    if not hass.services.has_service(DOMAIN, "get_dashboard_tiles"):
+        hass.services.async_register(
+            DOMAIN,
+            "get_dashboard_tiles",
+            handle_get_dashboard_tiles,
+            schema=vol.Schema({}),
+            supports_response=True,
+        )
+        _LOGGER.debug("Registered get_dashboard_tiles service")
 
 
 async def async_setup_entry_services_with_shield(

@@ -62,6 +62,9 @@ class ServiceShield:
         self.telemetry_handler: Optional[Any] = None
         self.telemetry_logger: Optional[Any] = None
 
+        # Mode Transition Tracker (bude inicializován později s box_id)
+        self.mode_tracker: Optional[Any] = None
+
         # Setup telemetrie pouze pro ServiceShield
         if not entry.options.get("no_telemetry", False):
             self._setup_telemetry()
@@ -683,6 +686,13 @@ class ServiceShield:
                 "queued_at": datetime.now(),
             }
 
+            # Track mode transition pokud je to set_box_mode
+            if service_name == "set_box_mode" and self.mode_tracker:
+                from_mode = params.get("current_value")
+                to_mode = params.get("value")
+                if from_mode and to_mode:
+                    self.mode_tracker.track_request(trace_id, from_mode, to_mode)
+
             # Notifikuj senzory o nové položce ve frontě
             self._notify_state_change()
 
@@ -698,6 +708,14 @@ class ServiceShield:
             _LOGGER.info(
                 f"[OIG Shield] Spouštím službu {service_name} (fronta prázdná)"
             )
+
+            # Track mode transition pokud je to set_box_mode
+            if service_name == "set_box_mode" and self.mode_tracker:
+                from_mode = params.get("current_value")
+                to_mode = params.get("value")
+                if from_mode and to_mode:
+                    self.mode_tracker.track_request(trace_id, from_mode, to_mode)
+
             await self._start_call(
                 service_name,
                 params,
@@ -1596,6 +1614,11 @@ class ServiceShield:
 
     async def cleanup(self) -> None:
         """Vyčistí ServiceShield při ukončení."""
+        # Cleanup mode tracker
+        if self.mode_tracker:
+            await self.mode_tracker.cleanup()
+            self._logger.info("[OIG Shield] Mode tracker cleaned up")
+
         # Zrušíme state listener
         if self._state_listener_unsub:
             self._state_listener_unsub()
@@ -1672,3 +1695,284 @@ class ServiceShield:
                 )
                 # OPRAVA: Přidání spánku při chybě, aby se předešlo opakovanému selhání
                 await asyncio.sleep(5)
+
+
+class ModeTransitionTracker:
+    """Sleduje dobu reakce střídače na změny režimu (box_prms_mode)."""
+
+    def __init__(self, hass: HomeAssistant, box_id: str):
+        """Initialize the tracker.
+
+        Args:
+            hass: Home Assistant instance
+            box_id: Box ID pro identifikaci senzoru
+        """
+        self.hass = hass
+        self.box_id = box_id
+        self._logger = logging.getLogger(__name__)
+
+        # Tracking aktivních transakcí: key = trace_id, value = {from_mode, to_mode, start_time}
+        self._active_transitions: Dict[str, Dict[str, Any]] = {}
+
+        # Statistiky přechodů: key = "from_mode→to_mode", value = list of durations (seconds)
+        self._transition_history: Dict[str, List[float]] = {}
+
+        # Max samples per scenario (limitovat memory)
+        self._max_samples = 100
+
+        # Listener pro změny stavu box_prms_mode
+        self._state_listener_unsub: Optional[Callable] = None
+
+        self._logger.info(f"[ModeTracker] Initialized for box {box_id}")
+
+    async def async_setup(self) -> None:
+        """Setup state change listener and load historical data."""
+        sensor_id = f"sensor.oig_{self.box_id}_box_prms_mode"
+
+        # Poslouchat změny stavu senzoru
+        self._state_listener_unsub = async_track_state_change_event(
+            self.hass, sensor_id, self._async_mode_changed
+        )
+
+        self._logger.info(f"[ModeTracker] Listening to {sensor_id}")
+
+        # Načíst historická data z recorderu (async)
+        await self._async_load_historical_data(sensor_id)
+
+    def track_request(self, trace_id: str, from_mode: str, to_mode: str) -> None:
+        """Track začátek transakce (když ServiceShield přidá do fronty).
+
+        Args:
+            trace_id: Unique ID transakce
+            from_mode: Počáteční režim
+            to_mode: Cílový režim
+        """
+        if from_mode == to_mode:
+            # Ignorovat same→same transakce
+            return
+
+        self._active_transitions[trace_id] = {
+            "from_mode": from_mode,
+            "to_mode": to_mode,
+            "start_time": dt_now(),
+        }
+
+        self._logger.debug(
+            f"[ModeTracker] Tracking {trace_id}: {from_mode} → {to_mode}"
+        )
+
+    @callback
+    def _async_mode_changed(self, event: Event) -> None:
+        """Callback when box_prms_mode state changes."""
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+
+        if not new_state or not old_state:
+            return
+
+        new_mode = new_state.state
+        old_mode = old_state.state
+
+        if new_mode == old_mode:
+            return
+
+        # Najít aktivní transakci která odpovídá této změně
+        for trace_id, transition in list(self._active_transitions.items()):
+            if (
+                transition["from_mode"] == old_mode
+                and transition["to_mode"] == new_mode
+            ):
+
+                # Spočítat dobu trvání
+                duration = (dt_now() - transition["start_time"]).total_seconds()
+
+                # Uložit do historie
+                scenario_key = f"{old_mode}→{new_mode}"
+                if scenario_key not in self._transition_history:
+                    self._transition_history[scenario_key] = []
+
+                # Přidat vzorek (limitovat na max_samples)
+                self._transition_history[scenario_key].append(duration)
+                if len(self._transition_history[scenario_key]) > self._max_samples:
+                    self._transition_history[scenario_key].pop(0)  # Remove oldest
+
+                self._logger.info(
+                    f"[ModeTracker] ✅ Completed {scenario_key} in {duration:.1f}s"
+                )
+
+                # Odstranit z aktivních
+                del self._active_transitions[trace_id]
+                break
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Získat statistiky všech scénářů.
+
+        Returns:
+            Dict with scenario statistics:
+            {
+                "Home 1→Home UPS": {
+                    "median_seconds": 5.2,
+                    "p95_seconds": 8.1,
+                    "samples": 45,
+                    "min": 3.1,
+                    "max": 12.5
+                }
+            }
+        """
+        import statistics
+
+        result = {}
+
+        for scenario, durations in self._transition_history.items():
+            if not durations:
+                continue
+
+            try:
+                result[scenario] = {
+                    "median_seconds": round(statistics.median(durations), 1),
+                    "p95_seconds": (
+                        round(
+                            statistics.quantiles(durations, n=20)[18],
+                            1,  # 95th percentile
+                        )
+                        if len(durations) >= 20
+                        else round(max(durations), 1)
+                    ),
+                    "samples": len(durations),
+                    "min": round(min(durations), 1),
+                    "max": round(max(durations), 1),
+                }
+            except Exception as e:
+                self._logger.error(
+                    f"[ModeTracker] Error calculating stats for {scenario}: {e}"
+                )
+
+        return result
+
+    def get_offset_for_scenario(self, from_mode: str, to_mode: str) -> float:
+        """Získat doporučený offset (v sekundách) pro daný scénář.
+
+        Args:
+            from_mode: Počáteční režim
+            to_mode: Cílový režim
+
+        Returns:
+            Doporučený offset v sekundách (95. percentil, nebo fallback 10s)
+        """
+        scenario_key = f"{from_mode}→{to_mode}"
+        stats = self.get_statistics()
+
+        if scenario_key in stats and stats[scenario_key]["samples"] >= 5:
+            # Použít 95. percentil pokud máme dost vzorků
+            return stats[scenario_key]["p95_seconds"]
+
+        # Fallback: 10 sekund
+        self._logger.debug(
+            f"[ModeTracker] No data for {scenario_key}, using fallback 10s"
+        )
+        return 10.0
+
+    async def _async_load_historical_data(self, sensor_id: str) -> None:
+        """Načte historická data z recorderu a analyzuje přechody mezi režimy.
+
+        Args:
+            sensor_id: ID senzoru (sensor.oig_<box_id>_box_prms_mode)
+        """
+        try:
+            self._logger.info(
+                f"[ModeTracker] Loading historical data for {sensor_id}..."
+            )
+
+            # Načíst 30 dní zpátky
+            end_time = dt_now()
+            start_time = end_time - timedelta(days=30)
+
+            # Načíst změny stavu z recorderu
+            from homeassistant.components import recorder
+
+            # Run v executoru aby to neblokovalo event loop
+            states = await self.hass.async_add_executor_job(
+                recorder.history.state_changes_during_period,
+                self.hass,
+                start_time,
+                end_time,
+                sensor_id,
+            )
+
+            if not states or sensor_id not in states:
+                self._logger.warning(
+                    f"[ModeTracker] No historical data found for {sensor_id}"
+                )
+                return
+
+            state_list = states[sensor_id]
+            self._logger.info(
+                f"[ModeTracker] Found {len(state_list)} historical states"
+            )
+
+            # Analyzovat přechody
+            transitions_found = 0
+
+            for i in range(1, len(state_list)):
+                prev_state = state_list[i - 1]
+                curr_state = state_list[i]
+
+                prev_mode = prev_state.state
+                curr_mode = curr_state.state
+
+                # Pokud se režim změnil
+                if (
+                    prev_mode != curr_mode
+                    and prev_mode != "unknown"
+                    and curr_mode != "unknown"
+                ):
+                    # Spočítat dobu od posledního požadavku
+                    # Hledáme změnu requested_mode v předchozích stavech
+                    requested_mode = curr_state.attributes.get("requested_mode")
+
+                    # Jednoduchá heuristika: když se state změnil, předpokládáme že
+                    # změna proběhla od posledního stavu
+                    duration = (
+                        curr_state.last_changed - prev_state.last_changed
+                    ).total_seconds()
+
+                    # Filtrovat rozumné hodnoty (0.1s - 5min)
+                    if 0.1 < duration < 300:
+                        scenario_key = f"{prev_mode}→{curr_mode}"
+
+                        if scenario_key not in self._transition_history:
+                            self._transition_history[scenario_key] = []
+
+                        self._transition_history[scenario_key].append(duration)
+                        transitions_found += 1
+
+            # Oříznout na max_samples
+            for scenario_key in self._transition_history:
+                if len(self._transition_history[scenario_key]) > self._max_samples:
+                    self._transition_history[scenario_key] = self._transition_history[
+                        scenario_key
+                    ][-self._max_samples :]
+
+            self._logger.info(
+                f"[ModeTracker] Loaded {transitions_found} transitions from history, "
+                f"scenarios: {len(self._transition_history)}"
+            )
+
+            # Vypsat statistiky
+            stats = self.get_statistics()
+            for scenario, data in stats.items():
+                self._logger.debug(
+                    f"[ModeTracker] {scenario}: median={data['median_seconds']}s, "
+                    f"p95={data['p95_seconds']}s, samples={data['samples']}"
+                )
+
+        except Exception as e:
+            self._logger.error(
+                f"[ModeTracker] Error loading historical data: {e}", exc_info=True
+            )
+
+    async def async_cleanup(self) -> None:
+        """Cleanup listeners."""
+        if self._state_listener_unsub:
+            self._state_listener_unsub()
+            self._state_listener_unsub = None

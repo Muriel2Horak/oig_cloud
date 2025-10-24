@@ -138,6 +138,36 @@ function subscribeToShield() {
                     console.log(`[Pricing] Sensor data changed: ${entityId}`, newState?.state);
                     debouncedLoadPricingData(); // Trigger pricing chart update (debounced)
                 }
+
+                // Custom tiles - check if entity is used in any tile
+                if (window.tileManager) {
+                    const tilesLeft = window.tileManager.getTiles('left');
+                    const tilesRight = window.tileManager.getTiles('right');
+                    const allTiles = [...(tilesLeft || []), ...(tilesRight || [])];
+
+                    // Check if changed entity is used in any tile (main or support entities)
+                    const isTileEntity = allTiles.some(tile => {
+                        if (!tile) return false;
+                        // Check main entity
+                        if (tile.entity === entityId) return true;
+                        // Check support entities
+                        if (tile.supportEntities) {
+                            return tile.supportEntities.some(se => se.entity === entityId);
+                        }
+                        return false;
+                    });
+
+                    if (isTileEntity) {
+                        console.log(`[Tiles] Entity used in tile changed: ${entityId}`);
+                        // Debounced re-render to prevent excessive updates
+                        if (!window.tileRenderTimeout) {
+                            window.tileRenderTimeout = setTimeout(() => {
+                                renderAllTiles();
+                                window.tileRenderTimeout = null;
+                            }, 100);
+                        }
+                    }
+                }
             }
         }, 'state_changed');
 
@@ -2068,10 +2098,24 @@ function updateTime() {
     document.getElementById('current-time').textContent = now.toLocaleTimeString('cs-CZ');
 }
 
+// Debounced version of drawConnections to prevent excessive redraws
+let drawConnectionsTimeout = null;
+function debouncedDrawConnections(delay = 100) {
+    if (drawConnectionsTimeout) {
+        clearTimeout(drawConnectionsTimeout);
+    }
+    drawConnectionsTimeout = setTimeout(() => {
+        drawConnections();
+        drawConnectionsTimeout = null;
+    }, delay);
+}
+
 // Draw connection lines
 function drawConnections() {
     const svg = document.getElementById('connections');
     const canvas = document.querySelector('.flow-canvas');
+    if (!svg) return; // Guard: SVG neexistuje
+
     svg.innerHTML = '';
 
     const nodes = {
@@ -2139,6 +2183,8 @@ function drawConnections() {
 
 // Create flow particle with optional delay for multiple particles
 function createParticle(from, to, color, speed = 2000, delay = 0) {
+    if (!from || !to) return;
+
     setTimeout(() => {
         const particle = document.createElement('div');
         particle.className = 'particle';
@@ -2146,7 +2192,10 @@ function createParticle(from, to, color, speed = 2000, delay = 0) {
         particle.style.left = from.x + 'px';
         particle.style.top = from.y + 'px';
 
-        document.getElementById('particles').appendChild(particle);
+        const particlesContainer = document.getElementById('particles');
+        if (!particlesContainer) return; // Guard: container neexistuje
+
+        particlesContainer.appendChild(particle);
 
         const dx = to.x - from.x;
         const dy = to.y - from.y;
@@ -2164,22 +2213,87 @@ function createParticle(from, to, color, speed = 2000, delay = 0) {
     }, delay);
 }
 
-// Create multiple particles based on power percentage
-function createParticleFlow(from, to, color, speed, powerPercentage) {
-    // Determine number of particles based on power
-    let particleCount = 1;
-    if (powerPercentage > 66) {
-        particleCount = 3; // High power: 3 particles
-    } else if (powerPercentage > 33) {
-        particleCount = 2; // Medium power: 2 particles
-    }
-    // Low power (0-33%): 1 particle (default)
+// Globální stav pro kontinuální animaci kuliček
+const particleFlows = {
+    solarToInverter: { active: false, speed: 2000, count: 0 },
+    batteryToInverter: { active: false, speed: 2000, count: 0 },
+    inverterToBattery: { active: false, speed: 2000, count: 0 },
+    gridToInverter: { active: false, speed: 2000, count: 0 },
+    inverterToGrid: { active: false, speed: 2000, count: 0 },
+    inverterToHouse: { active: false, speed: 2000, count: 0 }
+};
 
-    // Create particles with staggered delays
-    const delayBetweenParticles = speed / particleCount / 2; // Stagger them evenly
-    for (let i = 0; i < particleCount; i++) {
-        createParticle(from, to, color, speed, i * delayBetweenParticles);
+// Vytvoří kontinuální tok kuliček - když jedna doběhne, vytvoří se nová
+function createContinuousParticle(flowKey, from, to, color, speed) {
+    const flow = particleFlows[flowKey];
+    if (!flow || !flow.active || !from || !to) return;
+
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    particle.style.background = color;
+    particle.style.left = from.x + 'px';
+    particle.style.top = from.y + 'px';
+
+    const particlesContainer = document.getElementById('particles');
+    if (!particlesContainer) return;
+
+    particlesContainer.appendChild(particle);
+
+    particle.animate([
+        { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
+        { opacity: 1, offset: 0.1 },
+        { opacity: 1, offset: 0.9 },
+        { left: to.x + 'px', top: to.y + 'px', opacity: 0 }
+    ], {
+        duration: speed,
+        easing: 'linear'
+    }).onfinish = () => {
+        particle.remove();
+        // Rekurzivně vytvoř další kuličku pokud je flow stále aktivní
+        createContinuousParticle(flowKey, from, to, color, flow.speed);
+    };
+}
+
+// Spustí nebo zastaví kontinuální tok kuliček
+function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1) {
+    const flow = particleFlows[flowKey];
+    if (!flow) return;
+
+    const wasActive = flow.active;
+    const countChanged = flow.count !== count;
+
+    // Pokud se mění počet kuliček, musíme restartovat flow
+    if (active && wasActive && countChanged) {
+        flow.active = false; // Zastav staré kuličky
+        setTimeout(() => {
+            // Po 100ms spusť nové
+            flow.active = true;
+            flow.speed = speed;
+            flow.count = count;
+            const delayBetweenParticles = speed / count / 2;
+            for (let i = 0; i < count; i++) {
+                setTimeout(() => {
+                    createContinuousParticle(flowKey, from, to, color, speed);
+                }, i * delayBetweenParticles);
+            }
+        }, 100);
+        return;
     }
+
+    flow.active = active;
+    flow.speed = speed;
+    flow.count = count;
+
+    if (active && !wasActive) {
+        // Spustit nové toky s odstupem
+        const delayBetweenParticles = speed / count / 2;
+        for (let i = 0; i < count; i++) {
+            setTimeout(() => {
+                createContinuousParticle(flowKey, from, to, color, speed);
+            }, i * delayBetweenParticles);
+        }
+    }
+    // Pokud je active=false, kuličky se zastaví samy (rekurze se ukončí)
 }
 
 // Animate particles
@@ -2187,6 +2301,8 @@ function animateFlow(data) {
     const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
 
     const canvas = document.querySelector('.flow-canvas');
+    if (!canvas) return;
+
     const nodes = {
         solar: document.querySelector('.solar'),
         battery: document.querySelector('.battery'),
@@ -2226,57 +2342,60 @@ function animateFlow(data) {
         house: getCenter(nodes.house)
     };
 
-    // 1. SOLAR → INVERTER
-    // Speed based on solarPerc (0-100%)
-    // 100% = fast (1000ms), 0% = no animation
-    if (solarPerc > 0 && solarPower > 10) {
-        const speedMs = 3000 - (solarPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-        createParticleFlow(centers.solar, centers.inverter, '#ffd54f', speedMs, solarPerc);
-    }
+    // 1. SOLAR → INVERTER (žlutá)
+    const solarActive = solarPerc > 0 && solarPower > 100; // min 100W
+    const solarSpeed = solarActive ? 3000 - (solarPerc / 100) * 2000 : 2000;
+    const solarCount = solarPerc > 66 ? 3 : (solarPerc > 33 ? 2 : 1);
+    updateParticleFlow('solarToInverter', centers.solar, centers.inverter, '#ffd54f', solarActive, solarSpeed, solarCount);
 
     // 2. BATTERY ↔ INVERTER
-    // Max ±9000W
-    // Positive = charging (Inverter → Battery)
-    // Negative = discharging (Battery → Inverter)
     const batteryAbsPower = Math.abs(batteryPower);
-    if (batteryAbsPower > 10) {
-        const batteryPerc = Math.min(batteryAbsPower / 9000, 1) * 100; // 0-100%
-        const speedMs = 3000 - (batteryPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+    const batteryActive = batteryAbsPower > 100; // min 100W
+    const batteryPerc = batteryActive ? Math.min(batteryAbsPower / 9000, 1) * 100 : 0;
+    const batterySpeed = batteryActive ? 3000 - (batteryPerc / 100) * 2000 : 2000;
+    const batteryCount = batteryPerc > 66 ? 3 : (batteryPerc > 33 ? 2 : 1);
 
+    // Zastavit oba směry nejdřív
+    updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', false, batterySpeed, batteryCount);
+    updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, '#4caf50', false, batterySpeed, batteryCount);
+
+    if (batteryActive) {
         if (batteryPower > 0) {
-            // Charging: Inverter → Battery
-            createParticleFlow(centers.inverter, centers.battery, '#4caf50', speedMs, batteryPerc);
+            // Nabíjení: Inverter → Battery (zelená)
+            updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, '#4caf50', true, batterySpeed, batteryCount);
         } else {
-            // Discharging: Battery → Inverter
-            createParticleFlow(centers.battery, centers.inverter, '#ff9800', speedMs, batteryPerc);
+            // Vybíjení: Battery → Inverter (oranžová)
+            updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', true, batterySpeed, batteryCount);
         }
     }
 
     // 3. GRID ↔ INVERTER
-    // Max ±17000W
-    // Positive = from grid (Grid → Inverter), RED
-    // Negative = to grid (Inverter → Grid), GREEN
     const gridAbsPower = Math.abs(gridPower);
-    if (gridAbsPower > 10) {
-        const gridPerc = Math.min(gridAbsPower / 17000, 1) * 100; // 0-100%
-        const speedMs = 3000 - (gridPerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
+    const gridActive = gridAbsPower > 100; // min 100W
+    const gridPerc = gridActive ? Math.min(gridAbsPower / 17000, 1) * 100 : 0;
+    const gridSpeed = gridActive ? 3000 - (gridPerc / 100) * 2000 : 2000;
+    const gridCount = gridPerc > 66 ? 3 : (gridPerc > 33 ? 2 : 1);
 
+    // Zastavit oba směry nejdřív
+    updateParticleFlow('gridToInverter', centers.grid, centers.inverter, '#f44336', false, gridSpeed, gridCount);
+    updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, '#4caf50', false, gridSpeed, gridCount);
+
+    if (gridActive) {
         if (gridPower > 0) {
-            // From grid: Grid → Inverter (RED)
-            createParticleFlow(centers.grid, centers.inverter, '#f44336', speedMs, gridPerc);
+            // Z gridu: Grid → Inverter (červená)
+            updateParticleFlow('gridToInverter', centers.grid, centers.inverter, '#f44336', true, gridSpeed, gridCount);
         } else {
-            // To grid: Inverter → Grid (GREEN)
-            createParticleFlow(centers.inverter, centers.grid, '#4caf50', speedMs, gridPerc);
+            // Do gridu: Inverter → Grid (zelená)
+            updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, '#4caf50', true, gridSpeed, gridCount);
         }
     }
 
-    // 4. INVERTER → HOUSE
-    // Max 17000W, always one direction
-    if (housePower > 10) {
-        const housePerc = Math.min(housePower / 17000, 1) * 100; // 0-100%
-        const speedMs = 3000 - (housePerc / 100) * 2000; // 3000ms @ 0% to 1000ms @ 100%
-        createParticleFlow(centers.inverter, centers.house, '#f06292', speedMs, housePerc);
-    }
+    // 4. INVERTER → HOUSE (růžová)
+    const houseActive = housePower > 100; // min 100W
+    const housePerc = houseActive ? Math.min(housePower / 17000, 1) * 100 : 0;
+    const houseSpeed = houseActive ? 3000 - (housePerc / 100) * 2000 : 2000;
+    const houseCount = housePerc > 66 ? 3 : (housePerc > 33 ? 2 : 1);
+    updateParticleFlow('inverterToHouse', centers.inverter, centers.house, '#f06292', houseActive, houseSpeed, houseCount);
 
 }
 
@@ -2680,7 +2799,7 @@ async function loadData() {
     const boilerInstallPowerData = await getSensorSafe(getSensorId('boiler_install_power'));
     const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
 
-    // Animate particles (always run - with proper flow logic)
+    // Animate particles (kontinuálně běžící s aktualizací rychlosti)
     animateFlow({
         solarPower,
         solarPerc,
@@ -3018,7 +3137,8 @@ async function loadNodeDetails() {
     }
 
     // FIX: Překreslit linky po načtení dat (může se změnit pozice elementů)
-    drawConnections();
+    // Použít debounced verzi aby se nepřekreslovali příliš často
+    debouncedDrawConnections(50);
 }
 
 // Show charge battery dialog
@@ -3260,7 +3380,7 @@ function detectAndApplyTheme() {
 function initTooltips() {
     const tooltip = document.getElementById('global-tooltip');
     const arrow = document.getElementById('global-tooltip-arrow');
-    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .detail-value[data-tooltip-html]');
+    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .entity-value[data-tooltip-html], .detail-value[data-tooltip-html], #battery-grid-charging-indicator[data-tooltip], #battery-grid-charging-indicator[data-tooltip-html]');
 
     if (!tooltip || !arrow) {
         console.error('[Tooltips] Global tooltip elements not found!');
@@ -3382,6 +3502,52 @@ async function updateGridChargingPlan() {
         } else {
             indicator.classList.remove('active');
         }
+
+        // Build tooltip with charging intervals table
+        if (gridChargingData.attributes?.charging_intervals?.length > 0) {
+            const intervals = gridChargingData.attributes.charging_intervals;
+            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+
+            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 250px;">';
+            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px;">Plánované nabíjení z gridu</strong>';
+            tooltipHTML += '<table style="width: 100%; border-collapse: collapse;">';
+            tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
+            tooltipHTML += '<th style="padding: 4px; text-align: left;">Čas</th>';
+            tooltipHTML += '<th style="padding: 4px; text-align: right;">Energie</th>';
+            tooltipHTML += '<th style="padding: 4px; text-align: right;">Cena</th>';
+            tooltipHTML += '</tr></thead>';
+            tooltipHTML += '<tbody>';
+
+            intervals.forEach(interval => {
+                if (interval.is_charging_battery) {
+                    const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const energy = (interval.energy_kwh || 0).toFixed(2);
+                    const cost = (interval.cost_czk || 0).toFixed(2);
+                    tooltipHTML += '<tr>';
+                    tooltipHTML += `<td style="padding: 2px 4px;">${time}</td>`;
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${energy} kWh</td>`;
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${cost} Kč</td>`;
+                    tooltipHTML += '</tr>';
+                }
+            });
+
+            tooltipHTML += '</tbody>';
+            tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
+            tooltipHTML += '<td style="padding: 4px;">Celkem</td>';
+            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalEnergy.toFixed(2)} kWh</td>`;
+            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCost.toFixed(2)} Kč</td>`;
+            tooltipHTML += '</tr></tfoot>';
+            tooltipHTML += '</table>';
+            tooltipHTML += '</div>';
+
+            indicator.setAttribute('data-tooltip-html', tooltipHTML);
+        } else {
+            indicator.setAttribute('data-tooltip', 'Žádné plánované nabíjení');
+        }
+
+        // Re-inicializovat tooltips aby fungovaly i na dynamicky přidaných elementech
+        initTooltips();
     } else {
         console.error('[Grid Charging] Indicator element NOT FOUND!');
     }
@@ -4172,12 +4338,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Zničit existující graf
-    if (canvas.chart) {
-        canvas.chart.destroy();
-    }
-
-    // Vypočítat statistiky pro detekci razantních změn
+    // Vypočítat statistiky pro detekci razantních změn (potřebujeme před optimalizací)
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -4200,6 +4361,37 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
             significantPoints.push(idx);
         }
     });
+
+    // OPTIMALIZACE: Kontrola jestli se data změnila
+    const dataKey = JSON.stringify({ values, color, startTime, endTime });
+    if (canvas.lastDataKey === dataKey && canvas.chart) {
+        // Data se nezměnila, nepřekreslovat
+        return;
+    }
+    canvas.lastDataKey = dataKey;
+
+    // Pokud existuje graf a jen se změnila data (ne struktura), aktualizovat
+    if (canvas.chart && canvas.chart.data.datasets[0]) {
+        const dataset = canvas.chart.data.datasets[0];
+        const labelsChanged = canvas.chart.data.labels.length !== values.length;
+
+        if (!labelsChanged) {
+            // Jen aktualizovat data bez destroy
+            dataset.data = values;
+            dataset.borderColor = color;
+            dataset.backgroundColor = color.replace('1)', '0.2)');
+            dataset.pointBackgroundColor = values.map((_, i) =>
+                significantPoints.includes(i) ? color : 'transparent'
+            );
+            canvas.chart.update('none'); // Update bez animace
+            return;
+        }
+    }
+
+    // Pokud neexistuje graf nebo se změnila struktura, zničit a vytvořit nový
+    if (canvas.chart) {
+        canvas.chart.destroy();
+    }
 
     // Vytvořit absolutní časy pro X osu (ne relativní offsety)
     const start = new Date(startTime);
@@ -4796,9 +4988,32 @@ function loadPricingData() {
     // Create/update combined chart
     const ctx = document.getElementById('combined-chart');
     if (combinedChart) {
-        combinedChart.data.labels = allLabels;
-        combinedChart.data.datasets = datasets;
-        combinedChart.update();
+        // OPTIMALIZACE: Místo přenastavení celého datasetu aktualizujeme jen labely a data
+        const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
+        const datasetsChanged = combinedChart.data.datasets.length !== datasets.length;
+
+        if (labelsChanged) {
+            combinedChart.data.labels = allLabels;
+        }
+
+        if (datasetsChanged) {
+            // Pokud se změnil počet datasetů, musíme je nahradit
+            combinedChart.data.datasets = datasets;
+            combinedChart.update();
+        } else {
+            // Jinak jen aktualizujeme data v existujících datasetech
+            datasets.forEach((newDataset, idx) => {
+                if (combinedChart.data.datasets[idx]) {
+                    // Zachovat reference na dataset, jen aktualizovat data
+                    combinedChart.data.datasets[idx].data = newDataset.data;
+                    // Aktualizovat i další properties které se mohly změnit
+                    combinedChart.data.datasets[idx].label = newDataset.label;
+                    combinedChart.data.datasets[idx].backgroundColor = newDataset.backgroundColor;
+                    combinedChart.data.datasets[idx].borderColor = newDataset.borderColor;
+                }
+            });
+            combinedChart.update('none'); // Update bez animace, rychlejší
+        }
     } else {
         combinedChart = new Chart(ctx, {
             type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
@@ -5080,7 +5295,7 @@ let tileDialog = null;
 /**
  * Initialize custom tiles system
  */
-function initCustomTiles() {
+async function initCustomTiles() {
     console.log('[Tiles] Initializing custom tiles system...');
 
     // Initialize tile dialog only if not already initialized
@@ -5093,7 +5308,7 @@ function initCustomTiles() {
 
     // Initialize tile manager (only once)
     if (!tileManager) {
-        tileManager = new DashboardTileManager();
+        tileManager = new DashboardTileManager(hass);
         window.tileManager = tileManager; // Export for dialog access
 
         // Listen for config changes
@@ -5102,6 +5317,11 @@ function initCustomTiles() {
             renderAllTiles();
             updateTileControlsUI();
         });
+
+        // ASYNCHRONNĚ načíst konfiguraci z HA storage
+        console.log('[Tiles] Loading configuration...');
+        await tileManager.init();
+        console.log('[Tiles] Configuration loaded');
     }
 
     // Initialize tile dialog (only once)
@@ -5241,6 +5461,9 @@ function renderTilesBlock(side) {
     // Get configuration
     const tiles = tileManager.getTiles(side);
 
+    // Debug log pro diagnostiku
+    console.log(`[Tiles] DEBUG ${side} tiles:`, tiles, 'non-null:', tiles.filter(t => t !== null));
+
     // Render tiles up to count
     gridElement.innerHTML = '';
     for (let i = 0; i < tileCount; i++) {
@@ -5277,34 +5500,24 @@ function renderTile(side, index, config) {
     } else if (config.type === 'entity') {
         // Entity tile
         tile.classList.add('tile-entity');
-        tile.innerHTML = renderEntityTile(config);
-        // Klik pro editaci (mimo remove button)
-        tile.onclick = (e) => {
-            // Pokud klikáme na remove button nebo button tile action, ignoruj
-            if (e.target.closest('.tile-remove') || e.target.closest('.tile-button-action')) {
-                return;
-            }
-            window.tileDialog.open(index, side);
-        };
-        tile.style.cursor = 'pointer';
+        tile.innerHTML = renderEntityTile(config, side, index);
     } else if (config.type === 'button') {
         // Button tile
         tile.classList.add('tile-button');
-        tile.innerHTML = renderButtonTile(config);
-        // Klik pro editaci (mimo action)
-        tile.onclick = (e) => {
-            // Pokud klikáme na remove button, ignoruj
-            if (e.target.closest('.tile-remove')) {
-                return;
-            }
-            // Pokud klikáme na tile-content (akce), spusť akci
-            if (e.target.closest('.tile-content')) {
-                executeTileButtonAction(config);
-                return;
-            }
-            // Jinak otevři dialog pro editaci
+        tile.innerHTML = renderButtonTile(config, side, index);
+    }
+
+    // Add edit button (visible on hover)
+    if (config) {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'tile-edit';
+        editBtn.innerHTML = '⚙️';
+        editBtn.title = 'Upravit dlaždici';
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
             window.tileDialog.open(index, side);
         };
+        tile.appendChild(editBtn);
     }
 
     // Add remove button (visible on hover)
@@ -5326,11 +5539,76 @@ function renderTile(side, index, config) {
 }
 
 /**
- * Render entity tile content
- * @param {object} config - Entity tile config
+ * Render icon - podporuje emoji i MDI ikony
+ * @param {string} icon - Icon string (emoji nebo mdi:xxx)
+ * @param {string} color - Icon color
  * @returns {string} - HTML string
  */
-function renderEntityTile(config) {
+function renderIcon(icon, color) {
+    if (!icon) return '';
+
+    // MDI ikona (formát mdi:xxx) - použít emoji fallback protože ha-icon nefunguje v iframe
+    if (icon.startsWith('mdi:')) {
+        const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
+
+        // Emoji mapa - stejná jako v dashboard-dialog.js
+        const emojiMap = {
+            // Spotřebiče
+            'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
+            'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
+            'kettle': '🫖', 'toaster': '🍞',
+            // Osvětlení
+            'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
+            'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
+            'chandelier': '💡',
+            // Vytápění
+            'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
+            'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
+            'snowflake': '❄️',
+            // Energie
+            'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
+            'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
+            'power-plug': '🔌', 'power-socket': '🔌',
+            // Auto
+            'car': '🚗', 'car-electric': '🚗', 'car-battery': '🔋', 'ev-station': '🔌',
+            'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
+            // Zabezpečení
+            'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
+            'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
+            // Okna
+            'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
+            'curtains': '🪟', 'roller-shade': '🪟',
+            // Média
+            'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
+            'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
+            // Síť
+            'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
+            'network': '🌐', 'home-assistant': '🏠',
+            // Voda
+            'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
+            'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
+            // Počasí
+            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
+            'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
+            // Ostatní
+            'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
+            'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
+        };
+
+        const emoji = emojiMap[iconName] || '⚙️';
+        return `<span style="font-size: 28px; color: ${color};">${emoji}</span>`;
+    }
+
+    // Emoji nebo jiný text
+    return icon;
+}/**
+ * Render entity tile content
+ * @param {object} config - Entity tile config
+ * @param {string} side - Tile side (left/right)
+ * @param {number} index - Tile index
+ * @returns {string} - HTML string
+ */
+function renderEntityTile(config, side, index) {
     const hass = getHass();
     if (!hass || !hass.states) {
         return '<div class="tile-error">HA nedostupné</div>';
@@ -5342,7 +5620,8 @@ function renderEntityTile(config) {
     }
 
     const label = config.label || state.attributes.friendly_name || config.entity_id;
-    const icon = config.icon || state.attributes.icon || '📊';
+    // Použij POUZE ikonu z config, pokud není nastavena, použij výchozí - nikdy ne z HA state
+    const icon = config.icon || '📊';
     let value = state.state;
     let unit = state.attributes.unit_of_measurement || '';
     const color = config.color || '#03A9F4';
@@ -5370,7 +5649,7 @@ function renderEntityTile(config) {
                 let topRightValue = topRightState.state;
                 let topRightUnit = topRightState.attributes.unit_of_measurement || '';
                 const topRightIcon = topRightState.attributes.icon || '';
-                
+
                 // Konverze W/Wh na kW/kWh
                 if (topRightUnit === 'W' || topRightUnit === 'Wh') {
                     const numValue = parseFloat(topRightValue);
@@ -5383,16 +5662,16 @@ function renderEntityTile(config) {
                         }
                     }
                 }
-                
+
                 supportHtml += `
-                    <div class="tile-support tile-support-top-right">
+                    <div class="tile-support tile-support-top-right" onclick="openEntityDialog('${config.support_entities.top_right}')">
                         <span class="support-icon">${topRightIcon}</span>
                         <span class="support-value">${topRightValue}${topRightUnit}</span>
                     </div>
                 `;
             }
         }
-        
+
         // Bottom right
         if (config.support_entities.bottom_right) {
             const bottomRightState = hass.states[config.support_entities.bottom_right];
@@ -5400,7 +5679,7 @@ function renderEntityTile(config) {
                 let bottomRightValue = bottomRightState.state;
                 let bottomRightUnit = bottomRightState.attributes.unit_of_measurement || '';
                 const bottomRightIcon = bottomRightState.attributes.icon || '';
-                
+
                 // Konverze W/Wh na kW/kWh
                 if (bottomRightUnit === 'W' || bottomRightUnit === 'Wh') {
                     const numValue = parseFloat(bottomRightValue);
@@ -5413,9 +5692,9 @@ function renderEntityTile(config) {
                         }
                     }
                 }
-                
+
                 supportHtml += `
-                    <div class="tile-support tile-support-bottom-right">
+                    <div class="tile-support tile-support-bottom-right" onclick="openEntityDialog('${config.support_entities.bottom_right}')">
                         <span class="support-icon">${bottomRightIcon}</span>
                         <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
                     </div>
@@ -5424,12 +5703,19 @@ function renderEntityTile(config) {
         }
     }
 
+    // Detekce neaktivního stavu (0 W nebo 0 hodnota)
+    const numericValue = parseFloat(state.state);
+    const isInactive = !isNaN(numericValue) && numericValue === 0;
+    const inactiveClass = isInactive ? ' tile-inactive' : '';
+
     return `
-        <div class="tile-content" style="border-left: 3px solid ${color};">
+        <div class="tile-content tile-content-horizontal${inactiveClass}" style="border-left: 3px solid ${color};">
+            <div class="tile-main-content">
+                <div class="tile-icon-large" style="color: ${color};">${renderIcon(icon, color)}</div>
+                <div class="tile-value-large" onclick="openEntityDialog('${config.entity_id}')" style="cursor: pointer;">${value}<span class="tile-unit">${unit}</span></div>
+            </div>
             ${supportHtml}
-            <div class="tile-icon" style="color: ${color};">${icon}</div>
-            <div class="tile-label">${label}</div>
-            <div class="tile-value">${value} ${unit}</div>
+            <div class="tile-label-hover">${label}</div>
         </div>
     `;
 }
@@ -5437,9 +5723,11 @@ function renderEntityTile(config) {
 /**
  * Render button tile content
  * @param {object} config - Button tile config
+ * @param {string} side - Tile side (left/right)
+ * @param {number} index - Tile index
  * @returns {string} - HTML string
  */
-function renderButtonTile(config) {
+function renderButtonTile(config, side, index) {
     const hass = getHass();
     if (!hass || !hass.states) {
         return '<div class="tile-error">HA nedostupné</div>';
@@ -5451,20 +5739,96 @@ function renderButtonTile(config) {
     }
 
     const label = config.label || state.attributes.friendly_name || config.entity_id;
-    const icon = config.icon || state.attributes.icon || '🔘';
+    // Použij POUZE ikonu z config, pokud není nastavena, použij výchozí - nikdy ne z HA state
+    const icon = config.icon || '🔘';
     const color = config.color || '#FFC107';
     const action = config.action || 'toggle';
     const isOn = state.state === 'on';
 
     const buttonClass = isOn ? 'tile-button-active' : 'tile-button-inactive';
 
+    // Popis akce pro uživatele
+    const actionLabels = {
+        'toggle': 'Přepnout',
+        'turn_on': 'Zapnout',
+        'turn_off': 'Vypnout'
+    };
+    const actionLabel = actionLabels[action] || 'Ovládat';
+
+    // Podporné entity
+    let supportHtml = '';
+    if (config.support_entities) {
+        // Top right
+        if (config.support_entities.top_right) {
+            const topRightState = hass.states[config.support_entities.top_right];
+            if (topRightState) {
+                let topRightValue = topRightState.state;
+                let topRightUnit = topRightState.attributes.unit_of_measurement || '';
+                const topRightIcon = topRightState.attributes.icon || '';
+
+                // Konverze W/Wh na kW/kWh
+                if (topRightUnit === 'W' || topRightUnit === 'Wh') {
+                    const numValue = parseFloat(topRightValue);
+                    if (!isNaN(numValue)) {
+                        if (Math.abs(numValue) >= 1000) {
+                            topRightValue = (numValue / 1000).toFixed(1);
+                            topRightUnit = topRightUnit === 'W' ? 'kW' : 'kWh';
+                        } else {
+                            topRightValue = Math.round(numValue);
+                        }
+                    }
+                }
+
+                supportHtml += `
+                    <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
+                        <span class="support-icon">${topRightIcon}</span>
+                        <span class="support-value">${topRightValue}${topRightUnit}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Bottom right
+        if (config.support_entities.bottom_right) {
+            const bottomRightState = hass.states[config.support_entities.bottom_right];
+            if (bottomRightState) {
+                let bottomRightValue = bottomRightState.state;
+                let bottomRightUnit = bottomRightState.attributes.unit_of_measurement || '';
+                const bottomRightIcon = bottomRightState.attributes.icon || '';
+
+                // Konverze W/Wh na kW/kWh
+                if (bottomRightUnit === 'W' || bottomRightUnit === 'Wh') {
+                    const numValue = parseFloat(bottomRightValue);
+                    if (!isNaN(numValue)) {
+                        if (Math.abs(numValue) >= 1000) {
+                            bottomRightValue = (numValue / 1000).toFixed(1);
+                            bottomRightUnit = bottomRightUnit === 'W' ? 'kW' : 'kWh';
+                        } else {
+                            bottomRightValue = Math.round(numValue);
+                        }
+                    }
+                }
+
+                supportHtml += `
+                    <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
+                        <span class="support-icon">${bottomRightIcon}</span>
+                        <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
     return `
-        <div class="tile-content ${buttonClass}"
+        <div class="tile-content tile-content-horizontal ${buttonClass}"
              style="border-left: 3px solid ${color};"
              onclick="executeTileButtonAction('${config.entity_id}', '${action}')">
-            <div class="tile-icon" style="color: ${color};">${icon}</div>
-            <div class="tile-label">${label}</div>
-            <div class="tile-state">${isOn ? 'ON' : 'OFF'}</div>
+            <div class="tile-main-content">
+                <div class="tile-icon-large" style="color: ${color};">${renderIcon(icon, color)}</div>
+                <div class="tile-button-state">${isOn ? 'ON' : 'OFF'}</div>
+            </div>
+            ${supportHtml}
+            <div class="tile-label-hover">${label} • ${actionLabel}</div>
         </div>
     `;
 }

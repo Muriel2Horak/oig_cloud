@@ -3,6 +3,68 @@
  * Dialog pro konfiguraci dlaždic - výběr entity nebo tlačítka
  */
 
+/**
+ * Helper: Render ikonu pro picker a preview (emoji protože ha-icon nefunguje v iframe)
+ */
+function renderIconHTML(icon, color = 'var(--text-primary)') {
+    if (!icon) return '';
+
+    // MDI ikona (formát mdi:xxx) - převést na emoji
+    if (icon.startsWith('mdi:')) {
+        const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
+
+        // Emoji mapa - kompletní ze všech kategorií
+        const emojiMap = {
+            // Spotřebiče
+            'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
+            'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
+            'kettle': '🫖', 'toaster': '🍞',
+            // Osvětlení
+            'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
+            'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
+            'chandelier': '💡',
+            // Vytápění
+            'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
+            'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
+            'snowflake': '❄️',
+            // Energie
+            'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
+            'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
+            'power-plug': '🔌', 'power-socket': '🔌',
+            // Auto
+            'car': '🚗', 'car-electric': '�', 'car-battery': '🔋', 'ev-station': '🔌',
+            'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
+            // Zabezpečení
+            'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
+            'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
+            // Okna
+            'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
+            'curtains': '🪟', 'roller-shade': '🪟',
+            // Média
+            'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
+            'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
+            // Síť
+            'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
+            'network': '🌐', 'home-assistant': '🏠',
+            // Voda
+            'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
+            'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
+            // Počasí
+            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '�',
+            'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
+            // Ostatní
+            'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
+            'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
+        };
+
+        const emoji = emojiMap[iconName] || '⚙️';
+        return `<span style="font-size: 28px; color: ${color};">${emoji}</span>`;
+    }
+
+    // Emoji nebo jiný text
+    return icon;
+}
+
 class TileConfigDialog {
     constructor(hass, tileManager) {
         this.hass = hass;
@@ -75,11 +137,20 @@ class TileConfigDialog {
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Ikona (volitelné):</label>
-                                <input type="text"
-                                       id="entity-icon"
-                                       class="form-input"
-                                       placeholder="🔍 Hledat ikonu... (např. fridge)"
-                                       oninput="window.tileDialog.searchIcons(this.value)">
+                                <div class="icon-input-wrapper">
+                                    <div class="icon-preview-box" id="entity-icon-preview" onclick="window.tileDialog.openIconPicker('entity')">
+                                        <span class="icon-preview-placeholder">🔍</span>
+                                    </div>
+                                    <input type="text"
+                                           id="entity-icon"
+                                           class="form-input icon-input-field"
+                                           placeholder="Klikni na 🔍 nebo hledej..."
+                                           oninput="window.tileDialog.searchIcons(this.value, 'entity')"
+                                           readonly>
+                                    <button type="button" class="icon-picker-btn" onclick="window.tileDialog.openIconPicker('entity')" title="Vybrat ikonu">
+                                        📋
+                                    </button>
+                                </div>
                                 <div id="icon-suggestions" class="icon-suggestions" style="display: none;"></div>
                             </div>
 
@@ -129,9 +200,15 @@ class TileConfigDialog {
                         </div>
 
                         <div class="form-group">
-                            <label>Entita:</label>
-                            <select id="button-entity" class="form-input"></select>
+                            <label>Vyberte entitu pro tlačítko:</label>
+                            <input type="text"
+                                   id="button-entity-search"
+                                   class="form-input"
+                                   placeholder="🔍 Hledat entitu..."
+                                   oninput="window.tileDialog.filterButtonEntities(this.value)">
                         </div>
+
+                        <div id="button-entity-list" class="entity-list"></div>
 
                         <div class="form-group">
                             <label>Popisek:</label>
@@ -144,10 +221,19 @@ class TileConfigDialog {
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Ikona:</label>
-                                <input type="text"
-                                       id="button-icon"
-                                       class="form-input"
-                                       placeholder="mdi:lightbulb">
+                                <div class="icon-input-wrapper">
+                                    <div class="icon-preview-box" id="button-icon-preview" onclick="window.tileDialog.openIconPicker('button')">
+                                        <span class="icon-preview-placeholder">🔍</span>
+                                    </div>
+                                    <input type="text"
+                                           id="button-icon"
+                                           class="form-input icon-input-field"
+                                           placeholder="Klikni na 🔍 nebo hledej..."
+                                           readonly>
+                                    <button type="button" class="icon-picker-btn" onclick="window.tileDialog.openIconPicker('button')" title="Vybrat ikonu">
+                                        📋
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -170,10 +256,33 @@ class TileConfigDialog {
                     </button>
                 </div>
             </div>
+
+            <!-- Icon Picker Modal -->
+            <div class="icon-picker-modal" id="icon-picker-modal" style="display: none;" onclick="if(event.target === this) window.tileDialog.closeIconPicker()">
+                <div class="icon-picker-content" onclick="event.stopPropagation()">
+                    <div class="icon-picker-header">
+                        <h3>Vyberte ikonu</h3>
+                        <button class="icon-picker-close" onclick="window.tileDialog.closeIconPicker()">✕</button>
+                    </div>
+                    <div class="icon-picker-search">
+                        <input type="text"
+                               id="icon-picker-search"
+                               class="form-input"
+                               placeholder="🔍 Hledat ikonu..."
+                               oninput="window.tileDialog.filterIconPicker(this.value)">
+                    </div>
+                    <div class="icon-picker-body" id="icon-picker-body">
+                        <!-- Icons will be populated here -->
+                    </div>
+                </div>
+            </div>
         `;
 
         document.body.appendChild(dialog);
         this.dialog = dialog;
+        this.iconPickerModal = document.getElementById('icon-picker-modal');
+        this.iconPickerBody = document.getElementById('icon-picker-body');
+        this.currentIconTarget = null; // 'entity' nebo 'button'
     }
 
     /**
@@ -207,6 +316,9 @@ class TileConfigDialog {
         // Načíst existující konfiguraci (pokud existuje)
         const existingTile = this.tileManager.getTile(side, index);
 
+        // Flag pro rozlišení editace vs nová dlaždice
+        this.isEditing = !!existingTile;
+
         // Naplnit seznamy entit
         this.populateEntityLists();
 
@@ -230,6 +342,7 @@ class TileConfigDialog {
      */
     close() {
         this.dialog.style.display = 'none';
+        this.isEditing = false; // Reset editačního flagu
         this.resetForm();
     }
 
@@ -311,25 +424,50 @@ class TileConfigDialog {
     }
 
     /**
-     * Naplnit seznam entit pro tlačítka (switch, light)
+     * Naplnit seznam entit pro tlačítka (switch, light, fan, input_boolean)
      */
     populateButtonEntityList() {
-        const buttonEntity = document.getElementById('button-entity');
-        if (!buttonEntity) return;
+        const buttonEntityList = document.getElementById('button-entity-list');
+        if (!buttonEntityList) return;
 
         const switchables = Object.keys(this.hass.states)
-            .filter(id => id.startsWith('switch.') || id.startsWith('light.') || id.startsWith('fan.'))
+            .filter(id =>
+                id.startsWith('switch.') ||
+                id.startsWith('light.') ||
+                id.startsWith('fan.') ||
+                id.startsWith('input_boolean.')
+            )
             .sort((a, b) => {
                 const nameA = this.hass.states[a].attributes.friendly_name || a;
                 const nameB = this.hass.states[b].attributes.friendly_name || b;
                 return nameA.localeCompare(nameB);
             });
 
-        buttonEntity.innerHTML = '<option value="">-- Vyberte entitu --</option>' +
-            switchables.map(entityId => {
-                const name = this.hass.states[entityId].attributes.friendly_name || entityId;
-                return `<option value="${entityId}">${name}</option>`;
-            }).join('');
+        buttonEntityList.innerHTML = switchables.map(entityId => {
+            const state = this.hass.states[entityId];
+            const name = state.attributes.friendly_name || entityId;
+            const value = state.state;
+            const icon = state.attributes.icon || '';
+
+            return `
+                <div class="entity-item" data-entity-id="${entityId}">
+                    <input type="radio"
+                           name="button_entity"
+                           value="${entityId}"
+                           id="b_${entityId.replace(/\./g, '_')}"
+                           onchange="window.tileDialog.onButtonEntitySelected('${entityId}')">
+                    <label for="b_${entityId.replace(/\./g, '_')}">
+                        <div class="entity-item-content">
+                            <div class="entity-item-name">
+                                ${icon ? `<span class="entity-item-icon">${icon}</span>` : ''}
+                                ${name}
+                            </div>
+                            <div class="entity-item-value">${value}</div>
+                        </div>
+                    </label>
+                </div>
+            `;
+        }).join('');
     }
 
     /**
@@ -355,7 +493,7 @@ class TileConfigDialog {
     filterSupportEntities(number, searchText) {
         const listDiv = document.getElementById(`support-entity-${number}-list`);
         const hiddenInput = document.getElementById(`support-entity-${number}`);
-        
+
         if (!searchText.trim()) {
             listDiv.style.display = 'none';
             hiddenInput.value = '';
@@ -380,9 +518,9 @@ class TileConfigDialog {
             const name = state.attributes.friendly_name || entityId;
             const value = state.state;
             const unit = state.attributes.unit_of_measurement || '';
-            
+
             return `
-                <div class="entity-item support-entity-item" 
+                <div class="entity-item support-entity-item"
                      data-entity-id="${entityId}"
                      onclick="window.tileDialog.selectSupportEntity(${number}, '${entityId}', '${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">
                     <div class="entity-item-name">${name}</div>
@@ -390,7 +528,7 @@ class TileConfigDialog {
                 </div>
             `;
         }).join('');
-        
+
         listDiv.style.display = 'block';
     }
 
@@ -401,11 +539,11 @@ class TileConfigDialog {
         const searchInput = document.getElementById(`support-entity-${number}-search`);
         const hiddenInput = document.getElementById(`support-entity-${number}`);
         const listDiv = document.getElementById(`support-entity-${number}-list`);
-        
+
         searchInput.value = entityName;
         hiddenInput.value = entityId;
         listDiv.style.display = 'none';
-        
+
         console.log(`✅ Selected support entity ${number}: ${entityId}`);
     }
 
@@ -415,7 +553,7 @@ class TileConfigDialog {
     searchIcons(searchText) {
         const suggestionsDiv = document.getElementById('icon-suggestions');
         const iconInput = document.getElementById('entity-icon');
-        
+
         if (!searchText.trim() || searchText.startsWith('mdi:')) {
             suggestionsDiv.style.display = 'none';
             return;
@@ -423,14 +561,57 @@ class TileConfigDialog {
 
         // Základní populární ikony
         const commonIcons = [
-            'fridge', 'lightbulb', 'fan', 'thermometer', 'water-percent', 'power-plug',
-            'lightning-bolt', 'home', 'weather-sunny', 'weather-night', 'battery',
-            'battery-charging', 'flash', 'fire', 'snowflake', 'air-conditioner',
-            'washing-machine', 'dishwasher', 'stove', 'microwave', 'television',
-            'speaker', 'router-wireless', 'garage', 'door', 'window-closed',
-            'blinds', 'cctv', 'alarm-light', 'bell', 'motion-sensor',
-            'water-boiler', 'radiator', 'hvac', 'heat-pump', 'solar-panel',
-            'car-electric', 'ev-station', 'meter-electric', 'meter-gas', 'gauge'
+            // Spotřebiče & Domácnost
+            'fridge', 'fridge-outline', 'dishwasher', 'washing-machine', 'tumble-dryer',
+            'stove', 'microwave', 'coffee-maker', 'kettle', 'toaster',
+
+            // Světla & Osvětlení
+            'lightbulb', 'lightbulb-outline', 'lamp', 'ceiling-light', 'floor-lamp',
+            'led-strip', 'led-strip-variant', 'wall-sconce', 'chandelier',
+
+            // Vytápění & Chlazení
+            'thermometer', 'thermostat', 'radiator', 'radiator-disabled', 'heat-pump',
+            'air-conditioner', 'fan', 'hvac', 'fire', 'snowflake', 'snowflake-melt',
+
+            // Energie & Baterie
+            'lightning-bolt', 'flash', 'battery', 'battery-charging', 'battery-50',
+            'solar-panel', 'solar-power', 'meter-electric', 'meter-electric-outline',
+            'power-plug', 'power-socket', 'transmission-tower',
+
+            // Auto & Doprava
+            'car', 'car-electric', 'car-battery', 'ev-station', 'ev-plug-type2',
+            'garage', 'garage-open', 'garage-alert',
+
+            // Zabezpečení & Vstup
+            'door', 'door-open', 'door-closed', 'lock', 'lock-open', 'shield-home',
+            'cctv', 'camera', 'motion-sensor', 'alarm-light', 'bell', 'alert',
+
+            // Okna & Stínění
+            'window-closed', 'window-open', 'blinds', 'blinds-open', 'curtains',
+            'roller-shade', 'roller-shade-closed',
+
+            // Mediální zařízení
+            'television', 'speaker', 'speaker-wireless', 'music', 'volume-high',
+            'cast', 'cast-connected', 'chromecast',
+
+            // Síť & IoT
+            'router-wireless', 'wifi', 'access-point', 'lan', 'network',
+            'home-assistant', 'home-automation',
+
+            // Voda & Sanitace
+            'water', 'water-percent', 'water-boiler', 'water-pump', 'shower',
+            'toilet', 'faucet', 'pipe', 'waves',
+
+            // Počasí & Klima
+            'weather-sunny', 'weather-cloudy', 'weather-night', 'weather-rainy',
+            'weather-snowy', 'weather-windy', 'home-thermometer',
+
+            // Plyn & Ostatní utility
+            'meter-gas', 'gas-cylinder', 'gauge', 'chart-line', 'chart-areaspline',
+
+            // Speciální
+            'information', 'help-circle', 'alert-circle', 'checkbox-marked-circle',
+            'toggle-switch', 'power', 'sync'
         ];
 
         const search = searchText.toLowerCase();
@@ -441,12 +622,13 @@ class TileConfigDialog {
             return;
         }
 
-        suggestionsDiv.innerHTML = filtered.slice(0, 10).map(icon => `
+        suggestionsDiv.innerHTML = filtered.slice(0, 12).map(icon => `
             <div class="icon-suggestion-item" onclick="window.tileDialog.selectIcon('mdi:${icon}')">
-                <span class="icon-preview">mdi:${icon}</span>
+                <ha-icon icon="mdi:${icon}" style="--mdc-icon-size: 20px;"></ha-icon>
+                <span class="icon-name">mdi:${icon}</span>
             </div>
         `).join('');
-        
+
         suggestionsDiv.style.display = 'block';
     }
 
@@ -462,7 +644,27 @@ class TileConfigDialog {
      * Filtrovat entity podle hledaného textu
      */
     filterEntities(searchText) {
-        const items = document.querySelectorAll('.entity-item');
+        const items = document.querySelectorAll('#entity-list .entity-item');
+        const search = searchText.toLowerCase();
+
+        items.forEach(item => {
+            const entityId = item.dataset.entityId;
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+
+            if (name.includes(search) || entityId.toLowerCase().includes(search)) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    /**
+     * Filtrovat entity pro tlačítka podle hledaného textu
+     */
+    filterButtonEntities(searchText) {
+        const items = document.querySelectorAll('#button-entity-list .entity-item');
         const search = searchText.toLowerCase();
 
         items.forEach(item => {
@@ -491,14 +693,42 @@ class TileConfigDialog {
             labelInput.value = state.attributes.friendly_name || '';
         }
 
-        // Auto-fill icon
+        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
         const iconInput = document.getElementById('entity-icon');
-        if (iconInput && !iconInput.value && state.attributes.icon) {
+        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
             iconInput.value = state.attributes.icon;
         }
 
         // Auto-fill color podle domény
         const colorInput = document.getElementById('entity-color');
+        if (colorInput) {
+            colorInput.value = this.tileManager.getColorFromDomain(entityId);
+        }
+    }
+
+    /**
+     * Když je vybrána button entita, auto-fill ikonu a barvu
+     */
+    onButtonEntitySelected(entityId) {
+        if (!entityId) return;
+
+        const state = this.hass.states[entityId];
+        if (!state) return;
+
+        // Auto-fill label
+        const labelInput = document.getElementById('button-label');
+        if (labelInput && !labelInput.value) {
+            labelInput.value = state.attributes.friendly_name || '';
+        }
+
+        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
+        const iconInput = document.getElementById('button-icon');
+        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
+            iconInput.value = state.attributes.icon;
+        }
+
+        // Auto-fill color podle domény
+        const colorInput = document.getElementById('button-color');
         if (colorInput) {
             colorInput.value = this.tileManager.getColorFromDomain(entityId);
         }
@@ -519,7 +749,12 @@ class TileConfigDialog {
             document.getElementById('entity-label').value = tileConfig.label || '';
             document.getElementById('entity-icon').value = tileConfig.icon || '';
             document.getElementById('entity-color').value = tileConfig.color || '#03A9F4';
-            
+
+            // Update icon preview
+            if (tileConfig.icon) {
+                this.updateIconPreview('entity', tileConfig.icon);
+            }
+
             // Podporné entity - nastavit hidden input a zobrazit název v search
             if (tileConfig.support_entities) {
                 if (tileConfig.support_entities.top_right) {
@@ -541,12 +776,20 @@ class TileConfigDialog {
         } else if (tileConfig.type === 'button') {
             this.switchTab('button');
 
+            // Vybrat radio button
+            const radio = document.querySelector(`input[name="button_entity"][value="${tileConfig.entity_id}"]`);
+            if (radio) radio.checked = true;
+
             // Fill form
             document.getElementById('button-action').value = tileConfig.action || 'toggle';
-            document.getElementById('button-entity').value = tileConfig.entity_id || '';
             document.getElementById('button-label').value = tileConfig.label || '';
             document.getElementById('button-icon').value = tileConfig.icon || '';
             document.getElementById('button-color').value = tileConfig.color || '#FFC107';
+
+            // Update icon preview
+            if (tileConfig.icon) {
+                this.updateIconPreview('button', tileConfig.icon);
+            }
         }
     }
 
@@ -587,7 +830,7 @@ class TileConfigDialog {
         const label = document.getElementById('entity-label').value.trim();
         const icon = document.getElementById('entity-icon').value.trim();
         const color = document.getElementById('entity-color').value;
-        
+
         // Podpůrné entity
         const supportEntity1 = document.getElementById('support-entity-1').value;
         const supportEntity2 = document.getElementById('support-entity-2').value;
@@ -609,12 +852,13 @@ class TileConfigDialog {
      * Uložit button config
      */
     saveButtonConfig() {
-        const entityId = document.getElementById('button-entity').value;
-        if (!entityId) {
+        const selectedEntity = document.querySelector('input[name="button_entity"]:checked');
+        if (!selectedEntity) {
             alert('Vyberte entitu');
             return null;
         }
 
+        const entityId = selectedEntity.value;
         const action = document.getElementById('button-action').value;
         const label = document.getElementById('button-label').value.trim();
         const icon = document.getElementById('button-icon').value.trim();
@@ -640,13 +884,20 @@ class TileConfigDialog {
         document.getElementById('entity-color').value = '#03A9F4';
 
         document.getElementById('button-action').value = 'toggle';
-        document.getElementById('button-entity').value = '';
+        document.getElementById('button-entity-search').value = '';
         document.getElementById('button-label').value = '';
         document.getElementById('button-icon').value = '';
         document.getElementById('button-color').value = '#FFC107';
 
+        // Reset icon previews
+        document.getElementById('entity-icon-preview').innerHTML = '<span class="icon-preview-placeholder">🔍</span>';
+        document.getElementById('button-icon-preview').innerHTML = '<span class="icon-preview-placeholder">🔍</span>';
+
         // Odznačit všechny entity
         document.querySelectorAll('input[name="entity"]').forEach(radio => {
+            radio.checked = false;
+        });
+        document.querySelectorAll('input[name="button_entity"]').forEach(radio => {
             radio.checked = false;
         });
 
@@ -657,6 +908,210 @@ class TileConfigDialog {
 
         // Přepnout na první tab
         this.switchTab('entity');
+    }
+
+    /**
+     * Otevřít icon picker modal
+     */
+    openIconPicker(target) {
+        this.currentIconTarget = target;
+        this.populateIconPicker();
+        this.iconPickerModal.style.display = 'flex';
+        document.getElementById('icon-picker-search').value = '';
+        document.getElementById('icon-picker-search').focus();
+    }
+
+    /**
+     * Zavřít icon picker modal
+     */
+    closeIconPicker() {
+        this.iconPickerModal.style.display = 'none';
+        this.currentIconTarget = null;
+    }
+
+    /**
+     * Naplnit icon picker všemi ikonami
+     */
+    async populateIconPicker() {
+        const categories = {
+            'Spotřebiče': [
+                'fridge', 'fridge-outline', 'dishwasher', 'washing-machine', 'tumble-dryer',
+                'stove', 'microwave', 'coffee-maker', 'kettle', 'toaster', 'blender', 'food-processor',
+                'rice-cooker', 'slow-cooker', 'pressure-cooker', 'air-fryer', 'oven', 'range-hood'
+            ],
+            'Osvětlení': [
+                'lightbulb', 'lightbulb-outline', 'lamp', 'ceiling-light', 'floor-lamp', 'led-strip',
+                'led-strip-variant', 'wall-sconce', 'chandelier', 'desk-lamp', 'spotlight', 'light-switch'
+            ],
+            'Vytápění & Chlazení': [
+                'thermometer', 'thermostat', 'radiator', 'radiator-disabled', 'heat-pump',
+                'air-conditioner', 'fan', 'hvac', 'fire', 'snowflake', 'fireplace', 'heating-coil'
+            ],
+            'Energie & Baterie': [
+                'lightning-bolt', 'flash', 'battery', 'battery-charging', 'battery-50', 'battery-10',
+                'solar-panel', 'solar-power', 'meter-electric', 'power-plug', 'power-socket',
+                'ev-plug', 'transmission-tower', 'current-ac', 'current-dc'
+            ],
+            'Auto & Doprava': [
+                'car', 'car-electric', 'car-battery', 'ev-station', 'ev-plug-type2', 'garage',
+                'garage-open', 'motorcycle', 'bicycle', 'scooter', 'bus', 'train', 'airplane'
+            ],
+            'Zabezpečení': [
+                'door', 'door-open', 'lock', 'lock-open', 'shield-home', 'cctv', 'camera',
+                'motion-sensor', 'alarm-light', 'bell', 'eye', 'key', 'fingerprint', 'shield-check'
+            ],
+            'Okna & Stínění': [
+                'window-closed', 'window-open', 'blinds', 'blinds-open', 'curtains', 'roller-shade',
+                'window-shutter', 'balcony', 'door-sliding'
+            ],
+            'Média & Zábava': [
+                'television', 'speaker', 'speaker-wireless', 'music', 'volume-high', 'cast',
+                'chromecast', 'radio', 'headphones', 'microphone', 'gamepad', 'movie', 'spotify'
+            ],
+            'Síť & IT': [
+                'router-wireless', 'wifi', 'access-point', 'lan', 'network', 'home-assistant',
+                'server', 'nas', 'cloud', 'ethernet', 'bluetooth', 'cellphone', 'tablet', 'laptop'
+            ],
+            'Voda & Koupelna': [
+                'water', 'water-percent', 'water-boiler', 'water-pump', 'shower', 'toilet',
+                'faucet', 'pipe', 'bathtub', 'sink', 'water-heater', 'pool'
+            ],
+            'Počasí': [
+                'weather-sunny', 'weather-cloudy', 'weather-night', 'weather-rainy', 'weather-snowy',
+                'weather-windy', 'weather-fog', 'weather-lightning', 'weather-hail', 'temperature',
+                'humidity', 'barometer'
+            ],
+            'Ventilace & Kvalita vzduchu': [
+                'fan', 'air-filter', 'air-purifier', 'smoke-detector', 'co2', 'wind-turbine'
+            ],
+            'Zahrada & Venku': [
+                'flower', 'tree', 'sprinkler', 'grass', 'garden-light', 'outdoor-lamp', 'grill',
+                'pool', 'hot-tub', 'umbrella', 'thermometer-lines'
+            ],
+            'Domácnost': [
+                'iron', 'vacuum', 'broom', 'mop', 'washing', 'basket', 'hanger', 'scissors'
+            ],
+            'Notifikace & Stav': [
+                'information', 'help-circle', 'alert-circle', 'checkbox-marked-circle', 'check',
+                'close', 'minus', 'plus', 'arrow-up', 'arrow-down', 'refresh', 'sync', 'bell-ring'
+            ],
+            'Ovládání': [
+                'toggle-switch', 'power', 'play', 'pause', 'stop', 'skip-next', 'skip-previous',
+                'volume-up', 'volume-down', 'brightness-up', 'brightness-down'
+            ],
+            'Čas & Plánování': [
+                'clock', 'timer', 'alarm', 'calendar', 'calendar-clock', 'schedule', 'history'
+            ],
+            'Ostatní': [
+                'home', 'cog', 'tools', 'wrench', 'hammer', 'chart-line', 'gauge', 'dots-vertical',
+                'menu', 'settings', 'account', 'logout'
+            ]
+        };
+
+        console.log('🎨 Populating icon picker...');
+
+        // Vyprázdnit body
+        this.iconPickerBody.innerHTML = '';
+
+        // Vytvořit kategorie přímo jako DOM elementy
+        for (const [category, icons] of Object.entries(categories)) {
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = 'icon-category';
+
+            const categoryTitle = document.createElement('h4');
+            categoryTitle.className = 'icon-category-title';
+            categoryTitle.textContent = category;
+            categoryDiv.appendChild(categoryTitle);
+
+            const gridDiv = document.createElement('div');
+            gridDiv.className = 'icon-category-grid';
+
+            icons.forEach(icon => {
+                const fullIcon = `mdi:${icon}`;
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'icon-picker-item';
+                itemDiv.dataset.icon = fullIcon;
+                itemDiv.onclick = () => this.selectIconFromPicker(fullIcon);
+
+                // Vložit HTML s ha-icon
+                itemDiv.innerHTML = `
+                    ${renderIconHTML(fullIcon)}
+                    <span class="icon-picker-name">${icon}</span>
+                `;
+
+                gridDiv.appendChild(itemDiv);
+            });
+
+            categoryDiv.appendChild(gridDiv);
+            this.iconPickerBody.appendChild(categoryDiv);
+        }
+
+        console.log('✅ Icon picker populated with', Object.keys(categories).reduce((sum, cat) => sum + categories[cat].length, 0), 'emoji icons');
+    }    /**
+     * Filtrovat ikony v pickeru
+     */
+    filterIconPicker(searchText) {
+        const search = searchText.toLowerCase();
+        const items = this.iconPickerBody.querySelectorAll('.icon-picker-item');
+        const categories = this.iconPickerBody.querySelectorAll('.icon-category');
+
+        categories.forEach(category => {
+            const items = category.querySelectorAll('.icon-picker-item');
+            let hasVisible = false;
+
+            items.forEach(item => {
+                const iconName = item.dataset.icon.toLowerCase();
+                if (iconName.includes(search)) {
+                    item.style.display = '';
+                    hasVisible = true;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+
+            category.style.display = hasVisible ? '' : 'none';
+        });
+    }
+
+    /**
+     * Vybrat ikonu z pickeru
+     */
+    selectIconFromPicker(icon) {
+        console.log('🎯 Icon selected from picker:', icon);
+        const inputId = this.currentIconTarget === 'entity' ? 'entity-icon' : 'button-icon';
+        const previewId = this.currentIconTarget === 'entity' ? 'entity-icon-preview' : 'button-icon-preview';
+
+        const inputField = document.getElementById(inputId);
+        const previewBox = document.getElementById(previewId);
+
+        if (inputField) {
+            inputField.value = icon;
+            console.log('✅ Input field updated:', inputId, '=', icon);
+        }
+
+        if (previewBox) {
+            previewBox.innerHTML = renderIconHTML(icon);
+            console.log('✅ Preview box updated with rendered icon');
+        }
+
+        this.closeIconPicker();
+    }
+
+    /**
+     * Aktualizovat náhled ikony při načtení konfigurace
+     */
+    updateIconPreview(target, icon) {
+        if (!icon) return;
+        console.log('🎨 Updating icon preview:', target, icon);
+        const previewId = target === 'entity' ? 'entity-icon-preview' : 'button-icon-preview';
+        const previewBox = document.getElementById(previewId);
+        if (previewBox) {
+            previewBox.innerHTML = renderIconHTML(icon);
+            console.log('✅ Preview updated');
+        } else {
+            console.error('❌ Preview box not found:', previewId);
+        }
     }
 }
 

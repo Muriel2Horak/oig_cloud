@@ -35,7 +35,7 @@
         <div id="flow-tab" class="tab-content active">
 
     <!-- Control Panel -->
-    <div class="control-panel" id="control-panel">
+    <div class="control-panel minimized" id="control-panel">
         <div class="panel-header" onclick="toggleControlPanel()">
             <h3>⚙️ Ovládání
                 <span class="info-bubble" onclick="event.stopPropagation()">❓
@@ -52,7 +52,7 @@
                 </span>
             </h3>
             <button class="btn-minimize" onclick="event.stopPropagation(); toggleControlPanel()">
-                <span id="panel-toggle-icon">−</span>
+                <span id="panel-toggle-icon">+</span>
             </button>
         </div>
 
@@ -151,7 +151,6 @@
                 <div class="tiles-container">
                     <!-- Left Block -->
                     <div class="tiles-block" id="tiles-left">
-                        <div class="block-label">◀ Levý blok</div>
                         <div class="tiles-grid">
                             <!-- 4 tiles will be rendered here dynamically -->
                         </div>
@@ -159,7 +158,6 @@
 
                     <!-- Right Block -->
                     <div class="tiles-block" id="tiles-right">
-                        <div class="block-label">Pravý blok ▶</div>
                         <div class="tiles-grid">
                             <!-- 4 tiles will be rendered here dynamically -->
                         </div>
@@ -699,9 +697,9 @@
 
 
     <!-- Extrahovaný JavaScript -->
-    <script src="dashboard-tiles.js?v=20241032"></script>
-    <script src="dashboard-dialog.js?v=20241032"></script>
-    <script src="dashboard-core.js?v=20241032"></script>
+    <script src="dashboard-tiles.js?v=20241039&t=1761299055"></script>
+    <script src="dashboard-dialog.js?v=20241039&t=1761299055"></script>
+    <script src="dashboard-core.js?v=20241039&t=1761299055"></script>
 </body>
 </html>
 

@@ -638,6 +638,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 notification_manager.set_device_id(device_id)
                 _LOGGER.debug(f"Set notification manager device_id to: {device_id}")
 
+                # Inicializace Mode Transition Tracker
+                if service_shield:
+                    try:
+                        from .service_shield import ModeTransitionTracker
+
+                        service_shield.mode_tracker = ModeTransitionTracker(
+                            hass, device_id
+                        )
+                        await service_shield.mode_tracker.async_setup()
+                        _LOGGER.info(
+                            f"Mode Transition Tracker inicializován pro box {device_id}"
+                        )
+                    except Exception as tracker_error:
+                        _LOGGER.warning(
+                            f"Failed to initialize Mode Transition Tracker: {tracker_error}"
+                        )
+                        # Pokračujeme bez trackeru
+
                 # OPRAVA: Použít nový API přístup místo fetch_notifications_and_status
                 try:
                     await notification_manager.update_from_api()
