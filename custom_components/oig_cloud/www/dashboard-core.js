@@ -2386,37 +2386,41 @@ async function loadData() {
     // Display battery power using formatPower helper - UPDATE ONLY IF CHANGED
     updateElementIfChanged('battery-power', formatPower(batteryPower), 'battery-power');
 
-    // Update SVG battery fill (animated)
+    // Update SVG battery fill (animated) - s gradientem podle SoC
+    const batteryFill = document.getElementById('battery-fill');
+    
+    // Update fill height if SoC changed
     const previousSoC = previousValues['battery-gauge-width'];
     if (previousSoC === undefined || Math.abs(previousSoC - batterySoC) > 0.5) {
-        const batteryFill = document.getElementById('battery-fill');
         // SVG baterie má výšku 54px (od y=13 do y=67)
         const maxHeight = 54;
         const fillHeight = (batterySoC / 100) * maxHeight;
         const fillY = 13 + (maxHeight - fillHeight); // Počítáme od shora dolů
-        
+
         batteryFill.setAttribute('height', fillHeight);
         batteryFill.setAttribute('y', fillY);
         
-        // Určení barvy podle stavu nabíjení/vybíjení
-        let fillClass = 'battery-fill';
-        if (batteryPower > 10) {
-            fillClass += ' charging';
-        } else if (batteryPower < -10) {
-            fillClass += ' discharging';
-        } else {
-            fillClass += ' idle';
-        }
-        batteryFill.className = fillClass;
-        
         previousValues['battery-gauge-width'] = batterySoC;
+    }
+    
+    // Add charging animation if charging
+    const previousPower = previousValues['battery-power-state'];
+    const isCharging = batteryPower > 10;
+    
+    if (previousPower !== isCharging) {
+        if (isCharging) {
+            batteryFill.classList.add('charging');
+        } else {
+            batteryFill.classList.remove('charging');
+        }
+        previousValues['battery-power-state'] = isCharging;
     }
 
     // Check grid charging status for lightning indicator
     const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
     const isGridCharging = gridChargingData.value === 'on';
     const batteryLightning = document.getElementById('battery-lightning');
-    
+
     if (isGridCharging && batteryPower > 10) {
         batteryLightning.classList.add('active');
     } else {

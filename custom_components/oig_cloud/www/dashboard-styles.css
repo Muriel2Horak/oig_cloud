@@ -554,6 +554,7 @@
             font-size: 28px; /* Ještě menší */
             margin-bottom: 4px;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            position: relative; /* Pro absolutní pozici emoji ikony */
         }
 
         .node-label {
@@ -1765,22 +1766,19 @@
         }
 
         .battery-fill {
-            fill: #666;
-            transition: height 0.8s ease, fill 0.5s ease, y 0.8s ease;
+            /* Gradient je definován v SVG, zde jen animace */
+            transition: height 0.8s ease, y 0.8s ease, opacity 0.3s ease;
             transform-origin: bottom;
         }
 
-        /* Stavy baterie */
+        /* Animace blikání při nabíjení */
         .battery-fill.charging {
-            fill: #4caf50;
+            animation: battery-pulse 2s ease-in-out infinite;
         }
 
-        .battery-fill.discharging {
-            fill: #ff5722;
-        }
-
-        .battery-fill.idle {
-            fill: #757575;
+        @keyframes battery-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
 
         /* Grid charging blesk */
