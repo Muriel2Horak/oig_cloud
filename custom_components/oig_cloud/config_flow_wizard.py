@@ -579,15 +579,6 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         progress = self._get_progress_bar(4, 7)
 
-        # Detekce weather entit
-        weather_entities: Dict[str, str] = {}
-        for state in self.hass.states.async_all("weather"):
-            has_forecast = bool(state.attributes.get("forecast"))
-            label = f"{state.attributes.get('friendly_name', state.entity_id)}"
-            if has_forecast:
-                label += " ✅ (má forecast)"
-            weather_entities[state.entity_id] = label
-
         schema_fields: Dict[str, Any] = {
             vol.Optional("battery_min_percent", default=20.0): vol.All(
                 vol.Coerce(float), vol.Range(min=5.0, max=50.0)
@@ -604,18 +595,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("battery_percentile", default=75.0): vol.All(
                 vol.Coerce(float), vol.Range(min=50.0, max=95.0)
             ),
-            vol.Optional("charge_on_bad_weather", default=False): bool,
         }
-
-        # Přidat weather entitu pokud je bad weather zapnutý
-        if weather_entities:
-            weather_options = {"": "🤖 Automaticky (první dostupná)"}
-            weather_options.update(weather_entities)
-            schema_fields.update(
-                {
-                    vol.Optional("weather_entity", default=""): vol.In(weather_options),
-                }
-            )
 
         return self.async_show_form(
             step_id="advanced_battery",
@@ -630,7 +610,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "  Pod touto úrovní začne nabíjet\n"
                     "  Doporučeno: 15-25%\n\n"
                     "🎯 Cílová kapacita (%):\n"
-                    "  Pro preventivní nabití (bad weather)\n"
+                    "  Cílová úroveň pro nabití\n"
                     "  Doporučeno: 70-90%\n\n"
                     "⚡ Nabíjecí výkon (kW):\n"
                     "  Max. výkon vašeho systému ze sítě\n"
@@ -640,10 +620,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "  Doporučeno: 8-12 CZK/kWh\n\n"
                     "📊 Percentil špičky (%):\n"
                     "  Ceny nad tímto = špička\n"
-                    "  Doporučeno: 75-85%\n\n"
-                    "🌧️ Preventivní nabití:\n"
-                    "  Nabít před bouřkou/vichřicí\n"
-                    "  Vyžaduje weather entitu v HA"
+                    "  Doporučeno: 75-85%"
                 ),
             },
         )
@@ -935,10 +912,6 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     "max_price_conf": self.wizard_data.get("battery_max_price", 10.0),
                     "percentile_conf": self.wizard_data.get("battery_percentile", 75.0),
-                    "charge_on_bad_weather": self.wizard_data.get(
-                        "charge_on_bad_weather", False
-                    ),
-                    "weather_entity": self.wizard_data.get("weather_entity", ""),
                 }
             )
 

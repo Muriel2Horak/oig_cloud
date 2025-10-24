@@ -677,8 +677,6 @@ class WizardMixin:
             max_price = self._wizard_data.get("max_price_conf", 10.0)
             summary_parts.append(f"      → Kapacita: {min_cap}% - {target_cap}%")
             summary_parts.append(f"      → Max. cena: {max_price} CZK/kWh")
-            if self._wizard_data.get("charge_on_bad_weather", False):
-                summary_parts.append("      → Preventivní nabíjení: Zapnuto")
 
         if self._wizard_data.get("enable_pricing", False):
             summary_parts.append("   ✅ Cenové senzory a spotové ceny")
@@ -1389,21 +1387,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_battery")
 
-            # Detekce změny stavu checkboxu charge_on_bad_weather - pokud se změnil, znovu zobrazit formulář
-            old_bad_weather = self._wizard_data.get("charge_on_bad_weather", False)
-            new_bad_weather = user_input.get("charge_on_bad_weather", False)
-
-            # Pokud se změnil stav checkboxu, aktualizovat data a znovu zobrazit formulář
-            if old_bad_weather != new_bad_weather:
-                self._wizard_data.update(user_input)
-                return self.async_show_form(
-                    step_id="wizard_battery",
-                    data_schema=self._get_battery_schema(user_input),
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_battery"
-                    ),
-                )
-
             errors = {}
 
             # Validace min < target
@@ -1447,16 +1430,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
-        # Získat weather entity z HA
-        weather_entities = {"": "🤖 Automaticky (první dostupná)"}
-        if self.hass:
-            for state in self.hass.states.async_all("weather"):
-                has_forecast = bool(state.attributes.get("forecast"))
-                label = f"{state.attributes.get('friendly_name', state.entity_id)}"
-                if has_forecast:
-                    label += " ✅"
-                weather_entities[state.entity_id] = label
-
         schema_fields = {
             vol.Optional(
                 "min_capacity_percent",
@@ -1475,19 +1448,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "max_price_conf", default=defaults.get("max_price_conf", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
-            vol.Optional(
-                "charge_on_bad_weather",
-                default=defaults.get("charge_on_bad_weather", False),
-            ): bool,
         }
-
-        # Přidat weather entity POUZE když je bad weather zapnutý
-        if defaults.get("charge_on_bad_weather", False) and len(weather_entities) > 1:
-            schema_fields[
-                vol.Optional(
-                    "weather_entity", default=defaults.get("weather_entity", "")
-                )
-            ] = vol.In(weather_entities)
 
         # Přidat go_back na konec
         schema_fields[vol.Optional("go_back", default=False)] = bool
@@ -2141,10 +2102,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
                     "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
                     "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
-                    "charge_on_bad_weather": self._wizard_data.get(
-                        "charge_on_bad_weather", False
-                    ),
-                    "weather_entity": self._wizard_data.get("weather_entity", ""),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
                     # Dashboard
@@ -2329,10 +2286,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
                 "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
                 "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
-                "charge_on_bad_weather": self._wizard_data.get(
-                    "charge_on_bad_weather", False
-                ),
-                "weather_entity": self._wizard_data.get("weather_entity", ""),
                 # Pricing - použít mapované backend atributy
                 **pricing_backend,
                 # Dashboard
@@ -2742,41 +2695,12 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
         }
 
-        # NOVÉ: Přidat weather monitoring pokud je battery prediction zapnutý
-        if battery_enabled and weather_entities:
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "charge_on_bad_weather",
-                        default=current_options.get("charge_on_bad_weather", False),
-                        description="🌧️ Nabíjet preventivně při špatném počasí",
-                    ): bool,
-                }
-            )
-
-            # Pokud je zapnutý bad weather mode, nabídnout výběr entity
-            if current_options.get("charge_on_bad_weather", False):
-                # Přidat "auto" možnost jako první
-                weather_options = {"": "🤖 Automaticky (první dostupná)"}
-                weather_options.update(weather_entities)
-
-                schema_fields.update(
-                    {
-                        vol.Optional(
-                            "weather_entity",
-                            default=current_options.get("weather_entity", ""),
-                            description="🌦️ Weather entita pro předpověď (volitelné)",
-                        ): vol.In(weather_options),
-                    }
-                )
-
         # Vysvětlení parametrů
         min_cap = current_options.get("min_capacity_percent", 20.0)
         target_cap = current_options.get("target_capacity_percent", 80.0)
         charge_rate = current_options.get("home_charge_rate", 2.8)
         percentile = current_options.get("percentile_conf", 75.0)
         max_price = current_options.get("max_price_conf", 10.0)
-        bad_weather = current_options.get("charge_on_bad_weather", False)
 
         info_text = (
             f"🔋 CHYTRÉ NABÍJENÍ BATERIE\n"
@@ -2787,8 +2711,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             f"  • Cílová kapacita: {target_cap:.0f}%\n"
             f"  • Nabíjecí výkon: {charge_rate:.1f} kW\n"
             f"  • Percentil špičky: {percentile:.0f}%\n"
-            f"  • Max. cena: {max_price:.1f} CZK/kWh\n"
-            f"  • Špatné počasí: {'✅ Zapnuto' if bad_weather else '❌ Vypnuto'}\n\n"
+            f"  • Max. cena: {max_price:.1f} CZK/kWh\n\n"
             f"❓ Jak to funguje?\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"1️⃣ Systém sleduje spotové ceny elektřiny\n"
@@ -2796,8 +2719,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             f"3️⃣ Plánuje nabíjení tak, aby baterie\n"
             f"   neklesla pod minimální kapacitu\n"
             f"4️⃣ Preferuje nejlevnější hodiny\n"
-            f"5️⃣ Nikdy nenabíjí nad max. cenu\n"
-            f"6️⃣ NOVÉ: Preventivní nabití před bouřkou\n\n"
+            f"5️⃣ Nikdy nenabíjí nad max. cenu\n\n"
             f"💡 Příklad:\n"
             f"  Baterie má 30% → OK, necháme vybíjet\n"
             f"  Baterie klesne na {min_cap:.0f}% → START nabíjení\n"
@@ -2834,8 +2756,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             f"⚠️ Vyžaduje:\n"
             f"  • Zapnuté spotové ceny (OTE)\n"
             f"  • Zapnuté statistiky spotřeby\n"
-            f"  • Solární předpověď (doporučeno)\n"
-            f"  • Weather entitu (pro bad weather)"
+            f"  • Solární předpověď (doporučeno)"
         )
 
         return self.async_show_form(
@@ -2846,7 +2767,6 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 "min_capacity": min_cap,
                 "target_capacity": target_cap,
                 "charge_rate": charge_rate,
-                "bad_weather": ("✅ Ano" if bad_weather else "❌ Ne"),
                 "info": info_text,
             },
         )

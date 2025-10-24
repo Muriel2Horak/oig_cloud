@@ -117,9 +117,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 # Načtení warning dat
                 if isinstance(data.get("warning_data"), dict):
                     self._last_warning_data = data["warning_data"]
-                    _LOGGER.debug(
-                        f"🌦️ Loaded warning data from storage"
-                    )
+                    _LOGGER.debug(f"🌦️ Loaded warning data from storage")
                 else:
                     _LOGGER.debug("🌦️ No warning data found in storage")
             else:
@@ -190,14 +188,17 @@ class OigCloudChmuSensor(OigCloudSensor):
                 return
 
             # Získat ČHMÚ API klienta z coordinatoru
-            if not hasattr(self.coordinator, "chmu_api") or not self.coordinator.chmu_api:
+            if (
+                not hasattr(self.coordinator, "chmu_api")
+                or not self.coordinator.chmu_api
+            ):
                 _LOGGER.error("🌦️ ČHMÚ API not initialized in coordinator")
                 self._attr_available = False
                 return
 
             # Fetch data pomocí aiohttp session z HA
             session = aiohttp_client.async_get_clientsession(self.hass)
-            
+
             warning_data = await self.coordinator.chmu_api.get_warnings(
                 latitude, longitude, session
             )
@@ -242,7 +243,9 @@ class OigCloudChmuSensor(OigCloudSensor):
                 return (float(lat), float(lon))
 
         # 2. HA General Settings
-        if hasattr(self.hass.config, "latitude") and hasattr(self.hass.config, "longitude"):
+        if hasattr(self.hass.config, "latitude") and hasattr(
+            self.hass.config, "longitude"
+        ):
             lat = self.hass.config.latitude
             lon = self.hass.config.longitude
             if lat is not None and lon is not None:
@@ -285,14 +288,16 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         attrs = {
             # Lokální data
-            "local_warnings_count": self._last_warning_data.get("local_warnings_count", 0),
+            "local_warnings_count": self._last_warning_data.get(
+                "local_warnings_count", 0
+            ),
             "top_local_warning": self._last_warning_data.get("top_local_warning"),
             "local_warnings": self._last_warning_data.get("local_warnings", []),
-            
             # Globální statistiky
             "all_warnings_count": self._last_warning_data.get("all_warnings_count", 0),
-            "highest_severity_cz": self._last_warning_data.get("highest_severity_cz", 0),
-            
+            "highest_severity_cz": self._last_warning_data.get(
+                "highest_severity_cz", 0
+            ),
             # Meta
             "gps_location": self._last_warning_data.get("gps_location", {}),
             "last_update": self._last_warning_data.get("last_update"),
@@ -306,7 +311,7 @@ class OigCloudChmuSensor(OigCloudSensor):
     def icon(self) -> str:
         """Vrátí ikonu podle severity."""
         severity = self.state
-        
+
         if severity >= 4:
             return "mdi:alert-octagon"  # Extreme - červená osmihran
         elif severity >= 3:

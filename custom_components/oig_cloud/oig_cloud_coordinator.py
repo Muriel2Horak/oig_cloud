@@ -579,7 +579,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             # KRITICKÁ KONTROLA: Coordinator MUSÍ mít data před vytvořením battery forecast sensoru
             if not self.data or not isinstance(self.data, dict) or not self.data:
-                _LOGGER.debug("🔋 Coordinator has no data yet, skipping battery forecast calculation")
+                _LOGGER.debug(
+                    "🔋 Coordinator has no data yet, skipping battery forecast calculation"
+                )
                 return
 
             # Importujeme battery forecast třídu

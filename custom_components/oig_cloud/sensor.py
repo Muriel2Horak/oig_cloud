@@ -96,7 +96,9 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
             expected.add(sensor_type)
 
         # ČHMÚ warnings sensors (volitelné)
-        elif category == "chmu_warnings" and entry.options.get("enable_chmu_warnings", False):
+        elif category == "chmu_warnings" and entry.options.get(
+            "enable_chmu_warnings", False
+        ):
             expected.add(sensor_type)
 
     _LOGGER.debug(f"Expected {len(expected)} sensor types based on configuration")
