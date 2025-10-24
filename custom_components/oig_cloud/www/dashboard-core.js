@@ -4888,68 +4888,73 @@ function loadPricingData() {
 }
 
 /**
- * Setup onClick handlers for price cards (one-time only)
- * Handlers are attached once and survive innerHTML updates
+ * Setup onClick handlers for price cards
+ * OPRAVENO: Používá event delegation pro spolehlivost
+ * Handlery přežijí innerHTML updates a fungují i když elementy ještě neexistují
  */
 function setupPriceCardHandlers() {
     if (priceCardHandlersAttached) {
-        console.log('[Card] Handlers already attached, skipping');
-        return;
+        return; // Už nastaveno
     }
 
-    // Cheapest buy card
-    const cheapestCard = document.getElementById('cheapest-buy-price')?.closest('.stat-card');
-    if (cheapestCard) {
-        cheapestCard.style.cursor = 'pointer';
-        cheapestCard.onclick = (e) => {
-            e.stopPropagation();
-            if (currentPriceBlocks.cheapest) {
-                console.log('[Card] Cheapest buy clicked, zooming to:', currentPriceBlocks.cheapest);
-                zoomToTimeRange(currentPriceBlocks.cheapest.start, currentPriceBlocks.cheapest.end, cheapestCard);
-            }
-        };
-    }
+    console.log('[Card] Setting up price card click handlers (event delegation)');
 
-    // Expensive buy card
-    const expensiveCard = document.getElementById('expensive-buy-price')?.closest('.stat-card');
-    if (expensiveCard) {
-        expensiveCard.style.cursor = 'pointer';
-        expensiveCard.onclick = (e) => {
-            e.stopPropagation();
-            if (currentPriceBlocks.expensive) {
-                console.log('[Card] Expensive buy clicked, zooming to:', currentPriceBlocks.expensive);
-                zoomToTimeRange(currentPriceBlocks.expensive.start, currentPriceBlocks.expensive.end, expensiveCard);
-            }
-        };
-    }
+    // Event delegation: jeden handler na document, zachytí všechny kliky na karty
+    // Výhoda: Funguje i když se elementy dynamicky mění/přidávají
+    document.addEventListener('click', function(e) {
+        // Najít nejbližší .stat-card parent
+        const card = e.target.closest('.stat-card');
+        if (!card) return;
 
-    // Best export card
-    const bestExportCard = document.getElementById('best-export-price')?.closest('.stat-card');
-    if (bestExportCard) {
-        bestExportCard.style.cursor = 'pointer';
-        bestExportCard.onclick = (e) => {
-            e.stopPropagation();
-            if (currentPriceBlocks.bestExport) {
-                console.log('[Card] Best export clicked, zooming to:', currentPriceBlocks.bestExport);
-                zoomToTimeRange(currentPriceBlocks.bestExport.start, currentPriceBlocks.bestExport.end, bestExportCard);
-            }
-        };
-    }
+        // Určit který typ karty to je podle ID uvnitř
+        let blockData = null;
+        let cardType = '';
 
-    // Worst export card
-    const worstExportCard = document.getElementById('worst-export-price')?.closest('.stat-card');
-    if (worstExportCard) {
-        worstExportCard.style.cursor = 'pointer';
-        worstExportCard.onclick = (e) => {
+        if (card.querySelector('#cheapest-buy-price')) {
+            blockData = currentPriceBlocks.cheapest;
+            cardType = 'Nejlevnější nákup';
+        } else if (card.querySelector('#expensive-buy-price')) {
+            blockData = currentPriceBlocks.expensive;
+            cardType = 'Nejdražší nákup';
+        } else if (card.querySelector('#best-export-price')) {
+            blockData = currentPriceBlocks.bestExport;
+            cardType = 'Nejlepší prodej';
+        } else if (card.querySelector('#worst-export-price')) {
+            blockData = currentPriceBlocks.worstExport;
+            cardType = 'Nejhorší prodej';
+        } else {
+            return; // Není to jedna z našich cenových karet
+        }
+
+        // Pokud máme data o bloku, zoomuj
+        if (blockData && blockData.start && blockData.end) {
+            console.log(`[Card] ${cardType} clicked, zooming to:`, blockData.start, '->', blockData.end);
             e.stopPropagation();
-            if (currentPriceBlocks.worstExport) {
-                console.log('[Card] Worst export clicked, zooming to:', currentPriceBlocks.worstExport);
-                zoomToTimeRange(currentPriceBlocks.worstExport.start, currentPriceBlocks.worstExport.end, worstExportCard);
+            zoomToTimeRange(blockData.start, blockData.end, card);
+        } else {
+            console.warn(`[Card] ${cardType} clicked but no block data available`);
+        }
+    });
+
+    // Nastavit cursor pointer na všechny cenové karty (pokud existují)
+    const cardIds = [
+        'cheapest-buy-price',
+        'expensive-buy-price', 
+        'best-export-price',
+        'worst-export-price'
+    ];
+
+    cardIds.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            const card = element.closest('.stat-card');
+            if (card) {
+                card.style.cursor = 'pointer';
             }
-        };
-    }
+        }
+    });
 
     priceCardHandlersAttached = true;
-    console.log('[Card] All onClick handlers attached (one-time setup)');
+    console.log('[Card] Event delegation handler attached successfully');
 }
 
