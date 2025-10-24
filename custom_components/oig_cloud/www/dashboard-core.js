@@ -4909,7 +4909,17 @@ function loadPricingData() {
                     console.error('[Pricing] Error parsing timestamp:', timeStr, error);
                     return new Date();
                 }
-            });            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
+            });
+            
+            // DEBUG: Zkontrolovat první a poslední timestamp
+            if (prices.length > 0) {
+                console.log('[Pricing] Raw first timestamp:', prices[0].timestamp);
+                console.log('[Pricing] Parsed first label:', allLabels[0]);
+                console.log('[Pricing] Raw last timestamp:', prices[prices.length - 1].timestamp);
+                console.log('[Pricing] Parsed last label:', allLabels[allLabels.length - 1]);
+            }
+            
+            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
             originalPriceData = spotPriceData;
 
@@ -5340,14 +5350,14 @@ function loadPricingData() {
 
     // Create/update combined chart
     const ctx = document.getElementById('combined-chart');
-    
+
     // OPRAVA: Kontrola jestli je canvas viditelný (pricing tab aktivní)
     // Pokud není, odložit vytvoření grafu
     if (!ctx) {
         console.warn('[Pricing] Canvas element not found, deferring chart creation');
         return;
     }
-    
+
     const isVisible = ctx.offsetParent !== null;
     if (!isVisible && !combinedChart) {
         console.warn('[Pricing] Canvas not visible yet, deferring chart creation');
@@ -5360,11 +5370,16 @@ function loadPricingData() {
         }, 200);
         return;
     }
-    
+
     if (combinedChart) {
         // OPTIMALIZACE: Místo přenastavení celého datasetu aktualizujeme jen labely a data
         const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
         const datasetsChanged = combinedChart.data.datasets.length !== datasets.length;
+
+        console.log('[Pricing] Updating EXISTING chart - labelsChanged:', labelsChanged, 'datasetsChanged:', datasetsChanged);
+        if (allLabels.length > 0) {
+            console.log('[Pricing] Update - First label:', allLabels[0], 'Last:', allLabels[allLabels.length - 1]);
+        }
 
         if (labelsChanged) {
             combinedChart.data.labels = allLabels;
@@ -5389,6 +5404,15 @@ function loadPricingData() {
             combinedChart.update('none'); // Update bez animace, rychlejší
         }
     } else {
+        // DETAILNÍ DEBUG PRO ANALÝZU PROBLÉMU S ČASOVOU OSOU
+        console.log('[Pricing] Creating NEW chart with', allLabels.length, 'labels');
+        if (allLabels.length > 0) {
+            console.log('[Pricing] First label:', allLabels[0]);
+            console.log('[Pricing] Last label:', allLabels[allLabels.length - 1]);
+            console.log('[Pricing] Current time:', new Date());
+            console.log('[Pricing] Time offset (hours):', (new Date() - allLabels[0]) / (1000 * 60 * 60));
+        }
+        
         combinedChart = new Chart(ctx, {
             type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
             data: { labels: allLabels, datasets: datasets },
