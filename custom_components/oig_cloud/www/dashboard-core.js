@@ -5083,31 +5083,38 @@ let tileDialog = null;
 function initCustomTiles() {
     console.log('[Tiles] Initializing custom tiles system...');
 
-    // Initialize tile manager
-    tileManager = new DashboardTileManager();
-    window.tileManager = tileManager; // Export for dialog access
-
-    // Initialize tile dialog
+    // Initialize tile dialog only if not already initialized
     const hass = getHass();
     if (!hass) {
-        console.warn('[Tiles] Cannot initialize dialog - no HA connection');
+        console.warn('[Tiles] Cannot initialize - no HA connection, retrying...');
         setTimeout(initCustomTiles, 1000); // Retry
         return;
     }
 
-    tileDialog = new TileConfigDialog(hass, tileManager);
-    window.tileDialog = tileDialog; // Export for onclick handlers
+    // Initialize tile manager (only once)
+    if (!tileManager) {
+        tileManager = new DashboardTileManager();
+        window.tileManager = tileManager; // Export for dialog access
+        
+        // Listen for config changes
+        tileManager.addChangeListener(() => {
+            console.log('[Tiles] Config changed, re-rendering...');
+            renderAllTiles();
+            updateTileControlsUI();
+        });
+    }
 
-    // Listen for config changes
-    tileManager.addChangeListener(() => {
-        console.log('[Tiles] Config changed, re-rendering...');
-        renderAllTiles();
-        updateTileControlsUI();
-    });
+    // Initialize tile dialog (only once)
+    if (!tileDialog) {
+        tileDialog = new TileConfigDialog(hass, tileManager);
+        window.tileDialog = tileDialog; // Export for onclick handlers
+    }
 
     // Initial render
     renderAllTiles();
     updateTileControlsUI();
+    
+    console.log('[Tiles] Initialization complete');
 }
 
 /**
