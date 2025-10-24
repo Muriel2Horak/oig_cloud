@@ -5278,10 +5278,33 @@ function renderTile(side, index, config) {
         // Entity tile
         tile.classList.add('tile-entity');
         tile.innerHTML = renderEntityTile(config);
+        // Klik pro editaci (mimo remove button)
+        tile.onclick = (e) => {
+            // Pokud klikáme na remove button nebo button tile action, ignoruj
+            if (e.target.closest('.tile-remove') || e.target.closest('.tile-button-action')) {
+                return;
+            }
+            window.tileDialog.open(index, side);
+        };
+        tile.style.cursor = 'pointer';
     } else if (config.type === 'button') {
         // Button tile
         tile.classList.add('tile-button');
         tile.innerHTML = renderButtonTile(config);
+        // Klik pro editaci (mimo action)
+        tile.onclick = (e) => {
+            // Pokud klikáme na remove button, ignoruj
+            if (e.target.closest('.tile-remove')) {
+                return;
+            }
+            // Pokud klikáme na tile-content (akce), spusť akci
+            if (e.target.closest('.tile-content')) {
+                executeTileButtonAction(config);
+                return;
+            }
+            // Jinak otevři dialog pro editaci
+            window.tileDialog.open(index, side);
+        };
     }
 
     // Add remove button (visible on hover)
