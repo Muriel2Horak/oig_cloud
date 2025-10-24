@@ -2343,17 +2343,59 @@ function animateFlow(data) {
     };
 
     // 1. SOLAR → INVERTER (žlutá)
-    const solarActive = solarPerc > 0 && solarPower > 100; // min 100W
-    const solarSpeed = solarActive ? 3000 - (solarPerc / 100) * 2000 : 2000;
-    const solarCount = solarPerc > 66 ? 3 : (solarPerc > 33 ? 2 : 1);
+    let solarActive, solarSpeed, solarCount;
+    
+    if (solarPower < 500) {
+        // 0-500W: žádná animace
+        solarActive = false;
+        solarSpeed = 3000;
+        solarCount = 0;
+    } else if (solarPower < 2000) {
+        // 500-2000W: 1 kulička, pomalá
+        solarActive = true;
+        solarSpeed = 3000;
+        solarCount = 1;
+    } else if (solarPower < 5000) {
+        // 2000-5000W: 2 kuličky, střední rychlost
+        solarActive = true;
+        solarSpeed = 2500;
+        solarCount = 2;
+    } else {
+        // 5000W+: 3 kuličky, rychlé
+        solarActive = true;
+        solarSpeed = 1500;
+        solarCount = 3;
+    }
+    
     updateParticleFlow('solarToInverter', centers.solar, centers.inverter, '#ffd54f', solarActive, solarSpeed, solarCount);
 
     // 2. BATTERY ↔ INVERTER
     const batteryAbsPower = Math.abs(batteryPower);
-    const batteryActive = batteryAbsPower > 100; // min 100W
-    const batteryPerc = batteryActive ? Math.min(batteryAbsPower / 9000, 1) * 100 : 0;
-    const batterySpeed = batteryActive ? 3000 - (batteryPerc / 100) * 2000 : 2000;
-    const batteryCount = batteryPerc > 66 ? 3 : (batteryPerc > 33 ? 2 : 1);
+    
+    // Dynamický práh: pro nízké výkony používáme pomalejší animaci s menším počtem kuliček
+    let batteryActive, batterySpeed, batteryCount;
+    
+    if (batteryAbsPower < 500) {
+        // 0-500W: žádná animace (moc nízký výkon)
+        batteryActive = false;
+        batterySpeed = 3000;
+        batteryCount = 0;
+    } else if (batteryAbsPower < 2000) {
+        // 500-2000W: 1 kulička, pomalá
+        batteryActive = true;
+        batterySpeed = 3000;
+        batteryCount = 1;
+    } else if (batteryAbsPower < 5000) {
+        // 2000-5000W: 2 kuličky, střední rychlost
+        batteryActive = true;
+        batterySpeed = 2500;
+        batteryCount = 2;
+    } else {
+        // 5000W+: 3 kuličky, rychlé
+        batteryActive = true;
+        batterySpeed = 1500;
+        batteryCount = 3;
+    }
 
     // Zastavit oba směry nejdřív
     updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', false, batterySpeed, batteryCount);
@@ -2371,10 +2413,30 @@ function animateFlow(data) {
 
     // 3. GRID ↔ INVERTER
     const gridAbsPower = Math.abs(gridPower);
-    const gridActive = gridAbsPower > 100; // min 100W
-    const gridPerc = gridActive ? Math.min(gridAbsPower / 17000, 1) * 100 : 0;
-    const gridSpeed = gridActive ? 3000 - (gridPerc / 100) * 2000 : 2000;
-    const gridCount = gridPerc > 66 ? 3 : (gridPerc > 33 ? 2 : 1);
+    
+    let gridActive, gridSpeed, gridCount;
+    
+    if (gridAbsPower < 500) {
+        // 0-500W: žádná animace
+        gridActive = false;
+        gridSpeed = 3000;
+        gridCount = 0;
+    } else if (gridAbsPower < 3000) {
+        // 500-3000W: 1 kulička, pomalá
+        gridActive = true;
+        gridSpeed = 3000;
+        gridCount = 1;
+    } else if (gridAbsPower < 8000) {
+        // 3000-8000W: 2 kuličky, střední rychlost
+        gridActive = true;
+        gridSpeed = 2500;
+        gridCount = 2;
+    } else {
+        // 8000W+: 3 kuličky, rychlé
+        gridActive = true;
+        gridSpeed = 1500;
+        gridCount = 3;
+    }
 
     // Zastavit oba směry nejdřív
     updateParticleFlow('gridToInverter', centers.grid, centers.inverter, '#f44336', false, gridSpeed, gridCount);
@@ -2391,10 +2453,30 @@ function animateFlow(data) {
     }
 
     // 4. INVERTER → HOUSE (růžová)
-    const houseActive = housePower > 100; // min 100W
-    const housePerc = houseActive ? Math.min(housePower / 17000, 1) * 100 : 0;
-    const houseSpeed = houseActive ? 3000 - (housePerc / 100) * 2000 : 2000;
-    const houseCount = housePerc > 66 ? 3 : (housePerc > 33 ? 2 : 1);
+    let houseActive, houseSpeed, houseCount;
+    
+    if (housePower < 500) {
+        // 0-500W: žádná animace
+        houseActive = false;
+        houseSpeed = 3000;
+        houseCount = 0;
+    } else if (housePower < 3000) {
+        // 500-3000W: 1 kulička, pomalá
+        houseActive = true;
+        houseSpeed = 3000;
+        houseCount = 1;
+    } else if (housePower < 8000) {
+        // 3000-8000W: 2 kuličky, střední rychlost
+        houseActive = true;
+        houseSpeed = 2500;
+        houseCount = 2;
+    } else {
+        // 8000W+: 3 kuličky, rychlé
+        houseActive = true;
+        houseSpeed = 1500;
+        houseCount = 3;
+    }
+    
     updateParticleFlow('inverterToHouse', centers.inverter, centers.house, '#f06292', houseActive, houseSpeed, houseCount);
 
 }
