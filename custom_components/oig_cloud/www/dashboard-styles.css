@@ -3313,7 +3313,7 @@
         .chart-container { background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border-primary); padding: 20px; margin-bottom: 20px; }
         .chart-title { font-size: 18px; margin-bottom: 15px; font-weight: 600; }
         .chart-wrapper { position: relative; height: 400px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
         .stat-card { background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-primary); padding: 15px; transition: transform 0.2s, box-shadow 0.2s, border-color 0.3s, background 0.3s; }
         .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
         .stat-card.zoom-active { border-color: rgba(33, 150, 243, 0.8); box-shadow: 0 0 20px rgba(33, 150, 243, 0.5), 0 4px 12px rgba(0,0,0,0.4); background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); transform: scale(1.02); }

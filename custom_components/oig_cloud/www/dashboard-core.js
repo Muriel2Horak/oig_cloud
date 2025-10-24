@@ -3865,12 +3865,12 @@ function zoomToTimeRange(startTime, endTime, cardElement = null) {
         Math.abs(currentZoomRange.start - zoomStart) < 60000 &&
         Math.abs(currentZoomRange.end - zoomEnd) < 60000) {
         console.log('[Zoom] Already zoomed to this range -> ZOOM OUT');
-        
+
         // Reset zoom: odstranit scale limits
         delete combinedChart.options.scales.x.min;
         delete combinedChart.options.scales.x.max;
         combinedChart.update('none');
-        
+
         currentZoomRange = null;
 
         // Odebrat zoom-active třídu z aktivní karty
@@ -3890,11 +3890,11 @@ function zoomToTimeRange(startTime, endTime, cardElement = null) {
     try {
         // OPRAVA: zoom() metoda nefunguje správně pro absolutní rozsah
         // Místo toho nastavíme přímo scale limits a zavoláme update()
-        
+
         // Nastavit min/max na scale
         combinedChart.options.scales.x.min = zoomStart;
         combinedChart.options.scales.x.max = zoomEnd;
-        
+
         // Aplikovat změny
         combinedChart.update('none'); // 'none' = bez animace, okamžitě
 
@@ -4080,42 +4080,18 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
         }
     });
 
-    // Plugin pro svislé čáry označující start/end
-    const verticalLinesPlugin = {
-        id: 'verticalLines',
-        afterDraw: (chart) => {
-            const ctx = chart.ctx;
-            const xAxis = chart.scales.x;
-            const yAxis = chart.scales.y;
+    // Vytvořit absolutní časy pro X osu (ne relativní offsety)
+    const start = new Date(startTime);
+    const timeLabels = values.map((_, i) => {
+        const time = new Date(start.getTime() + i * 15 * 60 * 1000);
+        return time.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'});
+    });
 
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([4, 2]);
-
-            // Start čára (první bod)
-            const x1 = xAxis.getPixelForValue(0);
-            ctx.beginPath();
-            ctx.moveTo(x1, yAxis.top);
-            ctx.lineTo(x1, yAxis.bottom);
-            ctx.stroke();
-
-            // End čára (poslední bod)
-            const x2 = xAxis.getPixelForValue(values.length - 1);
-            ctx.beginPath();
-            ctx.moveTo(x2, yAxis.top);
-            ctx.lineTo(x2, yAxis.bottom);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-    };
-
-    // Vytvořit nový interaktivní mini graf
+    // Vytvořit nový interaktivní mini graf (bez svislých čar)
     canvas.chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: values.map((_, i) => `${i * 15}min`),
+            labels: timeLabels,
             datasets: [{
                 data: values,
                 borderColor: color,
@@ -4147,7 +4123,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
                     padding: 8,
                     displayColors: false,
                     callbacks: {
-                        title: (items) => `+${items[0].label}`,
+                        title: (items) => items[0].label,  // Zobrazit přesný čas místo "+Xmin"
                         label: (item) => `${item.parsed.y.toFixed(2)} Kč/kWh`
                     }
                 },
@@ -4187,8 +4163,20 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
             scales: {
                 x: { display: false },
                 y: {
-                    display: false,
-                    grace: '10%'  // Trochu prostoru kolem dat
+                    display: true,
+                    position: 'right',  // Y osa napravo
+                    grace: '10%',  // Trochu prostoru kolem dat
+                    ticks: {
+                        color: 'rgba(255, 255, 255, 0.6)',
+                        font: { size: 8 },
+                        callback: function(value) {
+                            return value.toFixed(1);  // Zobrazit s 1 desetinným místem
+                        },
+                        maxTicksLimit: 3  // Max 3 hodnoty (min, střed, max)
+                    },
+                    grid: {
+                        display: false  // Žádné horizontální čáry
+                    }
                 }
             },
             layout: {
@@ -4198,8 +4186,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
                 mode: 'nearest',
                 intersect: false
             }
-        },
-        plugins: [verticalLinesPlugin]
+        }
     });
 
     // Uložit časy pro zoom funkci
