@@ -1273,7 +1273,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         time_threshold = now - timedelta(minutes=10)
 
         # Pro kontrolu, jestli se baterie nabíjí, potřebujeme předchozí kapacitu
+        # Inicializovat z posledního bodu PŘED time_threshold
         prev_battery_capacity = None
+        for point in timeline_data:
+            try:
+                timestamp_str = point.get("timestamp", "")
+                timestamp = datetime.fromisoformat(timestamp_str)
+                if timestamp < time_threshold:
+                    prev_battery_capacity = point.get("battery_capacity_kwh", 0)
+                else:
+                    break  # Jakmile najdeme bod >= threshold, ukončíme
+            except (ValueError, TypeError):
+                continue
 
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
@@ -1348,30 +1359,59 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         """Vrátí stav senzoru - on/off jestli nabíjení PROBÍHÁ nebo brzy začne."""
         intervals, _, _ = self._calculate_charging_intervals()
 
-        # Kontrola, jestli je aktuální čas v intervalu nabíjení (nebo 5 min před)
+        # Najít souvislé bloky nabíjení a kontrolovat, jestli jsme v některém
         now = datetime.now()
         offset_before_start = timedelta(minutes=5)  # Zapnout 5 min před začátkem
         offset_before_end = timedelta(minutes=5)  # Vypnout 5 min před koncem
 
+        # Projít intervaly a vytvořit bloky
+        charging_blocks = []
+        current_block_start = None
+        current_block_end = None
+
         for interval in intervals:
             if not interval.get("is_charging_battery", False):
+                # Přeskočit intervaly bez nabíjení
+                if current_block_start:
+                    # Ukončit aktuální blok
+                    charging_blocks.append((current_block_start, current_block_end))
+                    current_block_start = None
+                    current_block_end = None
                 continue
 
             try:
                 interval_time = datetime.fromisoformat(interval["timestamp"])
-                interval_start = interval_time
-                interval_end = interval_time + timedelta(minutes=15)  # 15min interval
 
-                # Je aktuální čas v rozsahu (interval_start - 5min) až (interval_end - 5min)?
-                # Zapnout 5 min PŘED začátkem, vypnout 5 min PŘED koncem
-                if (
-                    (interval_start - offset_before_start)
-                    <= now
-                    <= (interval_end - offset_before_end)
-                ):
-                    return "on"
+                if current_block_start is None:
+                    # Začátek nového bloku
+                    current_block_start = interval_time
+                    current_block_end = interval_time + timedelta(minutes=15)
+                else:
+                    # Kontrola, jestli navazuje (max 15 min mezera)
+                    if (interval_time - current_block_end).total_seconds() <= 15 * 60:
+                        # Prodloužit blok
+                        current_block_end = interval_time + timedelta(minutes=15)
+                    else:
+                        # Mezera větší než 15 min -> nový blok
+                        charging_blocks.append((current_block_start, current_block_end))
+                        current_block_start = interval_time
+                        current_block_end = interval_time + timedelta(minutes=15)
             except (ValueError, TypeError):
                 continue
+
+        # Nezapomenout přidat poslední blok
+        if current_block_start:
+            charging_blocks.append((current_block_start, current_block_end))
+
+        # Kontrola, jestli je now v nějakém bloku (s offsety)
+        for block_start, block_end in charging_blocks:
+            # ON od (block_start - 5min) do (block_end - 5min)
+            if (
+                (block_start - offset_before_start)
+                <= now
+                <= (block_end - offset_before_end)
+            ):
+                return "on"
 
         return "off"
 
