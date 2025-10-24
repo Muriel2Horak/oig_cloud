@@ -185,7 +185,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         try:
             bat_p = float(pv_data["box_prms"]["p_bat"])
-            
+
             # Získat bat_min z batt_prms (minimální nabití v %)
             bat_min_percent = float(pv_data.get("batt_prms", {}).get("bat_min", 20))
             # Využitelná kapacita = 100% - bat_min%
