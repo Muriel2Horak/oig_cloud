@@ -4250,6 +4250,12 @@ function switchTab(tabName) {
             console.log('[Tab] Flow tab visible?', flowTab && flowTab.classList.contains('active'));
             console.log('[Tab] Flow tab offsetHeight:', flowTab?.offsetHeight);
 
+            // OPRAVA: Zkontrolovat jestli je tab skutečně viditelný
+            if (!flowTab || !flowTab.classList.contains('active')) {
+                console.warn('[Tab] ✗ Flow tab not visible yet, aborting redraw');
+                return;
+            }
+
             // 3. Invalidovat cache pozic
             cachedNodeCenters = null;
             lastLayoutHash = null;
@@ -4265,6 +4271,22 @@ function switchTab(tabName) {
             console.log('[Tab] Getting node centers...');
             getNodeCenters();
             console.log('[Tab] ✓ Node centers cached:', cachedNodeCenters);
+
+            // OPRAVA: Zkontrolovat jestli se pozice načetly správně
+            if (!cachedNodeCenters || Object.keys(cachedNodeCenters).length === 0) {
+                console.error('[Tab] ✗ Failed to get node centers, retrying...');
+                // Zkusit znovu s delším timeout
+                setTimeout(() => {
+                    cachedNodeCenters = null;
+                    lastLayoutHash = null;
+                    getNodeCenters();
+                    drawConnections();
+                    needsFlowReinitialize = true;
+                    loadData();
+                    console.log('[Tab] ✓ Retry complete');
+                }, 200);
+                return;
+            }
 
             // 6. Překreslit čáry (teď už máme správné pozice)
             console.log('[Tab] Drawing connections...');
@@ -5620,18 +5642,18 @@ function loadPricingData() {
 
         // Inicializace detailu pro nový graf
         updateChartDetailLevel(combinedChart);
-        
+
         // OPRAVA: Nastavit zoom asynchronně PO dokončení inicializace Chart.js
         // Chart.js zoom plugin se inicializuje asynchronně a přepisuje naše nastavení
         // Použijeme requestAnimationFrame aby se zoom aplikoval až po prvním renderu
         if (initialZoomStart && initialZoomEnd) {
             requestAnimationFrame(() => {
                 if (!combinedChart) return; // Safety check
-                
+
                 combinedChart.options.scales.x.min = initialZoomStart;
                 combinedChart.options.scales.x.max = initialZoomEnd;
                 combinedChart.update('none'); // Aplikovat okamžitě bez animace
-                
+
                 console.log('[Pricing] Initial zoom applied after first render:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
                 updateChartDetailLevel(combinedChart);
             });
