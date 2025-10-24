@@ -54,7 +54,7 @@ class TileConfigDialog {
                     <!-- Tab: Entity -->
                     <div id="tab-entity" class="tile-tab-content active">
                         <div class="form-group">
-                            <label>Vyberte entitu:</label>
+                            <label>Vyberte hlavní entitu:</label>
                             <input type="text"
                                    id="entity-search"
                                    class="form-input"
@@ -88,6 +88,22 @@ class TileConfigDialog {
                                        class="form-input"
                                        value="#03A9F4">
                             </div>
+                        </div>
+
+                        <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-primary);">
+
+                        <div class="form-group">
+                            <label>🔹 Podpůrná entita 1 (levý horní roh, volitelné):</label>
+                            <select id="support-entity-1" class="form-input">
+                                <option value="">-- Žádná --</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>🔹 Podpůrná entita 2 (levý dolní roh, volitelné):</label>
+                            <select id="support-entity-2" class="form-input">
+                                <option value="">-- Žádná --</option>
+                            </select>
                         </div>
                     </div>
 
@@ -238,6 +254,7 @@ class TileConfigDialog {
     populateEntityLists() {
         this.populateEntityList();
         this.populateButtonEntityList();
+        this.populateSupportEntitySelects(); // Naplnit selecty pro podpůrné entity
     }
 
     /**
@@ -306,6 +323,34 @@ class TileConfigDialog {
     }
 
     /**
+     * Naplnit selecty pro podpůrné entity
+     */
+    populateSupportEntitySelects() {
+        const supportEntity1 = document.getElementById('support-entity-1');
+        const supportEntity2 = document.getElementById('support-entity-2');
+        
+        if (!supportEntity1 || !supportEntity2) return;
+
+        // Všechny senzory a binary senzory
+        const entities = Object.keys(this.hass.states)
+            .filter(id => id.startsWith('sensor.') || id.startsWith('binary_sensor.'))
+            .sort((a, b) => {
+                const nameA = this.hass.states[a].attributes.friendly_name || a;
+                const nameB = this.hass.states[b].attributes.friendly_name || b;
+                return nameA.localeCompare(nameB);
+            });
+
+        const options = '<option value="">-- Žádná --</option>' +
+            entities.map(entityId => {
+                const name = this.hass.states[entityId].attributes.friendly_name || entityId;
+                return `<option value="${entityId}">${name}</option>`;
+            }).join('');
+
+        supportEntity1.innerHTML = options;
+        supportEntity2.innerHTML = options;
+    }
+
+    /**
      * Filtrovat entity podle hledaného textu
      */
     filterEntities(searchText) {
@@ -366,6 +411,12 @@ class TileConfigDialog {
             document.getElementById('entity-label').value = tileConfig.label || '';
             document.getElementById('entity-icon').value = tileConfig.icon || '';
             document.getElementById('entity-color').value = tileConfig.color || '#03A9F4';
+            
+            // Podporné entity
+            if (tileConfig.support_entities) {
+                document.getElementById('support-entity-1').value = tileConfig.support_entities.top_left || '';
+                document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_left || '';
+            }
 
         } else if (tileConfig.type === 'button') {
             this.switchTab('button');
@@ -416,13 +467,21 @@ class TileConfigDialog {
         const label = document.getElementById('entity-label').value.trim();
         const icon = document.getElementById('entity-icon').value.trim();
         const color = document.getElementById('entity-color').value;
+        
+        // Podpůrné entity
+        const supportEntity1 = document.getElementById('support-entity-1').value;
+        const supportEntity2 = document.getElementById('support-entity-2').value;
 
         return {
             type: 'entity',
             entity_id: entityId,
             label: label || null,
             icon: icon || null,
-            color: color
+            color: color,
+            support_entities: {
+                top_left: supportEntity1 || null,
+                bottom_left: supportEntity2 || null
+            }
         };
     }
 

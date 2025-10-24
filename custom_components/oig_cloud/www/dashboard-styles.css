@@ -3469,6 +3469,40 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
+    position: relative; /* Pro absolutní pozicování podporných entit */
+}
+
+/* Podporné entity v rozích */
+.tile-support {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 6px;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 4px;
+    border-radius: 3px;
+    opacity: 0.9;
+}
+
+.tile-support-top-left {
+    top: 2px;
+    left: 2px;
+}
+
+.tile-support-bottom-left {
+    bottom: 2px;
+    left: 2px;
+}
+
+.tile-support .support-icon {
+    font-size: 8px;
+}
+
+.tile-support .support-value {
+    font-weight: 600;
+    font-size: 7px;
 }
 
 .tile-icon {

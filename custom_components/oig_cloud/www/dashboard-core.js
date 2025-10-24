@@ -5324,8 +5324,45 @@ function renderEntityTile(config) {
     const unit = state.attributes.unit_of_measurement || '';
     const color = config.color || '#03A9F4';
 
+    // Podporné entity
+    let supportHtml = '';
+    if (config.support_entities) {
+        // Top left
+        if (config.support_entities.top_left) {
+            const topLeftState = hass.states[config.support_entities.top_left];
+            if (topLeftState) {
+                const topLeftValue = topLeftState.state;
+                const topLeftUnit = topLeftState.attributes.unit_of_measurement || '';
+                const topLeftIcon = topLeftState.attributes.icon || '';
+                supportHtml += `
+                    <div class="tile-support tile-support-top-left">
+                        <span class="support-icon">${topLeftIcon}</span>
+                        <span class="support-value">${topLeftValue}${topLeftUnit}</span>
+                    </div>
+                `;
+            }
+        }
+        
+        // Bottom left
+        if (config.support_entities.bottom_left) {
+            const bottomLeftState = hass.states[config.support_entities.bottom_left];
+            if (bottomLeftState) {
+                const bottomLeftValue = bottomLeftState.state;
+                const bottomLeftUnit = bottomLeftState.attributes.unit_of_measurement || '';
+                const bottomLeftIcon = bottomLeftState.attributes.icon || '';
+                supportHtml += `
+                    <div class="tile-support tile-support-bottom-left">
+                        <span class="support-icon">${bottomLeftIcon}</span>
+                        <span class="support-value">${bottomLeftValue}${bottomLeftUnit}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
     return `
         <div class="tile-content" style="border-left: 3px solid ${color};">
+            ${supportHtml}
             <div class="tile-icon" style="color: ${color};">${icon}</div>
             <div class="tile-label">${label}</div>
             <div class="tile-value">${value} ${unit}</div>
