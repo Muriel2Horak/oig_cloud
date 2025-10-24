@@ -256,8 +256,11 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                         else dt_naive
                     )
 
-                    # Přeskočit uplynulé intervaly
-                    if dt < now:
+                    # Zahrnout aktuální probíhající interval + budoucnost
+                    # Filtr: interval končí POZDĚJI než now (interval_end > now)
+                    interval_end = dt + timedelta(minutes=15)
+                    if interval_end <= now:
+                        continue  # Interval už skončil, přeskočit
                         continue
 
                     # Vypočítat výkupní cenu pro tento interval
@@ -647,6 +650,14 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                         if dt_naive.tzinfo is None
                         else dt_naive
                     )
+
+                    # Zahrnout aktuální probíhající interval + budoucnost
+                    # Filtr: interval končí POZDĚJI než now (interval_end > now)
+                    # Interval trvá 15 minut: 06:30 končí v 06:45
+                    # V 06:35: interval 06:30 končí 06:45 > 06:35 → ZAHRNOUT
+                    interval_end = dt + timedelta(minutes=15)
+                    if interval_end <= now:
+                        continue  # Interval už skončil, přeskočit
 
                     # Vypočítat finální cenu pro tento interval
                     final_price = self._calculate_final_price_15min(spot_price_czk, dt)

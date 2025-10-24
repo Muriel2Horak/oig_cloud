@@ -378,10 +378,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
 
                 if prices:
-                    # Filtrovat pouze budoucí data (od teď dál)
+                    # Spot price sensor již vrací jen aktuální + budoucí intervaly
+                    # Battery forecast používá VŠECHNA data bez dalšího filtrování
                     now = datetime.now()
 
-                    _LOGGER.info(f"Filtering timeline from now: {now.isoformat()}")
+                    _LOGGER.info(f"Loading timeline at: {now.isoformat()}")
 
                     # Konvertovat na timeline formát
                     timeline = []
@@ -396,7 +397,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                             )
                             continue
 
-                        # Parsovat timestamp pro porovnání
+                        # Parsovat timestamp pro validaci
                         try:
                             timestamp = datetime.fromisoformat(timestamp_str)
                         except ValueError:
@@ -405,19 +406,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                             )
                             continue
 
-                        # Filtr: vybrat intervaly >= now - 20 minut
-                        # 20 minut = 15min interval + 5min offset pro zapnutí sensoru před začátkem
-                        # V 06:38 zahrnuje: 06:15, 06:30 (probíhající), 06:45...
-                        time_threshold = now - timedelta(minutes=20)
-                        
-                        if timestamp < time_threshold:
-                            continue  # Přeskočit staré intervaly
-
+                        # Přidat bez filtrování - spot_price sensor už data vyfiltroval
                         timeline.append({"time": timestamp_str, "price": price})
 
                     _LOGGER.info(
                         f"Successfully loaded {len(timeline)} spot price points "
-                        f"(filtered from {len(prices)} total) from {sensor_id}"
+                        f"from {sensor_id}"
                     )
                     return timeline
                 else:
