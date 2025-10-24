@@ -764,11 +764,21 @@ class ServiceShield:
                             box_id = list(coordinator.data.keys())[0]
                             break
 
-            if box_id:
+            if not box_id:
+                _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
+            else:
                 power_entity = f"sensor.oig_{box_id}_actual_aci_wtotal"
                 power_state = self.hass.states.get(power_entity)
 
-                if power_state and power_state.state not in ["unknown", "unavailable"]:
+                if not power_state:
+                    _LOGGER.warning(
+                        f"[OIG Shield] Power monitor: entita {power_entity} neexistuje!"
+                    )
+                elif power_state.state in ["unknown", "unavailable"]:
+                    _LOGGER.warning(
+                        f"[OIG Shield] Power monitor: entita {power_entity} je {power_state.state}"
+                    )
+                else:
                     try:
                         current_power = float(power_state.state)
                         target_mode = data.get("value", "").upper()
@@ -784,7 +794,8 @@ class ServiceShield:
                         }
                         _LOGGER.info(
                             f"[OIG Shield] Power monitor aktivní pro {service_name}: "
-                            f"baseline={current_power}W, target={target_mode}"
+                            f"baseline={current_power}W, target={target_mode}, "
+                            f"going_to_ups={power_monitor['is_going_to_home_ups']}"
                         )
                     except (ValueError, TypeError) as e:
                         _LOGGER.warning(
@@ -968,10 +979,15 @@ class ServiceShield:
                     power_entity = power_monitor["entity_id"]
                     power_state = self.hass.states.get(power_entity)
 
-                    if power_state and power_state.state not in [
-                        "unknown",
-                        "unavailable",
-                    ]:
+                    if not power_state:
+                        _LOGGER.warning(
+                            f"[OIG Shield] Power monitor: entita {power_entity} neexistuje"
+                        )
+                    elif power_state.state in ["unknown", "unavailable"]:
+                        _LOGGER.debug(
+                            f"[OIG Shield] Power monitor: entita {power_entity} je {power_state.state}"
+                        )
+                    else:
                         try:
                             current_power = float(power_state.state)
                             last_power = power_monitor["last_power"]
@@ -983,8 +999,8 @@ class ServiceShield:
                             # Rozdíl mezi aktuální a poslední hodnotou (po sobě jdoucí updaty)
                             power_delta = current_power - last_power
 
-                            _LOGGER.debug(
-                                f"[OIG Shield] Power monitor: current={current_power}W, "
+                            _LOGGER.info(
+                                f"[OIG Shield] Power monitor check: current={current_power}W, "
                                 f"last={last_power}W, delta={power_delta}W, "
                                 f"threshold=±{threshold_w}W, going_to_ups={is_going_to_home_ups}"
                             )

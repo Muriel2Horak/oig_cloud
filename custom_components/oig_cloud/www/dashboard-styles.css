@@ -1314,15 +1314,31 @@
             animation: price-expensive-pulse 2s ease-in-out infinite;
         }
 
-        /* Ikony pro cenové stavy - animace */
+        /* Ikony pro cenové stavy - barevné stíny kolem zásuvky */
         .price-icon-cheap {
             animation: icon-savings 2s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px rgba(76, 175, 80, 0.8));
+            /* Zelený světelný efekt */
+            text-shadow:
+                0 0 10px rgba(76, 175, 80, 1),
+                0 0 20px rgba(76, 175, 80, 0.8),
+                0 0 30px rgba(76, 175, 80, 0.6);
+        }
+
+        .price-icon-normal {
+            /* Žlutý/oranžový světelný efekt */
+            text-shadow:
+                0 0 10px rgba(255, 193, 7, 1),
+                0 0 20px rgba(255, 193, 7, 0.8),
+                0 0 30px rgba(255, 193, 7, 0.6);
         }
 
         .price-icon-expensive {
             animation: icon-expensive 1.5s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px var(--status-discharging-shadow));
+            /* Červený světelný efekt */
+            text-shadow:
+                0 0 10px rgba(244, 67, 54, 1),
+                0 0 20px rgba(244, 67, 54, 0.8),
+                0 0 30px rgba(244, 67, 54, 0.6);
         }
 
         /* Node Details - Čitelné písmo */

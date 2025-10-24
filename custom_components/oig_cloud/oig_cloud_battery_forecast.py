@@ -462,56 +462,77 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         return {"today": today, "tomorrow": tomorrow}
 
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
-        """Získat všechny load_avg senzory."""
+        """
+        Získat všechny load_avg senzory pro box.
+
+        Používá PŘÍMO konfiguraci ze SENSOR_TYPES_STATISTICS místo hledání v atributech.
+        Mapuje entity_id na tuple (start_hour, end_hour, day_type).
+
+        Returns:
+            Dict[entity_id] = {
+                "value": float,
+                "time_range": (start_hour, end_hour),  # tuple!
+                "day_type": "weekday" | "weekend"
+            }
+        """
         if not self._hass:
             _LOGGER.warning("_get_load_avg_sensors: hass not available")
             return {}
 
-        load_sensors = {}
-        total_checked = 0
+        from .sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
-        # OPRAVA: Hledat podle time_range atributu, ne podle entity_id
-        # Entity mají české názvy (průměrný_odběr), ne sensor_type (load_avg)
-        for entity_id in self._hass.states.async_entity_ids("sensor"):
-            # Filtrovat jen naše senzory (oig_)
-            if f"oig_{self._box_id}_" not in entity_id:
+        load_sensors = {}
+
+        # Projít všechny load_avg senzory z konfigurace
+        for sensor_type, config in SENSOR_TYPES_STATISTICS.items():
+            # Hledat jen load_avg_* senzory
+            if not sensor_type.startswith("load_avg_"):
                 continue
 
+            # Zkontrolovat jestli má time_range a day_type v konfiguraci
+            if "time_range" not in config or "day_type" not in config:
+                continue
+
+            # Sestavit entity_id
+            entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+
+            # Získat stav senzoru
             state = self._hass.states.get(entity_id)
             if not state:
+                _LOGGER.debug(f"Sensor {entity_id} not found in HA")
                 continue
 
-            # Zkontrolovat jestli má time_range atribut (= je to load_avg sensor)
-            attrs = state.attributes
-            if "time_range" not in attrs or "day_type" not in attrs:
+            if state.state in ["unknown", "unavailable"]:
+                _LOGGER.debug(f"Sensor {entity_id} is {state.state}")
                 continue
 
-            total_checked += 1
-            _LOGGER.debug(
-                f"Checking {entity_id}: state={state.state}, time_range={attrs.get('time_range')}"
-            )
+            # Parsovat hodnotu
+            try:
+                value = float(state.state)
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    f"Failed to parse {entity_id} value '{state.state}': {e}"
+                )
+                continue
 
-            if state.state not in ["unknown", "unavailable"]:
-                try:
-                    load_sensors[entity_id] = {
-                        "value": float(state.state),
-                        "attributes": dict(attrs),
-                    }
-                except (ValueError, TypeError) as e:
-                    _LOGGER.warning(
-                        f"Failed to parse {entity_id} value '{state.state}': {e}"
-                    )
+            # Uložit s time_range jako TUPLE (ne string!)
+            time_range = config["time_range"]  # (6, 8)
+            day_type = config["day_type"]  # "weekday" | "weekend"
 
-        _LOGGER.info(
-            f"Found {len(load_sensors)} valid load_avg sensors (checked {total_checked} total)"
-        )
-        if len(load_sensors) > 0:
-            # Log first sensor for debugging
-            first_sensor = list(load_sensors.keys())[0]
+            load_sensors[entity_id] = {
+                "value": value,
+                "time_range": time_range,  # TUPLE!
+                "day_type": day_type,
+            }
+
+        _LOGGER.info(f"Found {len(load_sensors)} valid load_avg sensors")
+        if load_sensors:
+            # Log prvního senzoru pro debugging
+            first_id = next(iter(load_sensors))
+            first = load_sensors[first_id]
             _LOGGER.info(
-                f"Example sensor: {first_sensor}, "
-                f"value={load_sensors[first_sensor]['value']}W, "
-                f"attrs={load_sensors[first_sensor]['attributes']}"
+                f"Example: {first_id}, value={first['value']}W, "
+                f"range={first['time_range']}, day={first['day_type']}"
             )
 
         return load_sensors
@@ -573,12 +594,15 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         Args:
             timestamp: Timestamp pro který hledat spotřebu
-            load_avg_sensors: Dict všech load_avg senzorů
+            load_avg_sensors: Dict[entity_id] = {
+                "value": float,
+                "time_range": (start_hour, end_hour),
+                "day_type": "weekday" | "weekend"
+            }
 
         Returns:
             Load average v kWh za 15 minut
         """
-        # OPRAVA: Pokud je slovník prázdný, logovat a vrátit fallback
         if not load_avg_sensors:
             if not hasattr(self, "_empty_load_sensors_logged"):
                 _LOGGER.warning(
@@ -591,30 +615,36 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         is_weekend = timestamp.weekday() >= 5
         day_type = "weekend" if is_weekend else "weekday"
 
-        # Čas v hodinách a minutách
-        time_str = timestamp.strftime("%H:%M")
+        current_hour = timestamp.hour
 
-        # Najít odpovídající senzor
+        # Najít odpovídající senzor podle time_range tuple
         for entity_id, sensor_data in load_avg_sensors.items():
-            attrs = sensor_data.get("attributes", {})
-
             # Zkontrolovat day_type
-            sensor_day_type = attrs.get("day_type", "").lower()
+            sensor_day_type = sensor_data.get("day_type", "")
             if sensor_day_type != day_type:
                 continue
 
-            # Zkontrolovat time_range
-            time_range = attrs.get("time_range", "")
-            if not time_range:
+            # Získat time_range jako tuple (start_hour, end_hour)
+            time_range = sensor_data.get("time_range")
+            if (
+                not time_range
+                or not isinstance(time_range, tuple)
+                or len(time_range) != 2
+            ):
                 continue
 
-            # Parsovat time_range (např. "06:00-08:00")
-            start_time, end_time = self._parse_time_range(time_range)
-            if not start_time or not end_time:
-                continue
+            start_hour, end_hour = time_range
 
-            # Zkontrolovat jestli timestamp spadá do tohoto rozmezí
-            if self._is_time_in_range(time_str, start_time, end_time):
+            # Zkontrolovat jestli current_hour spadá do rozmezí
+            # Ošetřit případ přes půlnoc (např. 22-6)
+            if start_hour <= end_hour:
+                # Normální rozmezí (např. 6-8, 8-12)
+                in_range = start_hour <= current_hour < end_hour
+            else:
+                # Přes půlnoc (např. 22-6)
+                in_range = current_hour >= start_hour or current_hour < end_hour
+
+            if in_range:
                 # Hodnota senzoru je ve wattech (W)
                 # 143W = 143Wh za hodinu = 0,143 kWh/h
                 # Pro 15min interval: 0,143 / 4 = 0,03575 kWh
@@ -624,79 +654,24 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 if watts == 0:
                     watts = 500.0  # 500W = rozumná průměrná spotřeba domácnosti
                     _LOGGER.info(
-                        f"No consumption data yet for {time_str}, using fallback: 500W"
+                        f"No consumption data yet for {timestamp.strftime('%H:%M')}, using fallback: 500W"
                     )
 
                 kwh_per_hour = watts / 1000.0  # W → kW
                 kwh_per_15min = kwh_per_hour / 4.0  # kWh/h → kWh/15min
                 _LOGGER.debug(
-                    f"Matched {entity_id} for {time_str}: "
+                    f"Matched {entity_id} for {timestamp.strftime('%H:%M')}: "
                     f"{watts}W → {kwh_per_15min:.5f} kWh/15min"
                 )
                 return kwh_per_15min
 
         # Žádný senzor nenalezen - použít fallback 500W
         _LOGGER.warning(
-            f"No load_avg sensor found for {time_str} ({day_type}), "
+            f"No load_avg sensor found for {timestamp.strftime('%H:%M')} ({day_type}), "
             f"searched {len(load_avg_sensors)} sensors - using fallback 500W"
         )
         # 500W = 0.5 kWh/h = 0.125 kWh/15min
         return 0.125
-
-    def _parse_time_range(self, time_range: str) -> tuple[Optional[str], Optional[str]]:
-        """
-        Parsovat time_range string.
-
-        Args:
-            time_range: String ve formátu "HH:MM-HH:MM"
-
-        Returns:
-            Tuple (start_time, end_time) jako stringy "HH:MM"
-        """
-        try:
-            parts = time_range.split("-")
-            if len(parts) != 2:
-                return None, None
-
-            start_time = parts[0].strip()
-            end_time = parts[1].strip()
-
-            # Validace formátu
-            datetime.strptime(start_time, "%H:%M")
-            datetime.strptime(end_time, "%H:%M")
-
-            return start_time, end_time
-        except (ValueError, AttributeError):
-            return None, None
-
-    def _is_time_in_range(self, time_str: str, start_time: str, end_time: str) -> bool:
-        """
-        Zkontrolovat jestli čas spadá do rozmezí.
-
-        Args:
-            time_str: Čas ve formátu "HH:MM"
-            start_time: Začátek rozmezí "HH:MM"
-            end_time: Konec rozmezí "HH:MM"
-
-        Returns:
-            True pokud čas spadá do rozmezí
-        """
-        try:
-            time = datetime.strptime(time_str, "%H:%M").time()
-            start = datetime.strptime(start_time, "%H:%M").time()
-            end = datetime.strptime(end_time, "%H:%M").time()
-
-            # Handle range přes půlnoc
-            if start <= end:
-                # Inclusive start, exclusive end (standard interval notation)
-                # BUT: for boundary times, check if next range starts at this time
-                # For now: inclusive on both ends to avoid gaps
-                return start <= time <= end
-            else:
-                # Range přes půlnoc (např. "22:00-02:00")
-                return time >= start or time <= end
-        except ValueError:
-            return False
 
     # ========================================================================
     # GRID CHARGING OPTIMIZATION METHODS

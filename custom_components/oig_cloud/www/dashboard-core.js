@@ -2118,43 +2118,9 @@ function drawConnections() {
 
     svg.innerHTML = '';
 
-    const nodes = {
-        solar: document.querySelector('.solar'),
-        battery: document.querySelector('.battery'),
-        inverter: document.querySelector('.inverter'),
-        grid: document.querySelector('.grid-node'),
-        house: document.querySelector('.house')
-    };
-
-    // Get center points - FIX pro mobile scale
-    function getCenter(el) {
-        if (!el) return null;
-        const rect = el.getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-
-        // Get canvas scale factor
-        const canvasStyle = window.getComputedStyle(canvas);
-        const transform = canvasStyle.transform;
-        let scale = 1;
-        if (transform && transform !== 'none') {
-            const matrix = transform.match(/matrix\(([^)]+)\)/);
-            if (matrix) {
-                const values = matrix[1].split(',');
-                scale = parseFloat(values[0]) || 1;
-            }
-        }
-
-        return {
-            x: (rect.left + rect.width / 2 - canvasRect.left) / scale,
-            y: (rect.top + rect.height / 2 - canvasRect.top) / scale
-        };
-    }
-
-    const centers = {};
-    for (let key in nodes) {
-        const center = getCenter(nodes[key]);
-        if (center) centers[key] = center;
-    }
+    // OPRAVA BUG #2: Použít cache místo přepočítávání
+    const centers = cachedNodeCenters || getNodeCenters();
+    if (!centers) return;
 
     // Draw lines
     const connections = [
@@ -2296,12 +2262,109 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1) 
     // Pokud je active=false, kuličky se zastaví samy (rekurze se ukončí)
 }
 
-// Animate particles
-function animateFlow(data) {
-    const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
+/**
+ * Vypočítat barvu kuličky podle zdrojů energie.
+ *
+ * @param {number} solarRatio - Poměr solární energie (0-1)
+ * @param {number} gridRatio - Poměr energie ze sítě (0-1)
+ * @param {number} batteryRatio - Poměr energie z baterie (0-1, jen pro spotřebu)
+ * @returns {string} CSS gradient nebo jednolitá barva
+ */
+function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
+    const colors = [];
+    const SOLAR_COLOR = '#ffd54f';   // Žlutá
+    const GRID_COLOR = '#42a5f5';    // Modrá
+    const BATTERY_COLOR = '#ff9800'; // Oranžová
 
+    // Normalize ratios (pokud se nesečtou na 1.0)
+    const total = solarRatio + gridRatio + batteryRatio;
+    if (total > 0) {
+        solarRatio = solarRatio / total;
+        gridRatio = gridRatio / total;
+        batteryRatio = batteryRatio / total;
+    }
+
+    // Práh pro "čistý" zdroj (>95%)
+    const PURE_THRESHOLD = 0.95;
+
+    // Pokud je jeden zdroj dominantní, použij čistou barvu
+    if (solarRatio > PURE_THRESHOLD) return SOLAR_COLOR;
+    if (gridRatio > PURE_THRESHOLD) return GRID_COLOR;
+    if (batteryRatio > PURE_THRESHOLD) return BATTERY_COLOR;
+
+    // Vytvořit gradient podle poměrů
+    if (batteryRatio > 0) {
+        // 3 zdroje (pro spotřebu)
+        if (solarRatio > 0.05 && gridRatio > 0.05 && batteryRatio > 0.05) {
+            // Všechny 3 zdroje
+            const solarPct = (solarRatio * 100).toFixed(0);
+            const gridPct = ((solarRatio + gridRatio) * 100).toFixed(0);
+            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
+        } else if (solarRatio > 0.05 && batteryRatio > 0.05) {
+            // Solár + baterie
+            const solarPct = (solarRatio * 100).toFixed(0);
+            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${BATTERY_COLOR} ${solarPct}%, ${BATTERY_COLOR} 100%)`;
+        } else if (gridRatio > 0.05 && batteryRatio > 0.05) {
+            // Grid + baterie
+            const gridPct = (gridRatio * 100).toFixed(0);
+            return `linear-gradient(135deg, ${GRID_COLOR} 0%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
+        }
+    } else {
+        // 2 zdroje (pro nabíjení baterie)
+        if (solarRatio > 0.05 && gridRatio > 0.05) {
+            // Solár + grid
+            const solarPct = (solarRatio * 100).toFixed(0);
+            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} 100%)`;
+        }
+    }
+
+    // Fallback na dominantní barvu
+    if (solarRatio >= gridRatio && solarRatio >= batteryRatio) return SOLAR_COLOR;
+    if (gridRatio >= batteryRatio) return GRID_COLOR;
+    return BATTERY_COLOR;
+}
+
+// Global cache for node positions
+let cachedNodeCenters = null;
+let lastLayoutHash = null;
+
+// OPRAVA BUG #4: Cache pro power hodnoty
+let lastPowerValues = null;
+
+// Calculate layout hash to detect changes
+function getLayoutHash() {
+    const solar = document.querySelector('.solar');
+    const battery = document.querySelector('.battery');
+    const inverter = document.querySelector('.inverter');
+    const grid = document.querySelector('.grid-node');
+    const house = document.querySelector('.house');
+
+    if (!solar || !battery || !inverter || !grid || !house) return null;
+
+    // OPRAVA BUG #5: Zahrnout délku obsahu pro detekci změny velikosti
+    const hash = [solar, battery, inverter, grid, house]
+        .map(el => {
+            const rect = el.getBoundingClientRect();
+            const contentLength = el.textContent?.length || 0;
+            return `${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)},${contentLength}`;
+        })
+        .join('|');
+
+    return hash;
+}
+
+// Get cached or fresh node centers
+function getNodeCenters() {
+    const currentHash = getLayoutHash();
+
+    // If layout hasn't changed, return cached centers
+    if (currentHash === lastLayoutHash && cachedNodeCenters) {
+        return cachedNodeCenters;
+    }
+
+    // Layout changed - recalculate
     const canvas = document.querySelector('.flow-canvas');
-    if (!canvas) return;
+    if (!canvas) return null;
 
     const nodes = {
         solar: document.querySelector('.solar'),
@@ -2342,9 +2405,33 @@ function animateFlow(data) {
         house: getCenter(nodes.house)
     };
 
+    // OPRAVA BUG #1: Zkontrolovat změnu PŘED nastavením nového hashe
+    const layoutChanged = currentHash !== lastLayoutHash;
+
+    // Cache the results
+    cachedNodeCenters = centers;
+    lastLayoutHash = currentHash;
+
+    // If layout changed, redraw connections
+    if (layoutChanged && currentHash) {
+        console.log('[Layout] Layout changed, redrawing connections');
+        debouncedDrawConnections(50);
+    }
+
+    return centers;
+}
+
+// Animate particles
+function animateFlow(data) {
+    const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
+
+    // Use cached positions
+    const centers = getNodeCenters();
+    if (!centers) return;
+
     // 1. SOLAR → INVERTER (žlutá)
     let solarActive, solarSpeed, solarCount;
-    
+
     if (solarPower < 500) {
         // 0-500W: žádná animace
         solarActive = false;
@@ -2366,15 +2453,15 @@ function animateFlow(data) {
         solarSpeed = 1500;
         solarCount = 3;
     }
-    
+
     updateParticleFlow('solarToInverter', centers.solar, centers.inverter, '#ffd54f', solarActive, solarSpeed, solarCount);
 
     // 2. BATTERY ↔ INVERTER
     const batteryAbsPower = Math.abs(batteryPower);
-    
+
     // Dynamický práh: pro nízké výkony používáme pomalejší animaci s menším počtem kuliček
     let batteryActive, batterySpeed, batteryCount;
-    
+
     if (batteryAbsPower < 500) {
         // 0-500W: žádná animace (moc nízký výkon)
         batteryActive = false;
@@ -2403,19 +2490,45 @@ function animateFlow(data) {
 
     if (batteryActive) {
         if (batteryPower > 0) {
-            // Nabíjení: Inverter → Battery (zelená)
-            updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, '#4caf50', true, batterySpeed, batteryCount);
+            // Nabíjení baterie: Vypočítat poměr solár/grid
+            // Celková energie do baterie = batteryPower
+            // Dostupný solár = solarPower
+            // Dostupný grid = gridPower (pokud > 0)
+
+            let solarToBattery = 0;
+            let gridToBattery = 0;
+
+            if (solarPower > 0) {
+                // Solár částečně nebo plně nabíjí baterii
+                solarToBattery = Math.min(solarPower, batteryPower);
+            }
+
+            const remaining = batteryPower - solarToBattery;
+            if (remaining > 50 && gridPower > 0) {
+                // Zbytek pochází ze sítě
+                gridToBattery = remaining;
+            }
+
+            // Vypočítat poměry
+            const solarRatio = solarToBattery / batteryPower;
+            const gridRatio = gridToBattery / batteryPower;
+
+            // Získat barvu podle zdrojů
+            const batteryChargeColor = getEnergySourceColor(solarRatio, gridRatio, 0);
+
+            // Nabíjení: Inverter → Battery (barva podle zdroje)
+            updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, batteryChargeColor, true, batterySpeed, batteryCount);
         } else {
-            // Vybíjení: Battery → Inverter (oranžová)
+            // Vybíjení: Battery → Inverter (oranžová - baterie vždy oranžová)
             updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', true, batterySpeed, batteryCount);
         }
     }
 
     // 3. GRID ↔ INVERTER
     const gridAbsPower = Math.abs(gridPower);
-    
+
     let gridActive, gridSpeed, gridCount;
-    
+
     if (gridAbsPower < 500) {
         // 0-500W: žádná animace
         gridActive = false;
@@ -2454,7 +2567,7 @@ function animateFlow(data) {
 
     // 4. INVERTER → HOUSE (růžová)
     let houseActive, houseSpeed, houseCount;
-    
+
     if (housePower < 500) {
         // 0-500W: žádná animace
         houseActive = false;
@@ -2476,10 +2589,72 @@ function animateFlow(data) {
         houseSpeed = 1500;
         houseCount = 3;
     }
-    
-    updateParticleFlow('inverterToHouse', centers.inverter, centers.house, '#f06292', houseActive, houseSpeed, houseCount);
 
-}
+    // Vypočítat zdroje pro spotřebu (house)
+    // Spotřeba = housePower
+    // Zdroje: solár, baterie (vybíjení), grid
+
+    let solarToHouse = 0;
+    let batteryToHouse = 0;
+    let gridToHouse = 0;
+
+    if (housePower > 0) {
+        // OPRAVA: Správná logika rozdělení zdrojů
+        // batteryPower > 0 = nabíjení baterie (energie TEČE DO baterie)
+        // batteryPower < 0 = vybíjení baterie (energie TEČE Z baterie)
+        // gridPower > 0 = odběr ze sítě
+        // gridPower < 0 = dodávka do sítě
+
+        // 1. Kolik energie baterie poskytuje/odebírá
+        let batteryContribution = 0;
+        if (batteryPower < 0) {
+            // Vybíjení - baterie dává energii
+            batteryContribution = Math.abs(batteryPower);
+        }
+        // Pokud batteryPower > 0, baterie ODEBÍRÁ energii (nabíjí se), nedává do domu
+
+        // 2. Kolik soláru je dostupné pro dům
+        // Solár může jít do: baterie (nabíjení) + dům + grid (přebytek)
+        let solarAvailable = solarPower;
+        if (batteryPower > 0) {
+            // Baterie se nabíjí - část soláru jde do baterie
+            solarAvailable = Math.max(0, solarPower - batteryPower);
+        }
+
+        // 3. Kolik gridu potřebujeme
+        // Grid pokrývá to, co solár + baterie nezvládnou
+        const solarAndBattery = solarAvailable + batteryContribution;
+        let gridNeeded = 0;
+        if (housePower > solarAndBattery && gridPower > 0) {
+            gridNeeded = Math.min(gridPower, housePower - solarAndBattery);
+        }
+
+        // Přiřadit zdroje k domu
+        solarToHouse = Math.min(solarAvailable, housePower);
+        const remaining = housePower - solarToHouse;
+
+        if (remaining > 0) {
+            batteryToHouse = Math.min(batteryContribution, remaining);
+            const stillRemaining = remaining - batteryToHouse;
+
+            if (stillRemaining > 0) {
+                gridToHouse = Math.min(gridNeeded, stillRemaining);
+            }
+        }
+
+        // Vypočítat poměry pro barvu
+        const total = solarToHouse + batteryToHouse + gridToHouse;
+        const solarRatio = total > 0 ? solarToHouse / total : 0;
+        const batteryRatio = total > 0 ? batteryToHouse / total : 0;
+        const gridRatio = total > 0 ? gridToHouse / total : 0;
+
+        // Získat barvu podle zdrojů
+        const houseColor = getEnergySourceColor(solarRatio, gridRatio, batteryRatio);
+
+        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, houseColor, houseActive, houseSpeed, houseCount);
+    } else {
+        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, '#f06292', false, houseSpeed, houseCount);
+    }}
 
 // Cache for previous values to detect changes
 const previousValues = {};
@@ -2881,8 +3056,8 @@ async function loadData() {
     const boilerInstallPowerData = await getSensorSafe(getSensorId('boiler_install_power'));
     const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
 
-    // Animate particles (kontinuálně běžící s aktualizací rychlosti)
-    animateFlow({
+    // OPRAVA BUG #4: Volat animateFlow() jen pokud se hodnoty skutečně změnily
+    const currentPowerValues = {
         solarPower,
         solarPerc,
         batteryPower,
@@ -2890,7 +3065,21 @@ async function loadData() {
         housePower,
         boilerPower,
         boilerMaxPower
-    });
+    };
+
+    // Kontrola zda se něco změnilo
+    const powerChanged = !lastPowerValues ||
+        Object.keys(currentPowerValues).some(key =>
+            Math.abs(currentPowerValues[key] - (lastPowerValues[key] || 0)) > 0.1
+        );
+
+    if (powerChanged) {
+        console.log('[Animation] Power values changed, updating flow');
+        lastPowerValues = currentPowerValues;
+
+        // Animate particles (kontinuálně běžící s aktualizací rychlosti)
+        animateFlow(currentPowerValues);
+    }
 
     // REMOVED: Control panel status now handled by WebSocket events
     // if (!previousValues['control-status-loaded']) {
@@ -3000,21 +3189,22 @@ async function loadNodeDetails() {
         const gridIcon = document.getElementById('grid-icon');
         const price = spotPrice.value || 0;
         gridBox.classList.remove('price-cheap', 'price-normal', 'price-expensive');
-        gridIcon.classList.remove('price-icon-cheap', 'price-icon-expensive');
+        gridIcon.classList.remove('price-icon-cheap', 'price-icon-expensive', 'price-icon-normal');
 
         if (price < 3) {
-            gridBox.classList.add('price-cheap'); // 0-3 Kč - zelená
+            gridBox.classList.add('price-cheap');
             gridIcon.classList.add('price-icon-cheap');
-            gridIcon.textContent = '💚'; // Ikona úspor
+            gridIcon.textContent = '💚';
             gridIcon.title = 'Levná elektřina - šetříme!';
         } else if (price >= 3 && price <= 5) {
-            gridBox.classList.add('price-normal'); // 3-5 Kč - normální
-            gridIcon.textContent = '🔌'; // Normální síť
+            gridBox.classList.add('price-normal');
+            gridIcon.classList.add('price-icon-normal');
+            gridIcon.textContent = '🔌';
             gridIcon.title = 'Běžná cena elektřiny';
         } else {
-            gridBox.classList.add('price-expensive'); // 5+ Kč - drahá
+            gridBox.classList.add('price-expensive');
             gridIcon.classList.add('price-icon-expensive');
-            gridIcon.textContent = '💸'; // Ikona výdajů
+            gridIcon.textContent = '�';
             gridIcon.title = 'Drahá elektřina - zvýšená spotřeba!';
         }
 
@@ -3956,6 +4146,9 @@ function init() {
     let resizeTimer;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
+        // Clear cache on resize
+        cachedNodeCenters = null;
+        lastLayoutHash = null;
         resizeTimer = setTimeout(() => {
             drawConnections();
         }, 100);
@@ -3964,10 +4157,11 @@ function init() {
     // FIX: Force layout stabilization after initial render
     // Problém: Po restartu HA se někdy načítají CSS/HTML v jiném pořadí
     // Řešení: Opakované překreslení po různých intervalech
-    setTimeout(() => drawConnections(), 100);   // První pokus po 100ms
-    setTimeout(() => drawConnections(), 500);   // Druhý pokus po 500ms
-    setTimeout(() => drawConnections(), 1000);  // Třetí pokus po 1s
-    setTimeout(() => drawConnections(), 2000);  // Finální po 2s
+    // OPRAVA BUG #3: Inicializovat cache před prvním kreslením
+    setTimeout(() => { getNodeCenters(); drawConnections(); }, 100);   // První pokus po 100ms
+    setTimeout(() => { getNodeCenters(); drawConnections(); }, 500);   // Druhý pokus po 500ms
+    setTimeout(() => { getNodeCenters(); drawConnections(); }, 1000);  // Třetí pokus po 1s
+    setTimeout(() => { getNodeCenters(); drawConnections(); }, 2000);  // Finální po 2s
 
     // Mobile: Toggle node details on click (collapsed by default)
     if (window.innerWidth <= 768) {
@@ -4019,6 +4213,36 @@ function switchTab(tabName) {
 
     // Track active tab for event-driven updates
     pricingTabActive = (tabName === 'pricing');
+
+    // OPRAVA: Při přepnutí na tab toky, překreslit connections a restartovat particles
+    if (tabName === 'toky') {
+        console.log('[Tab] Switching to toky tab - redrawing connections and restarting particles');
+
+        // 1. Zastavit všechny particle flows
+        Object.keys(particleFlows).forEach(key => {
+            particleFlows[key].active = false;
+        });
+
+        // 2. Odstranit všechny existující částice
+        const particlesContainer = document.getElementById('particles');
+        if (particlesContainer) {
+            particlesContainer.innerHTML = '';
+        }
+
+        setTimeout(() => {
+            // 3. Invalidovat cache a překreslit čáry
+            cachedNodeCenters = null;
+            lastLayoutHash = null;
+            getNodeCenters(); // Vytvoří nový cache
+            drawConnections(); // Překreslí čáry
+
+            // 4. Restartovat particles s aktuálními power hodnotami
+            if (lastPowerValues) {
+                console.log('[Tab] Restarting particle animations with last power values');
+                animateFlow(lastPowerValues);
+            }
+        }, 100);
+    }
 
     // Load data when entering pricing tab
     if (tabName === 'pricing') {
@@ -5227,6 +5451,12 @@ function loadPricingData() {
                             },
                             tooltipFormat: 'dd.MM.yyyy HH:mm'
                         },
+                        adapters: {
+                            date: {
+                                // OPRAVA: Použít lokální timezone místo UTC
+                                zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                            }
+                        },
                         ticks: {
                             color: getTextColor(),
                             maxRotation: 45,
@@ -5746,7 +5976,7 @@ function renderEntityTile(config, side, index) {
                 }
 
                 supportHtml += `
-                    <div class="tile-support tile-support-top-right" onclick="openEntityDialog('${config.support_entities.top_right}')">
+                    <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
                         <span class="support-icon">${topRightIcon}</span>
                         <span class="support-value">${topRightValue}${topRightUnit}</span>
                     </div>
@@ -5776,7 +6006,7 @@ function renderEntityTile(config, side, index) {
                 }
 
                 supportHtml += `
-                    <div class="tile-support tile-support-bottom-right" onclick="openEntityDialog('${config.support_entities.bottom_right}')">
+                    <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
                         <span class="support-icon">${bottomRightIcon}</span>
                         <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
                     </div>
