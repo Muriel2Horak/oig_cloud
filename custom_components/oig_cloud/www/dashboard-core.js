@@ -4288,57 +4288,9 @@ function loadPricingData() {
                 pointBorderColor: pointColors,
                 pointBorderWidth: 2,
                 order: 1,
-                // Datalabels s chytrým umístěním
+                // Datalabels VYPNUTY - cenové labely ruší přehlednost grafu
                 datalabels: {
-                    display: (context) => {
-                        const price = context.dataset.data[context.dataIndex];
-                        return price <= bottomThreshold || price >= topThreshold;
-                    },
-                    align: (context) => {
-                        const idx = context.dataIndex;
-                        const price = context.dataset.data[idx];
-
-                        // Určit pozici v rámci extrémů
-                        const extremePosition = extremeIndices.indexOf(idx);
-                        const isTop = price >= topThreshold;
-
-                        // Alternovat nahoru/dolů pro sousední extrémy
-                        if (extremePosition >= 0) {
-                            const prevExtreme = extremePosition > 0 ? extremeIndices[extremePosition - 1] : -999;
-                            const isClose = (idx - prevExtreme) < 8; // Blízko = méně než 8 bodů
-
-                            if (isClose) {
-                                // Alternovat: lichý nahoru, sudý dolů
-                                return (extremePosition % 2 === 0) ? (isTop ? 'top' : 'bottom') : (isTop ? 'bottom' : 'top');
-                            }
-                        }
-
-                        // Default: top pro vysoké, bottom pro nízké
-                        return isTop ? 'top' : 'bottom';
-                    },
-                    offset: (context) => {
-                        // Větší offset pro lepší čitelnost
-                        const idx = context.dataIndex;
-                        const extremePosition = extremeIndices.indexOf(idx);
-                        if (extremePosition >= 0) {
-                            const prevExtreme = extremePosition > 0 ? extremeIndices[extremePosition - 1] : -999;
-                            const isClose = (idx - prevExtreme) < 8;
-                            return isClose ? 12 : 8;
-                        }
-                        return 8;
-                    },
-                    formatter: (value) => value.toFixed(2) + ' Kč',
-                    color: (context) => {
-                        const price = context.dataset.data[context.dataIndex];
-                        return price <= bottomThreshold ? '#ffffff' : '#ffffff';
-                    },
-                    font: { size: 10, weight: 'bold' },
-                    backgroundColor: (context) => {
-                        const price = context.dataset.data[context.dataIndex];
-                        return price <= bottomThreshold ? 'rgba(76, 175, 80, 0.9)' : 'rgba(244, 67, 54, 0.9)';
-                    },
-                    borderRadius: 4,
-                    padding: { top: 3, bottom: 3, left: 5, right: 5 }
+                    display: false
                 }
             });
 
