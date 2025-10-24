@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.4] - 2025-10-24
 
 ### ✨ Added
 
@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - WebSocket-driven real-time updates
   - Mobile-responsive design
   - Config flow integration with translations (CS/EN)
+  - Comprehensive documentation in `docs/CHMU_WARNINGS.md`
 
 ### 🔧 Changed
 
@@ -34,6 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `is_charging_battery` flag for each interval
   - `battery_capacity_kwh` tracking
   - `charging_battery_count` for actual charging intervals
+
+### 🐛 Fixed
+
+- **Dashboard Improvements**
+  - Fixed default zoom on pricing chart to show current time
+  - Fixed chart initialization after hard refresh
+  - Fixed timezone handling in charts
+  - Fixed flow animations particle count calculation
+  - Fixed tab visibility validation when switching to Flow tab
+  - Asynchronous application of default zoom after Chart.js initialization
+
+### 🗑️ Removed
+
+- Automatic battery charging based on weather conditions
+- Temporary documentation files and old backups
+
+## [Unreleased]
 
 ## [2.0.3-preview] - 2025-10-20
 
