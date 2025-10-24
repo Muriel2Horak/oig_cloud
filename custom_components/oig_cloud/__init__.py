@@ -112,9 +112,12 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
         version = "unknown"
         try:
-            with open(manifest_path, "r") as f:
-                manifest = json.load(f)
-                version = manifest.get("version", "unknown")
+            # OPRAVA: Použít async file read místo blocking open()
+            manifest_data = await hass.async_add_executor_job(
+                lambda: open(manifest_path, "r").read()
+            )
+            manifest = json.loads(manifest_data)
+            version = manifest.get("version", "unknown")
         except Exception as e:
             _LOGGER.warning(f"Could not load version from manifest: {e}")
 

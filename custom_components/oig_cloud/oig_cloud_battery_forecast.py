@@ -299,13 +299,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         state = self._hass.states.get(sensor_id)
 
         if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.warning(f"Sensor {sensor_id} not available")
+            _LOGGER.debug(f"Sensor {sensor_id} not available")
             return None
 
         try:
             return float(state.state)
         except (ValueError, TypeError):
-            _LOGGER.warning(f"Invalid value for {sensor_id}: {state.state}")
+            _LOGGER.debug(f"Invalid value for {sensor_id}: {state.state}")
             return None
 
     def _get_max_battery_capacity(self) -> float:
@@ -317,13 +317,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         state = self._hass.states.get(sensor_id)
 
         if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.warning(f"Sensor {sensor_id} not available, using default 10.0")
+            _LOGGER.debug(f"Sensor {sensor_id} not available, using default 10.0")
             return 10.0
 
         try:
             return float(state.state)
         except (ValueError, TypeError):
-            _LOGGER.warning(f"Invalid value for {sensor_id}: {state.state}")
+            _LOGGER.debug(f"Invalid value for {sensor_id}: {state.state}")
             return 10.0
 
     def _get_min_battery_capacity(self) -> float:
@@ -1430,16 +1430,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             # Import DOMAIN
             from .const import DOMAIN
 
-            # Získat ServiceShield z hass.data
-            if not self._hass or not hasattr(self, "_config_entry"):
-                _LOGGER.warning(
-                    "[BatteryForecast] Missing hass or config_entry for dynamic offset"
-                )
+            # OPRAVA: Použít self.hass z CoordinatorEntity
+            if not self.hass:
+                _LOGGER.debug("[BatteryForecast] hass not available for dynamic offset")
                 return 300.0  # Fallback 5 minut
 
-            entry_data = self._hass.data.get(DOMAIN, {}).get(
-                self._config_entry.entry_id
-            )
+            # Získat config_entry přes coordinator
+            config_entry = self.coordinator.config_entry
+            if not config_entry:
+                _LOGGER.debug("[BatteryForecast] No config_entry for dynamic offset")
+                return 300.0
+
+            entry_data = self.hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
             if not entry_data:
                 _LOGGER.debug("[BatteryForecast] No entry data for dynamic offset")
                 return 300.0
@@ -1466,7 +1468,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             return offset_seconds
 
         except Exception as e:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 f"[BatteryForecast] Error getting dynamic offset, using fallback: {e}"
             )
             return 300.0  # Fallback 5 minut
