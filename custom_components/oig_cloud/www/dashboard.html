@@ -554,35 +554,35 @@
         <!-- Nové karty s extrémními cenami -->
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
             <!-- Nejlevnější období NÁKUPU -->
-            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3);">
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
                 <div class="stat-label" style="color: #4CAF50; font-weight: 600;">🟢 Nejlevnější nákup</div>
                 <div class="stat-value" id="cheapest-buy-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                <div id="cheapest-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
-                <canvas id="cheapest-buy-chart" style="height: 40px; margin-top: 5px;"></canvas>
+                <div id="cheapest-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+                <canvas id="cheapest-buy-chart" style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
             </div>
 
             <!-- Nejdražší období NÁKUPU -->
-            <div class="stat-card" style="background: linear-gradient(135deg, rgba(244, 67, 54, 0.15) 0%, rgba(244, 67, 54, 0.05) 100%); border: 1px solid rgba(244, 67, 54, 0.3);">
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(244, 67, 54, 0.15) 0%, rgba(244, 67, 54, 0.05) 100%); border: 1px solid rgba(244, 67, 54, 0.3); min-height: 160px;">
                 <div class="stat-label" style="color: #F44336; font-weight: 600;">🔴 Nejdražší nákup</div>
                 <div class="stat-value" id="expensive-buy-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                <div id="expensive-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
-                <canvas id="expensive-buy-chart" style="height: 40px; margin-top: 5px;"></canvas>
+                <div id="expensive-buy-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+                <canvas id="expensive-buy-chart" style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
             </div>
 
             <!-- Nejlepší období PRODEJE (nejvyšší cena) -->
-            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3);">
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
                 <div class="stat-label" style="color: #4CAF50; font-weight: 600;">💰 Nejlepší prodej</div>
                 <div class="stat-value" id="best-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                <div id="best-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
-                <canvas id="best-export-chart" style="height: 40px; margin-top: 5px;"></canvas>
+                <div id="best-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+                <canvas id="best-export-chart" style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
             </div>
 
             <!-- Nejhorší období PRODEJE (nejnižší cena) -->
-            <div class="stat-card" style="background: linear-gradient(135deg, rgba(255, 167, 38, 0.15) 0%, rgba(255, 167, 38, 0.05) 100%); border: 1px solid rgba(255, 167, 38, 0.3);">
+            <div class="stat-card" style="background: linear-gradient(135deg, rgba(255, 167, 38, 0.15) 0%, rgba(255, 167, 38, 0.05) 100%); border: 1px solid rgba(255, 167, 38, 0.3); min-height: 160px;">
                 <div class="stat-label" style="color: #FFA726; font-weight: 600;">📉 Nejhorší prodej</div>
                 <div class="stat-value" id="worst-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                <div id="worst-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">--</div>
-                <canvas id="worst-export-chart" style="height: 40px; margin-top: 5px;"></canvas>
+                <div id="worst-export-time" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+                <canvas id="worst-export-chart" style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
             </div>
         </div>
 

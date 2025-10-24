@@ -3833,7 +3833,7 @@ function resetChartZoom() {
         delete combinedChart.options.scales.x.min;
         delete combinedChart.options.scales.x.max;
         combinedChart.update('none');
-        
+
         currentZoomRange = null;  // Reset zoom state
 
         // Odebrat zoom-active z aktivní karty
@@ -3856,7 +3856,7 @@ function toggleDatalabelMode() {
     // Aktualizovat UI
     const btnText = document.getElementById('datalabel-mode-text');
     const btn = document.getElementById('datalabel-toggle-btn');
-    
+
     if (btnText) {
         const labels = { 'auto': 'Auto', 'always': 'Vždy', 'never': 'Nikdy' };
         btnText.textContent = labels[datalabelMode];
@@ -4043,7 +4043,7 @@ function updateChartDetailLevel(chart) {
     }
 
     // Adaptivní zobrazení datalabels podle zoom úrovně a módu
-    const shouldShowLabels = (datalabelMode === 'always') || 
+    const shouldShowLabels = (datalabelMode === 'always') ||
                             (datalabelMode === 'auto' && hoursVisible <= 6);
 
     chart.data.datasets.forEach((dataset, idx) => {
@@ -4051,58 +4051,59 @@ function updateChartDetailLevel(chart) {
             dataset.datalabels = {};
         }
 
-        // 1. Spotová cena nákupu - adaptivní zobrazování
-        if (dataset.label && dataset.label.includes('Spotová cena')) {
-            if (datalabelMode === 'never') {
-                dataset.datalabels.display = false;
-            } else if (shouldShowLabels) {
-                // Zobrazit labely podle úrovně zoomu
-                dataset.datalabels.display = (context) => {
-                    const value = context.dataset.data[context.dataIndex];
-                    if (value == null) return false;
+        // Vypnout labely pokud režim = 'never'
+        if (datalabelMode === 'never') {
+            dataset.datalabels.display = false;
+            return;
+        }
 
-                    // Najít min/max pro detekci extrémů
-                    const allValues = context.dataset.data.filter(v => v != null);
-                    const min = Math.min(...allValues);
-                    const max = Math.max(...allValues);
-                    const range = max - min;
-
-                    if (hoursVisible <= 3) {
-                        // < 3h: téměř všechny body (každý 2.)
-                        return context.dataIndex % 2 === 0;
-                    } else if (hoursVisible <= 6) {
-                        // 3-6h: extrémy (top/bottom 15%)
-                        const threshold = range * 0.15;
-                        return value <= min + threshold || value >= max - threshold;
-                    } else if (hoursVisible <= 12) {
-                        // 6-12h: jen nejvyšší extrémy (top/bottom 10%)
-                        const threshold = range * 0.10;
-                        return value <= min + threshold || value >= max - threshold;
-                    }
-                    return false;
-                };
-                dataset.datalabels.align = 'top';
-                dataset.datalabels.offset = 6;
-                dataset.datalabels.color = '#fff';
-                dataset.datalabels.font = { size: 9, weight: 'bold' };
-                dataset.datalabels.formatter = (value) => value != null ? value.toFixed(2) : '';
-                dataset.datalabels.backgroundColor = (context) => {
-                    const value = context.dataset.data[context.dataIndex];
-                    const allValues = context.dataset.data.filter(v => v != null);
-                    const min = Math.min(...allValues);
-                    const max = Math.max(...allValues);
-                    const range = max - min;
-                    
-                    // Zelená pro nejlevnější, červená pro nejdražší
-                    if (value <= min + range * 0.10) return 'rgba(76, 175, 80, 0.9)'; // zelená
-                    if (value >= max - range * 0.10) return 'rgba(244, 67, 54, 0.9)'; // červená
-                    return 'rgba(33, 150, 243, 0.8)'; // modrá
-                };
-                dataset.datalabels.borderRadius = 4;
-                dataset.datalabels.padding = { top: 3, bottom: 3, left: 5, right: 5 };
-            } else {
-                dataset.datalabels.display = false;
+        // Zobrazit labely pro VŠECHNY datasety při zoomu
+        if (shouldShowLabels) {
+            // Určit hustotu zobrazování podle zoom úrovně
+            let showEveryNth = 1;
+            if (hoursVisible > 3 && hoursVisible <= 6) {
+                showEveryNth = 2; // 3-6h: každý druhý bod
+            } else if (hoursVisible > 6) {
+                showEveryNth = 4; // >6h: každý čtvrtý bod
             }
+            // <3h: všechny body (showEveryNth = 1)
+
+            dataset.datalabels.display = (context) => {
+                const value = context.dataset.data[context.dataIndex];
+                if (value == null || value === 0) return false;
+                return context.dataIndex % showEveryNth === 0;
+            };
+
+            // Nastavení podle typu dat
+            const isPrice = dataset.yAxisID === 'y-price';
+            const isSolar = dataset.label && (dataset.label.includes('Solární') || dataset.label.includes('String'));
+            const isBattery = dataset.label && dataset.label.includes('kapacita');
+
+            dataset.datalabels.align = 'top';
+            dataset.datalabels.offset = 6;
+            dataset.datalabels.color = '#fff';
+            dataset.datalabels.font = { size: 9, weight: 'bold' };
+            
+            // Formátování podle typu
+            if (isPrice) {
+                dataset.datalabels.formatter = (value) => value != null ? value.toFixed(2) + ' Kč' : '';
+                dataset.datalabels.backgroundColor = dataset.borderColor || 'rgba(33, 150, 243, 0.8)';
+            } else if (isSolar) {
+                dataset.datalabels.formatter = (value) => value != null ? value.toFixed(1) + ' kW' : '';
+                dataset.datalabels.backgroundColor = dataset.borderColor || 'rgba(255, 193, 7, 0.8)';
+            } else if (isBattery) {
+                dataset.datalabels.formatter = (value) => value != null ? value.toFixed(1) + ' kWh' : '';
+                dataset.datalabels.backgroundColor = dataset.borderColor || 'rgba(120, 144, 156, 0.8)';
+            } else {
+                // Ostatní datasety
+                dataset.datalabels.formatter = (value) => value != null ? value.toFixed(1) : '';
+                dataset.datalabels.backgroundColor = dataset.borderColor || 'rgba(33, 150, 243, 0.8)';
+            }
+
+            dataset.datalabels.borderRadius = 4;
+            dataset.datalabels.padding = { top: 3, bottom: 3, left: 5, right: 5 };
+        } else {
+            dataset.datalabels.display = false;
         }
     });
 
@@ -4210,8 +4211,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
-            aspectRatio: 3,
+            maintainAspectRatio: false,  // OPRAVA: Používat fixní výšku z HTML (40px)
             plugins: {
                 legend: { display: false },
                 tooltip: {
