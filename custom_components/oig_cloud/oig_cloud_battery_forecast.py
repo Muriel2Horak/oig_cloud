@@ -175,7 +175,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             )
 
             # KRITICKÉ: Uložit timeline zpět do coordinator.data aby grid_charging_planned sensor viděl aktuální data
-            if hasattr(self.coordinator, 'battery_forecast_data'):
+            if hasattr(self.coordinator, "battery_forecast_data"):
                 self.coordinator.battery_forecast_data = {
                     "timeline_data": self._timeline_data,
                     "calculation_time": self._last_update.isoformat(),
@@ -186,8 +186,10 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                         else 0
                     ),
                 }
-                _LOGGER.info("✅ Battery forecast data saved to coordinator - grid_charging_planned will update")
-                
+                _LOGGER.info(
+                    "✅ Battery forecast data saved to coordinator - grid_charging_planned will update"
+                )
+
                 # Trigger update všech coordinator sensorů (včetně grid_charging_planned)
                 self.coordinator.async_set_updated_data(self.coordinator.data)
 
@@ -1310,6 +1312,25 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     break  # Jakmile najdeme bod >= threshold, ukončíme
             except (ValueError, TypeError):
                 continue
+        
+        # Pokud jsme nenašli žádný bod před threshold (timeline začíná až od "teď"),
+        # použijeme AKTUÁLNÍ kapacitu baterie ze sensoru
+        if prev_battery_capacity is None:
+            # Zkusit načíst aktuální kapacitu ze sensoru
+            if hasattr(self, 'hass') and self.hass:
+                sensor_id = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
+                state = self.hass.states.get(sensor_id)
+                if state and state.state not in ["unknown", "unavailable"]:
+                    try:
+                        prev_battery_capacity = float(state.state)
+                        _LOGGER.debug(f"Using current battery capacity from sensor: {prev_battery_capacity:.2f} kWh")
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Fallback: použít první bod z timeline
+            if prev_battery_capacity is None and timeline_data:
+                prev_battery_capacity = timeline_data[0].get("battery_capacity_kwh", 0)
+                _LOGGER.debug(f"Using first timeline point as prev_capacity: {prev_battery_capacity:.2f} kWh")
 
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
@@ -1319,8 +1340,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 timestamp_str = point.get("timestamp", "")
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
-                    # Zahrnout intervaly od (now - 10min) pro detekci probíhajícího nabíjení
-                    if timestamp >= time_threshold:
+                    # Interval trvá 15 minut - zahrnout intervaly které ještě NESKONČILY
+                    # Pokud je now = 06:20, interval 06:15 končí 06:30, takže STÁLE PROBÍHÁ
+                    interval_end = timestamp + timedelta(minutes=15)
+                    
+                    # Zahrnout interval pokud:
+                    # 1. Ještě neskončil (interval_end > now), NEBO
+                    # 2. Skončil nedávno (timestamp >= now - 10min) pro historii
+                    if interval_end > now or timestamp >= time_threshold:
                         spot_price_czk = point.get("spot_price_czk", 0)
 
                         # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
