@@ -174,6 +174,23 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 f"Battery forecast updated: {len(self._timeline_data)} points"
             )
 
+            # KRITICKÉ: Uložit timeline zpět do coordinator.data aby grid_charging_planned sensor viděl aktuální data
+            if hasattr(self.coordinator, 'battery_forecast_data'):
+                self.coordinator.battery_forecast_data = {
+                    "timeline_data": self._timeline_data,
+                    "calculation_time": self._last_update.isoformat(),
+                    "data_source": "simplified_calculation",
+                    "current_battery_kwh": (
+                        self._timeline_data[0].get("battery_capacity_kwh", 0)
+                        if self._timeline_data
+                        else 0
+                    ),
+                }
+                _LOGGER.info("✅ Battery forecast data saved to coordinator - grid_charging_planned will update")
+                
+                # Trigger update všech coordinator sensorů (včetně grid_charging_planned)
+                self.coordinator.async_set_updated_data(self.coordinator.data)
+
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
 
