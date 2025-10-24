@@ -42,6 +42,7 @@
           "enable_battery_prediction": "🔋 Intelligent battery prediction and optimization",
           "enable_pricing": "💰 Price sensors and spot prices from OTE",
           "enable_extended_sensors": "⚡ Extended sensors (voltages, currents, temperatures)",
+          "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
           "enable_dashboard": "📊 Web dashboard with charts",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
@@ -51,6 +52,7 @@
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_solar_forecast": "Requires API key from Forecast.Solar",
           "enable_battery_prediction": "Experimental - smart charging based on prices",
+          "enable_chmu_warnings": "Meteorological warnings for your location (CAP XML)",
           "enable_dashboard": "Web interface with charts accessible in HA",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
@@ -521,6 +523,7 @@
           "enable_battery_prediction": "🔋 Intelligent battery prediction and optimization",
           "enable_pricing": "💰 Price sensors and spot prices from OTE",
           "enable_extended_sensors": "⚡ Extended sensors (voltages, currents, temperatures)",
+          "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
           "enable_dashboard": "📊 Web dashboard with charts",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
@@ -530,6 +533,7 @@
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_solar_forecast": "Requires API key from Forecast.Solar",
           "enable_battery_prediction": "Experimental - smart charging based on prices",
+          "enable_chmu_warnings": "Meteorological warnings for your location (CAP XML)",
           "enable_dashboard": "Web interface with charts accessible in HA",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
