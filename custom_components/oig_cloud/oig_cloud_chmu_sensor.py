@@ -270,7 +270,7 @@ class OigCloudChmuSensor(OigCloudSensor):
         # Global sensor - nejvyšší severity v ČR
         if self._sensor_type == "chmu_warning_level_global":
             return self._last_warning_data.get("highest_severity_cz", 0)
-        
+
         # Local sensor - severity pro lokalitu
         return self._last_warning_data.get("severity_level", 0)
 
@@ -294,7 +294,9 @@ class OigCloudChmuSensor(OigCloudSensor):
             attrs = {
                 "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
                 "all_warnings": self._last_warning_data.get("all_warnings", []),
-                "highest_severity": self._last_warning_data.get("highest_severity_cz", 0),
+                "highest_severity": self._last_warning_data.get(
+                    "highest_severity_cz", 0
+                ),
                 "severity_distribution": self._get_severity_distribution(),
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
@@ -302,23 +304,67 @@ class OigCloudChmuSensor(OigCloudSensor):
             return attrs
 
         # Local sensor - varování pro lokalitu
-        attrs = {
-            "local_warnings_count": self._last_warning_data.get(
-                "local_warnings_count", 0
-            ),
-            "top_local_warning": self._last_warning_data.get("top_local_warning"),
-            "local_warnings": self._last_warning_data.get("local_warnings", []),
-            # Globální statistiky
-            "all_warnings_count": self._last_warning_data.get("all_warnings_count", 0),
-            "highest_severity_cz": self._last_warning_data.get(
-                "highest_severity_cz", 0
-            ),
-            # Meta
-            "gps_location": self._last_warning_data.get("gps_location", {}),
-            "last_update": self._last_warning_data.get("last_update"),
-            "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
-            "filter_method": self._last_warning_data.get("filter_method", "no_filter"),
-        }
+        top_warning = self._last_warning_data.get("top_local_warning")
+
+        # Základní atributy z top_local_warning pro snadný přístup
+        if top_warning:
+            attrs = {
+                # Přímé informace z top varování
+                "event_type": top_warning.get("event", "Žádné"),
+                "severity": top_warning.get("severity", "Žádné"),
+                "onset": top_warning.get("onset"),  # Začátek
+                "expires": top_warning.get("expires"),  # Konec
+                "effective": top_warning.get("effective"),
+                "eta_hours": top_warning.get("eta_hours"),
+                "description": top_warning.get("description", ""),
+                "instruction": top_warning.get("instruction", ""),
+                "areas": top_warning.get("areas", []),
+                "urgency": top_warning.get("urgency", ""),
+                "certainty": top_warning.get("certainty", ""),
+                "status": top_warning.get("status", ""),
+                # Počty
+                "local_warnings_count": self._last_warning_data.get(
+                    "local_warnings_count", 0
+                ),
+                # Úplná data
+                "top_local_warning": top_warning,
+                "local_warnings": self._last_warning_data.get("local_warnings", []),
+                # Globální statistiky
+                "all_warnings_count": self._last_warning_data.get(
+                    "all_warnings_count", 0
+                ),
+                "highest_severity_cz": self._last_warning_data.get(
+                    "highest_severity_cz", 0
+                ),
+                # Meta
+                "gps_location": self._last_warning_data.get("gps_location", {}),
+                "last_update": self._last_warning_data.get("last_update"),
+                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+                "filter_method": self._last_warning_data.get(
+                    "filter_method", "no_filter"
+                ),
+            }
+        else:
+            # Žádné lokální varování
+            attrs = {
+                "event_type": "Žádné",
+                "severity": "Žádné",
+                "onset": None,
+                "expires": None,
+                "local_warnings_count": 0,
+                "all_warnings_count": self._last_warning_data.get(
+                    "all_warnings_count", 0
+                ),
+                "highest_severity_cz": self._last_warning_data.get(
+                    "highest_severity_cz", 0
+                ),
+                "gps_location": self._last_warning_data.get("gps_location", {}),
+                "last_update": self._last_warning_data.get("last_update"),
+                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+                "filter_method": self._last_warning_data.get(
+                    "filter_method", "no_filter"
+                ),
+            }
 
         return attrs
 
@@ -326,15 +372,15 @@ class OigCloudChmuSensor(OigCloudSensor):
         """Vrátí rozdělení severity pro všechna varování."""
         if not self._last_warning_data:
             return {"Minor": 0, "Moderate": 0, "Severe": 0, "Extreme": 0}
-        
+
         all_warnings = self._last_warning_data.get("all_warnings", [])
         distribution = {"Minor": 0, "Moderate": 0, "Severe": 0, "Extreme": 0}
-        
+
         for warning in all_warnings:
             severity = warning.get("severity", "Unknown")
             if severity in distribution:
                 distribution[severity] += 1
-        
+
         return distribution
 
     @property
