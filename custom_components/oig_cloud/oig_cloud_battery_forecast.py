@@ -405,13 +405,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                             )
                             continue
 
-                        # DŮLEŽITÉ: Interval trvá 15 minut, zahrnout i probíhající interval!
-                        # Pokud je now = 06:22, interval 06:15 končí až 06:30, STÁLE PROBÍHÁ
-                        interval_end = timestamp + timedelta(minutes=15)
-
-                        # Filtrovat: zahrnout intervaly které ještě neskončily
-                        if interval_end <= now:
-                            continue  # Přeskočit intervaly které už skončily
+                        # Filtr: vybrat intervaly >= now - 20 minut
+                        # 20 minut = 15min interval + 5min offset pro zapnutí sensoru před začátkem
+                        # V 06:38 zahrnuje: 06:15, 06:30 (probíhající), 06:45...
+                        time_threshold = now - timedelta(minutes=20)
+                        
+                        if timestamp < time_threshold:
+                            continue  # Přeskočit staré intervaly
 
                         timeline.append({"time": timestamp_str, "price": price})
 
