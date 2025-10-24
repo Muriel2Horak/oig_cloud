@@ -89,6 +89,14 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """Při odebrání z HA."""
         await super().async_will_remove_from_hass()
 
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator update - přepočítat forecast při každé aktualizaci dat."""
+        # Zavolat async_update v background tasku
+        if self.hass:
+            self.hass.async_create_task(self.async_update())
+        # Volat parent pro standardní zpracování
+        super()._handle_coordinator_update()
+
     @property
     def device_info(self) -> Optional[Dict[str, Any]]:
         """Return device info - Analytics Module."""
