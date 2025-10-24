@@ -84,6 +84,30 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._max_spot_retries: int = 20  # 20 * 15min = 5 hodin retry
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
 
+        # NOVÉ: ČHMÚ API inicializace
+        chmu_enabled = self.config_entry and self.config_entry.options.get(
+            "enable_chmu_warnings", False
+        )
+
+        if chmu_enabled:
+            try:
+                _LOGGER.debug("ČHMÚ warnings enabled - initializing ČHMÚ API")
+                from .api.api_chmu import ChmuApi
+
+                self.chmu_api = ChmuApi()
+                self.chmu_warning_data: Optional[Dict[str, Any]] = None
+
+                _LOGGER.debug("ČHMÚ API initialized successfully")
+
+            except Exception as e:
+                _LOGGER.error(f"Failed to initialize ČHMÚ API: {e}")
+                self.chmu_api = None
+                self.chmu_warning_data = None
+        else:
+            _LOGGER.debug("ČHMÚ warnings disabled - not initializing ČHMÚ API")
+            self.chmu_api = None
+            self.chmu_warning_data = None
+
         _LOGGER.info(
             f"Coordinator initialized with intervals: standard={standard_interval_seconds}s, extended={extended_interval_seconds}s, jitter=±{JITTER_SECONDS}s"
         )

@@ -7,6 +7,7 @@ DOMAIN = "oig_cloud"
 # Configuration constants
 CONF_ENABLE_STATISTICS = "enable_statistics"
 CONF_ENABLE_PRICING = "enable_pricing"  # Sjednoceno: pricing + spotové ceny
+CONF_ENABLE_CHMU_WARNINGS = "enable_chmu_warnings"  # ČHMÚ meteorologická varování
 CONF_SPOT_PRICES_UPDATE_INTERVAL = "spot_prices_update_interval"
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_USERNAME = "username"

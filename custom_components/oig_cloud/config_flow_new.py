@@ -621,6 +621,11 @@ class OigCloudOptionsFlow(config_entries.OptionsFlow):
                     description="💰 Spot ceny",
                 ): bool,
                 vol.Optional(
+                    "enable_chmu_warnings",
+                    default=current_options.get("enable_chmu_warnings", False),
+                    description="🌦️ Varování ČHMÚ",
+                ): bool,
+                vol.Optional(
                     "enable_dashboard",
                     default=current_options.get("enable_dashboard", True),
                     description="📊 Webový dashboard",

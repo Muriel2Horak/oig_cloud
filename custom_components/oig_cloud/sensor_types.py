@@ -34,6 +34,9 @@ from custom_components.oig_cloud.sensors.SENSOR_TYPES_STATISTICS import (
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_SPOT import (
     SENSOR_TYPES_SPOT,
 )
+from custom_components.oig_cloud.sensors.SENSOR_TYPES_CHMU import (
+    SENSOR_TYPES_CHMU,
+)
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_SHIELD import (
     SENSOR_TYPES_SHIELD,
 )
@@ -59,6 +62,7 @@ SENSOR_TYPES.update(SENSOR_TYPES_EXTENDED_LOAD)
 SENSOR_TYPES.update(SENSOR_TYPES_SOLAR_FORECAST)
 SENSOR_TYPES.update(SENSOR_TYPES_STATISTICS)
 SENSOR_TYPES.update(SENSOR_TYPES_SPOT)
+SENSOR_TYPES.update(SENSOR_TYPES_CHMU)
 SENSOR_TYPES.update(SENSOR_TYPES_SHIELD)
 STATISTICS_SENSOR_TYPES = SENSOR_TYPES_STATISTICS
 

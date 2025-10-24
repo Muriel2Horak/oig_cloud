@@ -95,6 +95,10 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         elif category == "pricing" and entry.options.get("enable_pricing", False):
             expected.add(sensor_type)
 
+        # ČHMÚ warnings sensors (volitelné)
+        elif category == "chmu_warnings" and entry.options.get("enable_chmu_warnings", False):
+            expected.add(sensor_type)
+
     _LOGGER.debug(f"Expected {len(expected)} sensor types based on configuration")
     return expected
 
@@ -953,6 +957,72 @@ async def async_setup_entry(
             _LOGGER.error(f"Error initializing analytics sensors: {e}", exc_info=True)
     else:
         _LOGGER.info("💰 Pricing disabled - skipping pricing and spot price sensors")
+
+    # ================================================================
+    # SECTION 10: ČHMÚ WEATHER WARNINGS (kategorie: "chmu_warnings")
+    # ================================================================
+    # Meteorologická varování ČHMÚ - volitelné (enable_chmu_warnings flag)
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třída: OigCloudChmuSensor
+    # ================================================================
+    chmu_enabled = entry.options.get("enable_chmu_warnings", False)
+    _LOGGER.info(f"ČHMÚ weather warnings enabled: {chmu_enabled}")
+
+    if chmu_enabled:
+        try:
+            _LOGGER.info("🌦️ Creating ČHMÚ weather warning sensors")
+
+            from .sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
+            from .oig_cloud_chmu_sensor import OigCloudChmuSensor
+
+            chmu_sensors: List[Any] = []
+
+            chmu_sensor_types = {
+                k: v
+                for k, v in SENSOR_TYPES_CHMU.items()
+                if v.get("sensor_type_category") == "chmu_warnings"
+            }
+
+            _LOGGER.debug(f"Found {len(chmu_sensor_types)} ČHMÚ sensors to create")
+
+            for sensor_type, config in chmu_sensor_types.items():
+                try:
+                    _LOGGER.debug(f"Creating ČHMÚ sensor: {sensor_type}")
+
+                    sensor = OigCloudChmuSensor(
+                        coordinator, sensor_type, entry, analytics_device_info
+                    )
+                    chmu_sensors.append(sensor)
+                    _LOGGER.debug(f"Created ČHMÚ sensor: {sensor_type}")
+
+                except Exception as e:
+                    _LOGGER.error(
+                        f"Failed to create ČHMÚ sensor {sensor_type}: {e}",
+                        exc_info=True,
+                    )
+                    continue
+
+            if chmu_sensors:
+                _LOGGER.info(f"Registering {len(chmu_sensors)} ČHMÚ sensors")
+                async_add_entities(chmu_sensors, True)
+                _LOGGER.info(
+                    f"Successfully registered {len(chmu_sensors)} ČHMÚ sensors"
+                )
+
+                # Debug log entity IDs
+                for sensor in chmu_sensors:
+                    _LOGGER.debug(
+                        f"🌦️ Registered ČHMÚ sensor: {sensor.entity_id} (unique_id: {sensor.unique_id})"
+                    )
+            else:
+                _LOGGER.warning("No ČHMÚ sensors could be created")
+
+        except ImportError as e:
+            _LOGGER.error(f"OigCloudChmuSensor not available: {e}")
+        except Exception as e:
+            _LOGGER.error(f"Error initializing ČHMÚ sensors: {e}", exc_info=True)
+    else:
+        _LOGGER.info("🌦️ ČHMÚ warnings disabled - skipping weather warning sensors")
 
     _LOGGER.info("OIG Cloud sensor setup completed")
 
