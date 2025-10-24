@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- **ČHMÚ Weather Warnings Integration** - Complete meteorological warning system
+  - CAP XML API client for real-time weather alerts from Czech Hydrometeorological Institute
+  - Two sensors: local (GPS-filtered) and global (entire Czech Republic)
+  - Severity levels 0-4 (None, Minor/Yellow, Moderate/Orange, Severe/Red, Extreme/Purple)
+  - Dashboard header badge with color-coded severity indicator
+  - Expandable modal with detailed warning information
+  - Event type, onset, expires, affected areas, descriptions, instructions
+  - Point-in-polygon and point-in-circle geographic filtering
+  - GPS priority: Solar Forecast → HA settings → Praha default
+  - Hourly updates with persistent storage
+  - WebSocket-driven real-time updates
+  - Mobile-responsive design
+  - Config flow integration with translations (CS/EN)
+
+### 🔧 Changed
+
+- **Grid Charging Sensor Refactor** - Binary sensor with enhanced attributes
+  - Changed from numeric sensor (kWh) to binary sensor (on/off)
+  - Energy and cost moved to attributes: `total_energy_kwh`, `total_cost_czk`
+  - Fixed calculation to count only actual battery charging
+  - Ignores intervals where grid only covers consumption (battery full)
+  - New attributes: `charging_intervals` with detailed per-interval data
+  - `is_charging_battery` flag for each interval
+  - `battery_capacity_kwh` tracking
+  - `charging_battery_count` for actual charging intervals
+
 ## [2.0.3-preview] - 2025-10-20
 
 ### 🚀 **MAJOR RELEASE** - Complete Rewrite & Enhancement

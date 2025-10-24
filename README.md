@@ -48,6 +48,16 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - Přesné výpočty pomocí Riemannovy integrace
 - Automatické resety statistik
 
+### 🌦️ **ČHMÚ Meteorologická Varování**
+- Integrace s Českým hydrometeorologickým ústavem
+- Lokální varování filtrovaná podle GPS (z Solar Forecast nebo HA nastavení)
+- Celostátní varování pro celou Českou republiku
+- 5 úrovní závažnosti (0-4): None, Minor/Žluté, Moderate/Oranžové, Severe/Červené, Extreme/Fialové
+- Dashboard badge v hlavičce s barevným indikátorem
+- Detailní modal s informacemi o všech aktivních varováních
+- Automatické aktualizace každou hodinu
+- WebSocket real-time updates
+
 ---
 
 ## 📋 Požadavky
@@ -150,6 +160,10 @@ Ochrana proti nechtěným změnám pracovního režimu.
 
 ### 📊 Extended Stats
 Rozšířené statistiky (denní, měsíční, roční).
+
+### 🌦️ ČHMÚ Warnings
+Meteorologická varování pro váš region a celou ČR.
+📖 **Dokumentace:** [ČHMÚ Warnings Guide](./docs/CHMU_WARNINGS.md)
 
 ---
 
