@@ -897,6 +897,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     default=defaults.get("enable_extended_sensors", True),
                 ): bool,
                 vol.Optional(
+                    "enable_chmu_warnings",
+                    default=defaults.get("enable_chmu_warnings", False),
+                ): bool,
+                vol.Optional(
                     "enable_dashboard", default=defaults.get("enable_dashboard", False)
                 ): bool,
                 vol.Optional("go_back", default=False): bool,
@@ -2039,6 +2043,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "enable_extended_sensors": self._wizard_data.get(
                         "enable_extended_sensors", True
                     ),
+                    "enable_chmu_warnings": self._wizard_data.get(
+                        "enable_chmu_warnings", False
+                    ),
                     "enable_dashboard": self._wizard_data.get(
                         "enable_dashboard", False
                     ),
@@ -2224,6 +2231,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "enable_pricing": self._wizard_data.get("enable_pricing", False),
                 "enable_extended_sensors": self._wizard_data.get(
                     "enable_extended_sensors", True
+                ),
+                "enable_chmu_warnings": self._wizard_data.get(
+                    "enable_chmu_warnings", False
                 ),
                 "enable_dashboard": self._wizard_data.get("enable_dashboard", False),
                 # Extended sensors detail

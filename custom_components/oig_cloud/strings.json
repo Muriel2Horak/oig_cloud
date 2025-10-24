@@ -42,6 +42,7 @@
           "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
+          "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
@@ -51,6 +52,7 @@
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
+          "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
@@ -302,6 +304,7 @@
           "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
+          "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
@@ -311,6 +314,7 @@
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
+          "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
