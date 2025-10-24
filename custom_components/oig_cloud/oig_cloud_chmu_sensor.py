@@ -267,6 +267,11 @@ class OigCloudChmuSensor(OigCloudSensor):
         if not self._last_warning_data:
             return 0
 
+        # Global sensor - nejvyšší severity v ČR
+        if self._sensor_type == "chmu_warning_level_global":
+            return self._last_warning_data.get("highest_severity_cz", 0)
+        
+        # Local sensor - severity pro lokalitu
         return self._last_warning_data.get("severity_level", 0)
 
     @property
@@ -279,15 +284,25 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         if not self._last_warning_data:
             return {
-                "local_warnings_count": 0,
-                "all_warnings_count": 0,
-                "highest_severity_cz": 0,
+                "warnings_count": 0,
                 "last_update": None,
                 "source": "ČHMÚ CAP Feed",
             }
 
+        # Global sensor - všechna varování pro ČR
+        if self._sensor_type == "chmu_warning_level_global":
+            attrs = {
+                "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
+                "all_warnings": self._last_warning_data.get("all_warnings", []),
+                "highest_severity": self._last_warning_data.get("highest_severity_cz", 0),
+                "severity_distribution": self._get_severity_distribution(),
+                "last_update": self._last_warning_data.get("last_update"),
+                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+            }
+            return attrs
+
+        # Local sensor - varování pro lokalitu
         attrs = {
-            # Lokální data
             "local_warnings_count": self._last_warning_data.get(
                 "local_warnings_count", 0
             ),
@@ -306,6 +321,21 @@ class OigCloudChmuSensor(OigCloudSensor):
         }
 
         return attrs
+
+    def _get_severity_distribution(self) -> Dict[str, int]:
+        """Vrátí rozdělení severity pro všechna varování."""
+        if not self._last_warning_data:
+            return {"Minor": 0, "Moderate": 0, "Severe": 0, "Extreme": 0}
+        
+        all_warnings = self._last_warning_data.get("all_warnings", [])
+        distribution = {"Minor": 0, "Moderate": 0, "Severe": 0, "Extreme": 0}
+        
+        for warning in all_warnings:
+            severity = warning.get("severity", "Unknown")
+            if severity in distribution:
+                distribution[severity] += 1
+        
+        return distribution
 
     @property
     def icon(self) -> str:
