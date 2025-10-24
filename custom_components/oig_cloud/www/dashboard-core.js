@@ -4269,17 +4269,25 @@ function switchTab(tabName) {
 
             // 5. Načíst fresh pozice node elementů
             console.log('[Tab] Getting node centers...');
-            getNodeCenters();
-            console.log('[Tab] ✓ Node centers cached:', cachedNodeCenters);
+            const centers = getNodeCenters();
+            console.log('[Tab] Node centers result:', centers);
 
             // OPRAVA: Zkontrolovat jestli se pozice načetly správně
-            if (!cachedNodeCenters || Object.keys(cachedNodeCenters).length === 0) {
-                console.error('[Tab] ✗ Failed to get node centers, retrying...');
+            if (!centers || Object.keys(centers).length === 0) {
+                console.error('[Tab] ✗ Failed to get node centers (DOM not ready), retrying...');
                 // Zkusit znovu s delším timeout
                 setTimeout(() => {
                     cachedNodeCenters = null;
                     lastLayoutHash = null;
-                    getNodeCenters();
+                    const retryCenters = getNodeCenters();
+                    console.log('[Tab] Retry node centers result:', retryCenters);
+
+                    if (!retryCenters || Object.keys(retryCenters).length === 0) {
+                        console.error('[Tab] ✗ Retry also failed, giving up');
+                        return;
+                    }
+
+                    console.log('[Tab] ✓ Node centers loaded on retry:', Object.keys(retryCenters).length);
                     drawConnections();
                     needsFlowReinitialize = true;
                     loadData();
@@ -4289,6 +4297,7 @@ function switchTab(tabName) {
             }
 
             // 6. Překreslit čáry (teď už máme správné pozice)
+            console.log('[Tab] ✓ Node centers cached:', Object.keys(centers).length);
             console.log('[Tab] Drawing connections...');
             drawConnections();
             console.log('[Tab] ✓ Connections drawn');
