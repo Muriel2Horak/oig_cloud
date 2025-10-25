@@ -6903,11 +6903,17 @@ async function updatePlannedConsumptionStats() {
         updateElementIfChanged('planned-consumption-trend', '--', 'planned-trend');
     }
 
-    // Detail řádky - Dnes (celkem = spotřebováno + zbývá) a Zítra (celý den)
-    if (todayPlannedKwh !== null && todayPlannedKwh !== undefined) {
-        updateElementIfChanged('planned-today-kwh', `${todayTotalKwh.toFixed(1)} kWh`, 'planned-today-kwh');
+    // Detail řádky - Dnes: spotřebováno + zbývá plán, Zítra: celý den
+    if (todayConsumedKwh !== null && todayConsumedKwh !== undefined) {
+        updateElementIfChanged('planned-today-consumed-kwh', `${todayConsumedKwh.toFixed(1)} kWh`, 'planned-today-consumed');
     } else {
-        updateElementIfChanged('planned-today-kwh', '--', 'planned-today-kwh');
+        updateElementIfChanged('planned-today-consumed-kwh', '--', 'planned-today-consumed');
+    }
+
+    if (todayPlannedKwh !== null && todayPlannedKwh !== undefined) {
+        updateElementIfChanged('planned-today-remaining-kwh', `${todayPlannedKwh.toFixed(1)} kWh`, 'planned-today-remaining');
+    } else {
+        updateElementIfChanged('planned-today-remaining-kwh', '--', 'planned-today-remaining');
     }
 
     if (tomorrowKwh !== null && tomorrowKwh !== undefined) {
@@ -6916,7 +6922,7 @@ async function updatePlannedConsumptionStats() {
         updateElementIfChanged('planned-tomorrow-kwh', '--', 'planned-tomorrow-kwh');
     }
 
-    // Profil display - bez emoji, čistý text
+    // Profil display - bez emoji, čistý text (nahoru místo "Zbývá dnes + celý zítřek")
     let profileDisplay = '';
     if (profileToday && profileToday !== 'Žádný profil' && profileToday !== 'Neznámý profil') {
         // Zkrátit dlouhé názvy profilů
