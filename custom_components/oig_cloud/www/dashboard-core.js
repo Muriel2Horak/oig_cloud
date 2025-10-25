@@ -2180,24 +2180,87 @@ function createParticle(from, to, color, speed = 2000, delay = 0) {
     }, delay);
 }
 
-// Globální stav pro kontinuální animaci kuliček
-const particleFlows = {
-    solarToInverter: { active: false, speed: 2000, count: 0 },
-    batteryToInverter: { active: false, speed: 2000, count: 0 },
-    inverterToBattery: { active: false, speed: 2000, count: 0 },
-    gridToInverter: { active: false, speed: 2000, count: 0 },
-    inverterToGrid: { active: false, speed: 2000, count: 0 },
-    inverterToHouse: { active: false, speed: 2000, count: 0 }
+// ========================================
+// FLOW ANIMATION v2.0 - Multi-layer particles
+// ========================================
+
+// Maxima pro normalizaci intenzity (Watt)
+const FLOW_MAXIMUMS = {
+    solar: 5400,      // 5.4 kW
+    battery: 7000,    // 7 kW
+    grid: 17000,      // 17 kW
+    house: 10000      // 10 kW
 };
 
-// Vytvoří kontinuální tok kuliček - když jedna doběhne, vytvoří se nová
-function createContinuousParticle(flowKey, from, to, color, speed) {
+// Barevné konstanty
+const FLOW_COLORS = {
+    solar: '#ffd54f',       // Žlutá
+    battery: '#ff9800',     // Oranžová
+    grid_import: '#f44336', // Červená (odběr)
+    grid_export: '#4caf50', // Zelená (dodávka)
+    house: '#f06292'        // Růžová (fallback)
+};
+
+// Globální stav pro kontinuální animaci kuliček
+// Nový formát: podporuje multi-source flows
+const particleFlows = {
+    solarToInverter: { active: false, speed: 2000, count: 0, sources: [] },
+    batteryToInverter: { active: false, speed: 2000, count: 0, sources: [] },
+    inverterToBattery: { active: false, speed: 2000, count: 0, sources: [] },
+    gridToInverter: { active: false, speed: 2000, count: 0, sources: [] },
+    inverterToGrid: { active: false, speed: 2000, count: 0, sources: [] },
+    inverterToHouse: { active: false, speed: 2000, count: 0, sources: [] }
+};
+
+/**
+ * Vypočítá parametry toku podle výkonu a maxima
+ * @param {number} power - Výkon v W (může být záporný)
+ * @param {number} maximum - Maximální výkon v W
+ * @returns {object} { active, intensity, count, speed, size, opacity }
+ */
+function calculateFlowParams(power, maximum) {
+    const absPower = Math.abs(power);
+    const intensity = Math.min(100, (absPower / maximum) * 100);
+    
+    return {
+        active: absPower >= 50,  // Práh: 50W (citlivější než 500W)
+        intensity: intensity,
+        count: Math.max(1, Math.min(4, Math.ceil(1 + intensity / 33))), // 1-4 kuličky
+        speed: Math.max(500, Math.round(3500 - (intensity * 30))),      // 3500-500ms
+        size: Math.round(6 + (intensity / 10)),                         // 6-16px
+        opacity: Math.min(1.0, 0.3 + (intensity / 150))                 // 0.3-1.0
+    };
+}
+
+/**
+ * Vytvoří kontinuální tok kuliček - když jedna doběhne, vytvoří se nová
+ * @param {string} flowKey - Klíč toku (např. 'solarToInverter')
+ * @param {object} from - Pozice začátku {x, y}
+ * @param {object} to - Pozice konce {x, y}
+ * @param {string} color - Barva kuličky
+ * @param {number} speed - Rychlost animace (ms)
+ * @param {number} size - Velikost kuličky (px)
+ * @param {number} opacity - Průhlednost (0-1)
+ */
+function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opacity = 1) {
     const flow = particleFlows[flowKey];
     if (!flow || !flow.active || !from || !to) return;
 
     const particle = document.createElement('div');
     particle.className = 'particle';
     particle.style.background = color;
+    
+    // Dynamická velikost s malou variací pro "živý" efekt
+    const sizeVariation = size + (Math.random() * 2 - 1); // ±1px
+    particle.style.width = `${sizeVariation}px`;
+    particle.style.height = `${sizeVariation}px`;
+    particle.style.borderRadius = '50%';
+    
+    // Blur pro rychlé toky
+    if (speed < 1500) {
+        particle.style.filter = 'blur(0.5px)';
+    }
+    
     particle.style.left = from.x + 'px';
     particle.style.top = from.y + 'px';
 
@@ -2208,8 +2271,8 @@ function createContinuousParticle(flowKey, from, to, color, speed) {
 
     particle.animate([
         { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
-        { opacity: 1, offset: 0.1 },
-        { opacity: 1, offset: 0.9 },
+        { opacity: opacity, offset: 0.1 },
+        { opacity: opacity, offset: 0.9 },
         { left: to.x + 'px', top: to.y + 'px', opacity: 0 }
     ], {
         duration: speed,
@@ -2217,12 +2280,72 @@ function createContinuousParticle(flowKey, from, to, color, speed) {
     }).onfinish = () => {
         particle.remove();
         // Rekurzivně vytvoř další kuličku pokud je flow stále aktivní
-        createContinuousParticle(flowKey, from, to, color, flow.speed);
+        createContinuousParticle(flowKey, from, to, color, flow.speed, size, opacity);
     };
 }
 
-// Spustí nebo zastaví kontinuální tok kuliček
-function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1) {
+/**
+ * Vytvoří multi-source flow s kuličkami různých barev
+ * @param {string} flowKey - Klíč toku
+ * @param {object} from - Pozice začátku
+ * @param {object} to - Pozice konce
+ * @param {Array} sources - [{type, power, color}, ...]
+ * @param {number} totalPower - Celkový výkon
+ * @param {number} speed - Rychlost animace
+ * @param {number} size - Velikost kuliček
+ * @param {number} opacity - Průhlednost
+ */
+function updateMultiSourceFlow(flowKey, from, to, sources, totalPower, speed, size, opacity) {
+    const flow = particleFlows[flowKey];
+    if (!flow) return;
+
+    // Zastavit starý flow pokud se změnily zdroje
+    const sourcesChanged = JSON.stringify(flow.sources) !== JSON.stringify(sources);
+    if (sourcesChanged) {
+        flow.active = false;
+        flow.sources = sources;
+        
+        // Restart po malém delaye
+        setTimeout(() => {
+            flow.active = true;
+            flow.speed = speed;
+            
+            // Pro každý zdroj vytvořit kuličky podle poměru
+            let cumulativeDelay = 0;
+            const totalCount = Math.max(1, Math.min(4, Math.ceil(sources.length + totalPower / 2000)));
+            
+            sources.forEach((source, idx) => {
+                const ratio = source.power / totalPower;
+                const sourceCount = Math.max(1, Math.round(totalCount * ratio));
+                
+                for (let i = 0; i < sourceCount; i++) {
+                    const particleKey = `${flowKey}_${source.type}_${i}`;
+                    particleFlows[particleKey] = { 
+                        active: true, 
+                        speed: speed,
+                        sources: [source]
+                    };
+                    
+                    setTimeout(() => {
+                        createContinuousParticle(
+                            particleKey, 
+                            from, to, 
+                            source.color, 
+                            speed, 
+                            size, 
+                            opacity
+                        );
+                    }, cumulativeDelay);
+                    
+                    cumulativeDelay += speed / totalCount / 2;
+                }
+            });
+        }, 100);
+    }
+}
+
+// Spustí nebo zastaví kontinuální tok kuliček (simple single-color flow)
+function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1, size = 8, opacity = 1) {
     const flow = particleFlows[flowKey];
     if (!flow) return;
 
@@ -2240,7 +2363,7 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1) 
             const delayBetweenParticles = speed / count / 2;
             for (let i = 0; i < count; i++) {
                 setTimeout(() => {
-                    createContinuousParticle(flowKey, from, to, color, speed);
+                    createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
                 }, i * delayBetweenParticles);
             }
         }, 100);
@@ -2256,7 +2379,7 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1) 
         const delayBetweenParticles = speed / count / 2;
         for (let i = 0; i < count; i++) {
             setTimeout(() => {
-                createContinuousParticle(flowKey, from, to, color, speed);
+                createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
             }, i * delayBetweenParticles);
         }
     }
@@ -2422,7 +2545,7 @@ function getNodeCenters() {
     return centers;
 }
 
-// Animate particles
+// Animate particles - v2.0 with continuous normalization
 function animateFlow(data) {
     const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
 
@@ -2430,176 +2553,197 @@ function animateFlow(data) {
     const centers = getNodeCenters();
     if (!centers) return;
 
-    // 1. SOLAR → INVERTER (žlutá)
-    let solarActive, solarSpeed, solarCount;
+    // ========================================
+    // 1. SOLAR → INVERTER (žlutá, jednosměrný)
+    // ========================================
+    const solarParams = calculateFlowParams(solarPower, FLOW_MAXIMUMS.solar);
+    
+    updateParticleFlow(
+        'solarToInverter', 
+        centers.solar, 
+        centers.inverter, 
+        FLOW_COLORS.solar, 
+        solarParams.active, 
+        solarParams.speed, 
+        solarParams.count,
+        solarParams.size,
+        solarParams.opacity
+    );
 
-    if (solarPower < 500) {
-        // 0-500W: žádná animace
-        solarActive = false;
-        solarSpeed = 3000;
-        solarCount = 0;
-    } else if (solarPower < 2000) {
-        // 500-2000W: 1 kulička, pomalá
-        solarActive = true;
-        solarSpeed = 3000;
-        solarCount = 1;
-    } else if (solarPower < 5000) {
-        // 2000-5000W: 2 kuličky, střední rychlost
-        solarActive = true;
-        solarSpeed = 2500;
-        solarCount = 2;
-    } else {
-        // 5000W+: 3 kuličky, rychlé
-        solarActive = true;
-        solarSpeed = 1500;
-        solarCount = 3;
-    }
-
-    updateParticleFlow('solarToInverter', centers.solar, centers.inverter, '#ffd54f', solarActive, solarSpeed, solarCount);
-
-    // 2. BATTERY ↔ INVERTER
+    // ========================================
+    // 2. BATTERY ↔ INVERTER (obousměrný)
+    // ========================================
     const batteryAbsPower = Math.abs(batteryPower);
-
-    // Dynamický práh: pro nízké výkony používáme pomalejší animaci s menším počtem kuliček
-    let batteryActive, batterySpeed, batteryCount;
-
-    if (batteryAbsPower < 500) {
-        // 0-500W: žádná animace (moc nízký výkon)
-        batteryActive = false;
-        batterySpeed = 3000;
-        batteryCount = 0;
-    } else if (batteryAbsPower < 2000) {
-        // 500-2000W: 1 kulička, pomalá
-        batteryActive = true;
-        batterySpeed = 3000;
-        batteryCount = 1;
-    } else if (batteryAbsPower < 5000) {
-        // 2000-5000W: 2 kuličky, střední rychlost
-        batteryActive = true;
-        batterySpeed = 2500;
-        batteryCount = 2;
-    } else {
-        // 5000W+: 3 kuličky, rychlé
-        batteryActive = true;
-        batterySpeed = 1500;
-        batteryCount = 3;
-    }
+    const batteryParams = calculateFlowParams(batteryAbsPower, FLOW_MAXIMUMS.battery);
 
     // Zastavit oba směry nejdřív
-    updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', false, batterySpeed, batteryCount);
-    updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, '#4caf50', false, batterySpeed, batteryCount);
+    updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, FLOW_COLORS.battery, false, batteryParams.speed, 0);
+    updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, FLOW_COLORS.solar, false, batteryParams.speed, 0);
 
-    if (batteryActive) {
+    if (batteryParams.active) {
         if (batteryPower > 0) {
-            // Nabíjení baterie: Vypočítat poměr solár/grid
-            // Celková energie do baterie = batteryPower
-            // Dostupný solár = solarPower
-            // Dostupný grid = gridPower (pokud > 0)
-
+            // ===== NABÍJENÍ BATERIE =====
+            // Vypočítat zdroje: solar + grid
             let solarToBattery = 0;
             let gridToBattery = 0;
 
             if (solarPower > 0) {
-                // Solár částečně nebo plně nabíjí baterii
                 solarToBattery = Math.min(solarPower, batteryPower);
             }
 
             const remaining = batteryPower - solarToBattery;
             if (remaining > 50 && gridPower > 0) {
-                // Zbytek pochází ze sítě
                 gridToBattery = remaining;
             }
 
-            // Vypočítat poměry
-            const solarRatio = solarToBattery / batteryPower;
-            const gridRatio = gridToBattery / batteryPower;
+            // Multi-source flow: žluté + modré kuličky
+            const sources = [];
+            if (solarToBattery > 50) {
+                sources.push({ type: 'solar', power: solarToBattery, color: FLOW_COLORS.solar });
+            }
+            if (gridToBattery > 50) {
+                sources.push({ type: 'grid', power: gridToBattery, color: FLOW_COLORS.grid_import });
+            }
 
-            // Získat barvu podle zdrojů
-            const batteryChargeColor = getEnergySourceColor(solarRatio, gridRatio, 0);
-
-            // Nabíjení: Inverter → Battery (barva podle zdroje)
-            updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, batteryChargeColor, true, batterySpeed, batteryCount);
+            if (sources.length > 1) {
+                // Multi-source: použít novou funkci
+                updateMultiSourceFlow(
+                    'inverterToBattery',
+                    centers.inverter,
+                    centers.battery,
+                    sources,
+                    batteryPower,
+                    batteryParams.speed,
+                    batteryParams.size,
+                    batteryParams.opacity
+                );
+            } else {
+                // Single source: použít starou funkci
+                const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.solar;
+                updateParticleFlow(
+                    'inverterToBattery', 
+                    centers.inverter, 
+                    centers.battery, 
+                    color, 
+                    true, 
+                    batteryParams.speed, 
+                    batteryParams.count,
+                    batteryParams.size,
+                    batteryParams.opacity
+                );
+            }
         } else {
-            // Vybíjení: Battery → Inverter (oranžová - baterie vždy oranžová)
-            updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, '#ff9800', true, batterySpeed, batteryCount);
+            // ===== VYBÍJENÍ BATERIE =====
+            // Vždy oranžová
+            updateParticleFlow(
+                'batteryToInverter', 
+                centers.battery, 
+                centers.inverter, 
+                FLOW_COLORS.battery, 
+                true, 
+                batteryParams.speed, 
+                batteryParams.count,
+                batteryParams.size,
+                batteryParams.opacity
+            );
         }
     }
 
-    // 3. GRID ↔ INVERTER
+    // ========================================
+    // 3. GRID ↔ INVERTER (obousměrný)
+    // ========================================
     const gridAbsPower = Math.abs(gridPower);
-
-    let gridActive, gridSpeed, gridCount;
-
-    if (gridAbsPower < 500) {
-        // 0-500W: žádná animace
-        gridActive = false;
-        gridSpeed = 3000;
-        gridCount = 0;
-    } else if (gridAbsPower < 3000) {
-        // 500-3000W: 1 kulička, pomalá
-        gridActive = true;
-        gridSpeed = 3000;
-        gridCount = 1;
-    } else if (gridAbsPower < 8000) {
-        // 3000-8000W: 2 kuličky, střední rychlost
-        gridActive = true;
-        gridSpeed = 2500;
-        gridCount = 2;
-    } else {
-        // 8000W+: 3 kuličky, rychlé
-        gridActive = true;
-        gridSpeed = 1500;
-        gridCount = 3;
-    }
+    const gridParams = calculateFlowParams(gridAbsPower, FLOW_MAXIMUMS.grid);
 
     // Zastavit oba směry nejdřív
-    updateParticleFlow('gridToInverter', centers.grid, centers.inverter, '#f44336', false, gridSpeed, gridCount);
-    updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, '#4caf50', false, gridSpeed, gridCount);
+    updateParticleFlow('gridToInverter', centers.grid, centers.inverter, FLOW_COLORS.grid_import, false, gridParams.speed, 0);
+    updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, FLOW_COLORS.grid_export, false, gridParams.speed, 0);
 
-    if (gridActive) {
+    if (gridParams.active) {
         if (gridPower > 0) {
-            // Z gridu: Grid → Inverter (červená)
-            updateParticleFlow('gridToInverter', centers.grid, centers.inverter, '#f44336', true, gridSpeed, gridCount);
+            // ===== ODBĚR ZE SÍTĚ =====
+            // Červená, jednosměrný
+            updateParticleFlow(
+                'gridToInverter', 
+                centers.grid, 
+                centers.inverter, 
+                FLOW_COLORS.grid_import, 
+                true, 
+                gridParams.speed, 
+                gridParams.count,
+                gridParams.size,
+                gridParams.opacity
+            );
         } else {
-            // Do gridu: Inverter → Grid (zelená)
-            updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, '#4caf50', true, gridSpeed, gridCount);
+            // ===== DODÁVKA DO SÍTĚ =====
+            // Vypočítat zdroje: solar + battery
+            const gridExportPower = Math.abs(gridPower);
+            
+            let solarToGrid = 0;
+            let batteryToGrid = 0;
+
+            // Solár co nejde do baterie ani domu může jít do gridu
+            const solarUsed = (batteryPower > 0 ? batteryPower : 0);
+            const solarAvailableForGrid = Math.max(0, solarPower - solarUsed);
+            
+            solarToGrid = Math.min(solarAvailableForGrid, gridExportPower);
+            
+            const remaining = gridExportPower - solarToGrid;
+            if (remaining > 50 && batteryPower < 0) {
+                // Zbytek z baterie
+                batteryToGrid = Math.min(Math.abs(batteryPower), remaining);
+            }
+
+            // Multi-source flow: žluté + oranžové kuličky
+            const sources = [];
+            if (solarToGrid > 50) {
+                sources.push({ type: 'solar', power: solarToGrid, color: FLOW_COLORS.solar });
+            }
+            if (batteryToGrid > 50) {
+                sources.push({ type: 'battery', power: batteryToGrid, color: FLOW_COLORS.battery });
+            }
+
+            if (sources.length > 1) {
+                // Multi-source
+                updateMultiSourceFlow(
+                    'inverterToGrid',
+                    centers.inverter,
+                    centers.grid,
+                    sources,
+                    gridExportPower,
+                    gridParams.speed,
+                    gridParams.size,
+                    gridParams.opacity
+                );
+            } else {
+                // Single source - zelená
+                const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.grid_export;
+                updateParticleFlow(
+                    'inverterToGrid', 
+                    centers.inverter, 
+                    centers.grid, 
+                    color, 
+                    true, 
+                    gridParams.speed, 
+                    gridParams.count,
+                    gridParams.size,
+                    gridParams.opacity
+                );
+            }
         }
     }
 
-    // 4. INVERTER → HOUSE (růžová)
-    let houseActive, houseSpeed, houseCount;
-
-    if (housePower < 500) {
-        // 0-500W: žádná animace
-        houseActive = false;
-        houseSpeed = 3000;
-        houseCount = 0;
-    } else if (housePower < 3000) {
-        // 500-3000W: 1 kulička, pomalá
-        houseActive = true;
-        houseSpeed = 3000;
-        houseCount = 1;
-    } else if (housePower < 8000) {
-        // 3000-8000W: 2 kuličky, střední rychlost
-        houseActive = true;
-        houseSpeed = 2500;
-        houseCount = 2;
-    } else {
-        // 8000W+: 3 kuličky, rychlé
-        houseActive = true;
-        houseSpeed = 1500;
-        houseCount = 3;
-    }
+    // ========================================
+    // 4. INVERTER → HOUSE (spotřeba, multi-source)
+    // ========================================
+    const houseParams = calculateFlowParams(housePower, FLOW_MAXIMUMS.house);
 
     // Vypočítat zdroje pro spotřebu (house)
-    // Spotřeba = housePower
-    // Zdroje: solár, baterie (vybíjení), grid
-
     let solarToHouse = 0;
     let batteryToHouse = 0;
     let gridToHouse = 0;
 
-    if (housePower > 0) {
+    if (houseParams.active && housePower > 0) {
         // OPRAVA: Správná logika rozdělení zdrojů
         // batteryPower > 0 = nabíjení baterie (energie TEČE DO baterie)
         // batteryPower < 0 = vybíjení baterie (energie TEČE Z baterie)
@@ -2632,29 +2776,58 @@ function animateFlow(data) {
 
         // Přiřadit zdroje k domu
         solarToHouse = Math.min(solarAvailable, housePower);
-        const remaining = housePower - solarToHouse;
+        const houseRemaining = housePower - solarToHouse;
 
-        if (remaining > 0) {
-            batteryToHouse = Math.min(batteryContribution, remaining);
-            const stillRemaining = remaining - batteryToHouse;
+        if (houseRemaining > 0) {
+            batteryToHouse = Math.min(batteryContribution, houseRemaining);
+            const stillRemaining = houseRemaining - batteryToHouse;
 
             if (stillRemaining > 0) {
                 gridToHouse = Math.min(gridNeeded, stillRemaining);
             }
         }
 
-        // Vypočítat poměry pro barvu
-        const total = solarToHouse + batteryToHouse + gridToHouse;
-        const solarRatio = total > 0 ? solarToHouse / total : 0;
-        const batteryRatio = total > 0 ? batteryToHouse / total : 0;
-        const gridRatio = total > 0 ? gridToHouse / total : 0;
+        // Multi-source flow: žluté + oranžové + červené kuličky
+        const sources = [];
+        if (solarToHouse > 50) {
+            sources.push({ type: 'solar', power: solarToHouse, color: FLOW_COLORS.solar });
+        }
+        if (batteryToHouse > 50) {
+            sources.push({ type: 'battery', power: batteryToHouse, color: FLOW_COLORS.battery });
+        }
+        if (gridToHouse > 50) {
+            sources.push({ type: 'grid', power: gridToHouse, color: FLOW_COLORS.grid_import });
+        }
 
-        // Získat barvu podle zdrojů
-        const houseColor = getEnergySourceColor(solarRatio, gridRatio, batteryRatio);
-
-        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, houseColor, houseActive, houseSpeed, houseCount);
+        if (sources.length > 1) {
+            // Multi-source
+            updateMultiSourceFlow(
+                'inverterToHouse',
+                centers.inverter,
+                centers.house,
+                sources,
+                housePower,
+                houseParams.speed,
+                houseParams.size,
+                houseParams.opacity
+            );
+        } else {
+            // Single source
+            const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.house;
+            updateParticleFlow(
+                'inverterToHouse', 
+                centers.inverter, 
+                centers.house, 
+                color, 
+                true, 
+                houseParams.speed, 
+                houseParams.count,
+                houseParams.size,
+                houseParams.opacity
+            );
+        }
     } else {
-        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, '#f06292', false, houseSpeed, houseCount);
+        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, FLOW_COLORS.house, false, houseParams.speed, 0);
     }
 }
 
