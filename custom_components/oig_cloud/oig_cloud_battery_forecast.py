@@ -259,7 +259,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         today = dt_util.now().date()
 
-        _LOGGER.debug(f"Starting calculation with capacity={battery_kwh:.2f} kWh")
+        # Získat battery efficiency pro výpočty
+        efficiency = self._get_battery_efficiency()
+
+        _LOGGER.debug(
+            f"Starting calculation with capacity={battery_kwh:.2f} kWh, efficiency={efficiency:.3f}"
+        )
 
         # Info o použité metodě predikce
         if adaptive_profiles:
@@ -311,13 +316,32 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"load={load_kwh:.3f}, grid={grid_kwh:.3f}"
                 )
 
-            # DŮLEŽITÁ LOGIKA:
-            # - Když solar >= load: přebytek nabíjí baterii
-            # - Když solar < load: deficit vybíjí baterii (pokud grid nedobíjí)
-            # net_energy = (solar - consumption) + grid_charging
-            net_energy = solar_kwh - load_kwh + grid_kwh
+            # DŮLEŽITÁ LOGIKA s EFFICIENCY:
+            # GAP #1: Při vybíjení z baterie musíme zohlednit DC/AC losses
+            # GAP #3: V UPS režimu spotřeba jde ze sítě (ne z baterie)
 
-            # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
+            # Určit jestli je UPS režim (když nabíjíme ze sítě)
+            # V UPS: spotřeba NEJDE z baterie, baterie JEN roste
+            is_ups_mode = grid_kwh > 0
+
+            if is_ups_mode:
+                # UPS režim: spotřeba ze sítě (100% účinnost)
+                # Baterie roste jen díky solar + grid nabíjení
+                net_energy = solar_kwh + grid_kwh
+                # load_kwh se NEODEČÍTÁ (jde ze sítě!)
+            else:
+                # Home I/II/III režim: spotřeba z baterie (s DC/AC losses)
+                # Když je solar < load: musíme vytáhnout VÍCE z baterie kvůli losses
+                load_from_battery = max(0, load_kwh - solar_kwh)
+                battery_drain = load_from_battery / efficiency  # 0.882 → 12% více!
+
+                # Solar přebytek nabíjí baterii (bez losses - DC/DC je velmi účinný)
+                solar_to_battery_charge = max(0, solar_kwh - load_kwh)
+
+                # Celková změna SoC
+                net_energy = (
+                    solar_to_battery_charge - battery_drain + grid_kwh
+                )  # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
             solar_to_battery = max(0, solar_kwh - load_kwh)
 
             # Výpočet nové kapacity baterie
@@ -343,6 +367,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     ),  # ZMĚNA: čistý přírůstek ze soláru
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
+                    "mode": "UPS" if is_ups_mode else "Home",  # Nový: rozlišení režimu
                 }
             )
 
@@ -400,6 +425,48 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return (min_capacity_percent / 100.0) * max_capacity
 
         return 2.0  # Default 20% z 10kWh
+
+    def _get_battery_efficiency(self) -> float:
+        """
+        Získat aktuální efektivitu baterie z battery_efficiency sensoru.
+
+        Returns:
+            Efektivita jako desetinné číslo (0.882 pro 88.2%)
+            Fallback na 0.882 pokud sensor není k dispozici
+        """
+        if not self._hass:
+            _LOGGER.debug("HASS not available, using fallback efficiency 0.882")
+            return 0.882
+
+        sensor_id = f"sensor.oig_{self._box_id}_battery_efficiency"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unknown", "unavailable"]:
+            _LOGGER.debug(
+                f"Battery efficiency sensor {sensor_id} not available, using fallback 0.882"
+            )
+            return 0.882
+
+        try:
+            # State je v %, převést na desetinné číslo
+            efficiency_pct = float(state.state)
+            efficiency = efficiency_pct / 100.0
+
+            # Sanity check
+            if efficiency < 0.70 or efficiency > 1.0:
+                _LOGGER.warning(
+                    f"Unrealistic efficiency {efficiency:.3f} ({efficiency_pct}%), using fallback 0.882"
+                )
+                return 0.882
+
+            _LOGGER.debug(
+                f"Using battery efficiency: {efficiency:.3f} ({efficiency_pct}%)"
+            )
+            return efficiency
+
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(f"Error parsing battery efficiency: {e}")
+            return 0.882
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
         """Získat timeline spotových cen z spot_price_current_15min.
@@ -1293,6 +1360,10 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """
         Přepočítá timeline od daného indexu podle vzorce baterie.
 
+        DŮLEŽITÉ: Používá stejnou logiku jako _calculate_timeline():
+        - GAP #1: Efficiency při vybíjení (DC/AC losses)
+        - GAP #3: UPS režim (spotřeba ze sítě)
+
         Args:
             timeline: Timeline data (modifikuje in-place)
             start_index: Index od kterého přepočítat
@@ -1305,6 +1376,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         )
         min_capacity = (min_capacity_percent / 100.0) * max_capacity
 
+        # Získat battery efficiency
+        efficiency = self._get_battery_efficiency()
+
         for i in range(start_index, len(timeline)):
             if i == 0:
                 # První bod - použij aktuální kapacitu jako základ
@@ -1313,19 +1387,45 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             prev_point = timeline[i - 1]
             curr_point = timeline[i]
 
-            # Vzorec: nová_kapacita = předchozí + solar + grid - consumption
+            # Načíst hodnoty z timeline
             prev_capacity = prev_point.get("battery_capacity_kwh", 0)
-            solar_kwh = curr_point.get("solar_production_kwh", 0)
+            solar_charge_kwh = curr_point.get("solar_charge_kwh", 0)  # Čistý přírůstek
             grid_kwh = curr_point.get("grid_charge_kwh", 0)
             consumption_kwh = curr_point.get("consumption_kwh", 0)
 
-            new_capacity = prev_capacity + solar_kwh + grid_kwh - consumption_kwh
+            # Určit režim (UPS vs Home)
+            is_ups_mode = grid_kwh > 0
+
+            if is_ups_mode:
+                # UPS režim: spotřeba ze sítě, baterie JEN roste
+                net_energy = solar_charge_kwh + grid_kwh
+                # consumption NEJDE z baterie!
+            else:
+                # Home režim: spotřeba z baterie (s DC/AC losses)
+                # solar_charge_kwh je už čistý přírůstek (solar - consumption)
+                # Musíme ale přepočítat kvůli efficiency
+
+                # Zjistit jestli vybíjíme z baterie
+                # Pokud solar_charge_kwh < 0, znamená to že consumption > solar
+                if solar_charge_kwh < 0:
+                    # Vybíjíme z baterie - musíme vzít VÍCE kvůli losses
+                    load_from_battery = abs(solar_charge_kwh)
+                    battery_drain = load_from_battery / efficiency  # 0.882
+                    net_energy = -battery_drain + grid_kwh
+                else:
+                    # Solar přebytek nabíjí baterii (bez losses - DC/DC je velmi účinný)
+                    net_energy = solar_charge_kwh + grid_kwh
+
+            new_capacity = prev_capacity + net_energy
 
             # Clamp jen na maximum, NE na minimum (ať timeline ukazuje skutečný pokles)
             new_capacity = min(new_capacity, max_capacity)
             # NEPOUŽÍVAT: max(min_capacity, ...) - ať vidíme critical intervals
 
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
+
+            # Aktualizovat mode pokud se změnilo grid_charge
+            curr_point["mode"] = "UPS" if is_ups_mode else "Home"
 
     # =========================================================================
     # ADAPTIVE LOAD PREDICTION v2
