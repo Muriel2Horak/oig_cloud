@@ -3316,6 +3316,9 @@ async function loadData() {
 
     // Update battery efficiency statistics
     updateBatteryEfficiencyStats();
+
+    // Update planned consumption statistics
+    updatePlannedConsumptionStats();
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -6696,35 +6699,35 @@ async function updateBatteryEfficiencyStats() {
 
     const attrs = sensor.attributes || {};
 
-    // Current month data (main display)
-    const currentMonthEff = attrs.efficiency_current_month_pct;
-    const currentMonthLossesPct = attrs.losses_current_month_pct;
-    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
-    const currentMonthCharge = attrs.current_month_charge_kwh;
-    const currentMonthDischarge = attrs.current_month_discharge_kwh;
-
-    // Last month data (for comparison)
+    // Last month data (main display - SWAPPED)
     const lastMonthEff = attrs.efficiency_last_month_pct;
+    const lastMonthLossesPct = attrs.losses_last_month_pct;
+    const lastMonthLossesKwh = attrs.losses_last_month_kwh;
+    const lastMonthCharge = attrs.last_month_charge_kwh;
+    const lastMonthDischarge = attrs.last_month_discharge_kwh;
 
-    if (currentMonthEff !== null && currentMonthEff !== undefined) {
-        // Main value - current month efficiency
-        updateElementIfChanged('battery-efficiency-main', `${currentMonthEff.toFixed(1)}%`, 'batt-eff-main');
+    // Current month data (for comparison)
+    const currentMonthEff = attrs.efficiency_current_month_pct;
 
-        // Trend comparison with last month
-        if (lastMonthEff !== null && lastMonthEff !== undefined) {
+    if (lastMonthEff !== null && lastMonthEff !== undefined) {
+        // Main value - LAST month efficiency (M2M)
+        updateElementIfChanged('battery-efficiency-main', `${lastMonthEff.toFixed(1)}%`, 'batt-eff-main');
+
+        // Trend comparison with current month
+        if (currentMonthEff !== null && currentMonthEff !== undefined) {
             const diff = currentMonthEff - lastMonthEff;
             const diffAbs = Math.abs(diff);
             let trendText = '';
             let trendColor = '';
 
             if (diff > 0.5) {
-                trendText = `↗️ +${diffAbs.toFixed(1)}% oproti minulému`;
+                trendText = `↗️ Tento měsíc +${diffAbs.toFixed(1)}%`;
                 trendColor = '#4CAF50'; // Green for improvement
             } else if (diff < -0.5) {
-                trendText = `↘️ -${diffAbs.toFixed(1)}% oproti minulému`;
+                trendText = `↘️ Tento měsíc -${diffAbs.toFixed(1)}%`;
                 trendColor = '#FF5722'; // Red for decline
             } else {
-                trendText = `➡️ Stejné jako minulý měsíc`;
+                trendText = `➡️ Tento měsíc podobně`;
                 trendColor = 'var(--text-secondary)';
             }
 
@@ -6734,16 +6737,16 @@ async function updateBatteryEfficiencyStats() {
                 trendEl.style.color = trendColor;
             }
         } else {
-            updateElementIfChanged('battery-efficiency-trend', 'První měsíc měření', 'batt-trend');
+            updateElementIfChanged('battery-efficiency-trend', 'Tento měsíc: měření probíhá', 'batt-trend');
         }
 
-        // Detail values
-        updateElementIfChanged('battery-charge-value', `${currentMonthCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
-        updateElementIfChanged('battery-discharge-value', `${currentMonthDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
-        updateElementIfChanged('battery-losses-value', `${currentMonthLossesKwh?.toFixed(1) || '--'} kWh (${currentMonthLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
+        // Detail values - show LAST month data
+        updateElementIfChanged('battery-charge-value', `${lastMonthCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
+        updateElementIfChanged('battery-discharge-value', `${lastMonthDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
+        updateElementIfChanged('battery-losses-value', `${lastMonthLossesKwh?.toFixed(1) || '--'} kWh (${lastMonthLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
 
-        // Create mini trend chart (similar to extreme price cards)
-        createBatteryEfficiencyChart(currentMonthEff, lastMonthEff);
+        // Create mini trend chart - swap order for visual consistency
+        createBatteryEfficiencyChart(lastMonthEff, currentMonthEff);
     } else {
         updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main');
         updateElementIfChanged('battery-efficiency-trend', 'Čekám na data...', 'batt-trend');
@@ -6823,7 +6826,57 @@ function createBatteryEfficiencyChart(currentEff, lastEff) {
             }
         }
     });
-}// Toggle ČHMÚ warning modal
+}
+
+/**
+ * Update planned consumption statistics on Pricing tab
+ * Reads pre-calculated data from battery_forecast.attributes.adaptive_consumption
+ */
+async function updatePlannedConsumptionStats() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
+    const forecastSensor = hass.states[forecastSensorId];
+
+    // Check if sensor is available
+    if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
+        console.log('[Planned Consumption] Battery forecast sensor not available:', forecastSensorId);
+        updateElementIfChanged('planned-consumption-main', '--', 'planned-cons-main');
+        updateElementIfChanged('consumption-profile-name', 'Čekám na data...', 'profile-name');
+        updateElementIfChanged('consumption-profile-details', '', 'profile-details');
+        updateElementIfChanged('charging-cost-value', '--', 'charging-cost');
+        return;
+    }
+
+    // Get pre-calculated adaptive consumption data from battery_forecast
+    const forecastAttrs = forecastSensor.attributes || {};
+    const adaptiveData = forecastAttrs.adaptive_consumption || {};
+
+    // Display data (already calculated in Python)
+    const remainingKwh = adaptiveData.remaining_kwh;
+    const profileName = adaptiveData.profile_name;
+    const profileDetails = adaptiveData.profile_details;
+    const chargingCost = adaptiveData.charging_cost_today;
+
+    // Update UI
+    if (remainingKwh !== null && remainingKwh !== undefined) {
+        updateElementIfChanged('planned-consumption-main', `${remainingKwh.toFixed(1)} kWh`, 'planned-cons-main');
+    } else {
+        updateElementIfChanged('planned-consumption-main', '--', 'planned-cons-main');
+    }
+
+    updateElementIfChanged('consumption-profile-name', profileName || 'Žádný profil', 'profile-name');
+    updateElementIfChanged('consumption-profile-details', profileDetails || '', 'profile-details');
+
+    if (chargingCost !== null && chargingCost !== undefined && chargingCost > 0) {
+        updateElementIfChanged('charging-cost-value', `${chargingCost.toFixed(0)} Kč`, 'charging-cost');
+    } else {
+        updateElementIfChanged('charging-cost-value', '--', 'charging-cost');
+    }
+}
+
+// Toggle ČHMÚ warning modal
 function toggleChmuWarningModal() {
     const modal = document.getElementById('chmu-modal');
     if (!modal) return;

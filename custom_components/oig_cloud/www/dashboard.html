@@ -713,7 +713,7 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-top: 20px;">
                 <div class="stat-card"
                     style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">� Efektivita baterie</div>
+                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">⚡ Efektivita nabíjení</div>
                     <div class="stat-value" id="battery-efficiency-main" style="font-size: 1.8em; margin: 10px 0;">--</div>
                     <div id="battery-efficiency-trend"
                         style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
@@ -734,6 +734,27 @@
                     </div>
                     <canvas id="battery-efficiency-chart"
                         style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
+                </div>
+
+                <!-- Planned Consumption (Adaptive Load Profiles) -->
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); border: 1px solid rgba(33, 150, 243, 0.3); min-height: 160px;">
+                    <div class="stat-label" style="color: #2196F3; font-weight: 600;">📊 Plánovaná spotřeba</div>
+                    <div class="stat-value" id="planned-consumption-main" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                    <div style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
+                        <div id="consumption-profile-name" style="margin-bottom: 4px; font-weight: 500;">
+                            --
+                        </div>
+                        <div id="consumption-profile-details" style="font-size: 0.9em; opacity: 0.8;">
+                            --
+                        </div>
+                    </div>
+                    <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(33, 150, 243, 0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>💰 Cena nabíjení:</span>
+                            <span id="charging-cost-value" style="color: var(--text-primary); font-weight: 600; font-size: 1.1em;">--</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Placeholder for future stats cards -->

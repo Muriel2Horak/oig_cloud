@@ -82,6 +82,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         self._timeline_data: List[Dict[str, Any]] = []
         self._last_update: Optional[datetime] = None
         self._charging_metrics: Dict[str, Any] = {}
+        self._adaptive_consumption_data: Dict[str, Any] = {}  # NOVÉ: pro dashboard
         self._first_update: bool = True  # Flag pro první update (setup)
 
     async def async_added_to_hass(self) -> None:
@@ -135,6 +136,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, "_charging_metrics") and self._charging_metrics:
             attrs.update(self._charging_metrics)
 
+        # Přidat adaptive load profile data pro dashboard (NOVÉ)
+        if (
+            hasattr(self, "_adaptive_consumption_data")
+            and self._adaptive_consumption_data
+        ):
+            attrs["adaptive_consumption"] = self._adaptive_consumption_data
+
         return attrs
 
     async def async_update(self) -> None:
@@ -187,6 +195,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug(
                 f"Battery forecast updated: {len(self._timeline_data)} points"
             )
+
+            # NOVÉ: Zpracovat adaptive consumption data pro dashboard
+            self._process_adaptive_consumption_for_dashboard(adaptive_profiles)
 
             # Označit že první update proběhl
             if self._first_update:
@@ -1316,6 +1327,80 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     # =========================================================================
     # ADAPTIVE LOAD PREDICTION v2
     # =========================================================================
+
+    def _process_adaptive_consumption_for_dashboard(
+        self, adaptive_profiles: Optional[Dict[str, Any]]
+    ) -> None:
+        """Zpracuj adaptive data pro dashboard (do attributes).
+
+        Vypočítá:
+        - remaining_kwh: zbývající spotřeba do konce dne
+        - profile_name: lidsky čitelný název profilu
+        - profile_details: season, day_count, shoda
+        - charging_cost_today: celková cena za nabíjení dnes
+        """
+        if not adaptive_profiles:
+            self._adaptive_consumption_data = {}
+            return
+
+        # 1. Zbývající spotřeba do konce dne
+        now = datetime.now()
+        current_hour = now.hour
+        remaining_kwh = 0.0
+
+        today_profile = adaptive_profiles.get("today_profile")
+        if today_profile and "hourly_consumption" in today_profile:
+            hourly = today_profile["hourly_consumption"]
+            for hour in range(current_hour, 24):
+                remaining_kwh += hourly.get(hour, 0.0)
+
+        # 2. Profil název a detaily
+        profile_name = adaptive_profiles.get("profile_name", "Neznámý profil")
+        match_score = adaptive_profiles.get("match_score", 0)
+
+        profile_details = ""
+        if today_profile:
+            season = today_profile.get("season", "")
+            day_count = today_profile.get("day_count", 0)
+
+            season_names = {
+                "winter": "zimní",
+                "spring": "jarní",
+                "summer": "letní",
+                "autumn": "podzimní",
+            }
+            season_cz = season_names.get(season, season)
+
+            profile_details = f"{season_cz}, {day_count} podobných dnů"
+            if match_score > 0:
+                profile_details += f" • {int(match_score)}% shoda"
+
+        # 3. Cena za nabíjení dnes (sečti z timeline)
+        charging_cost_today = 0.0
+        today_date = now.date()
+
+        for entry in self._timeline_data:
+            timestamp_str = entry.get("timestamp")
+            if not timestamp_str:
+                continue
+
+            try:
+                entry_dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                if entry_dt.date() == today_date:
+                    charging_kwh = entry.get("charging_kwh", 0)
+                    spot_price = entry.get("spot_price_czk_per_kwh", 0)
+                    if charging_kwh > 0 and spot_price > 0:
+                        charging_cost_today += charging_kwh * spot_price
+            except (ValueError, AttributeError):
+                continue
+
+        # Uložit do instance
+        self._adaptive_consumption_data = {
+            "remaining_kwh": round(remaining_kwh, 1),
+            "profile_name": profile_name,
+            "profile_details": profile_details,
+            "charging_cost_today": round(charging_cost_today, 0),
+        }
 
     async def _get_adaptive_load_prediction(self) -> Optional[Dict[str, Any]]:
         """

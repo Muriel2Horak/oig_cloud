@@ -902,6 +902,36 @@ async def async_setup_entry(
                         async_add_entities(efficiency_sensors, True)
                 except Exception as e:
                     _LOGGER.error(f"Error creating battery efficiency sensors: {e}")
+
+                # Přidat také adaptive load profiles sensor
+                try:
+                    from .oig_cloud_adaptive_load_profiles import (
+                        OigCloudAdaptiveLoadProfilesSensor,
+                    )
+
+                    adaptive_sensors: List[Any] = []
+
+                    for sensor_type, config in SENSOR_TYPES.items():
+                        if config.get("sensor_type_category") == "adaptive_profiles":
+                            sensor = OigCloudAdaptiveLoadProfilesSensor(
+                                coordinator,
+                                sensor_type,
+                                entry,
+                                analytics_device_info,
+                                hass,
+                            )
+                            adaptive_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Created adaptive load profiles sensor: {sensor_type}"
+                            )
+
+                    if adaptive_sensors:
+                        _LOGGER.info(
+                            f"Registering {len(adaptive_sensors)} adaptive load profiles sensors"
+                        )
+                        async_add_entities(adaptive_sensors, True)
+                except Exception as e:
+                    _LOGGER.error(f"Error creating adaptive load profiles sensors: {e}")
             else:
                 _LOGGER.debug("No battery prediction sensors found")
         except ImportError as e:

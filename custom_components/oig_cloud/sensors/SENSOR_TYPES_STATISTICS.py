@@ -322,4 +322,16 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "entity_category": None,
         "description": "Round-trip efektivita baterie za minulý kompletní měsíc (%). Atributy obsahují průběžná data aktuálního měsíce a detailní metriky.",
     },
+    "adaptive_load_profiles": {
+        "name": "Adaptive Load Profiles",
+        "name_cs": "Adaptivní profily spotřeby",
+        "unit": None,  # State = počet profilů
+        "icon": "mdi:chart-timeline-variant-shimmer",
+        "device_class": None,
+        "state_class": None,
+        "sensor_type_category": "adaptive_profiles",
+        "device_mapping": "analytics",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "description": "Automaticky generované profily spotřeby založené na historických datech. State = počet profilů, attributes = detaily jednotlivých profilů.",
+    },
 }
