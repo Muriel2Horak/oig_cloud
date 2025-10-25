@@ -82,7 +82,10 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         self._timeline_data: List[Dict[str, Any]] = []
         self._last_update: Optional[datetime] = None
         self._charging_metrics: Dict[str, Any] = {}
-        self._adaptive_consumption_data: Dict[str, Any] = {}  # NOVÉ: pro dashboard
+        self._adaptive_consumption_data: Dict[str, Any] = {}  # DEPRECATED
+        self._consumption_summary: Dict[str, Any] = (
+            {}
+        )  # NOVÉ: pro dashboard (4 hodnoty)
         self._first_update: bool = True  # Flag pro první update (setup)
 
     async def async_added_to_hass(self) -> None:
@@ -136,12 +139,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, "_charging_metrics") and self._charging_metrics:
             attrs.update(self._charging_metrics)
 
-        # Přidat adaptive load profile data pro dashboard (NOVÉ)
-        if (
-            hasattr(self, "_adaptive_consumption_data")
-            and self._adaptive_consumption_data
-        ):
-            attrs["adaptive_consumption"] = self._adaptive_consumption_data
+        # Přidat consumption summary (4 hodnoty pro dashboard)
+        if hasattr(self, "_consumption_summary") and self._consumption_summary:
+            attrs.update(self._consumption_summary)
 
         return attrs
 
@@ -196,8 +196,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 f"Battery forecast updated: {len(self._timeline_data)} points"
             )
 
-            # NOVÉ: Zpracovat adaptive consumption data pro dashboard
-            self._process_adaptive_consumption_for_dashboard(adaptive_profiles)
+            # Vypočítat consumption summary pro dashboard
+            if adaptive_profiles and isinstance(adaptive_profiles, dict):
+                self._calculate_consumption_summary(adaptive_profiles)
+            else:
+                self._consumption_summary = {}
 
             # Označit že první update proběhl
             if self._first_update:
@@ -1328,6 +1331,100 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
     # ADAPTIVE LOAD PREDICTION v2
     # =========================================================================
 
+    def _calculate_consumption_summary(self, adaptive_profiles: Dict[str, Any]) -> None:
+        """Vypočítá 4 sumarizační hodnoty pro dashboard.
+
+        Výstup do self._consumption_summary:
+        - planned_consumption_today: kWh od teď do půlnoci
+        - planned_consumption_tomorrow: kWh celý zítřek
+        - profile_today: lidsky čitelný popis profilu
+        - profile_tomorrow: lidsky čitelný popis profilu
+        """
+        if not adaptive_profiles or not isinstance(adaptive_profiles, dict):
+            self._consumption_summary = {}
+            return
+
+        # 1. Plánovaná spotřeba DNES (od current_hour do půlnoci)
+        today_profile = adaptive_profiles.get("today_profile")
+        current_hour = datetime.now().hour
+        planned_today = 0.0
+
+        if today_profile and isinstance(today_profile, dict):
+            hourly = today_profile.get("hourly_consumption", [])
+            if isinstance(hourly, list):
+                for hour in range(current_hour, 24):
+                    if hour < len(hourly):
+                        planned_today += hourly[hour]
+            elif isinstance(hourly, dict):
+                for hour in range(current_hour, 24):
+                    planned_today += hourly.get(hour, 0.0)
+
+        # 2. Plánovaná spotřeba ZÍTRA (celý den 0-23)
+        tomorrow_profile = adaptive_profiles.get("tomorrow_profile")
+        planned_tomorrow = 0.0
+
+        if tomorrow_profile and isinstance(tomorrow_profile, dict):
+            hourly = tomorrow_profile.get("hourly_consumption", [])
+            if isinstance(hourly, list):
+                planned_tomorrow = sum(
+                    hourly[h] if h < len(hourly) else 0.0 for h in range(24)
+                )
+            elif isinstance(hourly, dict):
+                planned_tomorrow = sum(hourly.get(h, 0.0) for h in range(24))
+
+        # 3. Formátované popisy profilů
+        profile_today_text = self._format_profile_description(today_profile)
+        profile_tomorrow_text = self._format_profile_description(tomorrow_profile)
+
+        # Uložit
+        self._consumption_summary = {
+            "planned_consumption_today": round(planned_today, 1),
+            "planned_consumption_tomorrow": round(planned_tomorrow, 1),
+            "profile_today": profile_today_text,
+            "profile_tomorrow": profile_tomorrow_text,
+        }
+
+        _LOGGER.debug(
+            f"Consumption summary: today={planned_today:.1f}kWh, "
+            f"tomorrow={planned_tomorrow:.1f}kWh"
+        )
+
+    def _format_profile_description(self, profile: Optional[Dict[str, Any]]) -> str:
+        """Vrátí lidsky čitelný popis profilu.
+
+        Příklad: "Páteční večer (zimní, 15 podobných dnů)"
+        """
+        if not profile or not isinstance(profile, dict):
+            return "Žádný profil"
+
+        # Získat název z profile["ui"]["name"]
+        ui = profile.get("ui", {})
+        description = ui.get("name", "Neznámý profil")
+
+        # Získat season z profile["characteristics"]["season"]
+        characteristics = profile.get("characteristics", {})
+        season = characteristics.get("season", "")
+
+        # Počet dnů z profile["sample_count"]
+        day_count = profile.get("sample_count", 0)
+
+        # České názvy ročních období
+        season_names = {
+            "winter": "zimní",
+            "spring": "jarní",
+            "summer": "letní",
+            "autumn": "podzimní",
+        }
+        season_cz = season_names.get(season, season)
+
+        # Formát: "Popis (season, X podobných dnů)"
+        if season and day_count > 0:
+            return f"{description} ({season_cz}, {day_count} podobných dnů)"
+        elif season:
+            return f"{description} ({season_cz})"
+        else:
+            return description
+
     def _process_adaptive_consumption_for_dashboard(
         self, adaptive_profiles: Optional[Dict[str, Any]]
     ) -> None:
@@ -1339,7 +1436,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         - profile_details: season, day_count, shoda
         - charging_cost_today: celková cena za nabíjení dnes
         """
-        if not adaptive_profiles:
+        # Check if adaptive_profiles is valid Dict (not list or None)
+        if not adaptive_profiles or not isinstance(adaptive_profiles, dict):
+            _LOGGER.debug(
+                f"No adaptive profiles for dashboard: type={type(adaptive_profiles)}"
+            )
             self._adaptive_consumption_data = {}
             return
 
@@ -1351,8 +1452,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         today_profile = adaptive_profiles.get("today_profile")
         if today_profile and "hourly_consumption" in today_profile:
             hourly = today_profile["hourly_consumption"]
-            for hour in range(current_hour, 24):
-                remaining_kwh += hourly.get(hour, 0.0)
+            if isinstance(hourly, list):
+                for hour in range(current_hour, 24):
+                    if hour < len(hourly):
+                        remaining_kwh += hourly[hour]
+            elif isinstance(hourly, dict):
+                for hour in range(current_hour, 24):
+                    remaining_kwh += hourly.get(hour, 0.0)
 
         # 2. Profil název a detaily
         profile_name = adaptive_profiles.get("profile_name", "Neznámý profil")
@@ -1470,7 +1576,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return None
 
     def _get_profiles_from_sensor(self) -> Dict[str, Any]:
-        """Načte profily z adaptive sensor."""
+        """Načte profily z adaptive sensor a převede list na dict."""
         try:
             profiles_sensor = f"sensor.oig_{self._box_id}_adaptive_load_profiles"
 
@@ -1481,7 +1587,20 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             if not profiles_state:
                 return {}
 
-            return profiles_state.attributes.get("profiles", {})
+            profiles_list = profiles_state.attributes.get("profiles", [])
+
+            # Převést list na dict s profile_id jako klíčem
+            if isinstance(profiles_list, list):
+                return {
+                    p.get("profile_id", f"profile_{i}"): p
+                    for i, p in enumerate(profiles_list)
+                }
+            elif isinstance(profiles_list, dict):
+                return profiles_list
+            else:
+                _LOGGER.warning(f"Unexpected profiles type: {type(profiles_list)}")
+                return {}
+
         except Exception as e:
             _LOGGER.debug(f"Error getting profiles: {e}")
             return {}

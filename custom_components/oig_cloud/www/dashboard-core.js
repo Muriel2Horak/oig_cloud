@@ -6759,7 +6759,7 @@ async function updateBatteryEfficiencyStats() {
 /**
  * Create mini chart showing battery efficiency trend
  */
-function createBatteryEfficiencyChart(currentEff, lastEff) {
+function createBatteryEfficiencyChart(lastMonthEff, currentMonthEff) {
     const canvas = document.getElementById('battery-efficiency-chart');
     if (!canvas) return;
 
@@ -6774,13 +6774,15 @@ function createBatteryEfficiencyChart(currentEff, lastEff) {
     const data = [];
     const labels = [];
 
-    if (lastEff !== null && lastEff !== undefined) {
-        data.push(lastEff);
-        labels.push('Minulý');
-    }
+    // Last month first (left side)
+    data.push(lastMonthEff);
+    labels.push('Minulý');
 
-    data.push(currentEff);
-    labels.push('Tento');
+    // Current month second (right side) - only if available
+    if (currentMonthEff !== null && currentMonthEff !== undefined) {
+        data.push(currentMonthEff);
+        labels.push('Tento');
+    }
 
     window.batteryEfficiencyMiniChart = new Chart(ctx, {
         type: 'line',
@@ -6830,7 +6832,7 @@ function createBatteryEfficiencyChart(currentEff, lastEff) {
 
 /**
  * Update planned consumption statistics on Pricing tab
- * Reads pre-calculated data from battery_forecast.attributes.adaptive_consumption
+ * Reads pre-calculated data from battery_forecast attributes
  */
 async function updatePlannedConsumptionStats() {
     const hass = getHass();
@@ -6842,37 +6844,80 @@ async function updatePlannedConsumptionStats() {
     // Check if sensor is available
     if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
         console.log('[Planned Consumption] Battery forecast sensor not available:', forecastSensorId);
-        updateElementIfChanged('planned-consumption-main', '--', 'planned-cons-main');
-        updateElementIfChanged('consumption-profile-name', 'Čekám na data...', 'profile-name');
-        updateElementIfChanged('consumption-profile-details', '', 'profile-details');
-        updateElementIfChanged('charging-cost-value', '--', 'charging-cost');
+        updateElementIfChanged('planned-consumption-today', '--', 'planned-today');
+        updateElementIfChanged('consumption-profile-today', 'Čekám na data...', 'profile-today');
+        updateElementIfChanged('planned-consumption-tomorrow', '--', 'planned-tomorrow');
+        updateElementIfChanged('consumption-profile-tomorrow', 'Čekám na data...', 'profile-tomorrow');
         return;
     }
 
-    // Get pre-calculated adaptive consumption data from battery_forecast
-    const forecastAttrs = forecastSensor.attributes || {};
-    const adaptiveData = forecastAttrs.adaptive_consumption || {};
+    // Get pre-calculated consumption data from battery_forecast attributes
+    const attrs = forecastSensor.attributes || {};
 
-    // Display data (already calculated in Python)
-    const remainingKwh = adaptiveData.remaining_kwh;
-    const profileName = adaptiveData.profile_name;
-    const profileDetails = adaptiveData.profile_details;
-    const chargingCost = adaptiveData.charging_cost_today;
+    // Display data (already calculated in Python) - načítáme přímo z root atributů
+    const todayKwh = attrs.planned_consumption_today;
+    const tomorrowKwh = attrs.planned_consumption_tomorrow;
+    const profileToday = attrs.profile_today;
+    const profileTomorrow = attrs.profile_tomorrow;
 
-    // Update UI
-    if (remainingKwh !== null && remainingKwh !== undefined) {
-        updateElementIfChanged('planned-consumption-main', `${remainingKwh.toFixed(1)} kWh`, 'planned-cons-main');
+    // Update UI - Dnešek
+    if (todayKwh !== null && todayKwh !== undefined) {
+        updateElementIfChanged('planned-consumption-today', `${todayKwh.toFixed(1)} kWh`, 'planned-today');
     } else {
-        updateElementIfChanged('planned-consumption-main', '--', 'planned-cons-main');
+        updateElementIfChanged('planned-consumption-today', '--', 'planned-today');
     }
+    updateElementIfChanged('consumption-profile-today', profileToday || 'Neznámý profil', 'profile-today');
 
-    updateElementIfChanged('consumption-profile-name', profileName || 'Žádný profil', 'profile-name');
-    updateElementIfChanged('consumption-profile-details', profileDetails || '', 'profile-details');
-
-    if (chargingCost !== null && chargingCost !== undefined && chargingCost > 0) {
-        updateElementIfChanged('charging-cost-value', `${chargingCost.toFixed(0)} Kč`, 'charging-cost');
+    // Update UI - Zítřek
+    if (tomorrowKwh !== null && tomorrowKwh !== undefined) {
+        updateElementIfChanged('planned-consumption-tomorrow', `${tomorrowKwh.toFixed(1)} kWh`, 'planned-tomorrow');
     } else {
-        updateElementIfChanged('charging-cost-value', '--', 'charging-cost');
+        updateElementIfChanged('planned-consumption-tomorrow', '--', 'planned-tomorrow');
+    }
+    updateElementIfChanged('consumption-profile-tomorrow', profileTomorrow || 'Neznámý profil', 'profile-tomorrow');
+
+    // Draw trend chart (Dnes vs Zítřek)
+    const canvas = document.getElementById('planned-consumption-chart');
+    if (canvas && todayKwh !== null && todayKwh !== undefined && tomorrowKwh !== null && tomorrowKwh !== undefined) {
+        const ctx = canvas.getContext('2d');
+        const width = canvas.offsetWidth;
+        const height = 40;
+        canvas.width = width;
+        canvas.height = height;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Data points: [Dnes, Zítřek]
+        const values = [todayKwh, tomorrowKwh];
+        const maxValue = Math.max(...values) * 1.1; // 10% padding
+
+        // Draw line chart
+        ctx.beginPath();
+        ctx.strokeStyle = '#2196F3';
+        ctx.lineWidth = 2;
+
+        const xStep = width / (values.length - 1);
+        values.forEach((value, index) => {
+            const x = index * xStep;
+            const y = height - (value / maxValue * height);
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+
+        // Draw points
+        values.forEach((value, index) => {
+            const x = index * xStep;
+            const y = height - (value / maxValue * height);
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = '#2196F3';
+            ctx.fill();
+        });
     }
 }
 
