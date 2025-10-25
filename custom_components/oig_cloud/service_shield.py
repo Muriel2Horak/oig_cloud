@@ -2015,9 +2015,14 @@ class ModeTransitionTracker:
         scenario_key = f"{from_mode}→{to_mode}"
         stats = self.get_statistics()
 
-        if scenario_key in stats and stats[scenario_key]["samples"] >= 5:
-            # Použít 95. percentil pokud máme dost vzorků
-            return stats[scenario_key]["p95_seconds"]
+        if scenario_key in stats and stats[scenario_key]["samples"] >= 2:
+            # Použít 95. percentil pokud máme alespoň 2 vzorky
+            offset = stats[scenario_key]["p95_seconds"]
+            self._logger.debug(
+                f"[ModeTracker] Using offset for {scenario_key}: {offset}s "
+                f"(samples={stats[scenario_key]['samples']})"
+            )
+            return offset
 
         # Fallback: 10 sekund
         self._logger.debug(

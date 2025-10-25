@@ -1327,6 +1327,10 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         if state_class:
             self._attr_state_class = SensorStateClass(state_class)
 
+        # Cache pro offsety (aby se nelogoval pokaždé)
+        self._last_offset_start = None
+        self._last_offset_end = None
+
     def _calculate_charging_intervals(
         self,
     ) -> tuple[List[Dict[str, Any]], float, float]:
@@ -1485,44 +1489,52 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
             # OPRAVA: Použít self.hass z CoordinatorEntity
             if not self.hass:
-                _LOGGER.debug("[BatteryForecast] hass not available for dynamic offset")
+                _LOGGER.warning(
+                    f"[BatteryForecast] hass not available for offset {from_mode}→{to_mode}, using fallback 300s"
+                )
                 return 300.0  # Fallback 5 minut
 
             # Získat config_entry přes coordinator
             config_entry = self.coordinator.config_entry
             if not config_entry:
-                _LOGGER.debug("[BatteryForecast] No config_entry for dynamic offset")
+                _LOGGER.warning(
+                    f"[BatteryForecast] No config_entry for offset {from_mode}→{to_mode}, using fallback 300s"
+                )
                 return 300.0
 
             entry_data = self.hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
             if not entry_data:
-                _LOGGER.debug("[BatteryForecast] No entry data for dynamic offset")
+                _LOGGER.warning(
+                    f"[BatteryForecast] No entry data for offset {from_mode}→{to_mode}, using fallback 300s"
+                )
                 return 300.0
 
             service_shield = entry_data.get("service_shield")
             if not service_shield or not hasattr(service_shield, "mode_tracker"):
-                _LOGGER.debug(
-                    "[BatteryForecast] ServiceShield or mode_tracker not available"
+                _LOGGER.warning(
+                    f"[BatteryForecast] ServiceShield or mode_tracker not available for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0
 
             mode_tracker = service_shield.mode_tracker
             if not mode_tracker:
-                _LOGGER.debug("[BatteryForecast] Mode tracker not initialized")
+                _LOGGER.warning(
+                    f"[BatteryForecast] Mode tracker not initialized for offset {from_mode}→{to_mode}, using fallback 300s"
+                )
                 return 300.0
 
             # Získat doporučený offset
             offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
 
-            _LOGGER.debug(
-                f"[BatteryForecast] Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s"
+            _LOGGER.info(
+                f"[BatteryForecast] ✅ Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s (from tracker)"
             )
 
             return offset_seconds
 
         except Exception as e:
-            _LOGGER.debug(
-                f"[BatteryForecast] Error getting dynamic offset, using fallback: {e}"
+            _LOGGER.warning(
+                f"[BatteryForecast] Error getting offset {from_mode}→{to_mode}, using fallback 300s: {e}"
             )
             return 300.0  # Fallback 5 minut
 
@@ -1537,6 +1549,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         # Získat dynamické offsety z ModeTransitionTracker
         offset_before_start_seconds = self._get_dynamic_offset("Home 1", "Home UPS")
         offset_before_end_seconds = self._get_dynamic_offset("Home UPS", "Home 1")
+
+        # Logovat jen při změně offsetů
+        if (
+            self._last_offset_start != offset_before_start_seconds
+            or self._last_offset_end != offset_before_end_seconds
+        ):
+            _LOGGER.info(
+                f"[GridChargingPlan] Offset changed: Home 1→Home UPS: {offset_before_start_seconds}s, "
+                f"Home UPS→Home 1: {offset_before_end_seconds}s"
+            )
+            self._last_offset_start = offset_before_start_seconds
+            self._last_offset_end = offset_before_end_seconds
 
         offset_before_start = timedelta(seconds=offset_before_start_seconds)
         offset_before_end = timedelta(seconds=offset_before_end_seconds)
