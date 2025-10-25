@@ -3159,7 +3159,6 @@ async function loadNodeDetails() {
         await updateGridChargingPlan();
 
         // === GRID DETAILS ===
-        const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
         const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
         const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
         const gridFreq = await getSensor(getSensorId('ac_in_aci_f')); // OPRAVENO: správný senzor
@@ -3169,7 +3168,6 @@ async function loadNodeDetails() {
         const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
         const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
         const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
-        const gridPower = gridPowerData.value || 0;
 
         // Grid pricing sensors
         const spotPrice = await getSensor(getSensorId('spot_price_current_15min'));
@@ -3196,6 +3194,67 @@ async function loadNodeDetails() {
             tariffDisplay = '🌙 NT'; // Nízký tarif - měsíc
         }
         updateElementIfChanged('grid-tariff-indicator', tariffDisplay);
+
+        // Update grid box color and icons based on power flow direction AND spot price
+        const gridBox = document.getElementById('grid-box');
+        const gridIcon = document.getElementById('grid-icon');  // Velká ikona - směr toku
+        const gridPriceIcon = document.getElementById('grid-price-icon');  // Malá ikona - cenový indikátor
+        const price = spotPrice.value || 0;
+        const isImporting = gridPower > 10;  // Import ze sítě (tolerance 10W pro šum)
+        const isExporting = gridPower < -10; // Export do sítě
+        
+        gridBox.classList.remove('price-cheap', 'price-normal', 'price-expensive', 'grid-exporting');
+        gridIcon.classList.remove('price-icon-cheap', 'price-icon-expensive', 'price-icon-normal');
+        if (gridPriceIcon) {
+            gridPriceIcon.classList.remove('price-icon-cheap', 'price-icon-expensive', 'price-icon-normal');
+        }
+
+        // 1️⃣ Nastavit HLAVNÍ IKONU podle směru toku
+        if (isExporting) {
+            // EXPORT DO SÍTĚ - šipka nahoru, zelená
+            gridBox.classList.add('grid-exporting');
+            gridIcon.classList.add('price-icon-cheap');
+            gridIcon.textContent = '⬆️';
+            gridIcon.title = `Export do sítě: ${Math.abs(gridPower).toFixed(0)}W - prodáváme elektřinu!`;
+        } else if (isImporting) {
+            // IMPORT ZE SÍTĚ - šipka dolů
+            gridIcon.textContent = '⬇️';
+            gridIcon.title = `Import ze sítě: ${gridPower.toFixed(0)}W`;
+        } else {
+            // Žádný tok - zástrčka
+            gridIcon.textContent = '🔌';
+            gridIcon.title = 'Síť - bez toku energie';
+        }
+
+        // 2️⃣ Nastavit CENOVÝ INDIKÁTOR (malá ikona) + barvu boxu
+        if (price < 3) {
+            // Levná elektřina - zelené srdce
+            gridBox.classList.add('price-cheap');
+            gridIcon.classList.add('price-icon-cheap');
+            if (gridPriceIcon) {
+                gridPriceIcon.classList.add('price-icon-cheap');
+                gridPriceIcon.textContent = '💚';
+                gridPriceIcon.title = `Levná elektřina: ${price.toFixed(2)} Kč/kWh - výhodné!`;
+            }
+        } else if (price >= 3 && price <= 5) {
+            // Normální cena - oranžový kosočtverec
+            gridBox.classList.add('price-normal');
+            gridIcon.classList.add('price-icon-normal');
+            if (gridPriceIcon) {
+                gridPriceIcon.classList.add('price-icon-normal');
+                gridPriceIcon.textContent = '🔶';
+                gridPriceIcon.title = `Běžná cena: ${price.toFixed(2)} Kč/kWh`;
+            }
+        } else {
+            // Drahá elektřina - peníze s varováním
+            gridBox.classList.add('price-expensive');
+            gridIcon.classList.add('price-icon-expensive');
+            if (gridPriceIcon) {
+                gridPriceIcon.classList.add('price-icon-expensive');
+                gridPriceIcon.textContent = '�';
+                gridPriceIcon.title = `Drahá elektřina: ${price.toFixed(2)} Kč/kWh - POZOR!`;
+            }
+        }
 
         updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
         updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
@@ -5025,12 +5084,12 @@ function loadPricingData() {
             });
 
             // DEBUG: Zkontrolovat první a poslední timestamp
-            // if (prices.length > 0) {
-            //     console.log('[Pricing] Raw first timestamp:', prices[0].timestamp);
-            //     console.log('[Pricing] Parsed first label:', allLabels[0]);
-            //     console.log('[Pricing] Raw last timestamp:', prices[prices.length - 1].timestamp);
-            //     console.log('[Pricing] Parsed last label:', allLabels[allLabels.length - 1]);
-            // }
+            if (prices.length > 0) {
+                console.log('[Pricing] Raw first timestamp:', prices[0].timestamp);
+                console.log('[Pricing] Parsed first label:', allLabels[0]);
+                console.log('[Pricing] Raw last timestamp:', prices[prices.length - 1].timestamp);
+                console.log('[Pricing] Parsed last label:', allLabels[allLabels.length - 1]);
+            }
 
             // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
@@ -5341,7 +5400,7 @@ function loadPricingData() {
     const batteryForecastEntityId = findShieldSensorId('battery_forecast');
     const batteryForecastSensor = hass.states[batteryForecastEntityId];
 
-    // console.log('[Pricing] Battery forecast sensor:', batteryForecastEntityId, batteryForecastSensor ? 'FOUND' : 'NOT FOUND');
+    console.log('[Pricing] Battery forecast sensor:', batteryForecastEntityId, batteryForecastSensor ? 'FOUND' : 'NOT FOUND');
 
     // Uchovej timeline rozsah pro výchozí zoom grafu
     let initialZoomStart = null;
@@ -5349,7 +5408,7 @@ function loadPricingData() {
 
     if (batteryForecastSensor && batteryForecastSensor.attributes && spotSensor && spotSensor.attributes) {
         const timelineData = batteryForecastSensor.attributes.timeline_data || [];
-        // console.log('[Pricing] Timeline data length:', timelineData.length);
+        console.log('[Pricing] Timeline data length:', timelineData.length);
         const maxCapacityKwh = batteryForecastSensor.attributes.max_capacity_kwh || 10;
         const minCapacityKwh = batteryForecastSensor.attributes.min_capacity_kwh || 0;
         const prices = spotSensor.attributes.prices || []; // Original ISO timestamps
@@ -5359,7 +5418,7 @@ function loadPricingData() {
             const timelineTimestamps = timelineData.map(t => new Date(t.timestamp));
             initialZoomStart = timelineTimestamps[0].getTime();
             initialZoomEnd = timelineTimestamps[timelineTimestamps.length - 1].getTime();
-            // console.log('[Pricing] Timeline range for initial zoom:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
+            console.log('[Pricing] Timeline range for initial zoom:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
 
             // EXTEND allLabels with battery forecast timestamps (union)
             const batteryTimestamps = timelineTimestamps;
@@ -5499,10 +5558,10 @@ function loadPricingData() {
         const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
         const datasetsChanged = combinedChart.data.datasets.length !== datasets.length;
 
-        // console.log('[Pricing] Updating EXISTING chart - labelsChanged:', labelsChanged, 'datasetsChanged:', datasetsChanged);
-        // if (allLabels.length > 0) {
-        //     console.log('[Pricing] Update - First label:', allLabels[0], 'Last:', allLabels[allLabels.length - 1]);
-        // }
+        console.log('[Pricing] Updating EXISTING chart - labelsChanged:', labelsChanged, 'datasetsChanged:', datasetsChanged);
+        if (allLabels.length > 0) {
+            console.log('[Pricing] Update - First label:', allLabels[0], 'Last:', allLabels[allLabels.length - 1]);
+        }
 
         if (labelsChanged) {
             combinedChart.data.labels = allLabels;
@@ -5528,13 +5587,13 @@ function loadPricingData() {
         }
     } else {
         // DETAILNÍ DEBUG PRO ANALÝZU PROBLÉMU S ČASOVOU OSOU
-        // console.log('[Pricing] Creating NEW chart with', allLabels.length, 'labels');
-        // if (allLabels.length > 0) {
-        //     console.log('[Pricing] First label:', allLabels[0]);
-        //     console.log('[Pricing] Last label:', allLabels[allLabels.length - 1]);
-        //     console.log('[Pricing] Current time:', new Date());
-        //     console.log('[Pricing] Time offset (hours):', (new Date() - allLabels[0]) / (1000 * 60 * 60));
-        // }
+        console.log('[Pricing] Creating NEW chart with', allLabels.length, 'labels');
+        if (allLabels.length > 0) {
+            console.log('[Pricing] First label:', allLabels[0]);
+            console.log('[Pricing] Last label:', allLabels[allLabels.length - 1]);
+            console.log('[Pricing] Current time:', new Date());
+            console.log('[Pricing] Time offset (hours):', (new Date() - allLabels[0]) / (1000 * 60 * 60));
+        }
 
         combinedChart = new Chart(ctx, {
             type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
@@ -5745,7 +5804,7 @@ function loadPricingData() {
                 combinedChart.options.scales.x.max = initialZoomEnd;
                 combinedChart.update('none'); // Aplikovat okamžitě bez animace
 
-                // console.log('[Pricing] Initial zoom applied after first render:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
+                console.log('[Pricing] Initial zoom applied after first render:', new Date(initialZoomStart), 'to', new Date(initialZoomEnd));
                 updateChartDetailLevel(combinedChart);
             });
         }

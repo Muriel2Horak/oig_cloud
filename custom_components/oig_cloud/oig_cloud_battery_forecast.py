@@ -79,6 +79,8 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Timeline data cache
         self._timeline_data: List[Dict[str, Any]] = []
         self._last_update: Optional[datetime] = None
+        self._charging_metrics: Dict[str, Any] = {}
+        self._first_update: bool = True  # Flag pro první update (setup)
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA."""
@@ -117,7 +119,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # HA databáze má limit 16KB na atributy
         # Timeline s 135 body (každý ~120 bytes) = ~16KB
         # Vrátíme CELOU timeline pro dashboard, ale s kompaktním formátem
-        return {
+        attrs = {
             "timeline_data": self._timeline_data,  # Celá timeline pro chart
             "calculation_time": (
                 self._last_update.isoformat() if self._last_update else None
@@ -126,6 +128,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             "max_capacity_kwh": self._get_max_battery_capacity(),
             "min_capacity_kwh": self._get_min_battery_capacity(),
         }
+
+        # Přidat metriky nabíjení pokud existují
+        if hasattr(self, "_charging_metrics") and self._charging_metrics:
+            attrs.update(self._charging_metrics)
+
+        return attrs
 
     async def async_update(self) -> None:
         """Update sensor data."""
@@ -173,6 +181,10 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug(
                 f"Battery forecast updated: {len(self._timeline_data)} points"
             )
+
+            # Označit že první update proběhl
+            if self._first_update:
+                self._first_update = False
 
             # KRITICKÉ: Uložit timeline zpět do coordinator.data aby grid_charging_planned sensor viděl aktuální data
             if hasattr(self.coordinator, "battery_forecast_data"):
@@ -249,16 +261,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     f"load={load_kwh:.3f}, grid={grid_kwh:.3f}"
                 )
 
-            # DŮLEŽITÁ LOGIKA: Solár primárně snižuje spotřebu, až přebytek jde do baterie
-            # solar_charge_kwh = max(0, solar_production - consumption)
-            # Toto je čistý přírůstek do baterie ze soláru
+            # DŮLEŽITÁ LOGIKA:
+            # - Když solar >= load: přebytek nabíjí baterii
+            # - Když solar < load: deficit vybíjí baterii (pokud grid nedobíjí)
+            # net_energy = (solar - consumption) + grid_charging
+            net_energy = solar_kwh - load_kwh + grid_kwh
+
+            # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
             solar_to_battery = max(0, solar_kwh - load_kwh)
 
-            # Výpočet změny kapacity za 15 minut
-            # battery_kwh = předchozí + solar_to_battery + grid - 0 (spotřeba už odečtena v solar_to_battery)
-            # POZOR: Původní výpočet byl: battery_kwh + solar + grid - load
-            # Ale to počítá spotřebu 2x! Správně:
-            battery_kwh = battery_kwh + solar_to_battery + grid_kwh
+            # Výpočet nové kapacity baterie
+            battery_kwh = battery_kwh + net_energy
 
             # Clamp jen na maximum, NE na minimum
             # (Chceme vidět pokles pod minimum aby grid charging algoritmus reagoval)
@@ -349,11 +362,17 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
 
-        # Retry logika: max 3 pokusy s 2s čekáním
+        # Retry logika: při prvním volání (setup) použít kratší timeout
         import asyncio
 
-        max_retries = 3
-        retry_delay = 2.0
+        if self._first_update:
+            # První update (setup) - rychlé timeout aby nepřekročili 10s
+            max_retries = 1
+            retry_delay = 0.5
+        else:
+            # Následné updaty - normální timeout
+            max_retries = 3
+            retry_delay = 2.0
 
         for attempt in range(max_retries):
             state = self._hass.states.get(sensor_id)
@@ -605,8 +624,8 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """
         if not load_avg_sensors:
             if not hasattr(self, "_empty_load_sensors_logged"):
-                _LOGGER.warning(
-                    "load_avg_sensors dictionary is empty - no statistics sensors available"
+                _LOGGER.debug(
+                    "load_avg_sensors dictionary is empty - using fallback 500W (statistics sensors may not be available yet)"
                 )
                 self._empty_load_sensors_logged = True
             return 0.125  # 500W fallback
@@ -653,7 +672,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # FALLBACK: Pokud jsou data 0 (ještě se nesebrala), použít 500W jako rozumný default
                 if watts == 0:
                     watts = 500.0  # 500W = rozumná průměrná spotřeba domácnosti
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"No consumption data yet for {timestamp.strftime('%H:%M')}, using fallback: 500W"
                     )
 
@@ -666,7 +685,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 return kwh_per_15min
 
         # Žádný senzor nenalezen - použít fallback 500W
-        _LOGGER.warning(
+        _LOGGER.debug(
             f"No load_avg sensor found for {timestamp.strftime('%H:%M')} ({day_type}), "
             f"searched {len(load_avg_sensors)} sensors - using fallback 500W"
         )
@@ -889,18 +908,24 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         iteration = 0
         used_intervals = set()  # Sledovat použité intervaly
 
+        # Vypočítat effective_target (pro 100% target použít 99%)
+        effective_target = target_capacity
+        if target_capacity >= max_capacity * 0.99:
+            effective_target = max_capacity * 0.99
+
         while iteration < max_iterations:
             # Zkontrolovat aktuální stav na konci
             current_final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
 
-            if current_final_capacity >= target_capacity:
+            if current_final_capacity >= effective_target:
                 _LOGGER.info(
-                    f"Target capacity achieved: {current_final_capacity:.2f}kWh >= {target_capacity:.2f}kWh"
+                    f"Target capacity achieved: {current_final_capacity:.2f}kWh >= {effective_target:.2f}kWh "
+                    f"(original target: {target_capacity:.2f}kWh)"
                 )
                 break
 
             # Potřebujeme více energie
-            shortage = target_capacity - current_final_capacity
+            shortage = effective_target - current_final_capacity
 
             # DŮLEŽITÉ: Přestavět seznam kandidátů s aktuálními kapacitami
             charging_candidates = []
@@ -966,6 +991,24 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         if iteration >= max_iterations:
             _LOGGER.warning("Reached max iterations in smart charging plan")
+
+        # Zkontrolovat finální stav a uložit metriky pro dashboard
+        final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
+        target_achieved = final_capacity >= effective_target
+        min_achieved = final_capacity >= min_capacity
+
+        # Uložit metriky pro pozdější použití v extra_state_attributes
+        self._charging_metrics = {
+            "target_capacity_kwh": target_capacity,
+            "effective_target_kwh": effective_target,
+            "final_capacity_kwh": final_capacity,
+            "min_capacity_kwh": min_capacity,
+            "target_achieved": target_achieved,
+            "min_achieved": min_achieved,
+            "shortage_kwh": (
+                max(0, effective_target - final_capacity) if not target_achieved else 0
+            ),
+        }
 
         return timeline
 
