@@ -704,9 +704,51 @@
 
             <div class="chart-container" style="height: 520px;">
                 <div class="chart-title">
-                    � Ceny elektřiny & Předpovědi
+                    📊 Ceny elektřiny & Předpovědi
                 </div>
                 <div class="chart-wrapper"><canvas id="combined-chart"></canvas></div>
+            </div>
+
+            <!-- Battery Efficiency Statistics -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-top: 20px;">
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
+                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">� Efektivita baterie</div>
+                    <div class="stat-value" id="battery-efficiency-main" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                    <div id="battery-efficiency-trend"
+                        style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
+                        --</div>
+                    <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>⚡ Nabito:</span>
+                            <span id="battery-charge-value" style="color: var(--text-primary);">--</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>🔌 Vybito:</span>
+                            <span id="battery-discharge-value" style="color: var(--text-primary);">--</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>📉 Ztráty:</span>
+                            <span id="battery-losses-value" style="color: #FF5722; font-weight: 600;">--</span>
+                        </div>
+                    </div>
+                    <canvas id="battery-efficiency-chart"
+                        style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
+                </div>
+
+                <!-- Placeholder for future stats cards -->
+                <div class="stat-card" style="opacity: 0.3; min-height: 160px;">
+                    <div class="stat-label">📊 Další statistika</div>
+                    <div class="stat-value" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                </div>
+                <div class="stat-card" style="opacity: 0.3; min-height: 160px;">
+                    <div class="stat-label">📊 Další statistika</div>
+                    <div class="stat-value" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                </div>
+                <div class="stat-card" style="opacity: 0.3; min-height: 160px;">
+                    <div class="stat-label">📊 Další statistika</div>
+                    <div class="stat-value" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                </div>
             </div>
         </div>
         <!-- End Pricing Tab -->

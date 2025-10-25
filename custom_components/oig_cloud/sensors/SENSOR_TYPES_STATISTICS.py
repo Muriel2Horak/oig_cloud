@@ -310,4 +310,16 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "entity_category": None,  # Hlavní senzor, ne diagnostic
         "description": "Indikátor plánovaného nabíjení baterie ze sítě (on/off). Atributy obsahují intervaly nabíjení, celkovou energii (kWh) a cenu (Kč).",
     },
+    "battery_efficiency": {
+        "name": "Battery Efficiency",
+        "name_cs": "Efektivita baterie (měsíc)",
+        "unit": PERCENTAGE,
+        "icon": "mdi:battery-sync",
+        "device_class": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "battery_efficiency",
+        "device_mapping": "analytics",
+        "entity_category": None,
+        "description": "Round-trip efektivita baterie za minulý kompletní měsíc (%). Atributy obsahují průběžná data aktuálního měsíce a detailní metriky.",
+    },
 }

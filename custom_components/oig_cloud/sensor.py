@@ -91,6 +91,12 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         ):
             expected.add(sensor_type)
 
+        # Battery efficiency sensors (volitelné, společně s battery_prediction)
+        elif category == "battery_efficiency" and entry.options.get(
+            "enable_battery_prediction", False
+        ):
+            expected.add(sensor_type)
+
         # Pricing sensors (volitelné)
         elif category == "pricing" and entry.options.get("enable_pricing", False):
             expected.add(sensor_type)
@@ -866,6 +872,36 @@ async def async_setup_entry(
                         async_add_entities(grid_charging_sensors, True)
                 except Exception as e:
                     _LOGGER.error(f"Error creating grid charging plan sensors: {e}")
+
+                # Přidat také battery efficiency sensor
+                try:
+                    from .oig_cloud_battery_forecast import (
+                        OigCloudBatteryEfficiencySensor,
+                    )
+
+                    efficiency_sensors: List[Any] = []
+
+                    for sensor_type, config in SENSOR_TYPES.items():
+                        if config.get("sensor_type_category") == "battery_efficiency":
+                            sensor = OigCloudBatteryEfficiencySensor(
+                                coordinator,
+                                sensor_type,
+                                entry,
+                                analytics_device_info,
+                                hass,
+                            )
+                            efficiency_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Created battery efficiency sensor: {sensor_type}"
+                            )
+
+                    if efficiency_sensors:
+                        _LOGGER.info(
+                            f"Registering {len(efficiency_sensors)} battery efficiency sensors"
+                        )
+                        async_add_entities(efficiency_sensors, True)
+                except Exception as e:
+                    _LOGGER.error(f"Error creating battery efficiency sensors: {e}")
             else:
                 _LOGGER.debug("No battery prediction sensors found")
         except ImportError as e:

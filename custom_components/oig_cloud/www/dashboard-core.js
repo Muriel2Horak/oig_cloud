@@ -96,6 +96,7 @@ function subscribeToShield() {
                     entityId.includes('box_temp') ||            // Inverter temp
                     entityId.includes('bypass_status') ||       // Bypass status
                     entityId.includes('chmu_warning_level') ||  // ČHMÚ weather warning
+                    entityId.includes('battery_efficiency') ||  // Battery efficiency stats
                     entityId.includes('real_data_update')) {    // Real data update
                     // console.log(`[Data] Sensor changed: ${entityId}`, event.data.new_state?.state);
                     debouncedLoadData(); // Trigger data update immediately (debounced)
@@ -3312,6 +3313,9 @@ async function loadData() {
 
     // Update ČHMÚ weather warning badge
     updateChmuWarningBadge();
+
+    // Update battery efficiency statistics
+    updateBatteryEfficiencyStats();
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -6674,7 +6678,152 @@ function updateChmuWarningBadge() {
     }
 }
 
-// Toggle ČHMÚ warning modal
+/**
+ * Update battery efficiency statistics on Pricing tab
+ * Loads data from battery_efficiency sensor and displays monthly stats
+ */
+async function updateBatteryEfficiencyStats() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
+    const sensor = hass.states[sensorId];
+
+    if (!sensor || sensor.state === 'unavailable' || sensor.state === 'unknown') {
+        console.log('[Battery Efficiency] Sensor not available:', sensorId);
+        return;
+    }
+
+    const attrs = sensor.attributes || {};
+
+    // Current month data (main display)
+    const currentMonthEff = attrs.efficiency_current_month_pct;
+    const currentMonthLossesPct = attrs.losses_current_month_pct;
+    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
+    const currentMonthCharge = attrs.current_month_charge_kwh;
+    const currentMonthDischarge = attrs.current_month_discharge_kwh;
+
+    // Last month data (for comparison)
+    const lastMonthEff = attrs.efficiency_last_month_pct;
+
+    if (currentMonthEff !== null && currentMonthEff !== undefined) {
+        // Main value - current month efficiency
+        updateElementIfChanged('battery-efficiency-main', `${currentMonthEff.toFixed(1)}%`, 'batt-eff-main');
+
+        // Trend comparison with last month
+        if (lastMonthEff !== null && lastMonthEff !== undefined) {
+            const diff = currentMonthEff - lastMonthEff;
+            const diffAbs = Math.abs(diff);
+            let trendText = '';
+            let trendColor = '';
+
+            if (diff > 0.5) {
+                trendText = `↗️ +${diffAbs.toFixed(1)}% oproti minulému`;
+                trendColor = '#4CAF50'; // Green for improvement
+            } else if (diff < -0.5) {
+                trendText = `↘️ -${diffAbs.toFixed(1)}% oproti minulému`;
+                trendColor = '#FF5722'; // Red for decline
+            } else {
+                trendText = `➡️ Stejné jako minulý měsíc`;
+                trendColor = 'var(--text-secondary)';
+            }
+
+            const trendEl = document.getElementById('battery-efficiency-trend');
+            if (trendEl) {
+                trendEl.textContent = trendText;
+                trendEl.style.color = trendColor;
+            }
+        } else {
+            updateElementIfChanged('battery-efficiency-trend', 'První měsíc měření', 'batt-trend');
+        }
+
+        // Detail values
+        updateElementIfChanged('battery-charge-value', `${currentMonthCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
+        updateElementIfChanged('battery-discharge-value', `${currentMonthDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
+        updateElementIfChanged('battery-losses-value', `${currentMonthLossesKwh?.toFixed(1) || '--'} kWh (${currentMonthLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
+
+        // Create mini trend chart (similar to extreme price cards)
+        createBatteryEfficiencyChart(currentMonthEff, lastMonthEff);
+    } else {
+        updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main');
+        updateElementIfChanged('battery-efficiency-trend', 'Čekám na data...', 'batt-trend');
+        updateElementIfChanged('battery-charge-value', '--', 'batt-charge-val');
+        updateElementIfChanged('battery-discharge-value', '--', 'batt-discharge-val');
+        updateElementIfChanged('battery-losses-value', '--', 'batt-loss-val');
+    }
+}
+
+/**
+ * Create mini chart showing battery efficiency trend
+ */
+function createBatteryEfficiencyChart(currentEff, lastEff) {
+    const canvas = document.getElementById('battery-efficiency-chart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+
+    // Destroy existing chart if it exists
+    if (window.batteryEfficiencyMiniChart) {
+        window.batteryEfficiencyMiniChart.destroy();
+    }
+
+    // Create simple trend data (last month -> current month)
+    const data = [];
+    const labels = [];
+
+    if (lastEff !== null && lastEff !== undefined) {
+        data.push(lastEff);
+        labels.push('Minulý');
+    }
+
+    data.push(currentEff);
+    labels.push('Tento');
+
+    window.batteryEfficiencyMiniChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                borderWidth: 2,
+                pointRadius: 3,
+                pointBackgroundColor: '#4CAF50',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        label: function(context) {
+                            return `Efektivita: ${context.parsed.y.toFixed(1)}%`;
+                        }
+                    }
+                },
+                datalabels: { display: false }
+            },
+            scales: {
+                x: { display: false },
+                y: {
+                    display: false,
+                    min: Math.min(...data) - 2,
+                    max: Math.max(...data) + 2
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            }
+        }
+    });
+}// Toggle ČHMÚ warning modal
 function toggleChmuWarningModal() {
     const modal = document.getElementById('chmu-modal');
     if (!modal) return;
