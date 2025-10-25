@@ -15,6 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
 
 from .oig_cloud_data_sensor import OigCloudDataSensor
 
@@ -161,6 +162,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_forecast = self._get_solar_forecast()
             load_avg_sensors = self._get_load_avg_sensors()
 
+            # NOVÉ: Zkusit získat adaptivní profily
+            adaptive_profiles = await self._get_adaptive_load_prediction()
+
             if current_capacity is None or not spot_prices:
                 _LOGGER.info(
                     f"Missing required data for battery forecast: "
@@ -168,7 +172,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 )
                 return
 
-            # Vypočítat timeline
+            # Vypočítat timeline (s adaptive profiles nebo fallback)
             self._timeline_data = self._calculate_timeline(
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
@@ -176,6 +180,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 spot_prices=spot_prices,
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
+                adaptive_profiles=adaptive_profiles,
             )
 
             self._last_update = datetime.now()
@@ -218,6 +223,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         spot_prices: List[Dict[str, Any]],
         solar_forecast: Dict[str, Any],
         load_avg_sensors: Dict[str, Any],
+        adaptive_profiles: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Vypočítat timeline predikce baterie.
@@ -229,6 +235,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             spot_prices: Timeline spotových cen (15min intervaly)
             solar_forecast: Solární předpověď (hodinové hodnoty)
             load_avg_sensors: Load average senzory
+            adaptive_profiles: Dict s profily (today_profile, tomorrow_profile) nebo None pro fallback
 
         Returns:
             List timeline bodů s predikcí
@@ -236,7 +243,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         timeline = []
         battery_kwh = current_capacity
 
+        today = dt_util.now().date()
+
         _LOGGER.debug(f"Starting calculation with capacity={battery_kwh:.2f} kWh")
+
+        # Info o použité metodě predikce
+        if adaptive_profiles:
+            profile_name = adaptive_profiles.get("profile_name", "unknown")
+            _LOGGER.info(f"Using ADAPTIVE profiles: {profile_name}")
+        else:
+            _LOGGER.info("Using FALLBACK load_avg sensors")
 
         for price_point in spot_prices:
             timestamp_str = price_point.get("time")
@@ -249,7 +265,26 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
 
             # Získat load average pro tento čas (kWh za 15min)
-            load_kwh = self._get_load_avg_for_timestamp(timestamp, load_avg_sensors)
+            # ADAPTIVE: Pokud máme adaptive profily, použít je místo load_avg sensors
+            if adaptive_profiles:
+                # Vybrat správný profil (dnes vs zítra)
+                if timestamp.date() == today:
+                    profile = adaptive_profiles["today_profile"]
+                else:
+                    profile = adaptive_profiles.get("tomorrow_profile")
+                    if not profile:
+                        # Fallback na today profile pokud nemáme tomorrow
+                        profile = adaptive_profiles["today_profile"]
+
+                # Získat hodinovou hodnotu z profilu
+                hour = timestamp.hour
+                hourly_kwh = profile["hourly_consumption"][hour]
+
+                # Převést na 15min interval
+                load_kwh = hourly_kwh / 4.0
+            else:
+                # Fallback: load_avg sensors
+                load_kwh = self._get_load_avg_for_timestamp(timestamp, load_avg_sensors)
 
             # Grid charging (prozatím 0, připraveno pro budoucí logiku)
             grid_kwh = 0.0
@@ -1277,6 +1312,342 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # NEPOUŽÍVAT: max(min_capacity, ...) - ať vidíme critical intervals
 
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
+
+    # =========================================================================
+    # ADAPTIVE LOAD PREDICTION v2
+    # =========================================================================
+
+    async def _get_adaptive_load_prediction(self) -> Optional[Dict[str, Any]]:
+        """
+        Najde nejlepší matching profil podle dnešního průběhu.
+
+        Returns:
+            Dict nebo None:
+            {
+                "today_profile": {...},      # Profil pro zbytek dneška
+                "tomorrow_profile": {...},   # Profil pro zítřek (pokud timeline přes půlnoc)
+                "match_score": 87.5,
+                "profile_name": "friday_to_saturday_winter"
+            }
+        """
+        try:
+            # 1. Načíst profily z sensor
+            profiles = self._get_profiles_from_sensor()
+            if not profiles:
+                return None
+
+            # 2. Načíst dnešní spotřebu po hodinách
+            today_hourly = await self._get_today_hourly_consumption()
+            if not today_hourly or len(today_hourly) == 0:
+                _LOGGER.debug("No today consumption data available")
+                return None
+
+            current_time = dt_util.now()
+            current_hour_float = current_time.hour + current_time.minute / 60
+
+            # 3. Najít best matching profil pro DNES
+            best_match = None
+            best_score = 0
+
+            for profile_id, profile in profiles.items():
+                # Porovnat jen hodiny které už proběhly
+                score = self._calculate_profile_similarity(
+                    today_hourly, profile["hourly_consumption"]
+                )
+
+                if score > best_score:
+                    best_score = score
+                    best_match = profile
+
+            if not best_match:
+                _LOGGER.warning("No matching profile found")
+                return None
+
+            profile_name = best_match.get("ui", {}).get(
+                "name", best_match["profile_id"]
+            )
+            _LOGGER.info(
+                f"Using profile '{profile_name}' for today (match: {best_score:.0f}%)"
+            )
+
+            # 4. Určit profil pro ZÍTŘEK (pokud timeline přes půlnoc)
+            tomorrow_profile = self._select_tomorrow_profile(profiles, current_time)
+
+            return {
+                "today_profile": best_match,
+                "tomorrow_profile": tomorrow_profile,
+                "match_score": best_score,
+                "profile_name": profile_name,
+            }
+
+        except Exception as e:
+            _LOGGER.error(f"Error in adaptive load prediction: {e}", exc_info=True)
+            return None
+
+    def _get_profiles_from_sensor(self) -> Dict[str, Any]:
+        """Načte profily z adaptive sensor."""
+        try:
+            profiles_sensor = f"sensor.oig_{self._box_id}_adaptive_load_profiles"
+
+            if not self._hass:
+                return {}
+
+            profiles_state = self._hass.states.get(profiles_sensor)
+            if not profiles_state:
+                return {}
+
+            return profiles_state.attributes.get("profiles", {})
+        except Exception as e:
+            _LOGGER.debug(f"Error getting profiles: {e}")
+            return {}
+
+    async def _get_today_hourly_consumption(self) -> List[float]:
+        """
+        Načte dnešní spotřebu po hodinách (od půlnoci do teď).
+
+        Returns:
+            List hodinových spotřeb v kWh (např. [0.5, 0.4, 0.3, ..., 1.2])
+        """
+        try:
+            consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
+
+            # Načíst ze statistics (hodinové průměry)
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+
+            start_time = dt_util.now().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end_time = dt_util.now()
+
+            stats = await self.hass.async_add_executor_job(
+                statistics_during_period,
+                self.hass,
+                start_time,
+                end_time,
+                {consumption_sensor},
+                "hour",
+                None,
+                {"mean"},
+            )
+
+            if not stats or consumption_sensor not in stats:
+                return []
+
+            hourly_values = []
+            for stat in stats[consumption_sensor]:
+                if stat.get("mean") is not None:
+                    # Statistics jsou ve wattech, převést na kWh/h
+                    kwh = stat["mean"] / 1000
+                    hourly_values.append(kwh)
+
+            return hourly_values
+
+        except Exception as e:
+            _LOGGER.debug(f"Error getting today hourly consumption: {e}")
+            return []
+
+    def _calculate_profile_similarity(
+        self, today_hourly: List[float], profile_hourly: List[float]
+    ) -> float:
+        """
+        Vypočítá podobnost dnešní křivky s profilem (MAPE scoring).
+
+        Returns:
+            float: Score 0-100% (vyšší = lepší match)
+        """
+        if not today_hourly or len(today_hourly) == 0:
+            return 0
+
+        # Porovnat jen hodiny které už proběhly
+        compare_length = min(len(today_hourly), len(profile_hourly))
+
+        total_error = 0
+        valid_hours = 0
+
+        for i in range(compare_length):
+            actual = today_hourly[i]
+            expected = profile_hourly[i]
+
+            if actual > 0:  # Ignore zero hours
+                error = abs(actual - expected) / actual
+                total_error += error
+                valid_hours += 1
+
+        if valid_hours == 0:
+            return 0
+
+        avg_error = total_error / valid_hours
+        score = max(0, 100 - (avg_error * 100))
+
+        return score
+
+    def _select_tomorrow_profile(
+        self, profiles: Dict[str, Any], current_time: datetime
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Vybere profil pro zítřek podle day_type a transition.
+
+        Args:
+            profiles: Všechny dostupné profily
+            current_time: Aktuální čas
+
+        Returns:
+            Profil pro zítřek nebo None
+        """
+        try:
+            tomorrow = current_time + timedelta(days=1)
+            tomorrow_weekday = tomorrow.weekday()
+            today_weekday = current_time.weekday()
+
+            # Určit season pro zítřek
+            month = tomorrow.month
+            if month in [12, 1, 2]:
+                season = "winter"
+            elif month in [3, 4, 5]:
+                season = "spring"
+            elif month in [6, 7, 8]:
+                season = "summer"
+            else:
+                season = "autumn"
+
+            # Detekovat transition
+            transition_type = None
+
+            # Pátek (4) → Sobota (5)
+            if today_weekday == 4 and tomorrow_weekday == 5:
+                transition_type = "friday_to_saturday"
+            # Neděle (6) → Pondělí (0)
+            elif today_weekday == 6 and tomorrow_weekday == 0:
+                transition_type = "sunday_to_monday"
+
+            # 1. Zkusit najít transition profil
+            if transition_type:
+                transition_profile_id = f"{transition_type}_{season}"
+                for profile_id, profile in profiles.items():
+                    if profile_id.startswith(transition_profile_id):
+                        _LOGGER.debug(
+                            f"Using transition profile for tomorrow: {profile_id}"
+                        )
+                        return profile
+
+            # 2. Fallback: standardní profil podle day_type
+            tomorrow_is_weekend = tomorrow_weekday >= 5
+            day_type = "weekend" if tomorrow_is_weekend else "weekday"
+            standard_profile_id = f"{day_type}_{season}"
+
+            best_match = None
+            for profile_id, profile in profiles.items():
+                if profile_id.startswith(standard_profile_id):
+                    # Vezmi první matching profil
+                    if not best_match:
+                        best_match = profile
+                    # Nebo preferuj "typical" level
+                    elif "_typical" in profile_id or len(profile_id.split("_")) == 2:
+                        best_match = profile
+
+            if best_match:
+                _LOGGER.debug(
+                    f"Using standard profile for tomorrow: {day_type}_{season}"
+                )
+
+            return best_match
+
+        except Exception as e:
+            _LOGGER.debug(f"Error selecting tomorrow profile: {e}")
+            return None
+
+    async def _get_consumption_today(self) -> Optional[float]:
+        """Získat celkovou spotřebu dnes od půlnoci do teď."""
+        try:
+            consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
+
+            start_time = dt_util.now().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end_time = dt_util.now()
+
+            # Načíst states z recorderu
+            from homeassistant.components.recorder import history
+
+            states = await self.hass.async_add_executor_job(
+                history.get_significant_states,
+                self.hass,
+                start_time,
+                end_time,
+                [consumption_sensor],
+            )
+
+            if not states or consumption_sensor not in states:
+                return None
+
+            consumption_states = states[consumption_sensor]
+            if not consumption_states:
+                return None
+
+            # Spočítat průměr a vynásobit hodinami
+            import statistics
+
+            valid_values = []
+            for state in consumption_states:
+                try:
+                    value = float(state.state)
+                    if 0 <= value <= 20000:  # Sanity check
+                        valid_values.append(value)
+                except (ValueError, AttributeError):
+                    continue
+
+            if not valid_values:
+                return None
+
+            avg_watts = statistics.mean(valid_values)
+            hours_elapsed = (end_time - start_time).total_seconds() / 3600
+            total_kwh = (avg_watts / 1000) * hours_elapsed
+
+            return total_kwh
+
+        except Exception as e:
+            _LOGGER.debug(f"Error getting consumption today: {e}")
+            return None
+
+    def _get_load_avg_fallback(self) -> float:
+        """
+        Fallback: Získá průměr z load_avg senzorů pro aktuální čas.
+
+        Returns:
+            float: kWh/h
+        """
+        current_time = dt_util.now()
+        is_weekend = current_time.weekday() >= 5
+        day_type = "weekend" if is_weekend else "weekday"
+
+        hour = current_time.hour
+        if 6 <= hour < 8:
+            time_block = "6_8"
+        elif 8 <= hour < 12:
+            time_block = "8_12"
+        elif 12 <= hour < 16:
+            time_block = "12_16"
+        elif 16 <= hour < 22:
+            time_block = "16_22"
+        else:
+            time_block = "22_6"
+
+        sensor_id = f"sensor.oig_{self._box_id}_load_avg_{time_block}_{day_type}"
+
+        if self._hass:
+            sensor_state = self._hass.states.get(sensor_id)
+            if sensor_state and sensor_state.state not in ["unknown", "unavailable"]:
+                try:
+                    watt = float(sensor_state.state)
+                    return watt / 1000  # W → kWh/h
+                except (ValueError, TypeError):
+                    pass
+
+        # Ultimate fallback
+        return 0.48
 
 
 class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
