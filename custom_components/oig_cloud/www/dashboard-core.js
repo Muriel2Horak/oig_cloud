@@ -2292,8 +2292,9 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
         easing: 'linear'
     }).onfinish = () => {
         particle.remove();
-        // Rekurzivně vytvoř další kuličku pokud je flow stále aktivní
-        createContinuousParticle(flowKey, from, to, color, flow.speed, size, opacity);
+        // OPRAVA: Použít lokální kopii rychlosti (speed parametr) místo flow.speed
+        // Tím zabráníme race condition když se rychlost změní během animace
+        createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
     };
 }
 
@@ -2374,9 +2375,10 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1, 
 
     const wasActive = flow.active;
     const countChanged = flow.count !== count;
+    const speedChanged = flow.speed !== speed;
 
-    // Pokud se mění počet kuliček, musíme restartovat flow
-    if (active && wasActive && countChanged) {
+    // OPRAVA: Pokud se mění počet kuliček NEBO rychlost, musíme restartovat flow
+    if (active && wasActive && (countChanged || speedChanged)) {
         flow.active = false; // Zastav staré kuličky
         setTimeout(() => {
             // Po 100ms spusť nové
