@@ -331,17 +331,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # load_kwh se NEODEČÍTÁ (jde ze sítě!)
             else:
                 # Home I/II/III režim: spotřeba z baterie (s DC/AC losses)
-                # Když je solar < load: musíme vytáhnout VÍCE z baterie kvůli losses
-                load_from_battery = max(0, load_kwh - solar_kwh)
-                battery_drain = load_from_battery / efficiency  # 0.882 → 12% více!
+                # Solar nejprve pokrývá spotřebu (bez losses), pak nabíjí baterii
+                if solar_kwh >= load_kwh:
+                    # Solar pokrývá spotřebu + nabíjí baterii
+                    solar_to_battery = solar_kwh - load_kwh
+                    net_energy = solar_to_battery + grid_kwh
+                else:
+                    # Solar nepokrývá spotřebu → vybíjíme z baterie (s losses!)
+                    load_from_battery = load_kwh - solar_kwh
+                    battery_drain = load_from_battery / efficiency  # 0.882 → 12% více!
+                    net_energy = -battery_drain + grid_kwh
 
-                # Solar přebytek nabíjí baterii (bez losses - DC/DC je velmi účinný)
-                solar_to_battery_charge = max(0, solar_kwh - load_kwh)
-
-                # Celková změna SoC
-                net_energy = (
-                    solar_to_battery_charge - battery_drain + grid_kwh
-                )  # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
+            # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
             solar_to_battery = max(0, solar_kwh - load_kwh)
 
             # Výpočet nové kapacity baterie
@@ -356,18 +357,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             #     battery_kwh = min_capacity
 
             # Přidat bod do timeline
-            # FORMÁT: solar_production_kwh je přejmenováno na solar_charge_kwh (čistý přírůstek)
             timeline.append(
                 {
                     "timestamp": timestamp_str,
                     "spot_price_czk": price_point.get("price", 0),
                     "battery_capacity_kwh": round(battery_kwh, 2),
+                    "solar_production_kwh": round(solar_kwh, 2),  # CELKOVÝ solar (ne jen přebytek!)
                     "solar_charge_kwh": round(
                         solar_to_battery, 2
-                    ),  # ZMĚNA: čistý přírůstek ze soláru
+                    ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
-                    "mode": "UPS" if is_ups_mode else "Home",  # Nový: rozlišení režimu
+                    "mode": "UPS" if is_ups_mode else "Home",
                 }
             )
 
@@ -1389,32 +1390,30 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # Načíst hodnoty z timeline
             prev_capacity = prev_point.get("battery_capacity_kwh", 0)
-            solar_charge_kwh = curr_point.get("solar_charge_kwh", 0)  # Čistý přírůstek
+            solar_kwh = curr_point.get("solar_production_kwh", 0)  # CELKOVÝ solar
             grid_kwh = curr_point.get("grid_charge_kwh", 0)
-            consumption_kwh = curr_point.get("consumption_kwh", 0)
+            load_kwh = curr_point.get("consumption_kwh", 0)
 
             # Určit režim (UPS vs Home)
             is_ups_mode = grid_kwh > 0
 
             if is_ups_mode:
-                # UPS režim: spotřeba ze sítě, baterie JEN roste
-                net_energy = solar_charge_kwh + grid_kwh
-                # consumption NEJDE z baterie!
+                # UPS režim: spotřeba ze sítě, baterie roste díky solar + grid
+                net_energy = solar_kwh + grid_kwh
             else:
                 # Home režim: spotřeba z baterie (s DC/AC losses)
-                # solar_charge_kwh je už čistý přírůstek (solar - consumption)
-                # Musíme ale přepočítat kvůli efficiency
-
-                # Zjistit jestli vybíjíme z baterie
-                # Pokud solar_charge_kwh < 0, znamená to že consumption > solar
-                if solar_charge_kwh < 0:
-                    # Vybíjíme z baterie - musíme vzít VÍCE kvůli losses
-                    load_from_battery = abs(solar_charge_kwh)
-                    battery_drain = load_from_battery / efficiency  # 0.882
-                    net_energy = -battery_drain + grid_kwh
+                if solar_kwh >= load_kwh:
+                    # Solar pokrývá spotřebu + nabíjí baterii
+                    solar_to_battery = solar_kwh - load_kwh
+                    net_energy = solar_to_battery + grid_kwh
                 else:
-                    # Solar přebytek nabíjí baterii (bez losses - DC/DC je velmi účinný)
-                    net_energy = solar_charge_kwh + grid_kwh
+                    # Solar nepokrývá spotřebu → vybíjení z baterie (s losses!)
+                    load_from_battery = load_kwh - solar_kwh
+                    battery_drain = load_from_battery / efficiency
+                    net_energy = -battery_drain + grid_kwh
+
+            # Aktualizovat solar_charge_kwh pro zobrazení
+            curr_point["solar_charge_kwh"] = round(max(0, solar_kwh - load_kwh), 2)
 
             new_capacity = prev_capacity + net_energy
 
