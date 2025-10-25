@@ -714,7 +714,7 @@
                 <div class="stat-card"
                     style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
                     <div class="stat-label" style="color: #4CAF50; font-weight: 600;">⚡ Efektivita nabíjení</div>
-                    <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">Minulý měsíc</div>
+                    <div id="battery-efficiency-period-label" style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">--</div>
                     <div class="stat-value" id="battery-efficiency-main" style="font-size: 1.8em; margin: 10px 0;">--</div>
                     <div id="battery-efficiency-trend"
                         style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
@@ -733,32 +733,55 @@
                             <span id="battery-losses-value" style="color: #FF5722; font-weight: 600;">--</span>
                         </div>
                     </div>
-                    <canvas id="battery-efficiency-chart"
-                        style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
+                    <!-- Gradient bar comparison místo grafu -->
+                    <div style="height: 40px; margin-top: 5px; position: relative; border-radius: 4px; overflow: hidden; background: rgba(76, 175, 80, 0.1);">
+                        <div id="battery-efficiency-bar-last" style="position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(76, 175, 80, 0.6) 0%, rgba(76, 175, 80, 0.4) 100%); transition: width 0.3s ease;">
+                        </div>
+                        <div id="battery-efficiency-bar-current" style="position: absolute; right: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(33, 150, 243, 0.4) 0%, rgba(33, 150, 243, 0.6) 100%); transition: width 0.3s ease;">
+                        </div>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: var(--text-primary); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3); display: flex; gap: 15px;">
+                            <span id="battery-efficiency-bar-last-label">--</span>
+                            <span style="opacity: 0.5;">|</span>
+                            <span id="battery-efficiency-bar-current-label">--</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Planned Consumption (Adaptive Load Profiles) -->
                 <div class="stat-card"
-                    style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); border: 1px solid rgba(33, 150, 243, 0.3); min-height: 160px; display: flex; flex-direction: column;">
-                    <div class="stat-label" style="color: #2196F3; font-weight: 600; margin-bottom: 8px;">📊 Plánovaná spotřeba</div>
+                    style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); border: 1px solid rgba(33, 150, 243, 0.3); min-height: 160px;">
+                    <div class="stat-label" style="color: #2196F3; font-weight: 600;">📊 Plánovaná spotřeba</div>
+                    <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">Zbývá dnes + celý zítřek</div>
+                    <div class="stat-value" id="planned-consumption-main" style="font-size: 1.8em; margin: 10px 0;">--</div>
+                    <div id="planned-consumption-trend"
+                        style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
+                        --</div>
+                    <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">
+                        <!-- Kompaktní grid pro Dnes/Zítra -->
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: baseline;">
+                            <span style="opacity: 0.7;">Dnes:</span>
+                            <span id="planned-today-kwh" style="color: var(--text-primary); font-weight: 500; text-align: right;">--</span>
 
-                    <!-- Dnešek - horní část -->
-                    <div style="flex: 1; padding: 8px 0; border-bottom: 1px solid rgba(33, 150, 243, 0.2);">
-                        <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">📅 Dnes</div>
-                        <div id="planned-consumption-today" style="font-size: 1.4em; font-weight: 600; margin-bottom: 4px;">--</div>
-                        <div id="consumption-profile-today" style="font-size: 0.7em; color: var(--text-secondary); line-height: 1.3;">--</div>
+                            <span style="opacity: 0.7;">Zítra:</span>
+                            <span id="planned-tomorrow-kwh" style="color: var(--text-primary); font-weight: 500; text-align: right;">--</span>
+                        </div>
+                        <!-- Profil -->
+                        <div id="consumption-profile-display" style="font-size: 0.85em; opacity: 0.8; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(33, 150, 243, 0.15); line-height: 1.3;">
+                            --
+                        </div>
                     </div>
-
-                    <!-- Zítřek - dolní část -->
-                    <div style="flex: 1; padding: 8px 0; padding-bottom: 5px;">
-                        <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">📅 Zítra</div>
-                        <div id="planned-consumption-tomorrow" style="font-size: 1.4em; font-weight: 600; margin-bottom: 4px;">--</div>
-                        <div id="consumption-profile-tomorrow" style="font-size: 0.7em; color: var(--text-secondary); line-height: 1.3;">--</div>
+                    <!-- Gradient bar místo grafu -->
+                    <div style="height: 40px; margin-top: 5px; position: relative; border-radius: 4px; overflow: hidden; background: rgba(33, 150, 243, 0.1);">
+                        <div id="planned-consumption-bar-today" style="position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(33, 150, 243, 0.6) 0%, rgba(33, 150, 243, 0.4) 100%); transition: width 0.3s ease;">
+                        </div>
+                        <div id="planned-consumption-bar-tomorrow" style="position: absolute; right: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(156, 39, 176, 0.4) 0%, rgba(156, 39, 176, 0.6) 100%); transition: width 0.3s ease;">
+                        </div>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: var(--text-primary); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3); display: flex; gap: 15px;">
+                            <span id="planned-bar-today-label">--</span>
+                            <span style="opacity: 0.5;">|</span>
+                            <span id="planned-bar-tomorrow-label">--</span>
+                        </div>
                     </div>
-
-                    <!-- Trend graf -->
-                    <canvas id="planned-consumption-chart"
-                        style="height: 40px; max-height: 40px; margin-top: 5px; display: block;"></canvas>
                 </div>
             </div>
         </div>

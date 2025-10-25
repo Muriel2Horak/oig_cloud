@@ -2373,6 +2373,7 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         self._battery_kwh_month_start: Optional[float] = None
         self._current_month_partial: Dict[str, Any] = {}
         self._last_month_data: Dict[str, Any] = {}  # Kompletní data minulého měsíce
+        self._loading_history: bool = False  # Flag aby se načítání neopakovalo
 
         # Initialize extra state attributes
         self._attr_extra_state_attributes = {}
@@ -2446,10 +2447,6 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         # Initial update
         await self._daily_update()
 
-        # Pokus o načtení dat za minulý měsíc z historie (pokud nemáme)
-        if self._efficiency_last_month is None and now.day > 2:
-            await self._try_load_last_month_from_history()
-
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
         await CoordinatorEntity.async_will_remove_from_hass(self)
@@ -2472,7 +2469,8 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         battery_month_end = self._current_month_partial.get("battery_end", 0)
         battery_month_start = self._current_month_partial.get("battery_start", 0)
 
-        if charge_last_month < 20.0 or discharge_last_month < 20.0:
+        # Snížený limit z 20 na 5 kWh - umožní výpočet i pro částečná data
+        if charge_last_month < 5.0 or discharge_last_month < 5.0:
             _LOGGER.warning(
                 f"🔋 Insufficient data for last month: "
                 f"charge={charge_last_month:.2f}, discharge={discharge_last_month:.2f}"
@@ -2592,6 +2590,17 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
     def _update_extra_state_attributes(self) -> None:
         """Update extra state attributes with current data."""
         now = datetime.now()
+
+        # Pokud nemáme kompletní data za minulý měsíc (chybí kWh hodnoty), zkusit načíst z historie
+        # Kontrolujeme charge_kwh protože to je klíčová hodnota pro zobrazení v dashboardu
+        # A ZÁROVEŇ kontrolujeme flag aby se načítání neopakovalo
+        if (
+            not self._last_month_data or not self._last_month_data.get("charge_kwh")
+        ) and not self._loading_history:
+            # Nastavit flag aby se loading neopakoval
+            self._loading_history = True
+            # Asynchronně spustit načtení (ale nevyčkávat na výsledek)
+            self.hass.async_create_task(self._try_load_last_month_from_history())
 
         # Průběžná data tohoto měsíce
         current_efficiency = self._current_month_partial.get("efficiency")
@@ -2836,6 +2845,11 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
                         f"efficiency={efficiency:.1f}%, charge={charge_kwh:.2f} kWh, "
                         f"discharge={discharge_kwh:.2f} kWh, delta={delta_kwh:.2f} kWh"
                     )
+
+                    # Uložit state do HA aby přežil restart
+                    self._update_extra_state_attributes()
+                    self.async_write_ha_state()
+                    _LOGGER.info("🔋 Last month data saved to state storage")
                 else:
                     _LOGGER.warning(
                         f"🔋 Invalid data for {last_month}/{last_month_year}: "
@@ -2850,6 +2864,9 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
         except Exception as e:
             _LOGGER.error(f"🔋 Error loading history: {e}", exc_info=True)
+        finally:
+            # Vždy resetovat flag aby se mohl zkusit loading znovu při dalším update
+            self._loading_history = False
 
     def _get_sensor(self, sensor_type: str) -> Optional[float]:
         """Získat hodnotu z existujícího sensoru."""

@@ -6699,35 +6699,60 @@ async function updateBatteryEfficiencyStats() {
 
     const attrs = sensor.attributes || {};
 
-    // Last month data (main display - SWAPPED)
+    // Prefer last month (complete), fallback to current month (partial)
+    let displayEff, displayLossesPct, displayLossesKwh, displayCharge, displayDischarge, displayLabel;
+
     const lastMonthEff = attrs.efficiency_last_month_pct;
     const lastMonthLossesPct = attrs.losses_last_month_pct;
     const lastMonthLossesKwh = attrs.losses_last_month_kwh;
     const lastMonthCharge = attrs.last_month_charge_kwh;
     const lastMonthDischarge = attrs.last_month_discharge_kwh;
 
-    // Current month data (for comparison)
     const currentMonthEff = attrs.efficiency_current_month_pct;
+    const currentMonthLossesPct = attrs.losses_current_month_pct;
+    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
+    const currentMonthCharge = attrs.current_month_charge_kwh;
+    const currentMonthDischarge = attrs.current_month_discharge_kwh;
+    const currentMonthDays = attrs.current_month_days;
 
-    if (lastMonthEff !== null && lastMonthEff !== undefined) {
-        // Main value - LAST month efficiency (M2M)
-        updateElementIfChanged('battery-efficiency-main', `${lastMonthEff.toFixed(1)}%`, 'batt-eff-main');
+    // Use last month if available (complete data), otherwise use current month (partial)
+    if (lastMonthEff !== null && lastMonthEff !== undefined &&
+        lastMonthCharge !== null && lastMonthDischarge !== null) {
+        displayEff = lastMonthEff;
+        displayLossesPct = lastMonthLossesPct;
+        displayLossesKwh = lastMonthLossesKwh;
+        displayCharge = lastMonthCharge;
+        displayDischarge = lastMonthDischarge;
+        displayLabel = 'Minulý měsíc';
+    } else if (currentMonthEff !== null && currentMonthEff !== undefined) {
+        displayEff = currentMonthEff;
+        displayLossesPct = currentMonthLossesPct;
+        displayLossesKwh = currentMonthLossesKwh;
+        displayCharge = currentMonthCharge;
+        displayDischarge = currentMonthDischarge;
+        displayLabel = `Tento měsíc (${currentMonthDays} dní)`;
+    }
 
-        // Trend comparison with current month
-        if (currentMonthEff !== null && currentMonthEff !== undefined) {
+    if (displayEff !== undefined) {
+        // Main value
+        updateElementIfChanged('battery-efficiency-main', `${displayEff.toFixed(1)}%`, 'batt-eff-main');
+
+        // Trend comparison
+        if (lastMonthEff !== null && currentMonthEff !== null &&
+            lastMonthEff !== undefined && currentMonthEff !== undefined) {
             const diff = currentMonthEff - lastMonthEff;
             const diffAbs = Math.abs(diff);
             let trendText = '';
             let trendColor = '';
 
             if (diff > 0.5) {
-                trendText = `↗️ Tento měsíc +${diffAbs.toFixed(1)}%`;
-                trendColor = '#4CAF50'; // Green for improvement
+                trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
+                trendColor = '#4CAF50';
             } else if (diff < -0.5) {
-                trendText = `↘️ Tento měsíc -${diffAbs.toFixed(1)}%`;
-                trendColor = '#FF5722'; // Red for decline
+                trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
+                trendColor = '#FF5722';
             } else {
-                trendText = `➡️ Tento měsíc podobně`;
+                trendText = `➡️ Podobně jako minulý měsíc`;
                 trendColor = 'var(--text-secondary)';
             }
 
@@ -6737,18 +6762,22 @@ async function updateBatteryEfficiencyStats() {
                 trendEl.style.color = trendColor;
             }
         } else {
-            updateElementIfChanged('battery-efficiency-trend', 'Tento měsíc: měření probíhá', 'batt-trend');
+            updateElementIfChanged('battery-efficiency-trend', displayLabel, 'batt-trend');
         }
 
-        // Detail values - show LAST month data
-        updateElementIfChanged('battery-charge-value', `${lastMonthCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
-        updateElementIfChanged('battery-discharge-value', `${lastMonthDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
-        updateElementIfChanged('battery-losses-value', `${lastMonthLossesKwh?.toFixed(1) || '--'} kWh (${lastMonthLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
+        // Detail values
+        updateElementIfChanged('battery-charge-value', `${displayCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
+        updateElementIfChanged('battery-discharge-value', `${displayDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
+        updateElementIfChanged('battery-losses-value', `${displayLossesKwh?.toFixed(1) || '--'} kWh (${displayLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
 
-        // Create mini trend chart - swap order for visual consistency
-        createBatteryEfficiencyChart(lastMonthEff, currentMonthEff);
+        // Update period label
+        updateElementIfChanged('battery-efficiency-period-label', displayLabel, 'batt-period-label');
+
+        // Update gradient bar comparison
+        updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
     } else {
         updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main');
+        updateElementIfChanged('battery-efficiency-period-label', 'Čekám na data...', 'batt-period-label');
         updateElementIfChanged('battery-efficiency-trend', 'Čekám na data...', 'batt-trend');
         updateElementIfChanged('battery-charge-value', '--', 'batt-charge-val');
         updateElementIfChanged('battery-discharge-value', '--', 'batt-discharge-val');
@@ -6757,77 +6786,47 @@ async function updateBatteryEfficiencyStats() {
 }
 
 /**
- * Create mini chart showing battery efficiency trend
+ * Update gradient bar showing battery efficiency comparison
  */
-function createBatteryEfficiencyChart(lastMonthEff, currentMonthEff) {
-    const canvas = document.getElementById('battery-efficiency-chart');
-    if (!canvas) return;
+function updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff) {
+    const barLast = document.getElementById('battery-efficiency-bar-last');
+    const barCurrent = document.getElementById('battery-efficiency-bar-current');
+    const labelLast = document.getElementById('battery-efficiency-bar-last-label');
+    const labelCurrent = document.getElementById('battery-efficiency-bar-current-label');
 
-    const ctx = canvas.getContext('2d');
+    if (!barLast || !barCurrent || !labelLast || !labelCurrent) return;
 
-    // Destroy existing chart if it exists
-    if (window.batteryEfficiencyMiniChart) {
-        window.batteryEfficiencyMiniChart.destroy();
+    // Pokud máme obě hodnoty, zobraz poměr
+    if (lastMonthEff !== null && lastMonthEff !== undefined &&
+        currentMonthEff !== null && currentMonthEff !== undefined) {
+
+        const total = lastMonthEff + currentMonthEff;
+        const lastPercent = (lastMonthEff / total) * 100;
+        const currentPercent = (currentMonthEff / total) * 100;
+
+        barLast.style.width = `${lastPercent}%`;
+        barCurrent.style.width = `${currentPercent}%`;
+        labelLast.textContent = `${lastMonthEff.toFixed(1)}%`;
+        labelCurrent.textContent = `${currentMonthEff.toFixed(1)}%`;
+    } else if (lastMonthEff !== null && lastMonthEff !== undefined) {
+        // Jen minulý měsíc
+        barLast.style.width = '100%';
+        barCurrent.style.width = '0%';
+        labelLast.textContent = `${lastMonthEff.toFixed(1)}%`;
+        labelCurrent.textContent = '--';
+    } else if (currentMonthEff !== null && currentMonthEff !== undefined) {
+        // Jen tento měsíc
+        barLast.style.width = '0%';
+        barCurrent.style.width = '100%';
+        labelLast.textContent = '--';
+        labelCurrent.textContent = `${currentMonthEff.toFixed(1)}%`;
+    } else {
+        // Žádná data
+        barLast.style.width = '0%';
+        barCurrent.style.width = '0%';
+        labelLast.textContent = '--';
+        labelCurrent.textContent = '--';
     }
-
-    // Create simple trend data (last month -> current month)
-    const data = [];
-    const labels = [];
-
-    // Last month first (left side)
-    data.push(lastMonthEff);
-    labels.push('Minulý');
-
-    // Current month second (right side) - only if available
-    if (currentMonthEff !== null && currentMonthEff !== undefined) {
-        data.push(currentMonthEff);
-        labels.push('Tento');
-    }
-
-    window.batteryEfficiencyMiniChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                borderColor: '#4CAF50',
-                backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                borderWidth: 2,
-                pointRadius: 3,
-                pointBackgroundColor: '#4CAF50',
-                fill: true,
-                tension: 0.3
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    enabled: true,
-                    callbacks: {
-                        label: function(context) {
-                            return `Efektivita: ${context.parsed.y.toFixed(1)}%`;
-                        }
-                    }
-                },
-                datalabels: { display: false }
-            },
-            scales: {
-                x: { display: false },
-                y: {
-                    display: false,
-                    min: Math.min(...data) - 2,
-                    max: Math.max(...data) + 2
-                }
-            },
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            }
-        }
-    });
 }
 
 /**
@@ -6855,69 +6854,95 @@ async function updatePlannedConsumptionStats() {
     const attrs = forecastSensor.attributes || {};
 
     // Display data (already calculated in Python) - načítáme přímo z root atributů
-    const todayKwh = attrs.planned_consumption_today;
+    const todayPlannedKwh = attrs.planned_consumption_today;
     const tomorrowKwh = attrs.planned_consumption_tomorrow;
     const profileToday = attrs.profile_today;
     const profileTomorrow = attrs.profile_tomorrow;
 
-    // Update UI - Dnešek
-    if (todayKwh !== null && todayKwh !== undefined) {
-        updateElementIfChanged('planned-consumption-today', `${todayKwh.toFixed(1)} kWh`, 'planned-today');
-    } else {
-        updateElementIfChanged('planned-consumption-today', '--', 'planned-today');
-    }
-    updateElementIfChanged('consumption-profile-today', profileToday || 'Neznámý profil', 'profile-today');
+    // Získat již spotřebovanou energii dnes z ac_out_en_day (vrací Wh, převést na kWh)
+    const todayConsumedSensorId = `sensor.oig_${INVERTER_SN}_ac_out_en_day`;
+    const todayConsumedSensor = hass.states[todayConsumedSensorId];
+    const todayConsumedWh = todayConsumedSensor && todayConsumedSensor.state !== 'unavailable'
+        ? parseFloat(todayConsumedSensor.state) || 0
+        : 0;
+    const todayConsumedKwh = todayConsumedWh / 1000; // Převod Wh -> kWh
 
-    // Update UI - Zítřek
+    // Celková spotřeba dnes (už spotřebováno + ještě plánováno)
+    const todayTotalKwh = todayConsumedKwh + (todayPlannedKwh || 0);
+
+    // Celková plánovaná spotřeba (dnes zbývá + zítřek celý)
+    const totalPlannedKwh = (todayPlannedKwh || 0) + (tomorrowKwh || 0);
+
+    // Update UI - Hlavní hodnota (plánovaná: dnes zbývá + zítřek)
+    if (totalPlannedKwh > 0) {
+        updateElementIfChanged('planned-consumption-main', `${totalPlannedKwh.toFixed(1)} kWh`, 'planned-main');
+    } else {
+        updateElementIfChanged('planned-consumption-main', '--', 'planned-main');
+    }
+
+    // Update trend text (porovnání celkem dnes vs zítřek)
+    if (todayTotalKwh > 0 && tomorrowKwh !== null && tomorrowKwh !== undefined) {
+        const diff = tomorrowKwh - todayTotalKwh;
+        const diffPercent = todayTotalKwh > 0 ? ((diff / todayTotalKwh) * 100) : 0;
+        let trendText = '';
+        let trendIcon = '';
+
+        if (Math.abs(diffPercent) < 5) {
+            trendIcon = '➡️';
+            trendText = `Zítra podobně`;
+        } else if (diff > 0) {
+            trendIcon = '📈';
+            trendText = `Zítra více (+${Math.abs(diffPercent).toFixed(0)}%)`;
+        } else {
+            trendIcon = '📉';
+            trendText = `Zítra méně (-${Math.abs(diffPercent).toFixed(0)}%)`;
+        }
+
+        updateElementIfChanged('planned-consumption-trend', `${trendIcon} ${trendText}`, 'planned-trend');
+    } else {
+        updateElementIfChanged('planned-consumption-trend', '--', 'planned-trend');
+    }
+
+    // Detail řádky - Dnes (celkem = spotřebováno + zbývá) a Zítra (celý den)
+    if (todayPlannedKwh !== null && todayPlannedKwh !== undefined) {
+        updateElementIfChanged('planned-today-kwh', `${todayTotalKwh.toFixed(1)} kWh`, 'planned-today-kwh');
+    } else {
+        updateElementIfChanged('planned-today-kwh', '--', 'planned-today-kwh');
+    }
+
     if (tomorrowKwh !== null && tomorrowKwh !== undefined) {
-        updateElementIfChanged('planned-consumption-tomorrow', `${tomorrowKwh.toFixed(1)} kWh`, 'planned-tomorrow');
+        updateElementIfChanged('planned-tomorrow-kwh', `${tomorrowKwh.toFixed(1)} kWh`, 'planned-tomorrow-kwh');
     } else {
-        updateElementIfChanged('planned-consumption-tomorrow', '--', 'planned-tomorrow');
+        updateElementIfChanged('planned-tomorrow-kwh', '--', 'planned-tomorrow-kwh');
     }
-    updateElementIfChanged('consumption-profile-tomorrow', profileTomorrow || 'Neznámý profil', 'profile-tomorrow');
 
-    // Draw trend chart (Dnes vs Zítřek)
-    const canvas = document.getElementById('planned-consumption-chart');
-    if (canvas && todayKwh !== null && todayKwh !== undefined && tomorrowKwh !== null && tomorrowKwh !== undefined) {
-        const ctx = canvas.getContext('2d');
-        const width = canvas.offsetWidth;
-        const height = 40;
-        canvas.width = width;
-        canvas.height = height;
+    // Profil display - bez emoji, čistý text
+    let profileDisplay = '';
+    if (profileToday && profileToday !== 'Žádný profil' && profileToday !== 'Neznámý profil') {
+        // Zkrátit dlouhé názvy profilů
+        const shortProfile = profileToday.length > 55 ? profileToday.substring(0, 52) + '...' : profileToday;
+        profileDisplay = shortProfile;
+    } else {
+        profileDisplay = 'Žádný profil';
+    }
+    updateElementIfChanged('consumption-profile-display', profileDisplay, 'profile-display');
 
-        // Clear canvas
-        ctx.clearRect(0, 0, width, height);
+    // Update gradient bar (místo canvas grafu)
+    const barToday = document.getElementById('planned-consumption-bar-today');
+    const barTomorrow = document.getElementById('planned-consumption-bar-tomorrow');
+    const labelToday = document.getElementById('planned-bar-today-label');
+    const labelTomorrow = document.getElementById('planned-bar-tomorrow-label');
 
-        // Data points: [Dnes, Zítřek]
-        const values = [todayKwh, tomorrowKwh];
-        const maxValue = Math.max(...values) * 1.1; // 10% padding
+    if (barToday && barTomorrow && todayTotalKwh > 0 && tomorrowKwh !== null && tomorrowKwh !== undefined) {
+        const total = todayTotalKwh + tomorrowKwh;
+        const todayPercent = (todayTotalKwh / total) * 100;
+        const tomorrowPercent = (tomorrowKwh / total) * 100;
 
-        // Draw line chart
-        ctx.beginPath();
-        ctx.strokeStyle = '#2196F3';
-        ctx.lineWidth = 2;
+        barToday.style.width = `${todayPercent}%`;
+        barTomorrow.style.width = `${tomorrowPercent}%`;
 
-        const xStep = width / (values.length - 1);
-        values.forEach((value, index) => {
-            const x = index * xStep;
-            const y = height - (value / maxValue * height);
-            if (index === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-        });
-        ctx.stroke();
-
-        // Draw points
-        values.forEach((value, index) => {
-            const x = index * xStep;
-            const y = height - (value / maxValue * height);
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, 2 * Math.PI);
-            ctx.fillStyle = '#2196F3';
-            ctx.fill();
-        });
+        if (labelToday) labelToday.textContent = `${todayTotalKwh.toFixed(1)}`;
+        if (labelTomorrow) labelTomorrow.textContent = `${tomorrowKwh.toFixed(1)}`;
     }
 }
 
