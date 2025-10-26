@@ -126,13 +126,15 @@ class ChmuApi:
 
         alerts = []
 
-        # Najít všechny <alert> elementy
+        # Root je přímo <alert> element (ne document s více alerts)
         # CAP 1.2 má strukturu: <alert><info>...</info></alert>
-        for alert_elem in root.findall(f".//{CAP_NS}alert"):
-            # Každý alert může mít více <info> bloků (různé jazyky)
-            for info_elem in alert_elem.findall(f"{CAP_NS}info"):
+
+        # Pokud root je alert element
+        if root.tag == f"{CAP_NS}alert":
+            # Každý alert může mít více <info> bloků (různé jazyky a události)
+            for info_elem in root.findall(f"{CAP_NS}info"):
                 try:
-                    alert_data = self._parse_info_block(alert_elem, info_elem)
+                    alert_data = self._parse_info_block(root, info_elem)
                     if alert_data:
                         alerts.append(alert_data)
                 except Exception as e:
@@ -418,7 +420,7 @@ class ChmuApi:
 
         Returns:
             (filtered_alerts, filter_method)
-            filter_method: "polygon_match", "circle_match", "geocode_match", nebo "no_filter"
+            filter_method: "polygon_match", "circle_match", "geocode_fallback", nebo "no_filter"
         """
         local_alerts = []
         filter_method = "no_filter"
@@ -453,10 +455,12 @@ class ChmuApi:
                 if not matched and area.get("geocodes"):
                     # Prozatím vše prochází (fallback)
                     # V produkci by zde bylo mapování GPS -> ORP/NUTS kód
-                    pass
+                    local_alerts.append(alert)
+                    filter_method = "geocode_fallback"
+                    matched = True
+                    break
 
-            if matched:
-                break
+            # Pokračujeme dále - chceme projít VŠECHNY výstrahy, ne jen první match
 
         return local_alerts, filter_method
 

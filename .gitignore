@@ -192,6 +192,7 @@ deploy_dashboard_switcher.sh
 analyze_*.sh
 debug_*.sh
 quick_*.sh
+test_*.py
 backups/
 *.tar.gz
 *.zip
