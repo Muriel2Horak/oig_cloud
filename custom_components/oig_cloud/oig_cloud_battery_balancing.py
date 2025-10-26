@@ -511,7 +511,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     ) -> Optional[Dict[str, Any]]:
         """
         Hledat opportunistic okno - extrémně levná cena.
-        
+
         NOVÁ LOGIKA:
         1. Najde VŠECHNY 3h holding window kandidáty pod threshold
         2. Seřadí je podle ceny (nejlevnější první)
@@ -521,10 +521,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         threshold = config["opportunistic_threshold"]
         hold_hours = config["hold_hours"]
         sorted_times = sorted(prices.keys())
-        
+
         # 1. Najít VŠECHNY kandidáty pod threshold
         candidates = []
-        
+
         for i in range(len(sorted_times) - hold_hours * 4):
             window_prices = []
             window_start = sorted_times[i]
@@ -537,33 +537,39 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             if avg_price < threshold:
                 from datetime import datetime, timedelta
-                
+
                 window_end_time = datetime.fromisoformat(
                     sorted_times[window_end_idx - 1]
                 ) + timedelta(minutes=15)
-                
-                candidates.append({
-                    "holding_start": window_start,
-                    "holding_end": window_end_time.isoformat(),
-                    "avg_price_czk": round(avg_price, 2),
-                    "reason": "opportunistic",
-                })
-        
+
+                candidates.append(
+                    {
+                        "holding_start": window_start,
+                        "holding_end": window_end_time.isoformat(),
+                        "avg_price_czk": round(avg_price, 2),
+                        "reason": "opportunistic",
+                    }
+                )
+
         if not candidates:
-            _LOGGER.debug(f"No opportunistic windows found (threshold={threshold} Kč/kWh)")
+            _LOGGER.debug(
+                f"No opportunistic windows found (threshold={threshold} Kč/kWh)"
+            )
             return None
-        
+
         # 2. Seřadit podle ceny (nejlevnější první)
         candidates.sort(key=lambda x: x["avg_price_czk"])
-        
-        _LOGGER.info(f"Found {len(candidates)} opportunistic candidates, testing feasibility...")
-        
+
+        _LOGGER.info(
+            f"Found {len(candidates)} opportunistic candidates, testing feasibility..."
+        )
+
         # 3. Testovat feasibility pro každého kandidáta (od nejlevnějšího)
         for idx, candidate in enumerate(candidates):
             is_feasible, intervals_needed = self._check_window_feasibility(
                 candidate["holding_start"], prices, force
             )
-            
+
             if is_feasible:
                 _LOGGER.info(
                     f"✅ Selected candidate #{idx+1}/{len(candidates)}: "
@@ -574,8 +580,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug(
                     f"❌ Candidate #{idx+1} not feasible: {candidate['holding_start']}"
                 )
-        
-        _LOGGER.warning(f"No feasible opportunistic window found (tested {len(candidates)} candidates)")
+
+        _LOGGER.warning(
+            f"No feasible opportunistic window found (tested {len(candidates)} candidates)"
+        )
         return None
 
     def _find_economic_window(

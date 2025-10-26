@@ -584,9 +584,26 @@ class ServiceShield:
             )
 
         # Čeká už ve frontě stejná služba se stejným cílem?
+        # OPRAVA: Porovnáváme i parametry (params), ne jen expected entities
         duplicate_found = False
+        new_params_set = frozenset(params.items()) if params else frozenset()
+
         for q in self.queue:
-            if q[0] == service_name and frozenset(q[2].items()) == new_expected_set:
+            queue_service = q[0]
+            queue_params = q[1]
+            queue_expected = q[2]
+
+            queue_params_set = (
+                frozenset(queue_params.items()) if queue_params else frozenset()
+            )
+            queue_expected_set = frozenset(queue_expected.items())
+
+            # Duplikát = stejná služba + stejné parametry + stejný očekávaný výsledek
+            if (
+                queue_service == service_name
+                and queue_params_set == new_params_set
+                and queue_expected_set == new_expected_set
+            ):
                 duplicate_found = True
                 _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND!")
                 _LOGGER.info(

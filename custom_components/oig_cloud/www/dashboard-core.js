@@ -111,6 +111,7 @@ function subscribeToShield() {
                     entityId.includes('spot_price') ||          // Grid pricing
                     entityId.includes('current_tariff') ||      // Tariff
                     entityId.includes('grid_charging_planned') || // Grid charging plan
+                    entityId.includes('battery_balancing') ||   // Battery balancing plan
                     entityId.includes('notification_count')) {  // Notifications
                     // console.log(`[Details] Sensor changed: ${entityId}`);
                     debouncedLoadNodeDetails(); // Trigger details update (debounced)
@@ -120,7 +121,7 @@ function subscribeToShield() {
                 if (entityId.includes('_spot_price_current_15min') ||  // Spot prices
                     entityId.includes('_export_price_current_15min') || // Export prices
                     entityId.includes('_solar_forecast') ||              // Solar forecast
-                    entityId.includes('_battery_prediction')) {          // Battery prediction
+                    entityId.includes('_battery_forecast')) {            // Battery forecast (OPRAVENO: prediction → forecast)
 
                     // Check if actual data changed (not just last_updated timestamp)
                     const oldState = event.data.old_state;
@@ -139,6 +140,11 @@ function subscribeToShield() {
 
                     // console.log(`[Pricing] Sensor data changed: ${entityId}`, newState?.state);
                     debouncedLoadPricingData(); // Trigger pricing chart update (debounced)
+
+                    // NOVÉ: Battery forecast obsahuje plánovanou spotřebu - aktualizovat ji
+                    if (entityId.includes('_battery_forecast')) {
+                        debouncedUpdatePlannedConsumption(); // Trigger planned consumption update (debounced)
+                    }
                 }
 
                 // Custom tiles - check if entity is used in any tile
@@ -3985,7 +3991,7 @@ function detectAndApplyTheme() {
 function initTooltips() {
     const tooltip = document.getElementById('global-tooltip');
     const arrow = document.getElementById('global-tooltip-arrow');
-    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .entity-value[data-tooltip-html], .detail-value[data-tooltip-html], #battery-grid-charging-indicator[data-tooltip], #battery-grid-charging-indicator[data-tooltip-html]');
+    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .entity-value[data-tooltip-html], .detail-value[data-tooltip-html], #battery-grid-charging-indicator[data-tooltip], #battery-grid-charging-indicator[data-tooltip-html], #balancing-planned-time-short[data-tooltip-html]');
 
     if (!tooltip || !arrow) {
         console.error('[Tooltips] Global tooltip elements not found!');
@@ -4501,37 +4507,71 @@ async function updateBatteryBalancingCard() {
             const endTime = new Date(planned.holding_end);
             const endStr = endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
 
-            // Sestavit detailní tooltip s tabulkou časů
-            let tooltipText = '═══ PLÁN BALANCOVÁNÍ ═══\n\n';
+            // Sestavit detailní tooltip s tabulkou (stejný styl jako grid charging)
+            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 280px;">';
+            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px; color: #FFA726;">🔋 Plán balancování baterie</strong>';
 
+            // Sekce: Příprava (nabíjení)
             if (chargingIntervals.length > 0) {
+                tooltipHTML += '<div style="margin-bottom: 10px;">';
+                tooltipHTML += '<div style="font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.9);">📊 Příprava (nabíjení na 100%)</div>';
+                tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-left: 8px;">';
+
+                // Rozdělíme intervaly do skupin po 3 pro přehlednost
                 const chargingTimes = chargingIntervals.map(t => {
                     const time = new Date(t);
                     return time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
                 });
 
-                tooltipText += `📊 PŘÍPRAVA (nabíjení na 100%):\n`;
-                tooltipText += `   Intervaly: ${chargingTimes.join(', ')}\n`;
-                tooltipText += `   Cena: ${chargingAvgPrice.toFixed(2)} Kč/kWh\n\n`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Intervaly:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingTimes.join(', ')}</td></tr>`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Průměrná cena:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingAvgPrice.toFixed(2)} Kč/kWh</td></tr>`;
+                tooltipHTML += '</table>';
+                tooltipHTML += '</div>';
             }
 
-            tooltipText += `🔋 BALANCOVÁNÍ (držení na 100%):\n`;
-            tooltipText += `   Čas: ${startStr} - ${endStr}\n`;
-            tooltipText += `   Délka: ${attrs.config?.hold_hours ?? 3} hodiny\n\n`;
+            // Sekce: Balancování (držení)
+            tooltipHTML += '<div style="margin-bottom: 10px;">';
+            tooltipHTML += '<div style="font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.9);">⚡ Balancování (držení na 100%)</div>';
+            tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-left: 8px;">';
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Začátek:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${startStr}</td></tr>`;
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Konec:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${endStr}</td></tr>`;
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Délka:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${attrs.config?.hold_hours ?? 3} hodiny</td></tr>`;
+            tooltipHTML += '</table>';
+            tooltipHTML += '</div>';
 
-            // Přidat náklady pokud jsou k dispozici
+            // Sekce: Náklady (pokud jsou k dispozici)
             if (balancingCost) {
-                const chargingCost = balancingCost.charging_cost_czk ?? 0;
-                const holdingCost = balancingCost.holding_cost_czk ?? 0;
-                tooltipText += `💰 NÁKLADY:\n`;
-                tooltipText += `   Nabíjení: ${chargingCost.toFixed(2)} Kč\n`;
-                tooltipText += `   Držení: ${holdingCost.toFixed(2)} Kč\n`;
-                tooltipText += `   ────────────────\n`;
-                tooltipText += `   CELKEM: ${(chargingCost + holdingCost).toFixed(2)} Kč`;
+                const chargingCostVal = balancingCost.charging_cost_czk ?? 0;
+                const holdingCostVal = balancingCost.holding_cost_czk ?? 0;
+                const totalCostVal = balancingCost.total_cost_czk ?? 0;
+
+                tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-top: 8px;">';
+                tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
+                tooltipHTML += '<th style="padding: 4px; text-align: left; color: rgba(255,255,255,0.9);">💰 Náklady</th>';
+                tooltipHTML += '<th style="padding: 4px; text-align: right;"></th>';
+                tooltipHTML += '</tr></thead>';
+                tooltipHTML += '<tbody>';
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Nabíjení:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingCostVal.toFixed(2)} Kč</td></tr>`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Držení:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${holdingCostVal.toFixed(2)} Kč</td></tr>`;
+                tooltipHTML += '</tbody>';
+                tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
+                tooltipHTML += '<td style="padding: 4px;">Celkem:</td>';
+                tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCostVal.toFixed(2)} Kč</td>`;
+                tooltipHTML += '</tr></tfoot>';
+                tooltipHTML += '</table>';
             }
+
+            tooltipHTML += '</div>';
 
             plannedTimeShort.textContent = `dnes ${startStr}`;
-            plannedTimeShort.title = tooltipText;
+            plannedTimeShort.setAttribute('data-tooltip-html', tooltipHTML);
 
             // Přesné náklady pokud jsou k dispozici
             if (balancingCost) {
@@ -4570,6 +4610,9 @@ async function updateBatteryBalancingCard() {
 
             timelineLabel.textContent = `${daysSince}/${intervalDays} dní`;
         }
+
+        // Re-inicializovat tooltips aby fungovaly na dynamicky přidaných elementech
+        initTooltips();
 
     } catch (error) {
         console.error('[Balancing] Error updating battery balancing card:', error);
@@ -4965,6 +5008,7 @@ function switchTab(tabName) {
 
 // === PRICING CHARTS ===
 let loadPricingDataTimer = null;
+let updatePlannedConsumptionTimer = null;
 let priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
 let currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
     cheapest: null,
@@ -4982,6 +5026,17 @@ function debouncedLoadPricingData() {
         }
     }, 300); // Wait 300ms before executing (allow multiple changes to settle)
 }
+
+// Debounced updatePlannedConsumptionStats() - prevents excessive calls when battery_forecast changes
+function debouncedUpdatePlannedConsumption() {
+    if (updatePlannedConsumptionTimer) clearTimeout(updatePlannedConsumptionTimer);
+    updatePlannedConsumptionTimer = setTimeout(() => {
+        if (pricingTabActive) {  // Only update if pricing tab is active
+            updatePlannedConsumptionStats();
+        }
+    }, 300); // Wait 300ms before executing
+}
+
 let combinedChart = null;
 
 // Helper funkce pro detekci theme a barvy
