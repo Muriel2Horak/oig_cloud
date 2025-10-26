@@ -1438,17 +1438,27 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "min_capacity_percent",
                 default=defaults.get("min_capacity_percent", 20.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=50.0)),
+            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
             vol.Optional(
                 "target_capacity_percent",
                 default=defaults.get("target_capacity_percent", 80.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=100.0)),
+            ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=100.0)),
             vol.Optional(
                 "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            # ECONOMIC CHARGING PARAMETERS
             vol.Optional(
-                "percentile_conf", default=defaults.get("percentile_conf", 75.0)
-            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=95.0)),
+                "enable_economic_charging",
+                default=defaults.get("enable_economic_charging", True),
+            ): bool,
+            vol.Optional(
+                "min_savings_margin", default=defaults.get("min_savings_margin", 0.30)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            vol.Optional(
+                "safety_margin_percent",
+                default=defaults.get("safety_margin_percent", 10.0),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+            # SAFETY LIMIT (applies to ALL algorithms)
             vol.Optional(
                 "max_price_conf", default=defaults.get("max_price_conf", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
@@ -2107,7 +2117,17 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         "target_capacity_percent", 80.0
                     ),
                     "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
-                    "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
+                    # Economic charging
+                    "enable_economic_charging": self._wizard_data.get(
+                        "enable_economic_charging", True
+                    ),
+                    "min_savings_margin": self._wizard_data.get(
+                        "min_savings_margin", 0.30
+                    ),
+                    "safety_margin_percent": self._wizard_data.get(
+                        "safety_margin_percent", 10.0
+                    ),
+                    # Safety limit
                     "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
@@ -2294,7 +2314,15 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "target_capacity_percent", 80.0
                 ),
                 "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
-                "percentile_conf": self._wizard_data.get("percentile_conf", 75.0),
+                # Economic charging
+                "enable_economic_charging": self._wizard_data.get(
+                    "enable_economic_charging", True
+                ),
+                "min_savings_margin": self._wizard_data.get("min_savings_margin", 0.30),
+                "safety_margin_percent": self._wizard_data.get(
+                    "safety_margin_percent", 10.0
+                ),
+                # Safety limit
                 "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
                 # Pricing - použít mapované backend atributy
                 **pricing_backend,
@@ -2682,26 +2710,38 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 "min_capacity_percent",
                 default=current_options.get("min_capacity_percent", 20.0),
                 description="📉 Minimální kapacita baterie (%)",
-            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=50.0)),
+            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
             vol.Optional(
                 "target_capacity_percent",
                 default=current_options.get("target_capacity_percent", 80.0),
                 description="🎯 Cílová kapacita baterie (%)",
-            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=100.0)),
+            ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=100.0)),
             vol.Optional(
                 "home_charge_rate",
                 default=current_options.get("home_charge_rate", 2.8),
                 description="⚡ Nabíjecí výkon ze sítě (kW)",
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            # ECONOMIC CHARGING
             vol.Optional(
-                "percentile_conf",
-                default=current_options.get("percentile_conf", 75.0),
-                description="📊 Percentil pro detekci špičky (%)",
-            ): vol.All(vol.Coerce(float), vol.Range(min=50.0, max=95.0)),
+                "enable_economic_charging",
+                default=current_options.get("enable_economic_charging", True),
+                description="💡 Ekonomické nabíjení (forward simulace)",
+            ): bool,
+            vol.Optional(
+                "min_savings_margin",
+                default=current_options.get("min_savings_margin", 0.30),
+                description="� Minimální úspora pro nabíjení (Kč/kWh)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            vol.Optional(
+                "safety_margin_percent",
+                default=current_options.get("safety_margin_percent", 10.0),
+                description="🛡️ Bezpečnostní margin nad minimum (%)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
+            # SAFETY LIMIT
             vol.Optional(
                 "max_price_conf",
                 default=current_options.get("max_price_conf", 10.0),
-                description="💰 Maximální cena pro nabíjení (CZK/kWh)",
+                description="⛔ Maximální cena pro nabíjení (CZK/kWh) - POJISTKA",
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
         }
 
@@ -2709,25 +2749,31 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
         min_cap = current_options.get("min_capacity_percent", 20.0)
         target_cap = current_options.get("target_capacity_percent", 80.0)
         charge_rate = current_options.get("home_charge_rate", 2.8)
-        percentile = current_options.get("percentile_conf", 75.0)
+        economic_enabled = current_options.get("enable_economic_charging", True)
+        min_savings = current_options.get("min_savings_margin", 0.30)
+        safety_margin = current_options.get("safety_margin_percent", 10.0)
         max_price = current_options.get("max_price_conf", 10.0)
+
+        algo_name = "EKONOMICKÝ" if economic_enabled else "LEGACY (percentil)"
 
         info_text = (
             f"🔋 CHYTRÉ NABÍJENÍ BATERIE\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{'✅ ZAPNUTO' if battery_enabled else '❌ VYPNUTO'}\n\n"
             f"📊 Aktuální nastavení:\n"
+            f"  • Algoritmus: {algo_name}\n"
             f"  • Min. kapacita: {min_cap:.0f}%\n"
             f"  • Cílová kapacita: {target_cap:.0f}%\n"
             f"  • Nabíjecí výkon: {charge_rate:.1f} kW\n"
-            f"  • Percentil špičky: {percentile:.0f}%\n"
-            f"  • Max. cena: {max_price:.1f} CZK/kWh\n\n"
+            f"  • Min. úspora: {min_savings:.2f} Kč/kWh\n"
+            f"  • Safety margin: {safety_margin:.0f}%\n"
+            f"  • Max. cena (pojistka): {max_price:.1f} CZK/kWh\n\n"
             f"❓ Jak to funguje?\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"1️⃣ Systém sleduje spotové ceny elektřiny\n"
-            f"2️⃣ Identifikuje levné off-peak hodiny\n"
-            f"3️⃣ Plánuje nabíjení tak, aby baterie\n"
-            f"   neklesla pod minimální kapacitu\n"
+            f"2️⃣ Forward simulace: porovná náklady s/bez nabíjení\n"
+            f"3️⃣ Nabíjí JEN pokud úspora ≥ {min_savings:.2f} Kč/kWh\n"
+            f"4️⃣ Death valley prevence: nabije minimum pro přežití\n"
             f"4️⃣ Preferuje nejlevnější hodiny\n"
             f"5️⃣ Nikdy nenabíjí nad max. cenu\n\n"
             f"💡 Příklad:\n"

@@ -362,7 +362,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "timestamp": timestamp_str,
                     "spot_price_czk": price_point.get("price", 0),
                     "battery_capacity_kwh": round(battery_kwh, 2),
-                    "solar_production_kwh": round(solar_kwh, 2),  # CELKOVÝ solar (ne jen přebytek!)
+                    "solar_production_kwh": round(
+                        solar_kwh, 2
+                    ),  # CELKOVÝ solar (ne jen přebytek!)
                     "solar_charge_kwh": round(
                         solar_to_battery, 2
                     ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
@@ -426,6 +428,290 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             return (min_capacity_percent / 100.0) * max_capacity
 
         return 2.0  # Default 20% z 10kWh
+
+    # =========================================================================
+    # ECONOMIC CHARGING - Nové metody pro ekonomické rozhodování
+    # =========================================================================
+
+    def _get_candidate_intervals(
+        self,
+        timeline: List[Dict[str, Any]],
+        max_charging_price: float,
+        current_time: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Získat kandidátní intervaly pro nabíjení.
+
+        Filtruje:
+        1. Cena < max_charging_price (pojistka)
+        2. Timestamp > now (jen budoucnost)
+        3. Seřadí od nejlevnějších
+
+        Args:
+            timeline: Timeline data
+            max_charging_price: Maximální cena (pojistka)
+            current_time: Aktuální čas (nebo None = now)
+
+        Returns:
+            Seznam kandidátních intervalů seřazených podle ceny
+        """
+        if current_time is None:
+            current_time = dt_util.now()
+
+        candidates = []
+
+        for i, interval in enumerate(timeline):
+            price = interval.get("spot_price_czk", float("inf"))
+            timestamp_str = interval.get("timestamp", "")
+
+            # Parse timestamp
+            try:
+                interval_time = datetime.fromisoformat(
+                    timestamp_str.replace("Z", "+00:00")
+                )
+            except:
+                continue
+
+            # Filtry
+            if price >= max_charging_price:
+                continue  # Nad pojistkou
+
+            if interval_time <= current_time:
+                continue  # Minulost
+
+            candidates.append(
+                {
+                    "index": i,
+                    "price": price,
+                    "timestamp": timestamp_str,
+                    "interval_time": interval_time,
+                }
+            )
+
+        # Seřadit od nejlevnějších
+        candidates.sort(key=lambda x: x["price"])
+
+        if not candidates:
+            _LOGGER.warning(
+                f"No charging intervals available - all prices above "
+                f"max_charging_price ({max_charging_price:.2f} Kč/kWh)"
+            )
+
+        return candidates
+
+    def _simulate_forward(
+        self,
+        timeline: List[Dict[str, Any]],
+        start_index: int,
+        charge_now: bool,
+        charge_amount_kwh: float,
+        horizon_hours: int,
+        effective_minimum_kwh: float,
+        efficiency: float,
+    ) -> Dict[str, Any]:
+        """
+        Forward simulace budoucího SoC.
+
+        Simuluje co se stane s baterií od start_index až +horizon_hours.
+
+        Args:
+            timeline: Timeline data
+            start_index: Index od kterého simulovat
+            charge_now: Nabít v start_index?
+            charge_amount_kwh: Kolik nabít (pokud charge_now)
+            horizon_hours: Kolik hodin dopředu simulovat
+            effective_minimum_kwh: Bezpečné minimum (hard min + safety margin)
+            efficiency: Efektivita baterie (0.882)
+
+        Returns:
+            Dict s výsledky simulace:
+                - total_charging_cost: Celkové náklady na nabíjení
+                - min_soc: Nejnižší SoC v horizontu
+                - final_soc: Koncové SoC
+                - death_valley_reached: True pokud SoC < effective_minimum
+                - charging_events: Seznam nabíjecích událostí
+        """
+        if start_index >= len(timeline):
+            return {
+                "total_charging_cost": 0,
+                "min_soc": 0,
+                "final_soc": 0,
+                "death_valley_reached": True,
+                "charging_events": [],
+            }
+
+        # Kopie pro simulaci
+        sim_timeline = [dict(point) for point in timeline]
+
+        soc = sim_timeline[start_index].get("battery_capacity_kwh", 0)
+        total_cost = 0
+        charging_events = []
+
+        # Nabít v prvním intervalu?
+        if charge_now and charge_amount_kwh > 0:
+            soc += charge_amount_kwh
+            price = sim_timeline[start_index].get("spot_price_czk", 0)
+            cost = charge_amount_kwh * price
+            total_cost += cost
+
+            charging_events.append(
+                {
+                    "index": start_index,
+                    "kwh": charge_amount_kwh,
+                    "price": price,
+                    "cost": cost,
+                    "reason": "scenario_test",
+                }
+            )
+
+            # Update timeline
+            sim_timeline[start_index]["battery_capacity_kwh"] = soc
+            sim_timeline[start_index]["grid_charge_kwh"] = charge_amount_kwh
+
+        min_soc = soc
+        horizon_intervals = horizon_hours * 4  # 15min intervaly
+
+        # Simulovat následující intervaly
+        for i in range(
+            start_index + 1, min(start_index + horizon_intervals, len(sim_timeline))
+        ):
+            prev_soc = sim_timeline[i - 1].get("battery_capacity_kwh", 0)
+
+            # Spočítat změnu SoC podle solar, consumption
+            solar_kwh = sim_timeline[i].get("solar_production_kwh", 0)
+            load_kwh = sim_timeline[i].get("consumption_kwh", 0)
+            grid_kwh = sim_timeline[i].get("grid_charge_kwh", 0)
+
+            # Použít stejnou logiku jako v _calculate_timeline
+            is_ups_mode = grid_kwh > 0
+
+            if is_ups_mode:
+                net_energy = solar_kwh + grid_kwh
+            else:
+                if solar_kwh >= load_kwh:
+                    net_energy = (solar_kwh - load_kwh) + grid_kwh
+                else:
+                    load_from_battery = load_kwh - solar_kwh
+                    battery_drain = load_from_battery / efficiency
+                    net_energy = -battery_drain + grid_kwh
+
+            soc = prev_soc + net_energy
+            sim_timeline[i]["battery_capacity_kwh"] = soc
+
+            # Track minimum
+            min_soc = min(min_soc, soc)
+
+        final_soc = sim_timeline[
+            min(start_index + horizon_intervals - 1, len(sim_timeline) - 1)
+        ].get("battery_capacity_kwh", 0)
+        death_valley_reached = min_soc < effective_minimum_kwh
+
+        return {
+            "total_charging_cost": total_cost,
+            "min_soc": min_soc,
+            "final_soc": final_soc,
+            "death_valley_reached": death_valley_reached,
+            "charging_events": charging_events,
+        }
+
+    def _calculate_minimum_charge(
+        self,
+        scenario_wait_min_soc: float,
+        effective_minimum_kwh: float,
+        max_charge_per_interval: float,
+    ) -> float:
+        """
+        Vypočítat minimální potřebné nabití.
+
+        Nabít JEN rozdíl mezi projekcí a bezpečným minimem (ne plnou kapacitu!).
+
+        Args:
+            scenario_wait_min_soc: Nejnižší SoC při WAIT scénáři
+            effective_minimum_kwh: Bezpečné minimum
+            max_charge_per_interval: Max nabití za 15 min
+
+        Returns:
+            Kolik kWh nabít (0 pokud není potřeba)
+        """
+        shortage = effective_minimum_kwh - scenario_wait_min_soc
+
+        if shortage <= 0:
+            return 0  # Není potřeba nabíjet
+
+        # Přidat 10% buffer pro nepřesnost predikce
+        charge_needed = shortage * 1.1
+
+        # Omezit max nabíjením za interval
+        return min(charge_needed, max_charge_per_interval)
+
+    def _calculate_protection_requirement(
+        self,
+        timeline: List[Dict[str, Any]],
+        max_capacity: float,
+    ) -> Optional[float]:
+        """
+        Vypočítat required SoC pro blackout/weather ochranu.
+
+        Args:
+            timeline: Timeline data
+            max_capacity: Maximální kapacita baterie
+
+        Returns:
+            Required SoC v kWh nebo None (pokud vypnuto)
+        """
+        config = (
+            self._config_entry.options
+            if self._config_entry.options
+            else self._config_entry.data
+        )
+
+        required_soc = 0
+
+        # A) Blackout ochrana
+        enable_blackout = config.get("enable_blackout_protection", False)
+        if enable_blackout:
+            blackout_hours = config.get("blackout_protection_hours", 12)
+            blackout_target_percent = config.get("blackout_target_soc_percent", 60.0)
+
+            # Spotřeba během autonomy period
+            current_time = dt_util.now()
+            autonomy_end = current_time + timedelta(hours=blackout_hours)
+
+            autonomy_consumption = 0
+            for point in timeline:
+                try:
+                    timestamp_str = point.get("timestamp", "")
+                    point_time = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
+                    )
+
+                    if current_time < point_time <= autonomy_end:
+                        autonomy_consumption += point.get("consumption_kwh", 0)
+                except:
+                    continue
+
+            blackout_soc = max(
+                autonomy_consumption, (blackout_target_percent / 100.0) * max_capacity
+            )
+            required_soc = max(required_soc, blackout_soc)
+
+            _LOGGER.debug(
+                f"Blackout protection: required {blackout_soc:.2f} kWh "
+                f"(consumption {autonomy_consumption:.2f} kWh, target {blackout_target_percent}%)"
+            )
+
+        # B) ČHMÚ weather risk
+        enable_weather = config.get("enable_weather_risk", False)
+        if enable_weather:
+            # TODO: Implementovat až bude sensor.oig_chmu_warning dostupný
+            # Pro nyní použít jen target
+            weather_target_percent = config.get("weather_target_soc_percent", 70.0)
+            weather_soc = (weather_target_percent / 100.0) * max_capacity
+            required_soc = max(required_soc, weather_soc)
+
+            _LOGGER.debug(f"Weather risk protection: required {weather_soc:.2f} kWh")
+
+        return required_soc if required_soc > 0 else None
 
     def _get_battery_efficiency(self) -> float:
         """
@@ -820,10 +1106,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         """
         Optimalizuje nabíjení baterie ze sítě podle cenových dat.
 
-        Nový algoritmus:
-        1. Analyzuje kdy baterie potřebuje nabít (pod minimum nebo pro target)
-        2. Vybírá nejlevnější dostupné intervaly kde se baterie SKUTEČNĚ nabije
-        3. Zabezpečí že nenabíjíme když je baterie plná
+        Podporuje dva režimy:
+        1. Economic charging (nový) - Forward simulace s ekonomickým vyhodnocením
+        2. Legacy charging (starý) - Percentile-based s kritickými místy
 
         Args:
             timeline_data: Seznam bodů s predikcí baterie
@@ -841,54 +1126,357 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 if self._config_entry.options
                 else self._config_entry.data
             )
+
+            # Nové parametry
+            enable_economic_charging = config.get("enable_economic_charging", True)
+            min_savings_margin = config.get("min_savings_margin", 0.30)  # Kč/kWh
+            safety_margin_percent = config.get("safety_margin_percent", 10.0)  # %
+
+            # Protection parametry (optional)
+            enable_blackout_protection = config.get("enable_blackout_protection", False)
+            blackout_protection_hours = config.get("blackout_protection_hours", 12)
+            blackout_target_soc_percent = config.get(
+                "blackout_target_soc_percent", 60.0
+            )
+
+            enable_weather_risk = config.get("enable_weather_risk", False)
+            weather_risk_level = config.get("weather_risk_level", "medium")
+            weather_target_soc_percent = config.get("weather_target_soc_percent", 70.0)
+
+            # Společné parametry
             min_capacity_percent = config.get("min_capacity_percent", 20.0)
             target_capacity_percent = config.get("target_capacity_percent", 80.0)
             max_charging_price = config.get("max_price_conf", 10.0)
-            peak_percentile = config.get("percentile_conf", 75.0)
             charging_power_kw = config.get("home_charge_rate", 2.8)
+
+            # Legacy parametr (jen pro backward compatibility)
+            peak_percentile = config.get("percentile_conf", 75.0)
 
             max_capacity = self._get_max_battery_capacity()
             min_capacity_kwh = (min_capacity_percent / 100.0) * max_capacity
             target_capacity_kwh = (target_capacity_percent / 100.0) * max_capacity
 
-            _LOGGER.info(
-                f"Smart grid charging optimization: min={min_capacity_kwh:.2f}kWh, target={target_capacity_kwh:.2f}kWh, max_price={max_charging_price}CZK, percentile={peak_percentile}%"
-            )
+            # Vypočítat effective_minimum s bezpečnostním marginem
+            usable_capacity = max_capacity - min_capacity_kwh
+            safety_margin_kwh = (safety_margin_percent / 100.0) * usable_capacity
+            effective_minimum_kwh = min_capacity_kwh + safety_margin_kwh
 
-            # Identifikovat špičky podle percentilu
-            prices = [
-                point.get("spot_price_czk", 0)
-                for point in timeline_data
-                if point.get("spot_price_czk") is not None
-            ]
-            if not prices:
-                _LOGGER.warning("No price data available for optimization")
-                return timeline_data
+            # Rozhodnout který algoritmus použít
+            if enable_economic_charging:
+                _LOGGER.info(
+                    f"ECONOMIC grid charging: min={min_capacity_kwh:.2f}kWh, "
+                    f"effective_min={effective_minimum_kwh:.2f}kWh (+{safety_margin_kwh:.2f}kWh safety), "
+                    f"target={target_capacity_kwh:.2f}kWh, max_price={max_charging_price}CZK, "
+                    f"min_savings={min_savings_margin}CZK/kWh"
+                )
 
-            price_threshold = np.percentile(prices, peak_percentile)
-            _LOGGER.debug(
-                f"Price threshold (percentile {peak_percentile}%): {price_threshold:.2f} CZK/kWh"
-            )
+                optimized_timeline = self._economic_charging_plan(
+                    timeline_data,
+                    min_capacity_kwh=min_capacity_kwh,
+                    effective_minimum_kwh=effective_minimum_kwh,
+                    target_capacity_kwh=target_capacity_kwh,
+                    max_charging_price=max_charging_price,
+                    min_savings_margin=min_savings_margin,
+                    charging_power_kw=charging_power_kw,
+                    max_capacity=max_capacity,
+                    enable_blackout_protection=enable_blackout_protection,
+                    blackout_protection_hours=blackout_protection_hours,
+                    blackout_target_soc_percent=blackout_target_soc_percent,
+                    enable_weather_risk=enable_weather_risk,
+                    weather_risk_level=weather_risk_level,
+                    weather_target_soc_percent=weather_target_soc_percent,
+                )
 
-            # Kopie timeline pro úpravy
-            optimized_timeline = [dict(point) for point in timeline_data]
+            else:
+                # Fallback na starý algoritmus
+                _LOGGER.info(
+                    f"LEGACY grid charging: min={min_capacity_kwh:.2f}kWh, "
+                    f"target={target_capacity_kwh:.2f}kWh, max_price={max_charging_price}CZK, "
+                    f"percentile={peak_percentile}%"
+                )
 
-            # NOVÝ PŘÍSTUP: Chytrý plán nabíjení
-            optimized_timeline = self._smart_charging_plan(
-                optimized_timeline,
-                min_capacity_kwh,
-                target_capacity_kwh,
-                max_charging_price,
-                price_threshold,
-                charging_power_kw,
-                max_capacity,
-            )
+                # Identifikovat špičky podle percentilu
+                prices = [
+                    point.get("spot_price_czk", 0)
+                    for point in timeline_data
+                    if point.get("spot_price_czk") is not None
+                ]
+                if not prices:
+                    _LOGGER.warning("No price data available for optimization")
+                    return timeline_data
+
+                price_threshold = np.percentile(prices, peak_percentile)
+                _LOGGER.debug(
+                    f"Price threshold (percentile {peak_percentile}%): {price_threshold:.2f} CZK/kWh"
+                )
+
+                # Kopie timeline pro úpravy
+                optimized_timeline = [dict(point) for point in timeline_data]
+
+                # Použít starý algoritmus
+                optimized_timeline = self._smart_charging_plan(
+                    optimized_timeline,
+                    min_capacity_kwh,
+                    target_capacity_kwh,
+                    max_charging_price,
+                    price_threshold,
+                    charging_power_kw,
+                    max_capacity,
+                )
 
             return optimized_timeline
 
         except Exception as e:
             _LOGGER.error(f"Error in grid charging optimization: {e}", exc_info=True)
             return timeline_data
+
+    def _economic_charging_plan(
+        self,
+        timeline_data: List[Dict[str, Any]],
+        min_capacity_kwh: float,
+        effective_minimum_kwh: float,
+        target_capacity_kwh: float,
+        max_charging_price: float,
+        min_savings_margin: float,
+        charging_power_kw: float,
+        max_capacity: float,
+        enable_blackout_protection: bool,
+        blackout_protection_hours: int,
+        blackout_target_soc_percent: float,
+        enable_weather_risk: bool,
+        weather_risk_level: str,
+        weather_target_soc_percent: float,
+    ) -> List[Dict[str, Any]]:
+        """
+        Ekonomický plán nabíjení s forward simulací.
+
+        Algoritmus:
+        1. Kontrola ochran (blackout, weather) - pokud aktivní, nabít okamžitě v nejlevnějším
+        2. Forward simulace - porovnání nákladů s/bez nabíjení
+        3. Death valley prevence - minimum charge pro přežití
+        4. Ekonomické rozhodnutí - nabít jen pokud se to vyplatí
+
+        Args:
+            timeline_data: Timeline data
+            min_capacity_kwh: Minimální kapacita (kWh)
+            effective_minimum_kwh: Minimální kapacita + bezpečnostní margin (kWh)
+            target_capacity_kwh: Cílová kapacita na konci (kWh)
+            max_charging_price: Maximální cena (CZK/kWh) - SAFETY LIMIT
+            min_savings_margin: Minimální úspora pro nabíjení (CZK/kWh)
+            charging_power_kw: Nabíjecí výkon (kW)
+            max_capacity: Maximální kapacita baterie (kWh)
+            enable_blackout_protection: Aktivovat ochranu před blackoutem
+            blackout_protection_hours: Počet hodin ochrany
+            blackout_target_soc_percent: Cílový SoC pro blackout (%)
+            enable_weather_risk: Aktivovat ochranu před počasím
+            weather_risk_level: Úroveň rizika (low/medium/high)
+            weather_target_soc_percent: Cílový SoC pro weather (%)
+
+        Returns:
+            Optimalizovaná timeline
+        """
+        # Kopie timeline pro úpravy
+        timeline = [dict(point) for point in timeline_data]
+
+        charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
+        current_time = datetime.now()
+
+        # KROK 1: PRIORITA MAXIMUM - Protection overrides (blackout, weather)
+        protection_soc_kwh = self._calculate_protection_requirement(
+            timeline=timeline,
+            max_capacity=max_capacity,
+        )
+
+        if protection_soc_kwh is not None:
+            current_soc = timeline[0].get("battery_capacity_kwh", 0)
+            protection_shortage = protection_soc_kwh - current_soc
+
+            if protection_shortage > 0:
+                _LOGGER.warning(
+                    f"PROTECTION OVERRIDE: Need {protection_shortage:.2f}kWh "
+                    f"to reach protection target {protection_soc_kwh:.2f}kWh "
+                    f"(current: {current_soc:.2f}kWh)"
+                )
+
+                # Najít nejlevnější intervaly bez ohledu na ekonomiku
+                # Ale stále respektovat max_charging_price jako safety limit!
+                candidates = self._get_candidate_intervals(
+                    timeline=timeline,
+                    max_charging_price=max_charging_price,  # Safety limit
+                    current_time=current_time,
+                )
+
+                if not candidates:
+                    _LOGGER.error(
+                        f"PROTECTION FAILED: No charging candidates under "
+                        f"max_price={max_charging_price}CZK"
+                    )
+                else:
+                    # Nabít postupně v nejlevnějších intervalech
+                    charged = 0.0
+                    for candidate in candidates:
+                        if charged >= protection_shortage:
+                            break
+
+                        idx = candidate["index"]
+                        old_charge = timeline[idx].get("grid_charge_kwh", 0)
+                        timeline[idx]["grid_charge_kwh"] = (
+                            old_charge + charge_per_interval
+                        )
+                        charged += charge_per_interval
+
+                        _LOGGER.info(
+                            f"PROTECTION: Adding {charge_per_interval:.2f}kWh at "
+                            f"{candidate['timestamp']} (price {candidate['price']:.2f}CZK)"
+                        )
+
+                        # Přepočítat timeline
+                        self._recalculate_timeline_from_index(timeline, idx)
+
+                    _LOGGER.info(
+                        f"PROTECTION: Charged {charged:.2f}kWh / {protection_shortage:.2f}kWh needed"
+                    )
+
+        # KROK 2: EKONOMICKÁ OPTIMALIZACE
+        # Získat kandidáty seřazené podle ceny
+        candidates = self._get_candidate_intervals(
+            timeline=timeline,
+            max_charging_price=max_charging_price,
+            current_time=current_time,
+        )
+
+        if not candidates:
+            _LOGGER.warning(
+                f"No economic charging candidates under max_price={max_charging_price}CZK"
+            )
+            return timeline
+
+        _LOGGER.info(f"Found {len(candidates)} economic charging candidates")
+
+        # Pro každého kandidáta: forward simulace a ekonomické vyhodnocení
+        efficiency = self._get_battery_efficiency()
+
+        for candidate in candidates:
+            idx = candidate["index"]
+            price = candidate["price"]
+            timestamp = candidate["timestamp"]
+
+            # Simulovat 48h dopředu (nebo do konce timeline)
+            horizon_hours = min(48, len(timeline) - idx)
+
+            # Scénář 1: Nabít tady
+            result_charge = self._simulate_forward(
+                timeline=timeline,
+                start_index=idx,
+                charge_now=True,
+                charge_amount_kwh=charge_per_interval,
+                horizon_hours=horizon_hours,
+                effective_minimum_kwh=effective_minimum_kwh,
+                efficiency=efficiency,
+            )
+            cost_charge = result_charge["total_charging_cost"]
+            min_soc_charge = result_charge["min_soc"]
+            final_soc_charge = result_charge["final_soc"]
+            death_valley_charge = result_charge["death_valley_reached"]
+
+            # Scénář 2: Počkat (nenabíjet tady)
+            result_wait = self._simulate_forward(
+                timeline=timeline,
+                start_index=idx,
+                charge_now=False,
+                charge_amount_kwh=0,
+                horizon_hours=horizon_hours,
+                effective_minimum_kwh=effective_minimum_kwh,
+                efficiency=efficiency,
+            )
+            cost_wait = result_wait["total_charging_cost"]
+            min_soc_wait = result_wait["min_soc"]
+            final_soc_wait = result_wait["final_soc"]
+            death_valley_wait = result_wait["death_valley_reached"]
+
+            # ROZHODNUTÍ 1: Death valley prevence
+            if death_valley_wait:
+                # Pokud nenabijeme, spadneme pod effective_minimum
+                shortage = effective_minimum_kwh - min_soc_wait
+
+                if shortage > 0:
+                    # Spočítat minimum charge
+                    min_charge = self._calculate_minimum_charge(
+                        scenario_wait_min_soc=min_soc_wait,
+                        effective_minimum_kwh=effective_minimum_kwh,
+                        max_charge_per_interval=charge_per_interval,
+                    )
+
+                    _LOGGER.warning(
+                        f"DEATH VALLEY at {timestamp}: Need {min_charge:.2f}kWh "
+                        f"(min_soc_wait={min_soc_wait:.2f}kWh, effective_min={effective_minimum_kwh:.2f}kWh)"
+                    )
+
+                    # Nabít minimum (ne full charge!)
+                    old_charge = timeline[idx].get("grid_charge_kwh", 0)
+                    timeline[idx]["grid_charge_kwh"] = old_charge + min_charge
+
+                    # Přepočítat timeline
+                    self._recalculate_timeline_from_index(timeline, idx)
+
+                    _LOGGER.info(
+                        f"DEATH VALLEY FIX: Added {min_charge:.2f}kWh at {timestamp} "
+                        f"(price {price:.2f}CZK)"
+                    )
+
+                    continue  # Další kandidát
+
+            # ROZHODNUTÍ 2: Ekonomické vyhodnocení
+            # Nabíjet jen pokud to ušetří min_savings_margin
+            savings_per_kwh = (cost_wait - cost_charge) / charge_per_interval
+
+            if savings_per_kwh >= min_savings_margin:
+                # Vyplatí se nabít!
+                old_charge = timeline[idx].get("grid_charge_kwh", 0)
+                timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
+
+                # Přepočítat timeline
+                self._recalculate_timeline_from_index(timeline, idx)
+
+                _LOGGER.info(
+                    f"ECONOMIC: Added {charge_per_interval:.2f}kWh at {timestamp} "
+                    f"(price {price:.2f}CZK, savings {savings_per_kwh:.3f}CZK/kWh > {min_savings_margin}CZK/kWh)"
+                )
+            else:
+                _LOGGER.debug(
+                    f"ECONOMIC: Skipping {timestamp} "
+                    f"(price {price:.2f}CZK, savings {savings_per_kwh:.3f}CZK/kWh < {min_savings_margin}CZK/kWh)"
+                )
+
+        # KROK 3: Finální kontrola a metriky
+        final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
+        target_achieved = final_capacity >= target_capacity_kwh
+        min_achieved = final_capacity >= min_capacity_kwh
+
+        # Uložit metriky pro dashboard
+        self._charging_metrics = {
+            "algorithm": "economic",
+            "target_capacity_kwh": target_capacity_kwh,
+            "effective_minimum_kwh": effective_minimum_kwh,
+            "final_capacity_kwh": final_capacity,
+            "min_capacity_kwh": min_capacity_kwh,
+            "target_achieved": target_achieved,
+            "min_achieved": min_achieved,
+            "shortage_kwh": (
+                max(0, target_capacity_kwh - final_capacity)
+                if not target_achieved
+                else 0
+            ),
+            "protection_enabled": enable_blackout_protection or enable_weather_risk,
+            "protection_soc_kwh": protection_soc_kwh,
+        }
+
+        _LOGGER.info(
+            f"Economic charging complete: final={final_capacity:.2f}kWh, "
+            f"target={target_capacity_kwh:.2f}kWh, achieved={target_achieved}"
+        )
+
+        return timeline
 
     def _smart_charging_plan(
         self,

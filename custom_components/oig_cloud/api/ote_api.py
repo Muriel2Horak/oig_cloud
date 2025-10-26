@@ -201,12 +201,34 @@ class OteApi:
 
         return root
 
-    def _period_index_to_time(self, date_obj: date, period_index: int) -> datetime:
-        """PT15M; index 1..96 (DST dny 92/100)."""
-        minutes = (period_index - 1) * 15
-        local_dt = datetime.combine(
-            date_obj, time(0), tzinfo=self.timezone
-        ) + timedelta(minutes=minutes)
+    def _parse_period_interval(self, date_obj: date, period_interval: str) -> datetime:
+        """
+        Parsuje PeriodInterval text (např. "23:45-24:00" nebo "02a:00-02a:15").
+
+        DST handling:
+        - "02a:00" = první výskyt hodiny 02:00 (před posunem času)
+        - "02b:00" = druhý výskyt hodiny 02:00 (po posunu času)
+        - Druhý výskyt posuneme o +1 minutu pro vizuální rozlišení v grafech
+        """
+        # Formát: "HH:MM-HH:MM" nebo "HHa:MM-HHa:MM" nebo "HHb:MM-HHb:MM"
+        start_time = period_interval.split("-")[0].strip()
+
+        # Detekce DST suffixu (a/b)
+        is_second_occurrence = "b" in start_time
+
+        # Odstranění suffixu a parsování času
+        clean_time = start_time.replace("a", "").replace("b", "")
+        hour, minute = map(int, clean_time.split(":"))
+
+        # Pro druhý výskyt (b) přidáme +1 minutu
+        if is_second_occurrence:
+            minute += 1
+            # Overflow check (pokud je 59+1 = 60)
+            if minute >= 60:
+                minute = 0
+                hour += 1
+
+        local_dt = datetime.combine(date_obj, time(hour, minute), tzinfo=self.timezone)
         return local_dt.astimezone(self.utc)
 
     def _aggregate_quarter_to_hour(
@@ -230,8 +252,8 @@ class OteApi:
         result: Dict[datetime, Decimal] = {}
         for item in root.findall(".//{http://www.ote-cr.cz/schema/service/public}Item"):
             d_el = item.find("{http://www.ote-cr.cz/schema/service/public}Date")
-            pidx_el = item.find(
-                "{http://www.ote-cr.cz/schema/service/public}PeriodIndex"
+            pinterval_el = item.find(
+                "{http://www.ote-cr.cz/schema/service/public}PeriodInterval"
             )
             pres_el = item.find(
                 "{http://www.ote-cr.cz/schema/service/public}PeriodResolution"
@@ -239,22 +261,21 @@ class OteApi:
             price_el = item.find("{http://www.ote-cr.cz/schema/service/public}Price")
             if not (
                 d_el is not None
-                and pidx_el is not None
+                and pinterval_el is not None
                 and pres_el is not None
                 and price_el is not None
             ):
                 continue
-            if not (d_el.text and pidx_el.text and pres_el.text and price_el.text):
+            if not (d_el.text and pinterval_el.text and pres_el.text and price_el.text):
                 continue
             if pres_el.text != "PT15M":
                 # bezpečnostně ignorujeme jiné periody
                 continue
 
             d = date.fromisoformat(d_el.text)
-            pidx = int(pidx_el.text)
             price_eur_mwh = Decimal(price_el.text)  # EUR/MWh
 
-            dt_utc = self._period_index_to_time(d, pidx)
+            dt_utc = self._parse_period_interval(d, pinterval_el.text)
             result[dt_utc] = price_eur_mwh / Decimal(1000)  # EUR/kWh
 
         return result
@@ -424,6 +445,7 @@ class OteApi:
         for dt, price_czk in hourly_czk.items():
             local_dt = dt.astimezone(self.timezone)
             price_date = local_dt.date()
+
             time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:00:00"
 
             prices_czk_kwh[time_key] = round(price_czk, 4)
@@ -485,9 +507,11 @@ class OteApi:
         if qh_rates_czk and qh_rates_eur:
             qh_prices_czk_kwh: Dict[str, float] = {}
             qh_prices_eur_mwh: Dict[str, float] = {}
+
             for dt, price_czk in qh_rates_czk.items():
                 local_dt = dt.astimezone(self.timezone)
                 price_date = local_dt.date()
+
                 time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
                 qh_prices_czk_kwh[time_key] = round(price_czk, 4)
                 qh_prices_eur_mwh[time_key] = round(float(qh_rates_eur[dt]) * 1000.0, 2)

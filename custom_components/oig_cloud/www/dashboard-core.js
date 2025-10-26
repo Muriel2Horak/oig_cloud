@@ -2227,6 +2227,92 @@ function cleanupSubFlows(flowKey) {
 }
 
 /**
+ * OPRAVA ÚNIK PAMĚTI: Zastaví a vyčistí VŠECHNY particle flows včetně animací
+ * Toto je kritická funkce pro prevenci memory leaks při dlouhém běhu dashboardu
+ */
+function stopAllParticleFlows() {
+    console.log('[Particles] 🧹 Stopping all particle flows and cleaning up...');
+
+    // 1. Zastavit všechny flows a SMAZAT je z objektu
+    let flowCount = 0;
+    Object.keys(particleFlows).forEach(key => {
+        particleFlows[key].active = false;
+        delete particleFlows[key];
+        flowCount++;
+    });
+
+    console.log(`[Particles] ✓ Stopped ${flowCount} flows`);
+
+    // 2. Vyčistit DOM a zrušit běžící animace
+    const container = document.getElementById('particles');
+    if (container) {
+        const particles = container.querySelectorAll('.particle');
+        const particleCount = particles.length;
+
+        // Explicitně zrušit všechny Web Animation API animace
+        particles.forEach(particle => {
+            const animations = particle.getAnimations();
+            animations.forEach(anim => {
+                try {
+                    anim.cancel();
+                } catch (e) {
+                    // Ignorovat chyby při rušení už dokončených animací
+                }
+            });
+            particle.remove();
+        });
+
+        // Finální vyčištění kontejneru
+        container.innerHTML = '';
+
+        console.log(`[Particles] ✓ Cleaned ${particleCount} particles from DOM`);
+    } else {
+        console.warn('[Particles] ⚠️ Particles container not found');
+    }
+
+    // 3. Reinicializovat základní flow objekty (ale neaktivní)
+    const baseFlows = ['solarToInverter', 'batteryToInverter', 'inverterToBattery',
+                       'gridToInverter', 'inverterToGrid', 'inverterToHouse'];
+    baseFlows.forEach(flowKey => {
+        particleFlows[flowKey] = { active: false, speed: 2000, count: 0, sources: [] };
+    });
+
+    console.log('[Particles] ✓ Particle flows cleaned and reinitialized');
+}
+
+/**
+ * DEBUGGING: Vypíše aktuální stav paměti a počet kuliček
+ * Volitelné - použij v konzoli nebo pro monitoring
+ */
+function logParticleMemoryStats() {
+    const container = document.getElementById('particles');
+    const particleCount = container ? container.children.length : 0;
+    const flowCount = Object.keys(particleFlows).length;
+    const activeFlows = Object.keys(particleFlows).filter(k => particleFlows[k]?.active).length;
+
+    console.log('═══════════════════════════════════════');
+    console.log('📊 PARTICLE MEMORY STATS');
+    console.log('═══════════════════════════════════════');
+    console.log(`🔵 Particles in DOM: ${particleCount}`);
+    console.log(`📦 Flow objects: ${flowCount} (${activeFlows} active)`);
+
+    if (performance.memory) {
+        const heapMB = (performance.memory.usedJSHeapSize / 1048576).toFixed(2);
+        const limitMB = (performance.memory.jsHeapSizeLimit / 1048576).toFixed(2);
+        const percentage = ((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100).toFixed(1);
+        console.log(`💾 Heap used: ${heapMB} MB / ${limitMB} MB (${percentage}%)`);
+    }
+
+    console.log('═══════════════════════════════════════');
+
+    return { particleCount, flowCount, activeFlows };
+}
+
+// Globální funkce pro debugging - můžeš volat z konzole
+window.logParticleStats = logParticleMemoryStats;
+window.cleanupParticles = stopAllParticleFlows;
+
+/**
  * Vypočítá parametry toku podle výkonu a maxima
  * @param {number} power - Výkon v W (může být záporný)
  * @param {number} maximum - Maximální výkon v W
@@ -2281,9 +2367,16 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
     const particlesContainer = document.getElementById('particles');
     if (!particlesContainer) return;
 
+    // OPRAVA ÚNIK PAMĚTI: Kontrola max počtu kuliček v DOM (prevence exponenciálního růstu)
+    const currentParticleCount = particlesContainer.children.length;
+    if (currentParticleCount > 50) {
+        console.warn(`[Particles] ⚠️ Too many particles (${currentParticleCount}), skipping creation for flow: ${flowKey}`);
+        return;
+    }
+
     particlesContainer.appendChild(particle);
 
-    particle.animate([
+    const animation = particle.animate([
         { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
         { opacity: opacity, offset: 0.1 },
         { opacity: opacity, offset: 0.9 },
@@ -2291,7 +2384,15 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
     ], {
         duration: speed,
         easing: 'linear'
-    }).onfinish = () => {
+    });
+
+    animation.onfinish = () => {
+        // OPRAVA ÚNIK PAMĚTI: Explicitně zrušit animaci před odstraněním elementu
+        try {
+            animation.cancel();
+        } catch (e) {
+            // Ignorovat chyby (animace už může být zrušená)
+        }
         particle.remove();
         // OPRAVA: Použít lokální kopii rychlosti (speed parametr) místo flow.speed
         // Tím zabráníme race condition když se rychlost změní během animace
@@ -2578,6 +2679,30 @@ function animateFlow(data) {
     // Use cached positions
     const centers = getNodeCenters();
     if (!centers) return;
+
+    // OPRAVA ÚNIK PAMĚTI: Při výrazné změně power hodnot vyčistit staré particles
+    // Toto pomáhá při náhlých změnách (např. cloud zakryje solár, zapne se boiler, atd.)
+    if (lastPowerValues) {
+        const solarChange = Math.abs(solarPower - (lastPowerValues.solarPower || 0));
+        const batteryChange = Math.abs(batteryPower - (lastPowerValues.batteryPower || 0));
+        const gridChange = Math.abs(gridPower - (lastPowerValues.gridPower || 0));
+        const houseChange = Math.abs(housePower - (lastPowerValues.housePower || 0));
+
+        // Pokud došlo k výrazné změně (>2000W na jakémkoli toku), vyčistit particles
+        const significantChange = solarChange > 2000 || batteryChange > 2000 ||
+                                  gridChange > 2000 || houseChange > 2000;
+
+        if (significantChange) {
+            console.log(`[Particles] 🔄 Significant power change detected (S:${solarChange}W B:${batteryChange}W G:${gridChange}W H:${houseChange}W), cleaning up...`);
+            const container = document.getElementById('particles');
+            if (container && container.children.length > 10) {
+                // Vyčistit jen pokud je více než 10 kuliček (aby se to nevolalo zbytečně)
+                stopAllParticleFlows();
+                // Po cleanup nastavit flag pro reinicializaci (už je nastaven v loadData, ale pro jistotu)
+                needsFlowReinitialize = true;
+            }
+        }
+    }
 
     // ========================================
     // 1. SOLAR → INVERTER (žlutá, jednosměrný)
@@ -4486,6 +4611,35 @@ function init() {
 
     // === CUSTOM TILES INITIALIZATION ===
     initCustomTiles();
+
+    // === PERIODICKÝ CLEANUP PARTICLES (PREVENCE ÚNIK PAMĚTI) ===
+    // Každých 30 sekund vyčistíme particles, pokud NEJSME na tab Toky
+    // Pokud JSME na tab Toky, vyčistíme jen pokud je příliš mnoho kuliček
+    setInterval(() => {
+        const tokyTab = document.querySelector('#toky-tab');
+        const isTokyTabActive = tokyTab && tokyTab.classList.contains('active');
+        const particlesContainer = document.getElementById('particles');
+
+        if (!isTokyTabActive) {
+            // Nejsme na tab Toky -> kompletní cleanup
+            console.log('[Particles] ⏰ Periodic cleanup (not on Toky tab)');
+            stopAllParticleFlows();
+        } else if (particlesContainer) {
+            // Jsme na tab Toky -> cleanup jen pokud je > 40 kuliček
+            const particleCount = particlesContainer.children.length;
+            if (particleCount > 40) {
+                console.log(`[Particles] ⏰ Periodic cleanup (${particleCount} particles exceeded threshold)`);
+                stopAllParticleFlows();
+                // Po cleanup restartovat animace s aktuálními daty
+                setTimeout(() => {
+                    needsFlowReinitialize = true;
+                    loadData();
+                }, 200);
+            }
+        }
+    }, 30000); // 30 sekund
+
+    console.log('[Particles] ✓ Periodic cleanup timer started (30s interval)');
 }
 
 // Wait for DOM
@@ -4525,20 +4679,8 @@ function switchTab(tabName) {
         console.log('[Tab] Event:', event);
         console.log('[Tab] Tab content element:', document.getElementById('toky-tab'));
 
-        // 1. Zastavit všechny particle flows
-        Object.keys(particleFlows).forEach(key => {
-            particleFlows[key].active = false;
-        });
-        console.log('[Tab] ✓ Particle flows stopped');
-
-        // 2. Odstranit všechny existující částice
-        const particlesContainer = document.getElementById('particles');
-        if (particlesContainer) {
-            particlesContainer.innerHTML = '';
-            console.log('[Tab] ✓ Particles cleared');
-        } else {
-            console.error('[Tab] ✗ Particles container NOT FOUND!');
-        }
+        // OPRAVA ÚNIK PAMĚTI: Použít novou cleanup funkci
+        stopAllParticleFlows();
 
         // DŮLEŽITÉ: Počkat až se tab zobrazí a DOM se vykreslí
         setTimeout(() => {
