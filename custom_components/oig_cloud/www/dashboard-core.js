@@ -61,8 +61,11 @@ function applyCustomPositions(positions) {
         if (pos.transform !== undefined) node.style.transform = pos.transform;
     });
 
-    // Invalidovat cache a přepočítat částice
+    // Invalidovat cache a přepočítat čáry a částice
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
     if (typeof updateAllParticleFlows === 'function') {
         updateAllParticleFlows();
     }
@@ -84,8 +87,11 @@ function resetLayout(breakpoint) {
         node.style.transform = '';
     });
 
-    // Invalidovat cache a přepočítat částice
+    // Invalidovat cache a přepočítat čáry a částice
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
     if (typeof updateAllParticleFlows === 'function') {
         updateAllParticleFlows();
     }
@@ -181,8 +187,11 @@ function handleDragMove(e) {
     draggedNode.style.bottom = 'auto';
     draggedNode.style.transform = 'none';
 
-    // Live update particles
+    // Live update čar a částic během tažení
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
 }
 
 function handleDragEnd(e) {
@@ -195,8 +204,11 @@ function handleDragEnd(e) {
     // Uložit pozice
     saveCurrentLayout();
 
-    // Finální update částic
+    // Finální update čar a částic
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
     if (typeof updateAllParticleFlows === 'function') {
         updateAllParticleFlows();
     }
@@ -261,8 +273,11 @@ function handleTouchMove(e) {
     draggedNode.style.bottom = 'auto';
     draggedNode.style.transform = 'none';
 
-    // Live update
+    // Live update čar během touch tažení
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
 }
 
 function handleTouchEnd(e) {
@@ -275,8 +290,11 @@ function handleTouchEnd(e) {
     // Uložit pozice
     saveCurrentLayout();
 
-    // Finální update
+    // Finální update čar a částic
     invalidateNodeCentersCache();
+    if (typeof drawConnections === 'function') {
+        drawConnections();
+    }
     if (typeof updateAllParticleFlows === 'function') {
         updateAllParticleFlows();
     }
@@ -346,12 +364,16 @@ function handleLayoutResize() {
             if (!loaded) {
                 console.log(`[Layout] No custom ${newBreakpoint} layout, using defaults`);
             }
+        }
 
-            // Update částic
-            invalidateNodeCentersCache();
-            if (typeof updateAllParticleFlows === 'function') {
-                updateAllParticleFlows();
-            }
+        // OPRAVA: Vždy překreslit čáry při resize (i bez změny breakpointu)
+        // protože pozice nodes se mění v % → změna pixel pozic
+        invalidateNodeCentersCache();
+        if (typeof drawConnections === 'function') {
+            drawConnections();
+        }
+        if (typeof updateAllParticleFlows === 'function') {
+            updateAllParticleFlows();
         }
     }, 300);
 }
@@ -2643,6 +2665,35 @@ function stopAllParticleFlows() {
 }
 
 /**
+ * Aktualizovat všechny particle flows po změně layoutu.
+ * Zastaví všechny běžící flows a vynutí reinicializaci s novými pozicemi nodes.
+ */
+function updateAllParticleFlows() {
+    console.log('[Layout] 🔄 Updating all particle flows after layout change...');
+
+    // DŮLEŽITÉ: Zastavit VŠECHNY běžící particles okamžitě
+    stopAllParticleFlows();
+
+    // Invalidovat cache pozic nodes
+    if (typeof cachedNodeCenters !== 'undefined') {
+        cachedNodeCenters = null;
+    }
+    if (typeof lastLayoutHash !== 'undefined') {
+        lastLayoutHash = null;
+    }
+
+    // Nastavit flag pro reinicializaci při dalším update cyklu
+    if (typeof needsFlowReinitialize !== 'undefined') {
+        needsFlowReinitialize = true;
+    }
+
+    // NEBUDEME spouštět animateFlow okamžitě - necháme to na normální update cyklus
+    // Tím zajistíme že particles dostanou správné pozice z getNodeCenters()
+
+    console.log('[Layout] ✓ All particles stopped, waiting for next data update to reinitialize');
+}
+
+/**
  * DEBUGGING: Vypíše aktuální stav paměti a počet kuliček
  * Volitelné - použij v konzoli nebo pro monitoring
  */
@@ -3066,9 +3117,22 @@ function getNodeCenters() {
     cachedNodeCenters = centers;
     lastLayoutHash = currentHash;
 
-    // If layout changed, redraw connections
+    // OPRAVA: Pokud se layout změnil, vyčistit VŠECHNY particles
+    // protože mají hardcodované staré cílové pozice v animacích
     if (layoutChanged && currentHash) {
-        // console.log('[Layout] Layout changed, redrawing connections');
+        console.log('[Layout] Layout changed, stopping all particles and redrawing connections');
+
+        // Zastavit všechny běžící particles (mají staré pozice)
+        if (typeof stopAllParticleFlows === 'function') {
+            stopAllParticleFlows();
+        }
+
+        // Nastavit flag pro reinicializaci
+        if (typeof needsFlowReinitialize !== 'undefined') {
+            needsFlowReinitialize = true;
+        }
+
+        // Překreslit čáry s novými pozicemi
         debouncedDrawConnections(50);
     }
 
@@ -4869,6 +4933,27 @@ async function updateBatteryBalancingCard() {
             statusLabel.style.color = stateColor;
         }
 
+        // OPRAVA: Update nadpisu karty podle aktuálního stavu
+        const cardTitle = document.getElementById('balancing-card-title');
+        if (cardTitle) {
+            if (currentState === 'balancing') {
+                cardTitle.textContent = '⚡ Probíhá balancování';
+                cardTitle.style.color = '#FF9800';
+            } else if (currentState === 'charging') {
+                cardTitle.textContent = '🔋 Příprava na balancování';
+                cardTitle.style.color = '#FFC107';
+            } else if (currentState === 'completed') {
+                cardTitle.textContent = '✅ Balancování dokončeno';
+                cardTitle.style.color = '#4CAF50';
+            } else if (currentState === 'planned') {
+                cardTitle.textContent = '📅 Balancování naplánováno';
+                cardTitle.style.color = '#2196F3';
+            } else {
+                cardTitle.textContent = '🔋 Vyrovnání baterie';
+                cardTitle.style.color = '#FF9800';
+            }
+        }
+
         // Update velké číslo - dny
         const daysNumber = document.getElementById('balancing-days-number');
         if (daysNumber) {
@@ -4909,9 +4994,9 @@ async function updateBatteryBalancingCard() {
             const endTime = new Date(planned.holding_end);
             const endStr = endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
 
-            // Sestavit detailní tooltip s tabulkou (stejný styl jako grid charging)
-            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 280px;">';
-            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px; color: #FFA726;">🔋 Plán balancování baterie</strong>';
+            // Sestavit detailní tooltip s tabulkou (zmenšená šířka aby se vešla)
+            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 200px; max-width: 250px;">';
+            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px; color: #FFA726;">🔋 Plán balancování</strong>';
 
             // Sekce: Příprava (nabíjení)
             if (chargingIntervals.length > 0) {
@@ -4919,14 +5004,19 @@ async function updateBatteryBalancingCard() {
                 tooltipHTML += '<div style="font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.9);">📊 Příprava (nabíjení na 100%)</div>';
                 tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-left: 8px;">';
 
-                // Rozdělíme intervaly do skupin po 3 pro přehlednost
+                // Formátovat intervaly s datem (dnes/zítra)
+                const now = new Date();
+                const todayDate = now.getDate();
                 const chargingTimes = chargingIntervals.map(t => {
                     const time = new Date(t);
-                    return time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const timeStr = time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const isTomorrow = time.getDate() !== todayDate;
+                    return isTomorrow ? `zítra ${timeStr}` : timeStr;
                 });
 
-                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Intervaly:</td>';
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingTimes.join(', ')}</td></tr>`;
+                // Rozdělit intervaly pod sebe pro lepší čitelnost
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7); vertical-align: top;">Intervaly:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right; line-height: 1.4;">${chargingTimes.join('<br>')}</td></tr>`;
                 tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Průměrná cena:</td>';
                 tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingAvgPrice.toFixed(2)} Kč/kWh</td></tr>`;
                 tooltipHTML += '</table>';
@@ -5185,9 +5275,14 @@ function init() {
     // Initialize tooltip system
     initTooltips();
 
-    // Initial full load
-    forceFullRefresh();
-    updateTime();
+    // OPRAVA: Počkat na dokončení layout načtení před voláním loadData()
+    // Pokud byl načten custom layout, particles byly zastaveny
+    // a needsFlowReinitialize je TRUE, takže loadData() je restartuje
+    setTimeout(() => {
+        // Initial full load
+        forceFullRefresh();
+        updateTime();
+    }, 50);
 
     // Subscribe to shield state changes for real-time updates
     subscribeToShield();
@@ -5524,6 +5619,255 @@ function switchTab(tabName) {
             loadPricingData();
         }, 150); // Stejný timeout jako u Toky pro konzistenci
     }
+
+    // Load data when entering boiler tab
+    if (tabName === 'boiler') {
+        console.log('[Tab] ========== SWITCHING TO BOILER TAB ==========');
+        // Počkat až se tab zobrazí a canvas bude viditelný
+        setTimeout(() => {
+            console.log('[Boiler] Tab visible, loading boiler data...');
+            loadBoilerData();
+        }, 150);
+    }
+}
+
+// === BOILER DATA & CHART ===
+let boilerChartInstance = null;
+
+async function loadBoilerData() {
+    console.log('[Boiler] Loading boiler data...');
+
+    try {
+        // Update boiler sensor values
+        await updateBoilerSensors();
+
+        // Update boiler profile
+        await updateBoilerProfile();
+
+        // Initialize or refresh boiler chart
+        await initializeBoilerChart();
+
+        console.log('[Boiler] Data loaded successfully');
+    } catch (error) {
+        console.error('[Boiler] Failed to load data:', error);
+    }
+}
+
+async function updateBoilerSensors() {
+    const sensorMap = {
+        'boiler-soc-value': 'boiler_soc',
+        'boiler-temp-top-value': 'boiler_temperature_top',
+        'boiler-energy-required-value': 'boiler_energy_required',
+        'boiler-plan-cost-value': 'boiler_plan_cost'
+    };
+
+    for (const [elementId, sensorSuffix] of Object.entries(sensorMap)) {
+        const entityId = getSensorId(sensorSuffix);
+        const state = hass?.states?.[entityId];
+
+        const element = document.getElementById(elementId);
+        if (element && state) {
+            const value = parseFloat(state.state);
+            if (!isNaN(value)) {
+                if (sensorSuffix.includes('soc')) {
+                    element.textContent = `${value.toFixed(0)} %`;
+                } else if (sensorSuffix.includes('temperature')) {
+                    element.textContent = `${value.toFixed(1)} °C`;
+                } else if (sensorSuffix.includes('energy')) {
+                    element.textContent = `${value.toFixed(2)} kWh`;
+                } else if (sensorSuffix.includes('cost')) {
+                    element.textContent = `${value.toFixed(2)} Kč`;
+                }
+            }
+        }
+    }
+
+    // Update plan info
+    const planEntityId = getSensorId('boiler_heating_plan');
+    const planState = hass?.states?.[planEntityId];
+
+    if (planState?.attributes?.plan) {
+        const plan = planState.attributes.plan;
+        const slots = plan.slots || [];
+        const activeSlots = slots.filter(s => s.heating).length;
+
+        document.getElementById('boiler-plan-digest').textContent = plan.digest || 'N/A';
+        document.getElementById('boiler-plan-slots').textContent = slots.length;
+        document.getElementById('boiler-plan-active-slots').textContent = activeSlots;
+
+        if (slots.length > 0) {
+            const startTime = new Date(slots[0].start_time);
+            const endTime = new Date(slots[slots.length - 1].start_time);
+
+            document.getElementById('boiler-plan-start').textContent = startTime.toLocaleString('cs-CZ', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('boiler-plan-end').textContent = endTime.toLocaleString('cs-CZ', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    }
+}
+
+async function updateBoilerProfile() {
+    // Načíst profil z coordinator data (přes API endpoint)
+    const entryId = new URLSearchParams(window.location.search).get('entry_id');
+
+    try {
+        const response = await fetch(`/api/oig_cloud/${entryId}/boiler_profile`);
+        if (!response.ok) {
+            console.warn('[Boiler] Profile API not available yet');
+            return;
+        }
+
+        const profile = await response.json();
+
+        document.getElementById('boiler-profile-volume').textContent = `${profile.volume_liters || '--'} L`;
+        document.getElementById('boiler-profile-heater-power').textContent = `${profile.heater_power_w || '--'} W`;
+        document.getElementById('boiler-profile-target-temp').textContent = `${profile.target_temp_c || '--'} °C`;
+        document.getElementById('boiler-profile-deadline').textContent = profile.deadline || '--:--';
+        document.getElementById('boiler-profile-stratification').textContent = profile.stratification_mode || '--';
+        document.getElementById('boiler-profile-k-constant').textContent = profile.k_constant?.toFixed(4) || '--';
+    } catch (error) {
+        console.error('[Boiler] Failed to load profile:', error);
+    }
+}
+
+async function initializeBoilerChart() {
+    const canvas = document.getElementById('boiler-chart');
+    if (!canvas) {
+        console.warn('[Boiler] Chart canvas not found');
+        return;
+    }
+
+    // Lazy load boiler chart module
+    if (!window.BoilerChartModule) {
+        try {
+            const module = await import('./modules/boiler-chart.js');
+            window.BoilerChartModule = module.BoilerChartModule;
+        } catch (error) {
+            console.error('[Boiler] Failed to load boiler-chart.js:', error);
+            return;
+        }
+    }
+
+    // Create or refresh chart instance
+    if (!boilerChartInstance) {
+        boilerChartInstance = new window.BoilerChartModule();
+        await boilerChartInstance.init(canvas, hass, INVERTER_SN);
+    } else {
+        await boilerChartInstance.refresh();
+    }
+}
+
+// Boiler control functions (will use ServiceShield)
+async function planBoilerHeating() {
+    console.log('[Boiler] Planning heating...');
+
+    const service = 'oig_cloud.plan_boiler_heating';
+    const entityId = getSensorId('boiler_heating_plan');
+
+    try {
+        await hass.callService('oig_cloud', 'plan_boiler_heating', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl úspěšně vytvořen', 'success');
+
+        // Refresh after planning
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to plan heating:', error);
+        showNotification('❌ Chyba při plánování topení', 'error');
+    }
+}
+
+async function applyBoilerPlan() {
+    console.log('[Boiler] Applying heating plan...');
+
+    const service = 'oig_cloud.apply_boiler_plan';
+    const entityId = getSensorId('boiler_heating_plan');
+
+    try {
+        await hass.callService('oig_cloud', 'apply_boiler_plan', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl aplikován', 'success');
+
+        // Refresh after applying
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to apply plan:', error);
+        showNotification('❌ Chyba při aplikaci plánu', 'error');
+    }
+}
+
+async function cancelBoilerPlan() {
+    console.log('[Boiler] Canceling heating plan...');
+
+    const service = 'oig_cloud.cancel_boiler_plan';
+    const entityId = getSensorId('boiler_heating_plan');
+
+    try {
+        await hass.callService('oig_cloud', 'cancel_boiler_plan', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl zrušen', 'success');
+
+        // Refresh after canceling
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to cancel plan:', error);
+        showNotification('❌ Chyba při rušení plánu', 'error');
+    }
+}
+
+function toggleBoilerControlPanel() {
+    const panel = document.getElementById('boiler-control-panel');
+    const icon = document.getElementById('boiler-panel-toggle-icon');
+
+    if (panel.classList.contains('minimized')) {
+        panel.classList.remove('minimized');
+        icon.textContent = '−';
+    } else {
+        panel.classList.add('minimized');
+        icon.textContent = '+';
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Simple notification system (can be enhanced)
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 20px;
+        background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        font-size: 14px;
+        max-width: 300px;
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.3s';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 // === PRICING CHARTS ===
@@ -7578,7 +7922,8 @@ function updateChmuWarningBadge() {
         icon.textContent = '✓';
         text.textContent = 'Bez výstrah';
     } else {
-        const warningCount = attrs.warning_count || 1;
+        const eventType = attrs.event_type || 'Varování';
+        const warningsCount = attrs.warnings_count || 1;
 
         if (severity >= 3) {
             icon.textContent = '🚨';
@@ -7586,14 +7931,13 @@ function updateChmuWarningBadge() {
             icon.textContent = '⚠️';
         }
 
-        const severityNames = {
-            1: 'Žluté varování',
-            2: 'Oranžové varování',
-            3: 'Červené varování',
-            4: 'Fialové varování'
-        };
+        // Show event type instead of generic "Oranžové varování"
+        text.textContent = eventType;
 
-        text.textContent = `${warningCount}× ${severityNames[severity]}`;
+        // If multiple warnings, show count
+        if (warningsCount > 1) {
+            text.textContent = `${eventType} +${warningsCount - 1}`;
+        }
     }
 }
 
@@ -7924,10 +8268,17 @@ function renderChmuWarningModal(container) {
         return;
     }
 
-    // Get warnings array
-    const warnings = attrs.warnings || [];
+    // Get warnings from new structure
+    const allWarningsDetails = attrs.all_warnings_details || [];
+    const topEventType = attrs.event_type;
+    const topSeverity = attrs.severity;
+    const topDescription = attrs.description;
+    const topInstruction = attrs.instruction;
+    const topOnset = attrs.onset;
+    const topExpires = attrs.expires;
+    const topEtaHours = attrs.eta_hours;
 
-    if (warnings.length === 0) {
+    if (allWarningsDetails.length === 0) {
         container.innerHTML = `
             <div class="chmu-no-warnings">
                 <div class="chmu-no-warnings-icon">❓</div>
@@ -7938,87 +8289,114 @@ function renderChmuWarningModal(container) {
         return;
     }
 
-    // Render all warnings
-    let html = '';
+    const icon = getWarningIcon(topEventType);
+    const severityLabel = getSeverityLabel(severity);
+    const onset = topOnset ? formatChmuDateTime(topOnset) : '--';
+    const expires = topExpires ? formatChmuDateTime(topExpires) : '--';
 
-    warnings.forEach((warning, index) => {
-        const wSeverity = warning.severity_level || 1;
-        const eventType = warning.event_type || warning.event || 'Varování';
-        const onset = warning.onset ? formatChmuDateTime(warning.onset) : '--';
-        const expires = warning.expires ? formatChmuDateTime(warning.expires) : '--';
-        const etaHours = warning.eta_hours !== undefined ? warning.eta_hours : null;
-        const areas = warning.areas || [];
-        const description = warning.description || '';
-        const instruction = warning.instruction || '';
-        const urgency = warning.urgency || '';
-        const certainty = warning.certainty || '';
-
-        const icon = getWarningIcon(eventType);
-        const severityLabel = getSeverityLabel(wSeverity);
-        const areaNames = areas.map(a => a.name || a).join(', ') || 'Není specifikováno';
-
-        let etaText = '';
-        if (etaHours !== null) {
-            if (etaHours <= 0) {
-                etaText = '<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Status</div><div class="chmu-info-value" style="color: #ef4444; font-weight: 700;">PROBÍHÁ NYNÍ</div></div></div>';
-            } else if (etaHours < 24) {
-                etaText = `<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Začátek za</div><div class="chmu-info-value">${Math.round(etaHours)} hodin</div></div></div>`;
-            }
+    let etaText = '';
+    if (topEtaHours !== null && topEtaHours !== undefined) {
+        if (topEtaHours <= 0) {
+            etaText = '<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Status</div><div class="chmu-info-value" style="color: #ef4444; font-weight: 700;">PROBÍHÁ NYNÍ</div></div></div>';
+        } else if (topEtaHours < 24) {
+            etaText = `<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Začátek za</div><div class="chmu-info-value">${Math.round(topEtaHours)} hodin</div></div></div>`;
         }
+    }
 
-        html += `
-            <div class="chmu-warning-item severity-${wSeverity}">
-                <div class="chmu-warning-header">
-                    <div class="chmu-warning-icon">${icon}</div>
-                    <div class="chmu-warning-title">
-                        <h4>${eventType}</h4>
-                        <span class="chmu-warning-severity severity-${wSeverity}">${severityLabel}</span>
-                    </div>
+    // TOP WARNING (hlavní sekce)
+    let html = `
+        <div class="chmu-warning-item chmu-warning-top severity-${severity}">
+            <div class="chmu-warning-header">
+                <div class="chmu-warning-icon">${icon}</div>
+                <div class="chmu-warning-title">
+                    <h4>${topEventType}</h4>
+                    <span class="chmu-warning-severity severity-${severity}">${severityLabel}</span>
                 </div>
-
-                <div class="chmu-warning-info">
-                    <div class="chmu-info-item">
-                        <div class="chmu-info-icon">📍</div>
-                        <div class="chmu-info-content">
-                            <div class="chmu-info-label">Oblast</div>
-                            <div class="chmu-info-value">${areaNames}</div>
-                        </div>
-                    </div>
-                    <div class="chmu-info-item">
-                        <div class="chmu-info-icon">⏰</div>
-                        <div class="chmu-info-content">
-                            <div class="chmu-info-label">Začátek</div>
-                            <div class="chmu-info-value">${onset}</div>
-                        </div>
-                    </div>
-                    <div class="chmu-info-item">
-                        <div class="chmu-info-icon">⏳</div>
-                        <div class="chmu-info-content">
-                            <div class="chmu-info-label">Konec</div>
-                            <div class="chmu-info-value">${expires}</div>
-                        </div>
-                    </div>
-                    ${etaText}
-                </div>
-
-                ${description ? `
-                    <div class="chmu-warning-description">
-                        <strong>📋 Popis</strong>
-                        <p>${description}</p>
-                    </div>
-                ` : ''}
-
-                ${instruction ? `
-                    <div class="chmu-warning-description">
-                        <strong>💡 Doporučení</strong>
-                        <p>${instruction}</p>
-                    </div>
-                ` : ''}
             </div>
-        `;
-    });
+
+            <div class="chmu-warning-info">
+                <div class="chmu-info-item">
+                    <div class="chmu-info-icon">⏰</div>
+                    <div class="chmu-info-content">
+                        <div class="chmu-info-label">Začátek</div>
+                        <div class="chmu-info-value">${onset}</div>
+                    </div>
+                </div>
+                <div class="chmu-info-item">
+                    <div class="chmu-info-icon">⏳</div>
+                    <div class="chmu-info-content">
+                        <div class="chmu-info-label">Konec</div>
+                        <div class="chmu-info-value">${expires}</div>
+                    </div>
+                </div>
+                ${etaText}
+            </div>
+
+            ${topDescription ? `
+                <div class="chmu-warning-description">
+                    <strong>📋 Popis</strong>
+                    <p>${topDescription}</p>
+                </div>
+            ` : ''}
+
+            ${topInstruction ? `
+                <div class="chmu-warning-description">
+                    <strong>💡 Doporučení</strong>
+                    <p>${topInstruction}</p>
+                </div>
+            ` : ''}
+        </div>
+    `;
+
+    // ALL WARNINGS (seznam všech aktivních)
+    if (allWarningsDetails.length > 1) {
+        html += '<div class="chmu-all-warnings-header"><h5>📋 Všechny aktivní výstrahy</h5></div>';
+
+        allWarningsDetails.forEach((warning, index) => {
+            const wEventType = warning.event || 'Varování';
+            const wSeverity = getSeverityLevelFromName(warning.severity);
+            const wOnset = warning.onset ? formatChmuDateTime(warning.onset) : '--';
+            const wExpires = warning.expires ? formatChmuDateTime(warning.expires) : '--';
+            const wRegions = (warning.regions || []).join(', ') || 'Celá ČR';
+            const wIcon = getWarningIcon(wEventType);
+            const wSeverityLabel = warning.severity || 'Neznámá';
+
+            html += `
+                <div class="chmu-warning-item chmu-warning-compact severity-${wSeverity}">
+                    <div class="chmu-warning-header">
+                        <div class="chmu-warning-icon">${wIcon}</div>
+                        <div class="chmu-warning-title">
+                            <h5>${wEventType}</h5>
+                            <span class="chmu-warning-severity severity-${wSeverity}">${wSeverityLabel}</span>
+                        </div>
+                    </div>
+                    <div class="chmu-warning-info-compact">
+                        <div class="chmu-info-row">
+                            <span class="chmu-info-label">📍 Regiony:</span>
+                            <span class="chmu-info-value">${wRegions}</span>
+                        </div>
+                        <div class="chmu-info-row">
+                            <span class="chmu-info-label">⏰ Platnost:</span>
+                            <span class="chmu-info-value">${wOnset} – ${wExpires}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
 
     container.innerHTML = html;
+}
+
+// Helper: Convert severity name to level
+function getSeverityLevelFromName(severityName) {
+    const map = {
+        'Minor': 1,
+        'Moderate': 2,
+        'Severe': 3,
+        'Extreme': 4
+    };
+    return map[severityName] || 1;
 }
 
 // Get icon for warning type

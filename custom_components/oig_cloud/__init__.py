@@ -295,6 +295,13 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         entity_id = entity.entity_id
         duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
 
+        # OPRAVA: Přeskočit bojler senzory - mají vlastní formát unique_id bez oig_cloud_ prefixu
+        # Formát: {entry_id}_boiler_{sensor_type}
+        if "_boiler_" in old_unique_id:
+            skipped_count += 1
+            _LOGGER.debug(f"Skipping boiler sensor (correct format): {entity_id}")
+            continue
+
         # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
         if old_unique_id.startswith("oig_cloud_"):
             # Zkontrolujeme, jestli entity_id má příponu, ale unique_id ne
@@ -730,6 +737,70 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
 
+        # NOVÉ: Boiler module setup
+        boiler_coordinator = None
+        if entry.options.get("enable_boiler", False):
+            try:
+                _LOGGER.debug("Initializing Boiler module")
+                from .boiler import BoilerConfig, BoilerCoordinator
+                from datetime import timedelta
+
+                # Create boiler config from options
+                boiler_config = BoilerConfig(
+                    volume_l=entry.options.get("boiler_volume_l", 120),
+                    target_temp_c=entry.options.get("boiler_target_temp_c", 60.0),
+                    cold_inlet_temp_c=entry.options.get(
+                        "boiler_cold_inlet_temp_c", 10.0
+                    ),
+                    temp_sensor_top=entry.options.get("boiler_temp_sensor_top", ""),
+                    temp_sensor_bottom=entry.options.get(
+                        "boiler_temp_sensor_bottom", ""
+                    ),
+                    stratification_mode=entry.options.get(
+                        "boiler_stratification_mode", "simple_avg"
+                    ),
+                    two_zone_split_ratio=entry.options.get(
+                        "boiler_two_zone_split_ratio", 0.5
+                    ),
+                    heater_power_kw_entity=entry.options.get(
+                        "boiler_heater_power_kw_entity",
+                        "sensor.oig_2206237016_boiler_install_power",
+                    ),
+                    heater_switch_entity=entry.options.get(
+                        "boiler_heater_switch_entity", ""
+                    ),
+                    alt_heater_switch_entity=entry.options.get(
+                        "boiler_alt_heater_switch_entity", ""
+                    ),
+                    has_alternative_heating=entry.options.get(
+                        "boiler_has_alternative_heating", False
+                    ),
+                    alt_cost_kwh=entry.options.get("boiler_alt_cost_kwh", None),
+                    spot_price_sensor=entry.options.get("boiler_spot_price_sensor", ""),
+                    deadline_time=entry.options.get("boiler_deadline_time", "20:00"),
+                    planning_horizon_hours=entry.options.get(
+                        "boiler_planning_horizon_hours", 36
+                    ),
+                    plan_slot_minutes=entry.options.get("boiler_plan_slot_minutes", 30),
+                )
+
+                # Create boiler coordinator
+                boiler_coordinator = BoilerCoordinator(
+                    hass,
+                    boiler_config,
+                    update_interval=timedelta(minutes=5),
+                )
+
+                # First refresh
+                await boiler_coordinator.async_config_entry_first_refresh()
+
+                _LOGGER.info("Boiler module successfully initialized")
+            except Exception as e:
+                _LOGGER.error(f"Failed to initialize Boiler module: {e}", exc_info=True)
+                boiler_coordinator = None
+        else:
+            _LOGGER.debug("Boiler module disabled")
+
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
             "enable_dashboard", False
@@ -746,10 +817,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "analytics_device_info": analytics_device_info,
             "service_shield": service_shield,
             "ote_api": ote_api,
+            "boiler_coordinator": boiler_coordinator,  # NOVÉ: Boiler coordinator
             "dashboard_enabled": dashboard_enabled,  # NOVÉ: stav dashboard
             "config": {
                 "enable_statistics": statistics_enabled,
                 "enable_pricing": entry.options.get("enable_pricing", False),
+                "enable_boiler": entry.options.get("enable_boiler", False),  # NOVÉ
                 "enable_dashboard": dashboard_enabled,  # NOVÉ
             },
         }
@@ -807,6 +880,67 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Setup entry-specific služeb s shield ochranou
         # OPRAVA: Předání service_shield přímo, ne z hass.data
         await async_setup_entry_services_with_shield(hass, entry, service_shield)
+
+        # NOVÉ: Registrace HTTP API endpointu pro boiler profile
+        if boiler_coordinator:
+            from aiohttp import web
+            from homeassistant.helpers.http import HomeAssistantView
+
+            class BoilerProfileView(HomeAssistantView):
+                """API view for boiler profile data."""
+
+                url = "/api/oig_cloud/{entry_id}/boiler_profile"
+                name = "api:oig_cloud:boiler_profile"
+                requires_auth = True
+
+                async def get(
+                    self, request: web.Request, entry_id: str
+                ) -> web.Response:
+                    """Get boiler profile data."""
+                    try:
+                        # Získat boiler coordinator z hass.data
+                        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+                        if not entry_data:
+                            return web.json_response(
+                                {"error": "Entry not found"}, status=404
+                            )
+
+                        boiler_coord = entry_data.get("boiler_coordinator")
+                        if not boiler_coord:
+                            return web.json_response(
+                                {"error": "Boiler module not enabled"}, status=404
+                            )
+
+                        # Získat profil
+                        profile = boiler_coord.profile
+                        if not profile:
+                            return web.json_response(
+                                {"error": "Boiler profile not available"}, status=404
+                            )
+
+                        # Převést na dict
+                        profile_dict = {
+                            "volume_liters": profile.volume_liters,
+                            "heater_power_w": profile.heater_power_w,
+                            "target_temp_c": profile.target_temp_c,
+                            "min_acceptable_temp_c": profile.min_acceptable_temp_c,
+                            "k_constant": profile.k_constant,
+                            "deadline": profile.deadline_time,
+                            "stratification_mode": profile.stratification_mode,
+                            "two_zone_split_ratio": profile.two_zone_split_ratio,
+                        }
+
+                        return web.json_response(profile_dict)
+
+                    except Exception as e:
+                        _LOGGER.error(
+                            f"Error getting boiler profile: {e}", exc_info=True
+                        )
+                        return web.json_response({"error": str(e)}, status=500)
+
+            # Registrovat view
+            hass.http.register_view(BoilerProfileView())
+            _LOGGER.info("Registered Boiler Profile API endpoint")
 
         # OPRAVA: Zajistit, že ServiceShield je připojený k volání služeb
         if service_shield:

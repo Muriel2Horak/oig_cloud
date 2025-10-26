@@ -18,11 +18,46 @@ CONF_EXTENDED_SCAN_INTERVAL = "extended_scan_interval"
 CONF_LOG_LEVEL = "log_level"
 CONF_TIMEOUT = "timeout"
 
+# Boiler Module constants
+CONF_ENABLE_BOILER = "enable_boiler"
+CONF_BOILER_VOLUME_L = "boiler_volume_l"
+CONF_BOILER_TARGET_TEMP_C = "boiler_target_temp_c"
+CONF_BOILER_COLD_INLET_TEMP_C = "boiler_cold_inlet_temp_c"
+CONF_BOILER_TEMP_SENSOR_TOP = "boiler_temp_sensor_top"
+CONF_BOILER_TEMP_SENSOR_BOTTOM = "boiler_temp_sensor_bottom"
+CONF_BOILER_STRATIFICATION_MODE = "boiler_stratification_mode"
+CONF_BOILER_TWO_ZONE_SPLIT_RATIO = "boiler_two_zone_split_ratio"
+CONF_BOILER_HEATER_POWER_KW_ENTITY = "boiler_heater_power_kw_entity"
+CONF_BOILER_HEATER_SWITCH_ENTITY = "boiler_heater_switch_entity"
+CONF_BOILER_ALT_HEATER_SWITCH_ENTITY = "boiler_alt_heater_switch_entity"
+CONF_BOILER_HAS_ALTERNATIVE_HEATING = "boiler_has_alternative_heating"
+CONF_BOILER_ALT_COST_KWH = "boiler_alt_cost_kwh"
+CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
+CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
+CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
+CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
+
+# Auto Module constants
+CONF_ENABLE_AUTO = "enable_auto"
+
 # Default values
 DEFAULT_UPDATE_INTERVAL = 20
 DEFAULT_NAME = "ČEZ Battery Box"
 DEFAULT_STANDARD_SCAN_INTERVAL = 30
 DEFAULT_EXTENDED_SCAN_INTERVAL = 300
+
+# Boiler defaults
+DEFAULT_BOILER_TARGET_TEMP_C = 60.0
+DEFAULT_BOILER_COLD_INLET_TEMP_C = 10.0
+DEFAULT_BOILER_STRATIFICATION_MODE = "simple_avg"
+DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
+DEFAULT_BOILER_HEATER_POWER_KW_ENTITY = "sensor.oig_2206237016_boiler_install_power"
+DEFAULT_BOILER_DEADLINE_TIME = "20:00"
+DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
+DEFAULT_BOILER_PLAN_SLOT_MINUTES = 30
+
+# Energetic constant for water heating (kWh per liter per °C)
+BOILER_ENERGY_CONSTANT_KWH_L_C = 0.001163  # ≈ 4.186 kJ/kg/°C / 3600
 
 # Performance settings - VYPNUTÍ STATISTICKÝCH SENSORŮ
 DISABLE_STATISTICS_SENSORS = True  # Vypnout statistické senzory kvůli výkonu
@@ -42,6 +77,9 @@ ERROR_UNKNOWN = "Unknown error"
 # Service names
 SERVICE_FORCE_UPDATE = "force_update"
 SERVICE_RESET_STATISTICS = "reset_statistics"
+SERVICE_PLAN_BOILER_HEATING = "plan_boiler_heating"
+SERVICE_APPLY_BOILER_PLAN = "apply_boiler_plan"
+SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 
 # OpenTelemetry constants
 OT_ENDPOINT = "https://log-api.eu.newrelic.com"

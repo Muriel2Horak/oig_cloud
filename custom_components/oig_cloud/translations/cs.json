@@ -44,6 +44,8 @@
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
+          "enable_boiler": "🔥 Bojler - optimalizace ohřevu vody",
+          "enable_auto": "🚗 Auto - plánování nabíjení vozidla",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -54,6 +56,8 @@
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
+          "enable_boiler": "Inteligentní plánování ohřevu bojleru podle spotových cen",
+          "enable_auto": "Optimalizace nabíjení elektromobilu (připravujeme)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -97,11 +101,11 @@
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
           "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "0° = JIH, 90° = ZÁPAD, 180° = SEVER, 270° = VÝCHOD (rozsah 0-360°)",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
           "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "0° = JIH, 90° = ZÁPAD, 180° = SEVER, 270° = VÝCHOD (rozsah 0-360°)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -250,6 +254,46 @@
       "solar_string2": {
         "title": "Solar Forecast - String 2",
         "description": "Parametry panelů na String 2."
+      },
+      "wizard_boiler": {
+        "title": "🔥 Konfigurace bojleru",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně plánuje oh řev bojleru podle spotových cen elektřiny. Vybírá nejlevnější časové sloty pro ohřev vody před vámi nastaveným deadlinem.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Vypočítá kolik energie potřebujete pro dohřátí vody\n2. Najde nejlevnější časové sloty před deadlinem (např. 20:00)\n3. Vytvoří plán kdy zapnout bojler\n4. Ovládá přepínač (switch) pro zapnutí/vypnutí ohřevu\n\n⚠️ **Poznámka:** Tento modul pouze řídí KDY ohřívat. Fyzické zapínání bojleru musíte zajistit pomocí automatizace nebo chytrého vypínače.",
+        "data": {
+          "boiler_volume_l": "Objem bojleru (litry)",
+          "boiler_target_temp_c": "Cílová teplota vody (°C)",
+          "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
+          "boiler_temp_sensor_top": "Teplotní senzor (horní část)",
+          "boiler_temp_sensor_bottom": "Teplotní senzor (dolní část) - volitelný",
+          "boiler_stratification_mode": "Režim stratifikace",
+          "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
+          "boiler_heater_switch_entity": "Přepínač topného tělesa",
+          "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
+          "boiler_has_alternative_heating": "Má bojler alternativní zdroj tepla?",
+          "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
+          "boiler_spot_price_sensor": "Senzor spotové ceny",
+          "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
+          "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
+          "boiler_plan_slot_minutes": "Délka časového slotu (minuty)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_volume_l": "Celkový objem zásobníku teplé vody (např. 120 litrů)",
+          "boiler_target_temp_c": "Na jakou teplotu chcete ohřát vodu (typicky 55-65°C)",
+          "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
+          "boiler_temp_sensor_top": "Entity ID teplotního senzoru v horní části bojleru (např. sensor.boiler_temperature_top)",
+          "boiler_temp_sensor_bottom": "Entity ID teplotního senzoru ve spodní části - pro přesnější výpočet u stratifikovaných bojlerů",
+          "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
+          "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
+          "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
+          "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
+          "boiler_has_alternative_heating": "Zaškrtněte, pokud máte alternativní způsob ohřevu (kotel, TČ) a chcete ho využívat když je elektřina drahá",
+          "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
+          "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
+          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování vždy najde nejlevnější sloty PŘED tímto časem.",
+          "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
+          "boiler_plan_slot_minutes": "Velikost časových bloků pro plánování (15-60 minut). Menší = přesnější, větší = jednodušší. Doporučeno 60 minut.",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
       }
     },
     "error": {
@@ -314,6 +358,8 @@
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
+          "enable_boiler": "🔥 Bojler - optimalizace ohřevu vody",
+          "enable_auto": "🚗 Auto - plánování nabíjení vozidla",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -324,6 +370,8 @@
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
+          "enable_boiler": "Inteligentní plánování ohřevu bojleru podle spotových cen",
+          "enable_auto": "Optimalizace nabíjení elektromobilu (připravujeme)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -367,11 +415,11 @@
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
           "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "0° = JIH, 90° = ZÁPAD, 180° = SEVER, 270° = VÝCHOD (rozsah 0-360°)",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
           "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "0° = JIH, 90° = ZÁPAD, 180° = SEVER, 270° = VÝCHOD (rozsah 0-360°)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -485,6 +533,46 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
+      "wizard_boiler": {
+        "title": "🔥 Konfigurace bojleru",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně plánuje ohřev bojleru podle spotových cen elektřiny. Vybírá nejlevnější časové sloty pro ohřev vody před vámi nastaveným deadlinem.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Vypočítá kolik energie potřebujete pro dohřátí vody\n2. Najde nejlevnější časové sloty před deadlinem (např. 20:00)\n3. Vytvoří plán kdy zapnout bojler\n4. Ovládá přepínač (switch) pro zapnutí/vypnutí ohřevu\n\n⚠️ **Poznámka:** Tento modul pouze řídí KDY ohřívat. Fyzické zapínání bojleru musíte zajistit pomocí automatizace nebo chytrého vypínače.",
+        "data": {
+          "boiler_volume_l": "Objem bojleru (litry)",
+          "boiler_target_temp_c": "Cílová teplota vody (°C)",
+          "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
+          "boiler_temp_sensor_top": "Teplotní senzor (horní část)",
+          "boiler_temp_sensor_bottom": "Teplotní senzor (dolní část) - volitelný",
+          "boiler_stratification_mode": "Režim stratifikace",
+          "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
+          "boiler_heater_switch_entity": "Přepínač topného tělesa",
+          "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
+          "boiler_has_alternative_heating": "Má bojler alternativní zdroj tepla?",
+          "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
+          "boiler_spot_price_sensor": "Senzor spotové ceny",
+          "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
+          "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
+          "boiler_plan_slot_minutes": "Délka časového slotu (minuty)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_volume_l": "Celkový objem zásobníku teplé vody (např. 120 litrů)",
+          "boiler_target_temp_c": "Na jakou teplotu chcete ohřát vodu (typicky 55-65°C)",
+          "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
+          "boiler_temp_sensor_top": "Entity ID teplotního senzoru v horní části bojleru (např. sensor.boiler_temperature_top)",
+          "boiler_temp_sensor_bottom": "Entity ID teplotního senzoru ve spodní části - pro přesnější výpočet u stratifikovaných bojlerů",
+          "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
+          "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
+          "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
+          "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
+          "boiler_has_alternative_heating": "Zaškrtněte, pokud máte alternativní způsob ohřevu (kotel, TČ) a chcete ho využívat když je elektřina drahá",
+          "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
+          "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
+          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování vždy najde nejlevnější sloty PŘED tímto časem.",
+          "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
+          "boiler_plan_slot_minutes": "Velikost časových bloků pro plánování (15-60 minut). Menší = přesnější, větší = jednodušší. Doporučeno 60 minut.",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        }
+      },
       "wizard_summary": {
         "title": "✅ Shrnutí a dokončení",
         "description": "{step}\n{progress}\n\n📋 **Shrnutí konfigurace**\n\n{summary}\n\n---\n\n✅ **Vše je připraveno!**\n\nKliknutím na 'Odeslat' uložíte změny.",
@@ -514,6 +602,30 @@
         "Home 5": "Home 5",
         "Home 6": "Home 6"
       }
+    }
+  },
+  "services": {
+    "plan_boiler_heating": {
+      "name": "Naplánovat ohřev bojleru",
+      "description": "Vytvoří plán optimálního ohřevu bojleru na základě spotových cen. Najde nejlevnější časové sloty před deadlinem.",
+      "fields": {
+        "force": {
+          "name": "Vynutit přepočet",
+          "description": "Vynutí přepočet plánu i když už existuje platný plán"
+        },
+        "deadline": {
+          "name": "Přepsat deadline",
+          "description": "Přepsání defaultního deadline času (formát HH:MM, např. 20:00)"
+        }
+      }
+    },
+    "apply_boiler_plan": {
+      "name": "Aplikovat plán ohřevu",
+      "description": "Aplikuje naplánovaný ohřev bojleru. Vytvoří automatizace pro zapínání topného tělesa v naplánovaných časech."
+    },
+    "cancel_boiler_plan": {
+      "name": "Zrušit plán ohřevu",
+      "description": "Zruší aktivní plán ohřevu bojleru a odstraní naplánované automatizace."
     }
   }
 }

@@ -656,6 +656,24 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             energy_needed = max(0, max_capacity - (current_soc / 100.0 * max_capacity))
             intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
 
+            # OPRAVA: Pokud je holding_start v minulosti nebo příliš blízko,
+            # posunout holding window do budoucnosti
+            min_charging_time = timedelta(hours=3)  # Minimum 3h na nabití
+            earliest_holding_start = now + min_charging_time
+
+            if holding_start < earliest_holding_start:
+                time_shift = earliest_holding_start - holding_start
+                _LOGGER.warning(
+                    f"Holding start {holding_start} is in the past or too close, "
+                    f"shifting window by {time_shift}"
+                )
+                holding_start = earliest_holding_start
+                holding_end = holding_end + time_shift
+
+                # Update window
+                window["holding_start"] = holding_start.isoformat()
+                window["holding_end"] = holding_end.isoformat()
+
             # Najít kandidáty (mezi NOW a holding_start - nabíjíme PŘED holding fází!)
             # DŮLEŽITÉ: Zahrnout i aktuální probíhající interval!
             candidates = []
@@ -699,7 +717,8 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             _LOGGER.info(
                 f"Balancing charging: {len(cheapest)} intervals, "
-                f"avg price {window['charging_avg_price_czk']} Kč/kWh"
+                f"avg price {window['charging_avg_price_czk']} Kč/kWh, "
+                f"holding: {window['holding_start']} - {window['holding_end']}"
             )
 
         except Exception as e:

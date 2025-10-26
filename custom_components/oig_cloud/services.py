@@ -479,6 +479,20 @@ async def async_setup_entry_services_with_shield(
             ),
         )
         _LOGGER.debug("Registered set_formating_mode")
+
+        # Setup Boiler services if enabled
+        boiler_coordinator = (
+            hass.data[DOMAIN].get(entry.entry_id, {}).get("boiler_coordinator")
+        )
+        if boiler_coordinator:
+            try:
+                from .boiler import setup_boiler_services
+
+                setup_boiler_services(hass, boiler_coordinator)
+                _LOGGER.info("Boiler services registered")
+            except Exception as e:
+                _LOGGER.error(f"Failed to register boiler services: {e}", exc_info=True)
+
         _LOGGER.info("All entry services registered with shield protection")
     else:
         _LOGGER.debug("Entry services already registered, skipping")

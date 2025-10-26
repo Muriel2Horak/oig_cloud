@@ -2879,7 +2879,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     if interval_end > now or timestamp >= time_threshold:
                         spot_price_czk = point.get("spot_price_czk", 0)
 
-                        # Zjistit, jestli se baterie SKUTEČNĚ nabíjí
+                        # OPRAVA: Při režimu "Home UPS" vždy považujeme za nabíjení
+                        # (i když grid_charge_kwh=0, protože může být balancování ze solárů)
+                        # Zjistit, jestli se baterie SKUTEČNĚ nabíjí z gridu
                         # (kapacita roste oproti předchozímu bodu)
                         # DŮLEŽITÉ: battery_capacity v timeline je PŘED grid charge!
                         # Musíme přičíst grid_charge_kwh pro správné porovnání
@@ -2896,6 +2898,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             is_actually_charging = capacity_increase > 0.01
 
                         # Přidat interval do seznamu (všechny s UPS režimem)
+                        # is_charging_battery = True protože máme "Home UPS" režim
                         interval_data = {
                             "timestamp": timestamp_str,
                             "energy_kwh": round(
@@ -2903,7 +2906,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             ),  # Celková grid energie
                             "spot_price_czk": round(spot_price_czk, 2),
                             "battery_capacity_kwh": round(battery_capacity, 2),
-                            "is_charging_battery": is_actually_charging,
+                            "is_charging_battery": True,  # OPRAVA: Vždy True při "Home UPS"
                         }
 
                         # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu

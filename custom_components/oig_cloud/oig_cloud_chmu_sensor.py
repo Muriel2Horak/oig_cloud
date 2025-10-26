@@ -308,41 +308,54 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Základní atributy z top_local_warning pro snadný přístup
         if top_warning:
+            # Seznam všech reálných varování (bez "Žádná..." a "Žádný výhled")
+            all_local_events = []
+            all_warnings_details = []
+
+            for w in self._last_warning_data.get("local_warnings", []):
+                event = w.get("event", "")
+                # Filtrovat negativní hlášky
+                if event.startswith("Žádná") or event.startswith("Žádný"):
+                    continue
+
+                all_local_events.append(event)
+
+                # Extrahovat názvy regionů z areas
+                regions = []
+                for area in w.get("areas", []):
+                    area_desc = area.get("description", "")
+                    if area_desc:
+                        regions.append(area_desc)
+
+                # Detail pro každou výstrahu s regiony
+                all_warnings_details.append(
+                    {
+                        "event": event,
+                        "severity": w.get("severity", ""),
+                        "onset": w.get("onset"),
+                        "expires": w.get("expires"),
+                        "regions": regions,  # Seznam názvů regionů
+                    }
+                )
+
             attrs = {
-                # Přímé informace z top varování
+                # Hlavní informace z nejdůležitějšího varování (TOP priority)
                 "event_type": top_warning.get("event", "Žádné"),
                 "severity": top_warning.get("severity", "Žádné"),
-                "onset": top_warning.get("onset"),  # Začátek
-                "expires": top_warning.get("expires"),  # Konec
-                "effective": top_warning.get("effective"),
-                "eta_hours": top_warning.get("eta_hours"),
-                "description": top_warning.get("description", ""),
-                "instruction": top_warning.get("instruction", ""),
-                "areas": top_warning.get("areas", []),
-                "urgency": top_warning.get("urgency", ""),
-                "certainty": top_warning.get("certainty", ""),
-                "status": top_warning.get("status", ""),
-                # Počty
-                "local_warnings_count": self._last_warning_data.get(
-                    "local_warnings_count", 0
-                ),
-                # Úplná data
-                "top_local_warning": top_warning,
-                "local_warnings": self._last_warning_data.get("local_warnings", []),
-                # Globální statistiky
-                "all_warnings_count": self._last_warning_data.get(
-                    "all_warnings_count", 0
-                ),
-                "highest_severity_cz": self._last_warning_data.get(
-                    "highest_severity_cz", 0
-                ),
+                "onset": top_warning.get("onset"),  # Začátek TOP varování
+                "expires": top_warning.get("expires"),  # Konec TOP varování
+                "eta_hours": top_warning.get("eta_hours", 0),
+                "description": top_warning.get("description", ""),  # Popis TOP varování
+                "instruction": top_warning.get(
+                    "instruction", ""
+                ),  # Pokyny pro TOP varování
+                # Počty a přehled všech aktivních varování
+                "warnings_count": len(all_local_events),  # Jen reálné výstrahy
+                "all_warnings": all_local_events,  # Seznam názvů ["Silný vítr", "Nová sněhová pokrývka"]
+                "all_warnings_details": all_warnings_details,  # Detaily všech výstrah
                 # Meta
-                "gps_location": self._last_warning_data.get("gps_location", {}),
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
-                "filter_method": self._last_warning_data.get(
-                    "filter_method", "no_filter"
-                ),
             }
         else:
             # Žádné lokální varování
@@ -351,19 +364,13 @@ class OigCloudChmuSensor(OigCloudSensor):
                 "severity": "Žádné",
                 "onset": None,
                 "expires": None,
-                "local_warnings_count": 0,
-                "all_warnings_count": self._last_warning_data.get(
-                    "all_warnings_count", 0
-                ),
-                "highest_severity_cz": self._last_warning_data.get(
-                    "highest_severity_cz", 0
-                ),
-                "gps_location": self._last_warning_data.get("gps_location", {}),
+                "eta_hours": 0,
+                "description": "",
+                "instruction": "",
+                "warnings_count": 0,
+                "all_warnings": [],
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
-                "filter_method": self._last_warning_data.get(
-                    "filter_method", "no_filter"
-                ),
             }
 
         return attrs

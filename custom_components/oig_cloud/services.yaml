@@ -224,3 +224,33 @@ get_dashboard_tiles:
     config:
       description: "JSON objekt s konfigurací dlaždic, nebo null pokud žádná konfigurace neexistuje"
       example: '{"tiles_left": [], "tiles_right": [], "left_count": 6, "right_count": 6, "visible": true, "version": 1}'
+
+plan_boiler_heating:
+  name: "🔥 Naplánovat ohřev bojleru"
+  description: |
+    Vytvoří plán optimálního ohřevu bojleru na základě spotových cen elektřiny.
+    Vybere nejlevnější časové sloty před deadlinem.
+  fields:
+    force:
+      description: "Vynutit přepočet plánu i když existuje platný plán"
+      required: false
+      default: false
+      selector:
+        boolean:
+    deadline:
+      description: "Přepsat deadline (formát HH:MM, např. 20:00)"
+      required: false
+      example: "20:00"
+      selector:
+        text:
+
+apply_boiler_plan:
+  name: "🔥 Aplikovat plán ohřevu"
+  description: |
+    Aplikuje naplánovaný ohřev bojleru.
+    Vytvoří automatizace pro zapínání topného tělesa v naplánovaných slotech.
+
+cancel_boiler_plan:
+  name: "🔥 Zrušit plán ohřevu"
+  description: |
+    Zruší aktivní plán ohřevu bojleru a odstraní naplánované automatizace.

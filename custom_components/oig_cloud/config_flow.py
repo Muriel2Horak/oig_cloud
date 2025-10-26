@@ -7,6 +7,7 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.core import callback, HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import selector
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -903,6 +904,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 vol.Optional(
                     "enable_dashboard", default=defaults.get("enable_dashboard", False)
                 ): bool,
+                vol.Optional(
+                    "enable_boiler", default=defaults.get("enable_boiler", False)
+                ): bool,
+                vol.Optional(
+                    "enable_auto", default=defaults.get("enable_auto", False)
+                ): bool,
                 vol.Optional("go_back", default=False): bool,
             }
         )
@@ -948,6 +955,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             total += 3  # wizard_pricing (3 kroky: import, export, distribution)
         if self._wizard_data.get("enable_extended_sensors", False):
             total += 1  # wizard_extended
+        if self._wizard_data.get("enable_boiler", False):
+            total += 1  # wizard_boiler
 
         # Summary krok (vždy na konci):
         total += 1
@@ -1018,6 +1027,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_extended_sensors", False):
             current += 1
 
+        # Boiler
+        if step_id == "wizard_boiler":
+            return current
+        if self._wizard_data.get("enable_boiler", False):
+            current += 1
+
         # Summary
         if step_id == "wizard_summary":
             return current
@@ -1063,6 +1078,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_pricing_export",
             "wizard_pricing_distribution",
             "wizard_extended",
+            "wizard_boiler",
             "wizard_summary",
         ]
 
@@ -1093,6 +1109,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if step == "wizard_extended" and not self._wizard_data.get(
                 "enable_extended_sensors"
             ):
+                continue
+            if step == "wizard_boiler" and not self._wizard_data.get("enable_boiler"):
                 continue
 
             return step
@@ -1466,27 +1484,45 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "balancing_enabled",
                 default=defaults.get("balancing_enabled", True),
-            ): bool,
+            ): selector.BooleanSelector(),
             vol.Optional(
                 "balancing_interval_days",
                 default=defaults.get("balancing_interval_days", 7),
-            ): vol.All(vol.Coerce(int), vol.Range(min=3, max=30)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=3, max=30, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
             vol.Optional(
                 "balancing_hold_hours",
                 default=defaults.get("balancing_hold_hours", 3),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=12, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
             vol.Optional(
                 "balancing_opportunistic_threshold",
                 default=defaults.get("balancing_opportunistic_threshold", 1.1),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5, max=5.0, step=0.1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
             vol.Optional(
                 "balancing_economic_threshold",
                 default=defaults.get("balancing_economic_threshold", 2.5),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5, max=10.0, step=0.1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
         }
 
         # Přidat go_back na konec
-        schema_fields[vol.Optional("go_back", default=False)] = bool
+        schema_fields[vol.Optional("go_back", default=False)] = (
+            selector.BooleanSelector()
+        )
 
         return vol.Schema(schema_fields)
 
@@ -1883,6 +1919,216 @@ Kliknutím na "Odeslat" spustíte průvodce.
             description_placeholders=self._get_step_placeholders("wizard_extended"),
         )
 
+    async def async_step_wizard_boiler(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step: Boiler module configuration."""
+        from .const import (
+            CONF_BOILER_ALT_COST_KWH,
+            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_COLD_INLET_TEMP_C,
+            CONF_BOILER_DEADLINE_TIME,
+            CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+            CONF_BOILER_HEATER_POWER_KW_ENTITY,
+            CONF_BOILER_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_PLANNING_HORIZON_HOURS,
+            CONF_BOILER_PLAN_SLOT_MINUTES,
+            CONF_BOILER_SPOT_PRICE_SENSOR,
+            CONF_BOILER_STRATIFICATION_MODE,
+            CONF_BOILER_TARGET_TEMP_C,
+            CONF_BOILER_TEMP_SENSOR_BOTTOM,
+            CONF_BOILER_TEMP_SENSOR_TOP,
+            CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+            CONF_BOILER_VOLUME_L,
+            DEFAULT_BOILER_COLD_INLET_TEMP_C,
+            DEFAULT_BOILER_DEADLINE_TIME,
+            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
+            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            DEFAULT_BOILER_STRATIFICATION_MODE,
+            DEFAULT_BOILER_TARGET_TEMP_C,
+            DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
+        )
+
+        if user_input is not None:
+            # Kontrola tlačítka "Zpět"
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler")
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler")
+
+            next_step = self._get_next_step("wizard_boiler")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        # Defaults from wizard_data or constants
+        defaults = self._wizard_data if self._wizard_data else {}
+
+        return self.async_show_form(
+            step_id="wizard_boiler",
+            data_schema=vol.Schema(
+                {
+                    # Nádrž - number inputy místo sliderů
+                    vol.Required(
+                        CONF_BOILER_VOLUME_L,
+                        default=defaults.get(CONF_BOILER_VOLUME_L, 120),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=10,
+                            max=500,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_TARGET_TEMP_C,
+                        default=defaults.get(
+                            CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=30, max=90, step=1, mode=selector.NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_COLD_INLET_TEMP_C,
+                        default=defaults.get(
+                            CONF_BOILER_COLD_INLET_TEMP_C,
+                            DEFAULT_BOILER_COLD_INLET_TEMP_C,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX
+                        )
+                    ),
+                    # Teplotní senzory - entity selector s filtrem pro temperature
+                    vol.Optional(
+                        CONF_BOILER_TEMP_SENSOR_TOP,
+                        default=defaults.get(CONF_BOILER_TEMP_SENSOR_TOP, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor", device_class="temperature"
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_TEMP_SENSOR_BOTTOM,
+                        default=defaults.get(CONF_BOILER_TEMP_SENSOR_BOTTOM, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor", device_class="temperature"
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_STRATIFICATION_MODE,
+                        default=defaults.get(
+                            CONF_BOILER_STRATIFICATION_MODE,
+                            DEFAULT_BOILER_STRATIFICATION_MODE,
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["simple_avg", "two_zone"],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+                        default=defaults.get(
+                            CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+                            DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0.1,
+                            max=0.9,
+                            step=0.1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    # Výkon a řízení - entity selektory
+                    vol.Optional(
+                        CONF_BOILER_HEATER_POWER_KW_ENTITY,
+                        default=defaults.get(
+                            CONF_BOILER_HEATER_POWER_KW_ENTITY,
+                            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_HEATER_SWITCH_ENTITY,
+                        default=defaults.get(CONF_BOILER_HEATER_SWITCH_ENTITY, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="switch")
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+                        default=defaults.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="switch")
+                    ),
+                    # Alternativa
+                    vol.Optional(
+                        CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+                        default=defaults.get(
+                            CONF_BOILER_HAS_ALTERNATIVE_HEATING, False
+                        ),
+                    ): selector.BooleanSelector(),
+                    vol.Optional(
+                        CONF_BOILER_ALT_COST_KWH,
+                        default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=50,
+                            step=0.1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    # Cenový senzor - auto-discovery pro OIG spot price
+                    vol.Optional(
+                        CONF_BOILER_SPOT_PRICE_SENSOR,
+                        default=defaults.get(CONF_BOILER_SPOT_PRICE_SENSOR, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_DEADLINE_TIME,
+                        default=defaults.get(
+                            CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
+                        ),
+                    ): selector.TimeSelector(),
+                    # Number inputy místo sliderů
+                    vol.Optional(
+                        CONF_BOILER_PLANNING_HORIZON_HOURS,
+                        default=defaults.get(
+                            CONF_BOILER_PLANNING_HORIZON_HOURS,
+                            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=12, max=72, step=1, mode=selector.NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_PLAN_SLOT_MINUTES,
+                        default=defaults.get(
+                            CONF_BOILER_PLAN_SLOT_MINUTES,
+                            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=15,
+                            max=120,
+                            step=15,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional("go_back", default=False): selector.BooleanSelector(),
+                }
+            ),
+            description_placeholders=self._get_step_placeholders("wizard_boiler"),
+        )
+
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -2156,6 +2402,57 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "dashboard_refresh_interval": self._wizard_data.get(
                         "dashboard_refresh_interval", 5
                     ),
+                    # Boiler module
+                    "enable_boiler": self._wizard_data.get("enable_boiler", False),
+                    "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
+                    "boiler_target_temp_c": self._wizard_data.get(
+                        "boiler_target_temp_c", 60.0
+                    ),
+                    "boiler_cold_inlet_temp_c": self._wizard_data.get(
+                        "boiler_cold_inlet_temp_c", 10.0
+                    ),
+                    "boiler_temp_sensor_top": self._wizard_data.get(
+                        "boiler_temp_sensor_top", ""
+                    ),
+                    "boiler_temp_sensor_bottom": self._wizard_data.get(
+                        "boiler_temp_sensor_bottom", ""
+                    ),
+                    "boiler_stratification_mode": self._wizard_data.get(
+                        "boiler_stratification_mode", "simple_avg"
+                    ),
+                    "boiler_two_zone_split_ratio": self._wizard_data.get(
+                        "boiler_two_zone_split_ratio", 0.5
+                    ),
+                    "boiler_heater_power_kw_entity": self._wizard_data.get(
+                        "boiler_heater_power_kw_entity",
+                        "sensor.oig_2206237016_boiler_install_power",
+                    ),
+                    "boiler_heater_switch_entity": self._wizard_data.get(
+                        "boiler_heater_switch_entity", ""
+                    ),
+                    "boiler_alt_heater_switch_entity": self._wizard_data.get(
+                        "boiler_alt_heater_switch_entity", ""
+                    ),
+                    "boiler_has_alternative_heating": self._wizard_data.get(
+                        "boiler_has_alternative_heating", False
+                    ),
+                    "boiler_alt_cost_kwh": self._wizard_data.get(
+                        "boiler_alt_cost_kwh", 0.0
+                    ),
+                    "boiler_spot_price_sensor": self._wizard_data.get(
+                        "boiler_spot_price_sensor", ""
+                    ),
+                    "boiler_deadline_time": self._wizard_data.get(
+                        "boiler_deadline_time", "20:00"
+                    ),
+                    "boiler_planning_horizon_hours": self._wizard_data.get(
+                        "boiler_planning_horizon_hours", 36
+                    ),
+                    "boiler_plan_slot_minutes": self._wizard_data.get(
+                        "boiler_plan_slot_minutes", 30
+                    ),
+                    # Auto module
+                    "enable_auto": self._wizard_data.get("enable_auto", False),
                 },
             )
 
@@ -2351,6 +2648,57 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "dashboard_refresh_interval": self._wizard_data.get(
                     "dashboard_refresh_interval", 5
                 ),
+                # Boiler module
+                "enable_boiler": self._wizard_data.get("enable_boiler", False),
+                "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
+                "boiler_target_temp_c": self._wizard_data.get(
+                    "boiler_target_temp_c", 60.0
+                ),
+                "boiler_cold_inlet_temp_c": self._wizard_data.get(
+                    "boiler_cold_inlet_temp_c", 10.0
+                ),
+                "boiler_temp_sensor_top": self._wizard_data.get(
+                    "boiler_temp_sensor_top", ""
+                ),
+                "boiler_temp_sensor_bottom": self._wizard_data.get(
+                    "boiler_temp_sensor_bottom", ""
+                ),
+                "boiler_stratification_mode": self._wizard_data.get(
+                    "boiler_stratification_mode", "simple_avg"
+                ),
+                "boiler_two_zone_split_ratio": self._wizard_data.get(
+                    "boiler_two_zone_split_ratio", 0.5
+                ),
+                "boiler_heater_power_kw_entity": self._wizard_data.get(
+                    "boiler_heater_power_kw_entity",
+                    "sensor.oig_2206237016_boiler_install_power",
+                ),
+                "boiler_heater_switch_entity": self._wizard_data.get(
+                    "boiler_heater_switch_entity", ""
+                ),
+                "boiler_alt_heater_switch_entity": self._wizard_data.get(
+                    "boiler_alt_heater_switch_entity", ""
+                ),
+                "boiler_has_alternative_heating": self._wizard_data.get(
+                    "boiler_has_alternative_heating", False
+                ),
+                "boiler_alt_cost_kwh": self._wizard_data.get(
+                    "boiler_alt_cost_kwh", 0.0
+                ),
+                "boiler_spot_price_sensor": self._wizard_data.get(
+                    "boiler_spot_price_sensor", ""
+                ),
+                "boiler_deadline_time": self._wizard_data.get(
+                    "boiler_deadline_time", "20:00"
+                ),
+                "boiler_planning_horizon_hours": self._wizard_data.get(
+                    "boiler_planning_horizon_hours", 36
+                ),
+                "boiler_plan_slot_minutes": self._wizard_data.get(
+                    "boiler_plan_slot_minutes", 30
+                ),
+                # Auto module
+                "enable_auto": self._wizard_data.get("enable_auto", False),
             }
 
             # Přidat debug log

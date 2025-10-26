@@ -44,16 +44,20 @@
           "enable_extended_sensors": "⚡ Extended sensors (voltages, currents, temperatures)",
           "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
           "enable_dashboard": "📊 Web dashboard with charts",
+          "enable_boiler": "🔥 Boiler - water heating optimization",
+          "enable_auto": "🚗 Car - vehicle charging planning",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
           "enable_statistics": "Recommended - consumption median, predictions",
-          "enable_pricing": "Recommended - spot prices from OTE + cost calculations",
+          "enable_pricing": "Recommended - OTE spot prices + cost calculation",
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_solar_forecast": "Requires API key from Forecast.Solar",
           "enable_battery_prediction": "Experimental - smart charging based on prices",
-          "enable_chmu_warnings": "Meteorological warnings for your location (CAP XML)",
+          "enable_chmu_warnings": "Weather warnings for your location (CAP XML)",
           "enable_dashboard": "Web interface with charts accessible in HA",
+          "enable_boiler": "Intelligent boiler heating planning based on spot prices",
+          "enable_auto": "Electric vehicle charging optimization (coming soon)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
@@ -97,11 +101,11 @@
           "solar_forecast_string1_enabled": "💡 Click 'Submit' to show parameters. If you have panels on only one orientation, String 1 is enough",
           "solar_forecast_string1_kwp": "Total String 1 power in kWp (e.g., 5.0 kWp)",
           "solar_forecast_string1_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = south, -90° = east, 90° = west. Range: 0-360°",
+          "solar_forecast_string1_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
           "solar_forecast_string2_kwp": "Total String 2 power in kWp (e.g., 3.5 kWp)",
           "solar_forecast_string2_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = south, -90° = east, 90° = west. Range: 0-360°",
+          "solar_forecast_string2_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
@@ -250,6 +254,46 @@
       "solar_string2": {
         "title": "Solar Forecast - String 2",
         "description": "Panel parameters for String 2."
+      },
+      "wizard_boiler": {
+        "title": "🔥 Boiler Configuration",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans boiler heating based on spot electricity prices. Selects the cheapest time slots for heating water before your deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heating element power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan of when to turn on the boiler\n4. Controls a switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical switching of the boiler must be handled by automation or smart switch.",
+        "data": {
+          "boiler_volume_l": "Boiler volume (liters)",
+          "boiler_target_temp_c": "Target water temperature (°C)",
+          "boiler_cold_inlet_temp_c": "Cold water inlet temperature (°C)",
+          "boiler_temp_sensor_top": "Temperature sensor (top)",
+          "boiler_temp_sensor_bottom": "Temperature sensor (bottom) - optional",
+          "boiler_stratification_mode": "Stratification mode",
+          "boiler_heater_power_kw_entity": "Heating element power sensor (kW)",
+          "boiler_heater_switch_entity": "Heating element switch",
+          "boiler_alt_heater_switch_entity": "Alternative heat source switch - optional",
+          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
+          "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
+          "boiler_spot_price_sensor": "Spot price sensor",
+          "boiler_deadline_time": "Deadline (time to have heated by)",
+          "boiler_planning_horizon_hours": "Planning horizon (hours)",
+          "boiler_plan_slot_minutes": "Time slot duration (minutes)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
+          "boiler_target_temp_c": "Desired water temperature (typically 55-65°C)",
+          "boiler_cold_inlet_temp_c": "Temperature of incoming cold water from mains (typically 10-15°C)",
+          "boiler_temp_sensor_top": "Entity ID of temperature sensor at top of boiler (e.g., sensor.boiler_temperature_top)",
+          "boiler_temp_sensor_bottom": "Entity ID of temperature sensor at bottom - for more accurate calculation with stratified boilers",
+          "boiler_stratification_mode": "simple_avg = average temperature | two_zone = stratified model (more accurate, needs 2 sensors)",
+          "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
+          "boiler_heater_switch_entity": "Entity ID of switch for turning on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
+          "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_alt_cost_kwh": "Cost per kWh from alternative source (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
+          "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
+          "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning will always find cheapest slots BEFORE this time.",
+          "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
+          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        }
       }
     },
     "error": {
@@ -365,6 +409,28 @@
           "description": "I acknowledge that starting battery charging from the grid modifies a live system and accept responsibility."
         }
       }
+    },
+    "plan_boiler_heating": {
+      "name": "Plan boiler heating",
+      "description": "Creates an optimal boiler heating plan based on spot prices. Finds the cheapest time slots before the deadline.",
+      "fields": {
+        "force": {
+          "name": "Force recalculation",
+          "description": "Forces plan recalculation even if a valid plan already exists"
+        },
+        "deadline": {
+          "name": "Override deadline",
+          "description": "Override the default deadline time (format HH:MM, e.g., 20:00)"
+        }
+      }
+    },
+    "apply_boiler_plan": {
+      "name": "Apply heating plan",
+      "description": "Applies the planned boiler heating. Creates automations for turning on the heating element at planned times."
+    },
+    "cancel_boiler_plan": {
+      "name": "Cancel heating plan",
+      "description": "Cancels the active boiler heating plan and removes planned automations."
     }
   },
   "selector": {
@@ -535,6 +601,8 @@
           "enable_extended_sensors": "⚡ Extended sensors (voltages, currents, temperatures)",
           "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
           "enable_dashboard": "📊 Web dashboard with charts",
+          "enable_boiler": "🔥 Boiler - water heating optimization",
+          "enable_auto": "🚗 Car - vehicle charging planning",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
@@ -545,6 +613,8 @@
           "enable_battery_prediction": "Experimental - smart charging based on prices",
           "enable_chmu_warnings": "Meteorological warnings for your location (CAP XML)",
           "enable_dashboard": "Web interface with charts accessible in HA",
+          "enable_boiler": "Intelligent boiler heating planning based on spot prices",
+          "enable_auto": "Electric vehicle charging optimization (coming soon)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
@@ -588,11 +658,11 @@
           "solar_forecast_string1_enabled": "💡 Click 'Submit' to show parameters. If you have panels on only one orientation, String 1 is enough",
           "solar_forecast_string1_kwp": "Total String 1 power in kWp (e.g., 5.0 kWp)",
           "solar_forecast_string1_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = south, -90° = east, 90° = west. Range: 0-360°",
+          "solar_forecast_string1_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
           "solar_forecast_string2_kwp": "Total String 2 power in kWp (e.g., 3.5 kWp)",
           "solar_forecast_string2_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = south, -90° = east, 90° = west. Range: 0-360°",
+          "solar_forecast_string2_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
@@ -703,6 +773,46 @@
           "enable_extended_battery_sensors": "Cell voltages, temperatures, charging/discharging currents",
           "enable_extended_fve_sensors": "String voltages, currents, temperatures, power of individual strings",
           "enable_extended_grid_sensors": "Phase voltages L1/L2/L3, frequency, power quality",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        }
+      },
+      "wizard_boiler": {
+        "title": "🔥 Boiler Configuration",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans water heater heating based on spot electricity prices. Selects the cheapest time slots to heat water before your set deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan when to turn on the boiler\n4. Controls the switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical boiler switching must be handled via automation or smart switch.",
+        "data": {
+          "boiler_volume_l": "Boiler volume (liters)",
+          "boiler_target_temp_c": "Target water temperature (°C)",
+          "boiler_cold_inlet_temp_c": "Cold water temperature (°C)",
+          "boiler_temp_sensor_top": "Temperature sensor (top)",
+          "boiler_temp_sensor_bottom": "Temperature sensor (bottom) - optional",
+          "boiler_stratification_mode": "Stratification mode",
+          "boiler_heater_power_kw_entity": "Heater power sensor (kW)",
+          "boiler_heater_switch_entity": "Heater switch",
+          "boiler_alt_heater_switch_entity": "Alternative heater switch - optional",
+          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
+          "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
+          "boiler_spot_price_sensor": "Spot price sensor",
+          "boiler_deadline_time": "Deadline (time to have heated by)",
+          "boiler_planning_horizon_hours": "Planning horizon (hours)",
+          "boiler_plan_slot_minutes": "Time slot length (minutes)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
+          "boiler_target_temp_c": "What temperature to heat water to (typically 55-65°C)",
+          "boiler_cold_inlet_temp_c": "Cold water inlet temperature from mains (typically 10-15°C)",
+          "boiler_temp_sensor_top": "Entity ID of temperature sensor at top of boiler (e.g., sensor.boiler_temperature_top)",
+          "boiler_temp_sensor_bottom": "Entity ID of temperature sensor at bottom - for more accurate calculation in stratified boilers",
+          "boiler_stratification_mode": "simple_avg = temperature average | two_zone = stratified model (more accurate, needs 2 sensors)",
+          "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
+          "boiler_heater_switch_entity": "Entity ID of switch to turn on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
+          "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_alt_cost_kwh": "How much 1 kWh from alternative source costs (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
+          "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
+          "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning always finds cheapest slots BEFORE this time.",
+          "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
+          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },

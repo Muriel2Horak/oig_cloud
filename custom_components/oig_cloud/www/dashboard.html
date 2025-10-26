@@ -53,6 +53,7 @@
         <div class="dashboard-tabs">
             <div class="dashboard-tab active" onclick="switchTab('flow')">⚡ Toky</div>
             <div class="dashboard-tab" onclick="switchTab('pricing')">💰 Predikce a statistiky</div>
+            <div class="dashboard-tab" onclick="switchTab('boiler')">🔥 Bojler & Auto</div>
             <div class="layout-controls">
                 <button id="edit-layout-btn" class="btn-layout-edit" onclick="toggleEditMode()" data-tooltip="Upravit rozmístění boxů">
                     🔧
@@ -636,6 +637,19 @@
         </div>
         <!-- End Flow Tab -->
 
+        <!-- INCLUDE: Boiler Tab -->
+        <script>
+            fetch('boiler-tab.html')
+                .then(response => response.text())
+                .then(html => {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    const boilerTab = tempDiv.firstElementChild;
+                    document.getElementById('pricing-tab').insertAdjacentElement('beforebegin', boilerTab);
+                })
+                .catch(err => console.error('[Dashboard] Failed to load boiler-tab.html:', err));
+        </script>
+
         <!-- Tab: Pricing & Forecast -->
         <div id="pricing-tab" class="tab-content">
             <!-- Nové karty s extrémními cenami -->
@@ -803,7 +817,7 @@
                 <!-- Battery Balancing Card -->
                 <div class="stat-card" id="battery-balancing-card"
                     style="background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 152, 0, 0.05) 100%); border: 1px solid rgba(255, 152, 0, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #FF9800; font-weight: 600;">🔋 Vyrovnání baterie</div>
+                    <div id="balancing-card-title" class="stat-label" style="color: #FF9800; font-weight: 600;">🔋 Vyrovnání baterie</div>
                     <div id="balancing-status-label" style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">--</div>
 
                     <!-- Velké číslo - dny do balancingu -->
