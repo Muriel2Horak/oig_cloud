@@ -3499,6 +3499,9 @@ async function loadNodeDetails() {
         // Grid charging plan
         await updateGridChargingPlan();
 
+        // Battery balancing card
+        await updateBatteryBalancingCard();
+
         // === GRID DETAILS ===
         const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
         const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
@@ -4375,7 +4378,169 @@ async function updateGridChargingPlan() {
     }
 }
 
-function showGridChargingPopup() {
+async function updateBatteryBalancingCard() {
+    try {
+        const balancingData = await getSensorString(getSensorId('battery_balancing'));
+        const forecastData = await getSensorString(getSensorId('battery_forecast'));
+
+        if (!balancingData || !balancingData.attributes) {
+            console.warn('[Balancing] No balancing data available');
+            return;
+        }
+
+        const attrs = balancingData.attributes;
+        const status = balancingData.value; // ok, due_soon, critical, overdue, disabled
+        const daysSince = attrs.days_since_last ?? null;
+        const intervalDays = attrs.config?.interval_days ?? 7;
+        const lastBalancing = attrs.last_balancing ? new Date(attrs.last_balancing) : null;
+        const planned = attrs.planned;
+        const currentState = attrs.current_state ?? 'standby'; // charging/balancing/planned/standby
+        const timeRemaining = attrs.time_remaining; // HH:MM
+
+        // Získat přesnou cenu z forecast sensoru
+        const balancingCost = forecastData?.attributes?.balancing_cost;
+
+        // Vypočítat dny do dalšího balancingu
+        let daysRemaining = null;
+        if (daysSince !== null) {
+            daysRemaining = Math.max(0, intervalDays - daysSince);
+        }
+
+        // Status barvy
+        const statusColors = {
+            ok: '#4CAF50',           // zelená
+            due_soon: '#FFC107',     // žlutá
+            critical: '#FF9800',     // oranžová
+            overdue: '#F44336',      // červená
+            disabled: '#757575'      // šedá
+        };
+        const statusColor = statusColors[status] || '#757575';
+
+        // Current state texty a barvy
+        const stateTexts = {
+            charging: 'Nabíjení na 100%',
+            balancing: 'Balancování',
+            completed: 'Dokončeno',
+            planned: 'Naplánováno',
+            standby: 'Standby'
+        };
+
+        const stateColors = {
+            charging: '#FFC107',    // žlutá
+            balancing: '#FF9800',   // oranžová
+            completed: '#4CAF50',   // zelená
+            planned: '#2196F3',     // modrá
+            standby: '#757575'      // šedá
+        };
+
+        // Update status label s detailním stavem
+        const statusLabel = document.getElementById('balancing-status-label');
+        if (statusLabel) {
+            const stateText = stateTexts[currentState] || currentState;
+            const stateColor = stateColors[currentState] || '#757575';
+
+            if (currentState === 'charging' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (${timeRemaining} do balancování)`;
+            } else if (currentState === 'balancing' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (zbývá ${timeRemaining})`;
+            } else if (currentState === 'planned' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (start za ${timeRemaining})`;
+            } else if (currentState === 'completed' && timeRemaining) {
+                statusLabel.textContent = `${stateText} ${timeRemaining}`;
+            } else {
+                statusLabel.textContent = stateText;
+            }
+
+            statusLabel.style.color = stateColor;
+        }
+
+        // Update velké číslo - dny
+        const daysNumber = document.getElementById('balancing-days-number');
+        if (daysNumber) {
+            if (daysRemaining !== null) {
+                daysNumber.textContent = daysRemaining;
+                daysNumber.style.color = statusColor;
+            } else {
+                daysNumber.textContent = '?';
+                daysNumber.style.color = '#757575';
+            }
+        }
+
+        // Update poslední balancing (krátký formát)
+        const lastDateShort = document.getElementById('balancing-last-date-short');
+        if (lastDateShort && lastBalancing) {
+            const dateStr = lastBalancing.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+            lastDateShort.textContent = `${dateStr} (${daysSince}d)`;
+        } else if (lastDateShort) {
+            lastDateShort.textContent = 'Žádné';
+        }
+
+        // Update plánované balancing (krátký formát)
+        const plannedShort = document.getElementById('balancing-planned-short');
+        const plannedTimeShort = document.getElementById('balancing-planned-time-short');
+        const costValueShort = document.getElementById('balancing-cost-value-short');
+
+        if (planned && plannedTimeShort && costValueShort && plannedShort) {
+            // Zobrazit plánovanou řádku
+            plannedShort.style.display = 'flex';
+
+            // Parsovat časy
+            const startTime = new Date(planned.holding_start);
+            const startStr = startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+
+            // Zobrazit info o charging intervalech
+            const chargingIntervals = planned.charging_intervals || [];
+            const chargingAvgPrice = planned.charging_avg_price_czk || 0;
+
+            if (chargingIntervals.length > 0) {
+                const chargingTimes = chargingIntervals.map(t => {
+                    const time = new Date(t);
+                    return time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                }).join(', ');
+
+                plannedTimeShort.textContent = `dnes ${startStr}`;
+                plannedTimeShort.title = `Nabíjení: ${chargingTimes} (${chargingAvgPrice.toFixed(2)} Kč/kWh)\nDržení: ${startStr}`;
+            } else {
+                plannedTimeShort.textContent = `dnes ${startStr}`;
+            }
+
+            // Přesné náklady pokud jsou k dispozici
+            if (balancingCost) {
+                const totalCost = balancingCost.total_cost_czk ?? 0;
+                const chargingCost = balancingCost.charging_cost_czk ?? 0;
+                const holdingCost = balancingCost.holding_cost_czk ?? 0;
+                costValueShort.textContent = `${totalCost.toFixed(1)} Kč`;
+                costValueShort.title = `Nabíjení: ${chargingCost.toFixed(1)} Kč (${chargingAvgPrice.toFixed(2)} Kč/kWh)\nDržení: ${holdingCost.toFixed(1)} Kč`;
+            } else {
+                // Fallback odhad
+                const avgPrice = planned.avg_price_czk ?? 0;
+                const holdHours = attrs.config?.hold_hours ?? 3;
+                const estimatedCost = avgPrice * holdHours * 0.7;
+                costValueShort.textContent = `~${estimatedCost.toFixed(1)} Kč`;
+            }
+        } else if (plannedShort) {
+            // Skrýt plánovanou řádku
+            plannedShort.style.display = 'none';
+            if (costValueShort) costValueShort.textContent = '--';
+        }
+
+        // Update timeline bar
+        const timelineBar = document.getElementById('balancing-timeline-bar');
+        const timelineLabel = document.getElementById('balancing-timeline-label');
+
+        if (timelineBar && timelineLabel && daysSince !== null) {
+            const progressPercent = Math.min(100, (daysSince / intervalDays) * 100);
+
+            timelineBar.style.width = `${progressPercent}%`;
+            timelineBar.style.background = `linear-gradient(90deg, ${statusColor} 0%, ${statusColor}aa 100%)`;
+
+            timelineLabel.textContent = `${daysSince}/${intervalDays} dní`;
+        }
+
+    } catch (error) {
+        console.error('[Balancing] Error updating battery balancing card:', error);
+    }
+}function showGridChargingPopup() {
     getSensorString(getSensorId('grid_charging_planned')).then(gridChargingData => {
         if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
             showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');

@@ -785,6 +785,52 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Battery Balancing Card -->
+                <div class="stat-card" id="battery-balancing-card"
+                    style="background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 152, 0, 0.05) 100%); border: 1px solid rgba(255, 152, 0, 0.3); min-height: 160px;">
+                    <div class="stat-label" style="color: #FF9800; font-weight: 600;">🔋 Vyrovnání baterie</div>
+                    <div id="balancing-status-label" style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">--</div>
+
+                    <!-- Velké číslo - dny do balancingu -->
+                    <div class="stat-value" style="margin: 10px 0;">
+                        <span id="balancing-days-number" style="font-size: 1.8em; font-weight: bold;">--</span>
+                        <span id="balancing-days-unit" style="font-size: 0.9em; color: var(--text-secondary); margin-left: 5px;">dní</span>
+                    </div>
+
+                    <div id="balancing-details" style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                            <span>📅 Poslední:</span>
+                            <span id="balancing-last-date-short" style="color: var(--text-primary);">--</span>
+                        </div>
+                        <div id="balancing-planned-short" style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                            <span>⏰ Plánováno:</span>
+                            <span id="balancing-planned-time-short" style="color: var(--text-primary);">--</span>
+                        </div>
+                        <div id="balancing-cost-short" style="display: flex; justify-content: space-between;">
+                            <span>💰 Náklady:</span>
+                            <span id="balancing-cost-value-short" style="color: var(--text-primary);">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Timeline bar -->
+                    <div style="height: 40px; margin-top: 5px; position: relative; border-radius: 4px; overflow: hidden; background: rgba(255, 152, 0, 0.1);">
+                        <div id="balancing-timeline-bar" style="position: absolute; left: 0; top: 0; height: 100%; transition: width 0.3s ease;">
+                            <!-- JS vyplní progress -->
+                        </div>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: var(--text-primary); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
+                            <span id="balancing-timeline-label">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Placeholder for 4th card if needed -->
+                <div class="stat-card" style="background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); min-height: 160px; display: flex; align-items: center; justify-content: center;">
+                    <div style="text-align: center; color: var(--text-secondary); opacity: 0.5;">
+                        <div style="font-size: 2em; margin-bottom: 10px;">📊</div>
+                        <div style="font-size: 0.85em;">Rezervováno</div>
+                    </div>
+                </div>
             </div>
         </div>
         <!-- End Pricing Tab -->

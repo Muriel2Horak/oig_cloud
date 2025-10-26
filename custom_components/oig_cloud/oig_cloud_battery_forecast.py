@@ -143,6 +143,10 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, "_consumption_summary") and self._consumption_summary:
             attrs.update(self._consumption_summary)
 
+        # Přidat balancing cost pokud existuje
+        if hasattr(self, "_balancing_cost") and self._balancing_cost:
+            attrs["balancing_cost"] = self._balancing_cost
+
         return attrs
 
     async def async_update(self) -> None:
@@ -172,7 +176,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # NOVÉ: Zkusit získat adaptivní profily
             adaptive_profiles = await self._get_adaptive_load_prediction()
-            
+
             # NOVÉ: Získat balancing plán
             balancing_plan = self._get_balancing_plan()
 
@@ -264,19 +268,59 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         battery_kwh = current_capacity
 
         today = dt_util.now().date()
-        
+
         # Parse balancing plan times if exists
-        balancing_start: Optional[datetime] = None
-        balancing_end: Optional[datetime] = None
+        balancing_start: Optional[datetime] = None  # Start HOLDING period (už na 100%)
+        balancing_end: Optional[datetime] = None  # End HOLDING period
+        balancing_charging_intervals: set = set()  # Intervaly kdy nabíjet (podle cen)
         balancing_reason: Optional[str] = None
-        
+
+        # Tracking pro přesný výpočet ceny balancování
+        balancing_charging_cost: float = 0.0  # Cena za nabití na 100%
+        balancing_holding_cost: float = 0.0  # Cena za držení (spotřeba ze sítě)
+
         if balancing_plan:
             try:
-                balancing_start = datetime.fromisoformat(balancing_plan.get("holding_start", ""))
-                balancing_end = datetime.fromisoformat(balancing_plan.get("holding_end", ""))
+                balancing_start = datetime.fromisoformat(
+                    balancing_plan.get("holding_start", "")
+                )
+                balancing_end = datetime.fromisoformat(
+                    balancing_plan.get("holding_end", "")
+                )
                 balancing_reason = balancing_plan.get("reason", "unknown")
+
+                # NOVÁ STRATEGIE: Najít nejlevnější intervaly pro nabíjení
+                # Nabíjet můžeme od teď až do konce holding period
+                # Potřebujeme X intervalů pro nabití na 100%
+                charging_power_kwh_per_15min = 0.75
+                energy_needed = max(0, max_capacity - battery_kwh)
+                intervals_needed = (
+                    int(energy_needed / charging_power_kwh_per_15min) + 1
+                )  # +1 pro bezpečnost
+
+                # Najít nejlevnější intervaly mezi now a balancing_end
+                now = dt_util.now()
+                charging_candidates = [
+                    p
+                    for p in spot_prices
+                    if p.get("time")
+                    and now <= datetime.fromisoformat(p["time"]) <= balancing_end
+                ]
+
+                # Seřadit podle ceny (nejlevnější první)
+                charging_candidates.sort(key=lambda p: p.get("price", 999))
+
+                # Vybrat N nejlevnějších intervalů
+                cheapest_intervals = charging_candidates[:intervals_needed]
+                balancing_charging_intervals = {
+                    datetime.fromisoformat(p["time"]) for p in cheapest_intervals
+                }
+
                 _LOGGER.info(
-                    f"Balancing plan active: {balancing_reason} from {balancing_start} to {balancing_end}"
+                    f"Balancing plan: {balancing_reason}, "
+                    f"holding {balancing_start.strftime('%H:%M')}-{balancing_end.strftime('%H:%M')}, "
+                    f"charging in {len(balancing_charging_intervals)} cheapest intervals "
+                    f"(need {energy_needed:.1f} kWh)"
                 )
             except (ValueError, TypeError) as e:
                 _LOGGER.warning(f"Failed to parse balancing plan times: {e}")
@@ -328,7 +372,23 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Fallback: load_avg sensors
                 load_kwh = self._get_load_avg_for_timestamp(timestamp, load_avg_sensors)
 
-            # Grid charging (prozatím 0, připraveno pro budoucí logiku)
+            # Zkontrolovat jestli jsme v balancing window
+            is_balancing_charging = False  # Nabíjení v levných intervalech
+            is_balancing_holding = False  # Držení na 100% během holding period
+
+            if balancing_plan and balancing_start and balancing_end:
+                # Charging: jsme v některém z vybraných levných intervalů?
+                if timestamp in balancing_charging_intervals:
+                    is_balancing_charging = True
+
+                # Holding: jsme v holding period?
+                if balancing_start <= timestamp <= balancing_end:
+                    is_balancing_holding = True
+
+            # Celkové balancing window = charging NEBO holding
+            is_balancing_window = is_balancing_charging or is_balancing_holding
+
+            # Grid charging - normální logika (může být přepsána balancingem)
             grid_kwh = 0.0
 
             # Debug první pár bodů
@@ -336,56 +396,111 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.info(
                     f"Timeline point {len(timeline)}: {timestamp_str}, "
                     f"battery_before={battery_kwh:.3f}, solar={solar_kwh:.3f}, "
-                    f"load={load_kwh:.3f}, grid={grid_kwh:.3f}"
+                    f"load={load_kwh:.3f}, grid={grid_kwh:.3f}, "
+                    f"balancing_charging={is_balancing_charging}, balancing_holding={is_balancing_holding}"
                 )
 
-            # DŮLEŽITÁ LOGIKA s EFFICIENCY:
-            # GAP #1: Při vybíjení z baterie musíme zohlednit DC/AC losses
-            # GAP #3: V UPS režimu spotřeba jde ze sítě (ne z baterie)
+            # BATTERY BALANCING: Nabíjení v levných hodinách + držení na 100%
+            if is_balancing_window:
+                # Cílová kapacita je 100%
+                target_kwh = max_capacity
 
-            # Určit jestli je UPS režim (když nabíjíme ze sítě)
-            # V UPS: spotřeba NEJDE z baterie, baterie JEN roste
-            is_ups_mode = grid_kwh > 0
+                # Spočítat kolik energie potřebujeme ze sítě
+                projected_kwh = battery_kwh + solar_kwh - (load_kwh * 0.05)
+                needed_kwh = target_kwh - projected_kwh
 
-            if is_ups_mode:
-                # UPS režim: spotřeba ze sítě (100% účinnost)
-                # Baterie roste jen díky solar + grid nabíjení
-                net_energy = solar_kwh + grid_kwh
-                # load_kwh se NEODEČÍTÁ (jde ze sítě!)
-            else:
-                # Home I/II/III režim: spotřeba z baterie (s DC/AC losses)
-                # Solar nejprve pokrývá spotřebu (bez losses), pak nabíjí baterii
-                if solar_kwh >= load_kwh:
-                    # Solar pokrývá spotřebu + nabíjí baterii
-                    solar_to_battery = solar_kwh - load_kwh
-                    net_energy = solar_to_battery + grid_kwh
+                # Nabíjet jen pokud:
+                # 1. Jsme v charging intervalu (levné hodiny) NEBO
+                # 2. Jsme v holding period a ještě nejsme na 100%
+                should_charge = is_balancing_charging or (
+                    is_balancing_holding and battery_kwh < target_kwh
+                )
+
+                if should_charge and needed_kwh > 0:
+                    # Potřebujeme dobít - omezit na max výkon (3 kW = 0.75 kWh/15min)
+                    grid_kwh = min(needed_kwh, 0.75)
                 else:
-                    # Solar nepokrývá spotřebu → vybíjíme z baterie (s losses!)
-                    load_from_battery = load_kwh - solar_kwh
-                    battery_drain = load_from_battery / efficiency  # 0.882 → 12% více!
-                    net_energy = -battery_drain + grid_kwh
+                    grid_kwh = 0.0
 
-            # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
-            solar_to_battery = max(0, solar_kwh - load_kwh)
+                # Sledovat cenu balancování
+                spot_price = price_point.get("price", 0)
 
-            # Výpočet nové kapacity baterie
-            battery_kwh = battery_kwh + net_energy
+                if is_balancing_holding:
+                    # HOLDING phase: Cena za spotřebu ze sítě (grid - solar)
+                    # V UPS režimu spotřeba jde ze sítě, ale pokud je solar, tak pomáhá
+                    net_consumption = max(0, load_kwh - solar_kwh)
+                    balancing_holding_cost += net_consumption * spot_price
 
-            # Clamp jen na maximum, NE na minimum
-            # (Chceme vidět pokles pod minimum aby grid charging algoritmus reagoval)
-            if battery_kwh > max_capacity:
-                battery_kwh = max_capacity
-            # DŮLEŽITÉ: NEclampovat na minimum - ať timeline ukazuje skutečný pokles
-            # if battery_kwh < min_capacity:
-            #     battery_kwh = min_capacity
+                    # HOLDING: Forcnout baterii na 100% (technický požadavek)
+                    battery_kwh = max_capacity
+
+                elif is_balancing_charging:
+                    # CHARGING phase: Cena za nabíjení ze sítě
+                    balancing_charging_cost += grid_kwh * spot_price
+
+                    # CHARGING: Normální nabíjení ale s max výkonem
+                    net_energy = solar_kwh + grid_kwh  # V UPS: spotřeba jde ze sítě
+                    battery_kwh = battery_kwh + net_energy
+                    # Clamp na maximum
+                    if battery_kwh > max_capacity:
+                        battery_kwh = max_capacity
+
+                is_ups_mode = grid_kwh > 0
+                solar_to_battery = solar_kwh  # Veškerý solar jde do baterie
+            else:
+                # NORMÁLNÍ REŽIM - standardní logika
+                # DŮLEŽITÁ LOGIKA s EFFICIENCY:
+                # GAP #1: Při vybíjení z baterie musíme zohlednit DC/AC losses
+                # GAP #3: V UPS režimu spotřeba jde ze sítě (ne z baterie)
+
+                # Určit jestli je UPS režim (když nabíjíme ze sítě)
+                # V UPS: spotřeba NEJDE z baterie, baterie JEN roste
+                is_ups_mode = grid_kwh > 0
+
+                if is_ups_mode:
+                    # UPS režim: spotřeba ze sítě (100% účinnost)
+                    # Baterie roste jen díky solar + grid nabíjení
+                    net_energy = solar_kwh + grid_kwh
+                    # load_kwh se NEODEČÍTÁ (jde ze sítě!)
+                else:
+                    # Home I/II/III režim: spotřeba z baterie (s DC/AC losses)
+                    # Solar nejprve pokrývá spotřebu (bez losses), pak nabíjí baterii
+                    if solar_kwh >= load_kwh:
+                        # Solar pokrývá spotřebu + nabíjí baterii
+                        solar_to_battery = solar_kwh - load_kwh
+                        net_energy = solar_to_battery + grid_kwh
+                    else:
+                        # Solar nepokrývá spotřebu → vybíjíme z baterie (s losses!)
+                        load_from_battery = load_kwh - solar_kwh
+                        battery_drain = (
+                            load_from_battery / efficiency
+                        )  # 0.882 → 12% více!
+                        net_energy = -battery_drain + grid_kwh
+
+                # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
+                solar_to_battery = max(0, solar_kwh - load_kwh)
+
+                # Výpočet nové kapacity baterie
+                battery_kwh = battery_kwh + net_energy
+
+                # Clamp jen na maximum, NE na minimum
+                # (Chceme vidět pokles pod minimum aby grid charging algoritmus reagoval)
+                if battery_kwh > max_capacity:
+                    battery_kwh = max_capacity
+                # DŮLEŽITÉ: NEclampovat na minimum - ať timeline ukazuje skutečný pokles
+                # if battery_kwh < min_capacity:
+                #     battery_kwh = min_capacity
 
             # Určit reason pro tento interval
             reason = "normal"
-            if balancing_plan and balancing_start and balancing_end:
-                # Zkontrolovat jestli tento timestamp spadá do balancing window
-                if balancing_start <= timestamp <= balancing_end:
+            if is_balancing_window:
+                if is_balancing_charging:
+                    reason = f"balancing_charging_{balancing_reason}"
+                elif is_balancing_holding:
+                    reason = f"balancing_holding_{balancing_reason}"
+                else:
                     reason = f"balancing_{balancing_reason}"
-                    
+
             # Přidat bod do timeline
             timeline.append(
                 {
@@ -406,9 +521,26 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             )
 
         # Optimalizace nabíjení ze sítě
+        # DŮLEŽITÉ: Pokud máme balancing plan, NEVOLAT optimalizaci!
+        # Balancing má prioritu před grid charging optimalizací
         _LOGGER.debug(f"Timeline before optimization: {len(timeline)} points")
-        timeline = self._optimize_grid_charging(timeline)
-        _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
+        if not balancing_plan:
+            timeline = self._optimize_grid_charging(timeline)
+            _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
+        else:
+            _LOGGER.info(f"Skipping grid charging optimization - balancing plan active")
+
+        # Uložit balancing cost info pro atributy
+        if balancing_plan:
+            self._balancing_cost = {
+                "charging_cost_czk": round(balancing_charging_cost, 2),
+                "holding_cost_czk": round(balancing_holding_cost, 2),
+                "total_cost_czk": round(
+                    balancing_charging_cost + balancing_holding_cost, 2
+                ),
+            }
+        else:
+            self._balancing_cost = None
 
         return timeline
 
@@ -929,16 +1061,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # Načíst planned window z atributů
         planned = state.attributes.get("planned")
-        
+
         if not planned:
             _LOGGER.debug("No balancing window planned")
             return None
-            
+
         _LOGGER.info(
             f"Balancing plan: {planned.get('reason')} from {planned.get('holding_start')} "
             f"to {planned.get('holding_end')}"
         )
-        
+
         return planned
 
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
