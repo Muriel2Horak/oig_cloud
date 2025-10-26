@@ -847,6 +847,36 @@ async def async_setup_entry(
                 )
                 async_add_entities(battery_forecast_sensors, True)
 
+                # Přidat také battery balancing sensor
+                try:
+                    from .oig_cloud_battery_balancing import (
+                        OigCloudBatteryBalancingSensor,
+                    )
+
+                    balancing_sensors: List[Any] = []
+
+                    for sensor_type, config in SENSOR_TYPES.items():
+                        if config.get("sensor_type_category") == "battery_balancing":
+                            sensor = OigCloudBatteryBalancingSensor(
+                                coordinator,
+                                sensor_type,
+                                entry,
+                                analytics_device_info,
+                                hass,
+                            )
+                            balancing_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Created battery balancing sensor: {sensor_type}"
+                            )
+
+                    if balancing_sensors:
+                        _LOGGER.info(
+                            f"Registering {len(balancing_sensors)} battery balancing sensors"
+                        )
+                        async_add_entities(balancing_sensors, True)
+                except Exception as e:
+                    _LOGGER.error(f"Error creating battery balancing sensors: {e}")
+
                 # Přidat také grid charging plan sensor
                 try:
                     from .oig_cloud_battery_forecast import (

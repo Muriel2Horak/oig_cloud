@@ -1462,6 +1462,27 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "max_price_conf", default=defaults.get("max_price_conf", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+            # BATTERY BALANCING PARAMETERS
+            vol.Optional(
+                "balancing_enabled",
+                default=defaults.get("balancing_enabled", True),
+            ): bool,
+            vol.Optional(
+                "balancing_interval_days",
+                default=defaults.get("balancing_interval_days", 7),
+            ): vol.All(vol.Coerce(int), vol.Range(min=3, max=30)),
+            vol.Optional(
+                "balancing_hold_hours",
+                default=defaults.get("balancing_hold_hours", 3),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+            vol.Optional(
+                "balancing_opportunistic_threshold",
+                default=defaults.get("balancing_opportunistic_threshold", 1.1),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Optional(
+                "balancing_economic_threshold",
+                default=defaults.get("balancing_economic_threshold", 2.5),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
         }
 
         # Přidat go_back na konec
@@ -2743,6 +2764,32 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 default=current_options.get("max_price_conf", 10.0),
                 description="⛔ Maximální cena pro nabíjení (CZK/kWh) - POJISTKA",
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+            # BATTERY BALANCING PARAMETERS
+            vol.Optional(
+                "balancing_enabled",
+                default=current_options.get("balancing_enabled", True),
+                description="🔄 Povolit automatické vyrovnání článků baterie",
+            ): bool,
+            vol.Optional(
+                "balancing_interval_days",
+                default=current_options.get("balancing_interval_days", 7),
+                description="📅 Interval vyrovnání (dny)",
+            ): vol.All(vol.Coerce(int), vol.Range(min=3, max=30)),
+            vol.Optional(
+                "balancing_hold_hours",
+                default=current_options.get("balancing_hold_hours", 3),
+                description="⏱️ Doba držení na 100% (hodiny)",
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+            vol.Optional(
+                "balancing_opportunistic_threshold",
+                default=current_options.get("balancing_opportunistic_threshold", 1.1),
+                description="💰 Cena pro opportunistic balancing (CZK/kWh)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Optional(
+                "balancing_economic_threshold",
+                default=current_options.get("balancing_economic_threshold", 2.5),
+                description="📊 Cena pro economic balancing (CZK/kWh)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
         }
 
         # Vysvětlení parametrů
