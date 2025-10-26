@@ -212,29 +212,33 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             # 2. Update status based on days_since
             self._update_balancing_status()
 
-            # 3. Planning logic - najít optimální okno
+            # 3. Planning logic - najít optimální okno (nebo držet existující)
             self._plan_balancing_window()
 
-            # 3b. Přepočítat charging intervals pokud máme aktivní window
+            # 4. Přepočítat charging intervals pro aktivní window
+            # (zahrnuje aktuální probíhající interval)
+            # ALE: pouze pokud jsme PŘED balancing fází!
             if self._planned_window:
-                _LOGGER.info(
-                    f"Recalculating charging intervals for planned window: {self._planned_window.get('holding_start')} - {self._planned_window.get('holding_end')}"
+                now = dt_util.now()
+                holding_start = datetime.fromisoformat(
+                    self._planned_window["holding_start"]
                 )
-                spot_prices = self._get_spot_prices()
-                _LOGGER.info(f"Got {len(spot_prices)} spot prices for recalculation")
-                if spot_prices:
-                    self._planned_window = self._add_charging_intervals(
-                        self._planned_window, spot_prices
-                    )
-                    _LOGGER.info(
-                        f"Updated window: {len(self._planned_window.get('charging_intervals', []))} charging intervals"
-                    )
+                if holding_start.tzinfo is None:
+                    holding_start = dt_util.as_local(holding_start)
+
+                # Pouze přepočítat pokud ještě NEprobíhá balancing
+                if now < holding_start:
+                    spot_prices = self._get_spot_prices()
+                    if spot_prices:
+                        self._planned_window = self._add_charging_intervals(
+                            self._planned_window, spot_prices
+                        )
                 else:
-                    _LOGGER.warning(
-                        "No spot prices available for charging interval recalculation"
+                    _LOGGER.debug(
+                        f"Balancing phase active, skipping charging intervals recalculation"
                     )
 
-            # 4. Detekce aktuálního stavu (charging/balancing/standby/planned)
+            # 5. Detekce aktuálního stavu (charging/balancing/standby/planned)
             self._update_current_state()
 
             self.async_write_ha_state()
@@ -276,6 +280,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         - ECONOMIC (5-7 dní): Cena < economic_threshold
         - CRITICAL (8 dní): Nejlepší dostupné okno
         - FORCED (9+ dní): Okamžitě v nejbližším okně
+
+        IMPORTANT: Pokud už existuje aktivní planned_window, NEMĚNIT ho!
+        Window se plánuje JEDNOU a drží se ho až do konce nebo zrušení.
         """
         config = self._get_balancing_config()
 
@@ -283,14 +290,43 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             self._planned_window = None
             return
 
+        # Pokud už máme naplánované okno, zkontrolovat jestli je stále aktivní
+        if self._planned_window:
+            now = dt_util.now()
+            try:
+                holding_start = datetime.fromisoformat(
+                    self._planned_window["holding_start"]
+                )
+                holding_end = datetime.fromisoformat(
+                    self._planned_window["holding_end"]
+                )
+                if holding_start.tzinfo is None:
+                    holding_start = dt_util.as_local(holding_start)
+                if holding_end.tzinfo is None:
+                    holding_end = dt_util.as_local(holding_end)
+
+                # Pokud okno ještě neskončilo + 1h grace period, DRŽET SE HO
+                if now < holding_end + timedelta(hours=1):
+                    _LOGGER.debug(
+                        f"Keeping existing planned window: {holding_start.strftime('%H:%M')}-{holding_end.strftime('%H:%M')}"
+                    )
+                    return  # NEMĚNIT window!
+                else:
+                    _LOGGER.info(
+                        f"Planned window completed at {holding_end.strftime('%H:%M')}, clearing"
+                    )
+                    self._planned_window = None
+            except (ValueError, TypeError, KeyError) as e:
+                _LOGGER.warning(f"Invalid planned_window format: {e}, clearing")
+                self._planned_window = None
+
         days = self._days_since_last
 
         # Získat spot prices z coordinator
         spot_prices = self._get_spot_prices()
         if not spot_prices:
             _LOGGER.debug("No spot prices available for planning")
-            self._planned_window = None
-            return
+            return  # NEMAZAT existující window
 
         # Hledat optimální okno podle priority
         if days >= config["interval_days"] + 1:  # Den 8+
@@ -306,6 +342,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # Pokud máme window, vypočítat charging intervaly (nejlevnější)
         if window:
             window = self._add_charging_intervals(window, spot_prices)
+            _LOGGER.info(
+                f"NEW planned window: {window['holding_start']} - {window['holding_end']}, "
+                f"charging intervals: {len(window.get('charging_intervals', []))}"
+            )
 
         self._planned_window = window
 
@@ -469,19 +509,23 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     def _find_opportunistic_window(
         self, prices: Dict[str, float], config: Dict[str, Any], force: bool = False
     ) -> Optional[Dict[str, Any]]:
-        """Hledat opportunistic okno - extrémně levná cena."""
+        """
+        Hledat opportunistic okno - extrémně levná cena.
+        
+        NOVÁ LOGIKA:
+        1. Najde VŠECHNY 3h holding window kandidáty pod threshold
+        2. Seřadí je podle ceny (nejlevnější první)
+        3. Pro každého kandidáta ověří feasibility (dá se dobít na 100%?)
+        4. Vrátí první feasible kandidát
+        """
         threshold = config["opportunistic_threshold"]
         hold_hours = config["hold_hours"]
-
-        # Najít 3h okno (holding) kde průměrná cena < threshold
-        best_window = None
-        best_avg_price = float("inf")
-
         sorted_times = sorted(prices.keys())
-
-        for i in range(
-            len(sorted_times) - hold_hours * 4
-        ):  # 4 = 15min intervals per hour
+        
+        # 1. Najít VŠECHNY kandidáty pod threshold
+        candidates = []
+        
+        for i in range(len(sorted_times) - hold_hours * 4):
             window_prices = []
             window_start = sorted_times[i]
             window_end_idx = i + hold_hours * 4
@@ -491,35 +535,48 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             avg_price = sum(window_prices) / len(window_prices)
 
-            if avg_price < threshold and avg_price < best_avg_price:
-                # KONTROLA PROVEDITELNOSTI - stíháme nabít?
-                is_feasible, _ = self._check_window_feasibility(
-                    window_start, prices, force
-                )
-
-                if not is_feasible:
-                    _LOGGER.debug(
-                        f"Skipping window {window_start} - not enough time to charge"
-                    )
-                    continue
-
-                best_avg_price = avg_price
-                # holding_end je konec 3h okna (začátek dalšího intervalu po okně)
-                # Pro 3h okno (12 intervalů): i, i+1, ..., i+11 → window_end = sorted_times[i+12] nebo i+11+15min
+            if avg_price < threshold:
                 from datetime import datetime, timedelta
-
+                
                 window_end_time = datetime.fromisoformat(
                     sorted_times[window_end_idx - 1]
                 ) + timedelta(minutes=15)
-                window_end = window_end_time.isoformat()
-                best_window = {
+                
+                candidates.append({
                     "holding_start": window_start,
-                    "holding_end": window_end,
+                    "holding_end": window_end_time.isoformat(),
                     "avg_price_czk": round(avg_price, 2),
                     "reason": "opportunistic",
-                }
-
-        return best_window
+                })
+        
+        if not candidates:
+            _LOGGER.debug(f"No opportunistic windows found (threshold={threshold} Kč/kWh)")
+            return None
+        
+        # 2. Seřadit podle ceny (nejlevnější první)
+        candidates.sort(key=lambda x: x["avg_price_czk"])
+        
+        _LOGGER.info(f"Found {len(candidates)} opportunistic candidates, testing feasibility...")
+        
+        # 3. Testovat feasibility pro každého kandidáta (od nejlevnějšího)
+        for idx, candidate in enumerate(candidates):
+            is_feasible, intervals_needed = self._check_window_feasibility(
+                candidate["holding_start"], prices, force
+            )
+            
+            if is_feasible:
+                _LOGGER.info(
+                    f"✅ Selected candidate #{idx+1}/{len(candidates)}: "
+                    f"{candidate['holding_start']} @ {candidate['avg_price_czk']} Kč/kWh"
+                )
+                return candidate
+            else:
+                _LOGGER.debug(
+                    f"❌ Candidate #{idx+1} not feasible: {candidate['holding_start']}"
+                )
+        
+        _LOGGER.warning(f"No feasible opportunistic window found (tested {len(candidates)} candidates)")
+        return None
 
     def _find_economic_window(
         self, prices: Dict[str, float], config: Dict[str, Any]
@@ -581,6 +638,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
 
             # Najít kandidáty (mezi NOW a holding_start - nabíjíme PŘED holding fází!)
+            # DŮLEŽITÉ: Zahrnout i aktuální probíhající interval!
             candidates = []
             for timestamp_str, price in prices.items():
                 try:
@@ -588,8 +646,21 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     # Make timezone aware
                     if timestamp.tzinfo is None:
                         timestamp = dt_util.as_local(timestamp)
-                    if now <= timestamp < holding_start:
+
+                    interval_end = timestamp + timedelta(minutes=15)
+
+                    # Zahrnout interval pokud:
+                    # 1. Ještě nezačal (timestamp >= now)
+                    # 2. NEBO právě probíhá (now je mezi timestamp a timestamp+15min)
+                    is_future = timestamp >= now
+                    is_current = timestamp < now < interval_end
+
+                    if (is_future or is_current) and timestamp < holding_start:
                         candidates.append({"timestamp": timestamp_str, "price": price})
+                        if is_current:
+                            _LOGGER.debug(
+                                f"Including CURRENT interval: {timestamp_str}"
+                            )
                 except (ValueError, TypeError):
                     continue
 
@@ -621,16 +692,21 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
     def _update_current_state(self) -> None:
         """
-        Aktualizovat current_state a time_remaining na základě plánovaného okna.
+        Detekuje aktuální stav balancování.
 
         Stavy:
-        - charging: Přípravná fáze nabíjení na 100% (v levných intervalech)
-        - balancing: Aktivní držení na 100% (balancování)
-        - completed: Balancování právě dokončeno (do 1h po skončení)
+        - charging: Probíhá nabíjení v levném intervalu před balancováním
+        - balancing: Probíhá balancování (držení na 100%)
+        - completed: Balancování dokončeno (do 1h po skončení)
         - planned: Balancování je naplánováno, ale ještě nezačalo
         - standby: Není naplánováno žádné balancování
         """
+        _LOGGER.info(
+            f"[State Update] _update_current_state called, _planned_window={self._planned_window is not None}"
+        )
+
         if not self._planned_window:
+            _LOGGER.info("[State Update] No planned window - setting standby")
             self._current_state = "standby"
             self._time_remaining = None
             return
@@ -643,8 +719,19 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             )
             holding_end = datetime.fromisoformat(self._planned_window["holding_end"])
 
+            # Make timezone aware!
+            if holding_start.tzinfo is None:
+                holding_start = dt_util.as_local(holding_start)
+            if holding_end.tzinfo is None:
+                holding_end = dt_util.as_local(holding_end)
+
             # Získat charging intervaly pokud existují
             charging_intervals = self._planned_window.get("charging_intervals", [])
+
+            _LOGGER.debug(
+                f"[State Check] now={now}, holding_start={holding_start}, "
+                f"charging_intervals={charging_intervals}"
+            )
 
             # Zkontrolovat jestli jsme v některém charging intervalu
             is_in_charging_interval = False
@@ -652,25 +739,59 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 for interval_str in charging_intervals:
                     try:
                         interval_time = datetime.fromisoformat(interval_str)
+                        if interval_time.tzinfo is None:
+                            interval_time = dt_util.as_local(interval_time)
                         # 15min interval
                         if interval_time <= now < interval_time + timedelta(minutes=15):
                             is_in_charging_interval = True
+                            _LOGGER.info(
+                                f"[State Check] IN CHARGING INTERVAL: {interval_str} "
+                                f"(now={now.strftime('%H:%M')})"
+                            )
                             break
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError) as e:
+                        _LOGGER.warning(
+                            f"[State Check] Invalid interval format: {interval_str} - {e}"
+                        )
                         continue
+
+            _LOGGER.debug(
+                f"[State Check] is_in_charging_interval={is_in_charging_interval}"
+            )
+
+            # Získat aktuální SoC
+            current_soc = self._get_current_soc()
+            _LOGGER.debug(f"[State Check] current_soc={current_soc}%")
 
             # Zjistit ve kterém jsme stavu
             if now >= holding_start and now <= holding_end:
-                # BALANCING fáze - držení na 100%
-                self._current_state = "balancing"
-                remaining = holding_end - now
-                hours = int(remaining.total_seconds() // 3600)
-                minutes = int((remaining.total_seconds() % 3600) // 60)
-                self._time_remaining = f"{hours:02d}:{minutes:02d}"
+                # BALANCING fáze - ale pouze pokud jsme na 100%!
+                if current_soc >= 99.5:
+                    self._current_state = "balancing"
+                    _LOGGER.info(
+                        f"[State] BALANCING - holding at 100% until {holding_end.strftime('%H:%M')}"
+                    )
+                    remaining = holding_end - now
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    self._time_remaining = f"{hours:02d}:{minutes:02d}"
+                else:
+                    # V holding okně, ale ještě nejsme na 100% → CHARGING
+                    self._current_state = "charging"
+                    _LOGGER.warning(
+                        f"[State] In holding window but SoC only {current_soc}% - continuing CHARGING"
+                    )
+                    remaining = holding_end - now
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    self._time_remaining = f"{hours:02d}:{minutes:02d}"
 
             elif is_in_charging_interval:
                 # CHARGING fáze - nabíjení v levném intervalu
                 self._current_state = "charging"
+                _LOGGER.info(
+                    f"[State] CHARGING - preparing for balancing at {holding_start.strftime('%H:%M')}"
+                )
                 remaining = holding_start - now
                 hours = int(remaining.total_seconds() // 3600)
                 minutes = int((remaining.total_seconds() % 3600) // 60)
@@ -679,12 +800,15 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             elif now < holding_start:
                 # PLANNED - čeká na start (nebo mezi charging intervaly)
                 self._current_state = "planned"
+                _LOGGER.debug(f"[State] PLANNED - waiting for next event")
                 # Najít nejbližší charging interval nebo holding_start
                 next_event = holding_start
                 if charging_intervals:
                     for interval_str in sorted(charging_intervals):
                         try:
                             interval_time = datetime.fromisoformat(interval_str)
+                            if interval_time.tzinfo is None:
+                                interval_time = dt_util.as_local(interval_time)
                             if interval_time > now:
                                 next_event = interval_time
                                 break
@@ -692,9 +816,6 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                             continue
 
                 remaining = next_event - now
-                hours = int(remaining.total_seconds() // 3600)
-                minutes = int((remaining.total_seconds() % 3600) // 60)
-                self._time_remaining = f"{hours:02d}:{minutes:02d}"
                 hours = int(remaining.total_seconds() // 3600)
                 minutes = int((remaining.total_seconds() % 3600) // 60)
                 self._time_remaining = f"{hours:02d}:{minutes:02d}"

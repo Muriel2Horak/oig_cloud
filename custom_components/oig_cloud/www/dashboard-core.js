@@ -4400,6 +4400,13 @@ async function updateBatteryBalancingCard() {
         // Získat přesnou cenu z forecast sensoru
         const balancingCost = forecastData?.attributes?.balancing_cost;
 
+        console.log('[Balancing] Forecast data:', {
+            hasForecast: !!forecastData,
+            hasAttributes: !!forecastData?.attributes,
+            balancingCost: balancingCost,
+            allAttributes: forecastData?.attributes ? Object.keys(forecastData.attributes) : []
+        });
+
         // Vypočítat dny do dalšího balancingu
         let daysRemaining = null;
         if (daysSince !== null) {
@@ -4491,32 +4498,59 @@ async function updateBatteryBalancingCard() {
             // Zobrazit info o charging intervalech
             const chargingIntervals = planned.charging_intervals || [];
             const chargingAvgPrice = planned.charging_avg_price_czk || 0;
+            const endTime = new Date(planned.holding_end);
+            const endStr = endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+
+            // Sestavit detailní tooltip s tabulkou časů
+            let tooltipText = '═══ PLÁN BALANCOVÁNÍ ═══\n\n';
 
             if (chargingIntervals.length > 0) {
                 const chargingTimes = chargingIntervals.map(t => {
                     const time = new Date(t);
                     return time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
-                }).join(', ');
+                });
 
-                plannedTimeShort.textContent = `dnes ${startStr}`;
-                plannedTimeShort.title = `Nabíjení: ${chargingTimes} (${chargingAvgPrice.toFixed(2)} Kč/kWh)\nDržení: ${startStr}`;
-            } else {
-                plannedTimeShort.textContent = `dnes ${startStr}`;
+                tooltipText += `📊 PŘÍPRAVA (nabíjení na 100%):\n`;
+                tooltipText += `   Intervaly: ${chargingTimes.join(', ')}\n`;
+                tooltipText += `   Cena: ${chargingAvgPrice.toFixed(2)} Kč/kWh\n\n`;
             }
+
+            tooltipText += `🔋 BALANCOVÁNÍ (držení na 100%):\n`;
+            tooltipText += `   Čas: ${startStr} - ${endStr}\n`;
+            tooltipText += `   Délka: ${attrs.config?.hold_hours ?? 3} hodiny\n\n`;
+
+            // Přidat náklady pokud jsou k dispozici
+            if (balancingCost) {
+                const chargingCost = balancingCost.charging_cost_czk ?? 0;
+                const holdingCost = balancingCost.holding_cost_czk ?? 0;
+                tooltipText += `💰 NÁKLADY:\n`;
+                tooltipText += `   Nabíjení: ${chargingCost.toFixed(2)} Kč\n`;
+                tooltipText += `   Držení: ${holdingCost.toFixed(2)} Kč\n`;
+                tooltipText += `   ────────────────\n`;
+                tooltipText += `   CELKEM: ${(chargingCost + holdingCost).toFixed(2)} Kč`;
+            }
+
+            plannedTimeShort.textContent = `dnes ${startStr}`;
+            plannedTimeShort.title = tooltipText;
 
             // Přesné náklady pokud jsou k dispozici
             if (balancingCost) {
                 const totalCost = balancingCost.total_cost_czk ?? 0;
                 const chargingCost = balancingCost.charging_cost_czk ?? 0;
                 const holdingCost = balancingCost.holding_cost_czk ?? 0;
+
+                console.log('[Balancing] Cost data:', { totalCost, chargingCost, holdingCost, balancingCost });
+
                 costValueShort.textContent = `${totalCost.toFixed(1)} Kč`;
-                costValueShort.title = `Nabíjení: ${chargingCost.toFixed(1)} Kč (${chargingAvgPrice.toFixed(2)} Kč/kWh)\nDržení: ${holdingCost.toFixed(1)} Kč`;
+                costValueShort.title = `Nabíjení: ${chargingCost.toFixed(2)} Kč\nDržení: ${holdingCost.toFixed(2)} Kč\nCelkem: ${totalCost.toFixed(2)} Kč`;
             } else {
                 // Fallback odhad
+                console.warn('[Balancing] No balancing_cost in forecast, using estimate');
                 const avgPrice = planned.avg_price_czk ?? 0;
                 const holdHours = attrs.config?.hold_hours ?? 3;
                 const estimatedCost = avgPrice * holdHours * 0.7;
                 costValueShort.textContent = `~${estimatedCost.toFixed(1)} Kč`;
+                costValueShort.title = `Odhad (přesné náklady nejsou k dispozici)`;
             }
         } else if (plannedShort) {
             // Skrýt plánovanou řádku
