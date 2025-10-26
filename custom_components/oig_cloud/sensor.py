@@ -1142,31 +1142,6 @@ async def async_setup_entry(
         _LOGGER.info("🌦️ ČHMÚ warnings disabled - skipping weather warning sensors")
 
     # ================================================================
-    # SECTION 10: BOILER SENSORS
-    # ================================================================
-    # Boiler module sensors - enabled by enable_boiler option
-    # Device: boiler_device_info (OIG Bojler)
-    # Třída: BoilerSensors
-    # ================================================================
-    if hass.data[DOMAIN][entry.entry_id].get("config", {}).get("enable_boiler", False):
-        _LOGGER.info("🔥 Boiler module enabled - setting up boiler sensors")
-        boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator")
-
-        if boiler_coordinator:
-            try:
-                from .boiler import async_setup_boiler_sensors
-
-                await async_setup_boiler_sensors(
-                    hass, entry, async_add_entities, boiler_coordinator
-                )
-                _LOGGER.info("✅ Boiler sensors successfully registered")
-            except Exception as e:
-                _LOGGER.error(f"❌ Error setting up boiler sensors: {e}", exc_info=True)
-        else:
-            _LOGGER.warning("Boiler coordinator not available, skipping sensors")
-    else:
-        _LOGGER.info("🔥 Boiler module disabled - skipping boiler sensors")
-
     _LOGGER.info("OIG Cloud sensor setup completed")
 
 
