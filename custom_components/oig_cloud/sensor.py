@@ -144,6 +144,12 @@ async def _cleanup_renamed_sensors(
         if len(parts) < 3 or not entity_entry.entity_id.startswith("sensor.oig_"):
             continue
 
+        # SKIP bojler senzory - ty mají vlastní životní cyklus
+        # Format: sensor.oig_bojler_{sensor_type}
+        if "_bojler_" in entity_entry.entity_id or entity_entry.entity_id.startswith("sensor.oig_bojler"):
+            _LOGGER.debug(f"Skipping boiler sensor cleanup: {entity_entry.entity_id}")
+            continue
+
         # Sensor type je vše po box_id
         # sensor.oig_{box_id}_{zbytek} -> zbytek je sensor_type
         # Najdeme index za "sensor.oig_" a box_id
