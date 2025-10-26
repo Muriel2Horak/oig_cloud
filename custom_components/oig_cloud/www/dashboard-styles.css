@@ -5533,3 +5533,407 @@
             background: linear-gradient(135deg, rgba(244, 67, 54, 0.3) 0%, rgba(244, 67, 54, 0.15) 100%);
             border-color: rgba(244, 67, 54, 0.7);
         }
+
+        /* NEW: Heating Ratio Bar */
+        .heating-ratio-container {
+            margin-top: 10px;
+        }
+
+        .ratio-bar {
+            width: 100%;
+            height: 30px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 15px;
+            overflow: hidden;
+            display: flex;
+            position: relative;
+        }
+
+        .ratio-grid {
+            background: linear-gradient(90deg, rgba(33, 150, 243, 0.6), rgba(33, 150, 243, 0.8));
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .ratio-alt {
+            background: linear-gradient(90deg, rgba(255, 152, 0, 0.6), rgba(255, 152, 0, 0.8));
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .ratio-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        /* NEW: Predicted Usage */
+        .boiler-predicted-usage {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .usage-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .usage-item:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-primary);
+        }
+
+        .usage-label {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .usage-value {
+            color: var(--text-primary);
+            font-weight: bold;
+        }
+
+        /* NEW: Grade Thermometer */
+        .boiler-visual-section {
+            margin-top: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px var(--shadow-color);
+        }
+
+        .visual-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .grade-thermometer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .grade-thermometer-container h3 {
+            margin-bottom: 20px;
+            color: var(--text-primary);
+        }
+
+        .boiler-tank {
+            position: relative;
+            width: 120px;
+            height: 400px;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--border-primary);
+            border-radius: 60px;
+            overflow: hidden;
+            box-shadow: inset 0 4px 12px var(--shadow-color);
+        }
+
+        .temperature-scale {
+            position: absolute;
+            left: -60px;
+            top: 0;
+            height: 100%;
+            width: 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 10px 0;
+        }
+
+        .scale-marker {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            text-align: right;
+            font-size: 0.75em;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .scale-marker::after {
+            content: '';
+            width: 8px;
+            height: 1px;
+            background: var(--border-secondary);
+            margin-left: 5px;
+        }
+
+        .water-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .water-level {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg,
+                rgba(255, 87, 34, 0.8) 0%,
+                rgba(255, 152, 0, 0.7) 20%,
+                rgba(255, 193, 7, 0.6) 40%,
+                rgba(76, 175, 80, 0.5) 60%,
+                rgba(33, 150, 243, 0.4) 80%,
+                rgba(3, 169, 244, 0.3) 100%
+            );
+            transition: height 0.8s ease;
+            border-radius: 0 0 58px 58px;
+        }
+
+        .target-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 193, 7, 0.9);
+            box-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+            transition: bottom 0.5s ease;
+        }
+
+        .target-label {
+            position: absolute;
+            right: 5px;
+            top: -20px;
+            background: rgba(255, 193, 7, 0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            color: #FFC107;
+            font-weight: bold;
+        }
+
+        .sensor-marker {
+            position: absolute;
+            right: -45px;
+            width: 40px;
+            height: 4px;
+            background: var(--text-primary);
+            border-radius: 2px;
+            transition: bottom 0.5s ease;
+        }
+
+        .sensor-marker::before {
+            content: '';
+            position: absolute;
+            left: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 10px;
+            height: 10px;
+            background: var(--accent-color);
+            border: 2px solid var(--bg-secondary);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-color);
+        }
+
+        .sensor-label {
+            position: absolute;
+            right: -80px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.75em;
+            color: var(--text-primary);
+            white-space: nowrap;
+            font-weight: bold;
+        }
+
+        .sensor-top::before {
+            background: rgba(255, 87, 34, 0.9);
+            box-shadow: 0 0 8px rgba(255, 87, 34, 0.6);
+        }
+
+        .sensor-bottom::before {
+            background: rgba(33, 150, 243, 0.9);
+            box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
+        }
+
+        .grade-label {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: var(--text-primary);
+            font-weight: bold;
+            text-align: center;
+        }
+
+        /* NEW: Profiling Chart */
+        .profiling-chart-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .profiling-chart-container h3 {
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .profile-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding: 15px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        .stat-value {
+            font-size: 1.2em;
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        /* NEW: Heatmap */
+        .heatmap-section {
+            margin-top: 20px;
+        }
+
+        .heatmap-section h3 {
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .heatmap-container {
+            display: grid;
+            grid-template-columns: 60px repeat(24, 1fr);
+            gap: 2px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .heatmap-day-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .heatmap-hour-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+            color: var(--text-secondary);
+            padding: 4px 0;
+        }
+
+        .heatmap-cell {
+            aspect-ratio: 1;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .heatmap-cell:hover {
+            transform: scale(1.1);
+            z-index: 10;
+            box-shadow: 0 4px 8px var(--shadow-color);
+        }
+
+        .heatmap-cell.low {
+            background: rgba(76, 175, 80, 0.3);
+        }
+
+        .heatmap-cell.medium {
+            background: rgba(255, 193, 7, 0.5);
+        }
+
+        .heatmap-cell.high {
+            background: rgba(244, 67, 54, 0.7);
+        }
+
+        .heatmap-cell.none {
+            background: var(--bg-secondary);
+            opacity: 0.3;
+        }
+
+        .heatmap-legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            padding: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 1px solid var(--border-secondary);
+        }
+
+        .legend-color.low {
+            background: rgba(76, 175, 80, 0.3);
+        }
+
+        .legend-color.medium {
+            background: rgba(255, 193, 7, 0.5);
+        }
+
+        .legend-color.high {
+            background: rgba(244, 67, 54, 0.7);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 900px) {
+            .visual-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .heatmap-container {
+                grid-template-columns: 40px repeat(24, 1fr);
+                font-size: 0.8em;
+            }
+        }

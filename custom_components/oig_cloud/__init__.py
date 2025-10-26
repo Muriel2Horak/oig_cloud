@@ -785,10 +785,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
 
                 # Create boiler coordinator
+                # TEST MODE: Uncomment to use real energy sensor instead of calculated values
+                test_sensor = "sensor.potrebna_energie_pro_ohrev_tuv_do_68_degc"  # Set to None to disable test mode
+
                 boiler_coordinator = BoilerCoordinator(
                     hass,
                     boiler_config,
                     update_interval=timedelta(minutes=5),
+                    test_energy_sensor=test_sensor,
                 )
 
                 # First refresh

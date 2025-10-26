@@ -34,12 +34,12 @@ export class BoilerChartModule {
      * Načte data z boiler senzorů a vykreslí graf
      */
     async loadAndRender() {
-        // Načíst boiler sensory
-        const planEntityId = `sensor.oig_${this.inverterId}_boiler_heating_plan`;
-        const socEntityId = `sensor.oig_${this.inverterId}_boiler_soc`;
-        const tempEntityId = `sensor.oig_${this.inverterId}_boiler_temperature_top`;
-        const energyEntityId = `sensor.oig_${this.inverterId}_boiler_energy_required`;
-        const costEntityId = `sensor.oig_${this.inverterId}_boiler_plan_cost`;
+        // Načíst boiler sensory - Czech entity names
+        const planEntityId = 'sensor.oig_bojler_plan_ohrevu';
+        const socEntityId = 'sensor.oig_bojler_stav_nabiti';
+        const tempEntityId = 'sensor.oig_bojler_teplota_nahore';
+        const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+        const costEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
         const planSensor = this.hass.states[planEntityId];
         const socSensor = this.hass.states[socEntityId];

@@ -111,10 +111,29 @@ class BoilerEnergyRequiredSensor(BoilerBaseSensor):
             return {}
 
         state_data = self.coordinator.data.get("state", {})
+        profile_data = self.coordinator.data.get("profile", {})
+
+        # Get full profiling data from coordinator
+        profiler = self.coordinator.profiler
+        usage_profile = profiler.get_profile()
+
+        # Build heatmap data: 7 days x 24 hours
+        heatmap_data: list[list[float]] = []
+        now = usage_profile.last_updated
+        for day_offset in range(7):
+            day_row: list[float] = []
+            for hour in range(24):
+                # Use hourly average for all days (we don't track per-day yet)
+                day_row.append(usage_profile.hourly_avg_kwh.get(hour, 0.0))
+            heatmap_data.append(day_row)
+
         attrs = {
             "volume_l": self.coordinator.config.volume_l,
             "target_temp_c": self.coordinator.config.target_temp_c,
             "cold_temp_c": self.coordinator.config.cold_inlet_temp_c,
+            "deadline": self.coordinator.config.deadline_time,
+            "stratification_mode": self.coordinator.config.stratification_mode,
+            "k_constant": 0.00116,  # Heat capacity constant for water
             "energy_now_kwh": state_data.get("energy_now_kwh"),
             "energy_target_kwh": state_data.get("energy_target_kwh"),
             "soc_percent": state_data.get("soc_percent"),
@@ -123,6 +142,19 @@ class BoilerEnergyRequiredSensor(BoilerBaseSensor):
             "method": state_data.get("method"),
             "updated_at": state_data.get("updated_at"),
             "profile_url": self.coordinator.data.get("profile_url"),
+            # Predictions
+            "predicted_usage_today": profile_data.get("predicted_usage_today"),
+            "peak_hours": profile_data.get("peak_hours", []),
+            "days_tracked": profile_data.get("days_tracked"),
+            # Full profiling data for charts
+            "hourly_avg_kwh": usage_profile.hourly_avg_kwh,  # Dict {0-23: kwh}
+            "heatmap_data": heatmap_data,  # 7x24 array
+            "total_events": len(profiler._events),  # Number of recorded usage events
+            "last_profile_update": (
+                usage_profile.last_updated.isoformat()
+                if usage_profile.last_updated
+                else None
+            ),
         }
 
         return {k: v for k, v in attrs.items() if v is not None}
@@ -147,9 +179,11 @@ class BoilerPlanCostSensor(BoilerBaseSensor):
     def native_value(self) -> Optional[float]:
         """Return the state."""
         if not self.coordinator.data:
-            return None
+            return 0.0
         plan_data = self.coordinator.data.get("plan", {})
-        return plan_data.get("total_cost_czk")
+        cost = plan_data.get("total_cost_czk")
+        # Return 0.0 if no plan exists instead of None
+        return cost if cost is not None else 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

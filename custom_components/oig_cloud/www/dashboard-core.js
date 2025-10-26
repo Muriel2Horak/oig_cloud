@@ -5644,6 +5644,21 @@ async function loadBoilerData() {
         // Update boiler profile
         await updateBoilerProfile();
 
+        // NEW: Update energy breakdown
+        await updateBoilerEnergyBreakdown();
+
+        // NEW: Update predicted usage
+        await updateBoilerPredictedUsage();
+
+        // NEW: Update grade thermometer
+        await updateBoilerGradeThermometer();
+
+        // NEW: Render profiling chart
+        await renderBoilerProfilingChart();
+
+        // NEW: Render heatmap
+        await renderBoilerHeatmap();
+
         // Initialize or refresh boiler chart
         await initializeBoilerChart();
 
@@ -5654,28 +5669,31 @@ async function loadBoilerData() {
 }
 
 async function updateBoilerSensors() {
+    const hass = getHass();
+    if (!hass) return;
+
+    // Boiler sensors have different naming: sensor.oig_bojler_*
     const sensorMap = {
-        'boiler-soc-value': 'boiler_soc',
-        'boiler-temp-top-value': 'boiler_temperature_top',
-        'boiler-energy-required-value': 'boiler_energy_required',
-        'boiler-plan-cost-value': 'boiler_plan_cost'
+        'boiler-soc-value': 'sensor.oig_bojler_stav_nabiti',
+        'boiler-temp-top-value': 'sensor.oig_bojler_teplota_nahore',
+        'boiler-energy-required-value': 'sensor.oig_bojler_pozadovana_energie',
+        'boiler-plan-cost-value': 'sensor.oig_bojler_cena_planu_ohrevu'
     };
 
-    for (const [elementId, sensorSuffix] of Object.entries(sensorMap)) {
-        const entityId = getSensorId(sensorSuffix);
+    for (const [elementId, entityId] of Object.entries(sensorMap)) {
         const state = hass?.states?.[entityId];
 
         const element = document.getElementById(elementId);
         if (element && state) {
             const value = parseFloat(state.state);
             if (!isNaN(value)) {
-                if (sensorSuffix.includes('soc')) {
+                if (entityId.includes('stav_nabiti')) {
                     element.textContent = `${value.toFixed(0)} %`;
-                } else if (sensorSuffix.includes('temperature')) {
+                } else if (entityId.includes('teplota')) {
                     element.textContent = `${value.toFixed(1)} °C`;
-                } else if (sensorSuffix.includes('energy')) {
+                } else if (entityId.includes('energie')) {
                     element.textContent = `${value.toFixed(2)} kWh`;
-                } else if (sensorSuffix.includes('cost')) {
+                } else if (entityId.includes('cena')) {
                     element.textContent = `${value.toFixed(2)} Kč`;
                 }
             }
@@ -5683,7 +5701,7 @@ async function updateBoilerSensors() {
     }
 
     // Update plan info
-    const planEntityId = getSensorId('boiler_heating_plan');
+    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
     const planState = hass?.states?.[planEntityId];
 
     if (planState?.attributes?.plan) {
@@ -5716,26 +5734,33 @@ async function updateBoilerSensors() {
 }
 
 async function updateBoilerProfile() {
-    // Načíst profil z coordinator data (přes API endpoint)
-    const entryId = new URLSearchParams(window.location.search).get('entry_id');
+    // Get configuration from energy sensor attributes
+    const hass = getHass();
+    if (!hass) return;
 
-    try {
-        const response = await fetch(`/api/oig_cloud/${entryId}/boiler_profile`);
-        if (!response.ok) {
-            console.warn('[Boiler] Profile API not available yet');
-            return;
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (energyState?.attributes) {
+        const attrs = energyState.attributes;
+
+        document.getElementById('boiler-profile-volume').textContent = `${attrs.volume_l || '--'} L`;
+        document.getElementById('boiler-profile-target-temp').textContent = `${attrs.target_temp_c || '--'} °C`;
+
+        // Deadline from plan or config
+        const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+        const planState = hass?.states?.[planEntityId];
+        const deadline = planState?.attributes?.plan?.deadline || attrs.deadline || '--:--';
+        document.getElementById('boiler-profile-deadline').textContent = deadline;
+
+        document.getElementById('boiler-profile-stratification').textContent = attrs.stratification_mode || attrs.method || '--';
+        document.getElementById('boiler-profile-k-constant').textContent = attrs.k_constant?.toFixed(4) || '--';
+
+        // Heater power - hide if element doesn't exist
+        const heaterPowerEl = document.getElementById('boiler-profile-heater-power');
+        if (heaterPowerEl) {
+            heaterPowerEl.textContent = '--'; // Not available in attributes
         }
-
-        const profile = await response.json();
-
-        document.getElementById('boiler-profile-volume').textContent = `${profile.volume_liters || '--'} L`;
-        document.getElementById('boiler-profile-heater-power').textContent = `${profile.heater_power_w || '--'} W`;
-        document.getElementById('boiler-profile-target-temp').textContent = `${profile.target_temp_c || '--'} °C`;
-        document.getElementById('boiler-profile-deadline').textContent = profile.deadline || '--:--';
-        document.getElementById('boiler-profile-stratification').textContent = profile.stratification_mode || '--';
-        document.getElementById('boiler-profile-k-constant').textContent = profile.k_constant?.toFixed(4) || '--';
-    } catch (error) {
-        console.error('[Boiler] Failed to load profile:', error);
     }
 }
 
@@ -5743,6 +5768,12 @@ async function initializeBoilerChart() {
     const canvas = document.getElementById('boiler-chart');
     if (!canvas) {
         console.warn('[Boiler] Chart canvas not found');
+        return;
+    }
+
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Boiler] Hass not available for chart');
         return;
     }
 
@@ -5770,8 +5801,11 @@ async function initializeBoilerChart() {
 async function planBoilerHeating() {
     console.log('[Boiler] Planning heating...');
 
+    const hass = getHass();
+    if (!hass) return;
+
     const service = 'oig_cloud.plan_boiler_heating';
-    const entityId = getSensorId('boiler_heating_plan');
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
         await hass.callService('oig_cloud', 'plan_boiler_heating', {
@@ -5791,8 +5825,11 @@ async function planBoilerHeating() {
 async function applyBoilerPlan() {
     console.log('[Boiler] Applying heating plan...');
 
+    const hass = getHass();
+    if (!hass) return;
+
     const service = 'oig_cloud.apply_boiler_plan';
-    const entityId = getSensorId('boiler_heating_plan');
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
         await hass.callService('oig_cloud', 'apply_boiler_plan', {
@@ -5812,8 +5849,11 @@ async function applyBoilerPlan() {
 async function cancelBoilerPlan() {
     console.log('[Boiler] Canceling heating plan...');
 
+    const hass = getHass();
+    if (!hass) return;
+
     const service = 'oig_cloud.cancel_boiler_plan';
-    const entityId = getSensorId('boiler_heating_plan');
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
         await hass.callService('oig_cloud', 'cancel_boiler_plan', {
@@ -5827,6 +5867,288 @@ async function cancelBoilerPlan() {
     } catch (error) {
         console.error('[Boiler] Failed to cancel plan:', error);
         showNotification('❌ Chyba při rušení plánu', 'error');
+    }
+}
+
+// NEW: Update energy breakdown (grid vs alternative)
+async function updateBoilerEnergyBreakdown() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+    const planState = hass?.states?.[planEntityId];
+
+    if (planState?.attributes?.plan) {
+        const plan = planState.attributes.plan;
+        const gridEnergy = plan.grid_energy_kwh || 0;
+        const gridCost = plan.grid_cost_czk || 0;
+        const altEnergy = plan.alt_energy_kwh || 0;
+        const altCost = plan.alt_cost_czk || 0;
+
+        // Update breakdown cards
+        document.getElementById('boiler-grid-energy-value').textContent =
+            `${gridEnergy.toFixed(2)} kWh (${gridCost.toFixed(2)} Kč)`;
+        document.getElementById('boiler-alt-energy-value').textContent =
+            `${altEnergy.toFixed(2)} kWh (${altCost.toFixed(2)} Kč)`;
+
+        // Update heating ratio bar
+        const totalEnergy = gridEnergy + altEnergy;
+        if (totalEnergy > 0) {
+            const gridPercent = (gridEnergy / totalEnergy) * 100;
+            const altPercent = (altEnergy / totalEnergy) * 100;
+
+            document.getElementById('boiler-ratio-grid').style.width = `${gridPercent}%`;
+            document.getElementById('boiler-ratio-alt').style.width = `${altPercent}%`;
+            document.getElementById('boiler-ratio-grid-label').textContent = `${gridPercent.toFixed(0)}% síť`;
+            document.getElementById('boiler-ratio-alt-label').textContent = `${altPercent.toFixed(0)}% alternativa`;
+        }
+    }
+}
+
+// NEW: Update predicted usage
+async function updateBoilerPredictedUsage() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (energyState?.attributes) {
+        const predictedToday = energyState.attributes.predicted_usage_today || 0;
+        const peakHours = energyState.attributes.peak_hours || [];
+
+        document.getElementById('boiler-predicted-today').textContent = `${predictedToday.toFixed(2)} kWh`;
+        document.getElementById('boiler-peak-hours').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+
+        // Calculate approximate liters at 40°C
+        // Energy = Volume × (40 - 15) × 0.00116
+        // Volume = Energy / (25 × 0.00116)
+        const liters = predictedToday / (25 * 0.00116);
+        document.getElementById('boiler-water-liters').textContent = `${liters.toFixed(0)} L`;
+    }
+}
+
+// NEW: Update grade thermometer
+async function updateBoilerGradeThermometer() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const tempTopEntityId = 'sensor.oig_bojler_teplota_nahore';
+    const socEntityId = 'sensor.oig_bojler_stav_nabiti';
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+
+    const tempTopState = hass?.states?.[tempTopEntityId];
+    const socState = hass?.states?.[socEntityId];
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (tempTopState && socState) {
+        const tempTop = parseFloat(tempTopState.state);
+        const soc = parseFloat(socState.state);
+        const tempBottom = energyState?.attributes?.temp_bottom_c || tempTop * 0.8;
+        const targetTemp = energyState?.attributes?.target_temp_c || 60;
+
+        // Update water level (based on SOC)
+        document.getElementById('boiler-water-level').style.height = `${soc}%`;
+
+        // Update grade label
+        document.getElementById('boiler-grade-label').textContent = `${soc.toFixed(0)}% nahřáto`;
+
+        // Update sensor markers
+        // Temperature range: 10°C (bottom) to 70°C (top)
+        // Position calculation: (temp - 10) / (70 - 10) * 100
+        const topPosition = ((tempTop - 10) / 60) * 100;
+        const bottomPosition = ((tempBottom - 10) / 60) * 100;
+        const targetPosition = ((targetTemp - 10) / 60) * 100;
+
+        document.getElementById('boiler-sensor-top').style.bottom = `${topPosition}%`;
+        document.getElementById('boiler-sensor-top').querySelector('.sensor-label').textContent = `${tempTop.toFixed(1)}°C`;
+
+        document.getElementById('boiler-sensor-bottom').style.bottom = `${bottomPosition}%`;
+        document.getElementById('boiler-sensor-bottom').querySelector('.sensor-label').textContent = `${tempBottom.toFixed(1)}°C`;
+
+        document.getElementById('boiler-target-line').style.bottom = `${targetPosition}%`;
+    }
+}
+
+// NEW: Render profiling chart
+async function renderBoilerProfilingChart() {
+    const canvas = document.getElementById('boiler-profile-chart');
+    if (!canvas) return;
+
+    try {
+        const hass = getHass();
+        if (!hass) {
+            console.warn('[Boiler] Hass not available');
+            return;
+        }
+
+        // Get data from sensor attributes
+        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
+        if (!energySensor || !energySensor.attributes) {
+            console.warn('[Boiler] Energy sensor not available');
+            return;
+        }
+
+        const attrs = energySensor.attributes;
+        const hourlyData = attrs.hourly_avg_kwh || {};
+        const peakHours = attrs.peak_hours || [];
+        const predictedToday = attrs.predicted_usage_today || 0;
+        const daysTracked = attrs.days_tracked || 7;
+
+        // Prepare data for chart
+        const labels = Array.from({ length: 24 }, (_, i) => `${i}h`);
+        const data = labels.map((_, i) => parseFloat(hourlyData[i] || 0));
+
+        // Destroy existing chart
+        if (window.boilerProfileChart) {
+            window.boilerProfileChart.destroy();
+        }
+
+        // Create new chart
+        const ctx = canvas.getContext('2d');
+        window.boilerProfileChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Průměrná spotřeba (kWh)',
+                    data: data,
+                    backgroundColor: labels.map((_, i) =>
+                        peakHours.includes(i)
+                            ? 'rgba(244, 67, 54, 0.6)'
+                            : 'rgba(33, 150, 243, 0.6)'
+                    ),
+                    borderColor: labels.map((_, i) =>
+                        peakHours.includes(i)
+                            ? 'rgba(244, 67, 54, 1)'
+                            : 'rgba(33, 150, 243, 1)'
+                    ),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `${context.parsed.y.toFixed(2)} kWh`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'kWh'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Hodina'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Update stats
+        document.getElementById('profile-stat-today').textContent = `${predictedToday.toFixed(2)} kWh`;
+        document.getElementById('profile-stat-peaks').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+        document.getElementById('profile-stat-days').textContent = `${daysTracked} dní`;
+
+    } catch (error) {
+        console.error('[Boiler] Error rendering profiling chart:', error);
+    }
+}
+
+// NEW: Render heatmap
+async function renderBoilerHeatmap() {
+    const container = document.getElementById('boiler-heatmap');
+    if (!container) return;
+
+    try {
+        const hass = getHass();
+        if (!hass) {
+            console.warn('[Boiler] Hass not available');
+            return;
+        }
+
+        // Get data from sensor attributes
+        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
+        if (!energySensor || !energySensor.attributes) {
+            console.warn('[Boiler] Energy sensor not available for heatmap');
+            return;
+        }
+
+        const attrs = energySensor.attributes;
+        const heatmapData = attrs.heatmap_data || [];
+
+        // If no heatmap_data, build from hourly_avg_kwh
+        let dataMatrix = heatmapData;
+        if (!heatmapData || heatmapData.length === 0) {
+            const hourlyData = attrs.hourly_avg_kwh || {};
+            dataMatrix = Array.from({ length: 7 }, () =>
+                Array.from({ length: 24 }, (_, hour) => parseFloat(hourlyData[hour] || 0))
+            );
+        }
+
+        // Calculate thresholds
+        const allValues = dataMatrix.flat();
+        const maxValue = Math.max(...allValues, 0.1);
+        const lowThreshold = maxValue * 0.3;
+        const highThreshold = maxValue * 0.7;
+
+        // Clear container
+        container.innerHTML = '';
+
+        // Day labels
+        const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+
+        // Header row with hour labels
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'heatmap-day-label';
+        container.appendChild(headerDiv);
+
+        for (let hour = 0; hour < 24; hour++) {
+            const hourLabel = document.createElement('div');
+            hourLabel.className = 'heatmap-hour-label';
+            hourLabel.textContent = hour;
+            container.appendChild(hourLabel);
+        }
+
+        // Rows for each day
+        days.forEach((day, dayIndex) => {
+            const dayLabel = document.createElement('div');
+            dayLabel.className = 'heatmap-day-label';
+            dayLabel.textContent = day;
+            container.appendChild(dayLabel);
+
+            for (let hour = 0; hour < 24; hour++) {
+                const value = dataMatrix[dayIndex]?.[hour] || 0;
+                const cell = document.createElement('div');
+                cell.className = 'heatmap-cell';
+
+                if (value === 0) {
+                    cell.classList.add('none');
+                } else if (value < lowThreshold) {
+                    cell.classList.add('low');
+                } else if (value < highThreshold) {
+                    cell.classList.add('medium');
+                } else {
+                    cell.classList.add('high');
+                }
+
+                cell.title = `${day} ${hour}h: ${value.toFixed(2)} kWh`;
+                container.appendChild(cell);
+            }
+        });
+
+    } catch (error) {
+        console.error('[Boiler] Error rendering heatmap:', error);
     }
 }
 

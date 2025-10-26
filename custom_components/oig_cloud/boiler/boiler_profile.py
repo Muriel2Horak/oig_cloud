@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from .boiler_models import WaterUsageProfile
 
@@ -70,8 +70,9 @@ class BoilerUsageProfiler:
         # 2. Not heating (heating would increase energy)
         # 3. Drop is significant (>0.1 kWh ~ 10L at 10°C delta)
         if energy_drop > 0.1 and not heating_active:
-            _LOGGER.debug(
-                f"Detected water usage: {energy_drop:.2f} kWh drop at {timestamp}"
+            _LOGGER.info(
+                f"💧 WATER USAGE DETECTED: {energy_drop:.2f} kWh drop at {timestamp.strftime('%H:%M')} "
+                f"(total events: {len(self._events) + 1})"
             )
             self._events[timestamp] = energy_drop
             self._cleanup_old_events(timestamp)
@@ -134,9 +135,13 @@ class BoilerUsageProfiler:
             last_updated=reference_time,
         )
 
-        _LOGGER.debug(
-            f"Generated profile from {len(self._events)} events over {self.tracking_days} days"
-        )
+        # Log hourly distribution
+        if len(self._events) > 0:
+            hours_with_usage = [h for h, kwh in hourly_avg_kwh.items() if kwh > 0]
+            _LOGGER.info(
+                f"📊 Profile: {len(self._events)} events → {len(hours_with_usage)} hours with usage"
+            )
+
         return profile
 
     def predict_usage_until(
@@ -188,3 +193,52 @@ class BoilerUsageProfiler:
             reverse=True,
         )
         return [hour for hour, _ in sorted_hours[:top_n]]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Export profiler state including events.
+
+        Returns:
+            Dict with events and metadata for persistence
+        """
+        return {
+            "events": {ts.isoformat(): energy for ts, energy in self._events.items()},
+            "last_energy_kwh": self._last_energy_kwh,
+            "last_check_time": (
+                self._last_check_time.isoformat() if self._last_check_time else None
+            ),
+            "interval_minutes": self.interval_minutes,
+            "tracking_days": self.tracking_days,
+        }
+
+    def from_dict(self, data: dict[str, Any]) -> None:
+        """Import profiler state from dict.
+
+        Args:
+            data: Dict from to_dict()
+        """
+        try:
+            # Restore events
+            self._events = {
+                datetime.fromisoformat(ts): energy
+                for ts, energy in data.get("events", {}).items()
+            }
+
+            # Restore last reading
+            self._last_energy_kwh = data.get("last_energy_kwh")
+            last_check = data.get("last_check_time")
+            self._last_check_time = (
+                datetime.fromisoformat(last_check) if last_check else None
+            )
+
+            # Update settings (if changed)
+            self.interval_minutes = data.get("interval_minutes", self.interval_minutes)
+            self.tracking_days = data.get("tracking_days", self.tracking_days)
+
+            _LOGGER.info(
+                f"Restored profiler: {len(self._events)} events, "
+                f"last_energy={self._last_energy_kwh}, "
+                f"last_check={self._last_check_time}"
+            )
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to restore profiler state: {e}", exc_info=True)

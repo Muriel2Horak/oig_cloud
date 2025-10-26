@@ -4,17 +4,22 @@
     <!-- Boiler Control Panel -->
     <div class="boiler-control-panel minimized" id="boiler-control-panel">
         <div class="panel-header" onclick="toggleBoilerControlPanel()">
-            <h3>🔥 Ovládání bojleru
+            <h3>� Pokročilé ovládání (Debug)
                 <span class="info-bubble" onclick="event.stopPropagation()">❓
                     <span class="info-bubble-tooltip">
-                        <strong>Ovládání bojleru</strong>
-                        Zde můžete spravovat inteligentní plánování ohřevu bojleru.
+                        <strong>⚠️ Automatický režim</strong>
+                        Bojler funguje plně automaticky! Systém:
                         <ul>
-                            <li><strong>Naplánovat topení:</strong> Vytvoří optimální plán ohřevu podle spotových cen</li>
-                            <li><strong>Aplikovat plán:</strong> Spustí naplánovaný ohřev</li>
-                            <li><strong>Zrušit plán:</strong> Zruší aktuální plán topení</li>
+                            <li>🤖 <strong>Automaticky plánuje</strong> ohřev každých 5 minut</li>
+                            <li>⏰ <strong>Cíl:</strong> Do deadline (20:00) být nahřátý na cílovou teplotu</li>
+                            <li>💰 <strong>Optimalizuje:</strong> Podle spotových cen a profilu spotřeby</li>
                         </ul>
-                        Všechny akce jsou chráněny ServiceShield systémem.
+                        <strong>Tlačítka níže jsou jen pro debug/override:</strong>
+                        <ul>
+                            <li><strong>Naplánovat:</strong> Manuálně přeplánovat (normálně automatické)</li>
+                            <li><strong>Aplikovat:</strong> Spustit plán ručně (normálně automatické)</li>
+                            <li><strong>Zrušit:</strong> Zrušit aktuální plán</li>
+                        </ul>
                     </span>
                 </span>
             </h3>
@@ -26,18 +31,18 @@
         <div class="panel-content">
             <!-- Boiler Actions -->
             <div class="control-section">
-                <h4>Akce</h4>
+                <h4>⚠️ Manuální akce (override)</h4>
                 <div class="button-group">
                     <button onclick="planBoilerHeating()" id="btn-plan-boiler"
-                        title="Vytvořit optimální plán ohřevu podle spotových cen a požadavků">
-                        📅 Naplánovat topení
+                        title="[DEBUG] Manuálně přeplánovat - normálně se děje automaticky každých 5 min">
+                        📅 Přeplánovat (debug)
                     </button>
                     <button onclick="applyBoilerPlan()" id="btn-apply-boiler"
-                        title="Spustit naplánovaný ohřev (pokud existuje platný plán)">
-                        ✅ Aplikovat plán
+                        title="[DEBUG] Spustit plán ručně - normálně automatické">
+                        ✅ Aplikovat ručně
                     </button>
                     <button onclick="cancelBoilerPlan()" id="btn-cancel-boiler"
-                        title="Zrušit aktuální plán topení">
+                        title="Zrušit aktuální automatický plán topení">
                         ❌ Zrušit plán
                     </button>
                 </div>
@@ -86,6 +91,65 @@
                 </div>
             </div>
 
+            <!-- NEW: Energy Breakdown -->
+            <div class="control-section">
+                <h4>Rozpad energie</h4>
+                <div class="boiler-status-grid">
+                    <div class="status-card">
+                        <div class="status-label">Ze sítě</div>
+                        <div class="status-value" id="boiler-grid-energy-value"
+                            data-tooltip="Energie ze sítě (kWh + náklady)">
+                            -- kWh (-- Kč)
+                        </div>
+                    </div>
+                    <div class="status-card">
+                        <div class="status-label">Alternativa</div>
+                        <div class="status-value" id="boiler-alt-energy-value"
+                            data-tooltip="Energie z alternativního zdroje">
+                            -- kWh (-- Kč)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW: Predicted Usage -->
+            <div class="control-section">
+                <h4>Plánované odběry</h4>
+                <div class="boiler-predicted-usage" id="boiler-predicted-usage">
+                    <div class="usage-item">
+                        <span class="usage-label">Předpokládaná spotřeba:</span>
+                        <span class="usage-value" id="boiler-predicted-today">-- kWh</span>
+                    </div>
+                    <div class="usage-item">
+                        <span class="usage-label">Píky spotřeby:</span>
+                        <span class="usage-value" id="boiler-peak-hours">--</span>
+                    </div>
+                    <div class="usage-item">
+                        <span class="usage-label">≈ objem vody (40°C):</span>
+                        <span class="usage-value" id="boiler-water-liters">-- L</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW: Heating Ratio -->
+            <div class="control-section">
+                <h4>Poměr dohřevu</h4>
+                <div class="heating-ratio-container">
+                    <div class="ratio-bar">
+                        <div class="ratio-grid" id="boiler-ratio-grid" style="width: 0%"
+                            data-tooltip="Podíl elektřiny ze sítě">
+                        </div>
+                        <div class="ratio-alt" id="boiler-ratio-alt" style="width: 0%"
+                            data-tooltip="Podíl alternativního zdroje">
+                        </div>
+                    </div>
+                    <div class="ratio-labels">
+                        <span id="boiler-ratio-grid-label">0% síť</span>
+                        <span id="boiler-ratio-alt-label">0% alternativa</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Boiler Plan Info -->
             <div class="control-section">
                 <h4>Informace o plánu</h4>
@@ -111,6 +175,73 @@
                         <span class="plan-info-value" id="boiler-plan-end">--</span>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Boiler Visual Section (Grade Thermometer + Profiling Charts) -->
+    <div class="boiler-visual-section">
+        <div class="visual-grid">
+            <!-- Grade Thermometer -->
+            <div class="grade-thermometer-container">
+                <h3>🌡️ Vizualizace bojleru</h3>
+                <div class="boiler-tank">
+                    <div class="temperature-scale">
+                        <div class="scale-marker" style="top: 0%"><span>70°C</span></div>
+                        <div class="scale-marker" style="top: 16.67%"><span>60°C</span></div>
+                        <div class="scale-marker" style="top: 33.33%"><span>50°C</span></div>
+                        <div class="scale-marker" style="top: 50%"><span>40°C</span></div>
+                        <div class="scale-marker" style="top: 66.67%"><span>30°C</span></div>
+                        <div class="scale-marker" style="top: 83.33%"><span>20°C</span></div>
+                        <div class="scale-marker" style="top: 100%"><span>10°C</span></div>
+                    </div>
+                    <div class="water-container">
+                        <div class="water-level" id="boiler-water-level" style="height: 0%"></div>
+                        <div class="target-line" id="boiler-target-line" style="bottom: 83.33%">
+                            <span class="target-label">Cíl</span>
+                        </div>
+                        <div class="sensor-marker sensor-top" id="boiler-sensor-top" style="bottom: 0%">
+                            <span class="sensor-label">--°C</span>
+                        </div>
+                        <div class="sensor-marker sensor-bottom" id="boiler-sensor-bottom" style="bottom: 0%">
+                            <span class="sensor-label">--°C</span>
+                        </div>
+                    </div>
+                    <div class="grade-label" id="boiler-grade-label">0% nahřáto</div>
+                </div>
+            </div>
+
+            <!-- Profiling Chart -->
+            <div class="profiling-chart-container">
+                <h3>📊 Profil spotřeby (týden)</h3>
+                <canvas id="boiler-profile-chart" style="max-height: 300px;"></canvas>
+                <div class="profile-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Dnes:</span>
+                        <span class="stat-value" id="profile-stat-today">-- kWh</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Píky:</span>
+                        <span class="stat-value" id="profile-stat-peaks">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Sledováno:</span>
+                        <span class="stat-value" id="profile-stat-days">7 dní</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Heatmap -->
+        <div class="heatmap-section">
+            <h3>🗓️ Mapa spotřeby (7 dní)</h3>
+            <div class="heatmap-container" id="boiler-heatmap">
+                <!-- Bude generováno JavaScriptem -->
+            </div>
+            <div class="heatmap-legend">
+                <span class="legend-item"><span class="legend-color low"></span> Nízká</span>
+                <span class="legend-item"><span class="legend-color medium"></span> Střední</span>
+                <span class="legend-item"><span class="legend-color high"></span> Vysoká</span>
             </div>
         </div>
     </div>

@@ -46,9 +46,7 @@ class BoilerConfig:
         if not 0 <= self.cold_inlet_temp_c <= 100:
             raise ValueError("cold_inlet_temp_c must be between 0 and 100")
         if self.stratification_mode not in ("simple_avg", "two_zone"):
-            raise ValueError(
-                "stratification_mode must be 'simple_avg' or 'two_zone'"
-            )
+            raise ValueError("stratification_mode must be 'simple_avg' or 'two_zone'")
         if not 0.1 <= self.two_zone_split_ratio <= 0.9:
             raise ValueError("two_zone_split_ratio must be between 0.1 and 0.9")
         if self.planning_horizon_hours <= 0:
@@ -89,9 +87,7 @@ class BoilerState:
             "energy_required_kwh": round(self.energy_required_kwh, 2),
             "soc_percent": round(self.soc_percent, 1),
             "method": self.method,
-            "updated_at": (
-                self.updated_at.isoformat() if self.updated_at else None
-            ),
+            "updated_at": (self.updated_at.isoformat() if self.updated_at else None),
         }
 
 
@@ -129,12 +125,22 @@ class BoilerPlan:
     use_alternative: bool = False
     created_at: Optional[datetime] = None
 
+    # Breakdown: grid vs alternative
+    grid_energy_kwh: float = 0.0
+    grid_cost_czk: float = 0.0
+    alt_energy_kwh: float = 0.0
+    alt_cost_czk: float = 0.0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for JSON serialization."""
         return {
             "slots": [slot.to_dict() for slot in self.slots],
             "total_energy_kwh": round(self.total_energy_kwh, 2),
             "total_cost_czk": round(self.total_cost_czk, 2),
+            "grid_energy_kwh": round(self.grid_energy_kwh, 2),
+            "grid_cost_czk": round(self.grid_cost_czk, 2),
+            "alt_energy_kwh": round(self.alt_energy_kwh, 2),
+            "alt_cost_czk": round(self.alt_cost_czk, 2),
             "deadline": self.deadline.isoformat() if self.deadline else None,
             "use_alternative": self.use_alternative,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -145,6 +151,10 @@ class BoilerPlan:
         return {
             "total_energy_kwh": round(self.total_energy_kwh, 2),
             "total_cost_czk": round(self.total_cost_czk, 2),
+            "grid_energy_kwh": round(self.grid_energy_kwh, 2),
+            "grid_cost_czk": round(self.grid_cost_czk, 2),
+            "alt_energy_kwh": round(self.alt_energy_kwh, 2),
+            "alt_cost_czk": round(self.alt_cost_czk, 2),
             "deadline": self.deadline.isoformat() if self.deadline else None,
             "use_alternative": self.use_alternative,
             "slots_count": len(self.slots),
@@ -166,9 +176,7 @@ class WaterUsageProfile:
     # Metadata
     last_updated: Optional[datetime] = None
 
-    def get_expected_usage_kwh(
-        self, start_hour: int, end_hour: int
-    ) -> float:
+    def get_expected_usage_kwh(self, start_hour: int, end_hour: int) -> float:
         """Get expected usage between hours (handles wrapping)."""
         total = 0.0
         hour = start_hour
@@ -184,8 +192,7 @@ class WaterUsageProfile:
         )
         return {
             "top_usage_hours": [
-                {"hour": h, "avg_kwh": round(kwh, 2)}
-                for h, kwh in sorted_hours[:top_n]
+                {"hour": h, "avg_kwh": round(kwh, 2)} for h, kwh in sorted_hours[:top_n]
             ],
             "days_tracked": self.days_tracked,
             "last_updated": (

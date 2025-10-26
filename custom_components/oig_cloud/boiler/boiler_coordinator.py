@@ -32,6 +32,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         config: BoilerConfig,
         update_interval: timedelta = timedelta(minutes=5),
+        test_energy_sensor: Optional[str] = None,
     ) -> None:
         """Initialize coordinator.
 
@@ -39,6 +40,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass: Home Assistant instance
             config: Boiler configuration
             update_interval: Update interval
+            test_energy_sensor: Optional test energy sensor for development
         """
         super().__init__(
             hass,
@@ -48,6 +50,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.config = config
         self.profiler = BoilerUsageProfiler()
+        self.test_energy_sensor = test_energy_sensor  # For testing with real sensor
         self.planner = BoilerPlanner(heater_power_kw=2.0)  # Will be updated from config
 
         # State
@@ -59,6 +62,29 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.profile_path = self.data_dir / "boiler_profile.json"
         self.plan_path = self.data_dir / "boiler_plan.json"
 
+        # Flag to track if profile was loaded
+        self._profile_loaded = False
+
+    async def async_load_profile(self) -> None:
+        """Load saved profiler state from file."""
+        if self._profile_loaded:
+            return
+
+        try:
+            profiler_state = await load_json(self.profile_path, hass=self.hass)
+            if profiler_state:
+                self.profiler.from_dict(profiler_state)
+                _LOGGER.info(
+                    f"Loaded profiler state: {len(self.profiler._events)} events"
+                )
+            self._profile_loaded = True
+        except FileNotFoundError:
+            _LOGGER.debug("No saved profile found, starting fresh")
+            self._profile_loaded = True
+        except Exception as e:
+            _LOGGER.error(f"Failed to load profile: {e}", exc_info=True)
+            self._profile_loaded = True
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Update boiler data.
 
@@ -66,24 +92,69 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             Dict with state and plan digests
         """
         try:
+            # Load profile on first run
+            if not self._profile_loaded:
+                await self.async_load_profile()
+
             # Read temperature sensors
+            _LOGGER.debug(
+                f"Reading temp sensors: top={self.config.temp_sensor_top}, bottom={self.config.temp_sensor_bottom}"
+            )
             temp_top = await self._get_sensor_value(self.config.temp_sensor_top)
             temp_bottom = await self._get_sensor_value(self.config.temp_sensor_bottom)
+            _LOGGER.debug(f"Temp values: top={temp_top}, bottom={temp_bottom}")
 
             if temp_top is None:
-                _LOGGER.warning("No top temperature sensor available")
+                _LOGGER.warning(
+                    f"No top temperature sensor available (entity_id={self.config.temp_sensor_top})"
+                )
                 return self._get_empty_data()
 
-            # Calculate energy state
-            e_target, e_now, e_req = calculate_required_energy(
-                volume_l=self.config.volume_l,
-                target_temp_c=self.config.target_temp_c,
-                cold_temp_c=self.config.cold_inlet_temp_c,
-                temp_top_c=temp_top,
-                temp_bottom_c=temp_bottom,
-                stratification_mode=self.config.stratification_mode,
-                split_ratio=self.config.two_zone_split_ratio,
-            )
+            # TEST MODE: Use real energy sensor if configured
+            if self.test_energy_sensor:
+                e_req_from_sensor = await self._get_sensor_value(
+                    self.test_energy_sensor
+                )
+                if e_req_from_sensor is not None and e_req_from_sensor >= 0:
+                    _LOGGER.info(
+                        f"🧪 TEST MODE: Using energy from {self.test_energy_sensor} = {e_req_from_sensor:.2f} kWh"
+                    )
+                    # Use sensor value directly as e_req
+                    e_req = e_req_from_sensor
+                    # Estimate e_target and e_now based on temperature
+                    # Assume cold water at config.cold_inlet_temp_c
+                    e_target, _, _ = calculate_required_energy(
+                        volume_l=self.config.volume_l,
+                        target_temp_c=self.config.target_temp_c,
+                        cold_temp_c=self.config.cold_inlet_temp_c,
+                        temp_top_c=self.config.target_temp_c,
+                        temp_bottom_c=self.config.target_temp_c,
+                        stratification_mode=self.config.stratification_mode,
+                        split_ratio=self.config.two_zone_split_ratio,
+                    )
+                    e_now = e_target - e_req
+                else:
+                    # Fallback to normal calculation
+                    e_target, e_now, e_req = calculate_required_energy(
+                        volume_l=self.config.volume_l,
+                        target_temp_c=self.config.target_temp_c,
+                        cold_temp_c=self.config.cold_inlet_temp_c,
+                        temp_top_c=temp_top,
+                        temp_bottom_c=temp_bottom,
+                        stratification_mode=self.config.stratification_mode,
+                        split_ratio=self.config.two_zone_split_ratio,
+                    )
+            else:
+                # Normal mode: Calculate energy state
+                e_target, e_now, e_req = calculate_required_energy(
+                    volume_l=self.config.volume_l,
+                    target_temp_c=self.config.target_temp_c,
+                    cold_temp_c=self.config.cold_inlet_temp_c,
+                    temp_top_c=temp_top,
+                    temp_bottom_c=temp_bottom,
+                    stratification_mode=self.config.stratification_mode,
+                    split_ratio=self.config.two_zone_split_ratio,
+                )
 
             # Calculate SOC
             from .boiler_energy import calculate_soc_percent
@@ -110,13 +181,47 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Save profile periodically
             await self._save_profile()
 
+            # Get predictions from profiler
+            profile = self.profiler.get_profile()
+            deadline_hour = int(self.config.deadline_time.split(":")[0])
+            current_hour = datetime.now().hour
+            predicted_today = self.profiler.predict_usage_until(
+                deadline_hour, current_hour
+            )
+            peak_hours = self.profiler.get_peak_usage_hours(top_n=3)
+
+            # AUTO-PLANNING: Automatically create plan if needed
+            should_plan = (
+                self.plan is None  # No plan exists
+                or e_req > 0.5  # Significant energy needed (>0.5 kWh)
+            )
+
+            if should_plan:
+                try:
+                    _LOGGER.info(
+                        f"🤖 AUTO-PLANNING: Creating heating plan (energy_required={e_req:.2f} kWh, deadline={self.config.deadline_time})"
+                    )
+                    await self.create_plan()
+                except Exception as plan_err:
+                    _LOGGER.warning(f"Auto-planning failed (non-critical): {plan_err}")
+
             # Return digest data
-            return {
+            result = {
                 "state": self.state.to_digest() if self.state else {},
                 "plan": self.plan.to_digest() if self.plan else {},
+                "profile": {
+                    "hourly_avg_kwh": profile.hourly_avg_kwh,
+                    "predicted_usage_today": round(predicted_today, 2),
+                    "peak_hours": peak_hours,
+                    "days_tracked": profile.days_tracked,
+                },
                 "profile_url": get_full_json_url("boiler_profile.json"),
                 "plan_url": get_full_json_url("boiler_plan.json"),
             }
+            _LOGGER.debug(
+                f"Returning data: state_keys={list(result['state'].keys()) if result['state'] else 'empty'}, plan_keys={list(result['plan'].keys()) if result['plan'] else 'empty'}"
+            )
+            return result
 
         except Exception as err:
             _LOGGER.error(f"Error updating boiler data: {err}", exc_info=True)
@@ -132,19 +237,26 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             Sensor value or None
         """
         if not entity_id or not entity_id.strip():
+            _LOGGER.debug(f"Empty entity_id provided")
             return None
 
         try:
             state = self.hass.states.get(entity_id)
             if state is None:
-                _LOGGER.debug(f"Sensor {entity_id} not found")
+                _LOGGER.warning(f"Sensor {entity_id} not found in hass.states")
                 return None
 
+            _LOGGER.debug(f"Sensor {entity_id} state: {state.state}")
+
             value = float(state.state)
+            _LOGGER.debug(f"Sensor {entity_id} value: {value}")
             return value
 
         except (ValueError, TypeError) as e:
-            _LOGGER.warning(f"Failed to read sensor {entity_id}: {e}")
+            state_val = state.state if state is not None else "None"
+            _LOGGER.warning(
+                f"Failed to read sensor {entity_id}: {e} (state={state_val})"
+            )
             return None
 
     async def _is_heating_active(self) -> bool:
@@ -165,8 +277,12 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _save_profile(self) -> None:
         """Save usage profile to file."""
         try:
-            profile = self.profiler.get_profile()
-            await atomic_save_json(profile.to_dict(), self.profile_path, hass=self.hass)
+            # Save full profiler state (including events)
+            profiler_state = self.profiler.to_dict()
+            await atomic_save_json(profiler_state, self.profile_path, hass=self.hass)
+            _LOGGER.debug(
+                f"Saved profiler state with {len(self.profiler._events)} events"
+            )
         except Exception as e:
             _LOGGER.warning(f"Failed to save profile: {e}")
 

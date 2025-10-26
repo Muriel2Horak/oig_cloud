@@ -1,0 +1,42 @@
+# 🧪 Generování testovacího profilu pro bojler z historických dat
+#
+# Tento skript načte historická data ze senzoru "sensor.potrebna_energie_pro_ohrev_tuv_do_68_degc"
+# a vytvoří z nich usage profil (kdy se odebírá teplá voda).
+#
+# Použití v Developer Tools -> Services:
+
+service: oig_cloud.generate_boiler_test_profile
+data:
+  energy_sensor: sensor.potrebna_energie_pro_ohrev_tuv_do_68_degc
+  days: 30 # Analyzovat posledních 30 dní
+  drop_threshold_kwh: 0.5 # Minimální pokles energie považovaný za odběr vody (kWh)
+
+---
+# Po vygenerování profilu můžeš zkontrolovat výsledky:
+
+# 1. Podívej se do atributů senzoru:
+# Developer Tools -> States -> sensor.oig_bojler_pozadovana_energie
+# Měl by tam být:
+#   - hourly_avg_kwh: {0: 0.0, 7: 1.5, 12: 0.8, ...}
+#   - predicted_usage_today: X.XX
+#   - peak_hours: [7, 12, 19]
+#   - total_events: XX
+#   - heatmap_data: [[...], [...], ...]
+
+# 2. Zkontroluj logy:
+# 🧪 Generating test profile from sensor.potrebna_energie_pro_ohrev_tuv_do_68_degc
+# Found XXX state changes
+# 💧 Usage detected: 2025-10-26 07:15 - 2.5 kWh
+# ✅ Detected XX usage events
+# 📊 Profile generated: XX events, XX hours with usage, peaks at [7, 12, 19]
+
+# 3. Refresh dashboard:
+# Otevři tab "🔥 Bojler & Auto" a měl bys vidět:
+#   - Profil spotřeby (týden) - histogram
+#   - Mapa spotřeby (7 dní) - heatmap
+#   - Predikovanou spotřebu dnes
+#   - Špičkové hodiny
+
+# 4. Automatické plánování:
+# Po vygenerování profilu coordinator automaticky vytvoří plán ohřevu
+# využívající tento profil + aktuální spotové ceny

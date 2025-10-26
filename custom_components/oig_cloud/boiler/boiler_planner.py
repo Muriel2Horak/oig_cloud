@@ -145,26 +145,35 @@ class BoilerPlanner:
             )
 
         # Check if we need alternative
+        alt_energy = 0.0
+        alt_cost = 0.0
         if total_energy < energy_needed_kwh and has_alternative:
             use_alternative = True
+            alt_energy = energy_needed_kwh - total_energy
+            if alt_cost_kwh is not None:
+                alt_cost = alt_energy * alt_cost_kwh
             _LOGGER.info(
                 f"Insufficient grid capacity ({total_energy:.2f}/{energy_needed_kwh:.2f}kWh), "
-                "will use alternative heating"
+                f"will use alternative heating: {alt_energy:.2f}kWh @ {alt_cost:.2f}Kč"
             )
 
         # Create final plan
         plan = BoilerPlan(
             slots=selected_slots,
-            total_energy_kwh=total_energy,
-            total_cost_czk=total_cost,
+            total_energy_kwh=total_energy + alt_energy,
+            total_cost_czk=total_cost + alt_cost,
+            grid_energy_kwh=total_energy,
+            grid_cost_czk=total_cost,
+            alt_energy_kwh=alt_energy,
+            alt_cost_czk=alt_cost,
             deadline=deadline,
             use_alternative=use_alternative,
             created_at=datetime.now(),
         )
 
         _LOGGER.info(
-            f"Plan created: {len(selected_slots)} slots, {total_energy:.2f}kWh, "
-            f"{total_cost:.2f}Kč, use_alt={use_alternative}"
+            f"Plan created: {len(selected_slots)} slots, grid={total_energy:.2f}kWh/{total_cost:.2f}Kč, "
+            f"alt={alt_energy:.2f}kWh/{alt_cost:.2f}Kč, use_alt={use_alternative}"
         )
 
         return plan
