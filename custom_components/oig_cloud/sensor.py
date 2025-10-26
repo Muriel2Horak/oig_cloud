@@ -1142,6 +1142,55 @@ async def async_setup_entry(
         _LOGGER.info("🌦️ ČHMÚ warnings disabled - skipping weather warning sensors")
 
     # ================================================================
+    # SECTION 11: BOILER SENSORS (kategorie: "boiler")
+    # ================================================================
+    # Bojlerové senzory - volitelné (enable_boiler flag)
+    # Device: OIG Bojler (samostatné zařízení)
+    # Třída: BoilerSensor* (13 senzorů)
+    # ================================================================
+    boiler_enabled = entry.options.get("enable_boiler", False)
+    _LOGGER.info(f"Boiler module enabled: {boiler_enabled}")
+
+    if boiler_enabled:
+        try:
+            boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get(
+                "boiler_coordinator"
+            )
+
+            if boiler_coordinator is None:
+                _LOGGER.warning(
+                    "Boiler coordinator not found in hass.data - skipping boiler sensors"
+                )
+            else:
+                _LOGGER.info("🔥 Creating boiler sensors")
+
+                from .boiler.sensors import get_boiler_sensors
+
+                boiler_sensors = get_boiler_sensors(boiler_coordinator)
+
+                if boiler_sensors:
+                    _LOGGER.info(f"Registering {len(boiler_sensors)} boiler sensors")
+                    async_add_entities(boiler_sensors, True)
+                    _LOGGER.info(
+                        f"Successfully registered {len(boiler_sensors)} boiler sensors"
+                    )
+
+                    # Debug log entity IDs
+                    for sensor in boiler_sensors:
+                        _LOGGER.debug(
+                            f"🔥 Registered boiler sensor: {sensor.entity_id} (unique_id: {sensor.unique_id})"
+                        )
+                else:
+                    _LOGGER.warning("No boiler sensors could be created")
+
+        except ImportError as e:
+            _LOGGER.error(f"Boiler sensors not available: {e}")
+        except Exception as e:
+            _LOGGER.error(f"Error initializing boiler sensors: {e}", exc_info=True)
+    else:
+        _LOGGER.info("🔥 Boiler module disabled - skipping boiler sensors")
+
+    # ================================================================
     _LOGGER.info("OIG Cloud sensor setup completed")
 
 

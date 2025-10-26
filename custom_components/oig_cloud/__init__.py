@@ -737,6 +737,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
 
+        # NOVÉ: Bojlerový modul (pokud je povolen)
+        boiler_coordinator = None
+        if entry.options.get("enable_boiler", False):
+            try:
+                _LOGGER.debug("Initializing Boiler module")
+                from .boiler.coordinator import BoilerCoordinator
+
+                # Kombinace entry.data a entry.options pro config
+                boiler_config = {**entry.data, **entry.options}
+
+                boiler_coordinator = BoilerCoordinator(hass, boiler_config)
+
+                # První refresh
+                await boiler_coordinator.async_config_entry_first_refresh()
+
+                _LOGGER.info("Boiler coordinator successfully initialized")
+            except Exception as e:
+                _LOGGER.error(f"Failed to initialize Boiler coordinator: {e}")
+                boiler_coordinator = None
+        else:
+            _LOGGER.debug("Boiler module disabled")
+
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
             "enable_dashboard", False
