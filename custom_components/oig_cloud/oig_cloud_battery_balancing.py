@@ -332,9 +332,20 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         if days >= config["interval_days"] + 1:  # Den 8+
             # CRITICAL nebo FORCED - najít nejlepší dostupné okno
             window = self._find_best_window(spot_prices, config, force=True)
-        elif days >= config["interval_days"] - 2:  # Den 5-7
-            # ECONOMIC - hledat přijatelné okno
-            window = self._find_economic_window(spot_prices, config)
+        elif days >= config["interval_days"] - 1:  # Den 6-7 (den před i v den deadline)
+            # ECONOMIC - hledat přijatelné okno, NEBO force na den 7
+            # OPRAVA: Na den 7 (interval_days) garantovat okno pomocí force
+            if days >= config["interval_days"]:
+                _LOGGER.info(f"Day {days} (deadline day) - forcing best window")
+                window = self._find_best_window(spot_prices, config, force=True)
+            else:
+                # Den 6 - zkusit economic, pokud selže, force backup
+                window = self._find_economic_window(spot_prices, config)
+                if not window:
+                    _LOGGER.warning(
+                        f"Day {days} - no economic window found, forcing best available"
+                    )
+                    window = self._find_best_window(spot_prices, config, force=True)
         else:
             # OPPORTUNISTIC - hledat skvělou cenu
             window = self._find_opportunistic_window(spot_prices, config)

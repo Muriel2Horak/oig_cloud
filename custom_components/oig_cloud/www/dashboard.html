@@ -53,6 +53,14 @@
         <div class="dashboard-tabs">
             <div class="dashboard-tab active" onclick="switchTab('flow')">⚡ Toky</div>
             <div class="dashboard-tab" onclick="switchTab('pricing')">💰 Predikce a statistiky</div>
+            <div class="layout-controls">
+                <button id="edit-layout-btn" class="btn-layout-edit" onclick="toggleEditMode()" data-tooltip="Upravit rozmístění boxů">
+                    🔧
+                </button>
+                <button id="reset-layout-btn" class="btn-layout-reset" onclick="resetLayout(getCurrentBreakpoint())" data-tooltip="Obnovit výchozí rozmístění">
+                    ↺
+                </button>
+            </div>
         </div>
 
         <!-- Tab: Flow (existing content) -->
@@ -269,6 +277,12 @@
                         onclick="openEntityDialog(getSensorId('extended_battery_current'))">
                         <span style="font-size: 12px;">〰️</span>
                         <span id="battery-current-value">-- A</span>
+                    </div>
+                    <!-- Battery Balancing Indicator - nový indikátor pod proudem -->
+                    <div class="battery-balancing-indicator" id="battery-balancing-indicator" style="display: none;"
+                        data-tooltip-html="">
+                        <span class="balancing-icon" id="balancing-icon">⚖️</span>
+                        <span class="balancing-text" id="balancing-text">Balancuje...</span>
                     </div>
                     <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
                         data-entity="extended_battery_voltage" data-tooltip="Napětí baterie"

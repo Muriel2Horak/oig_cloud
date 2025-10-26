@@ -48,6 +48,33 @@
             --inverter-bg: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
             --inverter-border: rgba(149, 117, 205, 0.4);
 
+            /* === LAYOUT POSITIONS - Default for Desktop === */
+            /* Solar - Top Center */
+            --solar-top: 40px;
+            --solar-left: 50%;
+            --solar-transform: translateX(-50%);
+
+            /* Grid - Left Middle */
+            --grid-top: 50%;
+            --grid-left: 80px;
+            --grid-transform: translateY(-50%);
+
+            /* Battery - Bottom Center */
+            --battery-top: auto;
+            --battery-bottom: 120px;
+            --battery-left: 50%;
+            --battery-transform: translateX(-50%);
+
+            /* House - Right Middle */
+            --house-top: 50%;
+            --house-right: 80px;
+            --house-transform: translateY(-50%);
+
+            /* Inverter - Center Hub */
+            --inverter-top: 50%;
+            --inverter-left: 50%;
+            --inverter-transform: translate(-50%, -50%);
+
             /* Status colors */
             --status-charging-bg: rgba(33, 150, 243, 0.3);
             --status-charging-text: #42a5f5;
@@ -773,7 +800,7 @@
             max-width: 100%;
             /* Celá šířka - bylo 900px */
             margin: 0 auto;
-            height: 850px;
+            height: 1000px;
         }
 
         /* SVG for connections */
@@ -821,61 +848,62 @@
 
         /* Solar - Top Center - S VĚTŠÍM ODSTUPEM */
         .solar {
-            top: 40px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: var(--solar-top);
+            left: var(--solar-left);
+            transform: var(--solar-transform);
             border-color: var(--solar-border);
             background: var(--solar-bg);
         }
 
         .solar:hover {
-            transform: translateX(-50%) scale(1.05);
+            transform: var(--solar-transform) scale(1.05);
         }
 
         /* Grid - Left Middle - S VĚTŠÍM ODSTUPEM */
         .grid-node {
-            top: 50%;
-            left: 80px;
-            transform: translateY(-50%);
+            top: var(--grid-top);
+            left: var(--grid-left);
+            transform: var(--grid-transform);
             border-color: var(--grid-border);
             background: var(--grid-bg);
         }
 
         .grid-node:hover {
-            transform: translateY(-50%) scale(1.05);
+            transform: var(--grid-transform) scale(1.05);
         }
 
         /* Battery - Bottom Center - S VELKÝM ODSTUPEM */
         .battery {
-            bottom: 40px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: var(--battery-top);
+            bottom: var(--battery-bottom);
+            left: var(--battery-left);
+            transform: var(--battery-transform);
             border-color: var(--battery-border);
             background: var(--battery-bg);
         }
 
         .battery:hover {
-            transform: translateX(-50%) scale(1.05);
+            transform: var(--battery-transform) scale(1.05);
         }
 
         /* House - Right Middle - S VĚTŠÍM ODSTUPEM */
         .house {
-            top: 50%;
-            right: 80px;
-            transform: translateY(-50%);
+            top: var(--house-top);
+            right: var(--house-right);
+            transform: var(--house-transform);
             border-color: var(--house-border);
             background: var(--house-bg);
         }
 
         .house:hover {
-            transform: translateY(-50%) scale(1.05);
+            transform: var(--house-transform) scale(1.05);
         }
 
         /* Center Hub - Inverter */
         .inverter {
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: var(--inverter-top);
+            left: var(--inverter-left);
+            transform: var(--inverter-transform);
             border-color: var(--inverter-border);
             background: var(--inverter-bg);
             min-width: 200px;
@@ -884,7 +912,39 @@
         }
 
         .inverter:hover {
-            transform: translate(-50%, -50%) scale(1.05);
+            transform: var(--inverter-transform) scale(1.05);
+        }
+
+        /* === EDIT MODE STYLES === */
+        /* Edit mode активní - nodes jsou draggable */
+        .flow-canvas.edit-mode .node {
+            cursor: move;
+            border: 2px dashed rgba(255, 193, 7, 0.6);
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .flow-canvas.edit-mode .node:hover {
+            border-color: rgba(255, 193, 7, 0.9);
+            box-shadow: 0 0 30px rgba(255, 193, 7, 0.5);
+        }
+
+        /* Během dragování */
+        .node.dragging {
+            opacity: 0.8;
+            z-index: 1000;
+            cursor: grabbing !important;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            transform: scale(1.05) !important;
+        }
+
+        /* Touch-friendly hit area pro mobily */
+        @media (max-width: 768px) {
+            .flow-canvas.edit-mode .node {
+                min-width: 44px;
+                min-height: 44px;
+                padding: 12px;
+            }
         }
 
         /* Node Content - VELMI KOMPAKTNÍ! */
@@ -1055,6 +1115,81 @@
 
         .battery-current-indicator:hover {
             transform: scale(1.1);
+        }
+
+        /* Battery Balancing Indicator - pod proudem */
+        .battery-balancing-indicator {
+            position: absolute !important;
+            top: 62px !important;
+            left: 8px !important;
+            font-size: 10px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: help;
+            margin: 0 !important;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 6px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.25) 0%, rgba(255, 152, 0, 0.15) 100%);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            transition: all 0.3s ease;
+            animation: pulse-balancing 2s ease-in-out infinite;
+        }
+
+        .battery-balancing-indicator:hover {
+            transform: scale(1.05);
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.35) 0%, rgba(255, 152, 0, 0.25) 100%);
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.4);
+        }
+
+        .balancing-icon {
+            font-size: 12px;
+            display: inline-block;
+        }
+
+        .balancing-text {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--warning-text);
+            white-space: nowrap;
+        }
+
+        /* Balancing states - různé barvy podle fáze */
+        .battery-balancing-indicator.charging {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.3) 0%, rgba(255, 152, 0, 0.2) 100%);
+            border-color: rgba(255, 193, 7, 0.5);
+        }
+
+        .battery-balancing-indicator.holding {
+            background: linear-gradient(135deg, rgba(66, 165, 245, 0.25) 0%, rgba(33, 150, 243, 0.15) 100%);
+            border-color: rgba(66, 165, 245, 0.4);
+        }
+
+        .battery-balancing-indicator.holding .balancing-text {
+            color: var(--info-text);
+        }
+
+        .battery-balancing-indicator.completed {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.25) 0%, rgba(56, 142, 60, 0.15) 100%);
+            border-color: rgba(76, 175, 80, 0.4);
+            animation: none;
+        }
+
+        .battery-balancing-indicator.completed .balancing-text {
+            color: var(--success-text);
+        }
+
+        @keyframes pulse-balancing {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.85;
+                transform: scale(1.02);
+            }
         }
 
         .battery-temp-indicator {
@@ -2043,6 +2178,18 @@
             color: var(--status-exporting-text);
         }
 
+        /* Flow Particles Container - OPRAVA: Stabilní positioning kontext */
+        #particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            overflow: visible;
+        }
+
         /* Flow Particles */
         .particle {
             position: absolute;
@@ -2052,6 +2199,7 @@
             pointer-events: none;
             z-index: 10;
             box-shadow: 0 0 10px currentColor;
+            will-change: transform, opacity;
         }
 
         /* Animations */
@@ -3926,6 +4074,7 @@
             padding: 10px;
             border-radius: 12px;
             border: 1px solid var(--border-primary);
+            align-items: center;
         }
 
         .dashboard-tab {
@@ -3951,6 +4100,47 @@
             border-color: rgba(66, 165, 245, 0.8);
             box-shadow: 0 0 15px rgba(66, 165, 245, 0.4);
             color: var(--text-primary);
+        }
+
+        /* Layout controls */
+        .layout-controls {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .btn-layout-edit,
+        .btn-layout-reset {
+            padding: 10px 14px;
+            background: var(--button-bg);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        .btn-layout-edit:hover,
+        .btn-layout-reset:hover {
+            background: var(--button-hover);
+            color: var(--text-primary);
+            transform: scale(1.05);
+        }
+
+        .btn-layout-edit.active {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.5), rgba(255, 152, 0, 0.5));
+            border-color: rgba(255, 193, 7, 0.8);
+            box-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
+            color: var(--text-primary);
+        }
+
+        .btn-layout-reset {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.3), rgba(211, 47, 47, 0.3));
+        }
+
+        .btn-layout-reset:hover {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.5), rgba(211, 47, 47, 0.5));
         }
 
         .tab-content {

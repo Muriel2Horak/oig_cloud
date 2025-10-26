@@ -1,5 +1,361 @@
 const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
 
+// === LAYOUT CUSTOMIZATION SYSTEM ===
+let editMode = false;
+let currentBreakpoint = null;
+let draggedNode = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartTop = 0;
+let dragStartLeft = 0;
+
+// Detekce viewportu
+function getCurrentBreakpoint() {
+    const width = window.innerWidth;
+    if (width <= 768) return 'mobile';
+    if (width <= 1024) return 'tablet';
+    return 'desktop';
+}
+
+// Uložení layoutu pro aktuální breakpoint
+function saveLayout(breakpoint, positions) {
+    const key = `oig-layout-${breakpoint}`;
+    localStorage.setItem(key, JSON.stringify(positions));
+    console.log(`[Layout] Saved ${breakpoint} layout:`, positions);
+}
+
+// Načtení layoutu pro aktuální breakpoint
+function loadLayout(breakpoint) {
+    const key = `oig-layout-${breakpoint}`;
+    const saved = localStorage.getItem(key);
+
+    if (saved) {
+        try {
+            const positions = JSON.parse(saved);
+            console.log(`[Layout] Loading ${breakpoint} layout:`, positions);
+            applyCustomPositions(positions);
+            return true;
+        } catch (e) {
+            console.error(`[Layout] Failed to parse ${breakpoint} layout:`, e);
+            return false;
+        }
+    }
+    return false;
+}
+
+// Aplikace custom pozic
+function applyCustomPositions(positions) {
+    const nodes = ['solar', 'grid-node', 'battery', 'house', 'inverter'];
+
+    nodes.forEach(nodeClass => {
+        const node = document.querySelector(`.${nodeClass}`);
+        if (!node || !positions[nodeClass]) return;
+
+        const pos = positions[nodeClass];
+
+        // Aplikovat pozice
+        if (pos.top !== undefined) node.style.top = pos.top;
+        if (pos.left !== undefined) node.style.left = pos.left;
+        if (pos.right !== undefined) node.style.right = pos.right;
+        if (pos.bottom !== undefined) node.style.bottom = pos.bottom;
+        if (pos.transform !== undefined) node.style.transform = pos.transform;
+    });
+
+    // Invalidovat cache a přepočítat částice
+    invalidateNodeCentersCache();
+    if (typeof updateAllParticleFlows === 'function') {
+        updateAllParticleFlows();
+    }
+}
+
+// Reset layoutu pro aktuální breakpoint
+function resetLayout(breakpoint) {
+    const key = `oig-layout-${breakpoint}`;
+    localStorage.removeItem(key);
+    console.log(`[Layout] Reset ${breakpoint} layout`);
+
+    // Odstranit inline styles a vrátit k CSS variables
+    const nodes = document.querySelectorAll('.solar, .grid-node, .battery, .house, .inverter');
+    nodes.forEach(node => {
+        node.style.top = '';
+        node.style.left = '';
+        node.style.right = '';
+        node.style.bottom = '';
+        node.style.transform = '';
+    });
+
+    // Invalidovat cache a přepočítat částice
+    invalidateNodeCentersCache();
+    if (typeof updateAllParticleFlows === 'function') {
+        updateAllParticleFlows();
+    }
+}
+
+// Toggle edit mode
+function toggleEditMode() {
+    editMode = !editMode;
+    const canvas = document.querySelector('.flow-canvas');
+    const btn = document.getElementById('edit-layout-btn');
+
+    if (editMode) {
+        canvas.classList.add('edit-mode');
+        if (btn) btn.classList.add('active');
+        console.log('[Layout] Edit mode enabled');
+        initializeDragAndDrop();
+    } else {
+        canvas.classList.remove('edit-mode');
+        if (btn) btn.classList.remove('active');
+        console.log('[Layout] Edit mode disabled');
+    }
+}
+
+// Inicializace drag & drop
+function initializeDragAndDrop() {
+    const nodes = document.querySelectorAll('.solar, .grid-node, .battery, .house, .inverter');
+
+    nodes.forEach(node => {
+        // Mouse events
+        node.addEventListener('mousedown', handleDragStart);
+
+        // Touch events
+        node.addEventListener('touchstart', handleTouchStart, { passive: false });
+    });
+
+    // Global handlers
+    document.addEventListener('mousemove', handleDragMove);
+    document.addEventListener('mouseup', handleDragEnd);
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+}
+
+// Mouse drag handlers
+function handleDragStart(e) {
+    if (!editMode) return;
+
+    e.preventDefault();
+    draggedNode = e.target.closest('.node');
+    if (!draggedNode) return;
+
+    draggedNode.classList.add('dragging');
+
+    const rect = draggedNode.getBoundingClientRect();
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartTop = rect.top;
+    dragStartLeft = rect.left;
+
+    console.log('[Drag] Started:', draggedNode.className);
+}
+
+function handleDragMove(e) {
+    if (!draggedNode || !editMode) return;
+
+    e.preventDefault();
+
+    const canvas = document.querySelector('.flow-canvas');
+    const canvasRect = canvas.getBoundingClientRect();
+
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+
+    const newLeft = dragStartLeft + deltaX;
+    const newTop = dragStartTop + deltaY;
+
+    // Constraints - keep within canvas
+    const nodeRect = draggedNode.getBoundingClientRect();
+    const minLeft = canvasRect.left;
+    const maxLeft = canvasRect.right - nodeRect.width;
+    const minTop = canvasRect.top;
+    const maxTop = canvasRect.bottom - nodeRect.height;
+
+    const constrainedLeft = Math.max(minLeft, Math.min(maxLeft, newLeft));
+    const constrainedTop = Math.max(minTop, Math.min(maxTop, newTop));
+
+    // Převést na pozice relativní k canvas
+    const relativeLeft = ((constrainedLeft - canvasRect.left) / canvasRect.width) * 100;
+    const relativeTop = ((constrainedTop - canvasRect.top) / canvasRect.height) * 100;
+
+    draggedNode.style.left = `${relativeLeft}%`;
+    draggedNode.style.top = `${relativeTop}%`;
+    draggedNode.style.right = 'auto';
+    draggedNode.style.bottom = 'auto';
+    draggedNode.style.transform = 'none';
+
+    // Live update particles
+    invalidateNodeCentersCache();
+}
+
+function handleDragEnd(e) {
+    if (!draggedNode || !editMode) return;
+
+    e.preventDefault();
+
+    draggedNode.classList.remove('dragging');
+
+    // Uložit pozice
+    saveCurrentLayout();
+
+    // Finální update částic
+    invalidateNodeCentersCache();
+    if (typeof updateAllParticleFlows === 'function') {
+        updateAllParticleFlows();
+    }
+
+    console.log('[Drag] Ended');
+    draggedNode = null;
+}
+
+// Touch handlers
+function handleTouchStart(e) {
+    if (!editMode) return;
+
+    e.preventDefault();
+    draggedNode = e.target.closest('.node');
+    if (!draggedNode) return;
+
+    draggedNode.classList.add('dragging');
+
+    const touch = e.touches[0];
+    const rect = draggedNode.getBoundingClientRect();
+
+    dragStartX = touch.clientX;
+    dragStartY = touch.clientY;
+    dragStartTop = rect.top;
+    dragStartLeft = rect.left;
+
+    console.log('[Touch] Started:', draggedNode.className);
+}
+
+function handleTouchMove(e) {
+    if (!draggedNode || !editMode) return;
+
+    e.preventDefault();
+
+    const touch = e.touches[0];
+    const canvas = document.querySelector('.flow-canvas');
+    const canvasRect = canvas.getBoundingClientRect();
+
+    const deltaX = touch.clientX - dragStartX;
+    const deltaY = touch.clientY - dragStartY;
+
+    const newLeft = dragStartLeft + deltaX;
+    const newTop = dragStartTop + deltaY;
+
+    // Constraints
+    const nodeRect = draggedNode.getBoundingClientRect();
+    const minLeft = canvasRect.left;
+    const maxLeft = canvasRect.right - nodeRect.width;
+    const minTop = canvasRect.top;
+    const maxTop = canvasRect.bottom - nodeRect.height;
+
+    const constrainedLeft = Math.max(minLeft, Math.min(maxLeft, newLeft));
+    const constrainedTop = Math.max(minTop, Math.min(maxTop, newTop));
+
+    // Relativní pozice
+    const relativeLeft = ((constrainedLeft - canvasRect.left) / canvasRect.width) * 100;
+    const relativeTop = ((constrainedTop - canvasRect.top) / canvasRect.height) * 100;
+
+    draggedNode.style.left = `${relativeLeft}%`;
+    draggedNode.style.top = `${relativeTop}%`;
+    draggedNode.style.right = 'auto';
+    draggedNode.style.bottom = 'auto';
+    draggedNode.style.transform = 'none';
+
+    // Live update
+    invalidateNodeCentersCache();
+}
+
+function handleTouchEnd(e) {
+    if (!draggedNode || !editMode) return;
+
+    e.preventDefault();
+
+    draggedNode.classList.remove('dragging');
+
+    // Uložit pozice
+    saveCurrentLayout();
+
+    // Finální update
+    invalidateNodeCentersCache();
+    if (typeof updateAllParticleFlows === 'function') {
+        updateAllParticleFlows();
+    }
+
+    console.log('[Touch] Ended');
+    draggedNode = null;
+}
+
+// Uložit aktuální pozice všech nodes
+function saveCurrentLayout() {
+    const breakpoint = getCurrentBreakpoint();
+    const canvas = document.querySelector('.flow-canvas');
+    const canvasRect = canvas.getBoundingClientRect();
+
+    const positions = {};
+    const nodes = {
+        'solar': document.querySelector('.solar'),
+        'grid-node': document.querySelector('.grid-node'),
+        'battery': document.querySelector('.battery'),
+        'house': document.querySelector('.house'),
+        'inverter': document.querySelector('.inverter')
+    };
+
+    Object.entries(nodes).forEach(([key, node]) => {
+        if (!node) return;
+
+        const rect = node.getBoundingClientRect();
+        const relativeLeft = ((rect.left - canvasRect.left) / canvasRect.width) * 100;
+        const relativeTop = ((rect.top - canvasRect.top) / canvasRect.height) * 100;
+
+        positions[key] = {
+            top: `${relativeTop}%`,
+            left: `${relativeLeft}%`,
+            right: 'auto',
+            bottom: 'auto',
+            transform: 'none'
+        };
+    });
+
+    saveLayout(breakpoint, positions);
+}
+
+// Invalidace cache pro node centers
+function invalidateNodeCentersCache() {
+    if (typeof window.lastLayoutHash !== 'undefined') {
+        window.lastLayoutHash = null;
+    }
+    if (typeof window.cachedNodeCenters !== 'undefined') {
+        window.cachedNodeCenters = null;
+    }
+}
+
+// Debounced resize handler
+let resizeTimer = null;
+function handleLayoutResize() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+
+    resizeTimer = setTimeout(() => {
+        const newBreakpoint = getCurrentBreakpoint();
+
+        if (newBreakpoint !== currentBreakpoint) {
+            console.log(`[Layout] Breakpoint changed: ${currentBreakpoint} → ${newBreakpoint}`);
+            currentBreakpoint = newBreakpoint;
+
+            // Načíst layout pro nový breakpoint
+            const loaded = loadLayout(newBreakpoint);
+            if (!loaded) {
+                console.log(`[Layout] No custom ${newBreakpoint} layout, using defaults`);
+            }
+
+            // Update částic
+            invalidateNodeCentersCache();
+            if (typeof updateAllParticleFlows === 'function') {
+                updateAllParticleFlows();
+            }
+        }
+    }, 300);
+}
+
 // === GLOBAL VARIABLES FOR CHART DATA ===
 // Store complete dataset for extremes calculation regardless of zoom
 let originalPriceData = null;
@@ -2318,21 +2674,46 @@ function logParticleMemoryStats() {
 window.logParticleStats = logParticleMemoryStats;
 window.cleanupParticles = stopAllParticleFlows;
 
+// Cache pro smoothing rychlosti - zabraňuje náhlým skokům
+const speedCache = {};
+
 /**
- * Vypočítá parametry toku podle výkonu a maxima
+ * Vypočítá parametry toku podle výkonu a maxima s VYHLAZENÍM rychlosti
  * @param {number} power - Výkon v W (může být záporný)
  * @param {number} maximum - Maximální výkon v W
+ * @param {string} flowKey - Klíč toku pro cachování rychlosti
  * @returns {object} { active, intensity, count, speed, size, opacity }
  */
-function calculateFlowParams(power, maximum) {
+function calculateFlowParams(power, maximum, flowKey = null) {
     const absPower = Math.abs(power);
     const intensity = Math.min(100, (absPower / maximum) * 100);
+
+    // Vypočítat cílovou rychlost
+    const targetSpeed = Math.max(500, Math.round(3500 - (intensity * 30))); // 3500-500ms
+
+    // OPRAVA: Smoothing rychlosti - zabraňuje náhlým skokům
+    let finalSpeed = targetSpeed;
+    if (flowKey && speedCache[flowKey] !== undefined) {
+        // Exponential moving average (alpha = 0.3 = 30% nová hodnota, 70% stará)
+        const alpha = 0.3;
+        finalSpeed = Math.round(alpha * targetSpeed + (1 - alpha) * speedCache[flowKey]);
+
+        // Pokud je rozdíl menší než 100ms, použít starou hodnotu (prevent jitter)
+        if (Math.abs(finalSpeed - speedCache[flowKey]) < 100) {
+            finalSpeed = speedCache[flowKey];
+        }
+    }
+
+    // Uložit do cache
+    if (flowKey) {
+        speedCache[flowKey] = finalSpeed;
+    }
 
     return {
         active: absPower >= 50,  // Práh: 50W (citlivější než 500W)
         intensity: intensity,
         count: Math.max(1, Math.min(4, Math.ceil(1 + intensity / 33))), // 1-4 kuličky
-        speed: Math.max(500, Math.round(3500 - (intensity * 30))),      // 3500-500ms
+        speed: finalSpeed,                                               // Vyhlazená rychlost
         size: Math.round(6 + (intensity / 10)),                         // 6-16px
         opacity: Math.min(1.0, 0.3 + (intensity / 150))                 // 0.3-1.0
     };
@@ -2356,10 +2737,9 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
     particle.className = 'particle';
     particle.style.background = color;
 
-    // Dynamická velikost s malou variací pro "živý" efekt
-    const sizeVariation = size + (Math.random() * 2 - 1); // ±1px
-    particle.style.width = `${sizeVariation}px`;
-    particle.style.height = `${sizeVariation}px`;
+    // OPRAVA: Konstantní velikost - žádná náhodná variace (eliminuje vizuální chaos)
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
     particle.style.borderRadius = '50%';
 
     // Blur pro rychlé toky
@@ -2400,9 +2780,14 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
             // Ignorovat chyby (animace už může být zrušená)
         }
         particle.remove();
-        // OPRAVA: Použít lokální kopii rychlosti (speed parametr) místo flow.speed
-        // Tím zabráníme race condition když se rychlost změní během animace
-        createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
+
+        // OPRAVA: Zkontrolovat že flow je stále aktivní PŘED vytvořením nové kuličky
+        // Tím zabráníme "zombie" kuličkám když se flow zastaví
+        const flow = particleFlows[flowKey];
+        if (flow && flow.active) {
+            // Použít AKTUÁLNÍ rychlost z flow objektu (může se změnit během animace)
+            createContinuousParticle(flowKey, from, to, color, flow.speed, size, opacity);
+        }
     };
 }
 
@@ -2483,23 +2868,35 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1, 
 
     const wasActive = flow.active;
     const countChanged = flow.count !== count;
-    const speedChanged = flow.speed !== speed;
+    const speedChanged = Math.abs(flow.speed - speed) > 150; // OPRAVA: Tolerace ±150ms pro prevenci zbytečných restartů
 
-    // OPRAVA: Pokud se mění počet kuliček NEBO rychlost, musíme restartovat flow
+    // OPRAVA: Pokud se mění počet kuliček NEBO výrazně rychlost, musíme restartovat flow
+    // ALE: Nebudeme zastavovat existující kuličky - nechť doběhnou přirozeně
     if (active && wasActive && (countChanged || speedChanged)) {
-        flow.active = false; // Zastav staré kuličky
-        setTimeout(() => {
-            // Po 100ms spusť nové
-            flow.active = true;
-            flow.speed = speed;
-            flow.count = count;
-            const delayBetweenParticles = speed / count / 2;
-            for (let i = 0; i < count; i++) {
-                setTimeout(() => {
-                    createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
-                }, i * delayBetweenParticles);
+        // Místo zastavení starých jen aktualizujeme parametry
+        flow.speed = speed;
+        flow.count = count;
+
+        // Pokud se změnil počet, přidáme/ubereme kuličky
+        if (countChanged) {
+            console.log(`[Particles] Count changed for ${flowKey}: ${flow.count} -> ${count}`);
+            // Starý count byl flow.count, nový je count
+            const diff = count - flow.count;
+
+            if (diff > 0) {
+                // Přidat kuličky
+                const delayBetweenParticles = speed / count / 2;
+                for (let i = 0; i < diff; i++) {
+                    setTimeout(() => {
+                        if (flow.active) { // Double-check že flow je stále aktivní
+                            createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
+                        }
+                    }, i * delayBetweenParticles);
+                }
             }
-        }, 100);
+            // Pokud diff < 0 (ubrat kuličky), kuličky se zastaví přirozeně když onfinish zjistí jiný count
+        }
+
         return;
     }
 
@@ -2713,7 +3110,7 @@ function animateFlow(data) {
     // ========================================
     // 1. SOLAR → INVERTER (žlutá, jednosměrný)
     // ========================================
-    const solarParams = calculateFlowParams(solarPower, FLOW_MAXIMUMS.solar);
+    const solarParams = calculateFlowParams(solarPower, FLOW_MAXIMUMS.solar, 'solarToInverter');
 
     updateParticleFlow(
         'solarToInverter',
@@ -2731,7 +3128,8 @@ function animateFlow(data) {
     // 2. BATTERY ↔ INVERTER (obousměrný)
     // ========================================
     const batteryAbsPower = Math.abs(batteryPower);
-    const batteryParams = calculateFlowParams(batteryAbsPower, FLOW_MAXIMUMS.battery);
+    const batteryParams = calculateFlowParams(batteryAbsPower, FLOW_MAXIMUMS.battery,
+        batteryPower > 0 ? 'inverterToBattery' : 'batteryToInverter');
 
     // Zastavit oba směry nejdřív
     updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, FLOW_COLORS.battery, false, batteryParams.speed, 0);
@@ -2814,7 +3212,8 @@ function animateFlow(data) {
     // 3. GRID ↔ INVERTER (obousměrný)
     // ========================================
     const gridAbsPower = Math.abs(gridPower);
-    const gridParams = calculateFlowParams(gridAbsPower, FLOW_MAXIMUMS.grid);
+    const gridParams = calculateFlowParams(gridAbsPower, FLOW_MAXIMUMS.grid,
+        gridPower > 0 ? 'gridToInverter' : 'inverterToGrid');
 
     // Zastavit oba směry nejdřív
     updateParticleFlow('gridToInverter', centers.grid, centers.inverter, FLOW_COLORS.grid_import, false, gridParams.speed, 0);
@@ -2901,7 +3300,7 @@ function animateFlow(data) {
     // ========================================
     // 4. INVERTER → HOUSE (spotřeba, multi-source)
     // ========================================
-    const houseParams = calculateFlowParams(housePower, FLOW_MAXIMUMS.house);
+    const houseParams = calculateFlowParams(housePower, FLOW_MAXIMUMS.house, 'inverterToHouse');
 
     // Vypočítat zdroje pro spotřebu (house)
     let solarToHouse = 0;
@@ -2997,6 +3396,9 @@ function animateFlow(data) {
         // Vyčistit i sub-flows
         cleanupSubFlows('inverterToHouse');
     }
+
+    // OPRAVA: Uložit aktuální power hodnoty pro detekci změn
+    lastPowerValues = { solarPower, batteryPower, gridPower, housePower };
 }
 
 // Cache for previous values to detect changes
@@ -3991,7 +4393,7 @@ function detectAndApplyTheme() {
 function initTooltips() {
     const tooltip = document.getElementById('global-tooltip');
     const arrow = document.getElementById('global-tooltip-arrow');
-    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .entity-value[data-tooltip-html], .detail-value[data-tooltip-html], #battery-grid-charging-indicator[data-tooltip], #battery-grid-charging-indicator[data-tooltip-html], #balancing-planned-time-short[data-tooltip-html]');
+    const entityValues = document.querySelectorAll('.entity-value[data-tooltip], .entity-value[data-tooltip-html], .detail-value[data-tooltip-html], #battery-grid-charging-indicator[data-tooltip], #battery-grid-charging-indicator[data-tooltip-html], #balancing-planned-time-short[data-tooltip-html], #battery-balancing-indicator[data-tooltip-html]');
 
     if (!tooltip || !arrow) {
         console.error('[Tooltips] Global tooltip elements not found!');
@@ -4614,10 +5016,84 @@ async function updateBatteryBalancingCard() {
         // Re-inicializovat tooltips aby fungovaly na dynamicky přidaných elementech
         initTooltips();
 
+        // NOVÉ: Aktualizovat baterie balancing indikátor
+        updateBatteryBalancingIndicator(currentState, timeRemaining, balancingCost);
+
     } catch (error) {
         console.error('[Balancing] Error updating battery balancing card:', error);
     }
-}function showGridChargingPopup() {
+}
+
+/**
+ * Aktualizuje indikátor balancování baterie v boxu baterie
+ * @param {string} state - Aktuální stav: 'charging', 'balancing', 'planned', 'standby'
+ * @param {string} timeRemaining - Zbývající čas ve formátu HH:MM
+ * @param {object} balancingCost - Objekt s náklady na balancování
+ */
+function updateBatteryBalancingIndicator(state, timeRemaining, balancingCost) {
+    const indicator = document.getElementById('battery-balancing-indicator');
+    const icon = document.getElementById('balancing-icon');
+    const text = document.getElementById('balancing-text');
+
+    if (!indicator || !icon || !text) return;
+
+    // Zobrazit indikátor jen během aktivního balancování
+    if (state === 'charging' || state === 'balancing') {
+        indicator.style.display = 'flex';
+
+        // Ikona podle stavu
+        if (state === 'charging') {
+            icon.textContent = '⚡';
+            text.textContent = 'Nabíjení...';
+            indicator.className = 'battery-balancing-indicator charging';
+        } else if (state === 'balancing') {
+            icon.textContent = '⏸️';
+            text.textContent = 'Balancuje...';
+            indicator.className = 'battery-balancing-indicator holding';
+        }
+
+        // Sestavit tooltip s detaily
+        let tooltipHtml = '<div style="text-align: left; min-width: 200px;">';
+        tooltipHtml += `<strong>🔋 Balancování baterie</strong><br><br>`;
+
+        if (state === 'charging') {
+            tooltipHtml += `<strong>Fáze:</strong> Nabíjení baterie<br>`;
+            tooltipHtml += `<em>Baterie se nabíjí před vyvažováním článků</em><br><br>`;
+        } else {
+            tooltipHtml += `<strong>Fáze:</strong> Držení (balancování)<br>`;
+            tooltipHtml += `<em>Články baterie se vyvažují na stejnou úroveň</em><br><br>`;
+        }
+
+        if (timeRemaining) {
+            tooltipHtml += `⏱️ <strong>Zbývá:</strong> ${timeRemaining}<br>`;
+        }
+
+        if (balancingCost) {
+            const totalCost = balancingCost.total_cost_czk ?? 0;
+            const chargingCost = balancingCost.charging_cost_czk ?? 0;
+            const holdingCost = balancingCost.holding_cost_czk ?? 0;
+
+            tooltipHtml += `<br><strong>💰 Náklady:</strong><br>`;
+            tooltipHtml += `• Nabíjení: ${chargingCost.toFixed(2)} Kč<br>`;
+            tooltipHtml += `• Držení: ${holdingCost.toFixed(2)} Kč<br>`;
+            tooltipHtml += `• <strong>Celkem: ${totalCost.toFixed(2)} Kč</strong><br>`;
+        }
+
+        tooltipHtml += `<br><small style="opacity: 0.7;">ℹ️ Balancování prodlužuje životnost baterie tím, že vyrovná napětí všech článků</small>`;
+        tooltipHtml += `</div>`;
+
+        indicator.setAttribute('data-tooltip-html', tooltipHtml);
+
+    } else {
+        // Skrýt indikátor pokud není aktivní balancování
+        indicator.style.display = 'none';
+    }
+
+    // Reinicializovat tooltips
+    initTooltips();
+}
+
+function showGridChargingPopup() {
     getSensorString(getSensorId('grid_charging_planned')).then(gridChargingData => {
         if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
             showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
@@ -4680,6 +5156,21 @@ function init() {
 
     // Detekovat a aplikovat téma z Home Assistantu
     detectAndApplyTheme();
+
+    // === LAYOUT CUSTOMIZATION INITIALIZATION ===
+    currentBreakpoint = getCurrentBreakpoint();
+    console.log(`[Layout] Initial breakpoint: ${currentBreakpoint}`);
+
+    // Načíst custom layout pokud existuje
+    const loaded = loadLayout(currentBreakpoint);
+    if (loaded) {
+        console.log(`[Layout] Custom ${currentBreakpoint} layout loaded`);
+    } else {
+        console.log(`[Layout] Using default ${currentBreakpoint} layout`);
+    }
+
+    // Resize listener pro breakpoint changes
+    window.addEventListener('resize', handleLayoutResize);
 
     // Auto-collapse control panel on mobile
     if (window.innerWidth <= 768) {
@@ -4821,7 +5312,23 @@ function init() {
         cachedNodeCenters = null;
         lastLayoutHash = null;
         resizeTimer = setTimeout(() => {
-            drawConnections();
+            // OPRAVA: Při resize na flow tabu musíme reinicializovat particles
+            const flowTab = document.querySelector('#flow-tab');
+            const isFlowTabActive = flowTab && flowTab.classList.contains('active');
+
+            if (isFlowTabActive) {
+                console.log('[Resize] Flow tab is active, reinitializing particles...');
+                // Zastavit staré particles
+                stopAllParticleFlows();
+                // Překreslit connections s novým layoutem
+                drawConnections();
+                // Force restart particles s aktuálními pozicemi
+                needsFlowReinitialize = true;
+                loadData();
+            } else {
+                // Jen překreslit connections pokud nejsme na flow tabu
+                drawConnections();
+            }
         }, 100);
     });
 
@@ -4855,19 +5362,25 @@ function init() {
     initCustomTiles();
 
     // === PERIODICKÝ CLEANUP PARTICLES (PREVENCE ÚNIK PAMĚTI) ===
-    // Každých 30 sekund vyčistíme particles, pokud NEJSME na tab Toky
-    // Pokud JSME na tab Toky, vyčistíme jen pokud je příliš mnoho kuliček
+    // Každých 30 sekund zkontrolujeme počet particles
+    // Pokud NEJSME na tab Toky, NEMAŽ particles (budou potřeba po návratu)
+    // Pokud JSME na tab Toky a je > 40 kuliček, proveď cleanup
     setInterval(() => {
-        const tokyTab = document.querySelector('#toky-tab');
-        const isTokyTabActive = tokyTab && tokyTab.classList.contains('active');
+        const flowTab = document.querySelector('#flow-tab');
+        const isFlowTabActive = flowTab && flowTab.classList.contains('active');
         const particlesContainer = document.getElementById('particles');
 
-        if (!isTokyTabActive) {
-            // Nejsme na tab Toky -> kompletní cleanup
-            console.log('[Particles] ⏰ Periodic cleanup (not on Toky tab)');
-            stopAllParticleFlows();
+        if (!isFlowTabActive) {
+            // OPRAVA: NEMAŽ particles když nejsi na tabu - budou potřeba při návratu
+            // Jen zkontroluj count pro monitoring
+            if (particlesContainer) {
+                const particleCount = particlesContainer.children.length;
+                if (particleCount > 50) {
+                    console.log(`[Particles] ⚠️ High particle count while tab inactive: ${particleCount} (will cleanup on tab switch)`);
+                }
+            }
         } else if (particlesContainer) {
-            // Jsme na tab Toky -> cleanup jen pokud je > 40 kuliček
+            // Jsme na tab flow (toky) -> cleanup jen pokud je > 40 kuliček
             const particleCount = particlesContainer.children.length;
             if (particleCount > 40) {
                 console.log(`[Particles] ⏰ Periodic cleanup (${particleCount} particles exceeded threshold)`);
@@ -4896,6 +5409,12 @@ let pricingTabActive = false;
 let needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
 
 function switchTab(tabName) {
+    // Zapamatuj si předchozí tab PŘED změnou
+    const previousActiveContent = document.querySelector('.tab-content.active');
+    const previousTab = previousActiveContent ? previousActiveContent.id.replace('-tab', '') : null;
+
+    console.log(`[Tab] Switching from '${previousTab}' to '${tabName}'`);
+
     // Remove active from all tabs and contents
     document.querySelectorAll('.dashboard-tab').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -4915,20 +5434,21 @@ function switchTab(tabName) {
     // Track active tab for event-driven updates
     pricingTabActive = (tabName === 'pricing');
 
-    // OPRAVA: Při přepnutí na tab toky, překreslit connections a restartovat particles
-    if (tabName === 'toky') {
-        console.log('[Tab] ========== SWITCHING TO TOKY TAB ==========');
-        console.log('[Tab] Event:', event);
-        console.log('[Tab] Tab content element:', document.getElementById('toky-tab'));
-
-        // OPRAVA ÚNIK PAMĚTI: Použít novou cleanup funkci
+    // OPRAVA: Při ODCHODU z tab flow (toky), zastavit particles (cleanup)
+    if (previousTab === 'flow' && tabName !== 'flow') {
+        console.log('[Tab] ========== LEAVING FLOW TAB - CLEANUP ==========');
         stopAllParticleFlows();
+    }
+
+    // OPRAVA: Při přepnutí NA tab flow (toky), překreslit connections a FORCE restart particles
+    if (tabName === 'flow') {
+        console.log('[Tab] ========== SWITCHING TO FLOW TAB ==========');
 
         // DŮLEŽITÉ: Počkat až se tab zobrazí a DOM se vykreslí
         setTimeout(() => {
             console.log('[Tab] --- Timeout fired, starting redraw ---');
 
-            const flowTab = document.getElementById('toky-tab');
+            const flowTab = document.getElementById('flow-tab');
             console.log('[Tab] Flow tab visible?', flowTab && flowTab.classList.contains('active'));
             console.log('[Tab] Flow tab offsetHeight:', flowTab?.offsetHeight);
 

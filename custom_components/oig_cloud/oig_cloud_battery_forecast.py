@@ -479,6 +479,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 else:
                     reason = f"balancing_{balancing_reason}"
 
+            # OPRAVA: Při balancování VŽDY použít UPS režim (držení baterie na 100%)
+            # Standardní logika: UPS když grid_kwh > 0, jinak Home I
+            final_is_ups_mode = (
+                is_ups_mode or is_balancing_charging or is_balancing_holding
+            )
+
             # Přidat bod do timeline
             timeline.append(
                 {
@@ -493,7 +499,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
-                    "mode": "UPS" if is_ups_mode else "Home",
+                    "mode": "Home UPS" if final_is_ups_mode else "Home I",
                     "reason": reason,
                 }
             )
@@ -722,9 +728,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_kwh = sim_timeline[i].get("solar_production_kwh", 0)
             load_kwh = sim_timeline[i].get("consumption_kwh", 0)
             grid_kwh = sim_timeline[i].get("grid_charge_kwh", 0)
+            reason = sim_timeline[i].get("reason", "")
 
             # Použít stejnou logiku jako v _calculate_timeline
-            is_ups_mode = grid_kwh > 0
+            # OPRAVA: Při balancování VŽDY UPS režim
+            is_balancing = reason.startswith("balancing_")
+            is_ups_mode = grid_kwh > 0 or is_balancing
 
             if is_ups_mode:
                 net_energy = solar_kwh + grid_kwh
@@ -2169,9 +2178,12 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_kwh = curr_point.get("solar_production_kwh", 0)  # CELKOVÝ solar
             grid_kwh = curr_point.get("grid_charge_kwh", 0)
             load_kwh = curr_point.get("consumption_kwh", 0)
+            reason = curr_point.get("reason", "")
 
             # Určit režim (UPS vs Home)
-            is_ups_mode = grid_kwh > 0
+            # OPRAVA: Při balancování VŽDY UPS režim
+            is_balancing = reason.startswith("balancing_")
+            is_ups_mode = grid_kwh > 0 or is_balancing
 
             if is_ups_mode:
                 # UPS režim: spotřeba ze sítě, baterie roste díky solar + grid
@@ -2200,7 +2212,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
             # Aktualizovat mode pokud se změnilo grid_charge
-            curr_point["mode"] = "UPS" if is_ups_mode else "Home"
+            curr_point["mode"] = "Home UPS" if is_ups_mode else "Home I"
 
     # =========================================================================
     # ADAPTIVE LOAD PREDICTION v2
@@ -2846,8 +2858,14 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
             battery_capacity = point.get("battery_capacity_kwh", 0)
+            mode = point.get("mode", "")
 
-            if grid_charge_kwh > 0:
+            # OPRAVA: Detekce nabíjení podle režimu UPS místo grid_charge_kwh
+            # Při balancování může být grid_charge_kwh=0 (nabíjení ze solaru)
+            # ale mode je stále "Home UPS"
+            is_ups_mode = mode == "Home UPS"
+
+            if is_ups_mode:
                 timestamp_str = point.get("timestamp", "")
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
@@ -2877,7 +2895,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             # (tolerance 0.01 kWh pro zaokrouhlovací chyby)
                             is_actually_charging = capacity_increase > 0.01
 
-                        # Přidat interval do seznamu (všechny s grid_charge > 0)
+                        # Přidat interval do seznamu (všechny s UPS režimem)
                         interval_data = {
                             "timestamp": timestamp_str,
                             "energy_kwh": round(
