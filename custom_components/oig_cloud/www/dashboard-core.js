@@ -4418,10 +4418,10 @@ async function updateBatteryBalancingCard() {
 
         // Current state texty a barvy
         const stateTexts = {
-            charging: 'Nabíjení na 100%',
-            balancing: 'Balancování',
-            completed: 'Dokončeno',
-            planned: 'Naplánováno',
+            charging: 'Příprava na 100%',
+            balancing: 'Vyrovnávání článků',
+            completed: 'Vybalancováno',
+            planned: 'Čeká na zahájení',
             standby: 'Standby'
         };
 

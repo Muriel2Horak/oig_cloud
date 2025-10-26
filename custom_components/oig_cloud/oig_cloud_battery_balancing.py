@@ -215,6 +215,25 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             # 3. Planning logic - najít optimální okno
             self._plan_balancing_window()
 
+            # 3b. Přepočítat charging intervals pokud máme aktivní window
+            if self._planned_window:
+                _LOGGER.info(
+                    f"Recalculating charging intervals for planned window: {self._planned_window.get('holding_start')} - {self._planned_window.get('holding_end')}"
+                )
+                spot_prices = self._get_spot_prices()
+                _LOGGER.info(f"Got {len(spot_prices)} spot prices for recalculation")
+                if spot_prices:
+                    self._planned_window = self._add_charging_intervals(
+                        self._planned_window, spot_prices
+                    )
+                    _LOGGER.info(
+                        f"Updated window: {len(self._planned_window.get('charging_intervals', []))} charging intervals"
+                    )
+                else:
+                    _LOGGER.warning(
+                        "No spot prices available for charging interval recalculation"
+                    )
+
             # 4. Detekce aktuálního stavu (charging/balancing/standby/planned)
             self._update_current_state()
 
@@ -333,8 +352,122 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(f"Error getting spot prices: {e}", exc_info=True)
             return {}
 
+    def _get_forecast_soc_at_time(self, timestamp_str: str) -> float:
+        """Získat predikovaný SOC v daném čase z battery forecast senzoru."""
+        try:
+            from datetime import datetime
+
+            if not self._hass:
+                return 50.0
+
+            forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
+            forecast_state = self._hass.states.get(forecast_sensor_id)
+
+            if not forecast_state or not forecast_state.attributes:
+                _LOGGER.debug(
+                    f"Battery forecast sensor {forecast_sensor_id} not available"
+                )
+                return 50.0
+
+            timeline = forecast_state.attributes.get("timeline_data", [])
+            if not timeline:
+                return 50.0
+
+            # Najít příslušný bod v timeline
+            target_time = datetime.fromisoformat(timestamp_str)
+            max_capacity = 12.29  # kWh
+
+            for point in timeline:
+                point_time = datetime.fromisoformat(point["timestamp"])
+                if point_time == target_time:
+                    capacity_kwh = point.get("battery_capacity_kwh", 0)
+                    return (capacity_kwh / max_capacity) * 100.0
+
+            # Pokud nenajdeme přesný čas, vrátíme aktuální SOC
+            return self._get_current_soc()
+
+        except Exception as e:
+            _LOGGER.warning(f"Failed to get forecast SOC: {e}")
+            return self._get_current_soc()
+
+    def _check_window_feasibility(
+        self, window_start: str, prices: Dict[str, float], force: bool = False
+    ) -> tuple[bool, int]:
+        """
+        Ověřit, jestli je možné nabít baterii do začátku holding okna.
+
+        Returns:
+            (is_feasible, intervals_needed)
+        """
+        try:
+            from datetime import datetime
+            from homeassistant.util import dt as dt_util
+
+            now = dt_util.now()
+            holding_start_dt = datetime.fromisoformat(window_start)
+            # Ensure timezone aware
+            if holding_start_dt.tzinfo is None:
+                holding_start_dt = dt_util.as_local(holding_start_dt)
+
+            # Kolik bude SOC na začátku holding okna (podle forecastu BEZ balancování)?
+            forecast_soc_percent = self._get_forecast_soc_at_time(window_start)
+
+            # Kolik energie potřebujeme dobít?
+            max_capacity = 12.29  # kWh
+            forecast_soc_kwh = (forecast_soc_percent / 100.0) * max_capacity
+            energy_needed = max(0, max_capacity - forecast_soc_kwh)
+
+            # Kolik intervalů potřebujeme?
+            charging_power_kwh_per_15min = 0.75
+            intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
+
+            # Kolik intervalů máme k dispozici?
+            available_intervals = 0
+            _LOGGER.debug(
+                f"Checking available intervals: NOW={now}, holding_start={holding_start_dt}"
+            )
+            for timestamp_str in prices.keys():
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str)
+                    # Ensure timezone aware
+                    if timestamp.tzinfo is None:
+                        timestamp = dt_util.as_local(timestamp)
+                    if now <= timestamp < holding_start_dt:
+                        available_intervals += 1
+                        if available_intervals <= 3:  # Log first 3 matches
+                            _LOGGER.debug(f"  ✓ Available: {timestamp_str}")
+                            _LOGGER.debug(f"  ✓ Available: {timestamp_str}")
+                except (ValueError, TypeError) as e:
+                    _LOGGER.debug(f"  ✗ Parse error for {timestamp_str}: {e}")
+                    continue
+
+            _LOGGER.debug(f"Total available intervals: {available_intervals}")
+
+            is_feasible = available_intervals >= intervals_needed
+
+            _LOGGER.info(
+                f"Feasibility check for {window_start}: "
+                f"forecast_soc={forecast_soc_percent:.1f}%, "
+                f"need {intervals_needed} intervals, "
+                f"have {available_intervals} available → "
+                f"{'✅ FEASIBLE' if is_feasible else '❌ NOT FEASIBLE'}"
+            )
+
+            # Pokud force (8. den), akceptuj i když není proveditelné
+            if force and not is_feasible:
+                _LOGGER.warning(
+                    f"Window not feasible but FORCING due to critical balancing need"
+                )
+                return True, intervals_needed
+
+            return is_feasible, intervals_needed
+
+        except Exception as e:
+            _LOGGER.error(f"Error checking window feasibility: {e}", exc_info=True)
+            return False, 0
+
     def _find_opportunistic_window(
-        self, prices: Dict[str, float], config: Dict[str, Any]
+        self, prices: Dict[str, float], config: Dict[str, Any], force: bool = False
     ) -> Optional[Dict[str, Any]]:
         """Hledat opportunistic okno - extrémně levná cena."""
         threshold = config["opportunistic_threshold"]
@@ -359,14 +492,31 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             avg_price = sum(window_prices) / len(window_prices)
 
             if avg_price < threshold and avg_price < best_avg_price:
+                # KONTROLA PROVEDITELNOSTI - stíháme nabít?
+                is_feasible, _ = self._check_window_feasibility(
+                    window_start, prices, force
+                )
+
+                if not is_feasible:
+                    _LOGGER.debug(
+                        f"Skipping window {window_start} - not enough time to charge"
+                    )
+                    continue
+
                 best_avg_price = avg_price
-                window_end = sorted_times[window_end_idx - 1]
+                # holding_end je konec 3h okna (začátek dalšího intervalu po okně)
+                # Pro 3h okno (12 intervalů): i, i+1, ..., i+11 → window_end = sorted_times[i+12] nebo i+11+15min
+                from datetime import datetime, timedelta
+
+                window_end_time = datetime.fromisoformat(
+                    sorted_times[window_end_idx - 1]
+                ) + timedelta(minutes=15)
+                window_end = window_end_time.isoformat()
                 best_window = {
                     "holding_start": window_start,
                     "holding_end": window_end,
                     "avg_price_czk": round(avg_price, 2),
                     "reason": "opportunistic",
-                    "total_cost_czk": None,  # TODO: Calculate
                 }
 
         return best_window
@@ -393,7 +543,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # Najít nejlevnější okno bez ohledu na threshold
         config_copy = config.copy()
         config_copy["opportunistic_threshold"] = float("inf")  # Žádný limit
-        window = self._find_opportunistic_window(prices, config_copy)
+        window = self._find_opportunistic_window(prices, config_copy, force)
 
         if window:
             window["reason"] = "forced" if force else "critical"
@@ -414,6 +564,11 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             holding_start = datetime.fromisoformat(window["holding_start"])
             holding_end = datetime.fromisoformat(window["holding_end"])
+            # Make timezone aware
+            if holding_start.tzinfo is None:
+                holding_start = dt_util.as_local(holding_start)
+            if holding_end.tzinfo is None:
+                holding_end = dt_util.as_local(holding_end)
             now = dt_util.now()
 
             # Získat aktuální SoC
@@ -425,12 +580,15 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             energy_needed = max(0, max_capacity - (current_soc / 100.0 * max_capacity))
             intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
 
-            # Najít kandidáty (mezi NOW a holding_end)
+            # Najít kandidáty (mezi NOW a holding_start - nabíjíme PŘED holding fází!)
             candidates = []
             for timestamp_str, price in prices.items():
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
-                    if now <= timestamp <= holding_end:
+                    # Make timezone aware
+                    if timestamp.tzinfo is None:
+                        timestamp = dt_util.as_local(timestamp)
+                    if now <= timestamp < holding_start:
                         candidates.append({"timestamp": timestamp_str, "price": price})
                 except (ValueError, TypeError):
                     continue
@@ -549,8 +707,13 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     minutes_ago = int(time_since_end.total_seconds() // 60)
                     self._time_remaining = f"před {minutes_ago} min"
                 else:
+                    # Více než hodinu po skončení - smazat planned window
                     self._current_state = "standby"
                     self._time_remaining = None
+                    self._planned_window = None  # Vyčistit starý plán
+                    _LOGGER.debug(
+                        f"Clearing old planned window (ended at {holding_end.isoformat()})"
+                    )
 
         except (ValueError, TypeError, KeyError) as e:
             _LOGGER.warning(f"Failed to parse balancing window times: {e}")

@@ -289,38 +289,16 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 )
                 balancing_reason = balancing_plan.get("reason", "unknown")
 
-                # NOVÁ STRATEGIE: Najít nejlevnější intervaly pro nabíjení
-                # Nabíjet můžeme od teď až do konce holding period
-                # Potřebujeme X intervalů pro nabití na 100%
-                charging_power_kwh_per_15min = 0.75
-                energy_needed = max(0, max_capacity - battery_kwh)
-                intervals_needed = (
-                    int(energy_needed / charging_power_kwh_per_15min) + 1
-                )  # +1 pro bezpečnost
-
-                # Najít nejlevnější intervaly mezi now a balancing_end
-                now = dt_util.now()
-                charging_candidates = [
-                    p
-                    for p in spot_prices
-                    if p.get("time")
-                    and now <= datetime.fromisoformat(p["time"]) <= balancing_end
-                ]
-
-                # Seřadit podle ceny (nejlevnější první)
-                charging_candidates.sort(key=lambda p: p.get("price", 999))
-
-                # Vybrat N nejlevnějších intervalů
-                cheapest_intervals = charging_candidates[:intervals_needed]
+                # Použít charging intervals z balancing plánu
+                charging_intervals_str = balancing_plan.get("charging_intervals", [])
                 balancing_charging_intervals = {
-                    datetime.fromisoformat(p["time"]) for p in cheapest_intervals
+                    datetime.fromisoformat(ts) for ts in charging_intervals_str
                 }
 
                 _LOGGER.info(
                     f"Balancing plan: {balancing_reason}, "
                     f"holding {balancing_start.strftime('%H:%M')}-{balancing_end.strftime('%H:%M')}, "
-                    f"charging in {len(balancing_charging_intervals)} cheapest intervals "
-                    f"(need {energy_needed:.1f} kWh)"
+                    f"charging in {len(balancing_charging_intervals)} intervals"
                 )
             except (ValueError, TypeError) as e:
                 _LOGGER.warning(f"Failed to parse balancing plan times: {e}")

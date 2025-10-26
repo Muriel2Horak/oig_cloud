@@ -4173,7 +4173,7 @@
             height: 100%;
             display: flex !important;
             flex-direction: row !important;
-            align-items: center !important;
+            align-items: flex-end !important;
             justify-content: flex-start !important;
             gap: 8px;
             position: relative;
@@ -4183,7 +4183,7 @@
         .tile-main-content {
             display: flex;
             flex-direction: row;
-            align-items: center;
+            align-items: flex-end;
             gap: 8px;
             flex: 1;
         }
