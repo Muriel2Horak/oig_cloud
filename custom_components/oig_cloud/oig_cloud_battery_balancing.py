@@ -98,8 +98,8 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             return
 
         try:
-            # Hledat SoC sensor
-            soc_entity_id = f"sensor.oig_{self._box_id}_battery_soc"
+            # Hledat SoC sensor (battery capacity percentage)
+            soc_entity_id = f"sensor.oig_{self._box_id}_batt_bat_c"
             
             # Získat historii posledních 30 dní
             end_time = dt_util.now()
