@@ -172,6 +172,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
             # NOVÉ: Zkusit získat adaptivní profily
             adaptive_profiles = await self._get_adaptive_load_prediction()
+            
+            # NOVÉ: Získat balancing plán
+            balancing_plan = self._get_balancing_plan()
 
             if current_capacity is None or not spot_prices:
                 _LOGGER.info(
@@ -189,6 +192,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=adaptive_profiles,
+                balancing_plan=balancing_plan,
             )
 
             self._last_update = datetime.now()
@@ -238,6 +242,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         solar_forecast: Dict[str, Any],
         load_avg_sensors: Dict[str, Any],
         adaptive_profiles: Optional[Dict[str, Any]] = None,
+        balancing_plan: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Vypočítat timeline predikce baterie.
@@ -250,6 +255,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_forecast: Solární předpověď (hodinové hodnoty)
             load_avg_sensors: Load average senzory
             adaptive_profiles: Dict s profily (today_profile, tomorrow_profile) nebo None pro fallback
+            balancing_plan: Dict s plánem balancování (holding_start, holding_end, reason) nebo None
 
         Returns:
             List timeline bodů s predikcí
@@ -258,6 +264,23 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         battery_kwh = current_capacity
 
         today = dt_util.now().date()
+        
+        # Parse balancing plan times if exists
+        balancing_start: Optional[datetime] = None
+        balancing_end: Optional[datetime] = None
+        balancing_reason: Optional[str] = None
+        
+        if balancing_plan:
+            try:
+                balancing_start = datetime.fromisoformat(balancing_plan.get("holding_start", ""))
+                balancing_end = datetime.fromisoformat(balancing_plan.get("holding_end", ""))
+                balancing_reason = balancing_plan.get("reason", "unknown")
+                _LOGGER.info(
+                    f"Balancing plan active: {balancing_reason} from {balancing_start} to {balancing_end}"
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(f"Failed to parse balancing plan times: {e}")
+                balancing_plan = None
 
         # Získat battery efficiency pro výpočty
         efficiency = self._get_battery_efficiency()
@@ -356,6 +379,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # if battery_kwh < min_capacity:
             #     battery_kwh = min_capacity
 
+            # Určit reason pro tento interval
+            reason = "normal"
+            if balancing_plan and balancing_start and balancing_end:
+                # Zkontrolovat jestli tento timestamp spadá do balancing window
+                if balancing_start <= timestamp <= balancing_end:
+                    reason = f"balancing_{balancing_reason}"
+                    
             # Přidat bod do timeline
             timeline.append(
                 {
@@ -371,6 +401,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
                     "mode": "UPS" if is_ups_mode else "Home",
+                    "reason": reason,
                 }
             )
 
@@ -884,6 +915,32 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         return {"today": today, "tomorrow": tomorrow}
 
+    def _get_balancing_plan(self) -> Optional[Dict[str, Any]]:
+        """Získat plán balancování z battery_balancing senzoru."""
+        if not self._hass:
+            return None
+
+        sensor_id = f"sensor.oig_{self._box_id}_battery_balancing"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or not state.attributes:
+            _LOGGER.debug(f"Battery balancing sensor {sensor_id} not available")
+            return None
+
+        # Načíst planned window z atributů
+        planned = state.attributes.get("planned")
+        
+        if not planned:
+            _LOGGER.debug("No balancing window planned")
+            return None
+            
+        _LOGGER.info(
+            f"Balancing plan: {planned.get('reason')} from {planned.get('holding_start')} "
+            f"to {planned.get('holding_end')}"
+        )
+        
+        return planned
+
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """
         Získat všechny load_avg senzory pro box.
@@ -1323,6 +1380,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                         timeline[idx]["grid_charge_kwh"] = (
                             old_charge + charge_per_interval
                         )
+                        # Ponechat existující reason (může být balancing_*)
+                        if timeline[idx].get("reason") == "normal":
+                            timeline[idx]["reason"] = "protection_charge"
                         charged += charge_per_interval
 
                         _LOGGER.info(
@@ -1415,6 +1475,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                     # Nabít minimum (ne full charge!)
                     old_charge = timeline[idx].get("grid_charge_kwh", 0)
                     timeline[idx]["grid_charge_kwh"] = old_charge + min_charge
+                    # Ponechat existující reason (může být balancing_*)
+                    if timeline[idx].get("reason") == "normal":
+                        timeline[idx]["reason"] = "death_valley_fix"
 
                     # Přepočítat timeline
                     self._recalculate_timeline_from_index(timeline, idx)
@@ -1434,6 +1497,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Vyplatí se nabít!
                 old_charge = timeline[idx].get("grid_charge_kwh", 0)
                 timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
+                # Ponechat existující reason (může být balancing_*)
+                if timeline[idx].get("reason") == "normal":
+                    timeline[idx]["reason"] = "economic_charge"
 
                 # Přepočítat timeline
                 self._recalculate_timeline_from_index(timeline, idx)
@@ -1589,6 +1655,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
                     old_charge = timeline[idx].get("grid_charge_kwh", 0)
                     timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
+                    # Ponechat existující reason (může být balancing_*)
+                    if timeline[idx].get("reason") == "normal":
+                        timeline[idx]["reason"] = "legacy_critical"
                     added_energy += charge_per_interval
 
                     _LOGGER.debug(
@@ -1683,6 +1752,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             # Přidat nabíjení
             old_charge = timeline[idx].get("grid_charge_kwh", 0)
             timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
+            # Ponechat existující reason (může být balancing_*)
+            if timeline[idx].get("reason") == "normal":
+                timeline[idx]["reason"] = "legacy_target"
 
             _LOGGER.debug(
                 f"Target charging: Adding {charge_per_interval:.2f}kWh at index {idx} "
@@ -1766,6 +1838,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             charge_kwh = charging_power_kw / 4.0  # kW → kWh za 15min
             old_charge = timeline[charging_index].get("grid_charge_kwh", 0)
             timeline[charging_index]["grid_charge_kwh"] = old_charge + charge_kwh
+            # Ponechat existující reason (může být balancing_*)
+            if timeline[charging_index].get("reason") == "normal":
+                timeline[charging_index]["reason"] = "legacy_violation_fix"
 
             _LOGGER.debug(
                 f"Adding {charge_kwh:.2f}kWh charging at index {charging_index}, price={timeline[charging_index]['spot_price_czk']:.2f}CZK"
@@ -1832,6 +1907,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             charge_kwh = charging_power_kw / 4.0  # kW → kWh za 15min
             old_charge = timeline[charging_index].get("grid_charge_kwh", 0)
             timeline[charging_index]["grid_charge_kwh"] = old_charge + charge_kwh
+            # Ponechat existující reason (může být balancing_*)
+            if timeline[charging_index].get("reason") == "normal":
+                timeline[charging_index]["reason"] = "legacy_target_ensure"
 
             _LOGGER.debug(
                 f"Adding {charge_kwh:.2f}kWh charging at index {charging_index} for target capacity"
