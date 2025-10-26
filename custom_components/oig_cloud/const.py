@@ -25,6 +25,9 @@ CONF_BOILER_TARGET_TEMP_C = "boiler_target_temp_c"
 CONF_BOILER_COLD_INLET_TEMP_C = "boiler_cold_inlet_temp_c"
 CONF_BOILER_TEMP_SENSOR_TOP = "boiler_temp_sensor_top"
 CONF_BOILER_TEMP_SENSOR_BOTTOM = "boiler_temp_sensor_bottom"
+CONF_BOILER_TEMP_SENSOR_POSITION = (
+    "boiler_temp_sensor_position"  # NEW: Pozice při 1 teploměru
+)
 CONF_BOILER_STRATIFICATION_MODE = "boiler_stratification_mode"
 CONF_BOILER_TWO_ZONE_SPLIT_RATIO = "boiler_two_zone_split_ratio"
 CONF_BOILER_HEATER_POWER_KW_ENTITY = "boiler_heater_power_kw_entity"
@@ -32,6 +35,7 @@ CONF_BOILER_HEATER_SWITCH_ENTITY = "boiler_heater_switch_entity"
 CONF_BOILER_ALT_HEATER_SWITCH_ENTITY = "boiler_alt_heater_switch_entity"
 CONF_BOILER_HAS_ALTERNATIVE_HEATING = "boiler_has_alternative_heating"
 CONF_BOILER_ALT_COST_KWH = "boiler_alt_cost_kwh"
+CONF_BOILER_ALT_ENERGY_SENSOR = "boiler_alt_energy_sensor"  # NEW: Měřič alternativy
 CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
@@ -49,12 +53,15 @@ DEFAULT_EXTENDED_SCAN_INTERVAL = 300
 # Boiler defaults
 DEFAULT_BOILER_TARGET_TEMP_C = 60.0
 DEFAULT_BOILER_COLD_INLET_TEMP_C = 10.0
-DEFAULT_BOILER_STRATIFICATION_MODE = "simple_avg"
+DEFAULT_BOILER_TEMP_SENSOR_POSITION = (
+    "top"  # top | upper_quarter | middle | lower_quarter
+)
+DEFAULT_BOILER_STRATIFICATION_MODE = "two_zone"  # Changed from simple_avg
 DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
 DEFAULT_BOILER_HEATER_POWER_KW_ENTITY = "sensor.oig_2206237016_boiler_install_power"
 DEFAULT_BOILER_DEADLINE_TIME = "20:00"
 DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
-DEFAULT_BOILER_PLAN_SLOT_MINUTES = 30
+DEFAULT_BOILER_PLAN_SLOT_MINUTES = 15  # Changed from 30 to 15min intervals
 
 # Energetic constant for water heating (kWh per liter per °C)
 BOILER_ENERGY_CONSTANT_KWH_L_C = 0.001163  # ≈ 4.186 kJ/kg/°C / 3600

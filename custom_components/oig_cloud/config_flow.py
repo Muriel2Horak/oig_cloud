@@ -1925,6 +1925,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         """Wizard Step: Boiler module configuration."""
         from .const import (
             CONF_BOILER_ALT_COST_KWH,
+            CONF_BOILER_ALT_ENERGY_SENSOR,
             CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
@@ -1937,6 +1938,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_STRATIFICATION_MODE,
             CONF_BOILER_TARGET_TEMP_C,
             CONF_BOILER_TEMP_SENSOR_BOTTOM,
+            CONF_BOILER_TEMP_SENSOR_POSITION,
             CONF_BOILER_TEMP_SENSOR_TOP,
             CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
             CONF_BOILER_VOLUME_L,
@@ -1947,6 +1949,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             DEFAULT_BOILER_PLAN_SLOT_MINUTES,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
+            DEFAULT_BOILER_TEMP_SENSOR_POSITION,
             DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
         )
 
@@ -2018,6 +2021,24 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             domain="sensor", device_class="temperature"
                         )
                     ),
+                    # NEW: Pozice senzoru (jen když nemá dolní senzor)
+                    vol.Optional(
+                        CONF_BOILER_TEMP_SENSOR_POSITION,
+                        default=defaults.get(
+                            CONF_BOILER_TEMP_SENSOR_POSITION,
+                            DEFAULT_BOILER_TEMP_SENSOR_POSITION,
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": "top", "label": "Přímo nahoře (100%)"},
+                                {"value": "upper_quarter", "label": "Horní čtvrtina (75%)"},
+                                {"value": "middle", "label": "Polovina (50%)"},
+                                {"value": "lower_quarter", "label": "Dolní čtvrtina (25%)"},
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Optional(
                         CONF_BOILER_STRATIFICATION_MODE,
                         default=defaults.get(
@@ -2082,6 +2103,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             max=50,
                             step=0.1,
                             mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    # NEW: Senzor pro měření alternativní energie
+                    vol.Optional(
+                        CONF_BOILER_ALT_ENERGY_SENSOR,
+                        default=defaults.get(CONF_BOILER_ALT_ENERGY_SENSOR, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor", device_class="energy"
                         )
                     ),
                     # Cenový senzor - auto-discovery pro OIG spot price
