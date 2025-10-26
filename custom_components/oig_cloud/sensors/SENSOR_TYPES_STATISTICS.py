@@ -298,6 +298,18 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Aktuální predikovaná kapacita baterie (kWh). Atributy obsahují kompletní timeline predikce.",
     },
+    "battery_balancing": {
+        "name": "Battery Balancing Status",
+        "name_cs": "Stav vyrovnání baterie",
+        "unit": None,
+        "icon": "mdi:battery-heart-variant",
+        "device_class": None,
+        "state_class": None,
+        "sensor_type_category": "battery_balancing",
+        "device_mapping": "analytics",  # Specializovaný senzor pro battery balancing
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "description": "Stav vyrovnání článků baterie. Zobrazuje kdy bylo poslední vyrovnání, kolik dní uplynulo, zda je naplánováno další a předpokládané náklady.",
+    },
     "grid_charging_planned": {
         "name": "Grid Charging Planned",
         "name_cs": "Plánované nabíjení ze sítě",
