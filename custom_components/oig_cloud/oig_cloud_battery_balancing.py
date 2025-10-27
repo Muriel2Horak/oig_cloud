@@ -1215,18 +1215,20 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             # Zjistit ve kterém jsme stavu
             if now >= holding_start and now <= holding_end:
-                # BALANCING fáze - ale pouze pokud jsme na 100%!
-                if current_soc >= 99.5:
+                # BALANCING fáze - ale pouze pokud jsme na ~100%!
+                # OPRAVA: Snížit práh z 99.5% na 98% kvůli zaokrouhlení
+                # Pokud je baterie na max capacity, je to holding i když SoC ukazuje 99%
+                if current_soc >= 98.0:
                     self._current_state = "balancing"
                     _LOGGER.info(
-                        f"[State] BALANCING - holding at 100% until {holding_end.strftime('%H:%M')}"
+                        f"[State] BALANCING - holding at {current_soc:.1f}% until {holding_end.strftime('%H:%M')}"
                     )
                     remaining = holding_end - now
                     hours = int(remaining.total_seconds() // 3600)
                     minutes = int((remaining.total_seconds() % 3600) // 60)
                     self._time_remaining = f"{hours:02d}:{minutes:02d}"
                 else:
-                    # V holding okně, ale ještě nejsme na 100% → CHARGING
+                    # V holding okně, ale ještě nejsme na ~100% → CHARGING
                     self._current_state = "charging"
                     _LOGGER.warning(
                         f"[State] In holding window but SoC only {current_soc}% - continuing CHARGING"

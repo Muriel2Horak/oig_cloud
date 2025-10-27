@@ -3844,6 +3844,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         # DŮLEŽITÉ: battery_capacity v timeline je PŘED grid charge!
                         # Musíme přičíst grid_charge_kwh pro správné porovnání
                         is_actually_charging = False
+                        reason = point.get("reason", "")
+                        is_balancing_holding = "balancing_holding" in reason
 
                         if prev_battery_capacity is not None:
                             # Kapacita PO grid charge = kapacita před + grid charge
@@ -3879,6 +3881,16 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             )  # Energie z gridu
                             total_energy += grid_charge_kwh
                             total_cost += cost_czk
+                        elif is_balancing_holding:
+                            # BALANCING HOLDING: Baterie na 100%, grid pokrývá spotřebu
+                            # Nezapočítáváme do total_energy (nebyla energie ze sítě DO baterie)
+                            # Ale chceme interval zobrazit v grid_charging_planned
+                            consumption_kwh = point.get("consumption_kwh", 0)
+                            holding_cost = consumption_kwh * spot_price_czk
+                            interval_data["cost_czk"] = round(holding_cost, 2)
+                            interval_data["battery_charge_kwh"] = 0.0
+                            interval_data["note"] = "Balancing holding - battery at 100%, grid covers consumption"
+                            # Holding cost se NEZAPOČÍTÁVÁ do total_cost (to je jen charging cost)
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
                             interval_data["cost_czk"] = 0.0
