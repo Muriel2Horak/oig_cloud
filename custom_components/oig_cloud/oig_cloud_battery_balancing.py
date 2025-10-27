@@ -81,10 +81,11 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planned_window: Optional[Dict[str, Any]] = None
         self._current_state: str = "standby"  # charging/balancing/planned/standby
         self._time_remaining: Optional[str] = None  # HH:MM format
-        
+
         # Hodinový planning loop
         self._planning_task: Optional[Any] = None  # asyncio.Task
         self._last_planning_check: Optional[datetime] = None
+        self._last_planning_run: Optional[datetime] = None  # Pro rate limiting
 
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
@@ -99,12 +100,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # Spustit počáteční detekci z historie
         await self._detect_last_balancing_from_history()
-        
+
         # START: Hodinový planning loop
         _LOGGER.info("Starting hourly balancing planning loop")
-        self._planning_task = self._hass.async_create_task(
-            self._planning_loop()
-        )
+        self._planning_task = self._hass.async_create_task(self._planning_loop())
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA - zrušit planning task."""
@@ -115,29 +114,29 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _planning_loop(self) -> None:
         """
         Hodinový planning loop - validace a plánování balancování.
-        
+
         Běží samostatně 1× za hodinu místo při každém coordinator update.
         """
         try:
             # Počkat na forecast data (max 5 min)
             await self._wait_for_forecast_ready(timeout=300)
-            
+
             _LOGGER.info("✅ Planning loop started - will run every hour")
-            
+
             while True:
                 try:
                     # Validovat/naplánovat
                     await self._validate_and_plan()
-                    
+
                     # Update timestamp
                     self._last_planning_check = dt_util.now()
-                    
+
                 except Exception as e:
                     _LOGGER.error(f"Planning loop iteration error: {e}", exc_info=True)
-                
+
                 # Čekat 1 hodinu (3600s)
                 await asyncio.sleep(3600)
-                
+
         except asyncio.CancelledError:
             _LOGGER.info("Planning loop cancelled")
         except Exception as e:
@@ -146,42 +145,44 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _wait_for_forecast_ready(self, timeout: int = 300) -> None:
         """
         Počkat až forecast sensor má data.
-        
+
         Args:
             timeout: Max čekání v sekundách (default 5 min)
         """
         _LOGGER.info("⏳ Waiting for forecast sensor to be ready...")
         start = dt_util.now()
-        
+
         while True:
             # Zkontrolovat timeout
             elapsed = (dt_util.now() - start).total_seconds()
             if elapsed > timeout:
                 _LOGGER.error(f"❌ Timeout waiting for forecast ({timeout}s)")
                 return
-            
+
             # Zkusit získat forecast
             forecast_sensor = self._get_forecast_sensor()
             if forecast_sensor:
                 timeline = forecast_sensor.get_timeline_data()
                 if timeline and len(timeline) > 0:
-                    _LOGGER.info(f"✅ Forecast ready with {len(timeline)} timeline points")
+                    _LOGGER.info(
+                        f"✅ Forecast ready with {len(timeline)} timeline points"
+                    )
                     return
-            
+
             # Čekat 10s a zkusit znovu
             await asyncio.sleep(10)
 
     async def _validate_and_plan(self) -> None:
         """
         Validovat existující plán nebo vytvořit nový.
-        
+
         Process:
         1. Pokud plán existuje → validovat
         2. Pokud není platný → zrušit
         3. Pokud potřeba → naplánovat nový
         """
         _LOGGER.debug("🔍 Validate and plan check...")
-        
+
         # 1. VALIDACE EXISTUJÍCÍHO PLÁNU
         if self._planned_window:
             is_valid = await self._validate_existing_plan()
@@ -197,25 +198,25 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 self._planned_window = None
                 # Zrušit v forecastu
                 await self._cancel_active_plan_in_forecast()
-        
+
         # 2. ZKONTROLOVAT POTŘEBU PLÁNOVÁNÍ
         config = self._get_balancing_config()
         if not config["enabled"]:
             _LOGGER.debug("Balancing disabled in config")
             return
-        
+
         days = self._days_since_last
         interval = config["interval_days"]  # Default 7 dní
-        
+
         # FORCED MODE ENFORCEMENT (den 8+):
         # Pokud days >= interval + 1 (den 8+), MUSÍME naplánovat balancování
         # i když není ideální okno. Forced mode = must run.
         is_forced = days >= interval + 1
-        
+
         if days < interval - 2:  # < 5. den
             _LOGGER.debug(f"Day {days} - too early for planning")
             return
-        
+
         # 3. SPUSTIT PLÁNOVÁNÍ
         if is_forced:
             _LOGGER.warning(
@@ -224,35 +225,33 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             )
         else:
             _LOGGER.info(f"📅 Day {days} - triggering balancing planning")
-        
+
         await self._plan_balancing_window(forced=is_forced)
 
     async def _validate_existing_plan(self) -> bool:
         """
         Zkontrolovat jestli existující plán je stále platný.
-        
+
         Returns:
             True pokud plán je OK, False pokud skončil nebo je invalid
         """
         if not self._planned_window:
             return False
-        
+
         try:
             holding_start = datetime.fromisoformat(
                 self._planned_window["holding_start"]
             )
-            holding_end = datetime.fromisoformat(
-                self._planned_window["holding_end"]
-            )
-            
+            holding_end = datetime.fromisoformat(self._planned_window["holding_end"])
+
             # Normalize timezone
             if holding_start.tzinfo is None:
                 holding_start = dt_util.as_local(holding_start)
             if holding_end.tzinfo is None:
                 holding_end = dt_util.as_local(holding_end)
-            
+
             now = dt_util.now()
-            
+
             # Skončil? (+ 1h grace period)
             if now > holding_end + timedelta(hours=1):
                 _LOGGER.debug(
@@ -260,10 +259,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     f"now is {now.strftime('%H:%M')}"
                 )
                 return False
-            
+
             # Stále aktivní nebo v budoucnosti
             return True
-            
+
         except (ValueError, TypeError, KeyError) as e:
             _LOGGER.error(f"Plan validation error: {e}")
             return False
@@ -273,13 +272,16 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         forecast_sensor = self._get_forecast_sensor()
         if not forecast_sensor:
             return
-        
+
         # Pokud forecast má aktivní plán → zrušit
-        if hasattr(forecast_sensor, '_active_charging_plan') and forecast_sensor._active_charging_plan:
+        if (
+            hasattr(forecast_sensor, "_active_charging_plan")
+            and forecast_sensor._active_charging_plan
+        ):
             _LOGGER.info("Cancelling active plan in forecast sensor")
             forecast_sensor._active_charging_plan = None
             forecast_sensor._plan_status = "none"
-            if hasattr(forecast_sensor, 'async_write_ha_state'):
+            if hasattr(forecast_sensor, "async_write_ha_state"):
                 forecast_sensor.async_write_ha_state()
 
     async def _detect_last_balancing_from_history(self) -> None:
@@ -445,10 +447,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _plan_balancing_window(self, forced: bool = False) -> None:
         """
         Planning logika s SIMULATION-BASED workflow.
-        
+
         Args:
             forced: Pokud True, musí naplánovat i bez ideálního okna (den 8+)
-        
+
         Process:
         1. Check existing plan status (držet se dokud neskončí)
         2. Evaluate need (days_since_last)
@@ -463,11 +465,13 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         if self._last_planning_run:
             elapsed = (now - self._last_planning_run).total_seconds()
             if elapsed < 300:  # 5 minut
-                _LOGGER.debug(f"Planning skipped - last run {elapsed:.0f}s ago (< 5min)")
+                _LOGGER.debug(
+                    f"Planning skipped - last run {elapsed:.0f}s ago (< 5min)"
+                )
                 return
-        
+
         config = self._get_balancing_config()
-        
+
         if not config["enabled"]:
             self._planned_window = None
             self._cancel_active_plan()
@@ -688,7 +692,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._update_current_state()
         if self._hass:
             self.async_write_ha_state()
-        
+
         # Mark planning run timestamp
         self._last_planning_run = dt_util.now()
 
