@@ -2869,38 +2869,49 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             if not self._hass:
                 _LOGGER.error("[Planner] No hass instance available")
                 return {"feasible": False, "status": "error", "error": "No hass"}
-            
+
             # Číst ze spot price senzoru (stejně jako dřív balancing)
             sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
             state = self._hass.states.get(sensor_id)
 
             if not state or state.state in ("unavailable", "unknown", None):
                 _LOGGER.error(f"[Planner] Spot price sensor {sensor_id} not available")
-                return {"feasible": False, "status": "error", "error": "No spot prices sensor"}
+                return {
+                    "feasible": False,
+                    "status": "error",
+                    "error": "No spot prices sensor",
+                }
 
             if not state.attributes:
-                _LOGGER.error(f"[Planner] Spot price sensor {sensor_id} has no attributes")
-                return {"feasible": False, "status": "error", "error": "No spot prices data"}
+                _LOGGER.error(
+                    f"[Planner] Spot price sensor {sensor_id} has no attributes"
+                )
+                return {
+                    "feasible": False,
+                    "status": "error",
+                    "error": "No spot prices data",
+                }
 
             # Format: [{timestamp, price, ...}, ...]
             prices_list = state.attributes.get("prices", [])
             if not prices_list:
                 _LOGGER.error("[Planner] No prices in spot price sensor")
-                return {"feasible": False, "status": "error", "error": "Empty spot prices"}
-            
+                return {
+                    "feasible": False,
+                    "status": "error",
+                    "error": "Empty spot prices",
+                }
+
             # Převést na timeline formát
             spot_prices = []
             for price_point in prices_list:
                 timestamp = price_point.get("timestamp")
                 price = price_point.get("price")
                 if timestamp and price is not None:
-                    spot_prices.append({
-                        "time": timestamp,
-                        "price": float(price)
-                    })
-            
+                    spot_prices.append({"time": timestamp, "price": float(price)})
+
             _LOGGER.debug(f"[Planner] Loaded {len(spot_prices)} spot prices")
-            
+
         except Exception as e:
             _LOGGER.error(f"[Planner] Failed to get spot prices: {e}")
             return {"feasible": False, "status": "error", "error": str(e)}
@@ -3084,6 +3095,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         for price_point in spot_prices:
             try:
                 timestamp = datetime.fromisoformat(price_point["time"])
+                # Make timezone aware if needed
+                if timestamp.tzinfo is None:
+                    timestamp = dt_util.as_local(timestamp)
                 if start_time <= timestamp < end_time:
                     available_intervals.append(
                         {
