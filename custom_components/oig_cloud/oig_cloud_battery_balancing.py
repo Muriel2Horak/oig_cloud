@@ -542,8 +542,55 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 if holding_end.tzinfo is None:
                     holding_end = dt_util.as_local(holding_end)
 
+                # CRITICAL CHECK: If holding window is active but battery not charged, CANCEL plan
+                if now >= holding_start and now <= holding_end:
+                    current_soc = self._get_current_soc()
+                    if current_soc < 95.0:  # Should be ~100% during holding
+                        _LOGGER.error(
+                            f"❌ PLAN FAILURE: Holding window active but battery only {current_soc:.1f}% "
+                            f"(expected 95%+). Cancelling failed plan and re-planning."
+                        )
+                        self._planned_window = None
+                        self._cancel_active_plan()
+                        # Continue to create new plan below (don't return)
+                    else:
+                        _LOGGER.debug(
+                            f"✅ Holding window active, battery at {current_soc:.1f}%, keeping plan"
+                        )
+                        return  # Plan is working, keep it
+
+                # CRITICAL CHECK: If all charging intervals are in the past, plan cannot work
+                # (Only check if plan still exists - might have been cancelled above)
+                if self._planned_window and now < holding_start:
+                    charging_intervals = self._planned_window.get("charging_intervals", [])
+                    if charging_intervals:
+                        all_past = True
+                        for interval_str in charging_intervals:
+                            try:
+                                interval_time = datetime.fromisoformat(interval_str)
+                                if interval_time.tzinfo is None:
+                                    interval_time = dt_util.as_local(interval_time)
+                                if interval_time > now:
+                                    all_past = False
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                        
+                        if all_past:
+                            _LOGGER.error(
+                                f"❌ PLAN FAILURE: All charging intervals are in the past! "
+                                f"Cancelling obsolete plan and re-planning."
+                            )
+                            self._planned_window = None
+                            self._cancel_active_plan()
+                            # Continue to create new plan below (don't return)
+                        else:
+                            _LOGGER.debug(
+                                f"Plan has future charging intervals, keeping it"
+                            )
+
                 # Pokud okno ještě neskončilo + 1h grace period, DRŽET SE HO
-                if now < holding_end + timedelta(hours=1):
+                elif now < holding_end + timedelta(hours=1):
                     _LOGGER.debug(
                         f"Keeping existing planned window: {holding_start.strftime('%H:%M')}-{holding_end.strftime('%H:%M')}"
                     )
