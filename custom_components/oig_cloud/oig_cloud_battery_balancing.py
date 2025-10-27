@@ -1,8 +1,11 @@
 """Sensor pro správu vyrovnání článků baterie (battery cell balancing)."""
 
 import logging
+import json
+import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -77,6 +80,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planned_window: Optional[Dict[str, Any]] = None
         self._current_state: str = "standby"  # charging/balancing/planned/standby
         self._time_remaining: Optional[str] = None  # HH:MM format
+        
+        # Profiling - recent history (5 posledních)
+        self._recent_balancing_history: List[Dict[str, Any]] = []
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA."""
@@ -212,8 +218,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             # 2. Update status based on days_since
             self._update_balancing_status()
 
-            # 3. Planning logic - najít optimální okno (nebo držet existující)
-            self._plan_balancing_window()
+            # 3. Planning logic - najít optimální okno (async background task)
+            if self._hass:
+                self._hass.async_create_task(self._plan_balancing_window())
 
             # 4. Přepočítat charging intervals - REMOVED
             # Unified planner již má charging intervals spočítané v plánu
@@ -252,27 +259,27 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         else:
             self._status = "ok"
 
-    def _plan_balancing_window(self) -> None:
+    async def _plan_balancing_window(self) -> None:
         """
-        Planning logika pro hledání optimálního okna - REFACTORED.
-
-        Nyní používá unified charging planner z battery forecast senzoru.
-        Metoda jen určuje parametry (target, deadline, mode) a volá plan_charging_to_target().
-
-        Prioritní úrovně:
-        - OPPORTUNISTIC (0-4 dní): Nepovinné, jen pokud velmi levné
-        - ECONOMIC (5-7 dní): Ekonomický režim, najdi levné intervaly
-        - FORCED (8+ dní): Forced režim, nabij i přes drahé ceny
+        Planning logika s SIMULATION-BASED workflow.
+        
+        Process:
+        1. Check existing plan status (držet se dokud neskončí)
+        2. Evaluate need (days_since_last)
+        3. Find candidate windows (s historical patterns)
+        4. Simulate každý kandidát
+        5. Vybrat nejlevnější feasible
+        6. Aplikovat plan
+        7. Alerting pokud drahý
         """
         config = self._get_balancing_config()
 
         if not config["enabled"]:
             self._planned_window = None
-            # Zrušit aktivní plán pokud existuje
             self._cancel_active_plan()
             return
 
-        # Pokud už máme naplánované okno, zkontrolovat jestli je stále aktivní
+        # 1. CHECK EXISTING PLAN
         if self._planned_window:
             now = dt_util.now()
             try:
@@ -297,132 +304,202 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.info(
                         f"Planned window completed at {holding_end.strftime('%H:%M')}, clearing"
                     )
+                    
+                    # PROFILING: Uložit dokončený plán do DB
+                    if self._planned_window and self._hass:
+                        self._hass.async_create_task(
+                            self._record_balancing_completion(self._planned_window)
+                        )
+                    
+                    # Update last_balancing
+                    self._last_balancing = holding_end
+                    self._days_since_last = 0
+                    
+                    # Clear plan
                     self._planned_window = None
-                    # Zrušit aktivní plán
                     self._cancel_active_plan()
             except (ValueError, TypeError, KeyError) as e:
                 _LOGGER.warning(f"Invalid planned_window format: {e}, clearing")
                 self._planned_window = None
                 self._cancel_active_plan()
 
+        # 2. EVALUATE NEED
         days = self._days_since_last
-
-        # Určit mode a deadline podle dnů od posledního balancování
         now = dt_util.now()
         hold_hours = config["hold_hours"]
 
-        # Opportunistic: dny 0-4 - nepovinné, jen pokud super levné
-        if days < config["interval_days"] - 2:  # Dny 0-4
-            _LOGGER.debug(f"Day {days} - too early for balancing, skipping")
+        # Too early?
+        if days < config["interval_days"] - 2:  # < 5. den
+            _LOGGER.debug(f"Day {days} - too early, skip")
             return
 
-        # Economic: dny 5-7 - hledej levné intervaly
-        elif days < config["interval_days"] + 1:  # Dny 5-7
+        # Determine mode & deadline
+        if days < config["interval_days"] + 1:  # Dny 5-7
             mode = "economic"
-            # Deadline: konec 7. dne (23:59 toho dne)
             days_until_deadline = config["interval_days"] - days
             deadline = (now + timedelta(days=days_until_deadline)).replace(
                 hour=23, minute=59, second=59, microsecond=0
             )
-            _LOGGER.info(
-                f"Day {days} - ECONOMIC mode, deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
-            )
-
-        # Forced: den 8+ - MUSÍ nabít i když drahé
         else:  # Den 8+
             mode = "forced"
-            # Deadline: co nejdříve (24h)
-            deadline = now + timedelta(hours=24)
-            _LOGGER.warning(
-                f"Day {days} - FORCED mode (overdue), deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
+            days_overdue = days - config["interval_days"]
+            deadline = (now + timedelta(days=2 - days_overdue)).replace(
+                hour=23, minute=59, second=59, microsecond=0
             )
 
-        # Získat forecast sensor - UNIFIED PLANNER
-        forecast_sensor = self._get_forecast_sensor()
-        if not forecast_sensor:
-            _LOGGER.error("Cannot get forecast sensor for unified planner")
-            return
-
-        # Zavolat unified planner
-        plan_result = forecast_sensor.plan_charging_to_target(
-            target_soc_percent=100.0,
-            deadline=deadline,
-            holding_duration_hours=hold_hours,
-            mode=mode,
-            requester="balancing",
+        _LOGGER.info(
+            f"📅 Day {days} - {mode.upper()} mode, "
+            f"deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
         )
 
-        # Vyhodnotit výsledek
-        if not plan_result.get("feasible"):
-            status = plan_result.get("status")
+        # 3. GET FORECAST & TIMELINE
+        forecast_sensor = self._get_forecast_sensor()
+        if not forecast_sensor:
+            _LOGGER.error("Cannot get forecast sensor")
+            return
 
-            if status == "conflict":
-                conflict = plan_result.get("conflict", {})
-                _LOGGER.warning(
-                    f"Balancing plan CONFLICT with {conflict.get('active_plan_requester')}, "
-                    f"predicted SOC at deadline: {conflict.get('predicted_soc_at_deadline', 0):.1f}%"
-                )
-                # V economic mode: akceptuj konflikt, forecast přednost
-                # V forced mode: warning ale neodstranuj aktivní plán
-                return
+        timeline = forecast_sensor.get_timeline_data()
+        if not timeline:
+            _LOGGER.error("No timeline data available")
+            return
 
-            elif status == "partial":
-                achieved = plan_result.get("achieved_soc_percent", 0)
-                _LOGGER.warning(
-                    f"Balancing plan PARTIAL: can only achieve {achieved:.1f}% (target 100%)"
-                )
-                # V economic mode: odmítnout
-                if mode == "economic":
-                    _LOGGER.info("Economic mode - rejecting partial plan")
-                    return
-                # V forced mode: přijmout i partial
-                else:
-                    _LOGGER.warning("Forced mode - accepting partial plan")
+        # 4. FIND CANDIDATE WINDOWS (s historical patterns)
+        candidates = await self._find_candidate_windows(
+            timeline=timeline,
+            hold_hours=hold_hours,
+            deadline=deadline,
+            mode=mode,
+        )
 
-            else:
-                _LOGGER.error(f"Balancing plan failed: {status}")
-                return
+        if not candidates:
+            _LOGGER.warning("No feasible candidate windows found")
+            return
 
-        # ÚSPĚCH - aplikovat plán
-        if forecast_sensor.apply_charging_plan(plan_result):
-            # Konvertovat do našeho formátu _planned_window
-            charging_plan = plan_result["charging_plan"]
+        # 5. SIMULATE každý kandidát
+        best_simulation = None
+        best_cost = float('inf')
+        best_candidate = None
 
-            self._planned_window = {
-                "holding_start": charging_plan["holding_start"],
-                "holding_end": charging_plan["holding_end"],
-                "avg_price_czk": (
-                    round(
-                        charging_plan["total_cost_czk"]
-                        / charging_plan["total_energy_kwh"],
-                        2,
-                    )
-                    if charging_plan["total_energy_kwh"] > 0
-                    else 0.0
-                ),
-                "reason": mode,
-                "charging_intervals": [
-                    iv["timestamp"] for iv in charging_plan["charging_intervals"]
-                ],
-                "charging_avg_price_czk": (
-                    round(
-                        charging_plan["charging_cost_czk"]
-                        / charging_plan["total_energy_kwh"],
-                        2,
-                    )
-                    if charging_plan["total_energy_kwh"] > 0
-                    else 0.0
-                ),
-            }
-
-            _LOGGER.info(
-                f"Balancing plan APPLIED: {mode} mode, "
-                f"holding {charging_plan['holding_start']} - {charging_plan['holding_end']}, "
-                f"{len(charging_plan['charging_intervals'])} charging intervals, "
-                f"total cost {charging_plan['total_cost_czk']:.2f} Kč"
+        for i, candidate in enumerate(candidates):
+            _LOGGER.debug(
+                f"Simulating candidate {i+1}/{len(candidates)}: "
+                f"hour={candidate['hour']}, score={candidate['score']:.1f}"
             )
-        else:
-            _LOGGER.error("Failed to apply balancing plan to forecast")
+
+            # Simulate
+            try:
+                simulation = await forecast_sensor.simulate_charging_plan(
+                    target_soc_percent=100.0,
+                    charging_start=now,  # Můžeme nabíjet kdykoli od teď
+                    charging_end=candidate['holding_start'],  # Do začátku holding
+                    holding_start=candidate['holding_start'],
+                    holding_end=candidate['holding_end'],
+                    requester="balancing",
+                )
+
+                # Validace feasibility
+                if not simulation.get('feasible'):
+                    violation = simulation.get('violation')
+                    _LOGGER.debug(f"  ❌ Not feasible: {violation}")
+                    continue
+
+                # Zkontrolovat náklady
+                total_cost = simulation.get('total_cost_czk', float('inf'))
+
+                if total_cost < best_cost:
+                    best_cost = total_cost
+                    best_simulation = simulation
+                    best_candidate = candidate
+                    _LOGGER.debug(f"  ✅ New best: {total_cost:.2f} Kč")
+
+            except Exception as e:
+                _LOGGER.error(f"Simulation failed for candidate {i+1}: {e}", exc_info=True)
+                continue
+
+        # 6. Check if found any feasible plan
+        if not best_simulation or not best_candidate:
+            _LOGGER.warning("No feasible balancing plan found after simulating all candidates")
+            return
+
+        # 7. ALERTING - check if expensive
+        await self._check_cost_alert(best_cost, mode)
+
+        # 8. APPLY best plan
+        # Konvertovat simulaci do formátu plánu
+        holding_start = best_candidate['holding_start']
+        holding_end = best_candidate['holding_end']
+        
+        self._planned_window = {
+            "holding_start": best_simulation['plan_start'],
+            "holding_end": best_simulation['plan_end'],
+            "total_cost_czk": best_simulation['total_cost_czk'],
+            "charging_cost_czk": best_simulation['charging_cost_czk'],
+            "holding_cost_czk": best_simulation['holding_cost_czk'],
+            "opportunity_cost_czk": best_simulation['opportunity_cost_czk'],
+            "avg_price_czk": best_simulation['total_cost_czk'] / best_simulation['energy_needed_kwh'] if best_simulation['energy_needed_kwh'] > 0 else 0,
+            "charging_avg_price_czk": best_simulation['charging_cost_czk'] / best_simulation['energy_needed_kwh'] if best_simulation['energy_needed_kwh'] > 0 else 0,
+            "reason": mode,
+            "charging_intervals": [
+                iv['timestamp'] for iv in best_simulation['charging_intervals']
+            ],
+            "alternatives_count": len(candidates),  # Pro profiling
+        }
+
+        _LOGGER.info(
+            f"✅ Balancing plan CREATED: {mode} mode, "
+            f"holding {holding_start.strftime('%Y-%m-%d %H:%M')} - {holding_end.strftime('%H:%M')}, "
+            f"{len(best_simulation['charging_intervals'])} intervals, "
+            f"cost {best_cost:.2f} Kč (charging={best_simulation['charging_cost_czk']:.2f}, "
+            f"holding={best_simulation['holding_cost_czk']:.2f}, "
+            f"opportunity={best_simulation['opportunity_cost_czk']:.2f})"
+        )
+
+    async def _check_cost_alert(self, plan_cost: float, mode: str) -> None:
+        """
+        Alertovat pokud balancování je výrazně dražší než obvykle.
+        
+        Args:
+            plan_cost: Náklady plánovaného balancování
+            mode: economic | forced
+        """
+        # Načíst historical data
+        profiles = await self._load_balancing_profiles(weeks_back=52)
+        if not profiles:
+            return  # Nemáme historii, nemůžeme porovnat
+        
+        patterns = self._analyze_balancing_patterns(profiles)
+        avg_cost = patterns.get('avg_cost_overall', 0)
+        
+        if avg_cost == 0:
+            return
+        
+        # Threshold: 1.5× průměrných nákladů
+        if plan_cost > avg_cost * 1.5:
+            increase_percent = ((plan_cost / avg_cost) - 1) * 100
+            
+            # Create persistent notification
+            if self._hass:
+                await self._hass.services.async_call(
+                    "persistent_notification",
+                    "create",
+                    {
+                        "title": "⚠️ Drahé balancování baterie",
+                        "message": (
+                            f"Plánované balancování stojí **{plan_cost:.2f} Kč**, "
+                            f"což je **{increase_percent:.0f}%** více než obvykle "
+                            f"(průměr: {avg_cost:.2f} Kč).\n\n"
+                            f"**Režim**: {mode}\n"
+                            f"**Doporučení**: {'Pokračovat (forced režim)' if mode == 'forced' else 'Zvážit odložení na levnější období'}\n\n"
+                            f"_Toto upozornění můžete ignorovat - plán byl automaticky aplikován._"
+                        ),
+                        "notification_id": "oig_cloud_expensive_balancing",
+                    }
+                )
+            
+            _LOGGER.warning(
+                f"⚠️ EXPENSIVE BALANCING: {plan_cost:.2f} Kč "
+                f"(+{increase_percent:.0f}% vs avg {avg_cost:.2f} Kč)"
+            )
 
     def _get_forecast_sensor(self) -> Optional[Any]:
         """Získat battery forecast sensor instanci pro volání unified planneru."""
@@ -461,6 +538,333 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         forecast_sensor = self._get_forecast_sensor()
         if forecast_sensor:
             forecast_sensor.cancel_charging_plan(requester="balancing")
+
+    # ========================================================================
+    # PROFILING & PATTERN ANALYSIS
+    # ========================================================================
+
+    async def _record_balancing_completion(self, plan_data: Dict[str, Any]) -> None:
+        """
+        Uložit profil dokončeného balancování do HA recorder.
+        
+        Args:
+            plan_data: Data z _planned_window včetně nákladů
+        """
+        if not self._hass:
+            _LOGGER.warning("Cannot record balancing - no hass instance")
+            return
+        
+        now = dt_util.now()
+        week = now.isocalendar()[1]
+        year = now.year
+        
+        # Parse timestamps
+        try:
+            charging_start = datetime.fromisoformat(plan_data["charging_intervals"][0])
+            charging_end = datetime.fromisoformat(plan_data["charging_intervals"][-1])
+            holding_start = datetime.fromisoformat(plan_data["holding_start"])
+            holding_end = datetime.fromisoformat(plan_data["holding_end"])
+            
+            charging_duration = (charging_end - charging_start).total_seconds() / 3600.0
+            holding_duration = (holding_end - holding_start).total_seconds() / 3600.0
+        except (KeyError, ValueError, IndexError) as e:
+            _LOGGER.error(f"Failed to parse plan timestamps: {e}")
+            return
+        
+        # Sestavit profil
+        profile = {
+            # Časová identifikace
+            "week": week,
+            "year": year,
+            "completed_at": now.isoformat(),
+            "day_of_week": now.weekday(),  # 0=Po, 6=Ne
+            "month": now.month,
+            
+            # Decision data
+            "mode": plan_data.get("reason", "unknown"),  # economic/forced
+            "days_since_last": self._days_since_last,
+            "alternatives_evaluated": plan_data.get("alternatives_count", 0),
+            
+            # Window timing
+            "charging_start": charging_start.isoformat(),
+            "charging_end": charging_end.isoformat(),
+            "holding_start": holding_start.isoformat(),
+            "holding_end": holding_end.isoformat(),
+            "charging_duration_hours": round(charging_duration, 2),
+            "holding_duration_hours": round(holding_duration, 2),
+            
+            # Cost breakdown
+            "charging_cost_czk": plan_data.get("total_cost_czk", 0),
+            "holding_cost_czk": 0,  # TODO: Extract from forecast
+            "opportunity_cost_czk": 0,  # TODO: Calculate
+            "total_cost_czk": plan_data.get("total_cost_czk", 0),
+            
+            # Energy data
+            "initial_soc_percent": 0,  # TODO: Get from forecast
+            "final_soc_percent": 100.0,
+            "energy_charged_kwh": 0,  # TODO: Calculate
+            "charging_efficiency_percent": 0,  # TODO: Calculate
+            
+            # Price context
+            "avg_spot_price_during_charging": plan_data.get("charging_avg_price_czk", 0),
+            "avg_spot_price_during_holding": plan_data.get("avg_price_czk", 0),
+            "min_spot_price_available": 0,  # TODO: Get from forecast
+            "max_spot_price_available": 0,  # TODO: Get from forecast
+            
+            # Success metrics
+            "minimal_capacity_violations": 0,  # Vždy 0 (jinak by plán neproběhl)
+            "target_achieved": True,
+        }
+        
+        # Event pro recorder
+        self._hass.bus.async_fire("oig_cloud_balancing_completed", profile)
+        
+        # Recent history (poslední 5)
+        self._recent_balancing_history.append(profile)
+        self._recent_balancing_history = self._recent_balancing_history[-5:]
+        
+        _LOGGER.info(
+            f"📊 Balancing profile saved: week {week}/{year}, "
+            f"mode={profile['mode']}, cost={profile['total_cost_czk']:.2f} Kč"
+        )
+
+    async def _load_balancing_profiles(
+        self, weeks_back: int = 52
+    ) -> List[Dict[str, Any]]:
+        """
+        Načíst balancing profily z posledních N týdnů.
+        
+        Args:
+            weeks_back: Kolik týdnů zpět hledat (default 52 = 1 rok)
+        
+        Returns:
+            List profilů seřazených od nejnovějšího
+        """
+        if not self._hass:
+            _LOGGER.warning("Cannot load profiles - no hass instance")
+            return []
+        
+        try:
+            # Get recorder instance
+            recorder = get_instance(self._hass)
+            if not recorder or not recorder.engine:
+                _LOGGER.warning("Recorder not available")
+                return []
+            
+            # SQL query
+            from sqlalchemy import text
+            
+            cutoff_date = dt_util.now() - timedelta(weeks=weeks_back)
+            
+            with recorder.engine.connect() as conn:
+                query = text("""
+                    SELECT event_data
+                    FROM events
+                    WHERE event_type = 'oig_cloud_balancing_completed'
+                    AND time_fired > :cutoff
+                    ORDER BY time_fired DESC
+                """)
+                
+                result = conn.execute(query, {"cutoff": cutoff_date})
+                profiles = [json.loads(row[0]) for row in result]
+            
+            _LOGGER.debug(f"Loaded {len(profiles)} balancing profiles from DB")
+            return profiles
+            
+        except Exception as e:
+            _LOGGER.error(f"Failed to load balancing profiles: {e}", exc_info=True)
+            return []
+
+    def _analyze_balancing_patterns(
+        self, profiles: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Analyzovat historické profily a najít patterns.
+        
+        Args:
+            profiles: List profilů z _load_balancing_profiles()
+        
+        Returns:
+            Dictionary s patterns a statistikami
+        """
+        if not profiles:
+            return {
+                "total_profiles": 0,
+                "avg_cost_overall": 0,
+            }
+        
+        # Seskupit podle měsíce
+        by_month = defaultdict(list)
+        for p in profiles:
+            month = p.get("month", 0)
+            by_month[month].append(p)
+        
+        # Seskupit podle dne v týdnu
+        by_weekday = defaultdict(list)
+        for p in profiles:
+            weekday = p.get("day_of_week", 0)
+            by_weekday[weekday].append(p)
+        
+        # Spočítat průměrné náklady
+        all_costs = [p.get("total_cost_czk", 0) for p in profiles]
+        avg_cost_overall = float(np.mean(all_costs)) if all_costs else 0
+        
+        avg_costs_by_month = {
+            month: float(np.mean([p.get("total_cost_czk", 0) for p in ps]))
+            for month, ps in by_month.items()
+        }
+        
+        avg_costs_by_weekday = {
+            day: float(np.mean([p.get("total_cost_czk", 0) for p in ps]))
+            for day, ps in by_weekday.items()
+        }
+        
+        # Najít typické časy nabíjení
+        charging_hours = []
+        for p in profiles:
+            try:
+                start_str = p.get("charging_start", "")
+                if start_str:
+                    start = datetime.fromisoformat(start_str)
+                    charging_hours.append(start.hour)
+            except (ValueError, TypeError):
+                continue
+        
+        typical_hour = int(max(set(charging_hours), key=charging_hours.count)) if charging_hours else 22
+        
+        # Seasonal patterns
+        winter_months = [11, 12, 1, 2]
+        summer_months = [5, 6, 7, 8]
+        
+        winter_profiles = [p for p in profiles if p.get("month") in winter_months]
+        summer_profiles = [p for p in profiles if p.get("month") in summer_months]
+        
+        winter_avg = float(np.mean([p.get("total_cost_czk", 0) for p in winter_profiles])) if winter_profiles else None
+        summer_avg = float(np.mean([p.get("total_cost_czk", 0) for p in summer_profiles])) if summer_profiles else None
+        
+        # Průměrná doba nabíjení
+        durations = [p.get("charging_duration_hours", 0) for p in profiles]
+        typical_duration = float(np.mean(durations)) if durations else 4.0
+        
+        return {
+            "total_profiles": len(profiles),
+            "avg_cost_overall": avg_cost_overall,
+            "avg_cost_by_month": avg_costs_by_month,
+            "avg_cost_by_weekday": avg_costs_by_weekday,
+            
+            "typical_charging_hour": typical_hour,
+            "typical_charging_duration": typical_duration,
+            
+            "winter_avg_cost": winter_avg,
+            "summer_avg_cost": summer_avg,
+        }
+
+    async def _find_candidate_windows(
+        self,
+        timeline: List[Dict[str, Any]],
+        hold_hours: int,
+        deadline: datetime,
+        mode: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Najít kandidátní okna pro balancování s využitím historical patterns.
+        
+        Args:
+            timeline: Forecast timeline data
+            hold_hours: Kolik hodin držet na 100%
+            deadline: Do kdy musí být plán dokončen
+            mode: economic | forced
+        
+        Returns:
+            List top 10 kandidátních oken seřazených podle score (nejlepší první)
+        """
+        # 1. Načíst historical patterns
+        profiles = await self._load_balancing_profiles(weeks_back=52)
+        patterns = self._analyze_balancing_patterns(profiles)
+        
+        preferred_hour = patterns.get("typical_charging_hour", 22)
+        
+        _LOGGER.info(
+            f"📊 Pattern analysis: {patterns['total_profiles']} profiles, "
+            f"typical hour={preferred_hour}:00, avg cost={patterns['avg_cost_overall']:.2f} Kč"
+        )
+        
+        # 2. Hledat možná okna v timeline
+        candidates = []
+        
+        for i in range(len(timeline)):
+            point = timeline[i]
+            timestamp_str = point.get("timestamp")
+            if not timestamp_str:
+                continue
+            
+            holding_start = datetime.fromisoformat(timestamp_str)
+            if holding_start.tzinfo is None:
+                holding_start = dt_util.as_local(holding_start)
+            
+            holding_end = holding_start + timedelta(hours=hold_hours)
+            
+            # Musí skončit před deadline
+            if holding_end > deadline:
+                break
+            
+            # Score kandidáta
+            score = 0.0
+            
+            # 1. Cena během holding period (nižší = lepší)
+            holding_price_sum = 0.0
+            holding_points = 0
+            for j in range(i, min(i + hold_hours * 4, len(timeline))):  # 4 = 15min/h
+                holding_price_sum += timeline[j].get("spot_price_czk", 0)
+                holding_points += 1
+            
+            holding_avg_price = holding_price_sum / holding_points if holding_points > 0 else 0
+            score -= holding_avg_price * 10  # Váha: cena je nejdůležitější
+            
+            # 2. Kapacita baterie na začátku (nižší = lepší, levnější nabít)
+            battery_kwh = point.get("battery_capacity_kwh", 0)
+            max_capacity = 12.29  # TODO: Get from config
+            capacity_ratio = battery_kwh / max_capacity if max_capacity > 0 else 0
+            score -= (1.0 - capacity_ratio) * 20  # Bonus za nízkou kapacitu
+            
+            # 3. BONUS: Podobnost s historical patterns (preferovaná hodina)
+            hour_of_day = holding_start.hour
+            hour_diff = abs(hour_of_day - preferred_hour)
+            if hour_diff <= 2:  # ±2 hodiny od typického času
+                score += 5.0
+            
+            # 4. BONUS: Weekend
+            if holding_start.weekday() >= 5:  # So, Ne
+                score += 3.0
+            
+            # 5. BONUS: Noc (22:00-06:00)
+            if hour_of_day >= 22 or hour_of_day <= 6:
+                score += 2.0
+            
+            candidates.append({
+                "holding_start": holding_start,
+                "holding_end": holding_end,
+                "holding_start_idx": i,
+                "score": score,
+                "initial_capacity_percent": capacity_ratio * 100,
+                "holding_avg_price_czk": holding_avg_price,
+                "hour": hour_of_day,
+                "is_weekend": holding_start.weekday() >= 5,
+            })
+        
+        # 3. Seřadit podle score (nejvyšší = nejlepší)
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 4. Vrátit top 10
+        top_candidates = candidates[:10]
+        
+        if top_candidates:
+            _LOGGER.info(
+                f"Found {len(candidates)} candidate windows, top 10 scores: "
+                f"{[round(c['score'], 1) for c in top_candidates]}"
+            )
+        
+        return top_candidates
 
     # ═══════════════════════════════════════════════════════════════════════════
     # DEPRECATED METHODS - Removed in refactoring, replaced by unified planner
