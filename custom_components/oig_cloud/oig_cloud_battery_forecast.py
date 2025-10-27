@@ -488,9 +488,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     net_consumption = max(0, load_kwh - solar_kwh)
                     balancing_holding_cost += net_consumption * spot_price
 
-                    # HOLDING: Forcnout baterii na 100% (technický požadavek)
-                    # Baterie se drží na max, spotřeba jde ze sítě (UPS režim)
-                    battery_kwh = max_capacity
+                    # HOLDING: Držet baterii na současné úrovni (ideálně 100%)
+                    # Spotřeba jde ze sítě, baterie se nedotýká
+                    # Pokud je solar, pomáhá krýt spotřebu → menší čerpání ze sítě
+                    # Baterie zůstává na úrovni z konce charging fáze
+                    # (Neměníme battery_kwh - zůstává jak je)
 
                 elif is_balancing_charging:
                     # CHARGING phase: Cena za nabíjení ze sítě
@@ -2902,27 +2904,84 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         max_capacity = self._get_max_battery_capacity()
         target_soc_kwh = (target_soc_percent / 100.0) * max_capacity
 
-        # 3. Získat aktuální SOC
-        current_battery_kwh = self._get_current_battery_capacity()
-        if current_battery_kwh is None:
-            _LOGGER.error("[Planner] Cannot get current battery capacity")
-            return {
-                "feasible": False,
-                "status": "error",
-                "error": "No current capacity data",
-            }
-
-        # 4. Vypočítat holding window
+        # 3. Vypočítat holding window
+        now = dt_util.now()
         holding_start = deadline - timedelta(hours=holding_duration_hours)
         holding_end = deadline
 
-        # 5. Najít dostupné intervaly (NOW až holding_start)
-        now = dt_util.now()
+        # 4. Získat BASELINE forecast battery capacity v holding_start
+        # KRITICKÉ: Simulace musí počítat od forecast BEZ aktivního plánu!
+        # Jinak cyklická závislost: plan → forecast 100% → simulace "už plno" → žádné charging
+
+        # Dočasně vypnout aktivní plán pro baseline výpočet
+        old_plan = self._active_charging_plan
+        self._active_charging_plan = None
+
+        try:
+            # Spočítat baseline forecast (bez plánu) až do holding_start
+            # Použít _get_current_battery_capacity jako startovní bod
+            current_capacity = self._get_current_battery_capacity()
+            if current_capacity is None:
+                _LOGGER.error("[Planner] Cannot get current battery capacity")
+                return {
+                    "feasible": False,
+                    "status": "error",
+                    "error": "No current capacity data",
+                }
+
+            # Načíst spot prices pro baseline timeline
+            spot_prices_list = []
+            if hasattr(self, "_spot_prices") and self._spot_prices:
+                spot_prices_list = self._spot_prices
+
+            # Baseline timeline bez aktivního plánu
+            baseline_timeline = self._calculate_timeline(
+                current_capacity=current_capacity,
+                spot_prices=spot_prices_list,
+                adaptive_profiles=getattr(self, "_adaptive_profiles", None),
+            )
+
+            # Najít battery capacity v čase holding_start z baseline
+            current_battery_kwh = None
+            for point in baseline_timeline:
+                point_time = dt_util.parse_datetime(point.get("time"))
+                if point_time and point_time >= holding_start:
+                    current_battery_kwh = point.get("battery_capacity_kwh")
+                    _LOGGER.info(
+                        f"[Planner] Baseline forecast at {point_time.strftime('%H:%M')}: "
+                        f"{current_battery_kwh:.2f} kWh ({current_battery_kwh/max_capacity*100:.1f}%)"
+                    )
+                    break
+
+            # Fallback na současnou kapacitu pokud forecast není dostupný
+            if current_battery_kwh is None:
+                current_battery_kwh = current_capacity
+                _LOGGER.warning(
+                    f"[Planner] Could not find baseline forecast at holding_start, "
+                    f"using current capacity: {current_battery_kwh:.2f} kWh"
+                )
+
+        finally:
+            # VŽDY obnovit aktivní plán
+            self._active_charging_plan = old_plan
+
+        if current_battery_kwh is None:
+            _LOGGER.error("[Planner] Cannot determine battery capacity for planning")
+            return {
+                "feasible": False,
+                "status": "error",
+                "error": "No capacity data",
+            }
+
+        # Pokud holding_start je v minulosti, posunout do budoucnosti
         if holding_start <= now:
-            _LOGGER.warning(f"[Planner] Holding start {holding_start} is in the past!")
-            # Posunout do budoucnosti
+            _LOGGER.warning(
+                f"[Planner] Holding start {holding_start} is in the past (now={now})!"
+            )
             holding_start = now + timedelta(hours=1)
             holding_end = holding_start + timedelta(hours=holding_duration_hours)
+
+        # 5. Najít dostupné intervaly (NOW až holding_start)
 
         # 6. Získat spot prices ze senzoru (ne async call!)
         try:
@@ -3048,8 +3107,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return {
             "feasible": True,
             "status": status,
-            "achieved_soc_percent": achieved_soc_percent,
+            "target_soc_percent": target_soc_percent,  # Původní cíl
+            "achieved_soc_percent": achieved_soc_percent,  # Co jsme dosáhli
             "charging_plan": charging_plan,
+            "total_cost_czk": costs["total_cost_czk"],  # Pro srovnání kandidátů
+            "charging_intervals": charging_intervals,  # Pro simulation wrapper
+            "initial_battery_kwh": current_battery_kwh,  # Baseline battery při holding_start
             "requester": requester,
             "mode": mode,
             "created_at": now.isoformat(),
@@ -3072,7 +3135,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._active_charging_plan = {
             "requester": plan_result["requester"],
             "mode": plan_result["mode"],
-            "target_soc_percent": plan_result.get("achieved_soc_percent", 100.0),
+            "target_soc_percent": plan_result.get(
+                "target_soc_percent", 100.0
+            ),  # Původní cíl, ne dosažený
             "deadline": plan_result["charging_plan"]["holding_end"],
             "charging_plan": plan_result["charging_plan"],
             "locked": True,
@@ -3215,44 +3280,30 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         target_soc_kwh = (target_soc_percent / 100.0) * max_capacity_kwh
         charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
 
-        # Najít aktuální SOC na začátku charging
-        current_soc_kwh = None
-        for point in original_timeline:
-            point_time = datetime.fromisoformat(point["timestamp"])
-            if point_time.tzinfo is None:
-                point_time = dt_util.as_local(point_time)
-            if point_time >= charging_start:
-                current_soc_kwh = point.get("battery_capacity_kwh", 0)
-                break
+        # Najít charging intervaly pomocí plan_charging_to_target
+        # která používá baseline forecast pro určení aktuální kapacity
+        holding_duration_hours = (holding_end - holding_start).total_seconds() / 3600
 
-        if current_soc_kwh is None:
-            _LOGGER.error("Cannot find battery capacity at charging_start")
-            return {
-                "simulation_id": None,
-                "feasible": False,
-                "violation": "invalid_charging_start",
-            }
-
-        # Získat spot prices
-        spot_prices = await self._get_spot_price_timeline()
-        if not spot_prices:
-            _LOGGER.error("Cannot simulate - no spot price data")
-            return {
-                "simulation_id": None,
-                "feasible": False,
-                "violation": "no_spot_prices",
-            }
-
-        # Najít charging intervaly
-        charging_intervals = self._find_cheapest_charging_intervals(
-            spot_prices=spot_prices,
-            start_time=charging_start,
-            end_time=charging_end,
-            target_soc_kwh=target_soc_kwh,
-            current_soc_kwh=current_soc_kwh,
-            charge_per_15min=charge_per_15min,
-            mode="economic",  # Vždy hledat nejlevnější
+        plan_result = self.plan_charging_to_target(
+            target_soc_percent=target_soc_percent,
+            deadline=holding_end,
+            holding_duration_hours=holding_duration_hours,
+            mode="economic",
+            requester=requester,
         )
+
+        if not plan_result or not plan_result.get("feasible"):
+            _LOGGER.error(
+                f"Failed to generate charging plan: {plan_result.get('status')}"
+            )
+            return {
+                "simulation_id": None,
+                "feasible": False,
+                "violation": "plan_generation_failed",
+            }
+
+        charging_intervals = plan_result["charging_intervals"]
+        initial_soc_kwh = plan_result.get("initial_battery_kwh", 0)
 
         # 3. Simulace na kopii timeline
         simulation_result = await self._run_timeline_simulation(
@@ -3311,7 +3362,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "total_cost_czk": costs["total"],
             "energy_needed_kwh": simulation_result["energy_needed"],
             "min_capacity_during_plan": simulation_result["min_capacity"],
-            "initial_soc_percent": (current_soc_kwh / max_capacity_kwh) * 100,
+            "initial_soc_percent": (initial_soc_kwh / max_capacity_kwh) * 100,
             "final_soc_percent": simulation_result["final_soc_percent"],
             "plan_start": charging_start.isoformat(),
             "plan_end": holding_end.isoformat(),
@@ -3608,7 +3659,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Both economic and forced modes use what's available
             # Simulation will report status="partial" if target not reached
             # Balancing will decide: wait for better prices or accept partial
-            _LOGGER.info(f"[Planner] {mode.upper()} mode: using {len(available_intervals)} available intervals (partial result expected)")
+            _LOGGER.info(
+                f"[Planner] {mode.upper()} mode: using {len(available_intervals)} available intervals (partial result expected)"
+            )
             intervals_needed = len(available_intervals)
 
         # Seřadit podle ceny (nejlevnější první)

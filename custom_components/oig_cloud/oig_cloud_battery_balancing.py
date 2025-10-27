@@ -86,7 +86,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planning_task: Optional[Any] = None  # asyncio.Task
         self._last_planning_check: Optional[datetime] = None
         self._last_planning_run: Optional[datetime] = None  # Pro rate limiting
-        self._last_calculation: Optional[datetime] = None  # Čas posledního výpočtu plánu
+        self._last_calculation: Optional[datetime] = (
+            None  # Čas posledního výpočtu plánu
+        )
 
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
@@ -1061,6 +1063,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # 2. Hledat možná okna v timeline
         candidates = []
+        now = dt_util.now()
+        # Minimální čas do začátku holding - potřebujeme čas na nabití baterie
+        # Rezerva: alespoň 1 hodina pro nalezení a spuštění nabíjecích intervalů
+        min_holding_start = now + timedelta(hours=1)
 
         for i in range(len(timeline)):
             point = timeline[i]
@@ -1073,6 +1079,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 holding_start = dt_util.as_local(holding_start)
 
             holding_end = holding_start + timedelta(hours=hold_hours)
+
+            # Skip holding windows in the past or too soon (need time to charge)
+            if holding_start < min_holding_start:
+                continue
 
             # Musí skončit před deadline
             if holding_end > deadline:
