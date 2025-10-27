@@ -367,7 +367,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             is_balancing_charging = False  # Nabíjení v levných intervalech
             is_balancing_holding = False  # Držení na 100% během holding period
 
-            if balancing_plan and balancing_start and balancing_end:
+            if active_plan and balancing_start and balancing_end:
                 # Charging: jsme v některém z vybraných levných intervalů?
                 if timestamp in balancing_charging_intervals:
                     is_balancing_charging = True
