@@ -531,12 +531,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 battery_kwh = battery_kwh + net_energy
 
                 # Clamp na maximum i minimum
-                # OPRAVA: MUSÍME clampovat na minimum (0 kWh), jinak baterie jde do mínusu!
+                # OPRAVA: MUSÍME clampovat na minimum (min_capacity nebo 0 kWh), jinak baterie jde pod limit!
                 # Grid charging algoritmus funguje správně i s clampem - detekuje když battery_kwh <= min_capacity
                 if battery_kwh > max_capacity:
                     battery_kwh = max_capacity
-                if battery_kwh < 0:  # Baterie NIKDY nemůže být záporná!
-                    battery_kwh = 0
+                if battery_kwh < min_capacity:
+                    # ⚠️ ENFORCEMENT: Battery NESMÍ klesnout pod min_capacity (2.458 kWh = 20%)
+                    _LOGGER.warning(
+                        f"Battery would drop below minimum ({min_capacity:.2f} kWh), "
+                        f"clamping from {battery_kwh:.2f} kWh"
+                    )
+                    battery_kwh = min_capacity
 
             # Určit reason pro tento interval
             reason = "normal"
