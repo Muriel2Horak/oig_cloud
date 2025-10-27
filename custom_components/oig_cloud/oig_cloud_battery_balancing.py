@@ -273,21 +273,22 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
     def _plan_balancing_window(self) -> None:
         """
-        Planning logika pro hledání optimálního okna.
+        Planning logika pro hledání optimálního okna - REFACTORED.
+
+        Nyní používá unified charging planner z battery forecast senzoru.
+        Metoda jen určuje parametry (target, deadline, mode) a volá plan_charging_to_target().
 
         Prioritní úrovně:
-        - OPPORTUNISTIC (0-∞ dní): Cena < opportunistic_threshold
-        - ECONOMIC (5-7 dní): Cena < economic_threshold
-        - CRITICAL (8 dní): Nejlepší dostupné okno
-        - FORCED (9+ dní): Okamžitě v nejbližším okně
-
-        IMPORTANT: Pokud už existuje aktivní planned_window, NEMĚNIT ho!
-        Window se plánuje JEDNOU a drží se ho až do konce nebo zrušení.
+        - OPPORTUNISTIC (0-4 dní): Nepovinné, jen pokud velmi levné
+        - ECONOMIC (5-7 dní): Ekonomický režim, najdi levné intervaly
+        - FORCED (8+ dní): Forced režim, nabij i přes drahé ceny
         """
         config = self._get_balancing_config()
 
         if not config["enabled"]:
             self._planned_window = None
+            # Zrušit aktivní plán pokud existuje
+            self._cancel_active_plan()
             return
 
         # Pokud už máme naplánované okno, zkontrolovat jestli je stále aktivní
@@ -316,417 +317,178 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                         f"Planned window completed at {holding_end.strftime('%H:%M')}, clearing"
                     )
                     self._planned_window = None
+                    # Zrušit aktivní plán
+                    self._cancel_active_plan()
             except (ValueError, TypeError, KeyError) as e:
                 _LOGGER.warning(f"Invalid planned_window format: {e}, clearing")
                 self._planned_window = None
+                self._cancel_active_plan()
 
         days = self._days_since_last
 
-        # Získat spot prices z coordinator
-        spot_prices = self._get_spot_prices()
-        if not spot_prices:
-            _LOGGER.debug("No spot prices available for planning")
-            return  # NEMAZAT existující window
-
-        # Hledat optimální okno podle priority
-        if days >= config["interval_days"] + 1:  # Den 8+
-            # CRITICAL nebo FORCED - najít nejlepší dostupné okno
-            window = self._find_best_window(spot_prices, config, force=True)
-        elif days >= config["interval_days"] - 1:  # Den 6-7 (den před i v den deadline)
-            # ECONOMIC - hledat přijatelné okno, NEBO force na den 7
-            # OPRAVA: Na den 7 (interval_days) garantovat okno pomocí force
-            if days >= config["interval_days"]:
-                _LOGGER.info(f"Day {days} (deadline day) - forcing best window")
-                window = self._find_best_window(spot_prices, config, force=True)
-            else:
-                # Den 6 - zkusit economic, pokud selže, force backup
-                window = self._find_economic_window(spot_prices, config)
-                if not window:
-                    _LOGGER.warning(
-                        f"Day {days} - no economic window found, forcing best available"
-                    )
-                    window = self._find_best_window(spot_prices, config, force=True)
-        else:
-            # OPPORTUNISTIC - hledat skvělou cenu
-            window = self._find_opportunistic_window(spot_prices, config)
-
-        # Pokud máme window, vypočítat charging intervaly (nejlevnější)
-        if window:
-            window = self._add_charging_intervals(window, spot_prices)
-            _LOGGER.info(
-                f"NEW planned window: {window['holding_start']} - {window['holding_end']}, "
-                f"charging intervals: {len(window.get('charging_intervals', []))}"
-            )
-
-        self._planned_window = window
-
-    def _get_spot_prices(self) -> Dict[str, float]:
-        """Získat spot prices ze spot_price_current_15min senzoru."""
-        try:
-            if not self._hass:
-                return {}
-
-            # Číst ze spot price senzoru (stejně jako forecast)
-            sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
-            state = self._hass.states.get(sensor_id)
-
-            if not state or state.state in ("unavailable", "unknown", None):
-                _LOGGER.debug(f"Spot price sensor {sensor_id} not available")
-                return {}
-
-            if not state.attributes:
-                _LOGGER.debug(f"Spot price sensor {sensor_id} has no attributes")
-                return {}
-
-            # Format: [{timestamp, price, ...}, ...]
-            prices_list = state.attributes.get("prices", [])
-
-            if not prices_list:
-                _LOGGER.debug("No prices in spot price sensor")
-                return {}
-
-            # Převést na dict {timestamp: price}
-            prices_dict: Dict[str, float] = {}
-            for price_point in prices_list:
-                timestamp = price_point.get("timestamp")
-                price = price_point.get("price")
-
-                if timestamp and price is not None:
-                    prices_dict[timestamp] = float(price)
-
-            _LOGGER.debug(
-                f"Loaded {len(prices_dict)} spot prices for balancing planning"
-            )
-            return prices_dict
-
-        except Exception as e:
-            _LOGGER.error(f"Error getting spot prices: {e}", exc_info=True)
-            return {}
-
-    def _get_forecast_soc_at_time(self, timestamp_str: str) -> float:
-        """Získat predikovaný SOC v daném čase z battery forecast senzoru."""
-        try:
-            from datetime import datetime
-
-            if not self._hass:
-                return 50.0
-
-            forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
-            forecast_state = self._hass.states.get(forecast_sensor_id)
-
-            if not forecast_state or not forecast_state.attributes:
-                _LOGGER.debug(
-                    f"Battery forecast sensor {forecast_sensor_id} not available"
-                )
-                return 50.0
-
-            timeline = forecast_state.attributes.get("timeline_data", [])
-            if not timeline:
-                return 50.0
-
-            # Najít příslušný bod v timeline
-            target_time = datetime.fromisoformat(timestamp_str)
-            max_capacity = 12.29  # kWh
-
-            for point in timeline:
-                point_time = datetime.fromisoformat(point["timestamp"])
-                if point_time == target_time:
-                    capacity_kwh = point.get("battery_capacity_kwh", 0)
-                    return (capacity_kwh / max_capacity) * 100.0
-
-            # Pokud nenajdeme přesný čas, vrátíme aktuální SOC
-            return self._get_current_soc()
-
-        except Exception as e:
-            _LOGGER.warning(f"Failed to get forecast SOC: {e}")
-            return self._get_current_soc()
-
-    def _check_window_feasibility(
-        self, window_start: str, prices: Dict[str, float], force: bool = False
-    ) -> tuple[bool, int]:
-        """
-        Ověřit, jestli je možné nabít baterii do začátku holding okna.
-
-        Returns:
-            (is_feasible, intervals_needed)
-        """
-        try:
-            from datetime import datetime
-            from homeassistant.util import dt as dt_util
-
-            now = dt_util.now()
-            holding_start_dt = datetime.fromisoformat(window_start)
-            # Ensure timezone aware
-            if holding_start_dt.tzinfo is None:
-                holding_start_dt = dt_util.as_local(holding_start_dt)
-
-            # Kolik bude SOC na začátku holding okna (podle forecastu BEZ balancování)?
-            forecast_soc_percent = self._get_forecast_soc_at_time(window_start)
-
-            # Kolik energie potřebujeme dobít?
-            max_capacity = 12.29  # kWh
-            forecast_soc_kwh = (forecast_soc_percent / 100.0) * max_capacity
-            energy_needed = max(0, max_capacity - forecast_soc_kwh)
-
-            # Kolik intervalů potřebujeme?
-            charging_power_kwh_per_15min = 0.75
-            intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
-
-            # Kolik intervalů máme k dispozici?
-            available_intervals = 0
-            _LOGGER.debug(
-                f"Checking available intervals: NOW={now}, holding_start={holding_start_dt}"
-            )
-            for timestamp_str in prices.keys():
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                    # Ensure timezone aware
-                    if timestamp.tzinfo is None:
-                        timestamp = dt_util.as_local(timestamp)
-                    if now <= timestamp < holding_start_dt:
-                        available_intervals += 1
-                        if available_intervals <= 3:  # Log first 3 matches
-                            _LOGGER.debug(f"  ✓ Available: {timestamp_str}")
-                            _LOGGER.debug(f"  ✓ Available: {timestamp_str}")
-                except (ValueError, TypeError) as e:
-                    _LOGGER.debug(f"  ✗ Parse error for {timestamp_str}: {e}")
-                    continue
-
-            _LOGGER.debug(f"Total available intervals: {available_intervals}")
-
-            is_feasible = available_intervals >= intervals_needed
-
-            _LOGGER.info(
-                f"Feasibility check for {window_start}: "
-                f"forecast_soc={forecast_soc_percent:.1f}%, "
-                f"need {intervals_needed} intervals, "
-                f"have {available_intervals} available → "
-                f"{'✅ FEASIBLE' if is_feasible else '❌ NOT FEASIBLE'}"
-            )
-
-            # Pokud force (8. den), akceptuj i když není proveditelné
-            if force and not is_feasible:
-                _LOGGER.warning(
-                    f"Window not feasible but FORCING due to critical balancing need"
-                )
-                return True, intervals_needed
-
-            return is_feasible, intervals_needed
-
-        except Exception as e:
-            _LOGGER.error(f"Error checking window feasibility: {e}", exc_info=True)
-            return False, 0
-
-    def _find_opportunistic_window(
-        self, prices: Dict[str, float], config: Dict[str, Any], force: bool = False
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Hledat opportunistic okno - extrémně levná cena.
-
-        NOVÁ LOGIKA:
-        1. Najde VŠECHNY 3h holding window kandidáty pod threshold
-        2. Seřadí je podle ceny (nejlevnější první)
-        3. Pro každého kandidáta ověří feasibility (dá se dobít na 100%?)
-        4. Vrátí první feasible kandidát
-        """
-        threshold = config["opportunistic_threshold"]
+        # Určit mode a deadline podle dnů od posledního balancování
+        now = dt_util.now()
         hold_hours = config["hold_hours"]
-        sorted_times = sorted(prices.keys())
 
-        # 1. Najít VŠECHNY kandidáty pod threshold
-        candidates = []
+        # Opportunistic: dny 0-4 - nepovinné, jen pokud super levné
+        if days < config["interval_days"] - 2:  # Dny 0-4
+            _LOGGER.debug(f"Day {days} - too early for balancing, skipping")
+            return
 
-        for i in range(len(sorted_times) - hold_hours * 4):
-            window_prices = []
-            window_start = sorted_times[i]
-            window_end_idx = i + hold_hours * 4
-
-            for j in range(i, window_end_idx):
-                window_prices.append(prices[sorted_times[j]])
-
-            avg_price = sum(window_prices) / len(window_prices)
-
-            if avg_price < threshold:
-                from datetime import datetime, timedelta
-
-                window_end_time = datetime.fromisoformat(
-                    sorted_times[window_end_idx - 1]
-                ) + timedelta(minutes=15)
-
-                candidates.append(
-                    {
-                        "holding_start": window_start,
-                        "holding_end": window_end_time.isoformat(),
-                        "avg_price_czk": round(avg_price, 2),
-                        "reason": "opportunistic",
-                    }
-                )
-
-        if not candidates:
-            _LOGGER.debug(
-                f"No opportunistic windows found (threshold={threshold} Kč/kWh)"
+        # Economic: dny 5-7 - hledej levné intervaly
+        elif days < config["interval_days"] + 1:  # Dny 5-7
+            mode = "economic"
+            # Deadline: konec 7. dne
+            days_until_deadline = config["interval_days"] - days
+            deadline = now + timedelta(days=days_until_deadline, hours=23, minutes=59)
+            _LOGGER.info(
+                f"Day {days} - ECONOMIC mode, deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
             )
+
+        # Forced: den 8+ - MUSÍ nabít i když drahé
+        else:  # Den 8+
+            mode = "forced"
+            # Deadline: co nejdříve (24h)
+            deadline = now + timedelta(hours=24)
+            _LOGGER.warning(
+                f"Day {days} - FORCED mode (overdue), deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
+            )
+
+        # Získat forecast sensor - UNIFIED PLANNER
+        forecast_sensor = self._get_forecast_sensor()
+        if not forecast_sensor:
+            _LOGGER.error("Cannot get forecast sensor for unified planner")
+            return
+
+        # Zavolat unified planner
+        plan_result = forecast_sensor.plan_charging_to_target(
+            target_soc_percent=100.0,
+            deadline=deadline,
+            holding_duration_hours=hold_hours,
+            mode=mode,
+            requester="balancing",
+        )
+
+        # Vyhodnotit výsledek
+        if not plan_result.get("feasible"):
+            status = plan_result.get("status")
+
+            if status == "conflict":
+                conflict = plan_result.get("conflict", {})
+                _LOGGER.warning(
+                    f"Balancing plan CONFLICT with {conflict.get('active_plan_requester')}, "
+                    f"predicted SOC at deadline: {conflict.get('predicted_soc_at_deadline', 0):.1f}%"
+                )
+                # V economic mode: akceptuj konflikt, forecast přednost
+                # V forced mode: warning ale neodstranuj aktivní plán
+                return
+
+            elif status == "partial":
+                achieved = plan_result.get("achieved_soc_percent", 0)
+                _LOGGER.warning(
+                    f"Balancing plan PARTIAL: can only achieve {achieved:.1f}% (target 100%)"
+                )
+                # V economic mode: odmítnout
+                if mode == "economic":
+                    _LOGGER.info("Economic mode - rejecting partial plan")
+                    return
+                # V forced mode: přijmout i partial
+                else:
+                    _LOGGER.warning("Forced mode - accepting partial plan")
+
+            else:
+                _LOGGER.error(f"Balancing plan failed: {status}")
+                return
+
+        # ÚSPĚCH - aplikovat plán
+        if forecast_sensor.apply_charging_plan(plan_result):
+            # Konvertovat do našeho formátu _planned_window
+            charging_plan = plan_result["charging_plan"]
+
+            self._planned_window = {
+                "holding_start": charging_plan["holding_start"],
+                "holding_end": charging_plan["holding_end"],
+                "avg_price_czk": (
+                    round(
+                        charging_plan["total_cost_czk"]
+                        / charging_plan["total_energy_kwh"],
+                        2,
+                    )
+                    if charging_plan["total_energy_kwh"] > 0
+                    else 0.0
+                ),
+                "reason": mode,
+                "charging_intervals": [
+                    iv["timestamp"] for iv in charging_plan["charging_intervals"]
+                ],
+                "charging_avg_price_czk": (
+                    round(
+                        charging_plan["charging_cost_czk"]
+                        / charging_plan["total_energy_kwh"],
+                        2,
+                    )
+                    if charging_plan["total_energy_kwh"] > 0
+                    else 0.0
+                ),
+            }
+
+            _LOGGER.info(
+                f"Balancing plan APPLIED: {mode} mode, "
+                f"holding {charging_plan['holding_start']} - {charging_plan['holding_end']}, "
+                f"{len(charging_plan['charging_intervals'])} charging intervals, "
+                f"total cost {charging_plan['total_cost_czk']:.2f} Kč"
+            )
+        else:
+            _LOGGER.error("Failed to apply balancing plan to forecast")
+
+    def _get_forecast_sensor(self) -> Optional[Any]:
+        """Získat battery forecast sensor instanci pro volání unified planneru."""
+        if not self._hass:
             return None
 
-        # 2. Seřadit podle ceny (nejlevnější první)
-        candidates.sort(key=lambda x: x["avg_price_czk"])
+        forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
 
-        _LOGGER.info(
-            f"Found {len(candidates)} opportunistic candidates, testing feasibility..."
-        )
+        # Získat sensor entity
+        from homeassistant.helpers import entity_registry as er
 
-        # 3. Testovat feasibility pro každého kandidáta (od nejlevnějšího)
-        for idx, candidate in enumerate(candidates):
-            is_feasible, intervals_needed = self._check_window_feasibility(
-                candidate["holding_start"], prices, force
-            )
+        ent_reg = er.async_get(self._hass)
+        entity = ent_reg.async_get(forecast_sensor_id)
 
-            if is_feasible:
-                _LOGGER.info(
-                    f"✅ Selected candidate #{idx+1}/{len(candidates)}: "
-                    f"{candidate['holding_start']} @ {candidate['avg_price_czk']} Kč/kWh"
-                )
-                return candidate
-            else:
-                _LOGGER.debug(
-                    f"❌ Candidate #{idx+1} not feasible: {candidate['holding_start']}"
-                )
+        if not entity:
+            _LOGGER.debug(f"Forecast sensor entity not found: {forecast_sensor_id}")
+            return None
 
-        _LOGGER.warning(
-            f"No feasible opportunistic window found (tested {len(candidates)} candidates)"
-        )
+        # Najít platform a získat instanci
+        # HACK: Procházet všechny entity v hass až najdeme tu správnou
+        for component_name in ["sensor"]:
+            component = self._hass.data.get("entity_components", {}).get(component_name)
+            if component:
+                for entity_obj in component.entities:
+                    if entity_obj.entity_id == forecast_sensor_id:
+                        _LOGGER.debug(
+                            f"Found forecast sensor instance: {forecast_sensor_id}"
+                        )
+                        return entity_obj
+
+        _LOGGER.warning(f"Forecast sensor instance not found: {forecast_sensor_id}")
         return None
 
-    def _find_economic_window(
-        self, prices: Dict[str, float], config: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Hledat economic okno - přijatelná cena."""
-        threshold = config["economic_threshold"]
-        # Použít stejnou logiku jako opportunistic, jen jiný práh
-        config_copy = config.copy()
-        config_copy["opportunistic_threshold"] = threshold
-        window = self._find_opportunistic_window(prices, config_copy)
+    def _cancel_active_plan(self) -> None:
+        """Zruší aktivní plán v forecast senzoru (pokud patří balancingu)."""
+        forecast_sensor = self._get_forecast_sensor()
+        if forecast_sensor:
+            forecast_sensor.cancel_charging_plan(requester="balancing")
 
-        if window:
-            window["reason"] = "economic"
-
-        return window
-
-    def _find_best_window(
-        self, prices: Dict[str, float], config: Dict[str, Any], force: bool = False
-    ) -> Optional[Dict[str, Any]]:
-        """Najít nejlepší dostupné okno (critical/forced)."""
-        # Najít nejlevnější okno bez ohledu na threshold
-        config_copy = config.copy()
-        config_copy["opportunistic_threshold"] = float("inf")  # Žádný limit
-        window = self._find_opportunistic_window(prices, config_copy, force)
-
-        if window:
-            window["reason"] = "forced" if force else "critical"
-
-        return window
-
-    def _add_charging_intervals(
-        self, window: Dict[str, Any], prices: Dict[str, float]
-    ) -> Dict[str, Any]:
-        """
-        Přidat do window informace o charging intervalech.
-
-        Najde nejlevnější intervaly mezi NOW a holding_end pro nabití na 100%.
-        """
-        try:
-            from datetime import datetime
-            from homeassistant.util import dt as dt_util
-
-            holding_start = datetime.fromisoformat(window["holding_start"])
-            holding_end = datetime.fromisoformat(window["holding_end"])
-            # Make timezone aware
-            if holding_start.tzinfo is None:
-                holding_start = dt_util.as_local(holding_start)
-            if holding_end.tzinfo is None:
-                holding_end = dt_util.as_local(holding_end)
-            now = dt_util.now()
-
-            # Získat aktuální SoC
-            current_soc = self._get_current_soc()
-            max_capacity = 12.29  # kWh - TODO: získat z config
-
-            # Spočítat potřebnou energii
-            charging_power_kwh_per_15min = 0.75
-            energy_needed = max(0, max_capacity - (current_soc / 100.0 * max_capacity))
-            intervals_needed = int(energy_needed / charging_power_kwh_per_15min) + 1
-
-            # OPRAVA: Pokud je holding_start v minulosti nebo příliš blízko,
-            # posunout holding window do budoucnosti
-            min_charging_time = timedelta(hours=3)  # Minimum 3h na nabití
-            earliest_holding_start = now + min_charging_time
-
-            if holding_start < earliest_holding_start:
-                time_shift = earliest_holding_start - holding_start
-                _LOGGER.warning(
-                    f"Holding start {holding_start} is in the past or too close, "
-                    f"shifting window by {time_shift}"
-                )
-                holding_start = earliest_holding_start
-                holding_end = holding_end + time_shift
-
-                # Update window
-                window["holding_start"] = holding_start.isoformat()
-                window["holding_end"] = holding_end.isoformat()
-
-            # Najít kandidáty (mezi NOW a holding_start - nabíjíme PŘED holding fází!)
-            # DŮLEŽITÉ: Zahrnout i aktuální probíhající interval!
-            candidates = []
-            for timestamp_str, price in prices.items():
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                    # Make timezone aware
-                    if timestamp.tzinfo is None:
-                        timestamp = dt_util.as_local(timestamp)
-
-                    interval_end = timestamp + timedelta(minutes=15)
-
-                    # Zahrnout interval pokud:
-                    # 1. Ještě nezačal (timestamp >= now)
-                    # 2. NEBO právě probíhá (now je mezi timestamp a timestamp+15min)
-                    is_future = timestamp >= now
-                    is_current = timestamp < now < interval_end
-
-                    if (is_future or is_current) and timestamp < holding_start:
-                        candidates.append({"timestamp": timestamp_str, "price": price})
-                        if is_current:
-                            _LOGGER.debug(
-                                f"Including CURRENT interval: {timestamp_str}"
-                            )
-                except (ValueError, TypeError):
-                    continue
-
-            # Seřadit podle ceny (nejlevnější první)
-            candidates.sort(key=lambda c: c["price"])
-
-            # Vybrat N nejlevnějších
-            cheapest = candidates[:intervals_needed]
-
-            # Přidat do window
-            window["charging_intervals"] = [c["timestamp"] for c in cheapest]
-            window["charging_avg_price_czk"] = (
-                round(sum(c["price"] for c in cheapest) / len(cheapest), 2)
-                if cheapest
-                else 0.0
-            )
-
-            _LOGGER.info(
-                f"Balancing charging: {len(cheapest)} intervals, "
-                f"avg price {window['charging_avg_price_czk']} Kč/kWh, "
-                f"holding: {window['holding_start']} - {window['holding_end']}"
-            )
-
-        except Exception as e:
-            _LOGGER.warning(f"Failed to calculate charging intervals: {e}")
-            window["charging_intervals"] = []
-            window["charging_avg_price_czk"] = 0.0
-
-        return window
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DEPRECATED METHODS - Removed in refactoring, replaced by unified planner
+    # ═══════════════════════════════════════════════════════════════════════════
+    # _get_spot_prices() - now in forecast sensor
+    # _get_forecast_soc_at_time() - replaced by forecast._predict_soc_at_time()
+    # _check_window_feasibility() - replaced by forecast._is_plan_feasible()
+    # _find_opportunistic_window() - replaced by forecast.plan_charging_to_target(mode="economic")
+    # _find_economic_window() - replaced by forecast.plan_charging_to_target(mode="economic")
+    # _find_best_window() - replaced by forecast.plan_charging_to_target(mode="forced")
+    # _add_charging_intervals() - replaced by forecast._find_cheapest_charging_intervals()
 
     def _update_current_state(self) -> None:
         """

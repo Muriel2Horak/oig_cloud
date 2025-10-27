@@ -88,6 +88,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         )  # NOVÉ: pro dashboard (4 hodnoty)
         self._first_update: bool = True  # Flag pro první update (setup)
 
+        # Unified charging planner - aktivní plán
+        self._active_charging_plan: Optional[Dict[str, Any]] = None
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA."""
         await super().async_added_to_hass()
@@ -246,7 +249,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         solar_forecast: Dict[str, Any],
         load_avg_sensors: Dict[str, Any],
         adaptive_profiles: Optional[Dict[str, Any]] = None,
-        balancing_plan: Optional[Dict[str, Any]] = None,
+        balancing_plan: Optional[
+            Dict[str, Any]
+        ] = None,  # DEPRECATED: Use self._active_charging_plan instead
     ) -> List[Dict[str, Any]]:
         """
         Vypočítat timeline predikce baterie.
@@ -259,7 +264,7 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             solar_forecast: Solární předpověď (hodinové hodnoty)
             load_avg_sensors: Load average senzory
             adaptive_profiles: Dict s profily (today_profile, tomorrow_profile) nebo None pro fallback
-            balancing_plan: Dict s plánem balancování (holding_start, holding_end, reason) nebo None
+            balancing_plan: DEPRECATED - kept for compatibility, use self._active_charging_plan
 
         Returns:
             List timeline bodů s predikcí
@@ -269,40 +274,48 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         today = dt_util.now().date()
 
-        # Parse balancing plan times if exists
+        # UNIFIED PLANNER: Použít aktivní plán místo parametru balancing_plan
+        active_plan = self._active_charging_plan
+
+        # Parse charging plan times if exists
         balancing_start: Optional[datetime] = None  # Start HOLDING period (už na 100%)
         balancing_end: Optional[datetime] = None  # End HOLDING period
         balancing_charging_intervals: set = set()  # Intervaly kdy nabíjet (podle cen)
         balancing_reason: Optional[str] = None
+        plan_requester: Optional[str] = None
 
         # Tracking pro přesný výpočet ceny balancování
         balancing_charging_cost: float = 0.0  # Cena za nabití na 100%
         balancing_holding_cost: float = 0.0  # Cena za držení (spotřeba ze sítě)
 
-        if balancing_plan:
+        if active_plan and active_plan.get("charging_plan"):
             try:
+                charging_plan = active_plan["charging_plan"]
                 balancing_start = datetime.fromisoformat(
-                    balancing_plan.get("holding_start", "")
+                    charging_plan.get("holding_start", "")
                 )
                 balancing_end = datetime.fromisoformat(
-                    balancing_plan.get("holding_end", "")
+                    charging_plan.get("holding_end", "")
                 )
-                balancing_reason = balancing_plan.get("reason", "unknown")
+                plan_requester = active_plan.get("requester", "unknown")
+                plan_mode = active_plan.get("mode", "unknown")
+                balancing_reason = f"{plan_requester}_{plan_mode}"
 
-                # Použít charging intervals z balancing plánu
-                charging_intervals_str = balancing_plan.get("charging_intervals", [])
+                # Použít charging intervals z plánu
+                charging_intervals_data = charging_plan.get("charging_intervals", [])
                 balancing_charging_intervals = {
-                    datetime.fromisoformat(ts) for ts in charging_intervals_str
+                    datetime.fromisoformat(iv["timestamp"])
+                    for iv in charging_intervals_data
                 }
 
                 _LOGGER.info(
-                    f"Balancing plan: {balancing_reason}, "
+                    f"Active charging plan: {plan_requester} ({plan_mode}), "
                     f"holding {balancing_start.strftime('%H:%M')}-{balancing_end.strftime('%H:%M')}, "
                     f"charging in {len(balancing_charging_intervals)} intervals"
                 )
-            except (ValueError, TypeError) as e:
-                _LOGGER.warning(f"Failed to parse balancing plan times: {e}")
-                balancing_plan = None
+            except (ValueError, TypeError, KeyError) as e:
+                _LOGGER.warning(f"Failed to parse active charging plan: {e}")
+                active_plan = None
 
         # Získat battery efficiency pro výpočty
         efficiency = self._get_battery_efficiency()
@@ -383,8 +396,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Cílová kapacita je 100%
                 target_kwh = max_capacity
 
-                # Spočítat kolik energie potřebujeme ze sítě
-                projected_kwh = battery_kwh + solar_kwh - (load_kwh * 0.05)
+                # OPRAVA: Spočítat kolik energie potřebujeme ze sítě
+                # Zohlednit že baterie NEMŮŽE být záporná (už je clampnuta na 0)
+                # Solar pomůže, load se odečítá (ale v UPS režimu jde ze sítě)
+                current_battery = max(0, battery_kwh)  # Zajistit že není záporná
+                projected_kwh = current_battery + solar_kwh
                 needed_kwh = target_kwh - projected_kwh
 
                 # Nabíjet jen pokud:
@@ -395,8 +411,18 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 )
 
                 if should_charge and needed_kwh > 0:
-                    # Potřebujeme dobít - omezit na max výkon (3 kW = 0.75 kWh/15min)
-                    grid_kwh = min(needed_kwh, 0.75)
+                    # OPRAVA: Použít home_charge_rate z konfigurace místo hardcoded 0.75
+                    # Načíst charging power z config
+                    config = (
+                        self._config_entry.options
+                        if self._config_entry and self._config_entry.options
+                        else self._config_entry.data if self._config_entry else {}
+                    )
+                    charging_power_kw = config.get("home_charge_rate", 2.8)
+                    max_charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
+
+                    # Potřebujeme dobít - omezit na max výkon
+                    grid_kwh = min(needed_kwh, max_charge_per_15min)
                 else:
                     grid_kwh = 0.0
 
@@ -461,13 +487,13 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
                 # Výpočet nové kapacity baterie
                 battery_kwh = battery_kwh + net_energy
 
-                # Clamp jen na maximum, NE na minimum
-                # (Chceme vidět pokles pod minimum aby grid charging algoritmus reagoval)
+                # Clamp na maximum i minimum
+                # OPRAVA: MUSÍME clampovat na minimum (0 kWh), jinak baterie jde do mínusu!
+                # Grid charging algoritmus funguje správně i s clampem - detekuje když battery_kwh <= min_capacity
                 if battery_kwh > max_capacity:
                     battery_kwh = max_capacity
-                # DŮLEŽITÉ: NEclampovat na minimum - ať timeline ukazuje skutečný pokles
-                # if battery_kwh < min_capacity:
-                #     battery_kwh = min_capacity
+                if battery_kwh < 0:  # Baterie NIKDY nemůže být záporná!
+                    battery_kwh = 0
 
             # Určit reason pro tento interval
             reason = "normal"
@@ -505,17 +531,19 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
             )
 
         # Optimalizace nabíjení ze sítě
-        # DŮLEŽITÉ: Pokud máme balancing plan, NEVOLAT optimalizaci!
-        # Balancing má prioritu před grid charging optimalizací
+        # DŮLEŽITÉ: Pokud máme aktivní charging plan, NEVOLAT optimalizaci!
+        # Charging plan má prioritu před grid charging optimalizací
         _LOGGER.debug(f"Timeline before optimization: {len(timeline)} points")
-        if not balancing_plan:
+        if not active_plan:
             timeline = self._optimize_grid_charging(timeline)
             _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
         else:
-            _LOGGER.info(f"Skipping grid charging optimization - balancing plan active")
+            _LOGGER.info(
+                f"Skipping grid charging optimization - active charging plan from {plan_requester}"
+            )
 
         # Uložit balancing cost info pro atributy
-        if balancing_plan:
+        if active_plan:
             self._balancing_cost = {
                 "charging_cost_czk": round(balancing_charging_cost, 2),
                 "holding_cost_czk": round(balancing_holding_cost, 2),
@@ -2739,6 +2767,448 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # Ultimate fallback
         return 0.48
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # UNIFIED CHARGING PLANNER - Centrální funkce pro plánování nabíjení
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def plan_charging_to_target(
+        self,
+        target_soc_percent: float,
+        deadline: datetime,
+        holding_duration_hours: int,
+        mode: str,
+        requester: str,
+    ) -> Dict[str, Any]:
+        """
+        Centrální plánovací funkce pro nabíjení baterie na cílový SOC.
+
+        Args:
+            target_soc_percent: Cílový SOC (0-100%)
+            deadline: DO KDY má být dosaženo (konec holding fáze)
+            holding_duration_hours: Délka holding fáze (např. 3h pro balancing)
+            mode: "economic" (hledá levné intervaly) nebo "forced" (MUSÍ nabít)
+            requester: "balancing", "weather_protection", "blackout_protection", "manual"
+
+        Returns:
+            Dict s výsledkem plánování:
+            {
+                "feasible": bool,           # Podařilo se vytvořit plán?
+                "status": str,              # "complete" nebo "partial"
+                "achieved_soc_percent": float,  # Čeho skutečně dosáhne
+                "charging_plan": {...},     # Detailní plán (pokud feasible)
+                "conflict": {...}           # Info o konfliktu (pokud nelze aplikovat)
+            }
+        """
+        _LOGGER.info(
+            f"[Planner] Request from {requester}: target={target_soc_percent}%, "
+            f"deadline={deadline.strftime('%Y-%m-%d %H:%M')}, mode={mode}"
+        )
+
+        # 1. Kontrola konfliktu s aktivním plánem
+        if hasattr(self, "_active_charging_plan") and self._active_charging_plan:
+            # Spočítat předpokládaný SOC k našemu deadline při aktivním plánu
+            predicted_soc = self._predict_soc_at_time(
+                deadline, self._active_charging_plan
+            )
+
+            _LOGGER.warning(
+                f"[Planner] CONFLICT: Active plan from {self._active_charging_plan['requester']}, "
+                f"predicted SOC at {deadline.strftime('%H:%M')} = {predicted_soc:.1f}%"
+            )
+
+            return {
+                "feasible": False,
+                "status": "conflict",
+                "conflict": {
+                    "active_plan_requester": self._active_charging_plan["requester"],
+                    "active_plan_deadline": self._active_charging_plan["deadline"],
+                    "active_plan_target_soc": self._active_charging_plan[
+                        "target_soc_percent"
+                    ],
+                    "predicted_soc_at_deadline": predicted_soc,
+                },
+            }
+
+        # 2. Načíst konfiguraci
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        charging_power_kw = config.get("home_charge_rate", 2.8)
+        charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
+
+        max_capacity = self._get_max_battery_capacity()
+        target_soc_kwh = (target_soc_percent / 100.0) * max_capacity
+
+        # 3. Získat aktuální SOC
+        current_battery_kwh = self._get_current_battery_capacity()
+        if current_battery_kwh is None:
+            _LOGGER.error("[Planner] Cannot get current battery capacity")
+            return {
+                "feasible": False,
+                "status": "error",
+                "error": "No current capacity data",
+            }
+
+        # 4. Vypočítat holding window
+        holding_start = deadline - timedelta(hours=holding_duration_hours)
+        holding_end = deadline
+
+        # 5. Najít dostupné intervaly (NOW až holding_start)
+        now = dt_util.now()
+        if holding_start <= now:
+            _LOGGER.warning(f"[Planner] Holding start {holding_start} is in the past!")
+            # Posunout do budoucnosti
+            holding_start = now + timedelta(hours=1)
+            holding_end = holding_start + timedelta(hours=holding_duration_hours)
+
+        # 6. Získat spot prices ze senzoru (ne async call!)
+        try:
+            if not self._hass:
+                _LOGGER.error("[Planner] No hass instance available")
+                return {"feasible": False, "status": "error", "error": "No hass"}
+            
+            # Číst ze spot price senzoru (stejně jako dřív balancing)
+            sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
+            state = self._hass.states.get(sensor_id)
+
+            if not state or state.state in ("unavailable", "unknown", None):
+                _LOGGER.error(f"[Planner] Spot price sensor {sensor_id} not available")
+                return {"feasible": False, "status": "error", "error": "No spot prices sensor"}
+
+            if not state.attributes:
+                _LOGGER.error(f"[Planner] Spot price sensor {sensor_id} has no attributes")
+                return {"feasible": False, "status": "error", "error": "No spot prices data"}
+
+            # Format: [{timestamp, price, ...}, ...]
+            prices_list = state.attributes.get("prices", [])
+            if not prices_list:
+                _LOGGER.error("[Planner] No prices in spot price sensor")
+                return {"feasible": False, "status": "error", "error": "Empty spot prices"}
+            
+            # Převést na timeline formát
+            spot_prices = []
+            for price_point in prices_list:
+                timestamp = price_point.get("timestamp")
+                price = price_point.get("price")
+                if timestamp and price is not None:
+                    spot_prices.append({
+                        "time": timestamp,
+                        "price": float(price)
+                    })
+            
+            _LOGGER.debug(f"[Planner] Loaded {len(spot_prices)} spot prices")
+            
+        except Exception as e:
+            _LOGGER.error(f"[Planner] Failed to get spot prices: {e}")
+            return {"feasible": False, "status": "error", "error": str(e)}
+
+        if not spot_prices:
+            _LOGGER.error("[Planner] No spot prices available")
+            return {"feasible": False, "status": "error", "error": "No spot prices"}
+
+        # 7. Najít nejlevnější intervaly
+        charging_intervals = self._find_cheapest_charging_intervals(
+            spot_prices=spot_prices,
+            start_time=now,
+            end_time=holding_start,
+            target_soc_kwh=target_soc_kwh,
+            current_soc_kwh=current_battery_kwh,
+            charge_per_15min=charge_per_15min,
+            mode=mode,
+        )
+
+        if not charging_intervals:
+            _LOGGER.warning("[Planner] No charging intervals found")
+            return {
+                "feasible": False,
+                "status": "insufficient_time",
+                "achieved_soc_percent": (current_battery_kwh / max_capacity) * 100.0,
+            }
+
+        # 8. Spočítat dosažený SOC
+        total_energy = sum(iv["grid_kwh"] for iv in charging_intervals)
+        achieved_soc_kwh = current_battery_kwh + total_energy
+        achieved_soc_percent = min(100.0, (achieved_soc_kwh / max_capacity) * 100.0)
+
+        # 9. Vyhodnotit úspěšnost
+        is_complete = achieved_soc_percent >= target_soc_percent - 1.0  # 1% tolerance
+        status = "complete" if is_complete else "partial"
+
+        # 10. Economic mode - kontrola threshold
+        if mode == "economic" and not is_complete:
+            _LOGGER.warning(
+                f"[Planner] Economic mode failed: achieved {achieved_soc_percent:.1f}% < target {target_soc_percent}%"
+            )
+            return {
+                "feasible": False,
+                "status": "partial",
+                "achieved_soc_percent": achieved_soc_percent,
+            }
+
+        # 11. Spočítat náklady
+        costs = self._calculate_charging_costs(
+            charging_intervals=charging_intervals,
+            holding_start=holding_start,
+            holding_end=holding_end,
+            spot_prices=spot_prices,
+        )
+
+        # 12. Sestavit charging plan
+        charging_plan = {
+            "holding_start": holding_start.isoformat(),
+            "holding_end": holding_end.isoformat(),
+            "charging_intervals": charging_intervals,
+            "total_cost_czk": costs["total_cost_czk"],
+            "total_energy_kwh": total_energy,
+            "charging_cost_czk": costs["charging_cost_czk"],
+            "holding_cost_czk": costs["holding_cost_czk"],
+        }
+
+        _LOGGER.info(
+            f"[Planner] SUCCESS: {status}, "
+            f"achieved={achieved_soc_percent:.1f}%, "
+            f"intervals={len(charging_intervals)}, "
+            f"cost={costs['total_cost_czk']:.2f} Kč"
+        )
+
+        return {
+            "feasible": True,
+            "status": status,
+            "achieved_soc_percent": achieved_soc_percent,
+            "charging_plan": charging_plan,
+            "requester": requester,
+            "mode": mode,
+            "created_at": now.isoformat(),
+        }
+
+    def apply_charging_plan(self, plan_result: Dict[str, Any]) -> bool:
+        """
+        Aplikuje schválený plán a zamkne ho.
+
+        Args:
+            plan_result: Výsledek z plan_charging_to_target()
+
+        Returns:
+            True pokud úspěšně aplikováno
+        """
+        if not plan_result.get("feasible"):
+            _LOGGER.warning("[Planner] Cannot apply non-feasible plan")
+            return False
+
+        self._active_charging_plan = {
+            "requester": plan_result["requester"],
+            "mode": plan_result["mode"],
+            "target_soc_percent": plan_result.get("achieved_soc_percent", 100.0),
+            "deadline": plan_result["charging_plan"]["holding_end"],
+            "charging_plan": plan_result["charging_plan"],
+            "locked": True,
+            "created_at": plan_result["created_at"],
+        }
+
+        _LOGGER.info(
+            f"[Planner] Plan APPLIED and LOCKED: {plan_result['requester']} "
+            f"({plan_result['mode']} mode)"
+        )
+
+        # Přepočítat forecast s novým plánem
+        if self._hass:
+            self._hass.async_create_task(self.async_update())
+
+        return True
+
+    def cancel_charging_plan(self, requester: str) -> bool:
+        """
+        Zruší aktivní plán (pouze pokud patří danému requesteru).
+
+        Args:
+            requester: ID requestera který plán vytvořil
+
+        Returns:
+            True pokud úspěšně zrušeno
+        """
+        if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
+            _LOGGER.debug(f"[Planner] No active plan to cancel")
+            return False
+
+        if self._active_charging_plan["requester"] != requester:
+            _LOGGER.warning(
+                f"[Planner] Cannot cancel plan: requester mismatch "
+                f"(active={self._active_charging_plan['requester']}, requested={requester})"
+            )
+            return False
+
+        _LOGGER.info(f"[Planner] Plan CANCELLED: {requester}")
+        self._active_charging_plan = None
+
+        # Přepočítat forecast bez plánu
+        if self._hass:
+            self._hass.async_create_task(self.async_update())
+
+        return True
+
+    def get_active_plan(self) -> Optional[Dict[str, Any]]:
+        """Vrátí aktuální aktivní plán nebo None."""
+        if hasattr(self, "_active_charging_plan"):
+            return self._active_charging_plan
+        return None
+
+    def _find_cheapest_charging_intervals(
+        self,
+        spot_prices: List[Dict[str, Any]],
+        start_time: datetime,
+        end_time: datetime,
+        target_soc_kwh: float,
+        current_soc_kwh: float,
+        charge_per_15min: float,
+        mode: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Najde nejlevnější intervaly pro nabíjení v časovém okně.
+
+        Returns:
+            List intervalů: [{"timestamp": str, "grid_kwh": float, "price_czk": float}, ...]
+        """
+        # Kolik energie potřebujeme?
+        energy_needed = max(0, target_soc_kwh - current_soc_kwh)
+        intervals_needed = int(np.ceil(energy_needed / charge_per_15min))
+
+        _LOGGER.debug(
+            f"[Planner] Energy needed: {energy_needed:.2f} kWh = {intervals_needed} intervals"
+        )
+
+        # Filtrovat intervaly v časovém okně
+        available_intervals = []
+        for price_point in spot_prices:
+            try:
+                timestamp = datetime.fromisoformat(price_point["time"])
+                if start_time <= timestamp < end_time:
+                    available_intervals.append(
+                        {
+                            "timestamp": price_point["time"],
+                            "price_czk": price_point["price"],
+                        }
+                    )
+            except (ValueError, KeyError):
+                continue
+
+        if len(available_intervals) < intervals_needed:
+            _LOGGER.warning(
+                f"[Planner] Insufficient intervals: need {intervals_needed}, have {len(available_intervals)}"
+            )
+            if mode == "economic":
+                return []  # Economic mode vyžaduje všechny intervaly
+            # Forced mode: použij co máš
+            intervals_needed = len(available_intervals)
+
+        # Seřadit podle ceny (nejlevnější první)
+        available_intervals.sort(key=lambda x: x["price_czk"])
+
+        # Vybrat N nejlevnějších
+        selected = available_intervals[:intervals_needed]
+
+        # Přidat grid_kwh
+        result = []
+        remaining_energy = energy_needed
+        for interval in selected:
+            grid_kwh = min(charge_per_15min, remaining_energy)
+            result.append(
+                {
+                    "timestamp": interval["timestamp"],
+                    "grid_kwh": round(grid_kwh, 3),
+                    "price_czk": round(interval["price_czk"], 2),
+                }
+            )
+            remaining_energy -= grid_kwh
+
+        return result
+
+    def _calculate_charging_costs(
+        self,
+        charging_intervals: List[Dict[str, Any]],
+        holding_start: datetime,
+        holding_end: datetime,
+        spot_prices: List[Dict[str, Any]],
+    ) -> Dict[str, float]:
+        """
+        Spočítá náklady na charging + holding fázi.
+
+        Returns:
+            {"charging_cost_czk": float, "holding_cost_czk": float, "total_cost_czk": float}
+        """
+        # Charging cost
+        charging_cost = sum(
+            iv["grid_kwh"] * iv["price_czk"] for iv in charging_intervals
+        )
+
+        # Holding cost - spotřeba ze sítě během holding (pokud ne solar)
+        # Pro zjednodušení: průměrná spotřeba * počet hodin * průměrná cena
+        # TODO: Refine s real forecast data
+        holding_hours = (holding_end - holding_start).total_seconds() / 3600
+        avg_consumption_kw = 0.15  # Průměrná spotřeba během noci
+
+        # Najít průměrnou cenu během holding
+        holding_prices = []
+        for price_point in spot_prices:
+            try:
+                timestamp = datetime.fromisoformat(price_point["time"])
+                if holding_start <= timestamp <= holding_end:
+                    holding_prices.append(price_point["price"])
+            except (ValueError, KeyError):
+                continue
+
+        avg_holding_price = np.mean(holding_prices) if holding_prices else 4.0
+        holding_cost = avg_consumption_kw * holding_hours * avg_holding_price
+
+        return {
+            "charging_cost_czk": round(charging_cost, 2),
+            "holding_cost_czk": round(holding_cost, 2),
+            "total_cost_czk": round(charging_cost + holding_cost, 2),
+        }
+
+    def _predict_soc_at_time(
+        self, target_time: datetime, active_plan: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """
+        Predikuje SOC v daném čase (s nebo bez aktivního plánu).
+
+        Args:
+            target_time: Čas pro predikci
+            active_plan: Aktivní charging plan (nebo None pro normální forecast)
+
+        Returns:
+            Predikovaný SOC v % (0-100)
+        """
+        # Pokud nemáme timeline, použij aktuální SOC
+        if not self._timeline_data:
+            current_capacity = self._get_current_battery_capacity()
+            max_capacity = self._get_max_battery_capacity()
+            if current_capacity and max_capacity:
+                return (current_capacity / max_capacity) * 100.0
+            return 50.0  # Fallback
+
+        # Najít bod v timeline nejblíže target_time
+        closest_point = None
+        min_diff = float("inf")
+
+        for point in self._timeline_data:
+            try:
+                timestamp = datetime.fromisoformat(point["timestamp"])
+                diff = abs((timestamp - target_time).total_seconds())
+                if diff < min_diff:
+                    min_diff = diff
+                    closest_point = point
+            except (ValueError, KeyError):
+                continue
+
+        if closest_point:
+            max_capacity = self._get_max_battery_capacity()
+            capacity_kwh = closest_point.get("battery_capacity_kwh", 0)
+            return (capacity_kwh / max_capacity) * 100.0
+
+        return 50.0  # Fallback
 
 
 class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
