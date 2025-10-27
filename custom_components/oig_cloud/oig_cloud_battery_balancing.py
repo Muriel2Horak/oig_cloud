@@ -319,9 +319,11 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # Economic: dny 5-7 - hledej levné intervaly
         elif days < config["interval_days"] + 1:  # Dny 5-7
             mode = "economic"
-            # Deadline: konec 7. dne
+            # Deadline: konec 7. dne (23:59 toho dne)
             days_until_deadline = config["interval_days"] - days
-            deadline = now + timedelta(days=days_until_deadline, hours=23, minutes=59)
+            deadline = (now + timedelta(days=days_until_deadline)).replace(
+                hour=23, minute=59, second=59, microsecond=0
+            )
             _LOGGER.info(
                 f"Day {days} - ECONOMIC mode, deadline {deadline.strftime('%Y-%m-%d %H:%M')}"
             )

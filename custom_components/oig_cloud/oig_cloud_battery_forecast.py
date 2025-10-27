@@ -2,8 +2,11 @@
 
 import logging
 import numpy as np
+import copy
+import json
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -22,7 +25,7 @@ from .oig_cloud_data_sensor import OigCloudDataSensor
 _LOGGER = logging.getLogger(__name__)
 
 
-class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
+class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
     """Zjednodušený senzor pro predikci nabití baterie."""
 
     def __init__(
@@ -90,11 +93,31 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
 
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
+        self._plan_status: str = "none"  # none | pending | active | completed
 
     async def async_added_to_hass(self) -> None:
-        """Při přidání do HA."""
+        """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
         self._hass = self.hass
+        
+        # Restore data z předchozí instance
+        if (last_state := await self.async_get_last_state()):
+            if last_state.attributes:
+                # Restore active plan z attributes (pokud existoval)
+                if "active_plan_data" in last_state.attributes:
+                    try:
+                        plan_json = last_state.attributes.get("active_plan_data")
+                        if plan_json:
+                            self._active_charging_plan = json.loads(plan_json)
+                            self._plan_status = last_state.attributes.get("plan_status", "pending")
+                            if self._active_charging_plan:
+                                _LOGGER.info(
+                                    f"✅ Restored charging plan: "
+                                    f"requester={self._active_charging_plan.get('requester', 'unknown')}, "
+                                    f"status={self._plan_status}"
+                                )
+                    except (json.decoder.JSONDecodeError, TypeError) as e:
+                        _LOGGER.warning(f"Failed to restore charging plan: {e}")
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
@@ -149,6 +172,11 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         # Přidat balancing cost pokud existuje
         if hasattr(self, "_balancing_cost") and self._balancing_cost:
             attrs["balancing_cost"] = self._balancing_cost
+        
+        # PERSISTENCE: Uložit active plan pro restore po restartu
+        if hasattr(self, "_active_charging_plan") and self._active_charging_plan:
+            attrs["active_plan_data"] = json.dumps(self._active_charging_plan)
+            attrs["plan_status"] = getattr(self, "_plan_status", "pending")
 
         return attrs
 
@@ -3065,6 +3093,425 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         if hasattr(self, "_active_charging_plan"):
             return self._active_charging_plan
         return None
+
+    def get_timeline_data(self) -> List[Dict[str, Any]]:
+        """Vrátí aktuální timeline data pro analýzu."""
+        if hasattr(self, "_timeline_data"):
+            return self._timeline_data
+        return []
+
+    # ========================================================================
+    # SIMULATION API - pro testování charging plánů bez aplikace
+    # ========================================================================
+
+    async def simulate_charging_plan(
+        self,
+        target_soc_percent: float,
+        charging_start: datetime,
+        charging_end: datetime,
+        holding_start: datetime,
+        holding_end: datetime,
+        requester: str,
+    ) -> Dict[str, Any]:
+        """
+        SIMULACE charging plánu - NEAPLIKUJE ho na skutečný forecast!
+        
+        Proces:
+        1. Vezme aktuální timeline (spot prices, solar, consumption)
+        2. Vytvoří KOPII timeline
+        3. Na kopii aplikuje simulovaný plán (nabíjení + holding)
+        4. Spočítá náklady, feasibility, violations
+        5. Vrátí výsledky BEZ změny skutečného stavu
+        
+        Args:
+            target_soc_percent: Cílová SOC při začátku holding (obvykle 100%)
+            charging_start: Začátek charging window
+            charging_end: Konec charging window (začátek holding)
+            holding_start: Začátek holding period
+            holding_end: Konec holding period
+            requester: Kdo žádá simulaci (balancing, weather_protection, atd.)
+        
+        Returns:
+            {
+                "simulation_id": "sim_balancing_20251027_080000",
+                "feasible": True/False,
+                "violation": None nebo "minimal_capacity_breach",
+                "violation_time": None nebo datetime,
+                
+                "charging_cost_czk": 35.12,
+                "holding_cost_czk": 2.15,
+                "opportunity_cost_czk": 5.30,
+                "total_cost_czk": 42.57,
+                
+                "energy_needed_kwh": 9.8,
+                "min_capacity_during_plan": 2.45,
+                "initial_soc_percent": 21.5,
+                "final_soc_percent": 100.0,
+                
+                "plan_start": "2025-10-27T10:45:00",
+                "plan_end": "2025-10-28T07:00:00",
+                "charging_intervals": [...]
+            }
+        """
+        # Inicializovat simulace dict pokud neexistuje
+        if not hasattr(self, "_simulations"):
+            self._simulations: Dict[str, Dict] = {}
+
+        # 1. Kopie aktuální timeline
+        if not hasattr(self, "_timeline_data") or not self._timeline_data:
+            _LOGGER.error("Cannot simulate - no timeline data available")
+            return {
+                "simulation_id": None,
+                "feasible": False,
+                "violation": "no_timeline_data",
+            }
+
+        original_timeline = self._timeline_data
+        
+        # 2. Najít charging intervaly (nejlevnější v okně)
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        
+        max_capacity_kwh = self._get_max_battery_capacity()
+        target_soc_kwh = (target_soc_percent / 100.0) * max_capacity_kwh
+        charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
+        
+        # Najít aktuální SOC na začátku charging
+        current_soc_kwh = None
+        for point in original_timeline:
+            point_time = datetime.fromisoformat(point["timestamp"])
+            if point_time.tzinfo is None:
+                point_time = dt_util.as_local(point_time)
+            if point_time >= charging_start:
+                current_soc_kwh = point.get("battery_capacity_kwh", 0)
+                break
+        
+        if current_soc_kwh is None:
+            _LOGGER.error("Cannot find battery capacity at charging_start")
+            return {
+                "simulation_id": None,
+                "feasible": False,
+                "violation": "invalid_charging_start",
+            }
+        
+        # Získat spot prices
+        spot_prices = self._get_spot_price_timeline()
+        if not spot_prices:
+            _LOGGER.error("Cannot simulate - no spot price data")
+            return {
+                "simulation_id": None,
+                "feasible": False,
+                "violation": "no_spot_prices",
+            }
+        
+        # Najít charging intervaly
+        charging_intervals = self._find_cheapest_charging_intervals(
+            spot_prices=spot_prices,
+            start_time=charging_start,
+            end_time=charging_end,
+            target_soc_kwh=target_soc_kwh,
+            current_soc_kwh=current_soc_kwh,
+            charge_per_15min=charge_per_15min,
+            mode="economic",  # Vždy hledat nejlevnější
+        )
+        
+        # 3. Simulace na kopii timeline
+        simulation_result = await self._run_timeline_simulation(
+            original_timeline=original_timeline,
+            charging_intervals=charging_intervals,
+            holding_start=holding_start,
+            holding_end=holding_end,
+            target_soc_kwh=target_soc_kwh,
+        )
+        
+        # 4. Validace
+        minimal_capacity_kwh = self._get_min_battery_capacity()
+        violations = self._validate_simulation(
+            timeline=simulation_result["simulated_timeline"],
+            minimal_capacity_kwh=minimal_capacity_kwh,
+        )
+        
+        # 5. Náklady
+        costs = self._calculate_simulation_costs(
+            original_timeline=original_timeline,
+            simulated_timeline=simulation_result["simulated_timeline"],
+            charging_intervals=charging_intervals,
+            holding_start=holding_start,
+            holding_end=holding_end,
+        )
+        
+        # 6. Generate ID
+        sim_id = f"sim_{requester}_{dt_util.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # 7. Uložit simulaci (max 10, auto-cleanup starších než 1h)
+        self._cleanup_old_simulations()
+        self._simulations[sim_id] = {
+            "created_at": dt_util.now(),
+            "timeline": simulation_result["simulated_timeline"],
+            "costs": costs,
+            "violations": violations,
+            "metadata": {
+                "charging_start": charging_start,
+                "charging_end": charging_end,
+                "holding_start": holding_start,
+                "holding_end": holding_end,
+                "requester": requester,
+            },
+        }
+        
+        # 8. Return results
+        return {
+            "simulation_id": sim_id,
+            "feasible": len([v for v in violations if v["severity"] == "critical"]) == 0,
+            "violation": violations[0]["type"] if violations else None,
+            "violation_time": violations[0]["time"] if violations else None,
+            
+            "charging_cost_czk": costs["charging"],
+            "holding_cost_czk": costs["holding"],
+            "opportunity_cost_czk": costs["opportunity"],
+            "total_cost_czk": costs["total"],
+            
+            "energy_needed_kwh": simulation_result["energy_needed"],
+            "min_capacity_during_plan": simulation_result["min_capacity"],
+            "initial_soc_percent": (current_soc_kwh / max_capacity_kwh) * 100,
+            "final_soc_percent": simulation_result["final_soc_percent"],
+            
+            "plan_start": charging_start.isoformat(),
+            "plan_end": holding_end.isoformat(),
+            "charging_intervals": charging_intervals,
+        }
+
+    async def _run_timeline_simulation(
+        self,
+        original_timeline: List[Dict[str, Any]],
+        charging_intervals: List[Dict[str, Any]],
+        holding_start: datetime,
+        holding_end: datetime,
+        target_soc_kwh: float,
+    ) -> Dict[str, Any]:
+        """
+        Spustí simulaci timeline s aplikovaným plánem.
+        
+        Returns:
+            {
+                "simulated_timeline": [...],
+                "energy_needed": 9.8,
+                "min_capacity": 2.45,
+                "final_soc_percent": 100.0
+            }
+        """
+        # COPY-ON-WRITE: Kopie timeline
+        simulated_timeline = copy.deepcopy(original_timeline)
+        
+        # Převést charging intervals na set pro rychlé lookup
+        charging_times = {
+            datetime.fromisoformat(iv["timestamp"]) for iv in charging_intervals
+        }
+        
+        # Config
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        max_capacity_kwh = self._get_max_battery_capacity()
+        charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
+        
+        # Tracking
+        min_capacity = float('inf')
+        energy_charged = 0.0
+        
+        # Aplikovat plán na timeline
+        for i, point in enumerate(simulated_timeline):
+            timestamp = datetime.fromisoformat(point["timestamp"])
+            if timestamp.tzinfo is None:
+                timestamp = dt_util.as_local(timestamp)
+            
+            battery_kwh = point["battery_capacity_kwh"]
+            
+            # Nabíjení v charging intervals
+            if timestamp in charging_times:
+                # Nabít k target (ale ne více než max capacity)
+                needed = min(charge_per_15min, max_capacity_kwh - battery_kwh)
+                point["grid_charge_kwh"] = needed
+                point["battery_capacity_kwh"] = min(battery_kwh + needed, max_capacity_kwh)
+                point["mode"] = "Home UPS"
+                point["reason"] = "balancing_charging"
+                energy_charged += needed
+            
+            # Holding period - držet na 100%
+            elif holding_start <= timestamp <= holding_end:
+                # V UPS režimu baterie drží 100%, spotřeba jde ze sítě
+                point["mode"] = "Home UPS"
+                point["reason"] = "balancing_holding"
+                # Baterie zůstává na target_soc (invertror drží)
+                point["battery_capacity_kwh"] = target_soc_kwh
+            
+            # Track minimum
+            if point["battery_capacity_kwh"] < min_capacity:
+                min_capacity = point["battery_capacity_kwh"]
+        
+        # Final SOC
+        final_soc_percent = 0.0
+        if simulated_timeline:
+            last_point = simulated_timeline[-1]
+            final_soc_percent = (last_point["battery_capacity_kwh"] / max_capacity_kwh) * 100
+        
+        return {
+            "simulated_timeline": simulated_timeline,
+            "energy_needed": energy_charged,
+            "min_capacity": min_capacity,
+            "final_soc_percent": final_soc_percent,
+        }
+
+    def _validate_simulation(
+        self,
+        timeline: List[Dict[str, Any]],
+        minimal_capacity_kwh: float,
+    ) -> List[Dict[str, Any]]:
+        """
+        Zkontrolovat všechna porušení kritických parametrů.
+        
+        Returns:
+            List violations: [{type, time, capacity, limit, severity}, ...]
+        """
+        violations = []
+        
+        for point in timeline:
+            battery_kwh = point.get("battery_capacity_kwh", 0)
+            timestamp = point.get("timestamp")
+            
+            # KRITICKÉ: minimal capacity
+            if battery_kwh < minimal_capacity_kwh:
+                violations.append({
+                    "type": "minimal_capacity_breach",
+                    "time": timestamp,
+                    "capacity": battery_kwh,
+                    "limit": minimal_capacity_kwh,
+                    "severity": "critical",
+                })
+        
+        return violations
+
+    def _calculate_simulation_costs(
+        self,
+        original_timeline: List[Dict[str, Any]],
+        simulated_timeline: List[Dict[str, Any]],
+        charging_intervals: List[Dict[str, Any]],
+        holding_start: datetime,
+        holding_end: datetime,
+    ) -> Dict[str, float]:
+        """
+        Spočítat všechny náklady simulace.
+        
+        Returns:
+            {
+                "charging": náklady na nabití,
+                "holding": náklady na držení (spotřeba ze sítě),
+                "opportunity": ztráta úspor (co bychom ušetřili bez plánu),
+                "total": součet všech nákladů
+            }
+        """
+        charging_cost = 0.0
+        holding_cost = 0.0
+        opportunity_cost = 0.0
+        
+        # 1. Charging cost - sečíst ceny nabíjení
+        for interval in charging_intervals:
+            charging_cost += interval.get("price_czk", 0)
+        
+        # 2. Holding cost - spotřeba ze sítě během holding
+        for i, point in enumerate(simulated_timeline):
+            timestamp = datetime.fromisoformat(point["timestamp"])
+            if timestamp.tzinfo is None:
+                timestamp = dt_util.as_local(timestamp)
+            
+            if holding_start <= timestamp <= holding_end:
+                # V UPS režimu: spotřeba jde ze sítě
+                consumption_kwh = point.get("consumption_kwh", 0)
+                spot_price = point.get("spot_price_czk", 0)
+                holding_cost += consumption_kwh * spot_price
+        
+        # 3. Opportunity cost - co ZTRATÍME tím že držíme baterii
+        for i, (orig, sim) in enumerate(zip(original_timeline, simulated_timeline)):
+            orig_timestamp = datetime.fromisoformat(orig["timestamp"])
+            if orig_timestamp.tzinfo is None:
+                orig_timestamp = dt_util.as_local(orig_timestamp)
+            
+            # Pouze v období charging + holding
+            if not (charging_intervals[0] if charging_intervals else None):
+                continue
+            
+            plan_start = datetime.fromisoformat(charging_intervals[0]["timestamp"])
+            if plan_start.tzinfo is None:
+                plan_start = dt_util.as_local(plan_start)
+            
+            if not (plan_start <= orig_timestamp <= holding_end):
+                continue
+            
+            # Původní plán: kolik bychom ušetřili vybitím baterie
+            # (záporné battery_change = vybíjení)
+            orig_discharge = 0.0
+            if i > 0:
+                orig_discharge = max(
+                    0,
+                    original_timeline[i - 1].get("battery_capacity_kwh", 0)
+                    - orig.get("battery_capacity_kwh", 0),
+                )
+            
+            sim_discharge = 0.0
+            if i > 0:
+                sim_discharge = max(
+                    0,
+                    simulated_timeline[i - 1].get("battery_capacity_kwh", 0)
+                    - sim.get("battery_capacity_kwh", 0),
+                )
+            
+            spot_price = orig.get("spot_price_czk", 0)
+            
+            # Rozdíl v úsporách
+            orig_savings = orig_discharge * spot_price
+            sim_savings = sim_discharge * spot_price
+            opportunity_cost += max(0, orig_savings - sim_savings)
+        
+        total_cost = charging_cost + holding_cost + opportunity_cost
+        
+        return {
+            "charging": round(charging_cost, 2),
+            "holding": round(holding_cost, 2),
+            "opportunity": round(opportunity_cost, 2),
+            "total": round(total_cost, 2),
+        }
+
+    def _cleanup_old_simulations(self) -> None:
+        """Smazat staré simulace (> 1h) a udržet max 10."""
+        if not hasattr(self, "_simulations"):
+            return
+        
+        now = dt_util.now()
+        cutoff = now - timedelta(hours=1)
+        
+        # Smazat starší než 1h
+        to_delete = [
+            sim_id
+            for sim_id, sim_data in self._simulations.items()
+            if sim_data["created_at"] < cutoff
+        ]
+        
+        for sim_id in to_delete:
+            del self._simulations[sim_id]
+        
+        # Udržet max 10 (smazat nejstarší)
+        if len(self._simulations) > 10:
+            sorted_sims = sorted(
+                self._simulations.items(), key=lambda x: x[1]["created_at"]
+            )
+            to_delete = [sim_id for sim_id, _ in sorted_sims[:-10]]
+            for sim_id in to_delete:
+                del self._simulations[sim_id]
 
     def _find_cheapest_charging_intervals(
         self,
