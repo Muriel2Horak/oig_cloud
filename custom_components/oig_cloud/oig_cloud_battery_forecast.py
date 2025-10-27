@@ -457,12 +457,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 projected_kwh = current_battery + solar_kwh
                 needed_kwh = target_kwh - projected_kwh
 
-                # Nabíjet jen pokud:
-                # 1. Jsme v charging intervalu (levné hodiny) NEBO
-                # 2. Jsme v holding period a ještě nejsme na 100%
-                should_charge = is_balancing_charging or (
-                    is_balancing_holding and battery_kwh < target_kwh
-                )
+                # DŮLEŽITÉ: V holding period NIKDY nenabíjet!
+                # Nabíjení probíhá JEN v charging_intervals (před holding periodem)
+                # V holding period jen držíme baterii na max kapacitě
+                should_charge = is_balancing_charging and (not is_balancing_holding)
 
                 if should_charge and needed_kwh > 0:
                     # OPRAVA: Použít home_charge_rate z konfigurace místo hardcoded 0.75
@@ -490,6 +488,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     balancing_holding_cost += net_consumption * spot_price
 
                     # HOLDING: Forcnout baterii na 100% (technický požadavek)
+                    # Baterie se drží na max, spotřeba jde ze sítě (UPS režim)
                     battery_kwh = max_capacity
 
                 elif is_balancing_charging:
@@ -503,7 +502,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if battery_kwh > max_capacity:
                         battery_kwh = max_capacity
 
-                is_ups_mode = grid_kwh > 0
+                # V balancing režimu je VŽDY UPS (nabíjení nebo držení baterie)
+                is_ups_mode = True
                 solar_to_battery = solar_kwh  # Veškerý solar jde do baterie
             else:
                 # NORMÁLNÍ REŽIM - standardní logika
