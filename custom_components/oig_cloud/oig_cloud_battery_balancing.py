@@ -80,6 +80,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planned_window: Optional[Dict[str, Any]] = None
         self._current_state: str = "standby"  # charging/balancing/planned/standby
         self._time_remaining: Optional[str] = None  # HH:MM format
+        
+        # Rate limiting pro planning
+        self._last_planning_run: Optional[datetime] = None
 
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
@@ -262,7 +265,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _plan_balancing_window(self) -> None:
         """
         Planning logika s SIMULATION-BASED workflow.
-
+        
         Process:
         1. Check existing plan status (držet se dokud neskončí)
         2. Evaluate need (days_since_last)
@@ -272,8 +275,16 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         6. Aplikovat plan
         7. Alerting pokud drahý
         """
+        # RATE LIMITING - neplánovat častěji než 1× za 5 minut
+        now = dt_util.now()
+        if self._last_planning_run:
+            elapsed = (now - self._last_planning_run).total_seconds()
+            if elapsed < 300:  # 5 minut
+                _LOGGER.debug(f"Planning skipped - last run {elapsed:.0f}s ago (< 5min)")
+                return
+        
         config = self._get_balancing_config()
-
+        
         if not config["enabled"]:
             self._planned_window = None
             self._cancel_active_plan()
@@ -484,6 +495,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._update_current_state()
         if self._hass:
             self.async_write_ha_state()
+        
+        # Mark planning run timestamp
+        self._last_planning_run = dt_util.now()
 
     async def _check_cost_alert(self, plan_cost: float, mode: str) -> None:
         """
