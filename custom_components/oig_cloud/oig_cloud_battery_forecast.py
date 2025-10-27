@@ -3168,6 +3168,9 @@ class OigCloudBatteryForecastSensor(CoordinatorEntity, SensorEntity):
         for price_point in spot_prices:
             try:
                 timestamp = datetime.fromisoformat(price_point["time"])
+                # Make timezone aware if needed
+                if timestamp.tzinfo is None:
+                    timestamp = dt_util.as_local(timestamp)
                 if holding_start <= timestamp <= holding_end:
                     holding_prices.append(price_point["price"])
             except (ValueError, KeyError):
