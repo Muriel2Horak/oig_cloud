@@ -3319,9 +3319,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             requester=requester,
         )
 
-        if not plan_result or not plan_result.get("feasible"):
+        # Accept both full feasible plans AND partial results with charging_intervals
+        # Partial results occur in economic mode when target can't be reached at low prices
+        if not plan_result or not plan_result.get("charging_intervals"):
+            status = plan_result.get('status') if plan_result else 'no_result'
             _LOGGER.error(
-                f"Failed to generate charging plan: {plan_result.get('status')}"
+                f"Failed to generate charging plan: {status}"
             )
             return {
                 "simulation_id": None,
