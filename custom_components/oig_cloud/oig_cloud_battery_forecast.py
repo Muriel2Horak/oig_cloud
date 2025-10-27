@@ -3056,6 +3056,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "feasible": False,
                 "status": "insufficient_time",
                 "achieved_soc_percent": (current_battery_kwh / max_capacity) * 100.0,
+                "charging_intervals": [],  # Return empty list instead of missing key
+                "initial_battery_kwh": current_battery_kwh,
+                "target_soc_percent": target_soc_percent,
+                "requester": requester,
+                "mode": mode,
+                "created_at": now.isoformat(),
             }
 
         # 8. Spočítat dosažený SOC
@@ -3072,10 +3078,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning(
                 f"[Planner] Economic mode failed: achieved {achieved_soc_percent:.1f}% < target {target_soc_percent}%"
             )
+            # CRITICAL FIX: Economic mode MUST return partial results with charging_intervals
+            # Otherwise simulation will fail with KeyError when trying to access them
             return {
                 "feasible": False,
                 "status": "partial",
                 "achieved_soc_percent": achieved_soc_percent,
+                "charging_intervals": charging_intervals,  # Return what we found
+                "initial_battery_kwh": current_battery_kwh,  # For simulation
+                "target_soc_percent": target_soc_percent,
+                "requester": requester,
+                "mode": mode,
+                "created_at": now.isoformat(),
             }
 
         # 11. Spočítat náklady

@@ -664,11 +664,18 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
                 # KRITICKÁ KONTROLA: Zkontrolovat jestli dosáhne 100% SOC
                 achieved_soc = simulation.get("achieved_soc_percent", 0)
-                if achieved_soc < 95.0:  # Minimum 95% (5% tolerance)
-                    _LOGGER.warning(
-                        f"  ⚠️ Insufficient charging: only achieves {achieved_soc:.1f}% (need 95%+), rejecting"
+                
+                # Economic mode: REJECT pokud < 95% (čekáme na lepší příležitost)
+                # Forced mode: ACCEPT i partial (musíme nabít co nejvíc)
+                if mode == "economic" and achieved_soc < 95.0:
+                    _LOGGER.debug(
+                        f"  ⚠️ Economic mode: insufficient charging {achieved_soc:.1f}% (need 95%+), skipping"
                     )
                     continue
+                elif mode == "forced" and achieved_soc < 95.0:
+                    _LOGGER.warning(
+                        f"  ⚠️ Forced mode: partial charging {achieved_soc:.1f}% (target 95%+), but accepting"
+                    )
 
                 # Zkontrolovat náklady
                 total_cost = simulation.get("total_cost_czk", float("inf"))
@@ -689,9 +696,16 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # 6. Check if found any feasible plan
         if not best_simulation or not best_candidate:
-            _LOGGER.warning(
-                "No feasible balancing plan found after simulating all candidates"
-            )
+            if mode == "economic":
+                _LOGGER.info(
+                    f"📊 Economic mode: No candidates achieving 95%+ SOC found, "
+                    f"waiting for better prices tomorrow (day {days}/{config['interval_days']})"
+                )
+            else:
+                _LOGGER.error(
+                    f"❌ Forced mode: No feasible balancing plan found after simulating all candidates! "
+                    f"This should not happen in forced mode."
+                )
             return
 
         # 7. ALERTING - check if expensive
