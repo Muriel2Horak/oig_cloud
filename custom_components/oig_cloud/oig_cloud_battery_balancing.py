@@ -215,28 +215,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             # 3. Planning logic - najít optimální okno (nebo držet existující)
             self._plan_balancing_window()
 
-            # 4. Přepočítat charging intervals pro aktivní window
-            # (zahrnuje aktuální probíhající interval)
-            # ALE: pouze pokud jsme PŘED balancing fází!
-            if self._planned_window:
-                now = dt_util.now()
-                holding_start = datetime.fromisoformat(
-                    self._planned_window["holding_start"]
-                )
-                if holding_start.tzinfo is None:
-                    holding_start = dt_util.as_local(holding_start)
-
-                # Pouze přepočítat pokud ještě NEprobíhá balancing
-                if now < holding_start:
-                    spot_prices = self._get_spot_prices()
-                    if spot_prices:
-                        self._planned_window = self._add_charging_intervals(
-                            self._planned_window, spot_prices
-                        )
-                else:
-                    _LOGGER.debug(
-                        f"Balancing phase active, skipping charging intervals recalculation"
-                    )
+            # 4. Přepočítat charging intervals - REMOVED
+            # Unified planner již má charging intervals spočítané v plánu
+            # Není potřeba přepočítávat
 
             # 5. Detekce aktuálního stavu (charging/balancing/standby/planned)
             self._update_current_state()
