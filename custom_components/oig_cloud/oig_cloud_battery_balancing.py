@@ -637,17 +637,26 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         await self._check_cost_alert(best_cost, mode)
 
         # 8. APPLY best plan to forecast sensor
-        simulation_id = best_simulation.get("simulation_id")
-        if not simulation_id:
-            _LOGGER.error("Best simulation has no simulation_id - cannot apply plan")
-            return
+        # Konvertovat simulation na plan_result formát
+        plan_result = {
+            "feasible": best_simulation.get("feasible", False),
+            "requester": "balancing",
+            "mode": mode,
+            "achieved_soc_percent": best_simulation.get("final_soc_percent", 100.0),
+            "charging_plan": {
+                "holding_start": best_simulation.get("plan_start"),
+                "holding_end": best_simulation.get("plan_end"),
+                "charging_intervals": best_simulation.get("charging_intervals", []),
+            },
+            "created_at": dt_util.now().isoformat(),
+        }
 
         # Apply to forecast
-        if not forecast_sensor.apply_charging_plan(simulation_id):
-            _LOGGER.error(f"Failed to apply simulation {simulation_id} to forecast")
+        if not forecast_sensor.apply_charging_plan(plan_result):
+            _LOGGER.error(f"Failed to apply plan to forecast")
             return
 
-        _LOGGER.info(f"✅ Applied simulation {simulation_id} to forecast sensor")
+        _LOGGER.info(f"✅ Applied balancing plan to forecast sensor")
 
         # 9. Save plan to balancing sensor (for state tracking)
         # Konvertovat simulaci do formátu plánu
