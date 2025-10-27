@@ -101,9 +101,13 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # Spustit počáteční detekci z historie
         await self._detect_last_balancing_from_history()
 
-        # START: Hodinový planning loop
+        # START: Hodinový planning loop jako background task
+        # DŮLEŽITÉ: Musí běžet na pozadí, jinak blokuje HA startup!
         _LOGGER.info("Starting hourly balancing planning loop")
-        self._planning_task = self._hass.async_create_task(self._planning_loop())
+        self._planning_task = self.hass.async_create_background_task(
+            self._planning_loop(),
+            name="oig_cloud_balancing_planning_loop"
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA - zrušit planning task."""
