@@ -5620,6 +5620,19 @@ function switchTab(tabName) {
         }, 150); // Stejný timeout jako u Toky pro konzistenci
     }
 
+    // Load boiler dashboard when entering boiler tab
+    if (tabName === 'boiler') {
+        console.log('[Tab] ========== SWITCHING TO BOILER TAB ==========');
+        setTimeout(() => {
+            console.log('[Boiler] Tab visible, initializing boiler dashboard...');
+            if (typeof initBoilerDashboard === 'function') {
+                initBoilerDashboard();
+            } else {
+                console.error('[Boiler] initBoilerDashboard function not found');
+            }
+        }, 150);
+    }
+
     // Load data when entering boiler tab
     if (tabName === 'boiler') {
         console.log('[Tab] ========== SWITCHING TO BOILER TAB ==========');

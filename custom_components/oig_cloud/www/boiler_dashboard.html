@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OIG Bojler Dashboard</title>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #03a9f4;
+            --background-color: #fafafa;
+            --card-background: #ffffff;
+            --text-color: #212121;
+            --secondary-text: #757575;
+            --divider-color: #e0e0e0;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --info-color: #2196f3;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background-color: #111111;
+                --card-background: #1e1e1e;
+                --text-color: #e1e1e1;
+                --secondary-text: #b0b0b0;
+                --divider-color: #333333;
+            }
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            padding: 20px;
+        }
+        
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+        
+        h2 {
+            font-size: 22px;
+            margin: 30px 0 15px 0;
+            color: var(--text-color);
+        }
+        
+        h3 {
+            font-size: 18px;
+            margin: 20px 0 10px 0;
+            color: var(--text-color);
+        }
+        
+        .header {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header-icon {
+            font-size: 32px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--secondary-text);
+        }
+        
+        .error {
+            background: #f44336;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        .category-selector {
+            background: var(--card-background);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .category-selector label {
+            font-weight: 500;
+            margin-right: 10px;
+            color: var(--text-color);
+        }
+        
+        .category-selector select {
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid var(--divider-color);
+            border-radius: 4px;
+            background: var(--background-color);
+            color: var(--text-color);
+            cursor: pointer;
+        }
+        
+        .section {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 15px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: var(--secondary-text);
+            margin-bottom: 8px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+        
+        .stat-unit {
+            font-size: 14px;
+            color: var(--secondary-text);
+            margin-left: 4px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--divider-color);
+        }
+        
+        th {
+            font-weight: 500;
+            background: var(--background-color);
+            color: var(--text-color);
+        }
+        
+        tr:hover {
+            background: var(--background-color);
+        }
+        
+        .confidence-bar {
+            height: 6px;
+            background: var(--divider-color);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: var(--success-color);
+            transition: width 0.3s;
+        }
+        
+        .last-updated {
+            text-align: right;
+            color: var(--secondary-text);
+            font-size: 12px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-title">
+            <span class="header-icon">🔥</span>
+            <h1>Bojler - Ohřev vody</h1>
+        </div>
+    </div>
+    
+    <div id="boiler-dashboard-container">
+        <div class="loading">
+            <p>Načítání dat...</p>
+        </div>
+    </div>
+    
+    <script src="/oig_cloud_static/boiler_dashboard.js"></script>
+</body>
+</html>

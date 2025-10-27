@@ -24,14 +24,14 @@ def calculate_stratified_temp(
 ) -> tuple[float, float]:
     """
     Vypočítá (horní_zóna_temp, dolní_zóna_temp) z jednoho teploměru.
-    
+
     Args:
         measured_temp: Naměřená teplota [°C]
         sensor_position: "top", "upper_quarter", "middle", "lower_quarter"
         mode: "two_zone" nebo "simple_avg"
         split_ratio: Poměr horní zóny (0.5 = polovina)
         boiler_height_m: Výška bojleru [m]
-        
+
     Returns:
         (T_horní, T_dolní) v °C
     """
@@ -67,12 +67,12 @@ def calculate_energy_to_heat(
 ) -> float:
     """
     Vypočítá energii potřebnou k ohřevu vody.
-    
+
     Args:
         volume_liters: Objem vody [l]
         temp_current: Současná teplota [°C]
         temp_target: Cílová teplota [°C]
-        
+
     Returns:
         Energie [kWh]
     """
@@ -96,12 +96,12 @@ def estimate_residual_energy(
 ) -> float:
     """
     Vypočítá residuální energii (alternativní zdroj) jako rozdíl.
-    
+
     Args:
         total_consumption_kwh: Celková spotřeba bojleru
         fve_contribution_kwh: Energie z FVE
         grid_contribution_kwh: Energie ze sítě
-        
+
     Returns:
         Residuální energie [kWh] (≥ 0)
     """
@@ -115,11 +115,11 @@ def validate_temperature_sensor(
 ) -> Optional[float]:
     """
     Validuje a vrací teplotu ze senzoru.
-    
+
     Args:
         state: Stav entity z Home Assistant
         sensor_name: Název senzoru (pro logging)
-        
+
     Returns:
         Teplota v °C nebo None pokud neplatná
     """

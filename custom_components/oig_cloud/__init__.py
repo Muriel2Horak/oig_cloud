@@ -839,66 +839,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # OPRAVA: Předání service_shield přímo, ne z hass.data
         await async_setup_entry_services_with_shield(hass, entry, service_shield)
 
-        # NOVÉ: Registrace HTTP API endpointu pro boiler profile
+        # NOVÉ: Registrace HTTP API endpointů pro boiler
         if boiler_coordinator:
-            from aiohttp import web
-            from homeassistant.helpers.http import HomeAssistantView
+            from .boiler.api_views import register_boiler_api_views
 
-            class BoilerProfileView(HomeAssistantView):
-                """API view for boiler profile data."""
-
-                url = "/api/oig_cloud/{entry_id}/boiler_profile"
-                name = "api:oig_cloud:boiler_profile"
-                requires_auth = True
-
-                async def get(
-                    self, request: web.Request, entry_id: str
-                ) -> web.Response:
-                    """Get boiler profile data."""
-                    try:
-                        # Získat boiler coordinator z hass.data
-                        entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
-                        if not entry_data:
-                            return web.json_response(
-                                {"error": "Entry not found"}, status=404
-                            )
-
-                        boiler_coord = entry_data.get("boiler_coordinator")
-                        if not boiler_coord:
-                            return web.json_response(
-                                {"error": "Boiler module not enabled"}, status=404
-                            )
-
-                        # Získat profil
-                        profile = boiler_coord.profile
-                        if not profile:
-                            return web.json_response(
-                                {"error": "Boiler profile not available"}, status=404
-                            )
-
-                        # Převést na dict
-                        profile_dict = {
-                            "volume_liters": profile.volume_liters,
-                            "heater_power_w": profile.heater_power_w,
-                            "target_temp_c": profile.target_temp_c,
-                            "min_acceptable_temp_c": profile.min_acceptable_temp_c,
-                            "k_constant": profile.k_constant,
-                            "deadline": profile.deadline_time,
-                            "stratification_mode": profile.stratification_mode,
-                            "two_zone_split_ratio": profile.two_zone_split_ratio,
-                        }
-
-                        return web.json_response(profile_dict)
-
-                    except Exception as e:
-                        _LOGGER.error(
-                            f"Error getting boiler profile: {e}", exc_info=True
-                        )
-                        return web.json_response({"error": str(e)}, status=500)
-
-            # Registrovat view
-            hass.http.register_view(BoilerProfileView())
-            _LOGGER.info("Registered Boiler Profile API endpoint")
+            register_boiler_api_views(hass)
+            _LOGGER.info("Boiler API endpoints registered")
 
         # OPRAVA: Zajistit, že ServiceShield je připojený k volání služeb
         if service_shield:

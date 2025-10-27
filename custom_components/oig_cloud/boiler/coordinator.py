@@ -28,7 +28,12 @@ from ..const import (
 from .models import BoilerPlan, BoilerProfile, EnergySource
 from .planner import BoilerPlanner
 from .profiler import BoilerProfiler
-from .utils import calculate_energy_to_heat, calculate_stratified_temp, estimate_residual_energy, validate_temperature_sensor
+from .utils import (
+    calculate_energy_to_heat,
+    calculate_stratified_temp,
+    estimate_residual_energy,
+    validate_temperature_sensor,
+)
 
 _LOGGER = logging.getLogger(__name__)
 

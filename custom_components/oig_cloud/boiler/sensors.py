@@ -364,9 +364,9 @@ class BoilerProfileConfidenceSensor(BoilerSensorBase):
             "category": profile.category,
             "hours_with_data": len(profile.hourly_avg),
             "total_samples": sum(profile.sample_count.values()),
-            "last_updated": profile.last_updated.isoformat()
-            if profile.last_updated
-            else None,
+            "last_updated": (
+                profile.last_updated.isoformat() if profile.last_updated else None
+            ),
         }
 
 

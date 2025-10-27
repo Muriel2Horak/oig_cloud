@@ -211,6 +211,50 @@
                 </div>
             </div>
 
+            <!-- NEW: Advanced Visualizations -->
+            <div class="boiler-advanced-viz">
+                <!-- Category Selector -->
+                <div class="category-selector-container" style="margin: 20px 0;">
+                    <label style="font-weight: bold; margin-right: 10px;">Profil:</label>
+                    <select id="boiler-category-select" onchange="onBoilerCategoryChange()" 
+                            style="padding: 8px 12px; font-size: 14px; border: 1px solid var(--divider-color); border-radius: 4px; background: var(--card-background-color); color: var(--primary-text-color);">
+                        <option value="">Načítání...</option>
+                    </select>
+                </div>
+
+                <!-- Heatmap 7×24 -->
+                <div class="heatmap-section-new" style="margin: 30px 0; background: var(--card-background-color); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h3 style="margin-bottom: 15px;">🗓️ Heatmapa spotřeby (7 dní × 24 hodin)</h3>
+                    <canvas id="boiler-heatmap-chart" style="max-height: 300px;"></canvas>
+                </div>
+
+                <!-- Timeline -->
+                <div class="timeline-section-new" style="margin: 30px 0; background: var(--card-background-color); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h3 style="margin-bottom: 15px;">⚡ Plán ohřevu - Doporučené zdroje</h3>
+                    <canvas id="boiler-timeline-chart" style="max-height: 250px;"></canvas>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="boiler-stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 30px 0;">
+                    <div class="stat-card" style="background: var(--card-background-color); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h4 style="font-size: 14px; color: var(--secondary-text); margin-bottom: 8px;">Celková spotřeba dnes</h4>
+                        <div id="boiler-total-consumption" class="stat-value" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div class="stat-card" style="background: var(--card-background-color); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h4 style="font-size: 14px; color: var(--secondary-text); margin-bottom: 8px;">Z FVE</h4>
+                        <div id="boiler-fve-consumption" class="stat-value" style="font-size: 24px; font-weight: bold; color: #4CAF50;">-</div>
+                    </div>
+                    <div class="stat-card" style="background: var(--card-background-color); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h4 style="font-size: 14px; color: var(--secondary-text); margin-bottom: 8px;">Ze sítě</h4>
+                        <div id="boiler-grid-consumption" class="stat-value" style="font-size: 24px; font-weight: bold; color: #FF9800;">-</div>
+                    </div>
+                    <div class="stat-card" style="background: var(--card-background-color); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h4 style="font-size: 14px; color: var(--secondary-text); margin-bottom: 8px;">Odhadovaná cena</h4>
+                        <div id="boiler-estimated-cost" class="stat-value" style="font-size: 24px; font-weight: bold; color: #2196F3;">-</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Profiling Chart -->
             <div class="profiling-chart-container">
                 <h3>📊 Profil spotřeby (týden)</h3>

@@ -2032,9 +2032,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         selector.SelectSelectorConfig(
                             options=[
                                 {"value": "top", "label": "Přímo nahoře (100%)"},
-                                {"value": "upper_quarter", "label": "Horní čtvrtina (75%)"},
+                                {
+                                    "value": "upper_quarter",
+                                    "label": "Horní čtvrtina (75%)",
+                                },
                                 {"value": "middle", "label": "Polovina (50%)"},
-                                {"value": "lower_quarter", "label": "Dolní čtvrtina (25%)"},
+                                {
+                                    "value": "lower_quarter",
+                                    "label": "Dolní čtvrtina (25%)",
+                                },
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )

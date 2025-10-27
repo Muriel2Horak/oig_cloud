@@ -79,9 +79,7 @@ class BoilerProfiler:
         # Zpracovat data
         self._process_history_data(history_data)
 
-        _LOGGER.info(
-            "Profilování dokončeno. Celkem kategorií: %s", len(self._profiles)
-        )
+        _LOGGER.info("Profilování dokončeno. Celkem kategorií: %s", len(self._profiles))
         return self._profiles
 
     async def _fetch_history(
@@ -112,7 +110,9 @@ class BoilerProfiler:
         )
 
         states = history_states.get(self.energy_sensor, [])
-        _LOGGER.debug("Načteno %s záznamů z SQL pro %s", len(states), self.energy_sensor)
+        _LOGGER.debug(
+            "Načteno %s záznamů z SQL pro %s", len(states), self.energy_sensor
+        )
 
         # Konverze na jednoduchou strukturu
         result = []
