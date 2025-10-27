@@ -187,6 +187,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         await super().async_update()
 
         try:
+            # Update plan lifecycle status FIRST
+            self.update_plan_lifecycle()
+            
             # Získat všechna potřebná data
             _LOGGER.info("Battery forecast async_update() called")
             current_capacity = self._get_current_battery_capacity()
@@ -2937,7 +2940,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Get battery parameters
             max_capacity = self._get_max_battery_capacity()
             min_capacity = self._get_min_battery_capacity()
-            
+
             # Get solar forecast and load sensors
             solar_forecast = getattr(self, "_solar_forecast", {})
             load_avg_sensors = getattr(self, "_load_avg_sensors", {})
@@ -3144,12 +3147,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "created_at": now.isoformat(),
         }
 
-    def apply_charging_plan(self, plan_result: Dict[str, Any]) -> bool:
+    def apply_charging_plan(
+        self, 
+        plan_result: Dict[str, Any],
+        plan_start: datetime,
+        plan_end: datetime,
+    ) -> bool:
         """
-        Aplikuje schválený plán a zamkne ho.
+        Aplikuje schválený plán s lifecycle managementem.
+
+        Plan Lifecycle:
+        - PLANNED: Čeká na start, lze přeplánovat
+        - LOCKED: <1h před startem, lze jen zrušit
+        - RUNNING: Aktivní nabíjení/holding, lze jen zrušit
+        - COMPLETED: Dokončeno
 
         Args:
             plan_result: Výsledek z plan_charging_to_target()
+            plan_start: Začátek plánu (první charging interval)
+            plan_end: Konec plánu (konec holding)
 
         Returns:
             True pokud úspěšně aplikováno
@@ -3158,24 +3174,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning("[Planner] Cannot apply non-feasible plan")
             return False
 
+        now = dt_util.now()
+        
+        # Určit počáteční status podle času do startu
+        time_to_start = (plan_start - now).total_seconds() / 3600  # hodiny
+        
+        if time_to_start <= 0:
+            initial_status = "running"
+        elif time_to_start < 1:
+            initial_status = "locked"
+        else:
+            initial_status = "planned"
+
         self._active_charging_plan = {
             "requester": plan_result["requester"],
             "mode": plan_result["mode"],
-            "target_soc_percent": plan_result.get(
-                "target_soc_percent", 100.0
-            ),  # Původní cíl, ne dosažený
+            "target_soc_percent": plan_result.get("target_soc_percent", 100.0),
             "deadline": plan_result["charging_plan"]["holding_end"],
             "charging_plan": plan_result["charging_plan"],
-            "locked": True,
+            "plan_start": plan_start.isoformat(),  # NOVÉ: Začátek aktivace
+            "plan_end": plan_end.isoformat(),      # NOVÉ: Konec plánu
+            "status": initial_status,              # NOVÉ: Lifecycle status
             "created_at": plan_result["created_at"],
         }
 
-        # Nastavit status na active
-        self._plan_status = "active"
+        # Nastavit global status
+        self._plan_status = initial_status
 
         _LOGGER.info(
-            f"[Planner] Plan APPLIED and LOCKED: {plan_result['requester']} "
-            f"({plan_result['mode']} mode)"
+            f"[Planner] Plan APPLIED: {plan_result['requester']} "
+            f"({plan_result['mode']} mode), status={initial_status}, "
+            f"start={plan_start.strftime('%H:%M')}, end={plan_end.strftime('%H:%M')}"
         )
 
         # Přepočítat forecast s novým plánem
@@ -3183,6 +3212,68 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             self._hass.async_create_task(self.async_update())
 
         return True
+
+    def update_plan_lifecycle(self) -> None:
+        """
+        Aktualizuje lifecycle status aktivního plánu podle času.
+        
+        Lifecycle transitions:
+        - PLANNED → LOCKED: 1h před plan_start
+        - LOCKED → RUNNING: plan_start reached
+        - RUNNING → COMPLETED: plan_end reached
+        
+        Volat každou hodinu (nebo při každém update).
+        """
+        if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
+            return
+        
+        now = dt_util.now()
+        plan = self._active_charging_plan
+        current_status = plan.get("status", "planned")
+        
+        # Parse timestamps
+        try:
+            plan_start = datetime.fromisoformat(plan["plan_start"])
+            if plan_start.tzinfo is None:
+                plan_start = dt_util.as_local(plan_start)
+            
+            plan_end = datetime.fromisoformat(plan["plan_end"])
+            if plan_end.tzinfo is None:
+                plan_end = dt_util.as_local(plan_end)
+        except (KeyError, ValueError, TypeError) as e:
+            _LOGGER.error(f"[Planner] Invalid plan timestamps: {e}")
+            return
+        
+        # Determine new status
+        new_status = current_status
+        
+        if now >= plan_end:
+            new_status = "completed"
+        elif now >= plan_start:
+            new_status = "running"
+        elif (plan_start - now).total_seconds() < 3600:  # <1h to start
+            new_status = "locked"
+        else:
+            new_status = "planned"
+        
+        # Update if changed
+        if new_status != current_status:
+            plan["status"] = new_status
+            self._plan_status = new_status
+            _LOGGER.info(
+                f"[Planner] Lifecycle transition: {current_status} → {new_status} "
+                f"(requester={plan['requester']})"
+            )
+            
+            # If completed, archive and clear
+            if new_status == "completed":
+                _LOGGER.info(
+                    f"[Planner] Plan COMPLETED, clearing "
+                    f"(requester={plan['requester']}, "
+                    f"duration={(plan_end - plan_start).total_seconds() / 3600:.1f}h)"
+                )
+                self._active_charging_plan = None
+                self._plan_status = "none"
 
     def cancel_charging_plan(self, requester: str) -> bool:
         """
@@ -3322,10 +3413,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Accept both full feasible plans AND partial results with charging_intervals
         # Partial results occur in economic mode when target can't be reached at low prices
         if not plan_result or not plan_result.get("charging_intervals"):
-            status = plan_result.get('status') if plan_result else 'no_result'
-            _LOGGER.error(
-                f"Failed to generate charging plan: {status}"
-            )
+            status = plan_result.get("status") if plan_result else "no_result"
+            _LOGGER.error(f"Failed to generate charging plan: {status}")
             return {
                 "simulation_id": None,
                 "feasible": False,

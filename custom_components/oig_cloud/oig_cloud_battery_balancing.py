@@ -103,17 +103,19 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         last_state = await self.async_get_last_state()
         if last_state and last_state.attributes:
             _LOGGER.info(f"Restoring balancing sensor state from last session")
-            
+
             # Restore last_calculation
             if "last_calculation" in last_state.attributes:
                 try:
                     self._last_calculation = dt_util.parse_datetime(
                         last_state.attributes["last_calculation"]
                     )
-                    _LOGGER.debug(f"Restored last_calculation: {self._last_calculation}")
+                    _LOGGER.debug(
+                        f"Restored last_calculation: {self._last_calculation}"
+                    )
                 except (ValueError, TypeError):
                     pass
-            
+
             # Restore last_balancing
             if "last_balancing" in last_state.attributes:
                 try:
@@ -253,7 +255,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             if (
                 hasattr(forecast_sensor, "_active_charging_plan")
                 and forecast_sensor._active_charging_plan
-                and forecast_sensor._active_charging_plan.get("requester") == "balancing"
+                and forecast_sensor._active_charging_plan.get("requester")
+                == "balancing"
             ):
                 _LOGGER.warning(
                     "⚠️ Forecast has balancing plan but balancer doesn't - cancelling orphaned plan"
@@ -579,17 +582,71 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 if holding_end.tzinfo is None:
                     holding_end = dt_util.as_local(holding_end)
 
+                # LIFECYCLE CHECK: Get plan status from forecast sensor
+                forecast_sensor = self._get_forecast_sensor()
+                if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                    active_plan = forecast_sensor._active_charging_plan
+                    if active_plan:
+                        plan_status = active_plan.get("status", "planned")
+                        plan_requester = active_plan.get("requester")
+                        
+                        # LOCKED or RUNNING: Cannot re-plan, only validate/cancel
+                        if plan_status in ["locked", "running"]:
+                            if plan_requester == "balancing":
+                                _LOGGER.info(
+                                    f"🔒 Plan is {plan_status.upper()} (charging started/imminent), "
+                                    f"will not re-plan. Only validation allowed."
+                                )
+                                # Continue to validation checks below (but won't create new plan)
+                            else:
+                                _LOGGER.info(
+                                    f"Plan {plan_status} but not owned by balancing "
+                                    f"(requester={plan_requester}), skipping"
+                                )
+                                return
+                        
+                        # COMPLETED: Clear and continue to new planning
+                        elif plan_status == "completed":
+                            _LOGGER.info(f"Plan COMPLETED, clearing and planning new cycle")
+                            self._planned_window = None
+                            await self._cancel_active_plan()
+                            # Continue to planning below (don't return)
+                        
+                        # PLANNED: Can re-plan freely
+                        else:  # plan_status == "planned"
+                            _LOGGER.debug(
+                                f"� Plan is PLANNED (>1h to start), can re-plan if needed"
+                            )
+
                 # CRITICAL CHECK: If holding window is active but battery not charged, CANCEL plan
+                # But ONLY if plan is RUNNING (not LOCKED - give it time to charge)
                 if now >= holding_start and now <= holding_end:
                     current_soc = self._get_current_soc()
+                    
+                    # Check plan status - only fail if RUNNING and battery not charged
+                    plan_status = None
+                    if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                        active_plan = forecast_sensor._active_charging_plan
+                        if active_plan:
+                            plan_status = active_plan.get("status")
+                    
                     if current_soc < 95.0:  # Should be ~100% during holding
-                        _LOGGER.error(
-                            f"❌ PLAN FAILURE: Holding window active but battery only {current_soc:.1f}% "
-                            f"(expected 95%+). Cancelling failed plan and re-planning."
-                        )
-                        self._planned_window = None
-                        await self._cancel_active_plan()
-                        # Continue to create new plan below (don't return)
+                        # If LOCKED (just starting), give warning but don't cancel yet
+                        if plan_status == "locked":
+                            _LOGGER.warning(
+                                f"⚠️ Holding window starting but battery only {current_soc:.1f}% "
+                                f"(expected 95%+). Plan is LOCKED, monitoring..."
+                            )
+                            return  # Keep monitoring
+                        # If RUNNING, cancel failed plan
+                        else:
+                            _LOGGER.error(
+                                f"❌ PLAN FAILURE: Holding window active but battery only {current_soc:.1f}% "
+                                f"(expected 95%+). Cancelling failed plan and re-planning."
+                            )
+                            self._planned_window = None
+                            await self._cancel_active_plan()
+                            # Continue to create new plan below (don't return)
                     else:
                         _LOGGER.debug(
                             f"✅ Holding window active, battery at {current_soc:.1f}%, keeping plan"
@@ -597,8 +654,14 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         return  # Plan is working, keep it
 
                 # CRITICAL CHECK: If all charging intervals are in the past, plan cannot work
-                # (Only check if plan still exists - might have been cancelled above)
-                if self._planned_window and now < holding_start:
+                # But ONLY check for PLANNED status (LOCKED/RUNNING plans are already executing)
+                plan_status = None
+                if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                    active_plan = forecast_sensor._active_charging_plan
+                    if active_plan:
+                        plan_status = active_plan.get("status")
+                
+                if self._planned_window and now < holding_start and plan_status == "planned":
                     charging_intervals = self._planned_window.get(
                         "charging_intervals", []
                     )
@@ -627,6 +690,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                             _LOGGER.debug(
                                 f"Plan has future charging intervals, keeping it"
                             )
+                            # If LOCKED or RUNNING, don't re-plan
+                            if plan_status in ["locked", "running"]:
+                                return
 
                 # Pokud okno ještě neskončilo + 1h grace period, DRŽET SE HO
                 elif now < holding_end + timedelta(hours=1):
@@ -672,7 +738,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         # - Days 1-4: Too early, skip
         # - Days 5-7: Economic mode - find cheap opportunities, deadline = day 9 midnight
         # - Day 8+: Forced mode - MUST charge, deadline = day 9 midnight (or ASAP if late)
-        
+
         if days < config["interval_days"] + 1:  # Dny 5-7 (economic)
             mode = "economic"
             # Deadline = den 9 půlnoc (interval_days=7 + 2 dny buffer)
@@ -818,6 +884,26 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         # DŮLEŽITÉ: Použít holding_start a holding_end z kandidáta, ne z simulace!
         # Simulace vrací plan_start (čas vytvoření) a plan_end (deadline),
         # ale potřebujeme skutečný holding_start a holding_end
+        
+        # Najít první charging interval pro plan_start
+        charging_intervals = best_simulation.get("charging_intervals", [])
+        plan_start = None
+        if charging_intervals:
+            first_interval_time = None
+            for interval in charging_intervals:
+                try:
+                    interval_time = datetime.fromisoformat(interval["timestamp"])
+                    if interval_time.tzinfo is None:
+                        interval_time = dt_util.as_local(interval_time)
+                    if first_interval_time is None or interval_time < first_interval_time:
+                        first_interval_time = interval_time
+                except (ValueError, TypeError, KeyError):
+                    continue
+            plan_start = first_interval_time
+        
+        # plan_end = konec holding
+        plan_end = best_candidate["holding_end"]
+        
         plan_result = {
             "feasible": best_simulation.get("feasible", False),
             "requester": "balancing",
@@ -826,14 +912,22 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             "charging_plan": {
                 "holding_start": best_candidate["holding_start"].isoformat(),
                 "holding_end": best_candidate["holding_end"].isoformat(),
-                "charging_intervals": best_simulation.get("charging_intervals", []),
+                "charging_intervals": charging_intervals,
             },
             "created_at": dt_util.now().isoformat(),
         }
 
-        # Apply to forecast
-        if not forecast_sensor.apply_charging_plan(plan_result):
-            _LOGGER.error(f"Failed to apply plan to forecast")
+        # Apply to forecast with lifecycle management
+        if plan_start:
+            if not forecast_sensor.apply_charging_plan(
+                plan_result=plan_result,
+                plan_start=plan_start,
+                plan_end=plan_end,
+            ):
+                _LOGGER.error(f"Failed to apply plan to forecast")
+                return
+        else:
+            _LOGGER.error(f"Cannot apply plan: no charging intervals found")
             return
 
         _LOGGER.info(f"✅ Applied balancing plan to forecast sensor")
@@ -973,7 +1067,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         forecast_sensor = self._get_forecast_sensor()
         if forecast_sensor:
             forecast_sensor.cancel_charging_plan(requester="balancing")
-            
+
             # Force update forecast to reflect cancelled plan
             if hasattr(forecast_sensor, "async_update"):
                 await forecast_sensor.async_update()
