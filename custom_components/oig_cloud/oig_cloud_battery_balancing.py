@@ -129,19 +129,39 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
             _LOGGER.info("✅ Planning loop started - will run every hour")
 
+            # První běh okamžitě po startu
+            first_run = True
+
             while True:
                 try:
+                    _LOGGER.info(
+                        f"🔄 Planning loop iteration starting (first_run={first_run})"
+                    )
+
                     # Validovat/naplánovat
                     await self._validate_and_plan()
 
                     # Update timestamp
                     self._last_planning_check = dt_util.now()
+                    _LOGGER.info(
+                        f"✅ Planning loop iteration completed at {self._last_planning_check}"
+                    )
 
                 except Exception as e:
-                    _LOGGER.error(f"Planning loop iteration error: {e}", exc_info=True)
+                    _LOGGER.error(
+                        f"❌ Planning loop iteration error: {e}", exc_info=True
+                    )
 
-                # Čekat 1 hodinu (3600s)
-                await asyncio.sleep(3600)
+                # První běh: čekat jen 60s, pak normálně 1h
+                if first_run:
+                    _LOGGER.info(
+                        "⏱️ First run completed, waiting 60s before next iteration"
+                    )
+                    await asyncio.sleep(60)
+                    first_run = False
+                else:
+                    _LOGGER.info("⏱️ Waiting 3600s (1 hour) until next iteration")
+                    await asyncio.sleep(3600)
 
         except asyncio.CancelledError:
             _LOGGER.info("Planning loop cancelled")
@@ -157,21 +177,35 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         """
         _LOGGER.info("⏳ Waiting for forecast sensor to be ready...")
         start = dt_util.now()
+        attempt = 0
 
         while True:
+            attempt += 1
             # Zkontrolovat timeout
             elapsed = (dt_util.now() - start).total_seconds()
             if elapsed > timeout:
-                _LOGGER.error(f"❌ Timeout waiting for forecast ({timeout}s)")
+                _LOGGER.error(
+                    f"❌ Timeout waiting for forecast after {attempt} attempts ({timeout}s)"
+                )
                 return
 
             # Zkusit získat forecast
             forecast_sensor = self._get_forecast_sensor()
-            if forecast_sensor:
+            if not forecast_sensor:
+                _LOGGER.debug(
+                    f"Attempt {attempt}: Forecast sensor not found, waiting..."
+                )
+            else:
                 timeline = forecast_sensor.get_timeline_data()
-                if timeline and len(timeline) > 0:
+                if not timeline:
+                    _LOGGER.debug(
+                        f"Attempt {attempt}: Forecast sensor found but no timeline data, waiting..."
+                    )
+                elif len(timeline) == 0:
+                    _LOGGER.debug(f"Attempt {attempt}: Timeline empty, waiting...")
+                else:
                     _LOGGER.info(
-                        f"✅ Forecast ready with {len(timeline)} timeline points"
+                        f"✅ Forecast ready after {attempt} attempts with {len(timeline)} timeline points"
                     )
                     return
 
@@ -187,23 +221,30 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         2. Pokud není platný → zrušit
         3. Pokud potřeba → naplánovat nový
         """
-        _LOGGER.debug("🔍 Validate and plan check...")
+        _LOGGER.info("🔍 Starting validate_and_plan check...")
 
         # 1. VALIDACE EXISTUJÍCÍHO PLÁNU
         if self._planned_window:
+            _LOGGER.info(
+                f"📋 Found existing plan: holding {self._planned_window.get('holding_start')} → {self._planned_window.get('holding_end')}"
+            )
             is_valid = await self._validate_existing_plan()
             if is_valid:
-                _LOGGER.debug("✅ Existing plan is valid, keeping it")
+                _LOGGER.info("✅ Existing plan is valid, keeping it")
                 # Update current state
                 self._update_current_state()
                 if self._hass:
                     self.async_write_ha_state()
                 return
             else:
-                _LOGGER.warning("⚠️ Existing plan invalid, clearing")
+                _LOGGER.warning(
+                    "❌ Existing plan is no longer valid, will clear and replan"
+                )
                 self._planned_window = None
                 # Zrušit v forecastu
                 await self._cancel_active_plan_in_forecast()
+        else:
+            _LOGGER.info("📋 No existing plan found")
 
         # 2. ZKONTROLOVAT POTŘEBU PLÁNOVÁNÍ
         config = self._get_balancing_config()
@@ -213,6 +254,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         days = self._days_since_last
         interval = config["interval_days"]  # Default 7 dní
+        _LOGGER.info(
+            f"📊 Balancing status: days_since_last={days}, interval={interval}"
+        )
 
         # FORCED MODE ENFORCEMENT (den 8+):
         # Pokud days >= interval + 1 (den 8+), MUSÍME naplánovat balancování
@@ -609,12 +653,21 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     holding_start=candidate["holding_start"],
                     holding_end=candidate["holding_end"],
                     requester="balancing",
+                    mode=mode,  # Pass economic/forced mode to simulation
                 )
 
                 # Validace feasibility
                 if not simulation.get("feasible"):
                     violation = simulation.get("violation")
                     _LOGGER.debug(f"  ❌ Not feasible: {violation}")
+                    continue
+
+                # KRITICKÁ KONTROLA: Zkontrolovat jestli dosáhne 100% SOC
+                achieved_soc = simulation.get("achieved_soc_percent", 0)
+                if achieved_soc < 95.0:  # Minimum 95% (5% tolerance)
+                    _LOGGER.warning(
+                        f"  ⚠️ Insufficient charging: only achieves {achieved_soc:.1f}% (need 95%+), rejecting"
+                    )
                     continue
 
                 # Zkontrolovat náklady
@@ -624,7 +677,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     best_cost = total_cost
                     best_simulation = simulation
                     best_candidate = candidate
-                    _LOGGER.debug(f"  ✅ New best: {total_cost:.2f} Kč")
+                    _LOGGER.debug(
+                        f"  ✅ New best: {total_cost:.2f} Kč, achieves {achieved_soc:.1f}%"
+                    )
 
             except Exception as e:
                 _LOGGER.error(

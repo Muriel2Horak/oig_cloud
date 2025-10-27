@@ -3213,6 +3213,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         holding_start: datetime,
         holding_end: datetime,
         requester: str,
+        mode: str = "economic",
     ) -> Dict[str, Any]:
         """
         SIMULACE charging plánu - NEAPLIKUJE ho na skutečný forecast!
@@ -3288,7 +3289,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             target_soc_percent=target_soc_percent,
             deadline=holding_end,
             holding_duration_hours=holding_duration_hours,
-            mode="economic",
+            mode=mode,  # Use parameter instead of hardcoded "economic"
             requester=requester,
         )
 
@@ -3363,7 +3364,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "energy_needed_kwh": simulation_result["energy_needed"],
             "min_capacity_during_plan": simulation_result["min_capacity"],
             "initial_soc_percent": (initial_soc_kwh / max_capacity_kwh) * 100,
-            "final_soc_percent": simulation_result["final_soc_percent"],
+            "achieved_soc_percent": plan_result.get(
+                "achieved_soc_percent", 100.0
+            ),  # From plan
+            "final_soc_percent": simulation_result[
+                "final_soc_percent"
+            ],  # From timeline sim
             "plan_start": charging_start.isoformat(),
             "plan_end": holding_end.isoformat(),
             "charging_intervals": charging_intervals,
