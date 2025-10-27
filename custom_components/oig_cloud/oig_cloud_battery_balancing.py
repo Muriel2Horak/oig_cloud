@@ -246,6 +246,20 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         """
         _LOGGER.info("🔍 Starting validate_and_plan check...")
 
+        # CRITICAL: Check if forecast has a plan but balancer doesn't
+        # This can happen after restart if balancer lost its state
+        forecast_sensor = self._get_forecast_sensor()
+        if forecast_sensor and not self._planned_window:
+            if (
+                hasattr(forecast_sensor, "_active_charging_plan")
+                and forecast_sensor._active_charging_plan
+                and forecast_sensor._active_charging_plan.get("requester") == "balancing"
+            ):
+                _LOGGER.warning(
+                    "⚠️ Forecast has balancing plan but balancer doesn't - cancelling orphaned plan"
+                )
+                await self._cancel_active_plan()
+
         # 1. VALIDACE EXISTUJÍCÍHO PLÁNU
         if self._planned_window:
             _LOGGER.info(
