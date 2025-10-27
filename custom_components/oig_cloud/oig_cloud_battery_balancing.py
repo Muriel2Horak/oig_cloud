@@ -1298,7 +1298,8 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         if not self._hass:
             return 50.0  # Default
 
-        soc_entity_id = f"sensor.oig_{self._box_id}_battery_soc"
+        # Správný sensor je batt_bat_c (battery capacity percentage)
+        soc_entity_id = f"sensor.oig_{self._box_id}_batt_bat_c"
         soc_state = self._hass.states.get(soc_entity_id)
 
         if soc_state and soc_state.state not in ("unknown", "unavailable"):
