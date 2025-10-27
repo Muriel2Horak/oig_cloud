@@ -415,8 +415,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if timestamp in balancing_charging_intervals:
                     is_balancing_charging = True
 
-                # Holding: jsme v holding period?
-                if balancing_start <= timestamp <= balancing_end:
+                # Holding: interval je holding pokud:
+                # 1. Začíná v holding period (timestamp >= balancing_start)
+                # 2. Končí v holding period (timestamp + 15min <= balancing_end)
+                # 3. Holding period začíná během tohoto intervalu
+                interval_end = timestamp + timedelta(minutes=15)
+                
+                # Interval je holding pokud se překrývá s holding periodem
+                interval_overlaps_holding = (
+                    (timestamp <= balancing_end) and 
+                    (interval_end >= balancing_start)
+                )
+                
+                if interval_overlaps_holding:
                     is_balancing_holding = True
 
             # Celkové balancing window = charging NEBO holding
@@ -3067,6 +3078,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "created_at": plan_result["created_at"],
         }
 
+        # Nastavit status na active
+        self._plan_status = "active"
+
         _LOGGER.info(
             f"[Planner] Plan APPLIED and LOCKED: {plan_result['requester']} "
             f"({plan_result['mode']} mode)"
@@ -3101,6 +3115,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         _LOGGER.info(f"[Planner] Plan CANCELLED: {requester}")
         self._active_charging_plan = None
+        self._plan_status = "none"
 
         # Přepočítat forecast bez plánu
         if self._hass:
@@ -3889,7 +3904,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                             holding_cost = consumption_kwh * spot_price_czk
                             interval_data["cost_czk"] = round(holding_cost, 2)
                             interval_data["battery_charge_kwh"] = 0.0
-                            interval_data["note"] = "Balancing holding - battery at 100%, grid covers consumption"
+                            interval_data["note"] = (
+                                "Balancing holding - battery at 100%, grid covers consumption"
+                            )
                             # Holding cost se NEZAPOČÍTÁVÁ do total_cost (to je jen charging cost)
                         else:
                             # Grid pokrývá spotřebu, ne nabíjení baterie
