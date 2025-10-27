@@ -86,6 +86,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planning_task: Optional[Any] = None  # asyncio.Task
         self._last_planning_check: Optional[datetime] = None
         self._last_planning_run: Optional[datetime] = None  # Pro rate limiting
+        self._last_calculation: Optional[datetime] = None  # Čas posledního výpočtu plánu
 
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
@@ -105,8 +106,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # DŮLEŽITÉ: Musí běžet na pozadí, jinak blokuje HA startup!
         _LOGGER.info("Starting hourly balancing planning loop")
         self._planning_task = self.hass.async_create_background_task(
-            self._planning_loop(),
-            name="oig_cloud_balancing_planning_loop"
+            self._planning_loop(), name="oig_cloud_balancing_planning_loop"
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -642,15 +642,16 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # 8. APPLY best plan to forecast sensor
         # Konvertovat simulation na plan_result formát
-        # DŮLEŽITÉ: Použít holding_end z kandidáta, ne z simulace!
-        # Simulace vrací plan_end=deadline, ale my chceme skutečný holding_end
+        # DŮLEŽITÉ: Použít holding_start a holding_end z kandidáta, ne z simulace!
+        # Simulace vrací plan_start (čas vytvoření) a plan_end (deadline),
+        # ale potřebujeme skutečný holding_start a holding_end
         plan_result = {
             "feasible": best_simulation.get("feasible", False),
             "requester": "balancing",
             "mode": mode,
             "achieved_soc_percent": best_simulation.get("final_soc_percent", 100.0),
             "charging_plan": {
-                "holding_start": best_simulation.get("plan_start"),
+                "holding_start": best_candidate["holding_start"].isoformat(),
                 "holding_end": best_candidate["holding_end"].isoformat(),
                 "charging_intervals": best_simulation.get("charging_intervals", []),
             },
@@ -668,6 +669,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # Konvertovat simulaci do formátu plánu
         holding_start = best_candidate["holding_start"]
         holding_end = best_candidate["holding_end"]
+
+        # Uložit timestamp výpočtu
+        calculation_time = dt_util.now()
+        self._last_calculation = calculation_time
 
         self._planned_window = {
             "holding_start": holding_start.isoformat(),
@@ -1328,6 +1333,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             "days_since_last": self._days_since_last,
             "last_balancing": (
                 self._last_balancing.isoformat() if self._last_balancing else None
+            ),
+            "last_calculation": (
+                self._last_calculation.isoformat() if self._last_calculation else None
             ),
             "current_state": self._current_state,
             "time_remaining": self._time_remaining,

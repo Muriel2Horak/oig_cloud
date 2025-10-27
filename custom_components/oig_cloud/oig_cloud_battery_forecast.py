@@ -420,13 +420,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # 2. Končí v holding period (timestamp + 15min <= balancing_end)
                 # 3. Holding period začíná během tohoto intervalu
                 interval_end = timestamp + timedelta(minutes=15)
-                
+
                 # Interval je holding pokud se překrývá s holding periodem
-                interval_overlaps_holding = (
-                    (timestamp <= balancing_end) and 
-                    (interval_end >= balancing_start)
+                interval_overlaps_holding = (timestamp <= balancing_end) and (
+                    interval_end >= balancing_start
                 )
-                
+
                 if interval_overlaps_holding:
                     is_balancing_holding = True
 
