@@ -70,7 +70,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_icon = "mdi:battery-charging-60"
         self._attr_native_unit_of_measurement = "kWh"
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_entity_category = None
 
         # Načíst název ze sensor types
@@ -325,16 +325,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 balancing_end = datetime.fromisoformat(
                     charging_plan.get("holding_end", "")
                 )
+                
+                # Normalize timezone - ensure aware datetimes
+                if balancing_start.tzinfo is None:
+                    balancing_start = dt_util.as_local(balancing_start)
+                if balancing_end.tzinfo is None:
+                    balancing_end = dt_util.as_local(balancing_end)
+                
                 plan_requester = active_plan.get("requester", "unknown")
                 plan_mode = active_plan.get("mode", "unknown")
                 balancing_reason = f"{plan_requester}_{plan_mode}"
 
                 # Použít charging intervals z plánu
                 charging_intervals_data = charging_plan.get("charging_intervals", [])
-                balancing_charging_intervals = {
-                    datetime.fromisoformat(iv["timestamp"])
-                    for iv in charging_intervals_data
-                }
+                balancing_charging_intervals = set()
+                for iv in charging_intervals_data:
+                    ts = datetime.fromisoformat(iv["timestamp"])
+                    # Normalize timezone
+                    if ts.tzinfo is None:
+                        ts = dt_util.as_local(ts)
+                    balancing_charging_intervals.add(ts)
 
                 _LOGGER.info(
                     f"Active charging plan: {plan_requester} ({plan_mode}), "
@@ -365,6 +375,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
 
             timestamp = datetime.fromisoformat(timestamp_str)
+            # Normalize timezone - ensure aware datetime
+            if timestamp.tzinfo is None:
+                timestamp = dt_util.as_local(timestamp)
 
             # Získat solar production pro tento čas (kWh za 15min)
             solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
