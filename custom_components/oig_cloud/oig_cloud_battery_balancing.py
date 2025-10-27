@@ -424,7 +424,20 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         # 7. ALERTING - check if expensive
         await self._check_cost_alert(best_cost, mode)
 
-        # 8. APPLY best plan
+        # 8. APPLY best plan to forecast sensor
+        simulation_id = best_simulation.get('simulation_id')
+        if not simulation_id:
+            _LOGGER.error("Best simulation has no simulation_id - cannot apply plan")
+            return
+        
+        # Apply to forecast
+        if not forecast_sensor.apply_charging_plan(simulation_id):
+            _LOGGER.error(f"Failed to apply simulation {simulation_id} to forecast")
+            return
+        
+        _LOGGER.info(f"✅ Applied simulation {simulation_id} to forecast sensor")
+
+        # 9. Save plan to balancing sensor (for state tracking)
         # Konvertovat simulaci do formátu plánu
         holding_start = best_candidate['holding_start']
         holding_end = best_candidate['holding_end']
@@ -453,6 +466,11 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             f"holding={best_simulation['holding_cost_czk']:.2f}, "
             f"opportunity={best_simulation['opportunity_cost_czk']:.2f})"
         )
+        
+        # Update current state and write to HA
+        self._update_current_state()
+        if self._hass:
+            self.async_write_ha_state()
 
     async def _check_cost_alert(self, plan_cost: float, mode: str) -> None:
         """
