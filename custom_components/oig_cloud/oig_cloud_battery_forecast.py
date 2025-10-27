@@ -82,7 +82,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_name = name_cs or name_en or sensor_type
 
         # Timeline data cache
-        self._timeline_data: List[Dict[str, Any]] = []  # ACTIVE timeline (with applied plan)
+        self._timeline_data: List[Dict[str, Any]] = (
+            []
+        )  # ACTIVE timeline (with applied plan)
         self._baseline_timeline: List[Dict[str, Any]] = []  # CLEAN baseline (no plan)
         self._last_update: Optional[datetime] = None
         self._charging_metrics: Dict[str, Any] = {}
@@ -237,7 +239,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 adaptive_profiles=adaptive_profiles,
                 balancing_plan=None,  # ALWAYS None for baseline!
             )
-            
+
             # STEP 2: Vypočítat ACTIVE timeline (s aplikovaným plánem)
             # Toto je pro UI/dashboard - ukazuje skutečný stav
             if self._active_charging_plan:
@@ -2938,13 +2940,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # 4. Získat BASELINE forecast battery capacity v holding_start
         # KRITICKÉ: Použít BASELINE timeline (bez plánu) pro plánování!
         # Jinak cyklická závislost: plan → forecast 100% → simulace "už plno" → žádné charging
-        
+
         # Use cached baseline timeline if available
-        baseline_timeline = self._baseline_timeline if hasattr(self, "_baseline_timeline") and self._baseline_timeline else None
-        
+        baseline_timeline = (
+            self._baseline_timeline
+            if hasattr(self, "_baseline_timeline") and self._baseline_timeline
+            else None
+        )
+
         if not baseline_timeline:
             # Fallback: Generate baseline on-demand
-            _LOGGER.warning("[Planner] No baseline timeline cached, generating on-demand")
+            _LOGGER.warning(
+                "[Planner] No baseline timeline cached, generating on-demand"
+            )
             current_capacity = self._get_current_battery_capacity()
             if current_capacity is None:
                 _LOGGER.error("[Planner] Cannot get current battery capacity")
@@ -2978,7 +2986,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 adaptive_profiles=getattr(self, "_adaptive_profiles", None),
                 balancing_plan=None,  # CRITICAL: No plan for baseline!
             )
-        
+
         # Najít battery capacity v čase holding_start z BASELINE
         current_battery_kwh = None
         for point in baseline_timeline:
@@ -3403,8 +3411,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # 1. Use BASELINE timeline (clean, no active plan)
         # CRITICAL: Simulations must use clean data to avoid circular dependency!
-        baseline_timeline = self._baseline_timeline if hasattr(self, "_baseline_timeline") and self._baseline_timeline else None
-        
+        baseline_timeline = (
+            self._baseline_timeline
+            if hasattr(self, "_baseline_timeline") and self._baseline_timeline
+            else None
+        )
+
         if not baseline_timeline:
             _LOGGER.error("Cannot simulate - no baseline timeline available")
             return {
@@ -4162,7 +4174,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             # OPRAVA: Použít self.hass z CoordinatorEntity
             if not self.hass:
                 _LOGGER.warning(
-                    f"[BatteryForecast] hass not available for offset {from_mode}→{to_mode}, using fallback 300s"
+                    f"[GridChargingPlan] hass not available for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0  # Fallback 5 minut
 
@@ -4170,28 +4182,28 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             config_entry = self.coordinator.config_entry
             if not config_entry:
                 _LOGGER.warning(
-                    f"[BatteryForecast] No config_entry for offset {from_mode}→{to_mode}, using fallback 300s"
+                    f"[GridChargingPlan] No config_entry for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0
 
             entry_data = self.hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
             if not entry_data:
                 _LOGGER.warning(
-                    f"[BatteryForecast] No entry data for offset {from_mode}→{to_mode}, using fallback 300s"
+                    f"[GridChargingPlan] No entry data for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0
 
             service_shield = entry_data.get("service_shield")
             if not service_shield or not hasattr(service_shield, "mode_tracker"):
                 _LOGGER.warning(
-                    f"[BatteryForecast] ServiceShield or mode_tracker not available for offset {from_mode}→{to_mode}, using fallback 300s"
+                    f"[GridChargingPlan] ServiceShield or mode_tracker not available for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0
 
             mode_tracker = service_shield.mode_tracker
             if not mode_tracker:
                 _LOGGER.warning(
-                    f"[BatteryForecast] Mode tracker not initialized for offset {from_mode}→{to_mode}, using fallback 300s"
+                    f"[GridChargingPlan] Mode tracker not initialized for offset {from_mode}→{to_mode}, using fallback 300s"
                 )
                 return 300.0
 
@@ -4199,14 +4211,15 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
 
             _LOGGER.info(
-                f"[BatteryForecast] ✅ Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s (from tracker)"
+                f"[GridChargingPlan] ✅ Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s (from tracker)"
             )
 
             return offset_seconds
 
         except Exception as e:
             _LOGGER.warning(
-                f"[BatteryForecast] Error getting offset {from_mode}→{to_mode}, using fallback 300s: {e}"
+                f"[GridChargingPlan] ❌ Error getting offset {from_mode}→{to_mode}, using fallback 300s: {e}",
+                exc_info=True
             )
             return 300.0  # Fallback 5 minut
 

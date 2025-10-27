@@ -572,22 +572,29 @@ class ServiceShield:
 
         new_expected_set = frozenset(expected_entities.items())
 
-        # Debug: Vypsat frontu před kontrolou deduplikace
+        # Debug: Vypsat frontu a pending před kontrolou deduplikace
         _LOGGER.info(f"[DEDUP DEBUG] Checking for duplicates:")
         _LOGGER.info(f"[DEDUP DEBUG]   New service: {service_name}")
         _LOGGER.info(f"[DEDUP DEBUG]   New params: {params}")
         _LOGGER.info(f"[DEDUP DEBUG]   New expected: {expected_entities}")
         _LOGGER.info(f"[DEDUP DEBUG]   Queue length: {len(self.queue)}")
+        _LOGGER.info(f"[DEDUP DEBUG]   Pending length: {len(self.pending)}")
         for i, q in enumerate(self.queue):
             _LOGGER.info(
                 f"[DEDUP DEBUG]   Queue[{i}]: service={q[0]}, params={q[1]}, expected={q[2]}"
             )
+        for service_key, pending_info in self.pending.items():
+            _LOGGER.info(
+                f"[DEDUP DEBUG]   Pending: service={service_key}, entities={pending_info.get('entities', {})}"
+            )
 
-        # Čeká už ve frontě stejná služba se stejným cílem?
-        # OPRAVA: Porovnáváme i parametry (params), ne jen expected entities
+        # Čeká už ve frontě nebo běží v pending stejná služba se stejným cílem?
+        # OPRAVA: Kontrolujeme jak queue, tak pending
         duplicate_found = False
+        duplicate_location = None
         new_params_set = frozenset(params.items()) if params else frozenset()
 
+        # 1. Kontrola QUEUE (čekající služby)
         for q in self.queue:
             queue_service = q[0]
             queue_params = q[1]
@@ -605,21 +612,42 @@ class ServiceShield:
                 and queue_expected_set == new_expected_set
             ):
                 duplicate_found = True
-                _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND!")
+                duplicate_location = "queue"
+                _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND IN QUEUE!")
                 _LOGGER.info(
                     f"[DEDUP DEBUG]   Matching: service={q[0]}, params={q[1]}, expected={q[2]}"
                 )
                 break
 
+        # 2. Kontrola PENDING (běžící služby) - pouze pokud nebyl nalezen v queue
+        if not duplicate_found:
+            for pending_service_key, pending_info in self.pending.items():
+                pending_entities = pending_info.get("entities", {})
+                pending_expected_set = frozenset(pending_entities.items())
+
+                # Duplikát v pending = stejná služba + stejný očekávaný výsledek
+                # (parametry u pending nemáme uložené, takže kontrolujeme jen expected entities)
+                if (
+                    pending_service_key == service_name
+                    and pending_expected_set == new_expected_set
+                ):
+                    duplicate_found = True
+                    duplicate_location = "pending"
+                    _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND IN PENDING!")
+                    _LOGGER.info(
+                        f"[DEDUP DEBUG]   Matching: service={pending_service_key}, expected={pending_entities}"
+                    )
+                    break
+
         if duplicate_found:
             _LOGGER.info(
-                f"[INTERCEPT DEBUG] Service already in queue - returning early"
+                f"[INTERCEPT DEBUG] Service already in {duplicate_location} - returning early"
             )
             await self._log_event(
                 "ignored",
                 service_name,
                 {"params": params, "entities": expected_entities},
-                reason="Ignorováno – služba se stejným efektem je již ve frontě",
+                reason=f"Ignorováno – služba se stejným efektem je již {'ve frontě' if duplicate_location == 'queue' else 'spuštěna'}",
                 context=context,
             )
             await self._log_telemetry(
@@ -628,7 +656,7 @@ class ServiceShield:
                 {
                     "params": params,
                     "entities": expected_entities,
-                    "reason": "duplicate_in_queue",
+                    "reason": f"duplicate_in_{duplicate_location}",
                 },
             )
             return
