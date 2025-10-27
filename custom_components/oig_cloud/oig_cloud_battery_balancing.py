@@ -80,7 +80,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._planned_window: Optional[Dict[str, Any]] = None
         self._current_state: str = "standby"  # charging/balancing/planned/standby
         self._time_remaining: Optional[str] = None  # HH:MM format
-        
+
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
 
@@ -262,7 +262,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _plan_balancing_window(self) -> None:
         """
         Planning logika s SIMULATION-BASED workflow.
-        
+
         Process:
         1. Check existing plan status (držet se dokud neskončí)
         2. Evaluate need (days_since_last)
@@ -304,17 +304,17 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.info(
                         f"Planned window completed at {holding_end.strftime('%H:%M')}, clearing"
                     )
-                    
+
                     # PROFILING: Uložit dokončený plán do DB
                     if self._planned_window and self._hass:
                         self._hass.async_create_task(
                             self._record_balancing_completion(self._planned_window)
                         )
-                    
+
                     # Update last_balancing
                     self._last_balancing = holding_end
                     self._days_since_last = 0
-                    
+
                     # Clear plan
                     self._planned_window = None
                     self._cancel_active_plan()
@@ -377,7 +377,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # 5. SIMULATE každý kandidát
         best_simulation = None
-        best_cost = float('inf')
+        best_cost = float("inf")
         best_candidate = None
 
         for i, candidate in enumerate(candidates):
@@ -391,20 +391,20 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 simulation = await forecast_sensor.simulate_charging_plan(
                     target_soc_percent=100.0,
                     charging_start=now,  # Můžeme nabíjet kdykoli od teď
-                    charging_end=candidate['holding_start'],  # Do začátku holding
-                    holding_start=candidate['holding_start'],
-                    holding_end=candidate['holding_end'],
+                    charging_end=candidate["holding_start"],  # Do začátku holding
+                    holding_start=candidate["holding_start"],
+                    holding_end=candidate["holding_end"],
                     requester="balancing",
                 )
 
                 # Validace feasibility
-                if not simulation.get('feasible'):
-                    violation = simulation.get('violation')
+                if not simulation.get("feasible"):
+                    violation = simulation.get("violation")
                     _LOGGER.debug(f"  ❌ Not feasible: {violation}")
                     continue
 
                 # Zkontrolovat náklady
-                total_cost = simulation.get('total_cost_czk', float('inf'))
+                total_cost = simulation.get("total_cost_czk", float("inf"))
 
                 if total_cost < best_cost:
                     best_cost = total_cost
@@ -413,47 +413,60 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.debug(f"  ✅ New best: {total_cost:.2f} Kč")
 
             except Exception as e:
-                _LOGGER.error(f"Simulation failed for candidate {i+1}: {e}", exc_info=True)
+                _LOGGER.error(
+                    f"Simulation failed for candidate {i+1}: {e}", exc_info=True
+                )
                 continue
 
         # 6. Check if found any feasible plan
         if not best_simulation or not best_candidate:
-            _LOGGER.warning("No feasible balancing plan found after simulating all candidates")
+            _LOGGER.warning(
+                "No feasible balancing plan found after simulating all candidates"
+            )
             return
 
         # 7. ALERTING - check if expensive
         await self._check_cost_alert(best_cost, mode)
 
         # 8. APPLY best plan to forecast sensor
-        simulation_id = best_simulation.get('simulation_id')
+        simulation_id = best_simulation.get("simulation_id")
         if not simulation_id:
             _LOGGER.error("Best simulation has no simulation_id - cannot apply plan")
             return
-        
+
         # Apply to forecast
         if not forecast_sensor.apply_charging_plan(simulation_id):
             _LOGGER.error(f"Failed to apply simulation {simulation_id} to forecast")
             return
-        
+
         _LOGGER.info(f"✅ Applied simulation {simulation_id} to forecast sensor")
 
         # 9. Save plan to balancing sensor (for state tracking)
         # Konvertovat simulaci do formátu plánu
-        holding_start = best_candidate['holding_start']
-        holding_end = best_candidate['holding_end']
-        
+        holding_start = best_candidate["holding_start"]
+        holding_end = best_candidate["holding_end"]
+
         self._planned_window = {
-            "holding_start": best_simulation['plan_start'],
-            "holding_end": best_simulation['plan_end'],
-            "total_cost_czk": best_simulation['total_cost_czk'],
-            "charging_cost_czk": best_simulation['charging_cost_czk'],
-            "holding_cost_czk": best_simulation['holding_cost_czk'],
-            "opportunity_cost_czk": best_simulation['opportunity_cost_czk'],
-            "avg_price_czk": best_simulation['total_cost_czk'] / best_simulation['energy_needed_kwh'] if best_simulation['energy_needed_kwh'] > 0 else 0,
-            "charging_avg_price_czk": best_simulation['charging_cost_czk'] / best_simulation['energy_needed_kwh'] if best_simulation['energy_needed_kwh'] > 0 else 0,
+            "holding_start": best_simulation["plan_start"],
+            "holding_end": best_simulation["plan_end"],
+            "total_cost_czk": best_simulation["total_cost_czk"],
+            "charging_cost_czk": best_simulation["charging_cost_czk"],
+            "holding_cost_czk": best_simulation["holding_cost_czk"],
+            "opportunity_cost_czk": best_simulation["opportunity_cost_czk"],
+            "avg_price_czk": (
+                best_simulation["total_cost_czk"] / best_simulation["energy_needed_kwh"]
+                if best_simulation["energy_needed_kwh"] > 0
+                else 0
+            ),
+            "charging_avg_price_czk": (
+                best_simulation["charging_cost_czk"]
+                / best_simulation["energy_needed_kwh"]
+                if best_simulation["energy_needed_kwh"] > 0
+                else 0
+            ),
             "reason": mode,
             "charging_intervals": [
-                iv['timestamp'] for iv in best_simulation['charging_intervals']
+                iv["timestamp"] for iv in best_simulation["charging_intervals"]
             ],
             "alternatives_count": len(candidates),  # Pro profiling
         }
@@ -466,7 +479,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             f"holding={best_simulation['holding_cost_czk']:.2f}, "
             f"opportunity={best_simulation['opportunity_cost_czk']:.2f})"
         )
-        
+
         # Update current state and write to HA
         self._update_current_state()
         if self._hass:
@@ -475,7 +488,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _check_cost_alert(self, plan_cost: float, mode: str) -> None:
         """
         Alertovat pokud balancování je výrazně dražší než obvykle.
-        
+
         Args:
             plan_cost: Náklady plánovaného balancování
             mode: economic | forced
@@ -484,17 +497,17 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         profiles = await self._load_balancing_profiles(weeks_back=52)
         if not profiles:
             return  # Nemáme historii, nemůžeme porovnat
-        
+
         patterns = self._analyze_balancing_patterns(profiles)
-        avg_cost = patterns.get('avg_cost_overall', 0)
-        
+        avg_cost = patterns.get("avg_cost_overall", 0)
+
         if avg_cost == 0:
             return
-        
+
         # Threshold: 1.5× průměrných nákladů
         if plan_cost > avg_cost * 1.5:
             increase_percent = ((plan_cost / avg_cost) - 1) * 100
-            
+
             # Create persistent notification
             if self._hass:
                 await self._hass.services.async_call(
@@ -511,9 +524,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                             f"_Toto upozornění můžete ignorovat - plán byl automaticky aplikován._"
                         ),
                         "notification_id": "oig_cloud_expensive_balancing",
-                    }
+                    },
                 )
-            
+
             _LOGGER.warning(
                 f"⚠️ EXPENSIVE BALANCING: {plan_cost:.2f} Kč "
                 f"(+{increase_percent:.0f}% vs avg {avg_cost:.2f} Kč)"
@@ -564,31 +577,31 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     async def _record_balancing_completion(self, plan_data: Dict[str, Any]) -> None:
         """
         Uložit profil dokončeného balancování do HA recorder.
-        
+
         Args:
             plan_data: Data z _planned_window včetně nákladů
         """
         if not self._hass:
             _LOGGER.warning("Cannot record balancing - no hass instance")
             return
-        
+
         now = dt_util.now()
         week = now.isocalendar()[1]
         year = now.year
-        
+
         # Parse timestamps
         try:
             charging_start = datetime.fromisoformat(plan_data["charging_intervals"][0])
             charging_end = datetime.fromisoformat(plan_data["charging_intervals"][-1])
             holding_start = datetime.fromisoformat(plan_data["holding_start"])
             holding_end = datetime.fromisoformat(plan_data["holding_end"])
-            
+
             charging_duration = (charging_end - charging_start).total_seconds() / 3600.0
             holding_duration = (holding_end - holding_start).total_seconds() / 3600.0
         except (KeyError, ValueError, IndexError) as e:
             _LOGGER.error(f"Failed to parse plan timestamps: {e}")
             return
-        
+
         # Sestavit profil
         profile = {
             # Časová identifikace
@@ -597,12 +610,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             "completed_at": now.isoformat(),
             "day_of_week": now.weekday(),  # 0=Po, 6=Ne
             "month": now.month,
-            
             # Decision data
             "mode": plan_data.get("reason", "unknown"),  # economic/forced
             "days_since_last": self._days_since_last,
             "alternatives_evaluated": plan_data.get("alternatives_count", 0),
-            
             # Window timing
             "charging_start": charging_start.isoformat(),
             "charging_end": charging_end.isoformat(),
@@ -610,37 +621,35 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             "holding_end": holding_end.isoformat(),
             "charging_duration_hours": round(charging_duration, 2),
             "holding_duration_hours": round(holding_duration, 2),
-            
             # Cost breakdown
             "charging_cost_czk": plan_data.get("total_cost_czk", 0),
             "holding_cost_czk": 0,  # TODO: Extract from forecast
             "opportunity_cost_czk": 0,  # TODO: Calculate
             "total_cost_czk": plan_data.get("total_cost_czk", 0),
-            
             # Energy data
             "initial_soc_percent": 0,  # TODO: Get from forecast
             "final_soc_percent": 100.0,
             "energy_charged_kwh": 0,  # TODO: Calculate
             "charging_efficiency_percent": 0,  # TODO: Calculate
-            
             # Price context
-            "avg_spot_price_during_charging": plan_data.get("charging_avg_price_czk", 0),
+            "avg_spot_price_during_charging": plan_data.get(
+                "charging_avg_price_czk", 0
+            ),
             "avg_spot_price_during_holding": plan_data.get("avg_price_czk", 0),
             "min_spot_price_available": 0,  # TODO: Get from forecast
             "max_spot_price_available": 0,  # TODO: Get from forecast
-            
             # Success metrics
             "minimal_capacity_violations": 0,  # Vždy 0 (jinak by plán neproběhl)
             "target_achieved": True,
         }
-        
+
         # Event pro recorder
         self._hass.bus.async_fire("oig_cloud_balancing_completed", profile)
-        
+
         # Recent history (poslední 5)
         self._recent_balancing_history.append(profile)
         self._recent_balancing_history = self._recent_balancing_history[-5:]
-        
+
         _LOGGER.info(
             f"📊 Balancing profile saved: week {week}/{year}, "
             f"mode={profile['mode']}, cost={profile['total_cost_czk']:.2f} Kč"
@@ -651,44 +660,46 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     ) -> List[Dict[str, Any]]:
         """
         Načíst balancing profily z posledních N týdnů.
-        
+
         Args:
             weeks_back: Kolik týdnů zpět hledat (default 52 = 1 rok)
-        
+
         Returns:
             List profilů seřazených od nejnovějšího
         """
         if not self._hass:
             _LOGGER.warning("Cannot load profiles - no hass instance")
             return []
-        
+
         try:
             # Get recorder instance
             recorder = get_instance(self._hass)
             if not recorder or not recorder.engine:
                 _LOGGER.warning("Recorder not available")
                 return []
-            
+
             # SQL query
             from sqlalchemy import text
-            
+
             cutoff_date = dt_util.now() - timedelta(weeks=weeks_back)
-            
+
             with recorder.engine.connect() as conn:
-                query = text("""
+                query = text(
+                    """
                     SELECT event_data
                     FROM events
                     WHERE event_type = 'oig_cloud_balancing_completed'
                     AND time_fired > :cutoff
                     ORDER BY time_fired DESC
-                """)
-                
+                """
+                )
+
                 result = conn.execute(query, {"cutoff": cutoff_date})
                 profiles = [json.loads(row[0]) for row in result]
-            
+
             _LOGGER.debug(f"Loaded {len(profiles)} balancing profiles from DB")
             return profiles
-            
+
         except Exception as e:
             _LOGGER.error(f"Failed to load balancing profiles: {e}", exc_info=True)
             return []
@@ -698,10 +709,10 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     ) -> Dict[str, Any]:
         """
         Analyzovat historické profily a najít patterns.
-        
+
         Args:
             profiles: List profilů z _load_balancing_profiles()
-        
+
         Returns:
             Dictionary s patterns a statistikami
         """
@@ -710,33 +721,33 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 "total_profiles": 0,
                 "avg_cost_overall": 0,
             }
-        
+
         # Seskupit podle měsíce
         by_month = defaultdict(list)
         for p in profiles:
             month = p.get("month", 0)
             by_month[month].append(p)
-        
+
         # Seskupit podle dne v týdnu
         by_weekday = defaultdict(list)
         for p in profiles:
             weekday = p.get("day_of_week", 0)
             by_weekday[weekday].append(p)
-        
+
         # Spočítat průměrné náklady
         all_costs = [p.get("total_cost_czk", 0) for p in profiles]
         avg_cost_overall = float(np.mean(all_costs)) if all_costs else 0
-        
+
         avg_costs_by_month = {
             month: float(np.mean([p.get("total_cost_czk", 0) for p in ps]))
             for month, ps in by_month.items()
         }
-        
+
         avg_costs_by_weekday = {
             day: float(np.mean([p.get("total_cost_czk", 0) for p in ps]))
             for day, ps in by_weekday.items()
         }
-        
+
         # Najít typické časy nabíjení
         charging_hours = []
         for p in profiles:
@@ -747,32 +758,42 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                     charging_hours.append(start.hour)
             except (ValueError, TypeError):
                 continue
-        
-        typical_hour = int(max(set(charging_hours), key=charging_hours.count)) if charging_hours else 22
-        
+
+        typical_hour = (
+            int(max(set(charging_hours), key=charging_hours.count))
+            if charging_hours
+            else 22
+        )
+
         # Seasonal patterns
         winter_months = [11, 12, 1, 2]
         summer_months = [5, 6, 7, 8]
-        
+
         winter_profiles = [p for p in profiles if p.get("month") in winter_months]
         summer_profiles = [p for p in profiles if p.get("month") in summer_months]
-        
-        winter_avg = float(np.mean([p.get("total_cost_czk", 0) for p in winter_profiles])) if winter_profiles else None
-        summer_avg = float(np.mean([p.get("total_cost_czk", 0) for p in summer_profiles])) if summer_profiles else None
-        
+
+        winter_avg = (
+            float(np.mean([p.get("total_cost_czk", 0) for p in winter_profiles]))
+            if winter_profiles
+            else None
+        )
+        summer_avg = (
+            float(np.mean([p.get("total_cost_czk", 0) for p in summer_profiles]))
+            if summer_profiles
+            else None
+        )
+
         # Průměrná doba nabíjení
         durations = [p.get("charging_duration_hours", 0) for p in profiles]
         typical_duration = float(np.mean(durations)) if durations else 4.0
-        
+
         return {
             "total_profiles": len(profiles),
             "avg_cost_overall": avg_cost_overall,
             "avg_cost_by_month": avg_costs_by_month,
             "avg_cost_by_weekday": avg_costs_by_weekday,
-            
             "typical_charging_hour": typical_hour,
             "typical_charging_duration": typical_duration,
-            
             "winter_avg_cost": winter_avg,
             "summer_avg_cost": summer_avg,
         }
@@ -786,102 +807,106 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
     ) -> List[Dict[str, Any]]:
         """
         Najít kandidátní okna pro balancování s využitím historical patterns.
-        
+
         Args:
             timeline: Forecast timeline data
             hold_hours: Kolik hodin držet na 100%
             deadline: Do kdy musí být plán dokončen
             mode: economic | forced
-        
+
         Returns:
             List top 10 kandidátních oken seřazených podle score (nejlepší první)
         """
         # 1. Načíst historical patterns
         profiles = await self._load_balancing_profiles(weeks_back=52)
         patterns = self._analyze_balancing_patterns(profiles)
-        
+
         preferred_hour = patterns.get("typical_charging_hour", 22)
-        
+
         _LOGGER.info(
             f"📊 Pattern analysis: {patterns['total_profiles']} profiles, "
             f"typical hour={preferred_hour}:00, avg cost={patterns['avg_cost_overall']:.2f} Kč"
         )
-        
+
         # 2. Hledat možná okna v timeline
         candidates = []
-        
+
         for i in range(len(timeline)):
             point = timeline[i]
             timestamp_str = point.get("timestamp")
             if not timestamp_str:
                 continue
-            
+
             holding_start = datetime.fromisoformat(timestamp_str)
             if holding_start.tzinfo is None:
                 holding_start = dt_util.as_local(holding_start)
-            
+
             holding_end = holding_start + timedelta(hours=hold_hours)
-            
+
             # Musí skončit před deadline
             if holding_end > deadline:
                 break
-            
+
             # Score kandidáta
             score = 0.0
-            
+
             # 1. Cena během holding period (nižší = lepší)
             holding_price_sum = 0.0
             holding_points = 0
             for j in range(i, min(i + hold_hours * 4, len(timeline))):  # 4 = 15min/h
                 holding_price_sum += timeline[j].get("spot_price_czk", 0)
                 holding_points += 1
-            
-            holding_avg_price = holding_price_sum / holding_points if holding_points > 0 else 0
+
+            holding_avg_price = (
+                holding_price_sum / holding_points if holding_points > 0 else 0
+            )
             score -= holding_avg_price * 10  # Váha: cena je nejdůležitější
-            
+
             # 2. Kapacita baterie na začátku (nižší = lepší, levnější nabít)
             battery_kwh = point.get("battery_capacity_kwh", 0)
             max_capacity = 12.29  # TODO: Get from config
             capacity_ratio = battery_kwh / max_capacity if max_capacity > 0 else 0
             score -= (1.0 - capacity_ratio) * 20  # Bonus za nízkou kapacitu
-            
+
             # 3. BONUS: Podobnost s historical patterns (preferovaná hodina)
             hour_of_day = holding_start.hour
             hour_diff = abs(hour_of_day - preferred_hour)
             if hour_diff <= 2:  # ±2 hodiny od typického času
                 score += 5.0
-            
+
             # 4. BONUS: Weekend
             if holding_start.weekday() >= 5:  # So, Ne
                 score += 3.0
-            
+
             # 5. BONUS: Noc (22:00-06:00)
             if hour_of_day >= 22 or hour_of_day <= 6:
                 score += 2.0
-            
-            candidates.append({
-                "holding_start": holding_start,
-                "holding_end": holding_end,
-                "holding_start_idx": i,
-                "score": score,
-                "initial_capacity_percent": capacity_ratio * 100,
-                "holding_avg_price_czk": holding_avg_price,
-                "hour": hour_of_day,
-                "is_weekend": holding_start.weekday() >= 5,
-            })
-        
+
+            candidates.append(
+                {
+                    "holding_start": holding_start,
+                    "holding_end": holding_end,
+                    "holding_start_idx": i,
+                    "score": score,
+                    "initial_capacity_percent": capacity_ratio * 100,
+                    "holding_avg_price_czk": holding_avg_price,
+                    "hour": hour_of_day,
+                    "is_weekend": holding_start.weekday() >= 5,
+                }
+            )
+
         # 3. Seřadit podle score (nejvyšší = nejlepší)
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        
+
         # 4. Vrátit top 10
         top_candidates = candidates[:10]
-        
+
         if top_candidates:
             _LOGGER.info(
                 f"Found {len(candidates)} candidate windows, top 10 scores: "
                 f"{[round(c['score'], 1) for c in top_candidates]}"
             )
-        
+
         return top_candidates
 
     # ═══════════════════════════════════════════════════════════════════════════
