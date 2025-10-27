@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -20,7 +21,7 @@ from homeassistant.components.recorder import history
 _LOGGER = logging.getLogger(__name__)
 
 
-class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
+class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
     """Sensor pro správu vyrovnání článků baterie."""
 
     def __init__(
@@ -99,7 +100,29 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         self._hass = self.hass
 
         # Načíst uložený stav z restore
-        # TODO: Restore state from previous session
+        last_state = await self.async_get_last_state()
+        if last_state and last_state.attributes:
+            _LOGGER.info(f"Restoring balancing sensor state from last session")
+            
+            # Restore last_calculation
+            if "last_calculation" in last_state.attributes:
+                try:
+                    self._last_calculation = dt_util.parse_datetime(
+                        last_state.attributes["last_calculation"]
+                    )
+                    _LOGGER.debug(f"Restored last_calculation: {self._last_calculation}")
+                except (ValueError, TypeError):
+                    pass
+            
+            # Restore last_balancing
+            if "last_balancing" in last_state.attributes:
+                try:
+                    self._last_balancing = dt_util.parse_datetime(
+                        last_state.attributes["last_balancing"]
+                    )
+                    _LOGGER.debug(f"Restored last_balancing: {self._last_balancing}")
+                except (ValueError, TypeError):
+                    pass
 
         # Spustit počáteční detekci z historie
         await self._detect_last_balancing_from_history()
@@ -524,7 +547,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         if not config["enabled"]:
             self._planned_window = None
-            self._cancel_active_plan()
+            await self._cancel_active_plan()
             return
 
         # 1. CHECK EXISTING PLAN
@@ -551,7 +574,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                             f"(expected 95%+). Cancelling failed plan and re-planning."
                         )
                         self._planned_window = None
-                        self._cancel_active_plan()
+                        await self._cancel_active_plan()
                         # Continue to create new plan below (don't return)
                     else:
                         _LOGGER.debug(
@@ -562,7 +585,9 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                 # CRITICAL CHECK: If all charging intervals are in the past, plan cannot work
                 # (Only check if plan still exists - might have been cancelled above)
                 if self._planned_window and now < holding_start:
-                    charging_intervals = self._planned_window.get("charging_intervals", [])
+                    charging_intervals = self._planned_window.get(
+                        "charging_intervals", []
+                    )
                     if charging_intervals:
                         all_past = True
                         for interval_str in charging_intervals:
@@ -575,14 +600,14 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
                                     break
                             except (ValueError, TypeError):
                                 continue
-                        
+
                         if all_past:
                             _LOGGER.error(
                                 f"❌ PLAN FAILURE: All charging intervals are in the past! "
                                 f"Cancelling obsolete plan and re-planning."
                             )
                             self._planned_window = None
-                            self._cancel_active_plan()
+                            await self._cancel_active_plan()
                             # Continue to create new plan below (don't return)
                         else:
                             _LOGGER.debug(
@@ -612,11 +637,11 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
                     # Clear plan
                     self._planned_window = None
-                    self._cancel_active_plan()
+                    await self._cancel_active_plan()
             except (ValueError, TypeError, KeyError) as e:
                 _LOGGER.warning(f"Invalid planned_window format: {e}, clearing")
                 self._planned_window = None
-                self._cancel_active_plan()
+                await self._cancel_active_plan()
 
         # 2. EVALUATE NEED
         days = self._days_since_last
@@ -711,7 +736,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
                 # KRITICKÁ KONTROLA: Zkontrolovat jestli dosáhne 100% SOC
                 achieved_soc = simulation.get("achieved_soc_percent", 0)
-                
+
                 # Economic mode: REJECT pokud < 95% (čekáme na lepší příležitost)
                 # Forced mode: ACCEPT i partial (musíme nabít co nejvíc)
                 if mode == "economic" and achieved_soc < 95.0:
@@ -913,11 +938,15 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         _LOGGER.warning(f"Forecast sensor instance not found: {forecast_sensor_id}")
         return None
 
-    def _cancel_active_plan(self) -> None:
+    async def _cancel_active_plan(self) -> None:
         """Zruší aktivní plán v forecast senzoru (pokud patří balancingu)."""
         forecast_sensor = self._get_forecast_sensor()
         if forecast_sensor:
             forecast_sensor.cancel_charging_plan(requester="balancing")
+            
+            # Force update forecast to reflect cancelled plan
+            if hasattr(forecast_sensor, "async_update"):
+                await forecast_sensor.async_update()
 
     # ========================================================================
     # PROFILING & PATTERN ANALYSIS
