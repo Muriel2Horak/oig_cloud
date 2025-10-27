@@ -2934,10 +2934,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if hasattr(self, "_spot_prices") and self._spot_prices:
                 spot_prices_list = self._spot_prices
 
+            # Get battery parameters
+            max_capacity = self._get_max_battery_capacity()
+            min_capacity = self._get_min_battery_capacity()
+            
+            # Get solar forecast and load sensors
+            solar_forecast = getattr(self, "_solar_forecast", {})
+            load_avg_sensors = getattr(self, "_load_avg_sensors", {})
+
             # Baseline timeline bez aktivního plánu
             baseline_timeline = self._calculate_timeline(
                 current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
                 spot_prices=spot_prices_list,
+                solar_forecast=solar_forecast,
+                load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=getattr(self, "_adaptive_profiles", None),
             )
 

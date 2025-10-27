@@ -668,18 +668,34 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             return
 
         # Determine mode & deadline
-        if days < config["interval_days"] + 1:  # Dny 5-7
+        # Business logic:
+        # - Days 1-4: Too early, skip
+        # - Days 5-7: Economic mode - find cheap opportunities, deadline = day 9 midnight
+        # - Day 8+: Forced mode - MUST charge, deadline = day 9 midnight (or ASAP if late)
+        
+        if days < config["interval_days"] + 1:  # Dny 5-7 (economic)
             mode = "economic"
-            days_until_deadline = config["interval_days"] - days
+            # Deadline = den 9 půlnoc (interval_days=7 + 2 dny buffer)
+            # Example: Day 7 → deadline = day 9 00:00 (2 days from now)
+            days_until_deadline = (config["interval_days"] + 2) - days
             deadline = (now + timedelta(days=days_until_deadline)).replace(
-                hour=23, minute=59, second=59, microsecond=0
+                hour=0, minute=0, second=0, microsecond=0
             )
-        else:  # Den 8+
+        else:  # Den 8+ (forced)
             mode = "forced"
-            days_overdue = days - config["interval_days"]
-            deadline = (now + timedelta(days=2 - days_overdue)).replace(
-                hour=23, minute=59, second=59, microsecond=0
-            )
+            # Deadline = den 9 půlnoc, ale minimálně 24h od teď
+            # Pokud už je den 9+, deadline = ASAP (zítra půlnoc)
+            days_overdue = max(0, days - config["interval_days"])
+            if days_overdue == 0:  # Den 8
+                # Den 9 půlnoc
+                deadline = (now + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+            else:  # Den 9+ (zpožděné)
+                # ASAP - zítra půlnoc (minimální čas na nabití)
+                deadline = (now + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
 
         _LOGGER.info(
             f"📅 Day {days} - {mode.upper()} mode, "
