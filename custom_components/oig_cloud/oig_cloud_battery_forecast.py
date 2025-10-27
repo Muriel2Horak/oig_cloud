@@ -422,8 +422,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 interval_end = timestamp + timedelta(minutes=15)
 
                 # Interval je holding pokud se překrývá s holding periodem
-                interval_overlaps_holding = (timestamp <= balancing_end) and (
-                    interval_end >= balancing_start
+                # CRITICAL: Use > not >= to avoid off-by-one error
+                # Example: interval 20:30-20:45 should NOT be holding if holding starts at 20:45
+                interval_overlaps_holding = (timestamp < balancing_end) and (
+                    interval_end > balancing_start
                 )
 
                 if interval_overlaps_holding:
@@ -3571,9 +3573,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         energy_needed = max(0, target_soc_kwh - current_soc_kwh)
         intervals_needed = int(np.ceil(energy_needed / charge_per_15min))
 
-        _LOGGER.debug(
-            f"[Planner] Energy needed: {energy_needed:.2f} kWh = {intervals_needed} intervals"
+        _LOGGER.info(
+            f"[Planner] Energy needed: {energy_needed:.2f} kWh = {intervals_needed} intervals "
+            f"(target={target_soc_kwh:.2f}, current={current_soc_kwh:.2f}, rate={charge_per_15min:.2f})"
         )
+        _LOGGER.info(
+            f"[Planner] Charging window: {start_time.strftime('%Y-%m-%d %H:%M')} → {end_time.strftime('%Y-%m-%d %H:%M')}"
+        )
+        _LOGGER.info(f"[Planner] Spot prices available: {len(spot_prices)} points")
 
         # Filtrovat intervaly v časovém okně
         available_intervals = []
@@ -3595,11 +3602,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if len(available_intervals) < intervals_needed:
             _LOGGER.warning(
-                f"[Planner] Insufficient intervals: need {intervals_needed}, have {len(available_intervals)}"
+                f"[Planner] Insufficient intervals: need {intervals_needed}, have {len(available_intervals)} "
+                f"(window: {start_time.strftime('%H:%M')} → {end_time.strftime('%H:%M')}, mode={mode})"
             )
-            if mode == "economic":
-                return []  # Economic mode vyžaduje všechny intervaly
-            # Forced mode: použij co máš
+            # Both economic and forced modes use what's available
+            # Simulation will report status="partial" if target not reached
+            # Balancing will decide: wait for better prices or accept partial
+            _LOGGER.info(f"[Planner] {mode.upper()} mode: using {len(available_intervals)} available intervals (partial result expected)")
             intervals_needed = len(available_intervals)
 
         # Seřadit podle ceny (nejlevnější první)
