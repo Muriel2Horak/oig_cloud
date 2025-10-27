@@ -642,6 +642,8 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
 
         # 8. APPLY best plan to forecast sensor
         # Konvertovat simulation na plan_result formát
+        # DŮLEŽITÉ: Použít holding_end z kandidáta, ne z simulace!
+        # Simulace vrací plan_end=deadline, ale my chceme skutečný holding_end
         plan_result = {
             "feasible": best_simulation.get("feasible", False),
             "requester": "balancing",
@@ -649,7 +651,7 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
             "achieved_soc_percent": best_simulation.get("final_soc_percent", 100.0),
             "charging_plan": {
                 "holding_start": best_simulation.get("plan_start"),
-                "holding_end": best_simulation.get("plan_end"),
+                "holding_end": best_candidate["holding_end"].isoformat(),
                 "charging_intervals": best_simulation.get("charging_intervals", []),
             },
             "created_at": dt_util.now().isoformat(),
@@ -668,8 +670,8 @@ class OigCloudBatteryBalancingSensor(CoordinatorEntity, SensorEntity):
         holding_end = best_candidate["holding_end"]
 
         self._planned_window = {
-            "holding_start": best_simulation["plan_start"],
-            "holding_end": best_simulation["plan_end"],
+            "holding_start": holding_start.isoformat(),
+            "holding_end": holding_end.isoformat(),
             "total_cost_czk": best_simulation["total_cost_czk"],
             "charging_cost_czk": best_simulation["charging_cost_czk"],
             "holding_cost_czk": best_simulation["holding_cost_czk"],
