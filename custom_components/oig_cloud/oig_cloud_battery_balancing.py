@@ -589,7 +589,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     if active_plan:
                         plan_status = active_plan.get("status", "planned")
                         plan_requester = active_plan.get("requester")
-                        
+
                         # LOCKED or RUNNING: Cannot re-plan, only validate/cancel
                         if plan_status in ["locked", "running"]:
                             if plan_requester == "balancing":
@@ -604,14 +604,14 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                                     f"(requester={plan_requester}), skipping"
                                 )
                                 return
-                        
+
                         # COMPLETED: Clear and continue to new planning
                         elif plan_status == "completed":
                             _LOGGER.info(f"Plan COMPLETED, clearing and planning new cycle")
                             self._planned_window = None
                             await self._cancel_active_plan()
                             # Continue to planning below (don't return)
-                        
+
                         # PLANNED: Can re-plan freely
                         else:  # plan_status == "planned"
                             _LOGGER.debug(
@@ -622,14 +622,14 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 # But ONLY if plan is RUNNING (not LOCKED - give it time to charge)
                 if now >= holding_start and now <= holding_end:
                     current_soc = self._get_current_soc()
-                    
+
                     # Check plan status - only fail if RUNNING and battery not charged
                     plan_status = None
                     if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
                         active_plan = forecast_sensor._active_charging_plan
                         if active_plan:
                             plan_status = active_plan.get("status")
-                    
+
                     if current_soc < 95.0:  # Should be ~100% during holding
                         # If LOCKED (just starting), give warning but don't cancel yet
                         if plan_status == "locked":
@@ -660,7 +660,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     active_plan = forecast_sensor._active_charging_plan
                     if active_plan:
                         plan_status = active_plan.get("status")
-                
+
                 if self._planned_window and now < holding_start and plan_status == "planned":
                     charging_intervals = self._planned_window.get(
                         "charging_intervals", []
@@ -884,7 +884,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         # DŮLEŽITÉ: Použít holding_start a holding_end z kandidáta, ne z simulace!
         # Simulace vrací plan_start (čas vytvoření) a plan_end (deadline),
         # ale potřebujeme skutečný holding_start a holding_end
-        
+
         # Najít první charging interval pro plan_start
         charging_intervals = best_simulation.get("charging_intervals", [])
         plan_start = None
@@ -900,10 +900,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 except (ValueError, TypeError, KeyError):
                     continue
             plan_start = first_interval_time
-        
+
         # plan_end = konec holding
         plan_end = best_candidate["holding_end"]
-        
+
         plan_result = {
             "feasible": best_simulation.get("feasible", False),
             "requester": "balancing",

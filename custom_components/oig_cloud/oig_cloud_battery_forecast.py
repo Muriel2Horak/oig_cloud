@@ -82,7 +82,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_name = name_cs or name_en or sensor_type
 
         # Timeline data cache
-        self._timeline_data: List[Dict[str, Any]] = []
+        self._timeline_data: List[Dict[str, Any]] = []  # ACTIVE timeline (with applied plan)
+        self._baseline_timeline: List[Dict[str, Any]] = []  # CLEAN baseline (no plan)
         self._last_update: Optional[datetime] = None
         self._charging_metrics: Dict[str, Any] = {}
         self._adaptive_consumption_data: Dict[str, Any] = {}  # DEPRECATED
@@ -189,7 +190,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             # Update plan lifecycle status FIRST
             self.update_plan_lifecycle()
-            
+
             # Získat všechna potřebná data
             _LOGGER.info("Battery forecast async_update() called")
             current_capacity = self._get_current_battery_capacity()
@@ -223,8 +224,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 return
 
-            # Vypočítat timeline (s adaptive profiles nebo fallback)
-            self._timeline_data = self._calculate_timeline(
+            # STEP 1: Vypočítat BASELINE timeline (bez jakéhokoli plánu)
+            # Toto je ČISTÁ predikce pro simulace a plánování
+            _LOGGER.debug("Calculating BASELINE timeline (no plan)")
+            self._baseline_timeline = self._calculate_timeline(
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
                 min_capacity=min_capacity,
@@ -232,12 +235,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=adaptive_profiles,
-                balancing_plan=balancing_plan,
+                balancing_plan=None,  # ALWAYS None for baseline!
             )
+            
+            # STEP 2: Vypočítat ACTIVE timeline (s aplikovaným plánem)
+            # Toto je pro UI/dashboard - ukazuje skutečný stav
+            if self._active_charging_plan:
+                _LOGGER.debug("Calculating ACTIVE timeline (with applied plan)")
+                self._timeline_data = self._calculate_timeline(
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    min_capacity=min_capacity,
+                    spot_prices=spot_prices,
+                    solar_forecast=solar_forecast,
+                    load_avg_sensors=load_avg_sensors,
+                    adaptive_profiles=adaptive_profiles,
+                    balancing_plan=balancing_plan,
+                )
+            else:
+                # Bez aktivního plánu: baseline = active
+                _LOGGER.debug("No active plan, using baseline as active timeline")
+                self._timeline_data = self._baseline_timeline
 
             self._last_update = datetime.now()
             _LOGGER.debug(
-                f"Battery forecast updated: {len(self._timeline_data)} points"
+                f"Battery forecast updated: {len(self._timeline_data)} active points, "
+                f"{len(self._baseline_timeline)} baseline points"
             )
 
             # Vypočítat consumption summary pro dashboard
@@ -2913,16 +2936,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         holding_end = deadline
 
         # 4. Získat BASELINE forecast battery capacity v holding_start
-        # KRITICKÉ: Simulace musí počítat od forecast BEZ aktivního plánu!
+        # KRITICKÉ: Použít BASELINE timeline (bez plánu) pro plánování!
         # Jinak cyklická závislost: plan → forecast 100% → simulace "už plno" → žádné charging
-
-        # Dočasně vypnout aktivní plán pro baseline výpočet
-        old_plan = self._active_charging_plan
-        self._active_charging_plan = None
-
-        try:
-            # Spočítat baseline forecast (bez plánu) až do holding_start
-            # Použít _get_current_battery_capacity jako startovní bod
+        
+        # Use cached baseline timeline if available
+        baseline_timeline = self._baseline_timeline if hasattr(self, "_baseline_timeline") and self._baseline_timeline else None
+        
+        if not baseline_timeline:
+            # Fallback: Generate baseline on-demand
+            _LOGGER.warning("[Planner] No baseline timeline cached, generating on-demand")
             current_capacity = self._get_current_battery_capacity()
             if current_capacity is None:
                 _LOGGER.error("[Planner] Cannot get current battery capacity")
@@ -2945,7 +2967,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             solar_forecast = getattr(self, "_solar_forecast", {})
             load_avg_sensors = getattr(self, "_load_avg_sensors", {})
 
-            # Baseline timeline bez aktivního plánu
+            # Generate baseline timeline (NO PLAN!)
             baseline_timeline = self._calculate_timeline(
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
@@ -2954,39 +2976,36 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=getattr(self, "_adaptive_profiles", None),
+                balancing_plan=None,  # CRITICAL: No plan for baseline!
             )
-
-            # Najít battery capacity v čase holding_start z baseline
-            current_battery_kwh = None
-            for point in baseline_timeline:
-                point_time = dt_util.parse_datetime(point.get("time"))
-                if point_time and point_time >= holding_start:
-                    current_battery_kwh = point.get("battery_capacity_kwh")
-                    _LOGGER.info(
-                        f"[Planner] Baseline forecast at {point_time.strftime('%H:%M')}: "
-                        f"{current_battery_kwh:.2f} kWh ({current_battery_kwh/max_capacity*100:.1f}%)"
-                    )
-                    break
-
-            # Fallback na současnou kapacitu pokud forecast není dostupný
-            if current_battery_kwh is None:
-                current_battery_kwh = current_capacity
-                _LOGGER.warning(
-                    f"[Planner] Could not find baseline forecast at holding_start, "
-                    f"using current capacity: {current_battery_kwh:.2f} kWh"
+        
+        # Najít battery capacity v čase holding_start z BASELINE
+        current_battery_kwh = None
+        for point in baseline_timeline:
+            point_time = dt_util.parse_datetime(point.get("time"))
+            if point_time and point_time >= holding_start:
+                current_battery_kwh = point.get("battery_capacity_kwh")
+                _LOGGER.info(
+                    f"[Planner] Baseline forecast at {point_time.strftime('%H:%M')}: "
+                    f"{current_battery_kwh:.2f} kWh ({current_battery_kwh/max_capacity*100:.1f}%)"
                 )
+                break
 
-        finally:
-            # VŽDY obnovit aktivní plán
-            self._active_charging_plan = old_plan
-
+        # Fallback na současnou kapacitu pokud forecast není dostupný
         if current_battery_kwh is None:
-            _LOGGER.error("[Planner] Cannot determine battery capacity for planning")
-            return {
-                "feasible": False,
-                "status": "error",
-                "error": "No capacity data",
-            }
+            current_capacity = self._get_current_battery_capacity()
+            if current_capacity is None:
+                _LOGGER.error("[Planner] Cannot get current battery capacity")
+                return {
+                    "feasible": False,
+                    "status": "error",
+                    "error": "No current capacity data",
+                }
+            current_battery_kwh = current_capacity
+            _LOGGER.warning(
+                f"[Planner] Could not find baseline forecast at holding_start, "
+                f"using current capacity: {current_battery_kwh:.2f} kWh"
+            )
 
         # Pokud holding_start je v minulosti, posunout do budoucnosti
         if holding_start <= now:
@@ -3148,7 +3167,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
     def apply_charging_plan(
-        self, 
+        self,
         plan_result: Dict[str, Any],
         plan_start: datetime,
         plan_end: datetime,
@@ -3175,10 +3194,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return False
 
         now = dt_util.now()
-        
+
         # Určit počáteční status podle času do startu
         time_to_start = (plan_start - now).total_seconds() / 3600  # hodiny
-        
+
         if time_to_start <= 0:
             initial_status = "running"
         elif time_to_start < 1:
@@ -3193,8 +3212,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "deadline": plan_result["charging_plan"]["holding_end"],
             "charging_plan": plan_result["charging_plan"],
             "plan_start": plan_start.isoformat(),  # NOVÉ: Začátek aktivace
-            "plan_end": plan_end.isoformat(),      # NOVÉ: Konec plánu
-            "status": initial_status,              # NOVÉ: Lifecycle status
+            "plan_end": plan_end.isoformat(),  # NOVÉ: Konec plánu
+            "status": initial_status,  # NOVÉ: Lifecycle status
             "created_at": plan_result["created_at"],
         }
 
@@ -3216,37 +3235,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def update_plan_lifecycle(self) -> None:
         """
         Aktualizuje lifecycle status aktivního plánu podle času.
-        
+
         Lifecycle transitions:
         - PLANNED → LOCKED: 1h před plan_start
         - LOCKED → RUNNING: plan_start reached
         - RUNNING → COMPLETED: plan_end reached
-        
+
         Volat každou hodinu (nebo při každém update).
         """
         if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
             return
-        
+
         now = dt_util.now()
         plan = self._active_charging_plan
         current_status = plan.get("status", "planned")
-        
+
         # Parse timestamps
         try:
             plan_start = datetime.fromisoformat(plan["plan_start"])
             if plan_start.tzinfo is None:
                 plan_start = dt_util.as_local(plan_start)
-            
+
             plan_end = datetime.fromisoformat(plan["plan_end"])
             if plan_end.tzinfo is None:
                 plan_end = dt_util.as_local(plan_end)
         except (KeyError, ValueError, TypeError) as e:
             _LOGGER.error(f"[Planner] Invalid plan timestamps: {e}")
             return
-        
+
         # Determine new status
         new_status = current_status
-        
+
         if now >= plan_end:
             new_status = "completed"
         elif now >= plan_start:
@@ -3255,7 +3274,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             new_status = "locked"
         else:
             new_status = "planned"
-        
+
         # Update if changed
         if new_status != current_status:
             plan["status"] = new_status
@@ -3264,7 +3283,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"[Planner] Lifecycle transition: {current_status} → {new_status} "
                 f"(requester={plan['requester']})"
             )
-            
+
             # If completed, archive and clear
             if new_status == "completed":
                 _LOGGER.info(
@@ -3313,9 +3332,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return None
 
     def get_timeline_data(self) -> List[Dict[str, Any]]:
-        """Vrátí aktuální timeline data pro analýzu."""
+        """Vrátí aktuální ACTIVE timeline data (s aplikovaným plánem) pro UI/dashboard."""
         if hasattr(self, "_timeline_data"):
             return self._timeline_data
+        return []
+
+    def get_baseline_timeline(self) -> List[Dict[str, Any]]:
+        """Vrátí BASELINE timeline (bez plánu) pro simulace a plánování."""
+        if hasattr(self, "_baseline_timeline"):
+            return self._baseline_timeline
         return []
 
     # ========================================================================
@@ -3376,16 +3401,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not hasattr(self, "_simulations"):
             self._simulations: Dict[str, Dict] = {}
 
-        # 1. Kopie aktuální timeline
-        if not hasattr(self, "_timeline_data") or not self._timeline_data:
-            _LOGGER.error("Cannot simulate - no timeline data available")
+        # 1. Use BASELINE timeline (clean, no active plan)
+        # CRITICAL: Simulations must use clean data to avoid circular dependency!
+        baseline_timeline = self._baseline_timeline if hasattr(self, "_baseline_timeline") and self._baseline_timeline else None
+        
+        if not baseline_timeline:
+            _LOGGER.error("Cannot simulate - no baseline timeline available")
             return {
                 "simulation_id": None,
                 "feasible": False,
-                "violation": "no_timeline_data",
+                "violation": "no_baseline_timeline",
             }
 
-        original_timeline = self._timeline_data
+        original_timeline = baseline_timeline  # Use BASELINE for simulation!
 
         # 2. Najít charging intervaly (nejlevnější v okně)
         config = (
