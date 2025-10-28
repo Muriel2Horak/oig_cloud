@@ -2254,9 +2254,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         state = self._hass.states.get(sensor_id)
 
         if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.debug(
-                f"Battery efficiency sensor {sensor_id} not available, using fallback 0.882"
-            )
+            # Zakomentováno: Spamuje logy během DP optimalizace (23k iterací)
+            # _LOGGER.debug(
+            #     f"Battery efficiency sensor {sensor_id} not available, using fallback 0.882"
+            # )
             return 0.882
 
         try:
