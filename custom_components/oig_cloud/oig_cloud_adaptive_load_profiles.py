@@ -189,6 +189,10 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self._profiling_status = "ok"
             self._profiling_error = None
 
+            # Počkat na zápis eventu do recorderu (5s delay pro DB commit)
+            _LOGGER.debug("Waiting 5s for recorder to commit event to DB...")
+            await asyncio.sleep(5)
+
             # Načíst best match a uložit do coordinatoru
             prediction = await self._find_best_matching_profile(consumption_sensor)
             self._current_prediction = prediction
@@ -590,6 +594,17 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 ),
                 "predicted_avg_kwh": self._current_prediction.get("predicted_avg_kwh"),
             }
+            
+            # Add today_profile and tomorrow_profile for battery_forecast integration
+            predicted_24h = self._current_prediction.get("predicted_consumption_24h", [])
+            if predicted_24h and len(predicted_24h) == 24:
+                profile_data = {
+                    "hourly_consumption": predicted_24h,
+                    "total_kwh": self._current_prediction.get("predicted_total_kwh", 0.0),
+                    "avg_kwh_h": self._current_prediction.get("predicted_avg_kwh", 0.0),
+                }
+                attrs["today_profile"] = profile_data
+                attrs["tomorrow_profile"] = profile_data  # Same for now, can differentiate later
 
         return attrs
 
