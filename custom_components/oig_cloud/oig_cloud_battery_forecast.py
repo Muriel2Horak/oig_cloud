@@ -932,13 +932,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Vypočítat náklady pokud uživatel vůbec nenabíjí ze sítě (DO NOTHING).
 
         Phase 2.6: What-if Analysis - Pasivní scénář bez grid charging.
-        
+
         Logika:
         - Solar → Load → Battery → Export
         - Battery vybíjení do Load když není solar
         - Žádné nabíjení ze sítě (HOME UPS zakázán)
         - Když dojde baterie, kupuje ze sítě
-        
+
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
             max_capacity: Max kapacita baterie (kWh)
@@ -1002,12 +1002,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Vypočítat náklady pokud uživatel nabíjí baterii na 100% každou noc (FULL HOME UPS).
 
         Phase 2.6: What-if Analysis - Agresivní nabíjení bez ohledu na cenu.
-        
+
         Logika:
         - V noci (22:00-06:00): Nabíjení na 100% ze sítě (HOME UPS režim)
         - Přes den: Standardní HOME I (solar → battery → load)
         - Ignoruje ceny, prostě nabíjí každou noc
-        
+
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
             max_capacity: Max kapacita baterie (kWh)
@@ -2329,7 +2329,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return CBB_MODE_HOME_III
 
         try:
-            mode = int(state.state)
+            # Sensor může vracet buď int (0-3) nebo string ("Home I", "Home II", ...)
+            mode_value = state.state
+            
+            # Pokud je to string, převést na int
+            if isinstance(mode_value, str):
+                # Mapování string → int
+                mode_map = {
+                    "Home I": CBB_MODE_HOME_I,
+                    "Home II": CBB_MODE_HOME_II,
+                    "Home III": CBB_MODE_HOME_III,
+                    "Home UPS": CBB_MODE_HOME_UPS,
+                }
+                
+                if mode_value in mode_map:
+                    mode = mode_map[mode_value]
+                else:
+                    # Zkusit parse jako int
+                    mode = int(mode_value)
+            else:
+                mode = int(mode_value)
 
             # Validate mode range
             if mode not in [
@@ -2347,7 +2366,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return mode
 
         except (ValueError, TypeError) as e:
-            _LOGGER.error(f"Error parsing CBB mode: {e}")
+            _LOGGER.error(f"Error parsing CBB mode from '{state.state}': {e}")
             return CBB_MODE_HOME_III
 
     def _get_boiler_available_capacity(self) -> float:

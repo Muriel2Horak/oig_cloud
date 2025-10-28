@@ -8627,7 +8627,7 @@ async function updateWhatIfAnalysis() {
     // Find best saving (highest delta)
     let maxSavings = 0;
     let bestAlt = '';
-    
+
     Object.entries(alternatives).forEach(([name, data]) => {
         const delta = data.delta_czk || 0;
         if (delta > maxSavings) {
@@ -8650,25 +8650,25 @@ async function updateWhatIfAnalysis() {
     const doNothing = alternatives['DO NOTHING'] || {};
     const fullUps = alternatives['FULL HOME UPS'] || {};
 
-    updateElementIfChanged('whatif-home-i-delta', 
-        homeI.delta_czk ? `+${homeI.delta_czk.toFixed(1)} Kč` : '--', 
+    updateElementIfChanged('whatif-home-i-delta',
+        homeI.delta_czk ? `+${homeI.delta_czk.toFixed(1)} Kč` : '--',
         'whatif-home-i');
-    updateElementIfChanged('whatif-do-nothing-delta', 
-        doNothing.delta_czk ? `+${doNothing.delta_czk.toFixed(1)} Kč` : '--', 
+    updateElementIfChanged('whatif-do-nothing-delta',
+        doNothing.delta_czk ? `+${doNothing.delta_czk.toFixed(1)} Kč` : '--',
         'whatif-do-nothing');
-    updateElementIfChanged('whatif-full-ups-delta', 
-        fullUps.delta_czk ? `+${fullUps.delta_czk.toFixed(1)} Kč` : '--', 
+    updateElementIfChanged('whatif-full-ups-delta',
+        fullUps.delta_czk ? `+${fullUps.delta_czk.toFixed(1)} Kč` : '--',
         'whatif-full-ups');
 
     // Update savings bar (0-100% based on max possible savings)
     const savingsBar = document.getElementById('whatif-savings-bar');
     const savingsLabel = document.getElementById('whatif-savings-label');
-    
+
     if (savingsBar && savingsLabel && maxSavings > 0) {
         // Calculate percentage: current savings vs worst alternative
         const worstCost = Math.max(...Object.values(alternatives).map(a => a.total_cost_czk || 0));
         const savingsPercent = worstCost > 0 ? ((worstCost - optimizedCost) / worstCost * 100) : 0;
-        
+
         savingsBar.style.width = `${Math.min(savingsPercent, 100)}%`;
         savingsLabel.textContent = `Úspora ${savingsPercent.toFixed(0)}%`;
     } else if (savingsBar && savingsLabel) {
@@ -8723,14 +8723,14 @@ async function updateModeRecommendations() {
     };
 
     let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
-    
+
     recommendations.forEach((rec, index) => {
         const icon = modeIcons[rec.mode_name] || '📍';
         const color = modeColors[rec.mode_name] || '#757575';
         const fromTime = rec.from_time ? new Date(rec.from_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
         const toTime = rec.to_time ? new Date(rec.to_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
         const duration = rec.duration_hours || 0;
-        
+
         html += `
             <div style="display: flex; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.02); border-left: 3px solid ${color}; border-radius: 4px;">
                 <div style="font-size: 1.5em; margin-right: 10px;">${icon}</div>
@@ -8744,9 +8744,9 @@ async function updateModeRecommendations() {
             </div>
         `;
     });
-    
+
     html += '</div>';
-    
+
     container.innerHTML = html;
 }
 
