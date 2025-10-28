@@ -866,6 +866,22 @@ async def async_setup_entry(
                 )
                 async_add_entities(battery_forecast_sensors, True)
 
+                # Přidat Battery Health sensor (SoH monitoring)
+                try:
+                    from .oig_cloud_battery_health import OigCloudBatteryHealthSensor
+
+                    health_sensor = OigCloudBatteryHealthSensor(
+                        coordinator,
+                        "battery_health",
+                        entry,
+                        analytics_device_info,
+                        hass,
+                    )
+                    async_add_entities([health_sensor], True)
+                    _LOGGER.info("✅ Registered Battery Health (SoH) sensor")
+                except Exception as e:
+                    _LOGGER.error(f"Error creating battery health sensor: {e}")
+
                 # Přidat také battery balancing sensor
                 try:
                     from .oig_cloud_battery_balancing import (

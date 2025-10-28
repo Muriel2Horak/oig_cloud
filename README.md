@@ -48,6 +48,14 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - Přesné výpočty pomocí Riemannovy integrace
 - Automatické resety statistik
 
+### 🔋 **Battery Health Monitoring** ⭐ NEW!
+- Automatické měření skutečné kapacity baterie
+- Power Integration + Coulomb Counting validace
+- Sledování degradace v čase (kWh/rok, %/rok)
+- Predikce End-of-Life (80% SoH)
+- Real-time SoH% (State of Health)
+- Trend analýza s R² confidence score
+
 ### 🌦️ **ČHMÚ Meteorologická Varování**
 - Integrace s Českým hydrometeorologickým ústavem
 - Lokální varování filtrovaná podle GPS (z Solar Forecast nebo HA nastavení)
