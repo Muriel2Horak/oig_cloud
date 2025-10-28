@@ -589,6 +589,9 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             "response_time": datetime.now().isoformat(),
         }
 
+        _LOGGER.info(f"🌞 PROCESS DEBUG: String1 has data: {data_string1 is not None}")
+        _LOGGER.info(f"🌞 PROCESS DEBUG: String2 has data: {data_string2 is not None}")
+
         try:
             # Inicializace prázdných hodnot
             total_hourly: Dict[str, float] = {}
@@ -599,6 +602,10 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 string1_watts = data_string1.get("result", {}).get("watts", {})
                 string1_wh_day = data_string1.get("result", {}).get(
                     "watt_hours_day", {}
+                )
+
+                _LOGGER.info(
+                    f"🌞 PROCESS DEBUG: String1 watts has {len(string1_watts)} timestamps"
                 )
 
                 # Převod na hodinová data pro String 1
@@ -694,6 +701,10 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         """Převede forecast data na hodinová data."""
         hourly_data = {}
 
+        _LOGGER.info(
+            f"🌞 CONVERT DEBUG: Input watts_data has {len(watts_data)} timestamps"
+        )
+
         for timestamp_str, power in watts_data.items():
             try:
                 # Parsování timestamp (forecast.solar používá UTC čas)
@@ -704,6 +715,13 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 hourly_data[hour_key] = max(hourly_data.get(hour_key, 0), power)
             except Exception as e:
                 _LOGGER.debug(f"Error parsing timestamp {timestamp_str}: {e}")
+
+        _LOGGER.info(
+            f"🌞 CONVERT DEBUG: Output hourly_data has {len(hourly_data)} hours"
+        )
+        if hourly_data:
+            sample = list(hourly_data.items())[:3]
+            _LOGGER.info(f"🌞 CONVERT DEBUG: Sample output: {sample}")
 
         return hourly_data
 

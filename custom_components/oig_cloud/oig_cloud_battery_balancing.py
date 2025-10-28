@@ -269,7 +269,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     async def _balancing_profiling_loop(self) -> None:
         """
         Denní profiling loop - vytváření 7d balancing decision profilů.
-        
+
         Běží každý den v 00:30 (30 minut po půlnoci).
         Ukládá profil posledních 168h (7 dní) balancing rozhodnutí.
         """
@@ -347,7 +347,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         self.async_write_ha_state()
 
                 # Počkat do dalšího dne 00:30
-                _LOGGER.info("⏱️ Waiting until tomorrow 00:30 for next balancing profile")
+                _LOGGER.info(
+                    "⏱️ Waiting until tomorrow 00:30 for next balancing profile"
+                )
                 self._balancing_profiling_status = "idle"
                 if self._hass:
                     self.async_write_ha_state()
@@ -1376,7 +1378,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     ) -> List[Dict[str, Any]]:
         """
         Načíst balancing completion profily z posledních N týdnů.
-        
+
         POZNÁMKA: Toto jsou staré 'balancing_completed' events, ne nové decision profily!
 
         Args:
@@ -1692,7 +1694,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             if balancing_pattern and balancing_pattern.get("predicted_120h_data"):
                 predicted_120h = balancing_pattern["predicted_120h_data"]
                 # Spočítat kolik hodin od teď je holding_start
-                hours_from_now = int((holding_start - dt_util.now()).total_seconds() / 3600)
+                hours_from_now = int(
+                    (holding_start - dt_util.now()).total_seconds() / 3600
+                )
 
                 # Pokud je v rozsahu predikce (0-119h)
                 if 0 <= hours_from_now < len(predicted_120h):
@@ -1929,7 +1933,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     async def _get_balancing_history_7d(self) -> Optional[Dict[str, Any]]:
         """
         Načíst 7 dní (168h) balancing historie.
-        
+
         Returns:
             Dict s hourly data: spot_price, solar_forecast, battery_soc, balancing_active
         """
@@ -1975,9 +1979,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     }
                 )
 
-            _LOGGER.info(
-                f"📊 Loaded 7d balancing history: {len(hourly_data)} hours"
-            )
+            _LOGGER.info(f"📊 Loaded 7d balancing history: {len(hourly_data)} hours")
 
             return {
                 "start_time": start_time.isoformat(),
@@ -2134,7 +2136,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     async def _create_balancing_profile(self) -> bool:
         """
         Vytvořit nový 7d balancing profil a uložit do recorderu.
-        
+
         Returns:
             True pokud úspěch, False při chybě
         """
@@ -2201,10 +2203,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     ) -> List[Dict[str, Any]]:
         """
         Načíst historické balancing profiles z recorderu.
-        
+
         Args:
             max_profiles: Maximum načtených profilů (default 52 = rok)
-            
+
         Returns:
             List profilů seřazených od nejnovějšího
         """
@@ -2243,9 +2245,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 )
                 profiles = [json.loads(row[0]) for row in result]
 
-            _LOGGER.debug(
-                f"Loaded {len(profiles)} balancing profiles from recorder"
-            )
+            _LOGGER.debug(f"Loaded {len(profiles)} balancing profiles from recorder")
             return profiles
 
         except Exception as e:
@@ -2257,20 +2257,23 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     ) -> float:
         """
         Spočítat similarity score mezi aktuálními 48h a prvními 48h profilu.
-        
+
         Scoring:
         - 40% spot price correlation
-        - 30% solar forecast correlation  
+        - 30% solar forecast correlation
         - 30% balancing success pattern match
-        
+
         Args:
             current_48h: Aktuální 48h dat
             profile_48h: První 48h historického profilu
-            
+
         Returns:
             Similarity score 0.0 - 1.0 (1.0 = perfektní match)
         """
-        if len(current_48h) != BALANCING_MATCH_HOURS or len(profile_48h) != BALANCING_MATCH_HOURS:
+        if (
+            len(current_48h) != BALANCING_MATCH_HOURS
+            or len(profile_48h) != BALANCING_MATCH_HOURS
+        ):
             _LOGGER.warning(
                 f"Invalid data length for similarity: {len(current_48h)}, {len(profile_48h)}"
             )
@@ -2306,7 +2309,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
             # 3. Balancing pattern match (30%)
             # Pokud v obou případech balancing byl/nebyl aktivní podobně, score je vyšší
-            balancing_match = 1.0 - np.mean(np.abs(current_balancing - profile_balancing))
+            balancing_match = 1.0 - np.mean(
+                np.abs(current_balancing - profile_balancing)
+            )
             balancing_score = max(0.0, balancing_match)
 
             # Weighted sum
@@ -2319,7 +2324,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             return float(similarity)
 
         except Exception as e:
-            _LOGGER.error(f"Failed to calculate balancing similarity: {e}", exc_info=True)
+            _LOGGER.error(
+                f"Failed to calculate balancing similarity: {e}", exc_info=True
+            )
             return 0.0
 
     async def _find_best_matching_balancing_pattern(
@@ -2327,10 +2334,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     ) -> Optional[Dict[str, Any]]:
         """
         Najít nejlepší matching 7d balancing profil pro aktuální situaci.
-        
+
         Matching: Aktuální 48h vs. první 48h profilů
         Predikce: Posledních 120h matched profilu
-        
+
         Returns:
             Dict s predikcí a match info, nebo None při chybě
         """
@@ -2353,7 +2360,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             profiles = await self._load_balancing_profiles()
 
             if not profiles:
-                _LOGGER.warning("No historical balancing profiles available for matching")
+                _LOGGER.warning(
+                    "No historical balancing profiles available for matching"
+                )
                 return None
 
             # 3. Najít best match

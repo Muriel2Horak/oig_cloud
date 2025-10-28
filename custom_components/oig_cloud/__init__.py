@@ -846,6 +846,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             register_boiler_api_views(hass)
             _LOGGER.info("Boiler API endpoints registered")
 
+        # NOVÉ: Registrace OIG Cloud REST API endpointů pro heavy data
+        # (timeline, spot prices, analytics)
+        try:
+            from .api.ha_rest_api import setup_api_endpoints
+
+            setup_api_endpoints(hass)
+            _LOGGER.info("✅ OIG Cloud REST API endpoints registered successfully")
+        except Exception as e:
+            _LOGGER.error(
+                f"Failed to register OIG Cloud REST API endpoints: {e}", exc_info=True
+            )
+            # Pokračujeme i bez API - senzory budou fungovat s attributes
+
         # OPRAVA: Zajistit, že ServiceShield je připojený k volání služeb
         if service_shield:
             _LOGGER.info(

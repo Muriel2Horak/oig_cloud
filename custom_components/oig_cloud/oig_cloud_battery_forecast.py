@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import copy
 import json
+import hashlib
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -24,8 +25,9 @@ from .oig_cloud_data_sensor import OigCloudDataSensor
 
 _LOGGER = logging.getLogger(__name__)
 
-# Debug options
-DEBUG_EXPOSE_BASELINE_TIMELINE = True  # Expose baseline timeline in sensor attributes
+# Debug options - Phase 1.5: API Optimization
+# Set to False for LEAN attributes (96% memory reduction)
+DEBUG_EXPOSE_BASELINE_TIMELINE = False  # Expose baseline timeline in sensor attributes
 
 
 class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
@@ -97,6 +99,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )  # NOVÉ: pro dashboard (4 hodnoty)
         self._first_update: bool = True  # Flag pro první update (setup)
 
+        # Phase 1.5: Hash-based change detection
+        self._data_hash: Optional[str] = (
+            None  # MD5 hash of timeline_data for efficient change detection
+        )
+
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
         self._plan_status: str = "none"  # none | pending | active | completed
@@ -146,51 +153,123 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     @property
     def state(self) -> Optional[Union[float, str]]:
-        """Stav senzoru - aktuální kapacita baterie."""
-        if not self._timeline_data:
-            return None
+        """
+        State = hash of timeline data (first 8 chars).
 
-        # První bod v timeline je current capacity
-        return round(self._timeline_data[0].get("battery_capacity_kwh", 0), 2)
+        Phase 1.5: Hash-based change detection
+        - State changes only when timeline data actually changes
+        - Frontend watches state via WebSocket
+        - On change -> fetch new data from API
+        - Current capacity moved to attributes
+
+        Returns:
+            First 8 chars of MD5 hash or "unknown"
+        """
+        if self._data_hash:
+            return self._data_hash[:8]
+        return "unknown"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Dodatečné atributy s timeline daty."""
-        # HA databáze má limit 16KB na atributy
-        # Timeline s 135 body (každý ~120 bytes) = ~16KB
-        # Vrátíme CELOU timeline pro dashboard, ale s kompaktním formátem
+        """
+        Dodatečné atributy - LEAN VERSION (Phase 1.5 API Optimization).
+
+        PŘED: 280 KB (celá timeline v attributes)
+        PO: ~2 KB (pouze summary, timeline přes API)
+
+        Full data dostupná přes API:
+        GET /api/oig_cloud/battery_forecast/{box_id}/timeline
+        """
+        # LEAN ATTRIBUTES: Pouze summary data pro dashboard
         attrs = {
-            "timeline_data": self._timeline_data,  # Celá timeline pro chart
-            "calculation_time": (
+            # Basic info
+            "last_update": (
                 self._last_update.isoformat() if self._last_update else None
             ),
             "data_source": "simplified_calculation",
+            # Current state (moved from state property)
+            "current_battery_kwh": (
+                round(self._timeline_data[0].get("battery_capacity_kwh", 0), 2)
+                if self._timeline_data
+                else 0
+            ),
+            "current_timestamp": (
+                self._timeline_data[0].get("timestamp") if self._timeline_data else None
+            ),
+            # Capacity limits
             "max_capacity_kwh": self._get_max_battery_capacity(),
             "min_capacity_kwh": self._get_min_battery_capacity(),
+            # Timeline metadata
+            "timeline_points_count": (
+                len(self._timeline_data) if self._timeline_data else 0
+            ),
+            "timeline_horizon_hours": (
+                round((len(self._timeline_data) * 15 / 60), 1)
+                if self._timeline_data
+                else 0
+            ),
+            # Phase 1.5: Hash-based change detection
+            "data_hash": self._data_hash if self._data_hash else "unknown",
+            # API endpoint hint
+            "api_endpoint": f"/api/oig_cloud/battery_forecast/{self._box_id}/timeline",
+            "api_query_params": "?type=active (default) | baseline | both",
+            "api_note": "Full timeline data available via REST API (reduces memory by 96%)",
         }
 
-        # DEBUG: Expose baseline timeline for comparison
-        if DEBUG_EXPOSE_BASELINE_TIMELINE and hasattr(self, "_baseline_timeline"):
-            attrs["baseline_timeline_data"] = self._baseline_timeline
-
-        # Přidat metriky nabíjení pokud existují
+        # Metriky nabíjení (malé, keep)
         if hasattr(self, "_charging_metrics") and self._charging_metrics:
             attrs.update(self._charging_metrics)
 
-        # Přidat consumption summary (4 hodnoty pro dashboard)
+        # Consumption summary (4 hodnoty, keep)
         if hasattr(self, "_consumption_summary") and self._consumption_summary:
             attrs.update(self._consumption_summary)
 
-        # Přidat balancing cost pokud existuje
+        # Balancing cost (1 hodnota, keep)
         if hasattr(self, "_balancing_cost") and self._balancing_cost:
             attrs["balancing_cost"] = self._balancing_cost
 
-        # PERSISTENCE: Uložit active plan pro restore po restartu
+        # PERSISTENCE: Active plan (kompaktní JSON, keep)
         if hasattr(self, "_active_charging_plan") and self._active_charging_plan:
             attrs["active_plan_data"] = json.dumps(self._active_charging_plan)
             attrs["plan_status"] = getattr(self, "_plan_status", "pending")
 
+        # DEBUG MODE: Expose full timeline pouze pro development/testing
+        # V produkci: False (timeline přes API)
+        if DEBUG_EXPOSE_BASELINE_TIMELINE:
+            _LOGGER.warning(
+                "⚠️ DEBUG MODE: Full timeline in attributes (280 KB)! "
+                "Set DEBUG_EXPOSE_BASELINE_TIMELINE=False for production."
+            )
+            attrs["timeline_data"] = self._timeline_data
+            if hasattr(self, "_baseline_timeline"):
+                attrs["baseline_timeline_data"] = self._baseline_timeline
+
         return attrs
+
+    def _calculate_data_hash(self, timeline_data: List[Dict[str, Any]]) -> str:
+        """
+        Calculate MD5 hash of timeline data for efficient change detection.
+
+        Phase 1.5: Hash-based change detection
+        - Frontend watches sensor state (hash)
+        - State change triggers WebSocket event
+        - Frontend fetches new data from API
+        - Avoids polling, reduces bandwidth
+
+        Args:
+            timeline_data: List of timeline points (active or baseline)
+
+        Returns:
+            MD5 hash string (32 chars hex)
+        """
+        if not timeline_data:
+            return "empty"
+
+        # Convert to deterministic JSON string
+        data_str = json.dumps(timeline_data, sort_keys=True)
+
+        # Calculate MD5 hash
+        return hashlib.md5(data_str.encode()).hexdigest()
 
     async def async_update(self) -> None:
         """Update sensor data."""
@@ -217,6 +296,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"_get_spot_price_timeline() returned {len(spot_prices)} prices"
             )
 
+            # Phase 1.5: Load export prices for timeline integration
+            _LOGGER.info("Calling _get_export_price_timeline()...")
+            export_prices = await self._get_export_price_timeline()  # ASYNC!
+            _LOGGER.info(
+                f"_get_export_price_timeline() returned {len(export_prices)} prices"
+            )
+
             solar_forecast = self._get_solar_forecast()
             load_avg_sensors = self._get_load_avg_sensors()
 
@@ -241,6 +327,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 max_capacity=max_capacity,
                 min_capacity=min_capacity,
                 spot_prices=spot_prices,
+                export_prices=export_prices,  # Phase 1.5: Export prices
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=adaptive_profiles,
@@ -256,6 +343,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     max_capacity=max_capacity,
                     min_capacity=min_capacity,
                     spot_prices=spot_prices,
+                    export_prices=export_prices,  # Phase 1.5: Export prices
                     solar_forecast=solar_forecast,
                     load_avg_sensors=load_avg_sensors,
                     adaptive_profiles=adaptive_profiles,
@@ -265,6 +353,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Bez aktivního plánu: baseline = active
                 _LOGGER.debug("No active plan, using baseline as active timeline")
                 self._timeline_data = self._baseline_timeline
+
+            # Phase 1.5: Calculate hash for change detection
+            new_hash = self._calculate_data_hash(self._timeline_data)
+            if new_hash != self._data_hash:
+                _LOGGER.debug(
+                    f"Timeline data changed: {self._data_hash[:8] if self._data_hash else 'none'} -> {new_hash[:8]}"
+                )
+                self._data_hash = new_hash
+            else:
+                _LOGGER.debug("Timeline data unchanged (same hash)")
 
             self._last_update = datetime.now()
             _LOGGER.debug(
@@ -311,6 +409,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         max_capacity: float,
         min_capacity: float,
         spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],  # Phase 1.5: Export prices timeline
         solar_forecast: Dict[str, Any],
         load_avg_sensors: Dict[str, Any],
         adaptive_profiles: Optional[Dict[str, Any]] = None,
@@ -325,7 +424,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             current_capacity: Aktuální kapacita baterie (kWh)
             max_capacity: Maximální kapacita baterie (kWh)
             min_capacity: Minimální kapacita baterie (kWh)
-            spot_prices: Timeline spotových cen (15min intervaly)
+            spot_prices: Timeline spotových cen (15min intervaly) - nákupní cena
+            export_prices: Timeline prodejních cen (15min intervaly) - Phase 1.5
             solar_forecast: Solární předpověď (hodinové hodnoty)
             load_avg_sensors: Load average senzory
             adaptive_profiles: Dict s profily (today_profile, tomorrow_profile) nebo None pro fallback
@@ -397,6 +497,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         _LOGGER.debug(
             f"Starting calculation with capacity={battery_kwh:.2f} kWh, efficiency={efficiency:.3f}"
+        )
+
+        # Phase 1.5: Create lookup dict for export prices by timestamp
+        export_price_lookup = {
+            ep["time"]: ep["price"]
+            for ep in export_prices
+            if "time" in ep and "price" in ep
+        }
+        _LOGGER.debug(
+            f"Export price lookup created: {len(export_price_lookup)} entries"
         )
 
         # Info o použité metodě predikce
@@ -609,10 +719,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # Přidat bod do timeline
+            # Phase 1.5: Lookup export price for this timestamp
+            export_price_czk = export_price_lookup.get(timestamp_str, 0)
+
             timeline.append(
                 {
                     "timestamp": timestamp_str,
                     "spot_price_czk": price_point.get("price", 0),
+                    "export_price_czk": export_price_czk,  # Phase 1.5: Export (sell) price
                     "battery_capacity_kwh": round(battery_kwh, 2),
                     "solar_production_kwh": round(
                         solar_kwh, 2
@@ -1031,131 +1145,154 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return 0.882
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
-        """Získat timeline spotových cen z spot_price_current_15min.
+        """Získat timeline spotových cen z coordinator data.
 
-        Použijeme retry logiku protože spot_price sensor může být připravený později než battery_forecast.
+        Phase 1.5: Spot prices jsou v coordinator.data["spot_prices"], ne v sensor attributes.
+        Sensor attributes obsahují jen summary (current_price, price_min/max/avg).
         """
-        if not self._hass:
-            _LOGGER.warning("HASS not available in _get_spot_price_timeline")
+        if not self.coordinator:
+            _LOGGER.warning("Coordinator not available in _get_spot_price_timeline")
             return []
 
-        sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
+        # Read from coordinator data (Phase 1.5 - lean attributes)
+        spot_data = self.coordinator.data.get("spot_prices", {})
 
-        # Retry logika: při prvním volání (setup) použít kratší timeout
-        import asyncio
+        if not spot_data:
+            _LOGGER.warning("No spot_prices data in coordinator")
+            return []
 
-        if self._first_update:
-            # První update (setup) - rychlé timeout aby nepřekročili 10s
-            max_retries = 1
-            retry_delay = 0.5
-        else:
-            # Následné updaty - normální timeout
-            max_retries = 3
-            retry_delay = 2.0
+        # spot_data format: {"prices15m_czk_kwh": {"2025-10-28T13:45:00": 4.18, ...}}
+        prices_dict = spot_data.get("prices15m_czk_kwh", {})
 
-        for attempt in range(max_retries):
-            state = self._hass.states.get(sensor_id)
+        if not prices_dict:
+            _LOGGER.warning("No prices15m_czk_kwh in spot_data")
+            return []
 
-            # Debug logging - co vidíme?
-            _LOGGER.info(
-                f"Attempt {attempt+1}/{max_retries}: Checking {sensor_id} - "
-                f"state exists: {state is not None}, "
-                f"state.state: {state.state if state else 'N/A'}, "
-                f"has attributes: {state.attributes is not None if state else False}"
-            )
+        # Convert to timeline format
+        timeline = []
+        for timestamp_str, price in sorted(prices_dict.items()):
+            try:
+                # Validate timestamp
+                datetime.fromisoformat(timestamp_str)
+                timeline.append({"time": timestamp_str, "price": price})
+            except ValueError:
+                _LOGGER.warning(f"Invalid timestamp in spot prices: {timestamp_str}")
+                continue
 
-            # OPRAVA: Kontrolovat state.state jako OigCloudStatisticsSensor
-            if not state or state.state in ("unavailable", "unknown", None):
-                _LOGGER.info(
-                    f"Attempt {attempt+1}: Sensor {sensor_id} unavailable - "
-                    f"state.state={state.state if state else 'None'}"
-                )
-            elif state.attributes:
-                # Načíst prices z atributů (formát: [{date, time, price, tariff}, ...])
-                prices = state.attributes.get("prices", [])
-
-                _LOGGER.debug(f"Found {len(prices)} price points in {sensor_id}")
-
-                if prices:
-                    # Spot price sensor již vrací jen aktuální + budoucí intervaly
-                    # Battery forecast používá VŠECHNA data bez dalšího filtrování
-                    now = datetime.now()
-
-                    _LOGGER.info(f"Loading timeline at: {now.isoformat()}")
-
-                    # Konvertovat na timeline formát
-                    timeline = []
-                    for price_point in prices:
-                        # Použít timestamp z sensoru (ISO formát)
-                        timestamp_str = price_point.get("timestamp")
-                        price = price_point.get("price", 0)
-
-                        if not timestamp_str:
-                            _LOGGER.warning(
-                                f"Price point missing timestamp: {price_point}"
-                            )
-                            continue
-
-                        # Parsovat timestamp pro validaci
-                        try:
-                            timestamp = datetime.fromisoformat(timestamp_str)
-                        except ValueError:
-                            _LOGGER.warning(
-                                f"Invalid timestamp format: {timestamp_str}"
-                            )
-                            continue
-
-                        # Přidat bez filtrování - spot_price sensor už data vyfiltroval
-                        timeline.append({"time": timestamp_str, "price": price})
-
-                    _LOGGER.info(
-                        f"Successfully loaded {len(timeline)} spot price points "
-                        f"from {sensor_id}"
-                    )
-                    return timeline
-                else:
-                    _LOGGER.info(
-                        f"Attempt {attempt+1}: No prices data in {sensor_id} attributes"
-                    )
-            else:
-                _LOGGER.info(
-                    f"Attempt {attempt+1}: Sensor {sensor_id} has no attributes"
-                )
-
-            # Pokud nejsme na posledním pokusu, počkáme
-            if attempt < max_retries - 1:
-                _LOGGER.info(f"Waiting {retry_delay}s before retry...")
-                await asyncio.sleep(retry_delay)
-
-        # Všechny pokusy selhaly
-        _LOGGER.error(
-            f"Failed to load spot price timeline after {max_retries} attempts"
+        _LOGGER.info(
+            f"Successfully loaded {len(timeline)} spot price points from coordinator"
         )
-        return []
+        return timeline
+
+    async def _get_export_price_timeline(self) -> List[Dict[str, Any]]:
+        """Získat timeline prodejních cen z coordinator data (Phase 1.5).
+
+        Export prices také v coordinator.data["spot_prices"], protože OTE API vrací obě ceny.
+        Sensor attributes obsahují jen summary (current_price, price_min/max/avg).
+
+        Returns:
+            List of dicts: [{"time": "2025-10-28T13:15:00", "price": 2.5}, ...]
+        """
+        if not self.coordinator:
+            _LOGGER.warning("Coordinator not available in _get_export_price_timeline")
+            return []
+
+        # Export prices jsou v coordinator data (stejně jako spot prices)
+        # OTE API je vrací v rámci get_spot_prices()
+        spot_data = self.coordinator.data.get("spot_prices", {})
+
+        if not spot_data:
+            _LOGGER.warning("No spot_prices data in coordinator for export prices")
+            return []
+
+        # Export prices jsou v "export_prices15m_czk_kwh" klíči (stejný formát jako spot)
+        # Pokud klíč neexistuje, zkusíme alternativní způsob výpočtu
+        export_prices_dict = spot_data.get("export_prices15m_czk_kwh", {})
+
+        if not export_prices_dict:
+            # Fallback: Vypočítat z spot prices podle config (percentage model)
+            _LOGGER.info("No direct export prices, calculating from spot prices")
+            spot_prices_dict = spot_data.get("prices15m_czk_kwh", {})
+
+            if not spot_prices_dict:
+                _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
+                return []
+
+            # Get export pricing config from coordinator
+            config_entry = self.coordinator.config_entry if self.coordinator else None
+            config = config_entry.options if config_entry else {}
+            export_model = config.get("export_pricing_model", "percentage")
+            export_fee = config.get("export_fee_percent", 15.0)
+
+            # Calculate export prices (spot price * (1 - fee/100))
+            export_prices_dict = {}
+            for timestamp_str, spot_price in spot_prices_dict.items():
+                if export_model == "percentage":
+                    export_price = spot_price * (1 - export_fee / 100)
+                else:
+                    # Fixed fee model
+                    export_price = max(0, spot_price - export_fee)
+                export_prices_dict[timestamp_str] = export_price
+
+        # Convert to timeline format
+        timeline = []
+        for timestamp_str, price in sorted(export_prices_dict.items()):
+            try:
+                # Validate timestamp
+                datetime.fromisoformat(timestamp_str)
+                timeline.append({"time": timestamp_str, "price": price})
+            except ValueError:
+                _LOGGER.warning(f"Invalid timestamp in export prices: {timestamp_str}")
+                continue
+
+        _LOGGER.info(
+            f"Successfully loaded {len(timeline)} export price points from coordinator"
+        )
+        return timeline
 
     def _get_solar_forecast(self) -> Dict[str, Any]:
         """Získat solární předpověď z solar_forecast senzoru."""
         if not self._hass:
+            _LOGGER.warning("🌞 SOLAR DEBUG: HomeAssistant instance not available")
             return {}
 
         sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
         state = self._hass.states.get(sensor_id)
 
-        if not state or not state.attributes:
-            _LOGGER.warning(f"Sensor {sensor_id} not available")
+        if not state:
+            _LOGGER.warning(f"🌞 SOLAR DEBUG: Sensor {sensor_id} NOT FOUND in HA")
+            return {}
+
+        if not state.attributes:
+            _LOGGER.warning(f"🌞 SOLAR DEBUG: Sensor {sensor_id} has NO ATTRIBUTES")
             return {}
 
         # Načíst today a tomorrow data (správné názvy atributů)
         today = state.attributes.get("today_hourly_total_kw", {})
         tomorrow = state.attributes.get("tomorrow_hourly_total_kw", {})
 
-        # Debug logging
+        # Enhanced debug logging
+        _LOGGER.info(f"🌞 SOLAR DEBUG: Retrieved solar forecast from {sensor_id}")
+        _LOGGER.info(f"🌞 SOLAR DEBUG: Today data points: {len(today)}")
+        _LOGGER.info(f"🌞 SOLAR DEBUG: Tomorrow data points: {len(tomorrow)}")
+
         if today:
             sample_keys = list(today.keys())[:3]
             sample_values = [today[k] for k in sample_keys]
             _LOGGER.info(
-                f"Solar forecast today sample: {dict(zip(sample_keys, sample_values))}"
+                f"🌞 SOLAR DEBUG: Today sample: {dict(zip(sample_keys, sample_values))}"
             )
+        else:
+            _LOGGER.warning(f"🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
+
+        if tomorrow:
+            sample_keys = list(tomorrow.keys())[:3]
+            sample_values = [tomorrow[k] for k in sample_keys]
+            _LOGGER.info(
+                f"🌞 SOLAR DEBUG: Tomorrow sample: {dict(zip(sample_keys, sample_values))}"
+            )
+        else:
+            _LOGGER.warning(f"🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
 
         return {"today": today, "tomorrow": tomorrow}
 
@@ -1284,8 +1421,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return 0.0
 
         # Najít hodinovou hodnotu pro daný čas
-        # Klíče jsou ve formátu ISO timestamp: "2025-10-20T14:00:00"
-        hour_key = timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+        # Klíče jsou ve formátu ISO timestamp BEZ timezone: "2025-10-20T14:00:00"
+        # Normalizovat timestamp na naive (local time) pro matching
+        timestamp_hour = timestamp.replace(minute=0, second=0, microsecond=0)
+
+        # Strip timezone to match solar_forecast key format
+        if timestamp_hour.tzinfo is not None:
+            # Convert to naive local time (remove timezone info)
+            hour_key = timestamp_hour.replace(tzinfo=None).isoformat()
+        else:
+            hour_key = timestamp_hour.isoformat()
 
         hourly_kw = data.get(hour_key, 0.0)
 
@@ -2994,6 +3139,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 max_capacity=max_capacity,
                 min_capacity=min_capacity,
                 spot_prices=spot_prices_list,
+                export_prices=[],  # Phase 1.5: Empty list (not available in this context)
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=getattr(self, "_adaptive_profiles", None),

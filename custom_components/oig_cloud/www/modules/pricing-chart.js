@@ -34,27 +34,41 @@ export class PricingChartModule {
         const datasets = [];
         let allLabels = [];
 
-        // 1. Spot prices (definují časovou osu)
-        const spotEntityId = `sensor.oig_${this.inverterId}_spot_price_current_15min`;
-        const spotSensor = this.hass.states[spotEntityId];
+        // Fetch timeline data from API (single source of truth)
+        const timelineUrl = `/api/oig_cloud/battery_forecast/${this.inverterId}/timeline?type=active`;
 
-        if (spotSensor && spotSensor.attributes) {
-            const prices = spotSensor.attributes.prices || [];
+        try {
+            const response = await fetch(timelineUrl);
+            if (!response.ok) {
+                console.error('[PricingChart] Failed to fetch timeline:', response.status);
+                return;
+            }
 
-            if (prices.length > 0) {
-                allLabels = prices.map(p => new Date(p.timestamp));
-                const priceValues = prices.map(p => p.price);
+            const data = await response.json();
+            const timeline = data.active || [];
 
+            if (timeline.length === 0) {
+                console.warn('[PricingChart] No timeline data available');
+                return;
+            }
+
+            // Extract pricing data from timeline
+            allLabels = timeline.map(p => new Date(p.timestamp));
+            const spotPrices = timeline.map(p => p.spot_price_czk || 0);
+            const exportPrices = timeline.map(p => p.export_price_czk || 0);
+
+            // 1. Spot prices with top/bottom 10% highlighting
+            if (spotPrices.length > 0) {
                 // Identifikace top/bottom 10% cen
-                const sortedPrices = [...priceValues].sort((a, b) => a - b);
+                const sortedPrices = [...spotPrices].sort((a, b) => a - b);
                 const tenPercentCount = Math.max(1, Math.ceil(sortedPrices.length * 0.1));
                 const bottomThreshold = sortedPrices[tenPercentCount - 1];
                 const topThreshold = sortedPrices[sortedPrices.length - tenPercentCount];
 
-                const pointRadii = priceValues.map(price =>
+                const pointRadii = spotPrices.map(price =>
                     (price <= bottomThreshold || price >= topThreshold) ? 5 : 0
                 );
-                const pointColors = priceValues.map(price => {
+                const pointColors = spotPrices.map(price => {
                     if (price <= bottomThreshold) return '#4CAF50';
                     if (price >= topThreshold) return '#F44336';
                     return '#42a5f5';
@@ -62,7 +76,7 @@ export class PricingChartModule {
 
                 datasets.push({
                     label: 'Spotová cena nákupu',
-                    data: priceValues,
+                    data: spotPrices,
                     borderColor: '#42a5f5',
                     backgroundColor: 'rgba(66,165,245,0.1)',
                     borderWidth: 2,
@@ -76,18 +90,12 @@ export class PricingChartModule {
                     pointBorderColor: pointColors
                 });
             }
-        }
 
-        // 2. Export prices
-        const exportEntityId = `sensor.oig_${this.inverterId}_export_price_current_15min`;
-        const exportSensor = this.hass.states[exportEntityId];
-
-        if (exportSensor && exportSensor.attributes) {
-            const prices = exportSensor.attributes.prices || [];
-            if (prices.length > 0) {
+            // 2. Export prices
+            if (exportPrices.length > 0) {
                 datasets.push({
                     label: 'Výkupní cena',
-                    data: prices.map(p => p.price),
+                    data: exportPrices,
                     borderColor: '#66bb6a',
                     backgroundColor: 'rgba(102,187,106,0.1)',
                     borderWidth: 2,
@@ -99,6 +107,9 @@ export class PricingChartModule {
                     pointHoverRadius: 4
                 });
             }
+        } catch (error) {
+            console.error('[PricingChart] Error fetching timeline data:', error);
+            return;
         }
 
         // 3. Solar forecast (interpolovaný na 15min grid)

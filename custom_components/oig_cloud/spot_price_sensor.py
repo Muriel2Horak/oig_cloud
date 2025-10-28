@@ -229,7 +229,14 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Atributy s budoucími výkupními cenami."""
+        """
+        Atributy s budoucími výkupními cenami - LEAN VERSION (Phase 1.5).
+
+        PŘED: ~40 KB (192 intervals v attributes)
+        PO: ~2 KB (summary only, intervals přes API)
+
+        Full data: GET /api/oig_cloud/spot_prices/{box_id}/intervals?currency=czk
+        """
         attrs: Dict[str, Any] = {}
 
         try:
@@ -243,12 +250,13 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             current_interval_index = self._get_current_interval_index(now)
             prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
 
-            # Ukládat pouze budoucí intervaly (včetně aktuálního)
-            intervals_data = []
+            # Počítat statistiky místo ukládání všech intervalů
+            future_prices = []
+            current_price: Optional[float] = None
+            next_price: Optional[float] = None
 
             for time_key, spot_price_czk in sorted(prices_15m.items()):
                 try:
-                    # OPRAVA: Parse datetime a přidat timezone info
                     dt_naive = datetime.fromisoformat(time_key)
                     dt = (
                         dt_naive.replace(tzinfo=now.tzinfo)
@@ -256,34 +264,27 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                         else dt_naive
                     )
 
-                    # Zahrnout aktuální probíhající interval + budoucnost
-                    # Filtr: interval končí POZDĚJI než now (interval_end > now)
                     interval_end = dt + timedelta(minutes=15)
                     if interval_end <= now:
-                        continue  # Interval už skončil, přeskočit
                         continue
 
-                    # Vypočítat výkupní cenu pro tento interval
                     export_price = self._calculate_export_price_15min(
                         spot_price_czk, dt
                     )
 
-                    # FORMÁT: Pouze ISO timestamp
-                    interval_data = {
-                        "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%S"),  # ISO formát
-                        "price": export_price,  # Výkupní cena
-                        "spot_price": round(
-                            spot_price_czk, 2
-                        ),  # Raw spotová cena pro porovnání
-                    }
+                    future_prices.append(export_price)
 
-                    intervals_data.append(interval_data)
+                    # První = current, druhý = next
+                    if current_price is None:
+                        current_price = export_price
+                    elif next_price is None:
+                        next_price = export_price
 
                 except Exception as e:
                     _LOGGER.debug(f"Error processing interval {time_key}: {e}")
                     continue
 
-            # Metadata
+            # Metadata + statistics
             next_interval = (current_interval_index + 1) % 96
             next_hour = next_interval // 4
             next_minute = (next_interval % 4) * 15
@@ -293,14 +294,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             if next_interval == 0:
                 next_update += timedelta(days=1)
 
-            # Rychlý přístup k aktuální a příští ceně
-            current_price: Optional[float] = None
-            next_price: Optional[float] = None
-            if len(intervals_data) > 0:
-                current_price = intervals_data[0]["price"]
-                if len(intervals_data) > 1:
-                    next_price = intervals_data[1]["price"]
-
+            # LEAN ATTRIBUTES: Summary only
             attrs = {
                 "current_datetime": now.strftime("%Y-%m-%d %H:%M"),
                 "source": "OTE_WSDL_API_QUARTER_HOUR",
@@ -309,12 +303,27 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 "current_price": current_price,
                 "next_price": next_price,
                 "next_update": next_update.isoformat(),
-                "intervals_count": len(intervals_data),
-                "prices": intervals_data,
+                "intervals_count": len(future_prices),
                 "last_update": (
                     self._last_update.isoformat() if self._last_update else None
                 ),
                 "note": "Export prices WITHOUT VAT and WITHOUT distribution fees",
+                # Statistics (instead of full intervals)
+                "price_min": round(min(future_prices), 2) if future_prices else None,
+                "price_max": round(max(future_prices), 2) if future_prices else None,
+                "price_avg": (
+                    round(sum(future_prices) / len(future_prices), 2)
+                    if future_prices
+                    else None
+                ),
+                "currency": "CZK/kWh",
+                # API endpoint hint
+                "api_endpoint": (
+                    f"/api/oig_cloud/spot_prices/{list(self.coordinator.data.keys())[0]}/intervals?type=export"
+                    if self.coordinator.data
+                    else "/api/oig_cloud/spot_prices/{box_id}/intervals?type=export"
+                ),
+                "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
             }
 
         except Exception as e:
@@ -365,6 +374,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._last_update: Optional[datetime] = None
         self._track_time_interval_remove = None
         self._track_15min_remove = None
+        self._data_hash: Optional[str] = None  # Phase 1.5: Hash for change detection
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
@@ -623,7 +633,14 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Všech 96 intervalů s finálními cenami a další metadata."""
+        """
+        Atributy se statistikami spot cen - LEAN VERSION (Phase 1.5).
+
+        PŘED: ~40 KB (96+ intervals v attributes)
+        PO: ~2 KB (summary only, intervals přes API)
+
+        Full data: GET /api/oig_cloud/battery_forecast/{box_id}/timeline?type=active
+        """
         attrs: Dict[str, Any] = {}
 
         try:
@@ -637,9 +654,10 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
             current_interval_index = self._get_current_interval_index(now)
             prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
 
-            # OPRAVA: Ukládat pouze budoucí intervaly (včetně aktuálního)
-            # Interval data - POUZE finální cena, tarif, datum a čas
-            intervals_data = []
+            # Počítat statistiky místo ukládání všech intervalů
+            future_prices = []
+            current_price: Optional[float] = None
+            next_price: Optional[float] = None
 
             for time_key, spot_price_czk in sorted(prices_15m.items()):
                 try:
@@ -652,25 +670,20 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                     )
 
                     # Zahrnout aktuální probíhající interval + budoucnost
-                    # Filtr: interval končí POZDĚJI než now (interval_end > now)
-                    # Interval trvá 15 minut: 06:30 končí v 06:45
-                    # V 06:35: interval 06:30 končí 06:45 > 06:35 → ZAHRNOUT
                     interval_end = dt + timedelta(minutes=15)
                     if interval_end <= now:
                         continue  # Interval už skončil, přeskočit
 
                     # Vypočítat finální cenu pro tento interval
                     final_price = self._calculate_final_price_15min(spot_price_czk, dt)
-                    tariff = self._get_tariff_for_datetime(dt)
 
-                    # FORMÁT: Pouze ISO timestamp
-                    interval_data = {
-                        "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%S"),  # ISO formát
-                        "price": final_price,  # Finální cena
-                        "tariff": tariff,  # VT/NT
-                    }
+                    future_prices.append(final_price)
 
-                    intervals_data.append(interval_data)
+                    # První = current, druhý = next
+                    if current_price is None:
+                        current_price = final_price
+                    elif next_price is None:
+                        next_price = final_price
 
                 except Exception as e:
                     _LOGGER.debug(f"Error processing interval {time_key}: {e}")
@@ -686,16 +699,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
             if next_interval == 0:
                 next_update += timedelta(days=1)
 
-            # OPRAVA: Přidat rychlý přístup k aktuální a příští ceně
-            current_price = None
-            next_price = None
-            if len(intervals_data) > 0:
-                current_price = intervals_data[0][
-                    "price"
-                ]  # První položka je vždy aktuální
-                if len(intervals_data) > 1:
-                    next_price = intervals_data[1]["price"]
-
+            # LEAN ATTRIBUTES: Summary only
             attrs = {
                 "current_datetime": now.strftime("%Y-%m-%d %H:%M"),
                 "source": "OTE_WSDL_API_QUARTER_HOUR",
@@ -705,11 +709,26 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 "next_price": next_price,
                 "next_update": next_update.isoformat(),
                 "current_tariff": self._get_tariff_for_datetime(now),
-                "intervals_count": len(intervals_data),
-                "prices": intervals_data,  # Pouze budoucí intervaly
+                "intervals_count": len(future_prices),
                 "last_update": (
                     self._last_update.isoformat() if self._last_update else None
                 ),
+                # Statistics (instead of full intervals)
+                "price_min": round(min(future_prices), 2) if future_prices else None,
+                "price_max": round(max(future_prices), 2) if future_prices else None,
+                "price_avg": (
+                    round(sum(future_prices) / len(future_prices), 2)
+                    if future_prices
+                    else None
+                ),
+                "currency": "CZK/kWh",
+                # API endpoint hint
+                "api_endpoint": (
+                    f"/api/oig_cloud/spot_prices/{list(self.coordinator.data.keys())[0]}/intervals?type=spot"
+                    if self.coordinator.data
+                    else "/api/oig_cloud/spot_prices/{box_id}/intervals?type=spot"
+                ),
+                "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
             }
 
         except Exception as e:

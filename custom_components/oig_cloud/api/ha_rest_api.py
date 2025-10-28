@@ -419,9 +419,9 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
         GET /api/oig_cloud/balancing_decisions/{box_id}
-        
+
         Returns balancing decision pattern prediction based on 7d profiling.
-        
+
         Response structure:
         {
             "current_prediction": {

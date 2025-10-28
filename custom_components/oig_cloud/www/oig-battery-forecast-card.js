@@ -14,7 +14,26 @@ class OigBatteryForecastCard extends HTMLElement {
 
     set hass(hass) {
         this._hass = hass;
-        this.updateChart();
+
+        // Phase 1.5: Hash-based change detection
+        // Check if timeline data changed by comparing hash (state)
+        const entityId = this.config?.entity;
+        if (entityId) {
+            const entity = hass.states[entityId];
+            if (entity) {
+                const currentHash = entity.state; // State = hash[:8]
+
+                // First load or hash changed - fetch new data
+                if (!this._lastHash || this._lastHash !== currentHash) {
+                    console.log(`🔄 Timeline data changed: ${this._lastHash || 'none'} -> ${currentHash}`);
+                    this._lastHash = currentHash;
+                    this.fetchAndUpdateChart();
+                } else {
+                    // Hash unchanged - skip update
+                    console.log(`✅ Timeline data unchanged (hash: ${currentHash})`);
+                }
+            }
+        }
     }
 
     connectedCallback() {
@@ -345,6 +364,80 @@ class OigBatteryForecastCard extends HTMLElement {
         this.updateChart();
     }
 
+    /**
+     * Phase 1.5: Fetch timeline data from REST API
+     * @param {string} boxId - Box ID from entity unique_id
+     * @returns {Promise<Array>} Timeline data points
+     */
+    async fetchTimelineFromAPI(boxId) {
+        const apiEndpoint = `/api/oig_cloud/battery_forecast/${boxId}/timeline`;
+
+        try {
+            console.log(`📡 Fetching timeline from API: ${apiEndpoint}?type=active`);
+            const response = await fetch(`${apiEndpoint}?type=active`, {
+                method: 'GET',
+                credentials: 'include', // Include HA session cookies
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log(`✅ Timeline fetched: ${data.metadata.points_count} points, ${data.metadata.size_kb} KB`);
+
+            return data.active || [];
+        } catch (error) {
+            console.error('❌ Failed to fetch timeline from API:', error);
+            this.showError(`Nepodařilo se načíst data grafu: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Phase 1.5: Fetch timeline and update chart
+     * Called when hash changes (timeline data updated)
+     */
+    async fetchAndUpdateChart() {
+        if (!this.chart || !this._hass) {
+            console.log('⏭️ Skipping update - chart or hass not ready');
+            return;
+        }
+
+        const entityId = this.config.entity;
+        const entity = this._hass.states[entityId];
+        if (!entity) {
+            console.warn(`⚠️ Entity not found: ${entityId}`);
+            return;
+        }
+
+        const attrs = entity.attributes;
+
+        // Extract box_id from entity_id: sensor.oig_2206237016_battery_forecast -> 2206237016
+        const boxIdMatch = entityId.match(/sensor\.oig_(\d+)_battery_forecast/);
+        if (!boxIdMatch) {
+            console.error(`❌ Could not extract box_id from entity_id: ${entityId}`);
+            this.showError('Chyba konfigurace: neplatné entity_id');
+            return;
+        }
+        const boxId = boxIdMatch[1];
+
+        // Fetch timeline from API
+        this.showLoading('Načítání dat grafu...');
+        const timelineData = await this.fetchTimelineFromAPI(boxId);
+
+        if (timelineData.length === 0) {
+            console.warn('⚠️ No timeline data received from API');
+            return;
+        }
+
+        // Store timeline data for chart update
+        this._timelineData = timelineData;
+
+        // Update chart with new data
+        this.updateChart();
+    }
+
     updateChart() {
         if (!this.chart || !this._hass) return;
 
@@ -525,11 +618,17 @@ class OigBatteryForecastCard extends HTMLElement {
 
         return series;
     }    prepareTwoLineData(attrs) {
-        console.log('🔥 prepareTwoLineData called - NOVÁ VERZE!');
+        console.log('🔥 prepareTwoLineData called - Phase 1.5 API VERSION!');
         const batteryLineData = [];
         const gridChargeData = [];
         const solarChargeData = [];
-        const timelineData = attrs.timeline_data || [];
+
+        // Phase 1.5: Use timeline data from API (stored in this._timelineData)
+        const timelineData = this._timelineData || [];
+
+        if (timelineData.length === 0) {
+            console.warn('⚠️ No timeline data available - chart will be empty');
+        }
 
         timelineData.forEach((point) => {
             if (!point.timestamp) return;
@@ -563,7 +662,8 @@ class OigBatteryForecastCard extends HTMLElement {
 
     prepareBatteryData(attrs) {
         const data = [];
-        const timelineData = attrs.timeline_data || [];
+        // Phase 1.5: Use timeline data from API
+        const timelineData = this._timelineData || [];
 
         // Pokud máme timeline_data, použijeme je
         if (timelineData.length > 0) {
@@ -602,7 +702,8 @@ class OigBatteryForecastCard extends HTMLElement {
 
     prepareSolarData(attrs) {
         const data = [];
-        const timelineData = attrs.timeline_data || [];
+        // Phase 1.5: Use timeline data from API
+        const timelineData = this._timelineData || [];
 
         if (timelineData.length > 0) {
             timelineData.forEach(point => {
@@ -631,7 +732,8 @@ class OigBatteryForecastCard extends HTMLElement {
 
     prepareConsumptionData(attrs) {
         const data = [];
-        const timelineData = attrs.timeline_data || [];
+        // Phase 1.5: Use timeline data from API
+        const timelineData = this._timelineData || [];
 
         if (timelineData.length > 0) {
             timelineData.forEach(point => {

@@ -5282,6 +5282,16 @@ function init() {
         // Initial full load
         forceFullRefresh();
         updateTime();
+
+        // OPRAVA: Načíst pricing data pokud je pricing tab aktivní při načtení stránky
+        const pricingTab = document.getElementById('pricing-tab');
+        if (pricingTab && pricingTab.classList.contains('active')) {
+            console.log('[Init] Pricing tab is active, loading initial pricing data...');
+            pricingTabActive = true;
+            setTimeout(() => {
+                loadPricingData();
+            }, 200);
+        }
     }, 50);
 
     // Subscribe to shield state changes for real-time updates
@@ -6779,7 +6789,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
     canvas.dataset.endTime = endTime;
 }
 
-function loadPricingData() {
+async function loadPricingData() {
     const hass = getHass();
     if (!hass || !hass.states) return;
     const boxId = getBoxId();
@@ -6788,60 +6798,87 @@ function loadPricingData() {
     const datasets = [];
     let allLabels = [];
 
-    // Spot prices (15min) - this defines the time range for all charts
+    // === PHASE 1.5: Fetch pricing data from timeline API ===
+    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
+    let timelineData = [];
+
+    try {
+        const response = await fetch(timelineUrl);
+        if (response.ok) {
+            const data = await response.json();
+            timelineData = data.active || [];
+            console.log(`[Pricing] Loaded ${timelineData.length} timeline points from API`);
+        } else {
+            console.error('[Pricing] Failed to fetch timeline:', response.status);
+        }
+    } catch (error) {
+        console.error('[Pricing] Error fetching timeline:', error);
+    }
+
+    // OPRAVA: Filtrovat pouze aktuální a budoucí intervaly
+    const now = new Date();
+    timelineData = timelineData.filter(point => {
+        const pointTime = new Date(point.timestamp);
+        return pointTime >= now;
+    });
+    console.log(`[Pricing] After filtering future intervals: ${timelineData.length} points`);
+
+    // Convert timeline to prices format for compatibility with existing code
+    const prices = timelineData.map(point => ({
+        timestamp: point.timestamp,
+        price: point.spot_price_czk || 0
+    }));
+
+    const exportPrices = timelineData.map(point => ({
+        timestamp: point.timestamp,
+        price: point.export_price_czk || 0
+    }));
+
+    // Spot prices (15min) - cards and chart
     const spotEntityId = 'sensor.oig_' + boxId + '_spot_price_current_15min';
     const spotSensor = hass.states[spotEntityId];
-    if (spotSensor && spotSensor.attributes) {
-        const prices = spotSensor.attributes.prices || [];
-        const currentPrice = spotSensor.attributes.current_price;
-        if (currentPrice != null) {
+
+    // Update current price card from sensor state (not attributes)
+    if (spotSensor && spotSensor.state) {
+        const currentPrice = parseFloat(spotSensor.state);
+        if (!isNaN(currentPrice)) {
             const spotCard = document.getElementById('current-spot-price');
-            if (spotCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
+            if (spotCard) {
                 spotCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                // Make card clickable
                 spotCard.parentElement.style.cursor = 'pointer';
                 spotCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
             }
         }
-        if (prices.length > 0) {
-            const priceValues = prices.map(p => p.price);
-            const avg = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
-            const avgCard = document.getElementById('avg-spot-today');
-            if (avgCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
-                avgCard.innerHTML = avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                // Make card clickable (same entity as current spot)
-                avgCard.parentElement.style.cursor = 'pointer';
-                avgCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+    }
+
+    if (prices.length > 0) {
+        const priceValues = prices.map(p => p.price);
+        const avg = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
+        const avgCard = document.getElementById('avg-spot-today');
+        if (avgCard) {
+            avgCard.innerHTML = avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+            avgCard.parentElement.style.cursor = 'pointer';
+            avgCard.parentElement.onclick = () => openEntityDialog(spotEntityId);
+        }
+
+        // Parse timestamps from timeline
+        allLabels = prices.map(p => {
+            const timeStr = p.timestamp;
+            if (!timeStr) return new Date();
+
+            try {
+                const [datePart, timePart] = timeStr.split('T');
+                if (!datePart || !timePart) return new Date();
+
+                const [year, month, day] = datePart.split('-').map(Number);
+                const [hour, minute, second = 0] = timePart.split(':').map(Number);
+
+                return new Date(year, month - 1, day, hour, minute, second);
+            } catch (error) {
+                console.error('[Pricing] Error parsing timestamp:', timeStr, error);
+                return new Date();
             }
-
-            // Use spot price timestamps as master timeline (includes today + tomorrow)
-            // OPRAVA: Parsovat ISO timestamps jako LOKÁLNÍ čas, ne UTC
-            allLabels = prices.map(p => {
-                const timeStr = p.timestamp;
-                if (!timeStr) return new Date();
-
-                // Parse as LOCAL time (not UTC)
-                try {
-                    const [datePart, timePart] = timeStr.split('T');
-                    if (!datePart || !timePart) return new Date();
-
-                    const [year, month, day] = datePart.split('-').map(Number);
-                    const [hour, minute, second = 0] = timePart.split(':').map(Number);
-
-                    return new Date(year, month - 1, day, hour, minute, second);
-                } catch (error) {
-                    console.error('[Pricing] Error parsing timestamp:', timeStr, error);
-                    return new Date();
-                }
-            });
-
-            // DEBUG: Zkontrolovat první a poslední timestamp
-            // if (prices.length > 0) {
-            //     console.log('[Pricing] Raw first timestamp:', prices[0].timestamp);
-            //     console.log('[Pricing] Parsed first label:', allLabels[0]);
-            //     console.log('[Pricing] Raw last timestamp:', prices[prices.length - 1].timestamp);
-            //     console.log('[Pricing] Parsed last label:', allLabels[allLabels.length - 1]);
-            // }
+        });
 
             // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
@@ -6926,15 +6963,14 @@ function loadPricingData() {
                 }
             }
         }
-    }
 
-    // Export prices (15min)
+    // Export prices (15min) - from timeline API
     const exportEntityId = 'sensor.oig_' + boxId + '_export_price_current_15min';
     const exportSensor = hass.states[exportEntityId];
-    if (exportSensor && exportSensor.attributes) {
-        const prices = exportSensor.attributes.prices || [];
-        const currentPrice = exportSensor.attributes.current_price;
-        if (currentPrice != null) {
+    if (exportSensor && exportSensor.state) {
+        // Current price from sensor state
+        const currentPrice = parseFloat(exportSensor.state);
+        if (!isNaN(currentPrice)) {
             const exportCard = document.getElementById('current-export-price');
             if (exportCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
                 exportCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
@@ -6943,54 +6979,56 @@ function loadPricingData() {
                 exportCard.parentElement.onclick = () => openEntityDialog(exportEntityId);
             }
         }
-        if (prices.length > 0) {
-            datasets.push({
-                label: '💰 Výkupní cena',
-                data: prices.map(p => p.price),
-                borderColor: '#4CAF50',
-                backgroundColor: 'rgba(76, 187, 106, 0.15)',
-                borderWidth: 2,
-                fill: false,
-                type: 'line',
-                tension: 0.4,
-                yAxisID: 'y-price',
-                pointRadius: 0,
-                pointHoverRadius: 5,
-                order: 1,
-                borderDash: [5, 5]
-            });
+    }
 
-            // === NOVÉ: Extrémní bloky pro EXPORT (prodej) - OBRÁCENÁ LOGIKA ===
-            // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
-            const bestExportBlock = findExtremePriceBlock(prices, false, 3);
-            if (bestExportBlock) {
-                currentPriceBlocks.bestExport = bestExportBlock;
+    // Export prices from timeline API (already fetched)
+    if (exportPrices.length > 0) {
+        datasets.push({
+            label: '💰 Výkupní cena',
+            data: exportPrices.map(p => p.price),
+            borderColor: '#4CAF50',
+            backgroundColor: 'rgba(76, 187, 106, 0.15)',
+            borderWidth: 2,
+            fill: false,
+            type: 'line',
+            tension: 0.4,
+            yAxisID: 'y-price',
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            order: 1,
+            borderDash: [5, 5]
+        });
 
-                const priceEl = document.getElementById('best-export-price');
-                const timeEl = document.getElementById('best-export-time');
-                if (priceEl && timeEl) {
-                    priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                    const startTime = new Date(bestExportBlock.start);
-                    const endTime = new Date(bestExportBlock.end);
-                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })} ${startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`;
-                    createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
-                }
+        // === NOVÉ: Extrémní bloky pro EXPORT (prodej) - OBRÁCENÁ LOGIKA ===
+        // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
+        const bestExportBlock = findExtremePriceBlock(exportPrices, false, 3);
+        if (bestExportBlock) {
+            currentPriceBlocks.bestExport = bestExportBlock;
+
+            const priceEl = document.getElementById('best-export-price');
+            const timeEl = document.getElementById('best-export-time');
+            if (priceEl && timeEl) {
+                priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                const startTime = new Date(bestExportBlock.start);
+                const endTime = new Date(bestExportBlock.end);
+                timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })} ${startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`;
+                createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
             }
+        }
 
-            // Nejhorší prodej = NEJNIŽŠÍ cena (findLowest = true)
-            const worstExportBlock = findExtremePriceBlock(prices, true, 3);
-            if (worstExportBlock) {
-                currentPriceBlocks.worstExport = worstExportBlock;
+        // Nejhorší prodej = NEJNIŽŠÍ cena (findLowest = true)
+        const worstExportBlock = findExtremePriceBlock(exportPrices, true, 3);
+        if (worstExportBlock) {
+            currentPriceBlocks.worstExport = worstExportBlock;
 
-                const priceEl = document.getElementById('worst-export-price');
-                const timeEl = document.getElementById('worst-export-time');
-                if (priceEl && timeEl) {
-                    priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
-                    const startTime = new Date(worstExportBlock.start);
-                    const endTime = new Date(worstExportBlock.end);
-                    timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })} ${startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`;
-                    createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
-                }
+            const priceEl = document.getElementById('worst-export-price');
+            const timeEl = document.getElementById('worst-export-time');
+            if (priceEl && timeEl) {
+                priceEl.innerHTML = worstExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
+                const startTime = new Date(worstExportBlock.start);
+                const endTime = new Date(worstExportBlock.end);
+                timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })} ${startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`;
+                createMiniPriceChart('worst-export-chart', worstExportBlock.values, 'rgba(255, 167, 38, 1)', worstExportBlock.start, worstExportBlock.end);
             }
         }
     }
@@ -7158,12 +7196,11 @@ function loadPricingData() {
     let initialZoomStart = null;
     let initialZoomEnd = null;
 
-    if (batteryForecastSensor && batteryForecastSensor.attributes && spotSensor && spotSensor.attributes) {
-        const timelineData = batteryForecastSensor.attributes.timeline_data || [];
+    if (batteryForecastSensor && batteryForecastSensor.attributes) {
+        // Timeline data already loaded from API at function start
         // console.log('[Pricing] Timeline data length:', timelineData.length);
         const maxCapacityKwh = batteryForecastSensor.attributes.max_capacity_kwh || 10;
         const minCapacityKwh = batteryForecastSensor.attributes.min_capacity_kwh || 0;
-        const prices = spotSensor.attributes.prices || []; // Original ISO timestamps
 
         if (timelineData.length > 0 && prices.length > 0) {
             // ULOŽIT ROZSAH TIMELINE PRO VÝCHOZÍ ZOOM
@@ -7507,19 +7544,27 @@ function loadPricingData() {
                     'y-solar': {
                         type: 'linear',
                         position: 'left',
-                        stacked: true,  // POVOL STACKING pro grid + solar
+                        stacked: true,
                         ticks: {
                             color: '#78909C',
                             font: { size: 11, weight: '500' },
-                            callback: function (value) { return value.toFixed(1) + ' kWh'; }
+                            callback: function (value) { return value.toFixed(1) + ' kWh'; },
+                            display: true
                         },
-                        grid: { display: false },
+                        grid: {
+                            display: true,
+                            color: 'rgba(120, 144, 156, 0.15)',
+                            lineWidth: 1,
+                            drawOnChartArea: true
+                        },
                         title: {
                             display: true,
                             text: '🔋 Kapacita baterie (kWh)',
                             color: '#78909C',
-                            font: { size: 13, weight: 'bold' }
-                        }
+                            font: { size: 11, weight: 'bold' }
+                        },
+                        // Začátek shora, aby se nepřekrývala s y-price
+                        beginAtZero: false
                     },
                     'y-power': {
                         type: 'linear',
