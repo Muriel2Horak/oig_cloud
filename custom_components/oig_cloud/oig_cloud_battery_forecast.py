@@ -1956,11 +1956,141 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning(f"Error parsing boiler power: {e}, using default 0.7 kWh")
             return 0.7  # Fallback
 
+    def _calculate_final_spot_price(
+        self, raw_spot_price: float, target_datetime: datetime
+    ) -> float:
+        """
+        Vypočítat finální spotovou cenu včetně obchodní přirážky, distribuce a DPH.
+
+        KRITICKÉ: Toto je STEJNÝ výpočet jako SpotPrice15MinSensor._calculate_final_price_15min()
+        Musí zůstat synchronizovaný!
+
+        Args:
+            raw_spot_price: Čistá spotová cena z OTE (Kč/kWh, bez přirážek)
+            target_datetime: Datetime pro určení tarifu (VT/NT)
+
+        Returns:
+            Finální cena včetně obchodní přirážky, distribuce a DPH (Kč/kWh)
+        """
+        config = (
+            self._config_entry.options
+            if self._config_entry.options
+            else self._config_entry.data
+        )
+
+        # Parametry z konfigurace
+        pricing_model = config.get("spot_pricing_model", "percentage")
+        positive_fee_percent = config.get("spot_positive_fee_percent", 15.0)
+        negative_fee_percent = config.get("spot_negative_fee_percent", 9.0)
+        fixed_fee_mwh = config.get("spot_fixed_fee_mwh", 0.0)
+        distribution_fee_vt_kwh = config.get("distribution_fee_vt_kwh", 1.50)
+        distribution_fee_nt_kwh = config.get("distribution_fee_nt_kwh", 1.20)
+        vat_rate = config.get("vat_rate", 21.0)
+        dual_tariff_enabled = config.get("dual_tariff_enabled", True)
+
+        # 1. Obchodní cena (spot + přirážka)
+        if pricing_model == "percentage":
+            if raw_spot_price >= 0:
+                commercial_price = raw_spot_price * (1 + positive_fee_percent / 100.0)
+            else:
+                commercial_price = raw_spot_price * (1 - negative_fee_percent / 100.0)
+        else:  # fixed
+            fixed_fee_kwh = fixed_fee_mwh / 1000.0
+            commercial_price = raw_spot_price + fixed_fee_kwh
+
+        # 2. Tarif pro distribuci (VT/NT)
+        current_tariff = self._get_tariff_for_datetime(target_datetime)
+
+        # 3. Distribuční poplatek
+        distribution_fee = (
+            distribution_fee_vt_kwh
+            if current_tariff == "VT"
+            else distribution_fee_nt_kwh
+        )
+
+        # 4. Cena bez DPH
+        price_without_vat = commercial_price + distribution_fee
+
+        # 5. Finální cena s DPH
+        final_price = price_without_vat * (1 + vat_rate / 100.0)
+
+        return round(final_price, 2)
+
+    def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
+        """
+        Získat tarif (VT/NT) pro daný datetime.
+
+        KRITICKÉ: Kopie logiky z SpotPrice15MinSensor._get_tariff_for_datetime()
+        Musí zůstat synchronizovaná!
+        """
+        config = (
+            self._config_entry.options
+            if self._config_entry.options
+            else self._config_entry.data
+        )
+
+        dual_tariff_enabled = config.get("dual_tariff_enabled", True)
+        if not dual_tariff_enabled:
+            return "VT"
+
+        is_weekend = target_datetime.weekday() >= 5
+
+        if is_weekend:
+            nt_times = self._parse_tariff_times(
+                config.get("tariff_nt_start_weekend", "0")
+            )
+            vt_times = self._parse_tariff_times(
+                config.get("tariff_vt_start_weekend", "")
+            )
+        else:
+            nt_times = self._parse_tariff_times(
+                config.get("tariff_nt_start_weekday", "22,2")
+            )
+            vt_times = self._parse_tariff_times(
+                config.get("tariff_vt_start_weekday", "6")
+            )
+
+        current_hour = target_datetime.hour
+        last_tariff = "NT"
+        last_hour = -1
+
+        all_changes = []
+        for hour in nt_times:
+            all_changes.append((hour, "NT"))
+        for hour in vt_times:
+            all_changes.append((hour, "VT"))
+
+        all_changes.sort(reverse=True)
+
+        for hour, tariff in all_changes:
+            if hour <= current_hour and hour > last_hour:
+                last_tariff = tariff
+                last_hour = hour
+
+        return last_tariff
+
+    def _parse_tariff_times(self, time_str: str) -> list[int]:
+        """Parse tariff times string to list of hours."""
+        if not time_str:
+            return []
+        try:
+            return [int(x.strip()) for x in time_str.split(",") if x.strip()]
+        except ValueError:
+            return []
+
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
-        """Získat timeline spotových cen z coordinator data.
+        """
+        Získat timeline spotových cen z coordinator data.
+
+        KRITICKÝ FIX: Vrací FINÁLNÍ ceny včetně obchodní přirážky, distribuce a DPH!
+        PŘED: Vracelo jen čistou spot price (2.29 Kč/kWh)
+        PO: Vrací finální cenu (4.51 Kč/kWh) = spot + přirážka 15% + distribuce 1.50 Kč/kWh + DPH 21%
 
         Phase 1.5: Spot prices jsou v coordinator.data["spot_prices"], ne v sensor attributes.
         Sensor attributes obsahují jen summary (current_price, price_min/max/avg).
+
+        Returns:
+            List of dicts: [{"time": "2025-10-28T13:15:00", "price": 4.51}, ...]
         """
         if not self.coordinator:
             _LOGGER.warning("Coordinator not available in _get_spot_price_timeline")
@@ -1973,26 +2103,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning("No spot_prices data in coordinator")
             return []
 
-        # spot_data format: {"prices15m_czk_kwh": {"2025-10-28T13:45:00": 4.18, ...}}
-        prices_dict = spot_data.get("prices15m_czk_kwh", {})
+        # spot_data format: {"prices15m_czk_kwh": {"2025-10-28T13:45:00": 2.29, ...}}
+        # Toto je ČISTÁ spotová cena BEZ přirážek, distribuce a DPH!
+        raw_prices_dict = spot_data.get("prices15m_czk_kwh", {})
 
-        if not prices_dict:
+        if not raw_prices_dict:
             _LOGGER.warning("No prices15m_czk_kwh in spot_data")
             return []
 
-        # Convert to timeline format
+        # Convert to timeline format WITH FINAL PRICES
         timeline = []
-        for timestamp_str, price in sorted(prices_dict.items()):
+        for timestamp_str, raw_spot_price in sorted(raw_prices_dict.items()):
             try:
-                # Validate timestamp
-                datetime.fromisoformat(timestamp_str)
-                timeline.append({"time": timestamp_str, "price": price})
+                # Validate and parse timestamp
+                target_datetime = datetime.fromisoformat(timestamp_str)
+
+                # KRITICKÝ FIX: Vypočítat FINÁLNÍ cenu včetně přirážky, distribuce a DPH
+                final_price = self._calculate_final_spot_price(
+                    raw_spot_price, target_datetime
+                )
+
+                timeline.append({"time": timestamp_str, "price": final_price})
+
             except ValueError:
                 _LOGGER.warning(f"Invalid timestamp in spot prices: {timestamp_str}")
                 continue
 
         _LOGGER.info(
-            f"Successfully loaded {len(timeline)} spot price points from coordinator"
+            f"Successfully loaded {len(timeline)} spot price points from coordinator "
+            f"(converted from raw spot to final price with distribution + VAT)"
         )
         return timeline
 
