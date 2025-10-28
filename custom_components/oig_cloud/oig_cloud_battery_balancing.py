@@ -189,15 +189,13 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             # Počkat na forecast data (max 5 min)
             self._planning_status = "preparing"
             self._planning_error = None
-            if self._hass:
-                self.async_write_ha_state()
+            self.async_schedule_update_ha_state(force_refresh=True)
 
             await self._wait_for_forecast_ready(timeout=300)
 
             _LOGGER.info("✅ Planning loop started - will run every hour")
             self._planning_status = "idle"
-            if self._hass:
-                self.async_write_ha_state()
+            self.async_schedule_update_ha_state(force_refresh=True)
 
             # První běh okamžitě po startu
             first_run = True
@@ -211,8 +209,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     # Nastavit stav calculating
                     self._planning_status = "calculating"
                     self._planning_error = None
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                     # Validovat/naplánovat
                     await self._validate_and_plan()
@@ -221,8 +218,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     self._last_planning_check = dt_util.now()
                     self._planning_status = "ok"
                     self._planning_error = None
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                     _LOGGER.info(
                         f"✅ Planning loop iteration completed at {self._last_planning_check}"
@@ -234,8 +230,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     )
                     self._planning_status = "error"
                     self._planning_error = str(e)
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                 # První běh: čekat jen 60s, pak normálně 1h
                 if first_run:
@@ -243,28 +238,24 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         "⏱️ First run completed, waiting 60s before next iteration"
                     )
                     self._planning_status = "idle"
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
                     await asyncio.sleep(60)
                     first_run = False
                 else:
                     _LOGGER.info("⏱️ Waiting 3600s (1 hour) until next iteration")
                     self._planning_status = "idle"
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
                     await asyncio.sleep(3600)
 
         except asyncio.CancelledError:
             _LOGGER.info("Planning loop cancelled")
             self._planning_status = "idle"
-            if self._hass:
-                self.async_write_ha_state()
+            self.async_schedule_update_ha_state(force_refresh=True)
         except Exception as e:
             _LOGGER.error(f"Planning loop fatal error: {e}", exc_info=True)
             self._planning_status = "error"
             self._planning_error = f"Fatal: {str(e)}"
-            if self._hass:
-                self.async_write_ha_state()
+            self.async_schedule_update_ha_state(force_refresh=True)
 
     async def _balancing_profiling_loop(self) -> None:
         """
@@ -281,8 +272,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 _LOGGER.info("📊 Creating initial 7d balancing profile")
                 self._balancing_profiling_status = "creating"
                 self._balancing_profiling_error = None
-                if self._hass:
-                    self.async_write_ha_state()
+                self.async_schedule_update_ha_state(force_refresh=True)
 
                 success = await self._create_balancing_profile()
 
@@ -298,15 +288,13 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     self._balancing_profiling_error = "Failed to create initial profile"
                     _LOGGER.warning("❌ Failed to create initial balancing profile")
 
-                if self._hass:
-                    self.async_write_ha_state()
+                self.async_schedule_update_ha_state(force_refresh=True)
 
             except Exception as e:
                 _LOGGER.error(f"❌ Initial profiling error: {e}", exc_info=True)
                 self._balancing_profiling_status = "error"
                 self._balancing_profiling_error = str(e)
-                if self._hass:
-                    self.async_write_ha_state()
+                self.async_schedule_update_ha_state(force_refresh=True)
 
             # Počkat do prvního denního okna (00:30)
             await self._wait_for_next_profiling_window()
@@ -318,8 +306,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
                     self._balancing_profiling_status = "creating"
                     self._balancing_profiling_error = None
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                     # Vytvořit profil
                     success = await self._create_balancing_profile()
@@ -336,23 +323,20 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         self._balancing_profiling_error = "Failed to create profile"
                         _LOGGER.warning("❌ Failed to create daily balancing profile")
 
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                 except Exception as e:
                     _LOGGER.error(f"❌ Profiling loop error: {e}", exc_info=True)
                     self._balancing_profiling_status = "error"
                     self._balancing_profiling_error = str(e)
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                 # Počkat do dalšího dne 00:30
                 _LOGGER.info(
                     "⏱️ Waiting until tomorrow 00:30 for next balancing profile"
                 )
                 self._balancing_profiling_status = "idle"
-                if self._hass:
-                    self.async_write_ha_state()
+                self.async_schedule_update_ha_state(force_refresh=True)
 
                 await self._wait_for_next_profiling_window()
 

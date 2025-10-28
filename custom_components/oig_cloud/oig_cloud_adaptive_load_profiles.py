@@ -136,14 +136,12 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.error(f"❌ Profiling loop error: {e}", exc_info=True)
                     self._profiling_status = "error"
                     self._profiling_error = str(e)
-                    if self._hass:
-                        self.async_write_ha_state()
+                    self.async_schedule_update_ha_state(force_refresh=True)
 
                 # Počkat do dalšího dne 00:30
                 _LOGGER.info("⏱️ Waiting until tomorrow 00:30 for next profile")
                 self._profiling_status = "idle"
-                if self._hass:
-                    self.async_write_ha_state()
+                self.async_schedule_update_ha_state(force_refresh=True)
 
                 await self._wait_for_next_profile_window()
 
