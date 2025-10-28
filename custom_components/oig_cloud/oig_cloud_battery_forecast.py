@@ -277,20 +277,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 },
                 "timeline_length": len(mo.get("optimal_timeline", [])),
             }
-            
+
             # Phase 2.5: Boiler summary (if boiler was used in optimization)
             boiler_total = sum(
-                interval.get("boiler_charge", 0) for interval in mo.get("optimal_timeline", [])
+                interval.get("boiler_charge", 0)
+                for interval in mo.get("optimal_timeline", [])
             )
             curtailed_total = sum(
-                interval.get("curtailed_loss", 0) for interval in mo.get("optimal_timeline", [])
+                interval.get("curtailed_loss", 0)
+                for interval in mo.get("optimal_timeline", [])
             )
-            
+
             if boiler_total > 0.001 or curtailed_total > 0.001:
                 attrs["boiler_summary"] = {
                     "total_energy_kwh": round(boiler_total, 2),
                     "intervals_used": sum(
-                        1 for i in mo.get("optimal_timeline", []) if i.get("boiler_charge", 0) > 0.001
+                        1
+                        for i in mo.get("optimal_timeline", [])
+                        if i.get("boiler_charge", 0) > 0.001
                     ),
                     "avoided_export_loss_czk": round(curtailed_total, 2),
                 }
@@ -596,26 +600,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if remaining_solar >= load_kwh:
                 # Enough FVE to cover load
                 surplus = remaining_solar - load_kwh
-                
+
                 # Phase 2.5: Export price protection with boiler support
                 # Priority: Battery > Boiler > Export (if profitable)
                 if export_price <= 0 and battery_soc < max_capacity:
                     # Try to store surplus in battery instead of exporting at loss
                     battery_space = max_capacity - result["new_soc"]
                     additional_charge = min(surplus, battery_space / efficiency)
-                    
+
                     result["battery_charge"] += additional_charge
                     result["new_soc"] += additional_charge * efficiency
                     surplus -= additional_charge
-                
+
                 # If still surplus and export would be lossy, try boiler
                 if surplus > 0.001 and export_price <= 0:
                     boiler_capacity = self._get_boiler_available_capacity()
                     boiler_usage = min(surplus, boiler_capacity)
-                    
+
                     result["boiler_charge"] = boiler_usage
                     surplus -= boiler_usage
-                
+
                 # Export only if profitable OR no other option (curtailment)
                 if surplus > 0.001:
                     if export_price > 0:
@@ -658,16 +662,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Phase 2.5: Export price protection with boiler support
                 # Remaining surplus → boiler > export (if profitable)
                 remaining_surplus = surplus - charge_amount
-                
+
                 if remaining_surplus > 0.001:
                     # Try boiler first if export would be lossy
                     if export_price <= 0:
                         boiler_capacity = self._get_boiler_available_capacity()
                         boiler_usage = min(remaining_surplus, boiler_capacity)
-                        
+
                         result["boiler_charge"] = boiler_usage
                         remaining_surplus -= boiler_usage
-                    
+
                     # Export remaining (profitable or forced curtailment)
                     if remaining_surplus > 0.001:
                         if export_price > 0:
@@ -676,8 +680,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         else:
                             # Forced curtailment (battery full, boiler full/unavailable)
                             result["grid_export"] = remaining_surplus
-                            result["export_revenue"] = remaining_surplus * export_price  # NEGATIVE
-                            result["curtailed_loss"] = abs(remaining_surplus * export_price)
+                            result["export_revenue"] = (
+                                remaining_surplus * export_price
+                            )  # NEGATIVE
+                            result["curtailed_loss"] = abs(
+                                remaining_surplus * export_price
+                            )
             else:
                 # FVE < load → grid supplements (battery NOT used)
                 deficit = load_kwh - solar_kwh
@@ -702,15 +710,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # If battery full and still FVE surplus → boiler > export
             if charge_amount < solar_kwh:
                 surplus = solar_kwh - charge_amount
-                
+
                 # Try boiler first if export would be lossy
                 if export_price <= 0:
                     boiler_capacity = self._get_boiler_available_capacity()
                     boiler_usage = min(surplus, boiler_capacity)
-                    
+
                     result["boiler_charge"] = boiler_usage
                     surplus -= boiler_usage
-                
+
                 # Export remaining (profitable or forced curtailment)
                 if surplus > 0.001:
                     if export_price > 0:
@@ -750,17 +758,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if remaining_solar >= load_kwh:
                 # Enough FVE
                 surplus = remaining_solar - load_kwh
-                
+
                 # Phase 2.5: Export price protection with boiler support
                 if surplus > 0.001:
                     # Try boiler first if export would be lossy
                     if export_price <= 0:
                         boiler_capacity = self._get_boiler_available_capacity()
                         boiler_usage = min(surplus, boiler_capacity)
-                        
+
                         result["boiler_charge"] = boiler_usage
                         surplus -= boiler_usage
-                    
+
                     # Export remaining (profitable or forced curtailment)
                     if surplus > 0.001:
                         if export_price > 0:
@@ -769,7 +777,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         else:
                             # Forced curtailment (boiler full/unavailable)
                             result["grid_export"] = surplus
-                            result["export_revenue"] = surplus * export_price  # NEGATIVE
+                            result["export_revenue"] = (
+                                surplus * export_price
+                            )  # NEGATIVE
                             result["curtailed_loss"] = abs(surplus * export_price)
             else:
                 # Import for load
@@ -1902,7 +1912,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Zjistit kolik kWh může bojler přijmout v 15min intervalu.
 
         Phase 2.5: Boiler support pro přebytkovou energii.
-        
+
         Pokud je boiler_is_use=on, CBB firmware automaticky směřuje přebytky do bojleru
         až do výše boiler_install_power (kW limit).
 
@@ -2348,6 +2358,183 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     # GRID CHARGING OPTIMIZATION METHODS
     # ========================================================================
 
+    def _calculate_optimal_night_charge_target(
+        self,
+        timeline_data: List[Dict[str, Any]],
+        max_capacity: float,
+        default_target_percent: float,
+    ) -> tuple[float, str]:
+        """
+        Vypočítá optimální target SoC pro noční nabíjení (ne vždy 100%).
+
+        Algoritmus:
+        1. Najít ranní solar surplus (FVE > spotřeba)
+        2. Rozhodnout jestli je lepší storage nebo export
+        3. Vrátit optimální target SoC
+
+        Args:
+            timeline_data: Timeline data s predikcí
+            max_capacity: Maximální kapacita baterie (kWh)
+            default_target_percent: Výchozí target z configu (%)
+
+        Returns:
+            (optimal_target_kwh, reason) - optimální target a vysvětlení
+        """
+        try:
+            # Najít ranní hodiny (06:00 - 12:00)
+            now = datetime.now()
+            morning_start = now.replace(hour=6, minute=0, second=0, microsecond=0)
+            if now.hour < 6:
+                # Pokud je před 6:00, použít dnešní ráno
+                pass
+            else:
+                # Jinak zítřejší ráno
+                morning_start += timedelta(days=1)
+
+            morning_end = morning_start.replace(hour=12, minute=0)
+
+            # Filtrovat ranní intervaly
+            morning_intervals = []
+            for point in timeline_data:
+                try:
+                    timestamp = datetime.fromisoformat(point.get("timestamp", ""))
+                    if morning_start <= timestamp < morning_end:
+                        morning_intervals.append(point)
+                except (ValueError, TypeError):
+                    continue
+
+            if not morning_intervals:
+                _LOGGER.debug(
+                    "No morning intervals found for optimal target calculation"
+                )
+                return (
+                    (default_target_percent / 100.0) * max_capacity,
+                    f"default ({default_target_percent:.0f}%) - no morning data",
+                )
+
+            # Spočítat ranní solar surplus
+            morning_surplus_kwh = 0.0
+            for interval in morning_intervals:
+                solar = interval.get("solar_production_kwh", 0)
+                consumption = interval.get("consumption_kwh", 0)
+                surplus = max(0, solar - consumption)
+                morning_surplus_kwh += surplus
+
+            _LOGGER.debug(
+                f"Morning solar surplus ({len(morning_intervals)} intervals): {morning_surplus_kwh:.2f} kWh"
+            )
+
+            # Pokud není surplus, použít default
+            if morning_surplus_kwh < 0.5:
+                return (
+                    (default_target_percent / 100.0) * max_capacity,
+                    f"default ({default_target_percent:.0f}%) - no morning surplus",
+                )
+
+            # Najít průměrnou export price ráno
+            export_prices = [
+                p.get("export_price_czk", 0)
+                for p in morning_intervals
+                if p.get("export_price_czk") is not None
+            ]
+            avg_export_price = (
+                sum(export_prices) / len(export_prices) if export_prices else 0
+            )
+
+            # Najít večerní spot price (18:00 - 22:00)
+            evening_start = morning_start.replace(hour=18, minute=0)
+            evening_end = morning_start.replace(hour=22, minute=0)
+            evening_prices = []
+            for point in timeline_data:
+                try:
+                    timestamp = datetime.fromisoformat(point.get("timestamp", ""))
+                    if evening_start <= timestamp < evening_end:
+                        spot = point.get("spot_price_czk")
+                        if spot is not None:
+                            evening_prices.append(spot)
+                except (ValueError, TypeError):
+                    continue
+
+            avg_evening_spot = (
+                sum(evening_prices) / len(evening_prices) if evening_prices else 6.0
+            )
+
+            # ROZHODNUTÍ: Storage value vs Export value
+            # Storage: uložit surplus ráno, využít večer (s efficiency loss)
+            dc_dc_efficiency = 0.95  # DC/DC charging (solar → battery)
+            dc_ac_efficiency = (
+                self._get_battery_efficiency()
+            )  # DC/AC discharge (battery → consumption)
+            storage_efficiency = dc_dc_efficiency * dc_ac_efficiency  # ~83.8%
+
+            storage_value = avg_evening_spot * morning_surplus_kwh * storage_efficiency
+            export_value = avg_export_price * morning_surplus_kwh
+
+            _LOGGER.info(
+                f"Optimal target calculation: "
+                f"morning_surplus={morning_surplus_kwh:.2f}kWh, "
+                f"export_price={avg_export_price:.2f}CZK/kWh, "
+                f"evening_spot={avg_evening_spot:.2f}CZK/kWh, "
+                f"storage_value={storage_value:.2f}CZK, "
+                f"export_value={export_value:.2f}CZK"
+            )
+
+            # Pokud storage je lepší než export (s 10% tolerance)
+            if storage_value > export_value * 1.1:
+                # Nechat místo pro ranní solar
+                # Kolik místa potřebujeme? morning_surplus / dc_dc_efficiency
+                space_needed_kwh = morning_surplus_kwh / dc_dc_efficiency
+
+                # Optimal target = max_capacity - space_needed
+                optimal_target_kwh = max_capacity - space_needed_kwh
+
+                # Clamp mezi 50% a 95%
+                min_target = max_capacity * 0.50
+                max_target = max_capacity * 0.95
+                optimal_target_kwh = max(
+                    min_target, min(max_target, optimal_target_kwh)
+                )
+
+                optimal_percent = (optimal_target_kwh / max_capacity) * 100
+
+                reason = (
+                    f"optimized ({optimal_percent:.0f}%) - "
+                    f"save {space_needed_kwh:.1f}kWh for morning solar "
+                    f"(storage_value={storage_value:.1f}CZK > export={export_value:.1f}CZK)"
+                )
+
+                _LOGGER.info(
+                    f"OPTIMAL TARGET: {optimal_target_kwh:.2f}kWh ({optimal_percent:.0f}%) - {reason}"
+                )
+
+                return (optimal_target_kwh, reason)
+
+            # Export je OK → nabít na default (nebo blízko 100%)
+            # Ale nikdy ne víc než 95% (leave margin for rounding)
+            safe_target = min(default_target_percent, 95.0)
+            target_kwh = (safe_target / 100.0) * max_capacity
+
+            reason = (
+                f"default ({safe_target:.0f}%) - "
+                f"export profitable (export={export_value:.1f}CZK >= storage={storage_value:.1f}CZK)"
+            )
+
+            _LOGGER.info(
+                f"OPTIMAL TARGET: {target_kwh:.2f}kWh ({safe_target:.0f}%) - {reason}"
+            )
+
+            return (target_kwh, reason)
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Error calculating optimal night charge target: {e}", exc_info=True
+            )
+            # Fallback na default
+            return (
+                (default_target_percent / 100.0) * max_capacity,
+                f"default ({default_target_percent:.0f}%) - calculation error",
+            )
+
     def _optimize_grid_charging(
         self, timeline_data: List[Dict[str, Any]], mode: int
     ) -> List[Dict[str, Any]]:
@@ -2414,7 +2601,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             max_capacity = self._get_max_battery_capacity()
             min_capacity_kwh = (min_capacity_percent / 100.0) * max_capacity
-            target_capacity_kwh = (target_capacity_percent / 100.0) * max_capacity
+
+            # OPTIMAL NIGHT CHARGE TARGET:
+            # Vypočítat optimální target SoC (ne vždy 100%)
+            # Využívá ranní solar surplus a evening spot prices z DP optimalizace
+            optimal_target_kwh, target_reason = (
+                self._calculate_optimal_night_charge_target(
+                    timeline_data=timeline_data,
+                    max_capacity=max_capacity,
+                    default_target_percent=target_capacity_percent,
+                )
+            )
+
+            # Použít optimální target místo fixního target_capacity_percent
+            target_capacity_kwh = optimal_target_kwh
+
+            _LOGGER.info(
+                f"Night charge target: {target_capacity_kwh:.2f}kWh "
+                f"({(target_capacity_kwh / max_capacity * 100):.1f}%) - {target_reason}"
+            )
 
             # Vypočítat effective_minimum s bezpečnostním marginem
             usable_capacity = max_capacity - min_capacity_kwh
@@ -2445,6 +2650,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     enable_weather_risk=enable_weather_risk,
                     weather_risk_level=weather_risk_level,
                     weather_target_soc_percent=weather_target_soc_percent,
+                    target_reason=target_reason,
                 )
 
             else:
@@ -2506,6 +2712,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         enable_weather_risk: bool,
         weather_risk_level: str,
         weather_target_soc_percent: float,
+        target_reason: str = "default",
     ) -> List[Dict[str, Any]]:
         """
         Ekonomický plán nabíjení s forward simulací.
@@ -2531,6 +2738,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             enable_weather_risk: Aktivovat ochranu před počasím
             weather_risk_level: Úroveň rizika (low/medium/high)
             weather_target_soc_percent: Cílový SoC pro weather (%)
+            target_reason: Vysvětlení proč byl zvolen tento target
 
         Returns:
             Optimalizovaná timeline
@@ -2738,6 +2946,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             ),
             "protection_enabled": enable_blackout_protection or enable_weather_risk,
             "protection_soc_kwh": protection_soc_kwh,
+            "optimal_target_info": {
+                "target_kwh": target_capacity_kwh,
+                "target_percent": (target_capacity_kwh / max_capacity * 100),
+                "reason": target_reason,
+            },
         }
 
         _LOGGER.info(
@@ -5043,14 +5256,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 timestamp_str = point.get("timestamp", "")
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
-                    # Interval trvá 15 minut - zahrnout intervaly které ještě NESKONČILY
-                    # Pokud je now = 06:20, interval 06:15 končí 06:30, takže STÁLE PROBÍHÁ
+                    # Interval trvá 15 minut
                     interval_end = timestamp + timedelta(minutes=15)
 
+                    # FIX grid_charging_planned bug:
                     # Zahrnout interval pokud:
-                    # 1. Ještě neskončil (interval_end > now), NEBO
-                    # 2. Skončil nedávno (timestamp >= now - 10min) pro historii
-                    if interval_end > now or timestamp >= time_threshold:
+                    # 1. Aktuálně probíhá (timestamp <= now < interval_end), NEBO
+                    # 2. Začne v budoucnu (timestamp > now), NEBO
+                    # 3. Skončil nedávno (timestamp >= time_threshold) pro historii
+                    #
+                    # DŮLEŽITÉ: interval_end >= now (ne >), aby se zahrnul i interval
+                    # který právě skončil (now = 06:30, interval 06:15-06:30)
+                    if interval_end >= now or timestamp >= time_threshold:
                         spot_price_czk = point.get("spot_price_czk", 0)
 
                         # OPRAVA: Při režimu "Home UPS" vždy považujeme za nabíjení
