@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 # CBB 3F Home Plus Premium - Mode Constants (Phase 2)
 # Mode definitions from sensor.oig_{box_id}_box_prms_mode
 CBB_MODE_HOME_I = 0  # Grid priority (cheap mode)
-CBB_MODE_HOME_II = 1  # Battery priority  
+CBB_MODE_HOME_II = 1  # Battery priority
 CBB_MODE_HOME_III = 2  # Solar priority (default)
 CBB_MODE_HOME_UPS = 3  # UPS mode (AC charging enabled)
 
@@ -46,7 +46,7 @@ AC_CHARGING_DISABLED_MODES = [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_I
 # NOTE: AC charging limit and efficiency are now read from:
 # - Config: home_charge_rate (kW) - user configured max charging power
 # - Sensor: sensor.oig_{box_id}_battery_efficiency (%) - real-time measured efficiency
-# 
+#
 # Example: home_charge_rate = 2.8 kW → 0.7 kWh per 15min interval
 # Fallback efficiency if sensor unavailable: 88.2%
 
@@ -441,7 +441,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         balancing_plan: Optional[
             Dict[str, Any]
         ] = None,  # DEPRECATED: Use self._active_charging_plan instead
-        mode: Optional[int] = None,  # Phase 2: CBB mode for forecast (None = use current mode)
+        mode: Optional[
+            int
+        ] = None,  # Phase 2: CBB mode for forecast (None = use current mode)
     ) -> List[Dict[str, Any]]:
         """
         Vypočítat timeline predikce baterie.
@@ -465,11 +467,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         battery_kwh = current_capacity
 
         today = dt_util.now().date()
-        
+
         # Phase 2: Determine mode for timeline calculation
         if mode is None:
             mode = self._get_current_mode()
-        
+
         mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
         _LOGGER.debug(f"_calculate_timeline() using mode: {mode_name} ({mode})")
 
@@ -640,7 +642,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # DŮLEŽITÉ: V holding period NIKDY nenabíjet!
                 # Nabíjení probíhá JEN v charging_intervals (před holding periodem)
                 # V holding period jen držíme baterii na max kapacitě
-                should_charge = is_balancing_charging and (not is_balancing_holding)
+                # MODE-AWARE: Balancing vyžaduje HOME_UPS mode (AC charging)
+                # Pokud forecastujeme pro jiný mode, balancing ignorovat
+                mode_allows_ac_charging = (mode == CBB_MODE_HOME_UPS)
+                should_charge = (
+                    is_balancing_charging
+                    and (not is_balancing_holding)
+                    and mode_allows_ac_charging
+                )
 
                 if should_charge and needed_kwh > 0:
                     # OPRAVA: Použít home_charge_rate z konfigurace místo hardcoded 0.75
@@ -688,14 +697,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 is_ups_mode = True
                 solar_to_battery = solar_kwh  # Veškerý solar jde do baterie
             else:
-                # NORMÁLNÍ REŽIM - standardní logika
+                # NORMÁLNÍ REŽIM - MODE-AWARE LOGIKA
                 # DŮLEŽITÁ LOGIKA s EFFICIENCY:
                 # GAP #1: Při vybíjení z baterie musíme zohlednit DC/AC losses
                 # GAP #3: V UPS režimu spotřeba jde ze sítě (ne z baterie)
 
-                # Určit jestli je UPS režim (když nabíjíme ze sítě)
-                # V UPS: spotřeba NEJDE z baterie, baterie JEN roste
-                is_ups_mode = grid_kwh > 0
+                # MODE-AWARE: Použít mode parametr místo detekce z grid_kwh
+                # HOME_UPS (3): AC nabíjení povoleno, spotřeba ze sítě
+                # HOME I/II/III (0/1/2): Jen DC nabíjení ze solaru, spotřeba z baterie
+                is_ups_mode = (mode == CBB_MODE_HOME_UPS)
 
                 if is_ups_mode:
                     # UPS režim: spotřeba ze sítě (100% účinnost)
@@ -778,9 +788,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Optimalizace nabíjení ze sítě
         # DŮLEŽITÉ: Pokud máme aktivní charging plan, NEVOLAT optimalizaci!
         # Charging plan má prioritu před grid charging optimalizací
+        # MODE-AWARE: Grid charging optimalizace pouze v HOME_UPS režimu
         _LOGGER.debug(f"Timeline before optimization: {len(timeline)} points")
         if not active_plan:
-            timeline = self._optimize_grid_charging(timeline)
+            timeline = self._optimize_grid_charging(timeline, mode)
             _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
         else:
             _LOGGER.info(
@@ -1181,34 +1192,34 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _get_ac_charging_limit_kwh_15min(self) -> float:
         """
         Získat AC charging limit pro 15min interval z configu.
-        
+
         Config obsahuje home_charge_rate v kW (hodinový výkon).
         Pro 15min interval: kW / 4 = kWh per 15min
-        
+
         Example: home_charge_rate = 2.8 kW → 0.7 kWh/15min
-        
+
         Returns:
             AC charging limit v kWh pro 15min interval
             Default: 2.8 kW → 0.7 kWh/15min
         """
         config = self._config_entry.options if self._config_entry else {}
         charging_power_kw = config.get("home_charge_rate", 2.8)
-        
+
         # Convert kW to kWh/15min
         limit_kwh_15min = charging_power_kw / 4.0
-        
+
         _LOGGER.debug(
             f"AC charging limit: {charging_power_kw} kW → {limit_kwh_15min} kWh/15min"
         )
-        
+
         return limit_kwh_15min
 
     def _get_current_mode(self) -> int:
         """
         Získat aktuální CBB režim ze sensoru.
-        
+
         Čte: sensor.oig_{box_id}_box_prms_mode
-        
+
         Returns:
             Mode number (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
             Default: CBB_MODE_HOME_III (2) pokud sensor není k dispozici
@@ -1228,17 +1239,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         try:
             mode = int(state.state)
-            
+
             # Validate mode range
-            if mode not in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS]:
-                _LOGGER.warning(
-                    f"Invalid mode {mode}, using fallback HOME III"
-                )
+            if mode not in [
+                CBB_MODE_HOME_I,
+                CBB_MODE_HOME_II,
+                CBB_MODE_HOME_III,
+                CBB_MODE_HOME_UPS,
+            ]:
+                _LOGGER.warning(f"Invalid mode {mode}, using fallback HOME III")
                 return CBB_MODE_HOME_III
-            
+
             mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
             _LOGGER.debug(f"Current CBB mode: {mode_name} ({mode})")
-            
+
             return mode
 
         except (ValueError, TypeError) as e:
@@ -1648,7 +1662,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     # ========================================================================
 
     def _optimize_grid_charging(
-        self, timeline_data: List[Dict[str, Any]]
+        self, timeline_data: List[Dict[str, Any]], mode: int
     ) -> List[Dict[str, Any]]:
         """
         Optimalizuje nabíjení baterie ze sítě podle cenových dat.
@@ -1657,12 +1671,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         1. Economic charging (nový) - Forward simulace s ekonomickým vyhodnocením
         2. Legacy charging (starý) - Percentile-based s kritickými místy
 
+        MODE-AWARE: Grid charging funguje POUZE v HOME_UPS režimu!
+        Pro ostatní režimy (HOME I/II/III) vrací timeline beze změn.
+
         Args:
             timeline_data: Seznam bodů s predikcí baterie
+            mode: CBB mode (0-3) pro forecast
 
         Returns:
-            Optimalizovaná timeline s přidaným grid charging
+            Optimalizovaná timeline s přidaným grid charging (pokud mode == HOME_UPS)
         """
+        # MODE-AWARE: Grid charging jen v HOME_UPS režimu
+        if mode != CBB_MODE_HOME_UPS:
+            mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
+            _LOGGER.debug(
+                f"Skipping grid charging optimization - mode {mode_name} ({mode}) doesn't support AC charging"
+            )
+            return timeline_data
+
         if not timeline_data:
             return timeline_data
 
