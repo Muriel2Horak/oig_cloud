@@ -124,6 +124,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )  # NOVÉ: pro dashboard (4 hodnoty)
         self._first_update: bool = True  # Flag pro první update (setup)
 
+        # Phase 2.5: DP Multi-Mode Optimization result
+        self._mode_optimization_result: Optional[Dict[str, Any]] = None
+
         # Phase 1.5: Hash-based change detection
         self._data_hash: Optional[str] = (
             None  # MD5 hash of timeline_data for efficient change detection
@@ -258,6 +261,40 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             attrs["active_plan_data"] = json.dumps(self._active_charging_plan)
             attrs["plan_status"] = getattr(self, "_plan_status", "pending")
 
+        # Phase 2.5: DP Multi-Mode Optimization Summary
+        if (
+            hasattr(self, "_mode_optimization_result")
+            and self._mode_optimization_result
+        ):
+            mo = self._mode_optimization_result
+            attrs["mode_optimization"] = {
+                "total_cost_czk": round(mo.get("total_cost", 0), 2),
+                "modes_distribution": {
+                    "HOME_I": mo["optimal_modes"].count(0),
+                    "HOME_II": mo["optimal_modes"].count(1),
+                    "HOME_III": mo["optimal_modes"].count(2),
+                    "HOME_UPS": mo["optimal_modes"].count(3),
+                },
+                "timeline_length": len(mo.get("optimal_timeline", [])),
+            }
+            
+            # Phase 2.5: Boiler summary (if boiler was used in optimization)
+            boiler_total = sum(
+                interval.get("boiler_charge", 0) for interval in mo.get("optimal_timeline", [])
+            )
+            curtailed_total = sum(
+                interval.get("curtailed_loss", 0) for interval in mo.get("optimal_timeline", [])
+            )
+            
+            if boiler_total > 0.001 or curtailed_total > 0.001:
+                attrs["boiler_summary"] = {
+                    "total_energy_kwh": round(boiler_total, 2),
+                    "intervals_used": sum(
+                        1 for i in mo.get("optimal_timeline", []) if i.get("boiler_charge", 0) > 0.001
+                    ),
+                    "avoided_export_loss_czk": round(curtailed_total, 2),
+                }
+
         # DEBUG MODE: Expose full timeline pouze pro development/testing
         # V produkci: False (timeline přes API)
         if DEBUG_EXPOSE_BASELINE_TIMELINE:
@@ -344,6 +381,63 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 return
 
+            # PHASE 2.5: DP Multi-Mode Optimization
+            # Vypočítat optimální sekvenci CBB režimů před timeline calculation
+            _LOGGER.info("Phase 2.5: Running DP multi-mode optimization...")
+
+            # Build load forecast list (kWh/15min for each interval)
+            load_forecast = []
+            today = dt_util.now().date()
+            for sp in spot_prices:
+                try:
+                    timestamp = datetime.fromisoformat(sp["time"])
+                    # Normalize timezone
+                    if timestamp.tzinfo is None:
+                        timestamp = dt_util.as_local(timestamp)
+
+                    if adaptive_profiles:
+                        # Use adaptive profiles (hourly → 15min)
+                        if timestamp.date() == today:
+                            profile = adaptive_profiles["today_profile"]
+                        else:
+                            profile = adaptive_profiles.get(
+                                "tomorrow_profile", adaptive_profiles["today_profile"]
+                            )
+
+                        hour = timestamp.hour
+                        hourly_kwh = profile["hourly_consumption"][hour]
+                        load_kwh = hourly_kwh / 4.0
+                    else:
+                        # Fallback: load_avg sensors
+                        load_kwh = self._get_load_avg_for_timestamp(
+                            timestamp, load_avg_sensors
+                        )
+
+                    load_forecast.append(load_kwh)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to get load for {sp.get('time')}: {e}")
+                    load_forecast.append(0.125)  # 500W fallback
+
+            # Run DP optimization
+            try:
+                self._mode_optimization_result = (
+                    self._calculate_optimal_mode_timeline_dp(
+                        current_capacity=current_capacity,
+                        max_capacity=max_capacity,
+                        min_capacity=min_capacity,
+                        spot_prices=spot_prices,
+                        export_prices=export_prices,
+                        solar_forecast=solar_forecast,
+                        load_forecast=load_forecast,
+                    )
+                )
+                _LOGGER.info(
+                    f"✅ DP optimization completed: total_cost={self._mode_optimization_result['total_cost']:.2f} Kč"
+                )
+            except Exception as e:
+                _LOGGER.error(f"DP optimization failed: {e}", exc_info=True)
+                self._mode_optimization_result = None
+
             # STEP 1: Vypočítat BASELINE timeline (bez jakéhokoli plánu)
             # Toto je ČISTÁ predikce pro simulace a plánování
             _LOGGER.debug("Calculating BASELINE timeline (no plan)")
@@ -427,6 +521,550 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
+
+    def _simulate_interval_with_mode(
+        self,
+        mode: int,
+        solar_kwh: float,
+        load_kwh: float,
+        battery_soc: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_price: float,
+        export_price: float,
+    ) -> Dict[str, Any]:
+        """
+        Simulovat jeden 15min interval s konkrétním CBB režimem.
+
+        Phase 2.5: Multi-Mode Cost Comparison - simulace podle ECONOMIC_MODE_DECISION_MODEL.md
+
+        Args:
+            mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
+            solar_kwh: FVE produkce v intervalu (kWh/15min)
+            load_kwh: Spotřeba v intervalu (kWh/15min)
+            battery_soc: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh)
+            spot_price: Spotová cena nákupu (Kč/kWh)
+            export_price: Prodejní cena exportu (Kč/kWh)
+
+        Returns:
+            Dict s výsledky simulace:
+                - new_soc: Nový SoC baterie (kWh)
+                - grid_import: Import ze sítě (kWh, >=0)
+                - grid_export: Export do sítě (kWh, >=0)
+                - battery_discharge: Vybití baterie (kWh, >=0)
+                - battery_charge: Nabití baterie (kWh, >=0)
+                - boiler_charge: Energie do bojleru (kWh, >=0) - Phase 2.5
+                - grid_cost: Náklady na elektřinu (Kč)
+                - export_revenue: Příjem z exportu (Kč)
+                - net_cost: Čisté náklady (grid_cost - export_revenue, Kč)
+                - curtailed_loss: Ztráta ze ztrátového exportu (Kč, >=0) - Phase 2.5
+        """
+        efficiency = self._get_battery_efficiency()
+
+        # Initialize result
+        result = {
+            "new_soc": battery_soc,
+            "grid_import": 0.0,
+            "grid_export": 0.0,
+            "battery_discharge": 0.0,
+            "battery_charge": 0.0,
+            "boiler_charge": 0.0,  # Phase 2.5: Boiler support
+            "grid_cost": 0.0,
+            "export_revenue": 0.0,
+            "net_cost": 0.0,
+            "curtailed_loss": 0.0,  # Phase 2.5: Export price protection
+        }
+
+        # HOME I (0): Battery Priority
+        # FVE → battery (DC/DC 95%), battery → load (DC/AC 88.2%)
+        # If FVE < load: battery discharges immediately
+        if mode == CBB_MODE_HOME_I:
+            # First: Charge battery from FVE (DC/DC)
+            available_for_battery = solar_kwh
+            battery_space = max_capacity - battery_soc
+            charge_amount = min(available_for_battery, battery_space / efficiency)
+
+            result["battery_charge"] = charge_amount
+            result["new_soc"] = battery_soc + charge_amount * efficiency
+
+            # Remaining FVE after battery charging
+            remaining_solar = solar_kwh - charge_amount
+
+            # Load must be covered
+            if remaining_solar >= load_kwh:
+                # Enough FVE to cover load
+                surplus = remaining_solar - load_kwh
+                
+                # Phase 2.5: Export price protection with boiler support
+                # Priority: Battery > Boiler > Export (if profitable)
+                if export_price <= 0 and battery_soc < max_capacity:
+                    # Try to store surplus in battery instead of exporting at loss
+                    battery_space = max_capacity - result["new_soc"]
+                    additional_charge = min(surplus, battery_space / efficiency)
+                    
+                    result["battery_charge"] += additional_charge
+                    result["new_soc"] += additional_charge * efficiency
+                    surplus -= additional_charge
+                
+                # If still surplus and export would be lossy, try boiler
+                if surplus > 0.001 and export_price <= 0:
+                    boiler_capacity = self._get_boiler_available_capacity()
+                    boiler_usage = min(surplus, boiler_capacity)
+                    
+                    result["boiler_charge"] = boiler_usage
+                    surplus -= boiler_usage
+                
+                # Export only if profitable OR no other option (curtailment)
+                if surplus > 0.001:
+                    if export_price > 0:
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price
+                    else:
+                        # Forced curtailment at loss (battery full, no boiler)
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price  # NEGATIVE
+                        result["curtailed_loss"] = abs(surplus * export_price)
+            else:
+                # Not enough FVE - discharge battery (DC/AC)
+                deficit = load_kwh - remaining_solar
+                battery_available = result["new_soc"] - min_capacity
+                discharge_amount = min(deficit / efficiency, battery_available)
+
+                result["battery_discharge"] = discharge_amount
+                result["new_soc"] -= discharge_amount
+
+                # If still deficit, import from grid
+                remaining_deficit = deficit - discharge_amount * efficiency
+                if remaining_deficit > 0.001:  # tolerance
+                    result["grid_import"] = remaining_deficit
+                    result["grid_cost"] = remaining_deficit * spot_price
+
+        # HOME II (1): Grid supplements during day, battery saved for evening
+        # FVE → load direct, grid supplements if needed
+        # Battery charges only from surplus FVE
+        elif mode == CBB_MODE_HOME_II:
+            # Cover load from FVE first
+            if solar_kwh >= load_kwh:
+                # Surplus FVE → battery
+                surplus = solar_kwh - load_kwh
+                battery_space = max_capacity - battery_soc
+                charge_amount = min(surplus, battery_space / efficiency)
+
+                result["battery_charge"] = charge_amount
+                result["new_soc"] = battery_soc + charge_amount * efficiency
+
+                # Phase 2.5: Export price protection with boiler support
+                # Remaining surplus → boiler > export (if profitable)
+                remaining_surplus = surplus - charge_amount
+                
+                if remaining_surplus > 0.001:
+                    # Try boiler first if export would be lossy
+                    if export_price <= 0:
+                        boiler_capacity = self._get_boiler_available_capacity()
+                        boiler_usage = min(remaining_surplus, boiler_capacity)
+                        
+                        result["boiler_charge"] = boiler_usage
+                        remaining_surplus -= boiler_usage
+                    
+                    # Export remaining (profitable or forced curtailment)
+                    if remaining_surplus > 0.001:
+                        if export_price > 0:
+                            result["grid_export"] = remaining_surplus
+                            result["export_revenue"] = remaining_surplus * export_price
+                        else:
+                            # Forced curtailment (battery full, boiler full/unavailable)
+                            result["grid_export"] = remaining_surplus
+                            result["export_revenue"] = remaining_surplus * export_price  # NEGATIVE
+                            result["curtailed_loss"] = abs(remaining_surplus * export_price)
+            else:
+                # FVE < load → grid supplements (battery NOT used)
+                deficit = load_kwh - solar_kwh
+                result["grid_import"] = deficit
+                result["grid_cost"] = deficit * spot_price
+
+        # HOME III (2): All FVE to battery (DC/DC, NO AC LIMIT!), load from grid
+        # Critical: DC/DC path has NO 2.8kW AC limit
+        elif mode == CBB_MODE_HOME_III:
+            # ALL FVE → battery (DC/DC 95%)
+            battery_space = max_capacity - battery_soc
+            charge_amount = min(solar_kwh, battery_space / efficiency)
+
+            result["battery_charge"] = charge_amount
+            result["new_soc"] = battery_soc + charge_amount * efficiency
+
+            # Load ALWAYS from grid
+            result["grid_import"] = load_kwh
+            result["grid_cost"] = load_kwh * spot_price
+
+            # Phase 2.5: Export price protection with boiler support
+            # If battery full and still FVE surplus → boiler > export
+            if charge_amount < solar_kwh:
+                surplus = solar_kwh - charge_amount
+                
+                # Try boiler first if export would be lossy
+                if export_price <= 0:
+                    boiler_capacity = self._get_boiler_available_capacity()
+                    boiler_usage = min(surplus, boiler_capacity)
+                    
+                    result["boiler_charge"] = boiler_usage
+                    surplus -= boiler_usage
+                
+                # Export remaining (profitable or forced curtailment)
+                if surplus > 0.001:
+                    if export_price > 0:
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price
+                    else:
+                        # Forced curtailment (battery full, boiler full/unavailable)
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price  # NEGATIVE
+                        result["curtailed_loss"] = abs(surplus * export_price)
+
+        # HOME UPS (3): AC charging from grid
+        # AC charging limit: 2.8 kW → 0.7 kWh/15min (per module)
+        elif mode == CBB_MODE_HOME_UPS:
+            # Get AC charging limit from config
+            ac_limit = self._get_ac_charging_limit_kwh_15min()
+
+            # Charge from FVE first (DC/DC)
+            battery_space = max_capacity - battery_soc
+            fve_charge = min(solar_kwh, battery_space / efficiency)
+
+            result["battery_charge"] = fve_charge
+            result["new_soc"] = battery_soc + fve_charge * efficiency
+
+            # Then charge from grid (AC/DC) up to limit
+            remaining_space = max_capacity - result["new_soc"]
+            grid_charge = min(ac_limit, remaining_space / efficiency)
+
+            if grid_charge > 0.001:
+                result["battery_charge"] += grid_charge
+                result["new_soc"] += grid_charge * efficiency
+                result["grid_import"] += grid_charge
+                result["grid_cost"] += grid_charge * spot_price
+
+            # Cover load
+            remaining_solar = solar_kwh - fve_charge
+            if remaining_solar >= load_kwh:
+                # Enough FVE
+                surplus = remaining_solar - load_kwh
+                
+                # Phase 2.5: Export price protection with boiler support
+                if surplus > 0.001:
+                    # Try boiler first if export would be lossy
+                    if export_price <= 0:
+                        boiler_capacity = self._get_boiler_available_capacity()
+                        boiler_usage = min(surplus, boiler_capacity)
+                        
+                        result["boiler_charge"] = boiler_usage
+                        surplus -= boiler_usage
+                    
+                    # Export remaining (profitable or forced curtailment)
+                    if surplus > 0.001:
+                        if export_price > 0:
+                            result["grid_export"] = surplus
+                            result["export_revenue"] = surplus * export_price
+                        else:
+                            # Forced curtailment (boiler full/unavailable)
+                            result["grid_export"] = surplus
+                            result["export_revenue"] = surplus * export_price  # NEGATIVE
+                            result["curtailed_loss"] = abs(surplus * export_price)
+            else:
+                # Import for load
+                deficit = load_kwh - remaining_solar
+                result["grid_import"] += deficit
+                result["grid_cost"] += deficit * spot_price
+
+        # Calculate net cost
+        result["net_cost"] = result["grid_cost"] - result["export_revenue"]
+
+        # Clamp SoC to valid range
+        result["new_soc"] = max(min_capacity, min(max_capacity, result["new_soc"]))
+
+        return result
+
+    def _calculate_interval_cost(
+        self,
+        simulation_result: Dict[str, Any],
+        spot_price: float,
+        export_price: float,
+        time_of_day: str,
+    ) -> Dict[str, Any]:
+        """
+        Vypočítat ekonomické náklady pro jeden interval.
+
+        Phase 2.5: Zahrnuje opportunity cost - cena za použití baterie TEĎ vs POZDĚJI.
+
+        Args:
+            simulation_result: Výsledek z _simulate_interval_with_mode()
+            spot_price: Spotová cena nákupu (Kč/kWh)
+            export_price: Prodejní cena exportu (Kč/kWh)
+            time_of_day: Časová kategorie ("night", "morning", "midday", "evening")
+
+        Returns:
+            Dict s náklady:
+                - direct_cost: Přímé náklady (grid_import * spot - grid_export * export)
+                - opportunity_cost: Oportunitní náklad použití baterie
+                - total_cost: Celkové náklady (direct + opportunity)
+        """
+        direct_cost = simulation_result["net_cost"]
+
+        # Opportunity cost: Kolik "stojí" vybít baterii TEĎ místo POZDĚJI
+        # Pokud vybíjíme baterii během dne, mohli bychom ji ušetřit na večerní peak
+        battery_discharge = simulation_result.get("battery_discharge", 0.0)
+
+        # Evening peak price assumption (můžeme použít max(spot_prices) nebo config)
+        # Pro začátek: pevná hodnota 6 Kč/kWh (typický večerní peak)
+        evening_peak_price = 6.0
+
+        opportunity_cost = 0.0
+        if battery_discharge > 0.001:
+            # Pokud vybíjíme během "cheap" období, ztrácíme možnost použít baterii večer
+            if time_of_day in ["night", "midday"]:
+                # Opportunity cost = kolik bychom ušetřili, kdybychom baterii použili večer
+                # Discharge now costs us: (evening_peak - spot_price) * discharge
+                opportunity_cost = (evening_peak_price - spot_price) * battery_discharge
+
+        total_cost = direct_cost + opportunity_cost
+
+        return {
+            "direct_cost": direct_cost,
+            "opportunity_cost": opportunity_cost,
+            "total_cost": total_cost,
+        }
+
+    def _calculate_optimal_mode_timeline_dp(
+        self,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> Dict[str, Any]:
+        """
+        Dynamic Programming optimization pro nalezení optimální sekvence CBB režimů.
+
+        Phase 2.5: Multi-Mode Cost Comparison s globální optimalizací.
+
+        DP State: (time_index, battery_soc_discrete)
+        DP Decision: Který CBB režim (0-3) použít v daném intervalu
+        DP Objective: Minimalizovat celkové náklady (direct + opportunity cost)
+
+        Args:
+            current_capacity: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh)
+            spot_prices: Timeline spotových cen
+            export_prices: Timeline prodejních cen
+            solar_forecast: Solární předpověď
+            load_forecast: List spotřeby pro každý interval (kWh/15min)
+
+        Returns:
+            Dict s optimalizovaným timeline:
+                - optimal_modes: List[int] - optimální režim pro každý interval
+                - optimal_timeline: List[Dict] - kompletní timeline s SoC, costs, etc.
+                - total_cost: float - celkové minimalizované náklady
+                - alternatives: Dict - srovnání s jinými strategiemi
+        """
+        n_intervals = len(spot_prices)
+
+        # Discretize SoC space pro DP (0.5 kWh kroky)
+        soc_step = 0.5  # kWh
+        soc_states = []
+        soc = min_capacity
+        while soc <= max_capacity:
+            soc_states.append(round(soc, 2))
+            soc += soc_step
+
+        n_soc_states = len(soc_states)
+
+        _LOGGER.info(
+            f"DP optimization: {n_intervals} intervals, {n_soc_states} SoC states "
+            f"({min_capacity:.1f}-{max_capacity:.1f} kWh, step {soc_step} kWh)"
+        )
+
+        # DP tables
+        # dp[t][s] = minimální náklady od intervalu t do konce, začínající se SoC state s
+        dp = [[float("inf")] * n_soc_states for _ in range(n_intervals + 1)]
+        # policy[t][s] = optimální režim v intervalu t při SoC state s
+        policy = [[-1] * n_soc_states for _ in range(n_intervals)]
+        # next_soc[t][s][mode] = následující SoC state při použití mode v intervalu t
+        next_soc_map = [[{} for _ in range(n_soc_states)] for _ in range(n_intervals)]
+
+        # Base case: poslední interval (t = n_intervals)
+        for s in range(n_soc_states):
+            dp[n_intervals][s] = 0.0  # Žádné další náklady po posledním intervalu
+
+        # Backward induction (od konce k začátku)
+        for t in range(n_intervals - 1, -1, -1):
+            spot_price = spot_prices[t].get("price", 0.0)
+            export_price = (
+                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
+            )
+
+            # Determine time of day for opportunity cost
+            timestamp_str = spot_prices[t].get("time", "")
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                hour = timestamp.hour
+                if 0 <= hour < 6:
+                    time_of_day = "night"
+                elif 6 <= hour < 10:
+                    time_of_day = "morning"
+                elif 10 <= hour < 17:
+                    time_of_day = "midday"
+                else:
+                    time_of_day = "evening"
+            except:
+                time_of_day = "midday"
+                timestamp = None
+
+            # Get solar and load for this interval using existing interpolation methods
+            solar_kwh = 0.0
+            if timestamp:
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+
+            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
+
+            # Pro každý SoC state
+            for s in range(n_soc_states):
+                battery_soc = soc_states[s]
+                best_cost = float("inf")
+                best_mode = -1
+                best_next_s = -1
+
+                # Zkusit všechny 4 režimy
+                for mode in [
+                    CBB_MODE_HOME_I,
+                    CBB_MODE_HOME_II,
+                    CBB_MODE_HOME_III,
+                    CBB_MODE_HOME_UPS,
+                ]:
+                    # Simulovat interval s tímto režimem
+                    sim_result = self._simulate_interval_with_mode(
+                        mode=mode,
+                        solar_kwh=solar_kwh,
+                        load_kwh=load_kwh,
+                        battery_soc=battery_soc,
+                        max_capacity=max_capacity,
+                        min_capacity=min_capacity,
+                        spot_price=spot_price,
+                        export_price=export_price,
+                    )
+
+                    # Vypočítat náklady včetně opportunity cost
+                    cost_analysis = self._calculate_interval_cost(
+                        simulation_result=sim_result,
+                        spot_price=spot_price,
+                        export_price=export_price,
+                        time_of_day=time_of_day,
+                    )
+
+                    interval_cost = cost_analysis["total_cost"]
+
+                    # Najít nejbližší SoC state pro new_soc
+                    new_soc = sim_result["new_soc"]
+                    next_s = min(
+                        range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
+                    )
+
+                    # Bellman equation: V(t,s) = min_mode [ cost(t,s,mode) + V(t+1, s') ]
+                    total_cost = interval_cost + dp[t + 1][next_s]
+
+                    if total_cost < best_cost:
+                        best_cost = total_cost
+                        best_mode = mode
+                        best_next_s = next_s
+
+                # Uložit nejlepší rozhodnutí
+                dp[t][s] = best_cost
+                policy[t][s] = best_mode
+                next_soc_map[t][s][best_mode] = best_next_s
+
+        # Forward pass: Rekonstruovat optimální trajektorii
+        # Najít startovní SoC state
+        start_s = min(
+            range(n_soc_states), key=lambda i: abs(soc_states[i] - current_capacity)
+        )
+
+        optimal_modes = []
+        optimal_timeline = []
+        current_s = start_s
+
+        for t in range(n_intervals):
+            mode = policy[t][current_s]
+            battery_soc = soc_states[current_s]
+
+            # Simulovat tento interval s optimálním režimem
+            timestamp_str = spot_prices[t].get("time", "")
+            spot_price = spot_prices[t].get("price", 0.0)
+            export_price = (
+                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
+            )
+            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
+
+            # Get solar using existing interpolation
+            solar_kwh = 0.0
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            sim_result = self._simulate_interval_with_mode(
+                mode=mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc=battery_soc,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_price=spot_price,
+                export_price=export_price,
+            )
+
+            optimal_modes.append(mode)
+            optimal_timeline.append(
+                {
+                    "time": spot_prices[t].get("time", ""),
+                    "mode": mode,
+                    "mode_name": CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}"),
+                    "battery_soc": battery_soc,
+                    "new_soc": sim_result["new_soc"],
+                    "grid_import": sim_result["grid_import"],
+                    "grid_export": sim_result["grid_export"],
+                    "net_cost": sim_result["net_cost"],
+                }
+            )
+
+            # Přesunout se na další SoC state
+            if mode in next_soc_map[t][current_s]:
+                current_s = next_soc_map[t][current_s][mode]
+            else:
+                # Fallback: najít nejbližší state k new_soc
+                new_soc = sim_result["new_soc"]
+                current_s = min(
+                    range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
+                )
+
+        total_cost = dp[0][start_s]
+
+        _LOGGER.info(
+            f"DP optimization completed: total_cost={total_cost:.2f} Kč, "
+            f"modes distribution: HOME I={optimal_modes.count(0)}, "
+            f"HOME II={optimal_modes.count(1)}, HOME III={optimal_modes.count(2)}, "
+            f"HOME UPS={optimal_modes.count(3)}"
+        )
+
+        return {
+            "optimal_modes": optimal_modes,
+            "optimal_timeline": optimal_timeline,
+            "total_cost": total_cost,
+            "alternatives": {},  # TODO: Srovnání s fixed-mode strategies
+        }
 
     def _calculate_timeline(
         self,
@@ -644,7 +1282,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # V holding period jen držíme baterii na max kapacitě
                 # MODE-AWARE: Balancing vyžaduje HOME_UPS mode (AC charging)
                 # Pokud forecastujeme pro jiný mode, balancing ignorovat
-                mode_allows_ac_charging = (mode == CBB_MODE_HOME_UPS)
+                mode_allows_ac_charging = mode == CBB_MODE_HOME_UPS
                 should_charge = (
                     is_balancing_charging
                     and (not is_balancing_holding)
@@ -705,7 +1343,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # MODE-AWARE: Použít mode parametr místo detekce z grid_kwh
                 # HOME_UPS (3): AC nabíjení povoleno, spotřeba ze sítě
                 # HOME I/II/III (0/1/2): Jen DC nabíjení ze solaru, spotřeba z baterie
-                is_ups_mode = (mode == CBB_MODE_HOME_UPS)
+                is_ups_mode = mode == CBB_MODE_HOME_UPS
 
                 if is_ups_mode:
                     # UPS režim: spotřeba ze sítě (100% účinnost)
@@ -1258,6 +1896,55 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except (ValueError, TypeError) as e:
             _LOGGER.error(f"Error parsing CBB mode: {e}")
             return CBB_MODE_HOME_III
+
+    def _get_boiler_available_capacity(self) -> float:
+        """
+        Zjistit kolik kWh může bojler přijmout v 15min intervalu.
+
+        Phase 2.5: Boiler support pro přebytkovou energii.
+        
+        Pokud je boiler_is_use=on, CBB firmware automaticky směřuje přebytky do bojleru
+        až do výše boiler_install_power (kW limit).
+
+        Returns:
+            kWh capacity for 15min interval (0 pokud bojler není aktivní)
+        """
+        if not self._hass:
+            return 0.0
+
+        # Check if boiler usage is enabled
+        boiler_use_sensor = f"sensor.oig_{self._box_id}_boiler_is_use"
+        state = self._hass.states.get(boiler_use_sensor)
+
+        if not state or state.state not in ["on", "1", "true"]:
+            # Boiler not active
+            return 0.0
+
+        # Get boiler power limit (kW)
+        boiler_power_sensor = f"sensor.oig_{self._box_id}_boiler_install_power"
+        power_state = self._hass.states.get(boiler_power_sensor)
+
+        if not power_state:
+            _LOGGER.warning(
+                f"Boiler is enabled but {boiler_power_sensor} not found, using default 2.8 kW"
+            )
+            # Default to typical 2.8 kW limit (same as AC charging)
+            return 0.7  # kWh/15min
+
+        try:
+            power_kw = float(power_state.state)
+            # Convert kW to kWh/15min
+            capacity_kwh_15min = power_kw / 4.0
+
+            _LOGGER.debug(
+                f"Boiler available: {power_kw} kW → {capacity_kwh_15min} kWh/15min"
+            )
+
+            return capacity_kwh_15min
+
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(f"Error parsing boiler power: {e}, using default 0.7 kWh")
+            return 0.7  # Fallback
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
         """Získat timeline spotových cen z coordinator data.
