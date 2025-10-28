@@ -25,6 +25,31 @@ from .oig_cloud_data_sensor import OigCloudDataSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+# CBB 3F Home Plus Premium - Mode Constants (Phase 2)
+# Mode definitions from sensor.oig_{box_id}_box_prms_mode
+CBB_MODE_HOME_I = 0  # Grid priority (cheap mode)
+CBB_MODE_HOME_II = 1  # Battery priority  
+CBB_MODE_HOME_III = 2  # Solar priority (default)
+CBB_MODE_HOME_UPS = 3  # UPS mode (AC charging enabled)
+
+# Mode names for display
+CBB_MODE_NAMES = {
+    CBB_MODE_HOME_I: "HOME I",
+    CBB_MODE_HOME_II: "HOME II",
+    CBB_MODE_HOME_III: "HOME III",
+    CBB_MODE_HOME_UPS: "HOME UPS",
+}
+
+# AC Charging - modes where charging is DISABLED (only solar DC/DC allowed)
+AC_CHARGING_DISABLED_MODES = [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]
+
+# NOTE: AC charging limit and efficiency are now read from:
+# - Config: home_charge_rate (kW) - user configured max charging power
+# - Sensor: sensor.oig_{box_id}_battery_efficiency (%) - real-time measured efficiency
+# 
+# Example: home_charge_rate = 2.8 kW → 0.7 kWh per 15min interval
+# Fallback efficiency if sensor unavailable: 88.2%
+
 # Debug options - Phase 1.5: API Optimization
 # Set to False for LEAN attributes (96% memory reduction)
 DEBUG_EXPOSE_BASELINE_TIMELINE = False  # Expose baseline timeline in sensor attributes
@@ -1143,6 +1168,73 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except (ValueError, TypeError) as e:
             _LOGGER.error(f"Error parsing battery efficiency: {e}")
             return 0.882
+
+    def _get_ac_charging_limit_kwh_15min(self) -> float:
+        """
+        Získat AC charging limit pro 15min interval z configu.
+        
+        Config obsahuje home_charge_rate v kW (hodinový výkon).
+        Pro 15min interval: kW / 4 = kWh per 15min
+        
+        Example: home_charge_rate = 2.8 kW → 0.7 kWh/15min
+        
+        Returns:
+            AC charging limit v kWh pro 15min interval
+            Default: 2.8 kW → 0.7 kWh/15min
+        """
+        config = self._config_entry.options if self._config_entry else {}
+        charging_power_kw = config.get("home_charge_rate", 2.8)
+        
+        # Convert kW to kWh/15min
+        limit_kwh_15min = charging_power_kw / 4.0
+        
+        _LOGGER.debug(
+            f"AC charging limit: {charging_power_kw} kW → {limit_kwh_15min} kWh/15min"
+        )
+        
+        return limit_kwh_15min
+
+    def _get_current_mode(self) -> int:
+        """
+        Získat aktuální CBB režim ze sensoru.
+        
+        Čte: sensor.oig_{box_id}_box_prms_mode
+        
+        Returns:
+            Mode number (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
+            Default: CBB_MODE_HOME_III (2) pokud sensor není k dispozici
+        """
+        if not self._hass:
+            _LOGGER.debug("HASS not available, using fallback mode HOME III")
+            return CBB_MODE_HOME_III
+
+        sensor_id = f"sensor.oig_{self._box_id}_box_prms_mode"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unknown", "unavailable"]:
+            _LOGGER.debug(
+                f"Mode sensor {sensor_id} not available, using fallback HOME III"
+            )
+            return CBB_MODE_HOME_III
+
+        try:
+            mode = int(state.state)
+            
+            # Validate mode range
+            if mode not in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS]:
+                _LOGGER.warning(
+                    f"Invalid mode {mode}, using fallback HOME III"
+                )
+                return CBB_MODE_HOME_III
+            
+            mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
+            _LOGGER.debug(f"Current CBB mode: {mode_name} ({mode})")
+            
+            return mode
+
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(f"Error parsing CBB mode: {e}")
+            return CBB_MODE_HOME_III
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
         """Získat timeline spotových cen z coordinator data.
