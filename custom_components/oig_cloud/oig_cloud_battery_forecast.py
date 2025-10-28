@@ -2330,9 +2330,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             new_capacity = prev_capacity + net_energy
 
-            # Clamp jen na maximum, NE na minimum (ať timeline ukazuje skutečný pokles)
+            # Clamp na maximum a minimum - MUSÍ být konzistentní s _calculate_timeline()
+            # 1. Maximum: max battery capacity
+            # 2. Minimum: min_capacity (politika) - baterie nemá klesnout pod 20%
+            # 3. HARD FLOOR: 0 kWh (fyzikální limit) - baterie nemůže být záporná
             new_capacity = min(new_capacity, max_capacity)
-            # NEPOUŽÍVAT: max(min_capacity, ...) - ať vidíme critical intervals
+            if new_capacity < min_capacity:
+                # Clamp na policy minimum (stejně jako v _calculate_timeline)
+                new_capacity = min_capacity
+            new_capacity = max(0.0, new_capacity)  # HARD FLOOR - fyzikální limit
 
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
