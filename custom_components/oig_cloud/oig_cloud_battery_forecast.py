@@ -2990,7 +2990,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Najít battery capacity v čase holding_start z BASELINE
         current_battery_kwh = None
         for point in baseline_timeline:
-            point_time = dt_util.parse_datetime(point.get("time"))
+            point_time = point.get("time")
+            # point_time is already a datetime object, no need to parse
+            if isinstance(point_time, str):
+                point_time = dt_util.parse_datetime(point_time)
             if point_time and point_time >= holding_start:
                 current_battery_kwh = point.get("battery_capacity_kwh")
                 _LOGGER.info(
@@ -4219,7 +4222,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         except Exception as e:
             _LOGGER.warning(
                 f"[GridChargingPlan] ❌ Error getting offset {from_mode}→{to_mode}, using fallback 300s: {e}",
-                exc_info=True
+                exc_info=True,
             )
             return 300.0  # Fallback 5 minut
 
