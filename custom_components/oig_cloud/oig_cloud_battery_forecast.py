@@ -278,6 +278,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "timeline_length": len(mo.get("optimal_timeline", [])),
             }
 
+            # Phase 2.6: What-if Analysis - Alternatives
+            if mo.get("alternatives"):
+                attrs["mode_optimization"]["alternatives"] = mo["alternatives"]
+
+            # Phase 2.6: Mode Recommendations - User-friendly 24h schedule
+            if mo.get("mode_recommendations"):
+                attrs["mode_recommendations"] = mo["mode_recommendations"]
+
             # Phase 2.5: Boiler summary (if boiler was used in optimization)
             boiler_total = sum(
                 interval.get("boiler_charge", 0)
@@ -845,6 +853,328 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "total_cost": total_cost,
         }
 
+    def _calculate_fixed_mode_cost(
+        self,
+        fixed_mode: int,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> float:
+        """
+        Vypočítat celkové náklady pokud by uživatel zůstal v jednom režimu celou dobu.
+
+        Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategií.
+
+        Args:
+            fixed_mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
+            current_capacity: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh)
+            spot_prices: Timeline spot cen
+            export_prices: Timeline export cen
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby (kWh per interval)
+
+        Returns:
+            Celkové náklady v Kč při použití fixed_mode
+        """
+        total_cost = 0.0
+        battery_soc = current_capacity
+
+        for t in range(len(spot_prices)):
+            timestamp_str = spot_prices[t].get("time", "")
+            spot_price = spot_prices[t].get("price", 0.0)
+            export_price = (
+                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
+            )
+            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
+
+            # Get solar
+            solar_kwh = 0.0
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            # Simulovat s fixed režimem
+            sim_result = self._simulate_interval_with_mode(
+                mode=fixed_mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc=battery_soc,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_price=spot_price,
+                export_price=export_price,
+            )
+
+            total_cost += sim_result["net_cost"]
+            battery_soc = sim_result["new_soc"]
+
+        return total_cost
+
+    def _calculate_do_nothing_cost(
+        self,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> float:
+        """
+        Vypočítat náklady pokud uživatel vůbec nenabíjí ze sítě (DO NOTHING).
+
+        Phase 2.6: What-if Analysis - Pasivní scénář bez grid charging.
+        
+        Logika:
+        - Solar → Load → Battery → Export
+        - Battery vybíjení do Load když není solar
+        - Žádné nabíjení ze sítě (HOME UPS zakázán)
+        - Když dojde baterie, kupuje ze sítě
+        
+        Args:
+            current_capacity: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh)
+            spot_prices: Timeline spot cen
+            export_prices: Timeline export cen
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby (kWh per interval)
+
+        Returns:
+            Celkové náklady v Kč bez grid charging
+        """
+        total_cost = 0.0
+        battery_soc = current_capacity
+
+        for t in range(len(spot_prices)):
+            timestamp_str = spot_prices[t].get("time", "")
+            spot_price = spot_prices[t].get("price", 0.0)
+            export_price = (
+                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
+            )
+            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
+
+            # Get solar
+            solar_kwh = 0.0
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            # DO NOTHING = HOME I bez možnosti nabíjet ze sítě
+            # Použijeme HOME I (0) ale výsledek je čistě pasivní
+            sim_result = self._simulate_interval_with_mode(
+                mode=0,  # HOME I: Battery priority
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc=battery_soc,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_price=spot_price,
+                export_price=export_price,
+            )
+
+            total_cost += sim_result["net_cost"]
+            battery_soc = sim_result["new_soc"]
+
+        return total_cost
+
+    def _calculate_full_ups_cost(
+        self,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> float:
+        """
+        Vypočítat náklady pokud uživatel nabíjí baterii na 100% každou noc (FULL HOME UPS).
+
+        Phase 2.6: What-if Analysis - Agresivní nabíjení bez ohledu na cenu.
+        
+        Logika:
+        - V noci (22:00-06:00): Nabíjení na 100% ze sítě (HOME UPS režim)
+        - Přes den: Standardní HOME I (solar → battery → load)
+        - Ignoruje ceny, prostě nabíjí každou noc
+        
+        Args:
+            current_capacity: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh)
+            spot_prices: Timeline spot cen
+            export_prices: Timeline export cen
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby (kWh per interval)
+
+        Returns:
+            Celkové náklady v Kč s nočním nabíjením na 100%
+        """
+        total_cost = 0.0
+        battery_soc = current_capacity
+
+        for t in range(len(spot_prices)):
+            timestamp_str = spot_prices[t].get("time", "")
+            spot_price = spot_prices[t].get("price", 0.0)
+            export_price = (
+                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
+            )
+            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
+
+            # Get solar
+            solar_kwh = 0.0
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+                hour = timestamp.hour
+            except:
+                solar_kwh = 0.0
+                hour = 12  # Default to day
+
+            # FULL UPS: Nabíjej v noci (22-06), přes den běž jako HOME I
+            if 22 <= hour or hour < 6:
+                # Noční nabíjení - HOME UPS režim
+                mode = 3  # HOME UPS
+            else:
+                # Denní provoz - HOME I
+                mode = 0  # HOME I
+
+            sim_result = self._simulate_interval_with_mode(
+                mode=mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc=battery_soc,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_price=spot_price,
+                export_price=export_price,
+            )
+
+            total_cost += sim_result["net_cost"]
+            battery_soc = sim_result["new_soc"]
+
+        return total_cost
+
+    def _create_mode_recommendations(
+        self, optimal_timeline: List[Dict[str, Any]], hours_ahead: int = 24
+    ) -> List[Dict[str, Any]]:
+        """
+        Vytvořit user-friendly doporučení režimů pro následujících N hodin.
+
+        Phase 2.6: Mode Recommendations - Seskupí po sobě jdoucí stejné režimy
+        do časových bloků pro snadné zobrazení v UI.
+
+        Args:
+            optimal_timeline: Timeline z DP optimalizace
+            hours_ahead: Kolik hodin do budoucna zahrnout (default 24h)
+
+        Returns:
+            List[Dict]: Seskupené režimy s časovými bloky
+                [{
+                    "mode": int,
+                    "mode_name": str,
+                    "from_time": str (ISO),
+                    "to_time": str (ISO),
+                    "duration_hours": float,
+                    "intervals_count": int,
+                }]
+        """
+        if not optimal_timeline:
+            return []
+
+        try:
+            now = datetime.now()
+            cutoff_time = now + timedelta(hours=hours_ahead)
+
+            # Filter next 24h
+            future_intervals = [
+                interval
+                for interval in optimal_timeline
+                if interval.get("time")
+                and datetime.fromisoformat(interval["time"]) < cutoff_time
+            ]
+
+            if not future_intervals:
+                return []
+
+            # Group consecutive same-mode intervals
+            recommendations = []
+            current_block = None
+
+            for interval in future_intervals:
+                mode = interval.get("mode")
+                mode_name = interval.get("mode_name", f"MODE_{mode}")
+                time_str = interval.get("time", "")
+
+                if current_block is None:
+                    # Start new block
+                    current_block = {
+                        "mode": mode,
+                        "mode_name": mode_name,
+                        "from_time": time_str,
+                        "to_time": time_str,
+                        "intervals_count": 1,
+                    }
+                elif current_block["mode"] == mode:
+                    # Extend current block
+                    current_block["to_time"] = time_str
+                    current_block["intervals_count"] += 1
+                else:
+                    # Save current block and start new one
+                    # Calculate duration
+                    try:
+                        from_dt = datetime.fromisoformat(current_block["from_time"])
+                        to_dt = datetime.fromisoformat(current_block["to_time"])
+                        duration = (
+                            to_dt - from_dt
+                        ).total_seconds() / 3600 + 0.25  # +15min last interval
+                        current_block["duration_hours"] = round(duration, 2)
+                    except:
+                        current_block["duration_hours"] = (
+                            current_block["intervals_count"] * 0.25
+                        )
+
+                    recommendations.append(current_block)
+
+                    # Start new block
+                    current_block = {
+                        "mode": mode,
+                        "mode_name": mode_name,
+                        "from_time": time_str,
+                        "to_time": time_str,
+                        "intervals_count": 1,
+                    }
+
+            # Don't forget last block
+            if current_block:
+                try:
+                    from_dt = datetime.fromisoformat(current_block["from_time"])
+                    to_dt = datetime.fromisoformat(current_block["to_time"])
+                    duration = (to_dt - from_dt).total_seconds() / 3600 + 0.25
+                    current_block["duration_hours"] = round(duration, 2)
+                except:
+                    current_block["duration_hours"] = (
+                        current_block["intervals_count"] * 0.25
+                    )
+
+                recommendations.append(current_block)
+
+            return recommendations
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to create mode recommendations: {e}")
+            return []
+
     def _calculate_optimal_mode_timeline_dp(
         self,
         current_capacity: float,
@@ -1069,11 +1399,124 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"HOME UPS={optimal_modes.count(3)}"
         )
 
+        # Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategiemi
+        alternatives = {}
+        for mode_id in range(4):
+            mode_name = CBB_MODE_NAMES.get(mode_id, f"MODE_{mode_id}")
+            try:
+                fixed_cost = self._calculate_fixed_mode_cost(
+                    fixed_mode=mode_id,
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    min_capacity=min_capacity,
+                    spot_prices=spot_prices,
+                    export_prices=export_prices,
+                    solar_forecast=solar_forecast,
+                    load_forecast=load_forecast,
+                )
+                alternatives[mode_name] = {
+                    "total_cost_czk": round(fixed_cost, 2),
+                    "delta_czk": round(
+                        fixed_cost - total_cost, 2
+                    ),  # Positive = savings with DP
+                    "delta_percent": (
+                        round((fixed_cost - total_cost) / fixed_cost * 100, 1)
+                        if fixed_cost > 0
+                        else 0.0
+                    ),
+                }
+            except Exception as e:
+                _LOGGER.warning(
+                    f"Failed to calculate alternative cost for {mode_name}: {e}"
+                )
+                alternatives[mode_name] = {
+                    "total_cost_czk": 0.0,
+                    "delta_czk": 0.0,
+                    "delta_percent": 0.0,
+                }
+
+        # Phase 2.6: DO NOTHING scénář (žádné nabíjení ze sítě)
+        try:
+            do_nothing_cost = self._calculate_do_nothing_cost(
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+            )
+            alternatives["DO NOTHING"] = {
+                "total_cost_czk": round(do_nothing_cost, 2),
+                "delta_czk": round(do_nothing_cost - total_cost, 2),
+                "delta_percent": (
+                    round((do_nothing_cost - total_cost) / do_nothing_cost * 100, 1)
+                    if do_nothing_cost > 0
+                    else 0.0
+                ),
+            }
+        except Exception as e:
+            _LOGGER.warning(f"Failed to calculate DO NOTHING cost: {e}")
+            alternatives["DO NOTHING"] = {
+                "total_cost_czk": 0.0,
+                "delta_czk": 0.0,
+                "delta_percent": 0.0,
+            }
+
+        # Phase 2.6: FULL HOME UPS scénář (nabíjení na 100% každou noc)
+        try:
+            full_ups_cost = self._calculate_full_ups_cost(
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+            )
+            alternatives["FULL HOME UPS"] = {
+                "total_cost_czk": round(full_ups_cost, 2),
+                "delta_czk": round(full_ups_cost - total_cost, 2),
+                "delta_percent": (
+                    round((full_ups_cost - total_cost) / full_ups_cost * 100, 1)
+                    if full_ups_cost > 0
+                    else 0.0
+                ),
+            }
+        except Exception as e:
+            _LOGGER.warning(f"Failed to calculate FULL HOME UPS cost: {e}")
+            alternatives["FULL HOME UPS"] = {
+                "total_cost_czk": 0.0,
+                "delta_czk": 0.0,
+                "delta_percent": 0.0,
+            }
+
+        _LOGGER.info(
+            f"What-if analysis: DP saves "
+            f"{alternatives.get('HOME I', {}).get('delta_czk', 0):.2f} Kč vs HOME I, "
+            f"{alternatives.get('HOME II', {}).get('delta_czk', 0):.2f} Kč vs HOME II, "
+            f"{alternatives.get('DO NOTHING', {}).get('delta_czk', 0):.2f} Kč vs DO NOTHING, "
+            f"{alternatives.get('FULL HOME UPS', {}).get('delta_czk', 0):.2f} Kč vs FULL UPS"
+        )
+
+        # Phase 2.6: Mode Recommendations - User-friendly 24h schedule
+        mode_recommendations = self._create_mode_recommendations(
+            optimal_timeline, hours_ahead=24
+        )
+
+        if mode_recommendations:
+            _LOGGER.info(
+                f"Mode recommendations created: {len(mode_recommendations)} blocks, "
+                f"first block: {mode_recommendations[0].get('mode_name')} "
+                f"from {mode_recommendations[0].get('from_time', '')[:16]}"
+            )
+
         return {
             "optimal_modes": optimal_modes,
             "optimal_timeline": optimal_timeline,
             "total_cost": total_cost,
-            "alternatives": {},  # TODO: Srovnání s fixed-mode strategies
+            "alternatives": alternatives,  # Phase 2.6: What-if comparison
+            "mode_recommendations": mode_recommendations,  # Phase 2.6: User-friendly schedule
         }
 
     def _calculate_timeline(

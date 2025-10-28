@@ -3916,6 +3916,10 @@ async function loadData() {
 
     // Update planned consumption statistics
     updatePlannedConsumptionStats();
+
+    // Phase 2.6: Update what-if analysis and mode recommendations
+    updateWhatIfAnalysis();
+    updateModeRecommendations();
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -8590,6 +8594,160 @@ async function updatePlannedConsumptionStats() {
         if (labelToday) labelToday.textContent = `${todayTotalKwh.toFixed(1)}`;
         if (labelTomorrow) labelTomorrow.textContent = `${tomorrowKwh.toFixed(1)}`;
     }
+}
+
+/**
+ * Update what-if analysis statistics on Pricing tab
+ * Reads mode_optimization.alternatives from battery_forecast attributes
+ */
+async function updateWhatIfAnalysis() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
+    const forecastSensor = hass.states[forecastSensorId];
+
+    // Check if sensor is available
+    if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
+        console.log('[What-if] Battery forecast sensor not available');
+        updateElementIfChanged('whatif-savings-main', '--', 'whatif-main');
+        updateElementIfChanged('whatif-best-alternative', 'Čekám na data...', 'whatif-best');
+        updateElementIfChanged('whatif-home-i-delta', '--', 'whatif-home-i');
+        updateElementIfChanged('whatif-do-nothing-delta', '--', 'whatif-do-nothing');
+        updateElementIfChanged('whatif-full-ups-delta', '--', 'whatif-full-ups');
+        return;
+    }
+
+    // Get mode_optimization data
+    const attrs = forecastSensor.attributes || {};
+    const modeOpt = attrs.mode_optimization || {};
+    const alternatives = modeOpt.alternatives || {};
+    const optimizedCost = modeOpt.total_cost_czk || 0;
+
+    // Find best saving (highest delta)
+    let maxSavings = 0;
+    let bestAlt = '';
+    
+    Object.entries(alternatives).forEach(([name, data]) => {
+        const delta = data.delta_czk || 0;
+        if (delta > maxSavings) {
+            maxSavings = delta;
+            bestAlt = name;
+        }
+    });
+
+    // Update main display
+    if (maxSavings > 0) {
+        updateElementIfChanged('whatif-savings-main', `+${maxSavings.toFixed(1)} Kč`, 'whatif-main');
+        updateElementIfChanged('whatif-best-alternative', `Oproti ${bestAlt} (${alternatives[bestAlt]?.delta_percent || 0}%)`, 'whatif-best');
+    } else {
+        updateElementIfChanged('whatif-savings-main', '0 Kč', 'whatif-main');
+        updateElementIfChanged('whatif-best-alternative', 'Optimalizace aktivní', 'whatif-best');
+    }
+
+    // Update individual deltas
+    const homeI = alternatives['HOME I'] || {};
+    const doNothing = alternatives['DO NOTHING'] || {};
+    const fullUps = alternatives['FULL HOME UPS'] || {};
+
+    updateElementIfChanged('whatif-home-i-delta', 
+        homeI.delta_czk ? `+${homeI.delta_czk.toFixed(1)} Kč` : '--', 
+        'whatif-home-i');
+    updateElementIfChanged('whatif-do-nothing-delta', 
+        doNothing.delta_czk ? `+${doNothing.delta_czk.toFixed(1)} Kč` : '--', 
+        'whatif-do-nothing');
+    updateElementIfChanged('whatif-full-ups-delta', 
+        fullUps.delta_czk ? `+${fullUps.delta_czk.toFixed(1)} Kč` : '--', 
+        'whatif-full-ups');
+
+    // Update savings bar (0-100% based on max possible savings)
+    const savingsBar = document.getElementById('whatif-savings-bar');
+    const savingsLabel = document.getElementById('whatif-savings-label');
+    
+    if (savingsBar && savingsLabel && maxSavings > 0) {
+        // Calculate percentage: current savings vs worst alternative
+        const worstCost = Math.max(...Object.values(alternatives).map(a => a.total_cost_czk || 0));
+        const savingsPercent = worstCost > 0 ? ((worstCost - optimizedCost) / worstCost * 100) : 0;
+        
+        savingsBar.style.width = `${Math.min(savingsPercent, 100)}%`;
+        savingsLabel.textContent = `Úspora ${savingsPercent.toFixed(0)}%`;
+    } else if (savingsBar && savingsLabel) {
+        savingsBar.style.width = '0%';
+        savingsLabel.textContent = 'Načítání...';
+    }
+}
+
+/**
+ * Update mode recommendations timeline on Pricing tab
+ * Reads mode_recommendations from battery_forecast attributes
+ */
+async function updateModeRecommendations() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
+    const forecastSensor = hass.states[forecastSensorId];
+
+    const container = document.getElementById('mode-recommendations-timeline');
+    if (!container) return;
+
+    // Check if sensor is available
+    if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
+        console.log('[Mode Recommendations] Battery forecast sensor not available');
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">Čekám na data...</div>';
+        return;
+    }
+
+    // Get mode_recommendations data
+    const attrs = forecastSensor.attributes || {};
+    const recommendations = attrs.mode_recommendations || [];
+
+    if (!recommendations || recommendations.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">Žádná doporučení k dispozici</div>';
+        return;
+    }
+
+    // Build timeline HTML
+    const modeIcons = {
+        'HOME I': '🏠',
+        'HOME II': '🏡',
+        'HOME III': '🏘️',
+        'HOME UPS': '⚡'
+    };
+
+    const modeColors = {
+        'HOME I': '#4CAF50',
+        'HOME II': '#2196F3',
+        'HOME III': '#FF9800',
+        'HOME UPS': '#9C27B0'
+    };
+
+    let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+    
+    recommendations.forEach((rec, index) => {
+        const icon = modeIcons[rec.mode_name] || '📍';
+        const color = modeColors[rec.mode_name] || '#757575';
+        const fromTime = rec.from_time ? new Date(rec.from_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
+        const toTime = rec.to_time ? new Date(rec.to_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
+        const duration = rec.duration_hours || 0;
+        
+        html += `
+            <div style="display: flex; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.02); border-left: 3px solid ${color}; border-radius: 4px;">
+                <div style="font-size: 1.5em; margin-right: 10px;">${icon}</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; color: ${color};">${rec.mode_name}</div>
+                    <div style="font-size: 0.85em; color: var(--text-secondary);">${fromTime} - ${toTime} (${duration.toFixed(1)}h)</div>
+                </div>
+                <div style="text-align: right; font-size: 0.85em; color: var(--text-secondary);">
+                    ${rec.intervals_count || 0} intervalů
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    container.innerHTML = html;
 }
 
 // Toggle ČHMÚ warning modal
