@@ -705,6 +705,81 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         else:
             self._status = "ok"
 
+    async def _create_emergency_balancing_plan(
+        self, timeline: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Emergency planning když FORCED mode nenašel feasible kandidáty.
+        
+        Najde nejlevnější 8h okno v následujících 24h bez ohledu na ostatní podmínky.
+        
+        Args:
+            timeline: Battery forecast timeline
+        """
+        _LOGGER.info("🚨 Creating emergency balancing plan - finding cheapest 8h window")
+        
+        now = dt_util.now()
+        # Brát jen následujících 24h
+        end_time = now + timedelta(hours=24)
+        
+        # Získat spot ceny
+        forecast_sensor = self._get_forecast_sensor()
+        if not forecast_sensor:
+            _LOGGER.error("Cannot create emergency plan - forecast sensor not found")
+            return
+            
+        spot_prices = forecast_sensor.get_spot_prices_48h()
+        if not spot_prices:
+            _LOGGER.error("Cannot create emergency plan - no spot prices available")
+            return
+        
+        # Najít všechna možná 8h okna v následujících 24h
+        best_window = None
+        best_avg_price = float('inf')
+        
+        for start_idx in range(len(spot_prices) - 7):  # -7 protože potřebujeme 8h
+            window_start = now + timedelta(hours=start_idx)
+            if window_start > end_time:
+                break
+                
+            # Spočítat průměrnou cenu pro toto 8h okno
+            window_prices = spot_prices[start_idx:start_idx + 8]
+            if len(window_prices) < 8:
+                continue
+                
+            avg_price = sum(window_prices) / 8
+            
+            if avg_price < best_avg_price:
+                best_avg_price = avg_price
+                best_window = {
+                    "start": window_start,
+                    "end": window_start + timedelta(hours=8),
+                    "avg_price": avg_price,
+                }
+        
+        if not best_window:
+            _LOGGER.error("Failed to find any 8h window for emergency plan")
+            return
+        
+        # Nastavit emergency plan
+        self._planned_window = {
+            "plan_start": best_window["start"].isoformat(),
+            "plan_end": best_window["end"].isoformat(),
+            "holding_start": best_window["start"].isoformat(),
+            "holding_end": best_window["end"].isoformat(),
+            "avg_spot_price": best_avg_price,
+            "type": "emergency",
+            "reason": "FORCED MODE - emergency cheapest 8h window",
+        }
+        
+        _LOGGER.warning(
+            f"🚨 EMERGENCY PLAN created: {best_window['start'].strftime('%Y-%m-%d %H:%M')} - "
+            f"{best_window['end'].strftime('%H:%M')}, avg price: {best_avg_price:.2f} CZK/kWh"
+        )
+        
+        self._status = "planned"
+        self.async_schedule_update_ha_state(force_refresh=True)
+
     async def _plan_balancing_window(self, forced: bool = False) -> None:
         """
         Planning logika s SIMULATION-BASED workflow.
@@ -975,13 +1050,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         if not candidates:
             if forced:
                 _LOGGER.warning(
-                    "⚠️ FORCED MODE: No candidates found, will create emergency plan"
+                    "⚠️ FORCED MODE: No candidates found, creating emergency plan"
                 )
-                # TODO: Vytvořit emergency plan - nejlevnější 8h okno v následujících 24h
-                # Pro teď jen logovat a return
-                _LOGGER.error(
-                    "Emergency planning not implemented yet - balancing skipped"
-                )
+                # Emergency plan: Najít nejlevnější 8h okno v následujících 24h
+                await self._create_emergency_balancing_plan(timeline)
             else:
                 _LOGGER.warning("No feasible candidate windows found")
             return
