@@ -175,7 +175,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self.async_write_ha_state()
 
         consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
-        
+
         # Najít best matching profile přímo z aktuálních dat
         # (nepotřebujeme ukládat do events - profily jsou on-the-fly)
         prediction = await self._find_best_matching_profile(consumption_sensor)
@@ -235,7 +235,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 from homeassistant.helpers.recorder import session_scope
 
                 instance = get_instance(self._hass)
-                with session_scope(hass=self._hass, session=instance.get_session()) as session:
+                with session_scope(
+                    hass=self._hass, session=instance.get_session()
+                ) as session:
                     start_ts = int(start_time.timestamp())
                     end_ts = int(end_time.timestamp())
 
@@ -263,11 +265,15 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                     return result.fetchall()
 
             # Execute query in executor
-            _LOGGER.debug(f"Loading 72h statistics for {consumption_sensor_entity_id}...")
+            _LOGGER.debug(
+                f"Loading 72h statistics for {consumption_sensor_entity_id}..."
+            )
             stats_rows = await self._hass.async_add_executor_job(get_hourly_statistics)
 
             if not stats_rows:
-                _LOGGER.warning(f"No statistics data for {consumption_sensor_entity_id}")
+                _LOGGER.warning(
+                    f"No statistics data for {consumption_sensor_entity_id}"
+                )
                 return None
 
             # Convert to hourly consumption list
@@ -352,7 +358,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 from homeassistant.helpers.recorder import session_scope
 
                 instance = get_instance(self._hass)
-                with session_scope(hass=self._hass, session=instance.get_session()) as session:
+                with session_scope(
+                    hass=self._hass, session=instance.get_session()
+                ) as session:
                     start_ts = int(start_time.timestamp())
                     end_ts = int(end_time.timestamp())
 
@@ -380,11 +388,15 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                     return result.fetchall()
 
             # Execute query
-            _LOGGER.debug(f"Loading historical statistics for profile matching ({days_back} days)...")
+            _LOGGER.debug(
+                f"Loading historical statistics for profile matching ({days_back} days)..."
+            )
             stats_rows = await self._hass.async_add_executor_job(get_all_statistics)
 
             if not stats_rows:
-                _LOGGER.warning(f"No historical statistics data for {consumption_sensor_entity_id}")
+                _LOGGER.warning(
+                    f"No historical statistics data for {consumption_sensor_entity_id}"
+                )
                 return []
 
             # Convert to hourly consumption array
@@ -413,16 +425,20 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             step = 24  # Posun po 24h (1 den)
 
             for i in range(0, len(hourly_data) - PROFILE_HOURS + 1, step):
-                profile_data = hourly_data[i:i + PROFILE_HOURS]
-                
-                if len(profile_data) == PROFILE_HOURS:
-                    profiles.append({
-                        "consumption_kwh": profile_data,
-                        "total_consumption": float(np.sum(profile_data)),
-                        "avg_consumption": float(np.mean(profile_data)),
-                    })
+                profile_data = hourly_data[i : i + PROFILE_HOURS]
 
-            _LOGGER.info(f"✅ Loaded {len(profiles)} historical 72h profiles from {len(hourly_data)} hours of data")
+                if len(profile_data) == PROFILE_HOURS:
+                    profiles.append(
+                        {
+                            "consumption_kwh": profile_data,
+                            "total_consumption": float(np.sum(profile_data)),
+                            "avg_consumption": float(np.mean(profile_data)),
+                        }
+                    )
+
+            _LOGGER.info(
+                f"✅ Loaded {len(profiles)} historical 72h profiles from {len(hourly_data)} hours of data"
+            )
 
             return profiles
 
@@ -611,17 +627,23 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 ),
                 "predicted_avg_kwh": self._current_prediction.get("predicted_avg_kwh"),
             }
-            
+
             # Add today_profile and tomorrow_profile for battery_forecast integration
-            predicted_24h = self._current_prediction.get("predicted_consumption_24h", [])
+            predicted_24h = self._current_prediction.get(
+                "predicted_consumption_24h", []
+            )
             if predicted_24h and len(predicted_24h) == 24:
                 profile_data = {
                     "hourly_consumption": predicted_24h,
-                    "total_kwh": self._current_prediction.get("predicted_total_kwh", 0.0),
+                    "total_kwh": self._current_prediction.get(
+                        "predicted_total_kwh", 0.0
+                    ),
                     "avg_kwh_h": self._current_prediction.get("predicted_avg_kwh", 0.0),
                 }
                 attrs["today_profile"] = profile_data
-                attrs["tomorrow_profile"] = profile_data  # Same for now, can differentiate later
+                attrs["tomorrow_profile"] = (
+                    profile_data  # Same for now, can differentiate later
+                )
 
         return attrs
 

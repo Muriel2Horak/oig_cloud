@@ -710,45 +710,52 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     ) -> None:
         """
         Emergency planning když FORCED mode nenašel feasible kandidáty.
-        
+
         Najde nejlevnější 8h okno v následujících 24h bez ohledu na ostatní podmínky.
-        
+
         Args:
             timeline: Battery forecast timeline
         """
-        _LOGGER.info("🚨 Creating emergency balancing plan - finding cheapest 8h window")
-        
+        _LOGGER.info(
+            "🚨 Creating emergency balancing plan - finding cheapest 8h window"
+        )
+
         now = dt_util.now()
         # Brát jen následujících 24h
         end_time = now + timedelta(hours=24)
-        
+
         # Získat spot ceny
         forecast_sensor = self._get_forecast_sensor()
         if not forecast_sensor:
             _LOGGER.error("Cannot create emergency plan - forecast sensor not found")
             return
-            
-        spot_prices = forecast_sensor.get_spot_prices_48h()
-        if not spot_prices:
+
+        # Get timeline from forecast sensor (async)
+        price_timeline = await forecast_sensor._get_spot_price_timeline()
+        if not price_timeline:
             _LOGGER.error("Cannot create emergency plan - no spot prices available")
             return
-        
+
+        # Extract just prices for sliding window algorithm
+        # Timeline format: [{"time": "2025-10-28T13:45:00", "price": 4.51}, ...]
+        spot_prices = [item["price"] for item in price_timeline]
+
         # Najít všechna možná 8h okna v následujících 24h
         best_window = None
-        best_avg_price = float('inf')
-        
+        best_avg_price = float("inf")
+
         for start_idx in range(len(spot_prices) - 7):  # -7 protože potřebujeme 8h
             window_start = now + timedelta(hours=start_idx)
             if window_start > end_time:
                 break
-                
+
             # Spočítat průměrnou cenu pro toto 8h okno
-            window_prices = spot_prices[start_idx:start_idx + 8]
+            window_prices = spot_prices[start_idx : start_idx + 8]
             if len(window_prices) < 8:
                 continue
-                
+
             avg_price = sum(window_prices) / 8
-            
+
             if avg_price < best_avg_price:
                 best_avg_price = avg_price
                 best_window = {
@@ -756,11 +763,11 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     "end": window_start + timedelta(hours=8),
                     "avg_price": avg_price,
                 }
-        
+
         if not best_window:
             _LOGGER.error("Failed to find any 8h window for emergency plan")
             return
-        
+
         # Nastavit emergency plan
         self._planned_window = {
             "plan_start": best_window["start"].isoformat(),
@@ -771,12 +778,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             "type": "emergency",
             "reason": "FORCED MODE - emergency cheapest 8h window",
         }
-        
+
         _LOGGER.warning(
             f"🚨 EMERGENCY PLAN created: {best_window['start'].strftime('%Y-%m-%d %H:%M')} - "
             f"{best_window['end'].strftime('%H:%M')}, avg price: {best_avg_price:.2f} CZK/kWh"
         )
-        
+
         self._status = "planned"
         self.async_schedule_update_ha_state(force_refresh=True)
 
