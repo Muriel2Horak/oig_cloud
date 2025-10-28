@@ -90,6 +90,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         self._last_calculation: Optional[datetime] = (
             None  # Čas posledního výpočtu plánu
         )
+        self._planning_status: str = "idle"  # idle/preparing/calculating/ok/error
+        self._planning_error: Optional[str] = None  # Poslední chyba při výpočtu
 
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
@@ -150,9 +152,17 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         """
         try:
             # Počkat na forecast data (max 5 min)
+            self._planning_status = "preparing"
+            self._planning_error = None
+            if self._hass:
+                self.async_write_ha_state()
+                
             await self._wait_for_forecast_ready(timeout=300)
 
             _LOGGER.info("✅ Planning loop started - will run every hour")
+            self._planning_status = "idle"
+            if self._hass:
+                self.async_write_ha_state()
 
             # První běh okamžitě po startu
             first_run = True
@@ -163,11 +173,22 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         f"🔄 Planning loop iteration starting (first_run={first_run})"
                     )
 
+                    # Nastavit stav calculating
+                    self._planning_status = "calculating"
+                    self._planning_error = None
+                    if self._hass:
+                        self.async_write_ha_state()
+
                     # Validovat/naplánovat
                     await self._validate_and_plan()
 
-                    # Update timestamp
+                    # Update timestamp a stav OK
                     self._last_planning_check = dt_util.now()
+                    self._planning_status = "ok"
+                    self._planning_error = None
+                    if self._hass:
+                        self.async_write_ha_state()
+                        
                     _LOGGER.info(
                         f"✅ Planning loop iteration completed at {self._last_planning_check}"
                     )
@@ -176,22 +197,39 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     _LOGGER.error(
                         f"❌ Planning loop iteration error: {e}", exc_info=True
                     )
+                    self._planning_status = "error"
+                    self._planning_error = str(e)
+                    if self._hass:
+                        self.async_write_ha_state()
 
                 # První běh: čekat jen 60s, pak normálně 1h
                 if first_run:
                     _LOGGER.info(
                         "⏱️ First run completed, waiting 60s before next iteration"
                     )
+                    self._planning_status = "idle"
+                    if self._hass:
+                        self.async_write_ha_state()
                     await asyncio.sleep(60)
                     first_run = False
                 else:
                     _LOGGER.info("⏱️ Waiting 3600s (1 hour) until next iteration")
+                    self._planning_status = "idle"
+                    if self._hass:
+                        self.async_write_ha_state()
                     await asyncio.sleep(3600)
 
         except asyncio.CancelledError:
             _LOGGER.info("Planning loop cancelled")
+            self._planning_status = "idle"
+            if self._hass:
+                self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error(f"Planning loop fatal error: {e}", exc_info=True)
+            self._planning_status = "error"
+            self._planning_error = f"Fatal: {str(e)}"
+            if self._hass:
+                self.async_write_ha_state()
 
     async def _wait_for_forecast_ready(self, timeout: int = 300) -> None:
         """
@@ -1647,6 +1685,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             ),
             "current_state": self._current_state,
             "time_remaining": self._time_remaining,
+            "planning_status": self._planning_status,  # idle/preparing/calculating/ok/error
+            "planning_error": self._planning_error,  # Chyba při výpočtu pokud nastala
         }
 
         # Config from config_entry
