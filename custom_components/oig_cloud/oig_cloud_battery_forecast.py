@@ -441,6 +441,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         balancing_plan: Optional[
             Dict[str, Any]
         ] = None,  # DEPRECATED: Use self._active_charging_plan instead
+        mode: Optional[int] = None,  # Phase 2: CBB mode for forecast (None = use current mode)
     ) -> List[Dict[str, Any]]:
         """
         Vypočítat timeline predikce baterie.
@@ -455,6 +456,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_avg_sensors: Load average senzory
             adaptive_profiles: Dict s profily (today_profile, tomorrow_profile) nebo None pro fallback
             balancing_plan: DEPRECATED - kept for compatibility, use self._active_charging_plan
+            mode: Phase 2 - CBB mode for forecast (0-3), None = use current mode from sensor
 
         Returns:
             List timeline bodů s predikcí
@@ -463,6 +465,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         battery_kwh = current_capacity
 
         today = dt_util.now().date()
+        
+        # Phase 2: Determine mode for timeline calculation
+        if mode is None:
+            mode = self._get_current_mode()
+        
+        mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
+        _LOGGER.debug(f"_calculate_timeline() using mode: {mode_name} ({mode})")
 
         # UNIFIED PLANNER: Použít aktivní plán místo parametru balancing_plan
         active_plan = self._active_charging_plan
