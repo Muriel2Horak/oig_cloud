@@ -584,7 +584,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
                 # LIFECYCLE CHECK: Get plan status from forecast sensor
                 forecast_sensor = self._get_forecast_sensor()
-                if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                if forecast_sensor and hasattr(
+                    forecast_sensor, "_active_charging_plan"
+                ):
                     active_plan = forecast_sensor._active_charging_plan
                     if active_plan:
                         plan_status = active_plan.get("status", "planned")
@@ -607,7 +609,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
                         # COMPLETED: Clear and continue to new planning
                         elif plan_status == "completed":
-                            _LOGGER.info(f"Plan COMPLETED, clearing and planning new cycle")
+                            _LOGGER.info(
+                                f"Plan COMPLETED, clearing and planning new cycle"
+                            )
                             self._planned_window = None
                             await self._cancel_active_plan()
                             # Continue to planning below (don't return)
@@ -625,7 +629,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
                     # Check plan status - only fail if RUNNING and battery not charged
                     plan_status = None
-                    if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                    if forecast_sensor and hasattr(
+                        forecast_sensor, "_active_charging_plan"
+                    ):
                         active_plan = forecast_sensor._active_charging_plan
                         if active_plan:
                             plan_status = active_plan.get("status")
@@ -656,12 +662,18 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 # CRITICAL CHECK: If all charging intervals are in the past, plan cannot work
                 # But ONLY check for PLANNED status (LOCKED/RUNNING plans are already executing)
                 plan_status = None
-                if forecast_sensor and hasattr(forecast_sensor, "_active_charging_plan"):
+                if forecast_sensor and hasattr(
+                    forecast_sensor, "_active_charging_plan"
+                ):
                     active_plan = forecast_sensor._active_charging_plan
                     if active_plan:
                         plan_status = active_plan.get("status")
 
-                if self._planned_window and now < holding_start and plan_status == "planned":
+                if (
+                    self._planned_window
+                    and now < holding_start
+                    and plan_status == "planned"
+                ):
                     charging_intervals = self._planned_window.get(
                         "charging_intervals", []
                     )
@@ -774,9 +786,11 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             _LOGGER.error("Cannot get forecast sensor")
             return
 
-        timeline = forecast_sensor.get_timeline_data()
+        # CRITICAL: Use BASELINE timeline (without any plan) for planning!
+        # Using active timeline would cause circular dependency and re-planning over existing plan
+        timeline = forecast_sensor.get_baseline_timeline()
         if not timeline:
-            _LOGGER.error("No timeline data available")
+            _LOGGER.error("No baseline timeline data available")
             return
 
         # 4. FIND CANDIDATE WINDOWS (s historical patterns)
@@ -848,12 +862,24 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 # Zkontrolovat náklady
                 total_cost = simulation.get("total_cost_czk", float("inf"))
 
-                if total_cost < best_cost:
-                    best_cost = total_cost
+                # SCORING: Preferovat kandidáty které dosáhnou 100% SOC
+                # V economic mode je kritické dosáhnout plnou kapacitu
+                # Penalizace za nedosažení 100%: za každé procento pod 100% přičíst 2 Kč k ceně
+                soc_penalty = 0.0
+                if achieved_soc < 100.0:
+                    soc_penalty = (100.0 - achieved_soc) * 2.0  # 2 Kč za každé %
+                    _LOGGER.debug(
+                        f"  SOC penalty: {soc_penalty:.2f} Kč for achieving {achieved_soc:.1f}%"
+                    )
+
+                effective_cost = total_cost + soc_penalty
+
+                if effective_cost < best_cost:
+                    best_cost = effective_cost
                     best_simulation = simulation
                     best_candidate = candidate
                     _LOGGER.debug(
-                        f"  ✅ New best: {total_cost:.2f} Kč, achieves {achieved_soc:.1f}%"
+                        f"  ✅ New best: {total_cost:.2f} Kč (+ {soc_penalty:.2f} penalty) = {effective_cost:.2f}, achieves {achieved_soc:.1f}%"
                     )
 
             except Exception as e:
@@ -895,7 +921,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     interval_time = datetime.fromisoformat(interval["timestamp"])
                     if interval_time.tzinfo is None:
                         interval_time = dt_util.as_local(interval_time)
-                    if first_interval_time is None or interval_time < first_interval_time:
+                    if (
+                        first_interval_time is None
+                        or interval_time < first_interval_time
+                    ):
                         first_interval_time = interval_time
                 except (ValueError, TypeError, KeyError):
                     continue

@@ -24,6 +24,9 @@ from .oig_cloud_data_sensor import OigCloudDataSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+# Debug options
+DEBUG_EXPOSE_BASELINE_TIMELINE = True  # Expose baseline timeline in sensor attributes
+
 
 class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
     """Zjednodušený senzor pro predikci nabití baterie."""
@@ -165,6 +168,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "max_capacity_kwh": self._get_max_battery_capacity(),
             "min_capacity_kwh": self._get_min_battery_capacity(),
         }
+
+        # DEBUG: Expose baseline timeline for comparison
+        if DEBUG_EXPOSE_BASELINE_TIMELINE and hasattr(self, "_baseline_timeline"):
+            attrs["baseline_timeline_data"] = self._baseline_timeline
 
         # Přidat metriky nabíjení pokud existují
         if hasattr(self, "_charging_metrics") and self._charging_metrics:
