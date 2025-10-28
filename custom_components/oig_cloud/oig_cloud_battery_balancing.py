@@ -1575,14 +1575,54 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             preferred_hour = 22  # Default když máme consumption prediction
         else:
             _LOGGER.warning(
-                "No consumption prediction available, using fallback patterns"
+                "No consumption prediction available, using balancing pattern prediction"
             )
-            # Fallback: použít historické balancing patterns
+
+        # 1b. Načíst balancing pattern prediction (7d profiling)
+        balancing_pattern = None
+        try:
+            balancing_pattern = await self._find_best_matching_balancing_pattern()
+        except Exception as e:
+            _LOGGER.debug(f"Could not get balancing pattern: {e}")
+
+        if balancing_pattern:
+            predicted_120h = balancing_pattern.get("predicted_120h_data", [])
+            similarity = balancing_pattern.get("similarity_score", 0.0)
+            predicted_balancing_hours = balancing_pattern.get(
+                "predicted_balancing_hours", 0
+            )
+            _LOGGER.info(
+                f"📊 Balancing pattern: similarity={similarity:.3f}, "
+                f"predicted_balancing_hours={predicted_balancing_hours}/120"
+            )
+
+            # Najít typickou hodinu kdy balancing začíná v predikci
+            if predicted_120h:
+                # Najít první hodinu kdy balancing začal v matched profilu
+                for i, hour_data in enumerate(predicted_120h):
+                    if hour_data.get("balancing_active"):
+                        # Převést index (0-119) na hodinu dne
+                        preferred_hour = i % 24
+                        _LOGGER.info(
+                            f"📊 Pattern suggests balancing at hour {preferred_hour}:00"
+                        )
+                        break
+                else:
+                    # Pokud nenajdeme aktivní balancing, použít historický pattern
+                    _LOGGER.info("No active balancing in pattern, using fallback")
+                    preferred_hour = 22
+            else:
+                preferred_hour = 22
+        else:
+            # Ultimate fallback: použít historické completion patterns
+            _LOGGER.info(
+                "No balancing pattern available, using completion history fallback"
+            )
             profiles = await self._load_balancing_completion_profiles(weeks_back=52)
             patterns = self._analyze_balancing_patterns(profiles)
             preferred_hour = patterns.get("typical_charging_hour", 22)
             _LOGGER.info(
-                f"📊 Fallback pattern analysis: {patterns['total_profiles']} profiles, "
+                f"📊 Fallback completion analysis: {patterns['total_profiles']} profiles, "
                 f"typical hour={preferred_hour}:00"
             )
 
@@ -1647,6 +1687,32 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             # 5. BONUS: Noc (22:00-06:00)
             if hour_of_day >= 22 or hour_of_day <= 6:
                 score += 2.0
+
+            # 6. BONUS: Balancing pattern prediction podporuje toto okno
+            if balancing_pattern and balancing_pattern.get("predicted_120h_data"):
+                predicted_120h = balancing_pattern["predicted_120h_data"]
+                # Spočítat kolik hodin od teď je holding_start
+                hours_from_now = int((holding_start - dt_util.now()).total_seconds() / 3600)
+
+                # Pokud je v rozsahu predikce (0-119h)
+                if 0 <= hours_from_now < len(predicted_120h):
+                    predicted_hour = predicted_120h[hours_from_now]
+
+                    # Pokud pattern predikuje že balancing bude aktivní v této době
+                    if predicted_hour.get("balancing_active"):
+                        score += 10.0  # Velký bonus - pattern říká že je to dobrá doba
+                        _LOGGER.debug(
+                            f"Pattern bonus for {holding_start}: balancing predicted at this time"
+                        )
+
+                    # Pokud má pattern nízkou cenu v této době
+                    predicted_price = predicted_hour.get("spot_price_czk", 0)
+                    current_price = point.get("spot_price_czk", 0)
+                    if predicted_price > 0 and predicted_price <= current_price * 1.1:
+                        score += 3.0  # Bonus - pattern ukazuje nízkou cenu
+                        _LOGGER.debug(
+                            f"Pattern price bonus for {holding_start}: {predicted_price:.2f} <= {current_price:.2f}"
+                        )
 
             candidates.append(
                 {
