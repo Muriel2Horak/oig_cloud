@@ -4304,66 +4304,53 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     async def _get_adaptive_load_prediction(self) -> Optional[Dict[str, Any]]:
         """
-        Najde nejlepší matching profil podle dnešního průběhu.
+        Načte adaptive load prediction přímo z adaptive_load_profiles sensoru.
+        
+        Sensor už má předpočítané today_profile a tomorrow_profile z 72h matching algoritmu.
 
         Returns:
             Dict nebo None:
             {
                 "today_profile": {...},      # Profil pro zbytek dneška
                 "tomorrow_profile": {...},   # Profil pro zítřek (pokud timeline přes půlnoc)
-                "match_score": 87.5,
-                "profile_name": "friday_to_saturday_winter"
+                "match_score": 0.666,
+                "prediction_summary": {...}
             }
         """
         try:
-            # 1. Načíst profily z sensor
-            profiles = self._get_profiles_from_sensor()
-            if not profiles:
+            # Načíst data přímo z adaptive sensor
+            profiles_sensor = f"sensor.oig_{self._box_id}_adaptive_load_profiles"
+
+            if not self._hass:
                 return None
 
-            # 2. Načíst dnešní spotřebu po hodinách
-            today_hourly = await self._get_today_hourly_consumption()
-            if not today_hourly or len(today_hourly) == 0:
-                _LOGGER.debug("No today consumption data available")
+            profiles_state = self._hass.states.get(profiles_sensor)
+            if not profiles_state:
+                _LOGGER.debug(f"Adaptive profiles sensor not found: {profiles_sensor}")
                 return None
 
-            current_time = dt_util.now()
-            current_hour_float = current_time.hour + current_time.minute / 60
+            attrs = profiles_state.attributes
 
-            # 3. Najít best matching profil pro DNES
-            best_match = None
-            best_score = 0
-
-            for profile_id, profile in profiles.items():
-                # Porovnat jen hodiny které už proběhly
-                score = self._calculate_profile_similarity(
-                    today_hourly, profile["hourly_consumption"]
-                )
-
-                if score > best_score:
-                    best_score = score
-                    best_match = profile
-
-            if not best_match:
-                _LOGGER.warning("No matching profile found")
+            # Zkontrolovat jestli má today_profile a tomorrow_profile
+            if "today_profile" not in attrs or "tomorrow_profile" not in attrs:
+                _LOGGER.debug("Adaptive sensor missing today_profile or tomorrow_profile")
                 return None
 
-            profile_name = best_match.get("ui", {}).get(
-                "name", best_match["profile_id"]
-            )
-            _LOGGER.info(
-                f"Using profile '{profile_name}' for today (match: {best_score:.0f}%)"
-            )
-
-            # 4. Určit profil pro ZÍTŘEK (pokud timeline přes půlnoc)
-            tomorrow_profile = self._select_tomorrow_profile(profiles, current_time)
-
-            return {
-                "today_profile": best_match,
-                "tomorrow_profile": tomorrow_profile,
-                "match_score": best_score,
-                "profile_name": profile_name,
+            # Vrátit profily přímo - sensor už udělal matching a prediction
+            result = {
+                "today_profile": attrs["today_profile"],
+                "tomorrow_profile": attrs["tomorrow_profile"],
+                "match_score": attrs.get("prediction_summary", {}).get("similarity_score", 0.0),
+                "prediction_summary": attrs.get("prediction_summary", {}),
             }
+
+            _LOGGER.debug(
+                f"✅ Adaptive prediction loaded: "
+                f"today={result['today_profile'].get('total_kwh', 0):.2f} kWh, "
+                f"match_score={result['match_score']:.3f}"
+            )
+
+            return result
 
         except Exception as e:
             _LOGGER.error(f"Error in adaptive load prediction: {e}", exc_info=True)
