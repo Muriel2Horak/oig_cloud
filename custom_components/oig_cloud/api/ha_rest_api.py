@@ -16,9 +16,10 @@ Endpoints:
 - /api/oig_cloud/spot_prices/<box_id>/intervals - 15min price intervals (155 KB)
 - /api/oig_cloud/analytics/<box_id>/hourly - Hourly analytics (6.5 KB)
 - /api/oig_cloud/consumption_profiles/<box_id> - 72h consumption prediction (~2 KB)
+- /api/oig_cloud/balancing_decisions/<box_id> - 7d balancing pattern prediction (~15 KB)
 
-Total API payload: ~724 KB
-Total sensor attributes: ~17 KB (96% reduction!)
+Total API payload: ~739 KB
+Total sensor attributes: ~17 KB (97% reduction!)
 
 Author: OIG Cloud Integration
 Date: 2025-10-28
@@ -408,6 +409,100 @@ class OIGCloudConsumptionProfilesView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class OIGCloudBalancingDecisionsView(HomeAssistantView):
+    """API endpoint for balancing decision pattern data."""
+
+    url = f"{API_BASE}/balancing_decisions/{{box_id}}"
+    name = "api:oig_cloud:balancing_decisions"
+    requires_auth = False  # TODO: Re-enable after auth method is implemented
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        """
+        GET /api/oig_cloud/balancing_decisions/{box_id}
+        
+        Returns balancing decision pattern prediction based on 7d profiling.
+        
+        Response structure:
+        {
+            "current_prediction": {
+                "matched_profile_created": "2025-10-27T00:30:00",
+                "similarity_score": 0.87,
+                "predicted_120h_data": [...],  # 120 hours of predicted data
+                "predicted_balancing_hours": 18,
+                "predicted_balancing_percentage": 15.0,
+                "predicted_avg_spot_price": 2.35,
+                "matched_profile_balancing_hours": 22
+            },
+            "metadata": {
+                "box_id": "CBB00000123",
+                "last_profile_created": "2025-10-28T00:30:00",
+                "profiling_status": "ok",
+                "data_source": "7d_balancing_profiling"
+            }
+        }
+        """
+        try:
+            # Find battery_balancing sensor entity
+            entity_id = f"sensor.oig_{box_id}_battery_balancing"
+            entity_component: EntityComponent = self.hass.data.get("entity_components", {}).get("sensor")  # type: ignore
+
+            if not entity_component:
+                return web.json_response(
+                    {"error": "Sensor component not found"}, status=404
+                )
+
+            # Get entity object
+            entity_obj = None
+            for entity in entity_component.entities:
+                if entity.entity_id == entity_id:
+                    entity_obj = entity
+                    break
+
+            if not entity_obj:
+                return web.json_response(
+                    {"error": f"Battery balancing sensor {entity_id} not found"},
+                    status=404,
+                )
+
+            # Get current prediction from sensor
+            current_prediction = None
+            if hasattr(entity_obj, "_find_best_matching_balancing_pattern"):
+                try:
+                    current_prediction = await entity_obj._find_best_matching_balancing_pattern()  # type: ignore
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to get balancing pattern: {e}")
+
+            # Prepare response
+            metadata = {
+                "box_id": box_id,
+                "last_profile_created": (
+                    entity_obj._last_balancing_profile_created.isoformat()  # type: ignore
+                    if hasattr(entity_obj, "_last_balancing_profile_created")
+                    and entity_obj._last_balancing_profile_created  # type: ignore
+                    else None
+                ),
+                "profiling_status": (
+                    entity_obj._balancing_profiling_status  # type: ignore
+                    if hasattr(entity_obj, "_balancing_profiling_status")
+                    else "unknown"
+                ),
+                "data_source": "7d_balancing_profiling",
+            }
+
+            response_data = {
+                "current_prediction": current_prediction,
+                "metadata": metadata,
+            }
+
+            _LOGGER.debug(f"API: Serving balancing decisions for {box_id}")
+
+            return web.json_response(response_data)
+
+        except Exception as e:
+            _LOGGER.error(f"Error serving balancing decisions API: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
     Register all OIG Cloud REST API endpoints.
@@ -422,11 +517,13 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
+    hass.http.register_view(OIGCloudBalancingDecisionsView())
 
     _LOGGER.info(
         "✅ OIG Cloud REST API endpoints registered:\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/timeline\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
-        f"  - {API_BASE}/consumption_profiles/<box_id>"
+        f"  - {API_BASE}/consumption_profiles/<box_id>\n"
+        f"  - {API_BASE}/balancing_decisions/<box_id>"
     )

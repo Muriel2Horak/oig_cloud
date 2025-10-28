@@ -20,6 +20,26 @@ from homeassistant.components.recorder import history
 
 _LOGGER = logging.getLogger(__name__)
 
+# ============================================================================
+# 7d Balancing Decision Profiling Constants
+# ============================================================================
+
+# Event type pro ukládání balancing decision profiles do recorderu
+BALANCING_PROFILE_EVENT_TYPE = "oig_cloud_balancing_decision_profile_7d"
+
+# Časové konstanty
+BALANCING_PROFILE_HOURS = 168  # 7 dní dat v profilu (7 × 24)
+BALANCING_MATCH_HOURS = 48  # Prvních 48h použít pro matching
+BALANCING_PREDICT_HOURS = 120  # Posledních 120h (5 dní) použít jako predikci
+
+# Maximální počet profilů k uložení (52 týdnů)
+MAX_BALANCING_PROFILES = 52
+
+# Similarity scoring weights (jak hodnotit podobnost profilů)
+WEIGHT_SPOT_PRICE = 0.40  # Korelace spot price pattern (40%)
+WEIGHT_SOLAR_FORECAST = 0.30  # Korelace solar forecast pattern (30%)
+WEIGHT_BALANCING_SUCCESS = 0.30  # Úspěšnost balancing rozhodnutí (30%)
+
 
 class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
     """Sensor pro správu vyrovnání článků baterie."""
@@ -96,6 +116,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         # Profiling - recent history (5 posledních)
         self._recent_balancing_history: List[Dict[str, Any]] = []
 
+        # 7d Balancing Decision Profiling
+        self._balancing_profiling_task: Optional[Any] = None  # asyncio.Task
+        self._last_balancing_profile_created: Optional[datetime] = None
+        self._balancing_profiling_status: str = "idle"  # idle/creating/ok/error
+        self._balancing_profiling_error: Optional[str] = None
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA."""
         await super().async_added_to_hass()
@@ -138,10 +164,19 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._planning_loop(), name="oig_cloud_balancing_planning_loop"
         )
 
+        # START: Denní balancing profiling loop jako background task
+        _LOGGER.info("Starting daily balancing decision profiling loop")
+        self._balancing_profiling_task = self.hass.async_create_background_task(
+            self._balancing_profiling_loop(),
+            name="oig_cloud_balancing_profiling_loop",
+        )
+
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA - zrušit planning task."""
         if self._planning_task and not self._planning_task.done():
             self._planning_task.cancel()
+        if self._balancing_profiling_task and not self._balancing_profiling_task.done():
+            self._balancing_profiling_task.cancel()
         await super().async_will_remove_from_hass()
 
     async def _planning_loop(self) -> None:
@@ -230,6 +265,118 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._planning_error = f"Fatal: {str(e)}"
             if self._hass:
                 self.async_write_ha_state()
+
+    async def _balancing_profiling_loop(self) -> None:
+        """
+        Denní profiling loop - vytváření 7d balancing decision profilů.
+        
+        Běží každý den v 00:30 (30 minut po půlnoci).
+        Ukládá profil posledních 168h (7 dní) balancing rozhodnutí.
+        """
+        try:
+            _LOGGER.info("📊 Balancing profiling loop starting")
+
+            # První běh hned po startu (aby byl profil k dispozici co nejdříve)
+            try:
+                _LOGGER.info("📊 Creating initial 7d balancing profile")
+                self._balancing_profiling_status = "creating"
+                self._balancing_profiling_error = None
+                if self._hass:
+                    self.async_write_ha_state()
+
+                success = await self._create_balancing_profile()
+
+                if success:
+                    self._last_balancing_profile_created = dt_util.now()
+                    self._balancing_profiling_status = "ok"
+                    self._balancing_profiling_error = None
+                    _LOGGER.info(
+                        f"✅ Initial balancing profile created at {self._last_balancing_profile_created}"
+                    )
+                else:
+                    self._balancing_profiling_status = "error"
+                    self._balancing_profiling_error = "Failed to create initial profile"
+                    _LOGGER.warning("❌ Failed to create initial balancing profile")
+
+                if self._hass:
+                    self.async_write_ha_state()
+
+            except Exception as e:
+                _LOGGER.error(f"❌ Initial profiling error: {e}", exc_info=True)
+                self._balancing_profiling_status = "error"
+                self._balancing_profiling_error = str(e)
+                if self._hass:
+                    self.async_write_ha_state()
+
+            # Počkat do prvního denního okna (00:30)
+            await self._wait_for_next_profiling_window()
+
+            # Denní loop
+            while True:
+                try:
+                    _LOGGER.info("📊 Creating daily 7d balancing profile")
+
+                    self._balancing_profiling_status = "creating"
+                    self._balancing_profiling_error = None
+                    if self._hass:
+                        self.async_write_ha_state()
+
+                    # Vytvořit profil
+                    success = await self._create_balancing_profile()
+
+                    if success:
+                        self._last_balancing_profile_created = dt_util.now()
+                        self._balancing_profiling_status = "ok"
+                        self._balancing_profiling_error = None
+                        _LOGGER.info(
+                            f"✅ Daily balancing profile created at {self._last_balancing_profile_created}"
+                        )
+                    else:
+                        self._balancing_profiling_status = "error"
+                        self._balancing_profiling_error = "Failed to create profile"
+                        _LOGGER.warning("❌ Failed to create daily balancing profile")
+
+                    if self._hass:
+                        self.async_write_ha_state()
+
+                except Exception as e:
+                    _LOGGER.error(f"❌ Profiling loop error: {e}", exc_info=True)
+                    self._balancing_profiling_status = "error"
+                    self._balancing_profiling_error = str(e)
+                    if self._hass:
+                        self.async_write_ha_state()
+
+                # Počkat do dalšího dne 00:30
+                _LOGGER.info("⏱️ Waiting until tomorrow 00:30 for next balancing profile")
+                self._balancing_profiling_status = "idle"
+                if self._hass:
+                    self.async_write_ha_state()
+
+                await self._wait_for_next_profiling_window()
+
+        except asyncio.CancelledError:
+            _LOGGER.info("Balancing profiling loop cancelled")
+            raise
+        except Exception as e:
+            _LOGGER.error(f"Fatal balancing profiling loop error: {e}", exc_info=True)
+
+    async def _wait_for_next_profiling_window(self) -> None:
+        """
+        Počkat do dalšího profiling okna (00:30).
+        """
+        now = dt_util.now()
+        target_time = now.replace(hour=0, minute=30, second=0, microsecond=0)
+
+        # Pokud už je po 00:30 dnes, čekat na zítra
+        if now >= target_time:
+            target_time += timedelta(days=1)
+
+        wait_seconds = (target_time - now).total_seconds()
+        _LOGGER.info(
+            f"⏱️ Waiting {wait_seconds / 3600:.1f} hours until next profiling window at {target_time}"
+        )
+
+        await asyncio.sleep(wait_seconds)
 
     async def _wait_for_forecast_ready(self, timeout: int = 300) -> None:
         """
@@ -1059,7 +1206,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             mode: economic | forced
         """
         # Načíst historical data
-        profiles = await self._load_balancing_profiles(weeks_back=52)
+        profiles = await self._load_balancing_completion_profiles(weeks_back=52)
         if not profiles:
             return  # Nemáme historii, nemůžeme porovnat
 
@@ -1224,11 +1371,13 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             f"mode={profile['mode']}, cost={profile['total_cost_czk']:.2f} Kč"
         )
 
-    async def _load_balancing_profiles(
+    async def _load_balancing_completion_profiles(
         self, weeks_back: int = 52
     ) -> List[Dict[str, Any]]:
         """
-        Načíst balancing profily z posledních N týdnů.
+        Načíst balancing completion profily z posledních N týdnů.
+        
+        POZNÁMKA: Toto jsou staré 'balancing_completed' events, ne nové decision profily!
 
         Args:
             weeks_back: Kolik týdnů zpět hledat (default 52 = 1 rok)
@@ -1429,7 +1578,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 "No consumption prediction available, using fallback patterns"
             )
             # Fallback: použít historické balancing patterns
-            profiles = await self._load_balancing_profiles(weeks_back=52)
+            profiles = await self._load_balancing_completion_profiles(weeks_back=52)
             patterns = self._analyze_balancing_patterns(profiles)
             preferred_hour = patterns.get("typical_charging_hour", 22)
             _LOGGER.info(
@@ -1707,6 +1856,503 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         return 50.0  # Default fallback
 
+    # ============================================================================
+    # 7d Balancing Decision Profiling Methods
+    # ============================================================================
+
+    async def _get_balancing_history_7d(self) -> Optional[Dict[str, Any]]:
+        """
+        Načíst 7 dní (168h) balancing historie.
+        
+        Returns:
+            Dict s hourly data: spot_price, solar_forecast, battery_soc, balancing_active
+        """
+        if not self._hass:
+            _LOGGER.warning("Cannot get balancing history - no hass instance")
+            return None
+
+        try:
+            end_time = dt_util.now()
+            start_time = end_time - timedelta(hours=BALANCING_PROFILE_HOURS)
+
+            # Připravit hourly data struktu
+            hourly_data = []
+
+            # Pro každou hodinu v 168h okně
+            for hour_offset in range(BALANCING_PROFILE_HOURS):
+                hour_start = start_time + timedelta(hours=hour_offset)
+                hour_end = hour_start + timedelta(hours=1)
+
+                # 1. Spot price - načíst z spot price senzoru
+                spot_price = await self._get_spot_price_for_hour(hour_start, hour_end)
+
+                # 2. Solar forecast - načíst z solar forecast senzoru
+                solar_forecast = await self._get_solar_forecast_for_hour(
+                    hour_start, hour_end
+                )
+
+                # 3. Battery SOC - průměr SOC v této hodině
+                battery_soc = await self._get_battery_soc_for_hour(hour_start, hour_end)
+
+                # 4. Balancing active - byl balancing aktivní?
+                balancing_active = await self._was_balancing_active(
+                    hour_start, hour_end
+                )
+
+                hourly_data.append(
+                    {
+                        "timestamp": hour_start.isoformat(),
+                        "spot_price_czk": spot_price,
+                        "solar_forecast_kwh": solar_forecast,
+                        "battery_soc": battery_soc,
+                        "balancing_active": balancing_active,
+                    }
+                )
+
+            _LOGGER.info(
+                f"📊 Loaded 7d balancing history: {len(hourly_data)} hours"
+            )
+
+            return {
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "hours": BALANCING_PROFILE_HOURS,
+                "hourly_data": hourly_data,
+            }
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to get balancing history: {e}", exc_info=True)
+            return None
+
+    async def _get_spot_price_for_hour(
+        self, hour_start: datetime, hour_end: datetime
+    ) -> float:
+        """Načíst spot price pro danou hodinu."""
+        try:
+            # Spot price sensor entity ID
+            entity_id = "sensor.spot_cena_czk"
+
+            # Načíst historical data
+            history_data = await self._hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self._hass,
+                hour_start,
+                hour_end,
+                entity_id,
+            )
+
+            if history_data and entity_id in history_data:
+                states = history_data[entity_id]
+                if states:
+                    # Průměr hodnot v této hodině
+                    values = []
+                    for s in states:
+                        try:
+                            values.append(float(s.state))
+                        except (ValueError, TypeError):
+                            continue
+
+                    if values:
+                        return float(np.mean(values))
+
+        except Exception as e:
+            _LOGGER.debug(f"Could not get spot price for hour: {e}")
+
+        return 0.0  # Default fallback
+
+    async def _get_solar_forecast_for_hour(
+        self, hour_start: datetime, hour_end: datetime
+    ) -> float:
+        """Načíst solar forecast pro danou hodinu."""
+        try:
+            # Solar forecast sensor - použít battery forecast který má solar data
+            entity_id = f"sensor.oig_{self._box_id}_battery_forecast"
+
+            # Načíst state
+            state_obj = self._hass.states.get(entity_id)
+            if state_obj and hasattr(state_obj, "attributes"):
+                # Forecast data jsou v atributech nebo přes API
+                # Pro zjednodušení použijeme historical actual solar production
+                entity_id = f"sensor.oig_{self._box_id}_actual_aco_p"
+
+                history_data = await self._hass.async_add_executor_job(
+                    history.state_changes_during_period,
+                    self._hass,
+                    hour_start,
+                    hour_end,
+                    entity_id,
+                )
+
+                if history_data and entity_id in history_data:
+                    states = history_data[entity_id]
+                    if states:
+                        values = []
+                        for s in states:
+                            try:
+                                val = float(s.state)
+                                # Pokud je záporné (výroba), převést na kladné
+                                if val < 0:
+                                    val = abs(val)
+                                values.append(val)
+                            except (ValueError, TypeError):
+                                continue
+
+                        if values:
+                            return float(np.mean(values))
+
+        except Exception as e:
+            _LOGGER.debug(f"Could not get solar forecast for hour: {e}")
+
+        return 0.0  # Default fallback
+
+    async def _get_battery_soc_for_hour(
+        self, hour_start: datetime, hour_end: datetime
+    ) -> float:
+        """Načíst battery SOC pro danou hodinu."""
+        try:
+            entity_id = f"sensor.oig_{self._box_id}_battery_soc"
+
+            history_data = await self._hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self._hass,
+                hour_start,
+                hour_end,
+                entity_id,
+            )
+
+            if history_data and entity_id in history_data:
+                states = history_data[entity_id]
+                if states:
+                    values = []
+                    for s in states:
+                        try:
+                            values.append(float(s.state))
+                        except (ValueError, TypeError):
+                            continue
+
+                    if values:
+                        return float(np.mean(values))
+
+        except Exception as e:
+            _LOGGER.debug(f"Could not get battery SOC for hour: {e}")
+
+        return 50.0  # Default fallback
+
+    async def _was_balancing_active(
+        self, hour_start: datetime, hour_end: datetime
+    ) -> bool:
+        """Zkontrolovat zda byl balancing aktivní v dané hodině."""
+        try:
+            # Kontrola balancing status - pokud byl status "balancing" nebo "charging"
+            entity_id = f"sensor.oig_{self._box_id}_battery_balancing"
+
+            history_data = await self._hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self._hass,
+                hour_start,
+                hour_end,
+                entity_id,
+            )
+
+            if history_data and entity_id in history_data:
+                states = history_data[entity_id]
+                for s in states:
+                    if s.state in ["balancing", "charging", "planned"]:
+                        return True
+
+        except Exception as e:
+            _LOGGER.debug(f"Could not check balancing status for hour: {e}")
+
+        return False
+
+    async def _create_balancing_profile(self) -> bool:
+        """
+        Vytvořit nový 7d balancing profil a uložit do recorderu.
+        
+        Returns:
+            True pokud úspěch, False při chybě
+        """
+        if not self._hass:
+            return False
+
+        try:
+            # Načíst 7d data
+            balancing_data = await self._get_balancing_history_7d()
+
+            if not balancing_data or not balancing_data.get("hourly_data"):
+                _LOGGER.warning("Cannot create balancing profile - no data")
+                return False
+
+            hourly_data = balancing_data["hourly_data"]
+
+            # Spočítat statistiky
+            spot_prices = [h["spot_price_czk"] for h in hourly_data]
+            solar_forecasts = [h["solar_forecast_kwh"] for h in hourly_data]
+            soc_values = [h["battery_soc"] for h in hourly_data]
+            balancing_hours = sum(1 for h in hourly_data if h["balancing_active"])
+
+            # Připravit event data
+            now = dt_util.now()
+            profile_data = {
+                "box_id": self._box_id,
+                "created_at": now.isoformat(),
+                "profile_hours": BALANCING_PROFILE_HOURS,
+                "start_time": balancing_data["start_time"],
+                "end_time": balancing_data["end_time"],
+                "hourly_data": hourly_data,
+                # Statistiky
+                "avg_spot_price": float(np.mean(spot_prices)),
+                "max_spot_price": float(np.max(spot_prices)),
+                "min_spot_price": float(np.min(spot_prices)),
+                "total_solar": float(np.sum(solar_forecasts)),
+                "avg_soc": float(np.mean(soc_values)),
+                "balancing_hours": balancing_hours,
+                "balancing_percentage": (balancing_hours / BALANCING_PROFILE_HOURS)
+                * 100,
+            }
+
+            # Fire event do recorderu
+            self._hass.bus.async_fire(
+                BALANCING_PROFILE_EVENT_TYPE,
+                profile_data,
+            )
+
+            _LOGGER.info(
+                f"📊 Created 7d balancing profile: "
+                f"balancing_hours={balancing_hours}, "
+                f"avg_spot_price={profile_data['avg_spot_price']:.2f} CZK, "
+                f"total_solar={profile_data['total_solar']:.1f} kWh"
+            )
+
+            return True
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to create balancing profile: {e}", exc_info=True)
+            return False
+
+    async def _load_balancing_profiles(
+        self, max_profiles: int = MAX_BALANCING_PROFILES
+    ) -> List[Dict[str, Any]]:
+        """
+        Načíst historické balancing profiles z recorderu.
+        
+        Args:
+            max_profiles: Maximum načtených profilů (default 52 = rok)
+            
+        Returns:
+            List profilů seřazených od nejnovějšího
+        """
+        if not self._hass:
+            _LOGGER.warning("Cannot load balancing profiles - no hass instance")
+            return []
+
+        try:
+            recorder = get_instance(self._hass)
+            if not recorder or not recorder.engine:
+                _LOGGER.warning("Recorder not available")
+                return []
+
+            from sqlalchemy import text
+
+            # Načíst max_profiles nejnovějších
+            with recorder.engine.connect() as conn:
+                query = text(
+                    """
+                    SELECT event_data
+                    FROM events
+                    WHERE event_type = :event_type
+                    AND JSON_EXTRACT(event_data, '$.box_id') = :box_id
+                    ORDER BY time_fired DESC
+                    LIMIT :limit
+                """
+                )
+
+                result = conn.execute(
+                    query,
+                    {
+                        "event_type": BALANCING_PROFILE_EVENT_TYPE,
+                        "box_id": self._box_id,
+                        "limit": max_profiles,
+                    },
+                )
+                profiles = [json.loads(row[0]) for row in result]
+
+            _LOGGER.debug(
+                f"Loaded {len(profiles)} balancing profiles from recorder"
+            )
+            return profiles
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to load balancing profiles: {e}", exc_info=True)
+            return []
+
+    async def _calculate_balancing_similarity(
+        self, current_48h: List[Dict[str, Any]], profile_48h: List[Dict[str, Any]]
+    ) -> float:
+        """
+        Spočítat similarity score mezi aktuálními 48h a prvními 48h profilu.
+        
+        Scoring:
+        - 40% spot price correlation
+        - 30% solar forecast correlation  
+        - 30% balancing success pattern match
+        
+        Args:
+            current_48h: Aktuální 48h dat
+            profile_48h: První 48h historického profilu
+            
+        Returns:
+            Similarity score 0.0 - 1.0 (1.0 = perfektní match)
+        """
+        if len(current_48h) != BALANCING_MATCH_HOURS or len(profile_48h) != BALANCING_MATCH_HOURS:
+            _LOGGER.warning(
+                f"Invalid data length for similarity: {len(current_48h)}, {len(profile_48h)}"
+            )
+            return 0.0
+
+        try:
+            # Extrahovat arrays pro NumPy
+            current_spot = np.array([h["spot_price_czk"] for h in current_48h])
+            profile_spot = np.array([h["spot_price_czk"] for h in profile_48h])
+
+            current_solar = np.array([h["solar_forecast_kwh"] for h in current_48h])
+            profile_solar = np.array([h["solar_forecast_kwh"] for h in profile_48h])
+
+            current_balancing = np.array(
+                [1 if h["balancing_active"] else 0 for h in current_48h]
+            )
+            profile_balancing = np.array(
+                [1 if h["balancing_active"] else 0 for h in profile_48h]
+            )
+
+            # 1. Spot price correlation (40%)
+            spot_correlation = np.corrcoef(current_spot, profile_spot)[0, 1]
+            if np.isnan(spot_correlation):
+                spot_correlation = 0.0
+            # Normalize to 0-1 (correlation může být -1 až 1, chceme jen pozitivní)
+            spot_score = max(0.0, spot_correlation)
+
+            # 2. Solar forecast correlation (30%)
+            solar_correlation = np.corrcoef(current_solar, profile_solar)[0, 1]
+            if np.isnan(solar_correlation):
+                solar_correlation = 0.0
+            solar_score = max(0.0, solar_correlation)
+
+            # 3. Balancing pattern match (30%)
+            # Pokud v obou případech balancing byl/nebyl aktivní podobně, score je vyšší
+            balancing_match = 1.0 - np.mean(np.abs(current_balancing - profile_balancing))
+            balancing_score = max(0.0, balancing_match)
+
+            # Weighted sum
+            similarity = (
+                WEIGHT_SPOT_PRICE * spot_score
+                + WEIGHT_SOLAR_FORECAST * solar_score
+                + WEIGHT_BALANCING_SUCCESS * balancing_score
+            )
+
+            return float(similarity)
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to calculate balancing similarity: {e}", exc_info=True)
+            return 0.0
+
+    async def _find_best_matching_balancing_pattern(
+        self,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Najít nejlepší matching 7d balancing profil pro aktuální situaci.
+        
+        Matching: Aktuální 48h vs. první 48h profilů
+        Predikce: Posledních 120h matched profilu
+        
+        Returns:
+            Dict s predikcí a match info, nebo None při chybě
+        """
+        if not self._hass:
+            return None
+
+        try:
+            # 1. Načíst aktuální 48h dat
+            current_data = await self._get_balancing_history_7d()
+
+            if not current_data or not current_data.get("hourly_data"):
+                _LOGGER.warning("Not enough current data for balancing matching")
+                return None
+
+            # Vezmi posledních 48h (nejnovější data)
+            all_current_data = current_data["hourly_data"]
+            current_48h = all_current_data[-BALANCING_MATCH_HOURS:]
+
+            # 2. Načíst historické profily
+            profiles = await self._load_balancing_profiles()
+
+            if not profiles:
+                _LOGGER.warning("No historical balancing profiles available for matching")
+                return None
+
+            # 3. Najít best match
+            best_match = None
+            best_score = 0.0
+
+            for profile in profiles:
+                # Vezmi první 48h z profilu
+                profile_data = profile.get("hourly_data", [])
+                if len(profile_data) != BALANCING_PROFILE_HOURS:
+                    continue
+
+                profile_first_48h = profile_data[:BALANCING_MATCH_HOURS]
+
+                # Spočítat similarity
+                score = await self._calculate_balancing_similarity(
+                    current_48h, profile_first_48h
+                )
+
+                if score > best_score:
+                    best_score = score
+                    best_match = profile
+
+            if not best_match:
+                _LOGGER.warning("No matching balancing profile found")
+                return None
+
+            # 4. Extrahovat predicted 120h (poslední 120h z matched profilu)
+            matched_data = best_match.get("hourly_data", [])
+            predicted_120h = matched_data[-BALANCING_PREDICT_HOURS:]
+
+            # Spočítat predikované metriky
+            predicted_balancing_hours = sum(
+                1 for h in predicted_120h if h["balancing_active"]
+            )
+            predicted_avg_spot_price = float(
+                np.mean([h["spot_price_czk"] for h in predicted_120h])
+            )
+
+            result = {
+                "matched_profile_created": best_match.get("created_at"),
+                "similarity_score": best_score,
+                "predicted_120h_data": predicted_120h,
+                "predicted_balancing_hours": predicted_balancing_hours,
+                "predicted_balancing_percentage": (
+                    predicted_balancing_hours / BALANCING_PREDICT_HOURS
+                )
+                * 100,
+                "predicted_avg_spot_price": predicted_avg_spot_price,
+                "matched_profile_balancing_hours": best_match.get("balancing_hours"),
+            }
+
+            _LOGGER.info(
+                f"🎯 Best matching balancing profile: score={best_score:.3f}, "
+                f"predicted_balancing_hours={predicted_balancing_hours}/120"
+            )
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Failed to find matching balancing pattern: {e}", exc_info=True
+            )
+            return None
+
     @property
     def native_value(self) -> str:
         """Return the state of the sensor."""
@@ -1727,6 +2373,13 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             "time_remaining": self._time_remaining,
             "planning_status": self._planning_status,  # idle/preparing/calculating/ok/error
             "planning_error": self._planning_error,  # Chyba při výpočtu pokud nastala
+            "balancing_profiling_status": self._balancing_profiling_status,  # idle/creating/ok/error
+            "balancing_profiling_error": self._balancing_profiling_error,  # Chyba při profiling pokud nastala
+            "last_balancing_profile_created": (
+                self._last_balancing_profile_created.isoformat()
+                if self._last_balancing_profile_created
+                else None
+            ),
         }
 
         # Config from config_entry
