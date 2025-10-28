@@ -2271,9 +2271,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 return 0.882
 
-            _LOGGER.debug(
-                f"Using battery efficiency: {efficiency:.3f} ({efficiency_pct}%)"
-            )
+            # Zakomentováno: Spamuje logy během DP optimalizace (23k iterací)
+            # _LOGGER.debug(
+            #     f"Using battery efficiency: {efficiency:.3f} ({efficiency_pct}%)"
+            # )
             return efficiency
 
         except (ValueError, TypeError) as e:
@@ -2299,9 +2300,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Convert kW to kWh/15min
         limit_kwh_15min = charging_power_kw / 4.0
 
-        _LOGGER.debug(
-            f"AC charging limit: {charging_power_kw} kW → {limit_kwh_15min} kWh/15min"
-        )
+        # Zakomentováno: Spamuje logy během DP optimalizace (23k iterací)
+        # _LOGGER.debug(
+        #     f"AC charging limit: {charging_power_kw} kW → {limit_kwh_15min} kWh/15min"
+        # )
 
         return limit_kwh_15min
 
@@ -2331,7 +2333,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             # Sensor může vracet buď int (0-3) nebo string ("Home I", "Home II", ...)
             mode_value = state.state
-            
+
             # Pokud je to string, převést na int
             if isinstance(mode_value, str):
                 # Mapování string → int
@@ -2341,7 +2343,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "Home III": CBB_MODE_HOME_III,
                     "Home UPS": CBB_MODE_HOME_UPS,
                 }
-                
+
                 if mode_value in mode_map:
                     mode = mode_map[mode_value]
                 else:
