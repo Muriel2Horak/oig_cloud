@@ -156,7 +156,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._planning_error = None
             if self._hass:
                 self.async_write_ha_state()
-                
+
             await self._wait_for_forecast_ready(timeout=300)
 
             _LOGGER.info("✅ Planning loop started - will run every hour")
@@ -188,7 +188,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     self._planning_error = None
                     if self._hass:
                         self.async_write_ha_state()
-                        
+
                     _LOGGER.info(
                         f"✅ Planning loop iteration completed at {self._last_planning_check}"
                     )
@@ -1375,7 +1375,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         mode: str,
     ) -> List[Dict[str, Any]]:
         """
-        Najít kandidátní okna pro balancování s využitím historical patterns.
+        Najít kandidátní okna pro balancování s využitím 72h consumption profiling.
 
         Args:
             timeline: Forecast timeline data
@@ -1386,16 +1386,56 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         Returns:
             List top 10 kandidátních oken seřazených podle score (nejlepší první)
         """
-        # 1. Načíst historical patterns
-        profiles = await self._load_balancing_profiles(weeks_back=52)
-        patterns = self._analyze_balancing_patterns(profiles)
+        # 1. Načíst 72h consumption prediction z adaptive_load_profiles senzoru
+        # Consumption profiling je v adaptive_load_profiles, ne v balancingu
+        consumption_prediction = None
+        try:
+            # Najít adaptive_load_profiles sensor entity
+            if self._hass:
+                entity_id = f"sensor.oig_{self._box_id}_adaptive_load_profiles"
 
-        preferred_hour = patterns.get("typical_charging_hour", 22)
+                # Projít všechny entity a najít náš sensor
+                from homeassistant.helpers import entity_platform
 
-        _LOGGER.info(
-            f"📊 Pattern analysis: {patterns['total_profiles']} profiles, "
-            f"typical hour={preferred_hour}:00, avg cost={patterns['avg_cost_overall']:.2f} Kč"
-        )
+                platforms = entity_platform.async_get_platforms(self._hass, "oig_cloud")
+
+                for platform in platforms:
+                    if platform.domain == "sensor":
+                        for entity in platform.entities.values():
+                            if (
+                                hasattr(entity, "entity_id")
+                                and entity.entity_id == entity_id
+                            ):
+                                if hasattr(entity, "get_current_prediction"):
+                                    consumption_prediction = (
+                                        entity.get_current_prediction()
+                                    )
+                                    break
+        except Exception as e:
+            _LOGGER.debug(
+                f"Could not get consumption prediction from adaptive_load_profiles: {e}"
+            )
+
+        if consumption_prediction:
+            predicted_24h = consumption_prediction.get("predicted_24h", [])
+            similarity = consumption_prediction.get("similarity_score", 0.0)
+            _LOGGER.info(
+                f"📊 Consumption prediction: similarity={similarity:.3f}, "
+                f"predicted_24h_total={sum(predicted_24h):.2f} kWh"
+            )
+            preferred_hour = 22  # Default když máme consumption prediction
+        else:
+            _LOGGER.warning(
+                "No consumption prediction available, using fallback patterns"
+            )
+            # Fallback: použít historické balancing patterns
+            profiles = await self._load_balancing_profiles(weeks_back=52)
+            patterns = self._analyze_balancing_patterns(profiles)
+            preferred_hour = patterns.get("typical_charging_hour", 22)
+            _LOGGER.info(
+                f"📊 Fallback pattern analysis: {patterns['total_profiles']} profiles, "
+                f"typical hour={preferred_hour}:00"
+            )
 
         # 2. Hledat možná okna v timeline
         candidates = []
