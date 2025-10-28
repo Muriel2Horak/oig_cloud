@@ -2,8 +2,6 @@
 
 import logging
 import asyncio
-import hashlib
-import json
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
@@ -22,11 +20,9 @@ from homeassistant.components.recorder import history
 _LOGGER = logging.getLogger(__name__)
 
 # 72h Consumption Profiling Constants
-PROFILE_EVENT_TYPE = "oig_cloud_consumption_profile_72h"
 PROFILE_HOURS = 72  # Délka profilu v hodinách
 PROFILE_MATCH_HOURS = 48  # Kolik hodin aktuálních dat používáme pro matching
 PROFILE_PREDICT_HOURS = 24  # Kolik hodin předpovídáme z matched profilu
-MAX_PROFILES = 365  # Maximum načtených profilů (1 rok denních profilů)
 
 # Similarity scoring weights
 WEIGHT_CORRELATION = 0.50  # Correlation coefficient weight
@@ -88,7 +84,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = name_cs or name_en or sensor_type
 
         # 72h Profiling storage
-        self._data_hash: Optional[str] = None  # MD5 hash of current profile data
         self._last_profile_created: Optional[datetime] = None
         self._profiling_status: str = "idle"  # idle/creating/ok/error
         self._profiling_error: Optional[str] = None
@@ -182,28 +177,24 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self.async_write_ha_state()
 
         consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
-        success = await self._create_consumption_profile(consumption_sensor)
+        
+        # Najít best matching profile přímo z aktuálních dat
+        # (nepotřebujeme ukládat do events - profily jsou on-the-fly)
+        prediction = await self._find_best_matching_profile(consumption_sensor)
 
-        if success:
+        if prediction:
             self._last_profile_created = dt_util.now()
             self._profiling_status = "ok"
             self._profiling_error = None
-
-            # Počkat na zápis eventu do recorderu (5s delay pro DB commit)
-            _LOGGER.debug("Waiting 5s for recorder to commit event to DB...")
-            await asyncio.sleep(5)
-
-            # Načíst best match a uložit do coordinatoru
-            prediction = await self._find_best_matching_profile(consumption_sensor)
             self._current_prediction = prediction
 
             _LOGGER.info(
-                f"✅ Profile created and prediction updated at {self._last_profile_created}"
+                f"✅ Profile updated: predicted {prediction.get('predicted_total_kwh', 0):.2f} kWh for next 24h"
             )
         else:
             self._profiling_status = "error"
             self._profiling_error = "Failed to create profile"
-            _LOGGER.warning("❌ Failed to create daily consumption profile")
+            _LOGGER.warning("❌ Failed to update consumption profile")
 
         if self._hass:
             self.async_write_ha_state()
@@ -216,7 +207,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         self, consumption_sensor_entity_id: str
     ) -> Optional[List[float]]:
         """
-        Načíst 72 hodin spotřeby z historie (hourly průměry).
+        Načíst 72 hodin spotřeby ze statistics tabulky (hourly průměry).
 
         Args:
             consumption_sensor_entity_id: Entity ID senzoru spotřeby
@@ -229,58 +220,87 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return None
 
         try:
+            from homeassistant.helpers.recorder import get_instance
+            from sqlalchemy import text
+
+            recorder_instance = get_instance(self._hass)
+            if not recorder_instance:
+                _LOGGER.error("Recorder instance not available")
+                return None
+
             end_time = dt_util.now()
             start_time = end_time - timedelta(hours=PROFILE_HOURS)
 
-            # Získat historical data
-            history_data = await self._hass.async_add_executor_job(
-                history.state_changes_during_period,
-                self._hass,
-                start_time,
-                end_time,
-                consumption_sensor_entity_id,
-            )
+            # SQL query pro statistics tabulku
+            def get_hourly_statistics():
+                """Query statistics table for hourly averages."""
+                from homeassistant.helpers.recorder import session_scope
 
-            if not history_data or consumption_sensor_entity_id not in history_data:
-                _LOGGER.warning(f"No history data for {consumption_sensor_entity_id}")
+                instance = get_instance(self._hass)
+                with session_scope(hass=self._hass, session=instance.get_session()) as session:
+                    start_ts = int(start_time.timestamp())
+                    end_ts = int(end_time.timestamp())
+
+                    query = text(
+                        """
+                        SELECT s.mean, s.start_ts
+                        FROM statistics s
+                        INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
+                        WHERE sm.statistic_id = :statistic_id
+                        AND s.start_ts >= :start_ts
+                        AND s.start_ts < :end_ts
+                        AND s.mean IS NOT NULL
+                        ORDER BY s.start_ts
+                        """
+                    )
+
+                    result = session.execute(
+                        query,
+                        {
+                            "statistic_id": consumption_sensor_entity_id,
+                            "start_ts": start_ts,
+                            "end_ts": end_ts,
+                        },
+                    )
+                    return result.fetchall()
+
+            # Execute query in executor
+            _LOGGER.debug(f"Loading 72h statistics for {consumption_sensor_entity_id}...")
+            stats_rows = await self._hass.async_add_executor_job(get_hourly_statistics)
+
+            if not stats_rows:
+                _LOGGER.warning(f"No statistics data for {consumption_sensor_entity_id}")
                 return None
 
-            states = history_data[consumption_sensor_entity_id]
-            if not states:
-                return None
+            # Convert to hourly consumption list
+            hourly_data = {}
+            for row in stats_rows:
+                try:
+                    mean_value = float(row[0])  # mean power in W
+                    timestamp_ts = float(row[1])  # UNIX timestamp
 
-            # Seskupit do hodinových průměrů
+                    # Convert to datetime
+                    timestamp = datetime.fromtimestamp(timestamp_ts, tz=dt_util.UTC)
+
+                    # Sanity check
+                    if mean_value < 0 or mean_value > 20000:
+                        continue
+
+                    # Calculate hour offset from start
+                    hour_offset = int((timestamp - start_time).total_seconds() / 3600)
+                    if 0 <= hour_offset < PROFILE_HOURS:
+                        # W → kWh (hourly average)
+                        hourly_data[hour_offset] = mean_value / 1000.0
+
+                except (ValueError, AttributeError, IndexError):
+                    continue
+
+            # Build final list with 0 for missing hours
             hourly_consumption = []
             for hour_offset in range(PROFILE_HOURS):
-                hour_start = start_time + timedelta(hours=hour_offset)
-                hour_end = hour_start + timedelta(hours=1)
-
-                # Filtrace states v této hodině
-                hour_states = [
-                    s
-                    for s in states
-                    if hour_start <= dt_util.as_local(s.last_changed) < hour_end
-                ]
-
-                if hour_states:
-                    # Průměr power values (W) → convert to kWh
-                    # sensor.oig_*_actual_aco_p je v WATTECH
-                    power_values = []
-                    for s in hour_states:
-                        try:
-                            power_values.append(float(s.state))
-                        except (ValueError, TypeError):
-                            continue
-
-                    if power_values:
-                        # Average power v Wattech → kWh pro 1 hodinu
-                        avg_power_w = float(np.mean(power_values))
-                        hourly_kwh = avg_power_w / 1000.0  # W → kWh (za 1h)
-                        hourly_consumption.append(hourly_kwh)
-                    else:
-                        hourly_consumption.append(0.0)
+                if hour_offset in hourly_data:
+                    hourly_consumption.append(hourly_data[hour_offset])
                 else:
-                    # Žádná data - použít 0
                     hourly_consumption.append(0.0)
 
             if len(hourly_consumption) != PROFILE_HOURS:
@@ -289,125 +309,127 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 )
                 return None
 
+            total_kwh = sum(hourly_consumption)
+            _LOGGER.info(
+                f"✅ Loaded 72h statistics: {len(stats_rows)} records, total {total_kwh:.2f} kWh"
+            )
+
             return hourly_consumption
 
         except Exception as e:
             _LOGGER.error(f"Failed to get consumption history: {e}", exc_info=True)
             return None
 
-    async def _create_consumption_profile(
-        self, consumption_sensor_entity_id: str
-    ) -> bool:
+    async def _load_historical_profiles(
+        self, consumption_sensor_entity_id: str, days_back: int = 90
+    ) -> List[Dict[str, Any]]:
         """
-        Vytvořit nový 72h consumption profil a uložit do recorderu.
+        Načíst historické 72h profily ze statistics (sliding window po dnech).
 
         Args:
             consumption_sensor_entity_id: Entity ID senzoru spotřeby
+            days_back: Kolik dní zpět načíst (default 90 = ~3 měsíce)
 
         Returns:
-            True pokud úspěch, False při chybě
+            List profilů, každý profil = 72h consumption data
         """
         if not self._hass:
-            return False
-
-        try:
-            # Načíst 72h data
-            consumption_data = await self._get_consumption_history_72h(
-                consumption_sensor_entity_id
-            )
-
-            if not consumption_data:
-                _LOGGER.warning("Cannot create profile - no consumption data")
-                return False
-
-            # Připravit event data
-            now = dt_util.now()
-            profile_data = {
-                "box_id": self._box_id,
-                "created_at": now.isoformat(),
-                "profile_hours": PROFILE_HOURS,
-                "consumption_kwh": consumption_data,  # List[float] - 72 hodin
-                "total_consumption": float(np.sum(consumption_data)),
-                "avg_consumption": float(np.mean(consumption_data)),
-                "max_consumption": float(np.max(consumption_data)),
-                "min_consumption": float(np.min(consumption_data)),
-            }
-
-            # Spočítat hash pro change detection
-            self._data_hash = self._calculate_data_hash(profile_data)
-
-            # Fire event do recorderu
-            self._hass.bus.async_fire(
-                PROFILE_EVENT_TYPE,
-                profile_data,
-            )
-
-            _LOGGER.info(
-                f"📊 Created 72h consumption profile: "
-                f"total={profile_data['total_consumption']:.2f} kWh, "
-                f"avg={profile_data['avg_consumption']:.3f} kWh/h, "
-                f"hash={self._data_hash[:8]}"
-            )
-
-            return True
-
-        except Exception as e:
-            _LOGGER.error(f"Failed to create consumption profile: {e}", exc_info=True)
-            return False
-
-    async def _load_consumption_profiles(
-        self, max_profiles: int = MAX_PROFILES
-    ) -> List[Dict[str, Any]]:
-        """
-        Načíst 72h consumption profily z recorderu.
-
-        Args:
-            max_profiles: Maximum načtených profilů (default 365)
-
-        Returns:
-            List profilů seřazených od nejnovějšího
-        """
-        if not self._hass:
-            _LOGGER.warning("Cannot load profiles - no hass instance")
             return []
 
         try:
             from homeassistant.helpers.recorder import get_instance
             from sqlalchemy import text
 
-            recorder = get_instance(self._hass)
-            if not recorder or not recorder.engine:
-                _LOGGER.warning("Recorder not available")
+            recorder_instance = get_instance(self._hass)
+            if not recorder_instance:
+                _LOGGER.error("Recorder instance not available")
                 return []
 
-            # Načíst max_profiles nejnovějších
-            with recorder.engine.connect() as conn:
-                query = text(
-                    """
-                    SELECT event_data
-                    FROM events
-                    WHERE event_type = :event_type
-                    AND JSON_EXTRACT(event_data, '$.box_id') = :box_id
-                    ORDER BY time_fired DESC
-                    LIMIT :limit
-                """
-                )
+            end_time = dt_util.now()
+            start_time = end_time - timedelta(days=days_back)
 
-                result = conn.execute(
-                    query,
-                    {
-                        "event_type": PROFILE_EVENT_TYPE,
-                        "box_id": self._box_id,
-                        "limit": max_profiles,
-                    },
-                )
-                profiles = [json.loads(row[0]) for row in result]
+            # Načíst všechna dostupná data z statistics tabulky
+            def get_all_statistics():
+                """Query statistics for all hourly averages."""
+                from homeassistant.helpers.recorder import session_scope
 
-            _LOGGER.debug(f"Loaded {len(profiles)} consumption profiles from recorder")
+                instance = get_instance(self._hass)
+                with session_scope(hass=self._hass, session=instance.get_session()) as session:
+                    start_ts = int(start_time.timestamp())
+                    end_ts = int(end_time.timestamp())
+
+                    query = text(
+                        """
+                        SELECT s.mean, s.start_ts
+                        FROM statistics s
+                        INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
+                        WHERE sm.statistic_id = :statistic_id
+                        AND s.start_ts >= :start_ts
+                        AND s.start_ts < :end_ts
+                        AND s.mean IS NOT NULL
+                        ORDER BY s.start_ts
+                        """
+                    )
+
+                    result = session.execute(
+                        query,
+                        {
+                            "statistic_id": consumption_sensor_entity_id,
+                            "start_ts": start_ts,
+                            "end_ts": end_ts,
+                        },
+                    )
+                    return result.fetchall()
+
+            # Execute query
+            _LOGGER.debug(f"Loading historical statistics for profile matching ({days_back} days)...")
+            stats_rows = await self._hass.async_add_executor_job(get_all_statistics)
+
+            if not stats_rows:
+                _LOGGER.warning(f"No historical statistics data for {consumption_sensor_entity_id}")
+                return []
+
+            # Convert to hourly consumption array
+            hourly_data = []
+            for row in stats_rows:
+                try:
+                    mean_value = float(row[0])  # mean power in W
+
+                    # Sanity check
+                    if mean_value < 0 or mean_value > 20000:
+                        continue
+
+                    # W → kWh
+                    hourly_data.append(mean_value / 1000.0)
+
+                except (ValueError, AttributeError, IndexError):
+                    continue
+
+            if len(hourly_data) < PROFILE_HOURS:
+                _LOGGER.warning(f"Not enough historical data: {len(hourly_data)} hours")
+                return []
+
+            # Create sliding window profiles (každý den = nový profil)
+            # Posuneme o 24h, takže každý profil je jiný den+předchozích 48h
+            profiles = []
+            step = 24  # Posun po 24h (1 den)
+
+            for i in range(0, len(hourly_data) - PROFILE_HOURS + 1, step):
+                profile_data = hourly_data[i:i + PROFILE_HOURS]
+                
+                if len(profile_data) == PROFILE_HOURS:
+                    profiles.append({
+                        "consumption_kwh": profile_data,
+                        "total_consumption": float(np.sum(profile_data)),
+                        "avg_consumption": float(np.mean(profile_data)),
+                    })
+
+            _LOGGER.info(f"✅ Loaded {len(profiles)} historical 72h profiles from {len(hourly_data)} hours of data")
+
             return profiles
 
         except Exception as e:
-            _LOGGER.error(f"Failed to load consumption profiles: {e}", exc_info=True)
+            _LOGGER.error(f"Failed to load historical profiles: {e}", exc_info=True)
             return []
 
     def _calculate_profile_similarity(
@@ -505,8 +527,8 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             # Vezmi posledních 48h (nejnovější data)
             current_48h = current_72h[-PROFILE_MATCH_HOURS:]
 
-            # 2. Načíst historické profily
-            profiles = await self._load_consumption_profiles()
+            # 2. Načíst historické profily ze statistics (několik týdnů dat, rozdělených na 72h bloky)
+            profiles = await self._load_historical_profiles(current_consumption_sensor)
 
             if not profiles:
                 _LOGGER.warning("No historical profiles available for matching")
@@ -561,15 +583,13 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(f"Failed to find matching profile: {e}", exc_info=True)
             return None
 
-    def _calculate_data_hash(self, data: Dict[str, Any]) -> str:
-        """Calculate MD5 hash of profile data for change detection."""
-        data_string = json.dumps(data, sort_keys=True)
-        return hashlib.md5(data_string.encode()).hexdigest()
-
     @property
     def native_value(self) -> Optional[str]:
-        """Return hash of current profile data."""
-        return self._data_hash[:8] if self._data_hash else "no_data"
+        """Return profiling status."""
+        if self._current_prediction:
+            total = self._current_prediction.get("predicted_total_kwh", 0)
+            return f"{total:.1f} kWh"
+        return "no_data"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -582,7 +602,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 if self._last_profile_created
                 else None
             ),
-            "data_hash": self._data_hash,
         }
 
         # Add prediction summary if available
