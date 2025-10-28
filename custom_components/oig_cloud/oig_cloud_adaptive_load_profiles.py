@@ -259,16 +259,20 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 ]
 
                 if hour_states:
-                    # Průměr hodnot v této hodině
-                    values = []
+                    # Průměr power values (W) → convert to kWh
+                    # sensor.oig_*_actual_aco_p je v WATTECH
+                    power_values = []
                     for s in hour_states:
                         try:
-                            values.append(float(s.state))
+                            power_values.append(float(s.state))
                         except (ValueError, TypeError):
                             continue
 
-                    if values:
-                        hourly_consumption.append(float(np.mean(values)))
+                    if power_values:
+                        # Average power v Wattech → kWh pro 1 hodinu
+                        avg_power_w = float(np.mean(power_values))
+                        hourly_kwh = avg_power_w / 1000.0  # W → kWh (za 1h)
+                        hourly_consumption.append(hourly_kwh)
                     else:
                         hourly_consumption.append(0.0)
                 else:
