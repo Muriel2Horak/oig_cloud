@@ -8618,6 +8618,11 @@ async function updateWhatIfAnalysis() {
         console.log('[What-if] Battery forecast sensor not available');
         updateElementIfChanged('whatif-optimized-cost', '--', 'whatif-main');
         updateElementIfChanged('whatif-savings-main', '--', 'whatif-savings');
+        updateElementIfChanged('whatif-home-i-delta', '--', 'whatif-home-i');
+        updateElementIfChanged('whatif-home-ii-delta', '--', 'whatif-home-ii');
+        updateElementIfChanged('whatif-home-iii-delta', '--', 'whatif-home-iii');
+        updateElementIfChanged('whatif-full-ups-delta', '--', 'whatif-full-ups');
+        updateElementIfChanged('whatif-do-nothing-delta', '--', 'whatif-do-nothing');
         return;
     }
 
@@ -8627,7 +8632,7 @@ async function updateWhatIfAnalysis() {
     const whatifData = attrs.whatif_analysis || {};
     const alternatives = whatifData.alternatives || [];
 
-    // Calculate total cost and savings from recommendations
+    // Calculate total cost and savings from recommendations (optimized plan)
     let totalCost = 0;
     let totalSavings = 0;
 
@@ -8636,7 +8641,7 @@ async function updateWhatIfAnalysis() {
         totalSavings += block.savings_vs_home_i || 0;
     });
 
-    // Update compact What-if card
+    // Update optimized cost and savings
     updateElementIfChanged('whatif-optimized-cost', `${totalCost.toFixed(2)} Kč`, 'whatif-main');
 
     if (totalSavings > 0) {
@@ -8646,6 +8651,33 @@ async function updateWhatIfAnalysis() {
     } else {
         updateElementIfChanged('whatif-savings-main', '0 Kč', 'whatif-savings');
     }
+
+    // Update what-if alternatives comparison
+    // Find each alternative and calculate delta (positive = would cost more, negative = would cost less)
+    const homeI = alternatives.find(a => a.scenario_name === 'HOME I');
+    const homeII = alternatives.find(a => a.scenario_name === 'HOME II');
+    const homeIII = alternatives.find(a => a.scenario_name === 'HOME III');
+    const fullUps = alternatives.find(a => a.scenario_name === 'FULL HOME UPS');
+    const doNothing = alternatives.find(a => a.scenario_name === 'DO NOTHING');
+
+    // Format deltas (positive means alternative is more expensive - we save by using optimized)
+    const formatDelta = (alt) => {
+        if (!alt || alt.cost_difference === undefined) return '--';
+        const delta = alt.cost_difference;
+        if (delta > 0.01) {
+            return `+${delta.toFixed(2)} Kč`;
+        } else if (delta < -0.01) {
+            return `${delta.toFixed(2)} Kč`;
+        } else {
+            return '~0 Kč';
+        }
+    };
+
+    updateElementIfChanged('whatif-home-i-delta', formatDelta(homeI), 'whatif-home-i');
+    updateElementIfChanged('whatif-home-ii-delta', formatDelta(homeII), 'whatif-home-ii');
+    updateElementIfChanged('whatif-home-iii-delta', formatDelta(homeIII), 'whatif-home-iii');
+    updateElementIfChanged('whatif-full-ups-delta', formatDelta(fullUps), 'whatif-full-ups');
+    updateElementIfChanged('whatif-do-nothing-delta', formatDelta(doNothing), 'whatif-do-nothing');
 }
 
 
