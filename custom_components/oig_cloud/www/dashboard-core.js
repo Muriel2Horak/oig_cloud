@@ -8621,8 +8621,7 @@ async function updateWhatIfAnalysis() {
         updateElementIfChanged('whatif-home-i-delta', '--', 'whatif-home-i');
         updateElementIfChanged('whatif-home-ii-delta', '--', 'whatif-home-ii');
         updateElementIfChanged('whatif-home-iii-delta', '--', 'whatif-home-iii');
-        updateElementIfChanged('whatif-full-ups-delta', '--', 'whatif-full-ups');
-        updateElementIfChanged('whatif-do-nothing-delta', '--', 'whatif-do-nothing');
+        updateElementIfChanged('whatif-home-ups-delta', '--', 'whatif-home-ups');
         return;
     }
 
@@ -8652,12 +8651,12 @@ async function updateWhatIfAnalysis() {
         updateElementIfChanged('whatif-savings-main', '0 Kč', 'whatif-savings');
     }
 
-    // Update what-if alternatives comparison
-    // Find each alternative and calculate delta (positive = would cost more, negative = would cost less)
+    // Update what-if alternatives comparison - 4 modes only
+    // Find each alternative
     const homeI = alternatives.find(a => a.scenario_name === 'HOME I');
     const homeII = alternatives.find(a => a.scenario_name === 'HOME II');
     const homeIII = alternatives.find(a => a.scenario_name === 'HOME III');
-    const fullUps = alternatives.find(a => a.scenario_name === 'FULL HOME UPS');
+    const homeUps = alternatives.find(a => a.scenario_name === 'FULL HOME UPS' || a.scenario_name === 'HOME UPS');
     const doNothing = alternatives.find(a => a.scenario_name === 'DO NOTHING');
 
     // Format deltas (positive means alternative is more expensive - we save by using optimized)
@@ -8673,11 +8672,47 @@ async function updateWhatIfAnalysis() {
         }
     };
 
+    // Update values
     updateElementIfChanged('whatif-home-i-delta', formatDelta(homeI), 'whatif-home-i');
     updateElementIfChanged('whatif-home-ii-delta', formatDelta(homeII), 'whatif-home-ii');
     updateElementIfChanged('whatif-home-iii-delta', formatDelta(homeIII), 'whatif-home-iii');
-    updateElementIfChanged('whatif-full-ups-delta', formatDelta(fullUps), 'whatif-full-ups');
-    updateElementIfChanged('whatif-do-nothing-delta', formatDelta(doNothing), 'whatif-do-nothing');
+    updateElementIfChanged('whatif-home-ups-delta', formatDelta(homeUps), 'whatif-home-ups');
+
+    // Highlight active mode (DO NOTHING = current mode)
+    // Reset all rows first
+    const rows = ['whatif-home-i-row', 'whatif-home-ii-row', 'whatif-home-iii-row', 'whatif-home-ups-row'];
+    rows.forEach(rowId => {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.style.background = 'transparent';
+            row.style.border = 'none';
+        }
+    });
+
+    // Highlight the active one (if DO NOTHING exists, check which mode it represents)
+    if (doNothing && doNothing.explanation) {
+        // Try to detect current mode from DO NOTHING explanation or scenario name
+        const activeMode = doNothing.scenario_name || '';
+        let activeRowId = null;
+
+        if (activeMode.includes('HOME I') || (homeI && Math.abs((homeI.total_cost || 0) - (doNothing.total_cost || 0)) < 0.01)) {
+            activeRowId = 'whatif-home-i-row';
+        } else if (activeMode.includes('HOME II') || (homeII && Math.abs((homeII.total_cost || 0) - (doNothing.total_cost || 0)) < 0.01)) {
+            activeRowId = 'whatif-home-ii-row';
+        } else if (activeMode.includes('HOME III') || (homeIII && Math.abs((homeIII.total_cost || 0) - (doNothing.total_cost || 0)) < 0.01)) {
+            activeRowId = 'whatif-home-iii-row';
+        } else if (activeMode.includes('UPS') || (homeUps && Math.abs((homeUps.total_cost || 0) - (doNothing.total_cost || 0)) < 0.01)) {
+            activeRowId = 'whatif-home-ups-row';
+        }
+
+        if (activeRowId) {
+            const activeRow = document.getElementById(activeRowId);
+            if (activeRow) {
+                activeRow.style.background = 'rgba(76, 175, 80, 0.15)';
+                activeRow.style.border = '1px solid rgba(76, 175, 80, 0.3)';
+            }
+        }
+    }
 }
 
 
