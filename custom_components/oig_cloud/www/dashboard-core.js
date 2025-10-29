@@ -8625,20 +8625,15 @@ async function updateWhatIfAnalysis() {
         return;
     }
 
-    // Get mode_recommendations and mode_optimization data
+    // Get mode_optimization data (still in attributes)
     const attrs = forecastSensor.attributes || {};
-    const recommendations = attrs.mode_recommendations || [];
     const modeOptData = attrs.mode_optimization || {};
     const alternatives = modeOptData.alternatives || {};
 
-    // Calculate total cost and savings from recommendations (optimized plan)
-    let totalCost = 0;
-    let totalSavings = 0;
-
-    recommendations.forEach(block => {
-        totalCost += block.total_cost || 0;
-        totalSavings += block.savings_vs_home_i || 0;
-    });
+    // Phase 2.8: Use cached totals from mode_optimization instead of summing blocks
+    // (mode_recommendations are per-interval, mode_optimization has pre-calculated totals for DNES+ZÍTRA)
+    const totalCost = modeOptData.total_cost_czk || 0;
+    const totalSavings = modeOptData.total_savings_vs_home_i_czk || 0;
 
     // Update optimized cost and savings
     updateElementIfChanged('whatif-optimized-cost', `${totalCost.toFixed(2)} Kč`, 'whatif-main');

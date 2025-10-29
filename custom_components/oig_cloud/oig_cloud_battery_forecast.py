@@ -275,7 +275,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         ):
             mo = self._mode_optimization_result
             attrs["mode_optimization"] = {
-                "total_cost_czk": round(mo.get("total_cost", 0), 2),
+                # Phase 2.8: Use 48h cost for frontend tile (DNES+ZÍTRA only)
+                "total_cost_czk": round(mo.get("total_cost_48h", 0), 2),
+                "total_savings_vs_home_i_czk": round(mo.get("total_savings_48h", 0), 2),
+                "total_cost_72h_czk": round(
+                    mo.get("total_cost", 0), 2
+                ),  # For reference
                 "modes_distribution": {
                     "HOME_I": mo["optimal_modes"].count(0),
                     "HOME_II": mo["optimal_modes"].count(1),
@@ -1913,6 +1918,83 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             prev_mode = current_mode
 
+        # =====================================================================
+        # POST-PROCESSING 2: Minimální délka bloku (kvůli switching overhead)
+        # =====================================================================
+        # Problém: Přepnutí režimu trvá ~5 min tam + 5 min zpět = 10 min overhead
+        # Pro 15min blok = 67% času v přechodovém stavu → neefektivní
+        # Řešení: Sloučit bloky kratší než 2 intervaly (30 min)
+
+        MIN_BLOCK_INTERVALS = 2  # 30 minut (2 × 15min)
+
+        # Identifikovat krátké bloky
+        mode_changes = []
+        current_block_start = 0
+        current_block_mode = optimal_modes[0]
+
+        for t in range(1, n_intervals):
+            if optimal_modes[t] != current_block_mode:
+                # Konec bloku
+                block_length = t - current_block_start
+                mode_changes.append(
+                    {
+                        "start": current_block_start,
+                        "end": t,
+                        "mode": current_block_mode,
+                        "length": block_length,
+                    }
+                )
+                current_block_start = t
+                current_block_mode = optimal_modes[t]
+
+        # Poslední blok
+        block_length = n_intervals - current_block_start
+        mode_changes.append(
+            {
+                "start": current_block_start,
+                "end": n_intervals,
+                "mode": current_block_mode,
+                "length": block_length,
+            }
+        )
+
+        # Sloučit krátké bloky s sousedními
+        merged_blocks = []
+        i = 0
+        while i < len(mode_changes):
+            block = mode_changes[i]
+
+            if block["length"] < MIN_BLOCK_INTERVALS and len(merged_blocks) > 0:
+                # Krátký blok - sloučit s předchozím
+                prev_block = merged_blocks[-1]
+                # Rozhodnout: použít režim předchozího nebo následujícího?
+                # Preferovat režim, který je "bližší" k tomuto (méně nákladný přechod)
+                # Pro jednoduchost: vždy použít režim předchozího bloku
+                for t in range(block["start"], block["end"]):
+                    optimal_modes[t] = prev_block["mode"]
+                    optimal_timeline[t]["mode"] = prev_block["mode"]
+                    optimal_timeline[t]["mode_name"] = self._get_mode_name(
+                        prev_block["mode"]
+                    )
+
+                # Rozšířit předchozí blok
+                prev_block["end"] = block["end"]
+                prev_block["length"] += block["length"]
+
+                _LOGGER.debug(
+                    f"Merged short block ({block['length']} intervals, mode {block['mode']}) "
+                    f"with previous block (mode {prev_block['mode']})"
+                )
+            else:
+                merged_blocks.append(block)
+
+            i += 1
+
+        _LOGGER.info(
+            f"Block merging: {len(mode_changes)} blocks → {len(merged_blocks)} blocks "
+            f"(removed {len(mode_changes) - len(merged_blocks)} short blocks < {MIN_BLOCK_INTERVALS} intervals)"
+        )
+
         _LOGGER.info(
             f"DP optimization completed: total_cost={total_cost:.2f} Kč, "
             f"modes distribution (pre-optimization): HOME I={optimal_modes.count(0)}, "
@@ -2090,10 +2172,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"from {mode_recommendations[0].get('from_time', '')[:16]}"
             )
 
+        # Phase 2.8: Calculate total_cost POUZE za DNES+ZÍTRA (48h max)
+        # Frontend dlaždice má zobrazovat náklady pouze za dnešek a zítřek
+        now = datetime.now()
+        today = now.date()
+        today_start = datetime.combine(today, datetime.min.time())
+        tomorrow_end = datetime.combine(today + timedelta(days=1), datetime.max.time())
+
+        total_cost_48h = 0.0
+        for interval in optimal_timeline:
+            try:
+                interval_time = datetime.fromisoformat(interval.get("time", ""))
+                if today_start <= interval_time <= tomorrow_end:
+                    total_cost_48h += interval.get("net_cost", 0.0)
+            except:
+                pass
+
+        # Calculate total savings vs HOME I for DNES+ZÍTRA
+        total_savings_48h = 0.0
+        if mode_recommendations:
+            for block in mode_recommendations:
+                total_savings_48h += block.get("savings_vs_home_i", 0.0)
+
+        _LOGGER.info(
+            f"Cost breakdown: 72h total={total_cost:.2f} Kč, "
+            f"48h (DNES+ZÍTRA)={total_cost_48h:.2f} Kč, savings={total_savings_48h:.2f} Kč"
+        )
+
         return {
             "optimal_modes": optimal_modes,
             "optimal_timeline": optimal_timeline,
-            "total_cost": total_cost,
+            "total_cost": total_cost,  # 72h total (for DP comparison)
+            "total_cost_48h": total_cost_48h,  # DNES+ZÍTRA only (for frontend tile)
+            "total_savings_48h": total_savings_48h,  # Savings vs HOME I for DNES+ZÍTRA
             "alternatives": alternatives,  # Phase 2.6: What-if comparison
             "mode_recommendations": mode_recommendations,  # Phase 2.6: User-friendly schedule
         }
