@@ -853,11 +853,32 @@
                 </div>
 
                 <!-- What-if Analysis Card -->
-                <div class="stat-card" style="background: linear-gradient(135deg, rgba(156, 39, 176, 0.15) 0%, rgba(156, 39, 176, 0.05) 100%); border: 1px solid rgba(156, 39, 176, 0.3); min-height: 160px;">
+                <div class="stat-card" style="background: linear-gradient(135deg, rgba(156, 39, 176, 0.15) 0%, rgba(156, 39, 176, 0.05) 100%); border: 1px solid rgba(156, 39, 176, 0.3); min-height: 400px;">
                     <div class="stat-label" style="color: #9C27B0; font-weight: 600;">🔮 What-if analýza</div>
                     <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">Optimalizace vs. alternativy</div>
                     <div class="stat-value" id="whatif-savings-main" style="font-size: 1.8em; margin: 10px 0; color: #4CAF50;">--</div>
                     <div id="whatif-best-alternative" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+
+                    <!-- Performance Tracking Chart -->
+                    <div style="margin: 15px 0; padding: 10px; background: rgba(156, 39, 176, 0.08); border-radius: 6px;">
+                        <div style="font-size: 0.8em; color: #9C27B0; font-weight: 600; margin-bottom: 8px;">📊 Očekávané vs. skutečné náklady (30 dní)</div>
+                        <canvas id="performance-chart" style="max-height: 120px;"></canvas>
+                        <div id="performance-summary" style="margin-top: 8px; font-size: 0.75em; color: var(--text-secondary); display: flex; justify-content: space-around;">
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-accuracy">--</div>
+                                <div>Přesnost</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-savings">--</div>
+                                <div>Úspory měsíc</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-days">--</div>
+                                <div>Dní měřeno</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>🏠 HOME I:</span>

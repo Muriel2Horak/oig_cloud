@@ -3920,6 +3920,9 @@ async function loadData() {
     // Phase 2.6: Update what-if analysis and mode recommendations
     updateWhatIfAnalysis();
     updateModeRecommendations();
+
+    // Phase 2.7: Update performance tracking chart
+    updatePerformanceChart();
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -5278,6 +5281,9 @@ function init() {
 
     // Initialize tooltip system
     initTooltips();
+
+    // Phase 2.7: Initialize performance tracking chart
+    initPerformanceChart();
 
     // OPRAVA: Počkat na dokončení layout načtení před voláním loadData()
     // Pokud byl načten custom layout, particles byly zastaveny
@@ -8749,6 +8755,197 @@ async function updateModeRecommendations() {
 
     container.innerHTML = html;
 }
+
+// ============================================================================
+// PHASE 2.7: PERFORMANCE TRACKING CHART
+// ============================================================================
+
+let performanceChart = null;
+
+/**
+ * Initialize performance tracking chart
+ */
+function initPerformanceChart() {
+    const canvas = document.getElementById('performance-chart');
+    if (!canvas) {
+        console.log('[Performance Chart] Canvas not found');
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
+
+    // Create Chart.js instance
+    performanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Očekávané náklady',
+                    data: [],
+                    backgroundColor: 'rgba(156, 39, 176, 0.5)',
+                    borderColor: 'rgba(156, 39, 176, 0.8)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Skutečné náklady',
+                    data: [],
+                    backgroundColor: 'rgba(76, 175, 80, 0.5)',
+                    borderColor: 'rgba(76, 175, 80, 0.8)',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 3,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary') || '#333',
+                        font: {
+                            size: 10
+                        },
+                        boxWidth: 12,
+                        padding: 8
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            label += context.parsed.y.toFixed(2) + ' Kč';
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary') || '#666',
+                        font: {
+                            size: 9
+                        },
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary') || '#666',
+                        font: {
+                            size: 9
+                        },
+                        callback: function(value) {
+                            return value.toFixed(0) + ' Kč';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(156, 39, 176, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+
+    console.log('[Performance Chart] Initialized');
+}
+
+/**
+ * Update performance tracking chart with latest data
+ */
+async function updatePerformanceChart() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const performanceSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast_performance`;
+    const performanceSensor = hass.states[performanceSensorId];
+
+    // Check if sensor is available
+    if (!performanceSensor || performanceSensor.state === 'unavailable' || performanceSensor.state === 'unknown') {
+        console.log('[Performance Chart] Performance sensor not available');
+
+        // Update summary with placeholder
+        updateElementIfChanged('perf-accuracy', '--', 'perf-acc');
+        updateElementIfChanged('perf-savings', '--', 'perf-sav');
+        updateElementIfChanged('perf-days', '--', 'perf-days');
+
+        return;
+    }
+
+    const attrs = performanceSensor.attributes || {};
+    const dailyHistory = attrs.daily_history || [];
+    const monthlySummary = attrs.monthly_summary || {};
+    const today = attrs.today || {};
+    const yesterday = attrs.yesterday || {};
+
+    // Update summary stats
+    const accuracy = monthlySummary.avg_accuracy || yesterday.accuracy || null;
+    const totalSavings = monthlySummary.total_savings || 0;
+    const daysTracked = monthlySummary.days_tracked || 0;
+
+    updateElementIfChanged('perf-accuracy',
+        accuracy !== null ? `${accuracy.toFixed(1)}%` : '--',
+        'perf-acc');
+    updateElementIfChanged('perf-savings',
+        totalSavings > 0 ? `+${totalSavings.toFixed(1)} Kč` : totalSavings < 0 ? `${totalSavings.toFixed(1)} Kč` : '0 Kč',
+        'perf-sav');
+    updateElementIfChanged('perf-days',
+        daysTracked > 0 ? `${daysTracked} dní` : '--',
+        'perf-days');
+
+    // Update chart if initialized
+    if (!performanceChart) {
+        initPerformanceChart();
+        if (!performanceChart) return;
+    }
+
+    // Prepare chart data (last 30 days)
+    const last30Days = dailyHistory.slice(-30);
+
+    const labels = [];
+    const expectedData = [];
+    const actualData = [];
+
+    last30Days.forEach(day => {
+        // Format date (DD.MM)
+        const dateStr = day.date || '';
+        const dateParts = dateStr.split('-');
+        if (dateParts.length === 3) {
+            labels.push(`${dateParts[2]}.${dateParts[1]}`);
+        } else {
+            labels.push(dateStr);
+        }
+
+        expectedData.push(day.expected || 0);
+        actualData.push(day.actual || 0);
+    });
+
+    // Update chart data
+    performanceChart.data.labels = labels;
+    performanceChart.data.datasets[0].data = expectedData;
+    performanceChart.data.datasets[1].data = actualData;
+
+    // Update chart
+    performanceChart.update('none'); // 'none' = no animation for performance
+
+    console.log(`[Performance Chart] Updated with ${last30Days.length} days`);
+}
+
+// ============================================================================
+// END PHASE 2.7
+// ============================================================================
 
 // Toggle ČHMÚ warning modal
 function toggleChmuWarningModal() {

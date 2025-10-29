@@ -831,6 +831,9 @@ async def async_setup_entry(
     if battery_prediction_enabled:
         try:
             from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
+            from .oig_cloud_battery_forecast import (
+                OigCloudBatteryForecastPerformanceSensor,
+            )
 
             battery_forecast_sensors: List[Any] = []
             if SENSOR_TYPES:
@@ -878,9 +881,27 @@ async def async_setup_entry(
                         hass,
                     )
                     async_add_entities([health_sensor], True)
-                    _LOGGER.info("✅ Registered Battery Health (SoH) sensor")
+                    _LOGGER.info("✅ Registered Battery Health sensor")
                 except Exception as e:
-                    _LOGGER.error(f"Error creating battery health sensor: {e}")
+                    _LOGGER.error(f"Failed to create Battery Health sensor: {e}")
+
+                # Přidat Battery Forecast Performance sensor (Phase 2.7)
+                try:
+                    performance_sensor = OigCloudBatteryForecastPerformanceSensor(
+                        coordinator,
+                        "battery_forecast_performance",
+                        entry,
+                        analytics_device_info,
+                        hass,
+                    )
+                    async_add_entities([performance_sensor], True)
+                    _LOGGER.info(
+                        "✅ Registered Battery Forecast Performance tracking sensor"
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        f"Failed to create Battery Forecast Performance sensor: {e}"
+                    )
 
                 # Přidat také battery balancing sensor
                 try:

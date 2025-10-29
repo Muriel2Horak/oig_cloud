@@ -1,6 +1,7 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
 import logging
+import math
 import numpy as np
 import copy
 import json
@@ -131,6 +132,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._data_hash: Optional[str] = (
             None  # MD5 hash of timeline_data for efficient change detection
         )
+
+        # Phase 2.7: HOME I timeline cache for savings calculation
+        self._home_i_timeline_cache: List[Dict[str, Any]] = []
 
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
@@ -597,9 +601,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # - HOME UPS: Charges from grid, holds 100%, consumption from grid (DIFFERENT)
         #
         # This short-circuit saves 67% of DP computation time at night!
-        if solar_kwh < 0.001 and mode in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]:
+        if solar_kwh < 0.001 and mode in [
+            CBB_MODE_HOME_I,
+            CBB_MODE_HOME_II,
+            CBB_MODE_HOME_III,
+        ]:
             # Night mode (FVE=0): HOME I/II/III identical → discharge battery to load
             available_battery = battery_soc - min_capacity
+            
+            # VALIDATION: Never discharge below minimum
+            if available_battery < 0:
+                available_battery = 0.0
+                
             discharge_amount = min(load_kwh, available_battery / efficiency)
 
             if discharge_amount > 0.001:
@@ -615,8 +628,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Net cost
             result["net_cost"] = result["grid_cost"]
 
-            # Clamp SoC
+            # Clamp SoC (SAFETY: Should never discharge below min_capacity)
             result["new_soc"] = max(min_capacity, min(max_capacity, result["new_soc"]))
+            
+            # DEBUG VALIDATION: Verify we respect minimum
+            if result["new_soc"] < min_capacity - 0.01:  # 0.01 kWh tolerance
+                _LOGGER.warning(
+                    f"⚠️  Battery SoC dropped below minimum! "
+                    f"new_soc={result['new_soc']:.2f}, min={min_capacity:.2f}, "
+                    f"discharge={discharge_amount:.3f}, mode={mode}"
+                )
 
             return result
 
@@ -923,6 +944,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Vypočítat celkové náklady pokud by uživatel zůstal v jednom režimu celou dobu.
 
         Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategií.
+        Phase 2.7: Cache timeline for HOME I (for savings calculation).
 
         Args:
             fixed_mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
@@ -939,6 +961,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         total_cost = 0.0
         battery_soc = current_capacity
+        timeline_cache = []  # Phase 2.7: Cache for savings calculation
 
         for t in range(len(spot_prices)):
             timestamp_str = spot_prices[t].get("time", "")
@@ -971,6 +994,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             total_cost += sim_result["net_cost"]
             battery_soc = sim_result["new_soc"]
 
+            # Phase 2.7: Cache timeline for HOME I (mode 0)
+            if fixed_mode == CBB_MODE_HOME_I:
+                timeline_cache.append(
+                    {"time": timestamp_str, "net_cost": sim_result["net_cost"]}
+                )
+
+        # Phase 2.7: Store HOME I timeline in instance variable
+        if fixed_mode == CBB_MODE_HOME_I:
+            self._home_i_timeline_cache = timeline_cache
+            _LOGGER.debug(
+                f"Cached HOME I timeline: {len(timeline_cache)} intervals, total_cost={total_cost:.2f} Kč"
+            )
+
         return total_cost
 
     def _calculate_do_nothing_cost(
@@ -984,15 +1020,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
     ) -> float:
         """
-        Vypočítat náklady pokud uživatel vůbec nenabíjí ze sítě (DO NOTHING).
+        Vypočítat náklady pokud uživatel NIC NEZMĚNÍ.
 
-        Phase 2.6: What-if Analysis - Pasivní scénář bez grid charging.
+        Phase 2.6: What-if Analysis - DO NOTHING = současný režim bez změn.
+
+        OPRAVA 29.10.2025:
+        - PŘED: Simuloval HOME I jako "pasivní" režim (nesprávně)
+        - PO: Simuluje SOUČASNÝ CBB REŽIM po celý den BEZ ZMĚN
 
         Logika:
-        - Solar → Load → Battery → Export
-        - Battery vybíjení do Load když není solar
-        - Žádné nabíjení ze sítě (HOME UPS zakázán)
-        - Když dojde baterie, kupuje ze sítě
+        - Načíst aktuální režim ze sensoru box_prms_mode
+        - Simulovat celých 24h s tímto režimem
+        - Uživatel vidí: "Co kdybyste nechali současný režim (HOME II) celý den?"
 
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
@@ -1004,8 +1043,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast: Předpověď spotřeby (kWh per interval)
 
         Returns:
-            Celkové náklady v Kč bez grid charging
+            Celkové náklady v Kč pokud uživatel nechá současný režim
         """
+        # OPRAVA: Načíst současný režim místo fixed HOME I
+        current_mode = self._get_current_mode()
+
+        _LOGGER.debug(
+            f"[DO NOTHING] Calculating cost for current mode: {current_mode} "
+            f"({['HOME I', 'HOME II', 'HOME III', 'HOME UPS'][current_mode]})"
+        )
+
         total_cost = 0.0
         battery_soc = current_capacity
 
@@ -1025,10 +1072,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except:
                 solar_kwh = 0.0
 
-            # DO NOTHING = HOME I bez možnosti nabíjet ze sítě
-            # Použijeme HOME I (0) ale výsledek je čistě pasivní
+            # OPRAVA: Použít současný režim místo HOME I
             sim_result = self._simulate_interval_with_mode(
-                mode=0,  # HOME I: Battery priority
+                mode=current_mode,  # ← OPRAVA: Prostě nech to být!
                 solar_kwh=solar_kwh,
                 load_kwh=load_kwh,
                 battery_soc=battery_soc,
@@ -1054,14 +1100,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
     ) -> float:
         """
-        Vypočítat náklady pokud uživatel nabíjí baterii na 100% každou noc (FULL HOME UPS).
+        Vypočítat náklady pokud uživatel nabíjí baterii na 100% ASAP v nejlevnějších nočních intervalech.
 
-        Phase 2.6: What-if Analysis - Agresivní nabíjení bez ohledu na cenu.
+        Phase 2.6: What-if Analysis - Optimální noční nabíjení na 100%.
+
+        OPRAVA 29.10.2025:
+        - PŘED: Nabíjel celou noc (22-06h) bez ohledu na cenu (8 hodin)
+        - PO: Nabíjí ASAP v nejlevnějších nočních intervalech (pouze potřebný čas)
 
         Logika:
-        - V noci (22:00-06:00): Nabíjení na 100% ze sítě (HOME UPS režim)
-        - Přes den: Standardní HOME I (solar → battery → load)
-        - Ignoruje ceny, prostě nabíjí každou noc
+        1. Spočítat potřebu: needed_kwh = max_capacity - current_capacity
+        2. AC charging limit: 2.8 kW = 0.7 kWh/15min
+        3. Intervals needed: ceil(needed_kwh / 0.7)
+        4. Najít N nejlevnějších nočních intervalů (22-06h)
+        5. Nabít pouze v těchto intervalech
+        6. Zbytek dne: HOME I
+
+        Výsledek: Úspora vs nabíjení celou noc, lepší ekonomie
 
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
@@ -1073,8 +1128,54 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast: Předpověď spotřeby (kWh per interval)
 
         Returns:
-            Celkové náklady v Kč s nočním nabíjením na 100%
+            Celkové náklady v Kč s optimálním nočním nabíjením
         """
+        # 1. Spočítat potřebu dobití
+        needed_kwh = max_capacity - current_capacity
+
+        # 2. AC charging limit per 15min interval
+        ac_charging_limit = 0.7  # kWh per 15min (2.8 kW AC path)
+
+        # 3. Kolik intervalů potřebujeme na dobití?
+        if needed_kwh > 0.001:
+            intervals_needed = int(math.ceil(needed_kwh / ac_charging_limit))
+        else:
+            intervals_needed = 0  # Battery už plná
+
+        _LOGGER.debug(
+            f"[FULL UPS] Need {needed_kwh:.2f} kWh to reach {max_capacity:.2f} kWh, "
+            f"requires {intervals_needed} intervals (×15min)"
+        )
+
+        # 4. Najít noční intervaly (22:00-06:00) a seřadit podle ceny
+        night_intervals = []
+        for t, price_data in enumerate(spot_prices):
+            timestamp_str = price_data.get("time", "")
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                hour = timestamp.hour
+
+                # Noční hodiny: 22-23, 0-5
+                if 22 <= hour or hour < 6:
+                    night_intervals.append((t, price_data.get("price", 0.0)))
+            except:
+                continue
+
+        # 5. Seřadit podle ceny a vybrat N nejlevnějších
+        night_sorted = sorted(
+            night_intervals, key=lambda x: x[1]
+        )  # Sort by price (ascending)
+        cheapest_intervals = set(
+            [idx for idx, price in night_sorted[:intervals_needed]]
+        )
+
+        if cheapest_intervals:
+            _LOGGER.debug(
+                f"[FULL UPS] Selected {len(cheapest_intervals)} cheapest night intervals "
+                f"from {len(night_intervals)} total night intervals"
+            )
+
+        # 6. Simulovat s optimálním nabíjením
         total_cost = 0.0
         battery_soc = current_capacity
 
@@ -1091,18 +1192,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                hour = timestamp.hour
             except:
                 solar_kwh = 0.0
-                hour = 12  # Default to day
 
-            # FULL UPS: Nabíjej v noci (22-06), přes den běž jako HOME I
-            if 22 <= hour or hour < 6:
-                # Noční nabíjení - HOME UPS režim
-                mode = 3  # HOME UPS
+            # OPRAVA: Nabíjet pouze v nejlevnějších nočních intervalech
+            if t in cheapest_intervals and battery_soc < max_capacity:
+                # Optimální nabíjení v levném intervalu
+                mode = CBB_MODE_HOME_UPS  # 3 - Grid charging enabled
             else:
-                # Denní provoz - HOME I
-                mode = 0  # HOME I
+                # Normální provoz (nebo battery už plná)
+                mode = CBB_MODE_HOME_I  # 0 - Battery priority
 
             sim_result = self._simulate_interval_with_mode(
                 mode=mode,
@@ -1127,14 +1226,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Vytvořit user-friendly doporučení režimů pro následujících N hodin.
 
         Phase 2.6: Mode Recommendations - Seskupí po sobě jdoucí stejné režimy
-        do časových bloků pro snadné zobrazení v UI.
+        do časových bloků s DETAILNÍM zdůvodněním.
 
         Args:
             optimal_timeline: Timeline z DP optimalizace
             hours_ahead: Kolik hodin do budoucna zahrnout (default 24h)
 
         Returns:
-            List[Dict]: Seskupené režimy s časovými bloky
+            List[Dict]: Seskupené režimy s časovými bloky a ekonomickými detaily
                 [{
                     "mode": int,
                     "mode_name": str,
@@ -1142,6 +1241,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "to_time": str (ISO),
                     "duration_hours": float,
                     "intervals_count": int,
+                    "avg_spot_price": float,      # Průměrná spot cena (Kč/kWh)
+                    "avg_solar_kw": float,         # Průměrná FVE výroba (kW)
+                    "avg_load_kw": float,          # Průměrná spotřeba (kW)
+                    "total_cost": float,           # Celkové náklady bloku (Kč)
+                    "cost_savings_vs_home_i": float,  # Úspora vs HOME I (Kč)
+                    "rationale": str,              # Vysvětlení proč tento režim
                 }]
         """
         if not optimal_timeline:
@@ -1162,9 +1267,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if not future_intervals:
                 return []
 
-            # Group consecutive same-mode intervals
+            # Group consecutive same-mode intervals WITH detailed metrics
             recommendations = []
             current_block = None
+            block_intervals = []  # Store intervals for current block
 
             for interval in future_intervals:
                 mode = interval.get("mode")
@@ -1180,25 +1286,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "to_time": time_str,
                         "intervals_count": 1,
                     }
+                    block_intervals = [interval]
                 elif current_block["mode"] == mode:
                     # Extend current block
                     current_block["to_time"] = time_str
                     current_block["intervals_count"] += 1
+                    block_intervals.append(interval)
                 else:
-                    # Save current block and start new one
-                    # Calculate duration
-                    try:
-                        from_dt = datetime.fromisoformat(current_block["from_time"])
-                        to_dt = datetime.fromisoformat(current_block["to_time"])
-                        duration = (
-                            to_dt - from_dt
-                        ).total_seconds() / 3600 + 0.25  # +15min last interval
-                        current_block["duration_hours"] = round(duration, 2)
-                    except:
-                        current_block["duration_hours"] = (
-                            current_block["intervals_count"] * 0.25
-                        )
-
+                    # Calculate detailed metrics for completed block
+                    self._add_block_details(current_block, block_intervals)
                     recommendations.append(current_block)
 
                     # Start new block
@@ -1209,19 +1305,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "to_time": time_str,
                         "intervals_count": 1,
                     }
+                    block_intervals = [interval]
 
             # Don't forget last block
             if current_block:
-                try:
-                    from_dt = datetime.fromisoformat(current_block["from_time"])
-                    to_dt = datetime.fromisoformat(current_block["to_time"])
-                    duration = (to_dt - from_dt).total_seconds() / 3600 + 0.25
-                    current_block["duration_hours"] = round(duration, 2)
-                except:
-                    current_block["duration_hours"] = (
-                        current_block["intervals_count"] * 0.25
-                    )
-
+                self._add_block_details(current_block, block_intervals)
                 recommendations.append(current_block)
 
             return recommendations
@@ -1229,6 +1317,249 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except Exception as e:
             _LOGGER.error(f"Failed to create mode recommendations: {e}")
             return []
+
+    def _add_block_details(
+        self, block: Dict[str, Any], intervals: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Přidat detailní metriky do bloku doporučení.
+
+        Phase 2.6: Rozšířeno o lidské vysvětlení a ekonomické zdůvodnění.
+        Phase 2.7: Přidána kalkulace úspor vs HOME I režim.
+
+        Args:
+            block: Block dictionary to enhance
+            intervals: List of intervals in this block
+        """
+        try:
+            # Calculate duration
+            from_dt = datetime.fromisoformat(block["from_time"])
+            to_dt = datetime.fromisoformat(block["to_time"])
+            duration = (
+                to_dt - from_dt
+            ).total_seconds() / 3600 + 0.25  # +15min last interval
+            block["duration_hours"] = round(duration, 2)
+        except:
+            block["duration_hours"] = block["intervals_count"] * 0.25
+
+        # Calculate average metrics across intervals
+        if not intervals:
+            return
+
+        # We need spot prices and solar/load data
+        # These should be available from timeline data
+        total_cost = sum(i.get("net_cost", 0) for i in intervals)
+
+        block["total_cost"] = round(total_cost, 2)
+
+        # Phase 2.7: Calculate savings vs HOME I
+        # Use cached HOME I timeline if available (from what-if analysis)
+        if hasattr(self, "_home_i_timeline_cache") and self._home_i_timeline_cache:
+            try:
+                # Match intervals by timestamp
+                home_i_cost_for_block = 0.0
+                for interval in intervals:
+                    interval_time = interval.get("time", "")
+                    if interval_time:
+                        # Find matching interval in HOME I timeline
+                        home_i_interval = next(
+                            (
+                                hi
+                                for hi in self._home_i_timeline_cache
+                                if hi.get("time") == interval_time
+                            ),
+                            None,
+                        )
+                        if home_i_interval:
+                            home_i_cost_for_block += home_i_interval.get("net_cost", 0)
+
+                # Savings = HOME I cost - actual optimized cost
+                savings = home_i_cost_for_block - total_cost
+                block["savings_vs_home_i"] = round(savings, 2)
+
+                # Add explanatory text
+                if savings > 0.5:
+                    block["savings_note"] = f"Ušetříte {savings:.2f} Kč oproti HOME I"
+                elif savings < -0.5:
+                    block["savings_note"] = (
+                        f"HOME I by byl levnější o {abs(savings):.2f} Kč"
+                    )
+                else:
+                    block["savings_note"] = "Podobné náklady jako HOME I"
+            except Exception as e:
+                _LOGGER.debug(f"Failed to calculate savings vs HOME I: {e}")
+                block["savings_vs_home_i"] = 0.0
+        else:
+            # No cached data - skip savings calculation
+            block["savings_vs_home_i"] = 0.0
+
+        # Try to extract solar/load info if available
+        # (This requires timeline to have been enriched with solar/load data)
+        solar_vals = [i.get("solar_kwh", 0) * 4 for i in intervals]  # Convert to kW
+        load_vals = [i.get("load_kwh", 0) * 4 for i in intervals]
+        spot_prices = [i.get("spot_price", 0) for i in intervals]
+
+        if solar_vals and any(v > 0 for v in solar_vals):
+            block["avg_solar_kw"] = round(sum(solar_vals) / len(solar_vals), 2)
+        else:
+            block["avg_solar_kw"] = 0.0
+
+        if load_vals:
+            block["avg_load_kw"] = round(sum(load_vals) / len(load_vals), 2)
+        else:
+            block["avg_load_kw"] = 0.0
+
+        if spot_prices:
+            block["avg_spot_price"] = round(sum(spot_prices) / len(spot_prices), 2)
+        else:
+            block["avg_spot_price"] = 0.0
+
+        # Generate human-friendly rationale with economic reasoning
+        mode = block["mode"]
+        solar_kw = block["avg_solar_kw"]
+        load_kw = block["avg_load_kw"]
+        spot_price = block["avg_spot_price"]
+
+        # Get from_time as datetime for expensive period lookup
+        from_dt = None
+        try:
+            from_dt = datetime.fromisoformat(block["from_time"])
+        except:
+            pass
+
+        # HOME I - Battery Priority
+        if mode == CBB_MODE_HOME_I:
+            if solar_kw > load_kw:
+                block["rationale"] = (
+                    "Nabíjíme baterii z FVE přebytku - ukládáme levnou energii na později"
+                )
+            elif solar_kw > 0:
+                block["rationale"] = (
+                    "Vybíjíme baterii - doplňujeme FVE pro pokrytí spotřeby"
+                )
+            else:
+                block["rationale"] = (
+                    f"Vybíjíme baterii - šetříme za elektřinu ze sítě ({spot_price:.1f} Kč/kWh)"
+                )
+
+        # HOME II - Grid Supplements (battery saved for expensive periods)
+        elif mode == CBB_MODE_HOME_II:
+            if solar_kw > load_kw:
+                block["rationale"] = (
+                    "Nabíjíme baterii z FVE - připravujeme zásobu na večerní špičku"
+                )
+            else:
+                # Try to find next expensive period for better explanation
+                if from_dt:
+                    next_peak_time = self._find_next_expensive_hour(from_dt, intervals)
+                    if next_peak_time:
+                        block["rationale"] = (
+                            f"Šetříme baterii na {next_peak_time} - teď grid levnější než vybíjení"
+                        )
+                    else:
+                        block["rationale"] = (
+                            f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - baterie šetřena na dražší období"
+                        )
+                else:
+                    block["rationale"] = (
+                        f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - baterie šetřena na dražší období"
+                    )
+
+        # HOME III - All Solar to Battery
+        elif mode == CBB_MODE_HOME_III:
+            if solar_kw > 0:
+                block["rationale"] = (
+                    f"Maximální nabíjení baterie z FVE ({solar_kw:.1f} kW) - připravujeme zásobu"
+                )
+            else:
+                block["rationale"] = "Vybíjíme baterii - šetříme za elektřinu ze sítě"
+
+        # HOME UPS - Grid Charging
+        elif mode == CBB_MODE_HOME_UPS:
+            # Try to explain WHY we're charging from grid
+            if from_dt:
+                next_expensive = self._find_next_expensive_hour(from_dt, intervals)
+                if next_expensive:
+                    block["rationale"] = (
+                        f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - připravujeme na {next_expensive}"
+                    )
+                else:
+                    block["rationale"] = (
+                        f"Nabíjíme ze sítě v levných hodinách ({spot_price:.1f} Kč/kWh)"
+                    )
+            else:
+                block["rationale"] = (
+                    f"Nabíjíme ze sítě v levných hodinách ({spot_price:.1f} Kč/kWh)"
+                )
+        else:
+            block["rationale"] = "Neznámý režim"
+
+    def _find_next_expensive_hour(
+        self, from_time: datetime, current_intervals: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """
+        Najít následující drahé období (pro vysvětlení proč šetříme baterii).
+
+        Args:
+            from_time: Od kdy hledáme
+            current_intervals: Aktuální intervaly (pro získání kontextu cen)
+
+        Returns:
+            String s časem typu "19-21h" nebo None
+        """
+        try:
+            # Get average price of current block
+            current_prices = [i.get("spot_price", 0) for i in current_intervals]
+            if not current_prices:
+                return None
+
+            avg_current_price = sum(current_prices) / len(current_prices)
+
+            # Look for next period where price is significantly higher (>30%)
+            # Check next 12 hours
+            if not hasattr(self, "_timeline_data") or not self._timeline_data:
+                return None
+
+            # _timeline_data is List[Dict], not Dict with "timeline" key
+            timeline = self._timeline_data
+
+            expensive_start = None
+            for interval in timeline:
+                interval_time_str = interval.get("time", "")
+                if not interval_time_str:
+                    continue
+
+                try:
+                    interval_time = datetime.fromisoformat(interval_time_str)
+
+                    # Skip if before from_time
+                    if interval_time <= from_time:
+                        continue
+
+                    # Check only next 12 hours
+                    if (interval_time - from_time).total_seconds() > 12 * 3600:
+                        break
+
+                    interval_price = interval.get("spot_price", 0)
+
+                    # Is this significantly more expensive? (>30% more)
+                    if interval_price > avg_current_price * 1.3:
+                        expensive_start = interval_time
+                        break
+
+                except (ValueError, TypeError):
+                    continue
+
+            if expensive_start:
+                hour = expensive_start.hour
+                # Return range like "19-21h" (2h window)
+                return f"{hour:02d}-{(hour+2)%24:02d}h"
+
+            return None
+
+        except Exception as e:
+            _LOGGER.debug(f"Failed to find next expensive period: {e}")
+            return None
 
     def _calculate_optimal_mode_timeline_dp(
         self,
@@ -1432,6 +1763,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "grid_import": sim_result["grid_import"],
                     "grid_export": sim_result["grid_export"],
                     "net_cost": sim_result["net_cost"],
+                    "solar_kwh": solar_kwh,  # For detailed recommendations
+                    "load_kwh": load_kwh,  # For detailed recommendations
+                    "spot_price": spot_price,  # For detailed recommendations
                 }
             )
 
@@ -1458,32 +1792,40 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         #
         # Důvod: HOME I/II/III mají při FVE=0 IDENTICKÉ chování (vybíjení),
         # takže zbytečně nepřepínat střídač.
-        
+
         last_fve_mode = None  # Poslední režim když byla výroba
-        
+
         for t in range(n_intervals):
             try:
                 timestamp = datetime.fromisoformat(optimal_timeline[t]["time"])
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
             except:
                 solar_kwh = 0.0
-            
+
             current_mode = optimal_modes[t]
-            
+
             if solar_kwh > 0.001:
                 # FVE produkuje → použít DP optimální režim
-                if current_mode in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]:
+                if current_mode in [
+                    CBB_MODE_HOME_I,
+                    CBB_MODE_HOME_II,
+                    CBB_MODE_HOME_III,
+                ]:
                     last_fve_mode = current_mode
             else:
                 # FVE = 0 (noc) → minimalizovat přepínání
-                if current_mode in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]:
+                if current_mode in [
+                    CBB_MODE_HOME_I,
+                    CBB_MODE_HOME_II,
+                    CBB_MODE_HOME_III,
+                ]:
                     # HOME I/II/III jsou při FVE=0 identické
                     # Preferovat HOME I pro jednoduchost
                     optimal_modes[t] = CBB_MODE_HOME_I
                     optimal_timeline[t]["mode"] = CBB_MODE_HOME_I
                     optimal_timeline[t]["mode_name"] = "HOME I"
                 # HOME UPS zůstává (grid charging)
-        
+
         _LOGGER.info(
             f"DP optimization completed: total_cost={total_cost:.2f} Kč, "
             f"modes distribution (pre-optimization): HOME I={optimal_modes.count(0)}, "
@@ -1492,6 +1834,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategiemi
+        # Get current mode for DO NOTHING explanation
+        current_mode = self._get_current_mode()
+        current_mode_name = CBB_MODE_NAMES.get(current_mode, f"MODE_{current_mode}")
+
         alternatives = {}
         for mode_id in range(4):
             mode_name = CBB_MODE_NAMES.get(mode_id, f"MODE_{mode_id}")
@@ -1506,16 +1852,43 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     solar_forecast=solar_forecast,
                     load_forecast=load_forecast,
                 )
+
+                delta_czk = round(fixed_cost - total_cost, 2)
+
+                # Human-friendly explanation
+                explanation = f"Kdybyste zůstali v {mode_name} celý den"
+
+                # Why more expensive (or cheaper)
+                if delta_czk > 0.5:
+                    if mode_id == CBB_MODE_HOME_I:
+                        why_more = "Vybíjeli byste baterii i když lepší šetřit na večerní špičku"
+                    elif mode_id == CBB_MODE_HOME_II:
+                        why_more = (
+                            "Zbytečně byste kupovali ze sítě i když máte plnou baterii"
+                        )
+                    elif mode_id == CBB_MODE_HOME_III:
+                        why_more = "V noci byste vybíjeli baterii místo použití levné elektřiny"
+                    else:  # HOME UPS
+                        why_more = (
+                            "Zbytečně byste nabíjeli i když stačí využít FVE přes den"
+                        )
+                elif delta_czk < -0.5:
+                    why_more = (
+                        f"V tomto případě je {mode_name} výhodnější než optimalizace"
+                    )
+                else:
+                    why_more = "Téměř stejné náklady jako optimalizace"
+
                 alternatives[mode_name] = {
                     "total_cost_czk": round(fixed_cost, 2),
-                    "delta_czk": round(
-                        fixed_cost - total_cost, 2
-                    ),  # Positive = savings with DP
+                    "delta_czk": delta_czk,
                     "delta_percent": (
                         round((fixed_cost - total_cost) / fixed_cost * 100, 1)
                         if fixed_cost > 0
                         else 0.0
                     ),
+                    "explanation": explanation,
+                    "why_more_expensive": why_more,
                 }
             except Exception as e:
                 _LOGGER.warning(
@@ -1525,9 +1898,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "total_cost_czk": 0.0,
                     "delta_czk": 0.0,
                     "delta_percent": 0.0,
+                    "explanation": f"Chyba při výpočtu {mode_name}",
+                    "why_more_expensive": "Výpočet selhal",
                 }
 
-        # Phase 2.6: DO NOTHING scénář (žádné nabíjení ze sítě)
+        # Phase 2.6: DO NOTHING scénář (současný režim bez změn)
         try:
             do_nothing_cost = self._calculate_do_nothing_cost(
                 current_capacity=current_capacity,
@@ -1538,13 +1913,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_forecast=solar_forecast,
                 load_forecast=load_forecast,
             )
+
+            delta_czk = round(do_nothing_cost - total_cost, 2)
+
             alternatives["DO NOTHING"] = {
                 "total_cost_czk": round(do_nothing_cost, 2),
-                "delta_czk": round(do_nothing_cost - total_cost, 2),
+                "delta_czk": delta_czk,
                 "delta_percent": (
                     round((do_nothing_cost - total_cost) / do_nothing_cost * 100, 1)
                     if do_nothing_cost > 0
                     else 0.0
+                ),
+                "current_mode": current_mode_name,
+                "explanation": f"Kdybyste nechali současný režim ({current_mode_name}) celý den bez změn",
+                "why_more_expensive": (
+                    "Neoptimální timing - kupovali byste ze sítě v drahých hodinách"
+                    if delta_czk > 0.5
+                    else "Váš současný režim je dostatečně dobrý"
                 ),
             }
         except Exception as e:
@@ -1553,9 +1938,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "total_cost_czk": 0.0,
                 "delta_czk": 0.0,
                 "delta_percent": 0.0,
+                "current_mode": current_mode_name,
+                "explanation": "Chyba při výpočtu",
+                "why_more_expensive": "Výpočet selhal",
             }
 
-        # Phase 2.6: FULL HOME UPS scénář (nabíjení na 100% každou noc)
+        # Phase 2.6: FULL HOME UPS scénář (nabíjení na 100% v nejlevnějších nočních intervalech)
         try:
             full_ups_cost = self._calculate_full_ups_cost(
                 current_capacity=current_capacity,
@@ -1566,13 +1954,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_forecast=solar_forecast,
                 load_forecast=load_forecast,
             )
+
+            delta_czk = round(full_ups_cost - total_cost, 2)
+
             alternatives["FULL HOME UPS"] = {
                 "total_cost_czk": round(full_ups_cost, 2),
-                "delta_czk": round(full_ups_cost - total_cost, 2),
+                "delta_czk": delta_czk,
                 "delta_percent": (
                     round((full_ups_cost - total_cost) / full_ups_cost * 100, 1)
                     if full_ups_cost > 0
                     else 0.0
+                ),
+                "explanation": "Kdybyste nabíjeli baterii na 100% v nejlevnějších nočních hodinách",
+                "why_more_expensive": (
+                    "Zbytečné nabíjení - často nepotřebujete plnou baterii"
+                    if delta_czk > 0.5
+                    else "V tomto případě je noční nabíjení výhodné"
                 ),
             }
         except Exception as e:
@@ -1581,6 +1978,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "total_cost_czk": 0.0,
                 "delta_czk": 0.0,
                 "delta_percent": 0.0,
+                "explanation": "Chyba při výpočtu",
+                "why_more_expensive": "Výpočet selhal",
             }
 
         _LOGGER.info(
@@ -6908,3 +7307,630 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+
+# ============================================================================
+# BATTERY FORECAST PERFORMANCE TRACKING SENSOR
+# Phase 2.7: Track Expected vs Actual costs for model validation
+# ============================================================================
+
+
+class OigCloudBatteryForecastPerformanceSensor(
+    RestoreEntity, CoordinatorEntity, SensorEntity
+):
+    """
+    Sensor pro tracking výkonu DP optimalizace - porovnání očekávaných vs skutečných nákladů.
+
+    Phase 2.7: Performance Tracking & Validation
+
+    Lifecycle:
+    1. 00:00 - Plan Fixation: První DP výpočet dne fixuje expected_cost + timeline
+    2. 00:15-23:45 - Actual Tracking: Průběžně sbírá actual grid import/export a spot prices
+    3. 00:00 (+1 day) - End-of-Day Evaluation: Porovná expected vs actual, uloží statistiky
+
+    State: Accuracy % (dnešní nebo průměr za měsíc)
+
+    Attributes:
+        - today: Dnešní tracking (expected, actual_so_far, status)
+        - yesterday: Včerejší výsledky (expected, actual, delta, accuracy)
+        - monthly_summary: Měsíční statistiky (total_savings, avg_accuracy, days_tracked)
+        - all_time_summary: Celkové statistiky
+        - daily_history: Posledních 30 dní (pro vizualizaci)
+    """
+
+    def __init__(
+        self,
+        coordinator: Any,
+        sensor_type: str,
+        config_entry: ConfigEntry,
+        device_info: Dict[str, Any],
+        hass: Optional[HomeAssistant] = None,
+    ) -> None:
+        """Initialize the performance tracking sensor."""
+        super().__init__(coordinator)
+
+        self._sensor_type = sensor_type
+        self._config_entry = config_entry
+        self._device_info = device_info
+        self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
+
+        # Box ID
+        self._data_key = "unknown"
+        if (
+            coordinator
+            and coordinator.data
+            and isinstance(coordinator.data, dict)
+            and coordinator.data
+        ):
+            self._data_key = list(coordinator.data.keys())[0]
+
+        self._box_id = self._data_key
+        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
+        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+        self._attr_icon = "mdi:chart-line"
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_device_class = None
+        self._attr_state_class = None
+        self._attr_entity_category = None
+        self._attr_name = "Battery Forecast Performance"
+
+        # Performance tracking state
+        self._today_plan: Optional[Dict[str, Any]] = None  # Fixovaný plán na dnes
+        self._actual_intervals: List[Dict[str, Any]] = (
+            []
+        )  # Skutečné hodnoty za intervaly
+        self._daily_history: List[Dict[str, Any]] = []  # Historie posledních 30 dní
+
+        # Monthly aggregates
+        self._monthly_stats: Dict[str, Any] = {}
+        self._all_time_stats: Dict[str, Any] = {}
+
+        # Previous sensor readings for delta calculation
+        self._prev_grid_import: Optional[float] = None
+        self._prev_grid_export: Optional[float] = None
+        self._prev_timestamp: Optional[datetime] = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore persistent data when added to HA."""
+        await super().async_added_to_hass()
+        self._hass = self.hass
+
+        # Restore from last state
+        if last_state := await self.async_get_last_state():
+            if last_state.attributes:
+                try:
+                    # Restore today's plan if exists
+                    if "today" in last_state.attributes:
+                        self._today_plan = last_state.attributes["today"]
+
+                    # Restore daily history
+                    if "daily_history" in last_state.attributes:
+                        self._daily_history = last_state.attributes["daily_history"]
+
+                    # Restore monthly stats
+                    if "monthly_summary" in last_state.attributes:
+                        self._monthly_stats = last_state.attributes["monthly_summary"]
+
+                    # Restore all-time stats
+                    if "all_time_summary" in last_state.attributes:
+                        self._all_time_stats = last_state.attributes["all_time_summary"]
+
+                    # Restore delta tracking baselines
+                    if "delta_tracking" in last_state.attributes:
+                        tracking = last_state.attributes["delta_tracking"]
+                        self._prev_grid_import = tracking.get("prev_grid_import")
+                        self._prev_grid_export = tracking.get("prev_grid_export")
+                        if timestamp_str := tracking.get("prev_timestamp"):
+                            try:
+                                self._prev_timestamp = datetime.fromisoformat(
+                                    timestamp_str
+                                )
+                            except (ValueError, TypeError):
+                                pass
+
+                    _LOGGER.info(
+                        f"📊 Restored performance data: "
+                        f"{len(self._daily_history)} days history, "
+                        f"today_plan={'active' if self._today_plan else 'none'}, "
+                        f"delta_baseline={'set' if self._prev_grid_import else 'unset'}"
+                    )
+                except Exception as e:
+                    _LOGGER.error(f"Failed to restore performance data: {e}")
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return accuracy percentage."""
+        # If today's tracking is complete, return today's accuracy
+        if self._today_plan and self._today_plan.get("status") == "completed":
+            return self._today_plan.get("accuracy")
+
+        # Otherwise return monthly average accuracy
+        if self._monthly_stats and self._monthly_stats.get("avg_accuracy"):
+            return self._monthly_stats["avg_accuracy"]
+
+        return None
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return performance tracking attributes."""
+        attrs = {}
+
+        # Today's status
+        if self._today_plan:
+            attrs["today"] = self._today_plan
+
+        # Yesterday's results (last entry in history)
+        if self._daily_history and len(self._daily_history) > 0:
+            attrs["yesterday"] = self._daily_history[-1]
+
+        # Monthly summary
+        if self._monthly_stats:
+            attrs["monthly_summary"] = self._monthly_stats
+
+        # All-time summary
+        if self._all_time_stats:
+            attrs["all_time_summary"] = self._all_time_stats
+
+        # Daily history (last 30 days)
+        attrs["daily_history"] = (
+            self._daily_history[-30:] if self._daily_history else []
+        )
+
+        # Delta tracking baselines (for persistence)
+        attrs["delta_tracking"] = {
+            "prev_grid_import": self._prev_grid_import,
+            "prev_grid_export": self._prev_grid_export,
+            "prev_timestamp": (
+                self._prev_timestamp.isoformat() if self._prev_timestamp else None
+            ),
+        }
+
+        return attrs
+
+    async def async_update(self) -> None:
+        """Update performance tracking."""
+        try:
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+
+            # Check if we need to fix a new plan (first update after midnight)
+            await self._maybe_fix_daily_plan(now, today_str)
+
+            # Track actual performance if plan is active
+            if self._today_plan and self._today_plan.get("status") in [
+                "plan_fixed",
+                "tracking",
+            ]:
+                await self._track_actual_performance(now)
+
+            # Check if we need end-of-day evaluation (after midnight)
+            await self._maybe_evaluate_yesterday(now)
+
+            # Update monthly aggregates
+            self._update_monthly_summary()
+
+        except Exception as e:
+            _LOGGER.error(f"Error updating performance sensor: {e}", exc_info=True)
+
+    async def _maybe_fix_daily_plan(self, now: datetime, today_str: str) -> None:
+        """
+        Fixovat denní plán při prvním DP výpočtu dne.
+
+        Volá se každých 15min, ale fixuje pouze pokud:
+        1. Ještě nemáme plán pro dnešek
+        2. Battery forecast sensor má mode_optimization data
+        """
+        # Už máme plán na dnes?
+        if self._today_plan and self._today_plan.get("date") == today_str:
+            return
+
+        # Načíst mode_optimization z battery_forecast sensoru
+        forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
+
+        if not self._hass:
+            return
+
+        forecast_state = self._hass.states.get(forecast_sensor_id)
+        if not forecast_state or forecast_state.state in ["unavailable", "unknown"]:
+            _LOGGER.debug("📊 Battery forecast not available for plan fixation")
+            return
+
+        attrs = forecast_state.attributes or {}
+        mode_opt = attrs.get("mode_optimization")
+
+        if not mode_opt or not mode_opt.get("total_cost_czk"):
+            _LOGGER.debug("📊 No mode_optimization data for plan fixation")
+            return
+
+        # FIXUJ PLÁN!
+        _LOGGER.info(f"🎯 Fixing daily plan for {today_str}")
+
+        self._today_plan = {
+            "date": today_str,
+            "status": "plan_fixed",
+            "plan_timestamp": now.isoformat(),
+            "expected_cost": mode_opt["total_cost_czk"],
+            "actual_cost_so_far": 0.0,
+            "actual_cost_final": None,
+            "delta": None,
+            "accuracy": None,
+            "intervals_tracked": 0,
+            "intervals_total": 96,  # 24h * 4 intervals
+        }
+
+        # Reset actual intervals for new day
+        self._actual_intervals = []
+
+        # Reset delta tracking (new baseline)
+        self._prev_grid_import = None
+        self._prev_grid_export = None
+        self._prev_timestamp = None
+
+        _LOGGER.info(
+            f"📋 Daily plan fixed: expected_cost={mode_opt['total_cost_czk']:.2f} Kč, "
+            f"intervals=96"
+        )
+
+    async def _track_actual_performance(self, now: datetime) -> None:
+        """
+        Průběžně trackovat skutečné náklady.
+
+        Načítá actual grid import/export a spot prices každých 15min.
+        """
+        if not self._today_plan:
+            return
+
+        # Update status to tracking
+        if self._today_plan["status"] == "plan_fixed":
+            self._today_plan["status"] = "tracking"
+
+        # Načíst actual hodnoty ze sensorů
+        actual_grid_import = await self._get_actual_grid_import()
+        actual_grid_export = await self._get_actual_grid_export()
+        actual_spot_price = await self._get_current_spot_price()
+        actual_export_price = await self._get_current_export_price()
+
+        # Update timestamp
+        self._prev_timestamp = now
+
+        # Spočítat náklady za tento interval
+        if actual_grid_import is not None and actual_spot_price is not None:
+            import_cost = actual_grid_import * actual_spot_price
+            export_revenue = (actual_grid_export or 0) * (actual_export_price or 0)
+            interval_cost = import_cost - export_revenue
+
+            # Přidat do actual intervals
+            self._actual_intervals.append(
+                {
+                    "time": now.isoformat(),
+                    "grid_import": actual_grid_import,
+                    "grid_export": actual_grid_export or 0,
+                    "spot_price": actual_spot_price,
+                    "export_price": actual_export_price or 0,
+                    "cost": interval_cost,
+                }
+            )
+
+            # Update cumulative cost
+            self._today_plan["actual_cost_so_far"] = sum(
+                interval["cost"] for interval in self._actual_intervals
+            )
+            self._today_plan["intervals_tracked"] = len(self._actual_intervals)
+
+            _LOGGER.debug(
+                f"📊 Tracked interval: import={actual_grid_import:.3f} kWh, "
+                f"export={actual_grid_export:.3f} kWh, "
+                f"cost={interval_cost:.2f} Kč, "
+                f"total_so_far={self._today_plan['actual_cost_so_far']:.2f} Kč"
+            )
+        else:
+            _LOGGER.debug(f"📊 Skipping interval tracking - missing data")
+
+    async def _get_actual_grid_import(self) -> Optional[float]:
+        """
+        Načíst actual grid import za poslední 15min interval.
+
+        Returns:
+            kWh imported from grid in last 15min interval
+        """
+        if not self._hass:
+            return None
+
+        # Get cumulative grid_import sensor
+        sensor_id = f"sensor.oig_{self._box_id}_grid_import"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unavailable", "unknown"]:
+            _LOGGER.debug(f"Grid import sensor not available: {sensor_id}")
+            return None
+
+        try:
+            current_value = float(state.state)
+
+            # Calculate delta from previous reading
+            if self._prev_grid_import is not None:
+                delta = current_value - self._prev_grid_import
+
+                # Sanity check (delta should be positive and < 10 kWh per 15min)
+                if 0 <= delta < 10:
+                    self._prev_grid_import = current_value
+                    return delta
+                else:
+                    _LOGGER.warning(
+                        f"Grid import delta sanity check failed: {delta:.3f} kWh "
+                        f"(prev={self._prev_grid_import}, current={current_value})"
+                    )
+                    # Reset and return None to skip this interval
+                    self._prev_grid_import = current_value
+                    return None
+            else:
+                # First reading - store and return None
+                self._prev_grid_import = current_value
+                _LOGGER.debug(f"Grid import baseline set: {current_value:.3f} kWh")
+                return None
+
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(f"Failed to parse grid import: {e}")
+            return None
+
+    async def _get_actual_grid_export(self) -> Optional[float]:
+        """
+        Načíst actual grid export za poslední 15min interval.
+
+        Returns:
+            kWh exported to grid in last 15min interval
+        """
+        if not self._hass:
+            return None
+
+        sensor_id = f"sensor.oig_{self._box_id}_grid_export"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unavailable", "unknown"]:
+            return None
+
+        try:
+            current_value = float(state.state)
+
+            # Calculate delta from previous reading
+            if self._prev_grid_export is not None:
+                delta = current_value - self._prev_grid_export
+
+                # Sanity check (delta should be positive and < 10 kWh per 15min)
+                if 0 <= delta < 10:
+                    self._prev_grid_export = current_value
+                    return delta
+                else:
+                    _LOGGER.warning(
+                        f"Grid export delta sanity check failed: {delta:.3f} kWh "
+                        f"(prev={self._prev_grid_export}, current={current_value})"
+                    )
+                    self._prev_grid_export = current_value
+                    return None
+            else:
+                # First reading - store and return None
+                self._prev_grid_export = current_value
+                _LOGGER.debug(f"Grid export baseline set: {current_value:.3f} kWh")
+                return None
+
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(f"Failed to parse grid export: {e}")
+            return None
+
+    async def _get_current_spot_price(self) -> Optional[float]:
+        """
+        Načíst aktuální spot price pro tento interval.
+
+        Returns:
+            Current spot price in Kč/kWh (including distribution + VAT)
+        """
+        if not self._hass:
+            return None
+
+        # Get from battery_forecast sensor which has spot prices
+        forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
+        state = self._hass.states.get(forecast_sensor_id)
+
+        if not state or state.state in ["unavailable", "unknown"]:
+            return None
+
+        attrs = state.attributes or {}
+
+        # Try to match current time to timeline entry
+        mode_opt = attrs.get("mode_optimization", {})
+        timeline = mode_opt.get("timeline", [])
+
+        if timeline:
+            now = datetime.now()
+            current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+            # Find matching timeline entry
+            for entry in timeline:
+                try:
+                    entry_time = datetime.fromisoformat(entry.get("time", ""))
+                    if entry_time == current_hour:
+                        return entry.get("spot_price_czk_kwh")
+                except (ValueError, TypeError):
+                    continue
+
+        # Fallback: Calculate average from mode_optimization
+        if mode_opt.get("total_cost_czk") and mode_opt.get("total_kwh_import"):
+            avg_price = mode_opt["total_cost_czk"] / mode_opt["total_kwh_import"]
+            _LOGGER.debug(f"Using average spot price: {avg_price:.2f} Kč/kWh")
+            return avg_price
+
+        # Final fallback
+        _LOGGER.debug("No spot price found, using fallback: 3.0 Kč/kWh")
+        return 3.0
+
+    async def _get_current_export_price(self) -> Optional[float]:
+        """
+        Načíst aktuální export price.
+
+        Returns:
+            Current export price in Kč/kWh
+        """
+        if not self._hass:
+            return None
+
+        # Get from battery_forecast sensor
+        forecast_sensor_id = f"sensor.oig_{self._box_id}_battery_forecast"
+        state = self._hass.states.get(forecast_sensor_id)
+
+        if not state or state.state in ["unavailable", "unknown"]:
+            return None
+
+        attrs = state.attributes or {}
+
+        # Try to get from mode_optimization timeline
+        mode_opt = attrs.get("mode_optimization", {})
+        timeline = mode_opt.get("timeline", [])
+
+        if timeline:
+            now = datetime.now()
+            current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+            # Find matching timeline entry
+            for entry in timeline:
+                try:
+                    entry_time = datetime.fromisoformat(entry.get("time", ""))
+                    if entry_time == current_hour:
+                        return entry.get("export_price_czk_kwh", 1.5)
+                except (ValueError, TypeError):
+                    continue
+
+        # Fallback: Use average export price if available
+        if mode_opt.get("total_revenue_czk") and mode_opt.get("total_kwh_export"):
+            if mode_opt["total_kwh_export"] > 0:
+                avg_export = (
+                    mode_opt["total_revenue_czk"] / mode_opt["total_kwh_export"]
+                )
+                _LOGGER.debug(f"Using average export price: {avg_export:.2f} Kč/kWh")
+                return avg_export
+
+        # Final fallback
+        return 1.5
+
+    async def _maybe_evaluate_yesterday(self, now: datetime) -> None:
+        """
+        Vyhodnotit včerejší den pokud jsme právě přešli půlnoc.
+
+        Kontroluje jestli máme plan z včerejška který není evaluated.
+        """
+        if not self._today_plan:
+            return
+
+        today_str = now.strftime("%Y-%m-%d")
+        plan_date = self._today_plan.get("date")
+
+        # Je plán z včerejška a ještě není completed?
+        if plan_date != today_str and self._today_plan.get("status") != "completed":
+            _LOGGER.info(f"📊 Evaluating yesterday's performance: {plan_date}")
+
+            # Mark as completed
+            self._today_plan["status"] = "completed"
+
+            # TODO: Phase 2 - Calculate final actual_cost
+            # Pro Phase 1: Use placeholder
+            expected = self._today_plan["expected_cost"]
+            actual = self._today_plan.get("actual_cost_so_far", expected)  # Placeholder
+
+            delta = expected - actual
+            accuracy = (1 - abs(delta) / expected) * 100 if expected > 0 else 100
+
+            # Determine rating
+            if accuracy >= 95:
+                rating = "excellent"
+            elif accuracy >= 90:
+                rating = "good"
+            elif accuracy >= 85:
+                rating = "fair"
+            else:
+                rating = "poor"
+
+            # Update plan with final values
+            self._today_plan["actual_cost_final"] = actual
+            self._today_plan["delta"] = delta
+            self._today_plan["accuracy"] = accuracy
+            self._today_plan["rating"] = rating
+
+            # Add to history
+            self._daily_history.append(
+                {
+                    "date": plan_date,
+                    "expected": expected,
+                    "actual": actual,
+                    "delta": delta,
+                    "accuracy": accuracy,
+                    "rating": rating,
+                }
+            )
+
+            # Keep only last 90 days in history
+            self._daily_history = self._daily_history[-90:]
+
+            _LOGGER.info(
+                f"📊 Yesterday evaluation complete: "
+                f"expected={expected:.2f} Kč, actual={actual:.2f} Kč, "
+                f"delta={delta:+.2f} Kč, accuracy={accuracy:.1f}% ({rating})"
+            )
+
+            # TODO: Phase 3 - Save to HA Statistics API
+            # await self._save_to_statistics(plan_date, expected, actual, delta, accuracy)
+
+    def _update_monthly_summary(self) -> None:
+        """Update monthly and all-time aggregates from history."""
+        if not self._daily_history:
+            return
+
+        now = datetime.now()
+        current_month = now.strftime("%Y-%m")
+
+        # Filter this month's data
+        month_data = [
+            day for day in self._daily_history if day["date"].startswith(current_month)
+        ]
+
+        if not month_data:
+            return
+
+        # Calculate monthly stats
+        total_expected = sum(day["expected"] for day in month_data)
+        total_actual = sum(day["actual"] for day in month_data)
+        total_savings = total_expected - total_actual
+        avg_accuracy = sum(day["accuracy"] for day in month_data) / len(month_data)
+
+        # Count rating distribution
+        excellent = sum(1 for day in month_data if day["rating"] == "excellent")
+        good = sum(1 for day in month_data if day["rating"] == "good")
+        fair = sum(1 for day in month_data if day["rating"] == "fair")
+        poor = sum(1 for day in month_data if day["rating"] == "poor")
+
+        self._monthly_stats = {
+            "month": current_month,
+            "days_tracked": len(month_data),
+            "total_expected_cost": round(total_expected, 2),
+            "total_actual_cost": round(total_actual, 2),
+            "total_savings": round(total_savings, 2),
+            "avg_accuracy": round(avg_accuracy, 1),
+            "excellent_days": excellent,
+            "good_days": good,
+            "fair_days": fair,
+            "poor_days": poor,
+        }
+
+        # Calculate all-time stats
+        all_expected = sum(day["expected"] for day in self._daily_history)
+        all_actual = sum(day["actual"] for day in self._daily_history)
+        all_savings = all_expected - all_actual
+        all_avg_accuracy = sum(day["accuracy"] for day in self._daily_history) / len(
+            self._daily_history
+        )
+
+        self._all_time_stats = {
+            "total_days": len(self._daily_history),
+            "total_expected_cost": round(all_expected, 2),
+            "total_actual_cost": round(all_actual, 2),
+            "total_savings": round(all_savings, 2),
+            "avg_accuracy": round(all_avg_accuracy, 1),
+        }
