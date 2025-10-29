@@ -206,6 +206,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                         f"🔄 Planning loop iteration starting (first_run={first_run})"
                     )
 
+                    # FIRST: Detect natural balancing completion (runs every hour)
+                    # This updates _last_balancing if battery was at 100% for hold_hours
+                    await self._detect_last_balancing_from_history()
+
                     # Nastavit stav calculating
                     self._planning_status = "calculating"
                     self._planning_error = None
