@@ -9256,7 +9256,7 @@ function buildTimelineBlocks(recommendations) {
         // Parse ISO datetime to get hours and minutes
         const fromTime = new Date(block.from_time);
         const toTime = new Date(block.to_time);
-        
+
         const startHour = fromTime.getHours();
         const startMin = fromTime.getMinutes();
         const endHour = toTime.getHours();
