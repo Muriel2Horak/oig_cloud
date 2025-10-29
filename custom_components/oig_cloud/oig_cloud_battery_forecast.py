@@ -289,9 +289,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if mo.get("alternatives"):
                 attrs["mode_optimization"]["alternatives"] = mo["alternatives"]
 
-            # Phase 2.6: Mode Recommendations - User-friendly 24h schedule
-            if mo.get("mode_recommendations"):
-                attrs["mode_recommendations"] = mo["mode_recommendations"]
+            # Phase 2.8: mode_recommendations moved to API endpoint
+            # (no longer in attributes to reduce memory usage)
 
             # Phase 2.5: Boiler summary (if boiler was used in optimization)
             boiler_total = sum(
