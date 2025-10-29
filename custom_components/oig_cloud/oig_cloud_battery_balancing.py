@@ -768,66 +768,55 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             _LOGGER.error("Failed to find any 8h window for emergency plan")
             return
 
-        # Simulate charging plan pro emergency okno
+        # Emergency plan: přímo vytvoříme charging intervals pro celé nejlevnější okno
+        # Nejlevnější okno je pro CHARGING (všech 8h)
+        charging_start = best_window["start"]
+        charging_end = best_window["end"]
+        
+        # Get hold_hours from config  
+        config = self._get_balancing_config()
+        hold_hours = config.get("hold_hours", 3)
+        
+        # Holding následuje hned po charging
+        holding_start = charging_end
+        holding_end = holding_start + timedelta(hours=hold_hours)
+
+        # Vytvoř charging intervals - každých 15 minut v rámci 8h okna
+        charging_intervals = []
+        current_time = charging_start
+        while current_time < charging_end:
+            charging_intervals.append(current_time.isoformat())
+            current_time += timedelta(minutes=15)
+
+        # Spočítat aproximativní cost (8h * průměrná cena * ~1.5 kWh/h nabíjení)
+        # Předpokládáme že nabíjíme cca 12 kWh za 8h = 1.5 kWh/h
+        estimated_kwh_per_hour = 1.5
+        total_kwh = 8 * estimated_kwh_per_hour
+        total_cost = total_kwh * best_avg_price
+
+        self._planned_window = {
+            "plan_start": charging_start.isoformat(),
+            "plan_end": holding_end.isoformat(),
+            "charging_start": charging_start.isoformat(),
+            "charging_end": charging_end.isoformat(),
+            "holding_start": holding_start.isoformat(),
+            "holding_end": holding_end.isoformat(),
+            "charging_intervals": charging_intervals,
+            "avg_spot_price": best_avg_price,
+            "total_cost_czk": total_cost,
+            "type": "emergency",
+            "reason": f"FORCED MODE - emergency cheapest 8h charging (avg {best_avg_price:.2f} CZK/kWh)",
+        }
+
         _LOGGER.warning(
-            f"🚨 Creating EMERGENCY charging plan: {best_window['start'].strftime('%Y-%m-%d %H:%M')} - "
-            f"{best_window['end'].strftime('%H:%M')}, avg price: {best_avg_price:.2f} CZK/kWh"
+            f"✅ EMERGENCY PLAN created: charging {charging_start.strftime('%d.%m %H:%M')}-{charging_end.strftime('%H:%M')} "
+            f"({len(charging_intervals)} intervals), "
+            f"holding {holding_start.strftime('%H:%M')}-{holding_end.strftime('%H:%M')}, "
+            f"estimated cost: {total_cost:.2f} CZK"
         )
 
-        forecast_sensor = self._get_forecast_sensor()
-        if not forecast_sensor:
-            _LOGGER.error("Cannot simulate emergency plan - forecast sensor not found")
-            return
-
-        try:
-            simulation = await forecast_sensor.simulate_charging_plan(
-                target_soc_percent=100.0,
-                charging_start=now,  # Můžeme nabíjet kdykoli od teď
-                charging_end=best_window["start"],  # Do začátku holding
-                holding_start=best_window["start"],
-                holding_end=best_window["end"],
-                requester="balancing_emergency",
-                mode="forced",  # Emergency je vždy forced mode
-            )
-
-            if not simulation or simulation.get("total_cost_czk", 0) == 0:
-                _LOGGER.error("Emergency simulation failed - no valid plan")
-                return
-
-            # Use forecast sensor result jako v normálním plánování
-            plan_data = simulation
-            charging_start = datetime.fromisoformat(plan_data["charging_intervals"][0])
-            charging_end = datetime.fromisoformat(
-                plan_data["charging_intervals"][-1]
-            ) + timedelta(hours=1)
-
-            self._planned_window = {
-                "plan_start": charging_start.isoformat(),
-                "plan_end": best_window["end"].isoformat(),
-                "charging_start": charging_start.isoformat(),
-                "charging_end": charging_end.isoformat(),
-                "holding_start": best_window["start"].isoformat(),
-                "holding_end": best_window["end"].isoformat(),
-                "charging_intervals": plan_data.get("charging_intervals", []),
-                "avg_spot_price": best_avg_price,
-                "total_cost_czk": plan_data.get("total_cost_czk", 0),
-                "type": "emergency",
-                "reason": "FORCED MODE - emergency cheapest 8h window",
-            }
-
-            _LOGGER.warning(
-                f"✅ EMERGENCY PLAN created: charging {charging_start.strftime('%H:%M')}-{charging_end.strftime('%H:%M')}, "
-                f"holding {best_window['start'].strftime('%H:%M')}-{best_window['end'].strftime('%H:%M')}, "
-                f"cost: {plan_data.get('total_cost_czk', 0):.2f} CZK"
-            )
-
-            self._status = "planned"
-            self.async_schedule_update_ha_state(force_refresh=True)
-
-        except Exception as e:
-            _LOGGER.error(f"Emergency plan simulation failed: {e}", exc_info=True)
-            self._planning_error = f"Emergency simulation error: {e}"
-            self.async_schedule_update_ha_state(force_refresh=True)
+        self._status = "planned"
+        self.async_schedule_update_ha_state(force_refresh=True)
 
     async def _plan_balancing_window(self, forced: bool = False) -> None:
         """
