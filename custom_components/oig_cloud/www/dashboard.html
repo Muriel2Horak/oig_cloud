@@ -852,71 +852,84 @@
                     </div>
                 </div>
 
-                <!-- What-if Analysis Card -->
-                <div class="stat-card" style="background: linear-gradient(135deg, rgba(156, 39, 176, 0.15) 0%, rgba(156, 39, 176, 0.05) 100%); border: 1px solid rgba(156, 39, 176, 0.3); min-height: 400px;">
-                    <div class="stat-label" style="color: #9C27B0; font-weight: 600;">🔮 What-if analýza</div>
-                    <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: 2px;">Optimalizace vs. alternativy</div>
-                    <div class="stat-value" id="whatif-savings-main" style="font-size: 1.8em; margin: 10px 0; color: #4CAF50;">--</div>
-                    <div id="whatif-best-alternative" style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">--</div>
+                <!-- Optimized Plan Card (Clickable) -->
+                <div class="stat-card clickable-card" onclick="openModeTimelineDialog()" style="background: linear-gradient(135deg, rgba(156, 39, 176, 0.15) 0%, rgba(156, 39, 176, 0.05) 100%); border: 1px solid rgba(156, 39, 176, 0.3); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                    <div class="stat-label" style="color: #9C27B0; font-weight: 600;">� Optimalizované náklady dnes</div>
+                    <div class="stat-value" id="whatif-optimized-cost" style="font-size: 2.5em; margin: 10px 0; color: #9C27B0;">--</div>
 
-                    <!-- Performance Tracking Chart -->
-                    <div style="margin: 15px 0; padding: 10px; background: rgba(156, 39, 176, 0.08); border-radius: 6px;">
-                        <div style="font-size: 0.8em; color: #9C27B0; font-weight: 600; margin-bottom: 8px;">📊 Očekávané vs. skutečné náklady (30 dní)</div>
-                        <canvas id="performance-chart" style="max-height: 120px;"></canvas>
-                        <div id="performance-summary" style="margin-top: 8px; font-size: 0.75em; color: var(--text-secondary); display: flex; justify-content: space-around;">
-                            <div style="text-align: center;">
-                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-accuracy">--</div>
-                                <div>Přesnost</div>
-                            </div>
-                            <div style="text-align: center;">
-                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-savings">--</div>
-                                <div>Úspory měsíc</div>
-                            </div>
-                            <div style="text-align: center;">
-                                <div style="color: var(--text-primary); font-weight: 600;" id="perf-days">--</div>
-                                <div>Dní měřeno</div>
-                            </div>
+                    <div style="background: rgba(76, 175, 80, 0.1); padding: 8px; border-radius: 6px; margin: 10px 0;">
+                        <div style="font-size: 0.85em; color: #4CAF50; font-weight: 600;">
+                            💡 Úspora: <span id="whatif-savings-main">--</span>
                         </div>
+                        <div id="whatif-best-alternative" style="font-size: 0.75em; color: var(--text-secondary); margin-top: 2px;">--</div>
                     </div>
 
-                    <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>🏠 HOME I:</span>
+                    <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                            <span>🏠 HOME I celý den:</span>
                             <span id="whatif-home-i-delta" style="color: var(--text-primary);">--</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>💤 DO NOTHING:</span>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                            <span>💤 Bez změn:</span>
                             <span id="whatif-do-nothing-delta" style="color: var(--text-primary);">--</span>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>⚡ FULL UPS:</span>
+                            <span>⚡ Noční nabíjení:</span>
                             <span id="whatif-full-ups-delta" style="color: var(--text-primary);">--</span>
                         </div>
                     </div>
-                    <!-- Progress bar showing optimization advantage -->
-                    <div style="height: 40px; margin-top: 5px; position: relative; border-radius: 4px; overflow: hidden; background: rgba(156, 39, 176, 0.1);">
-                        <div id="whatif-savings-bar" style="position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(76, 175, 80, 0.6) 0%, rgba(76, 175, 80, 0.4) 100%); transition: width 0.3s ease; width: 0%;">
-                        </div>
-                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: var(--text-primary); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                            <span id="whatif-savings-label">Načítání...</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Mode Recommendations Section -->
-            <div style="margin-top: 20px;">
-                <div class="stat-card" style="background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 152, 0, 0.05) 100%); border: 1px solid rgba(255, 152, 0, 0.3);">
-                    <div class="stat-label" style="color: #FF9800; font-weight: 600; margin-bottom: 15px;">📅 Doporučený plán režimů (24h)</div>
-                    <div id="mode-recommendations-timeline" style="font-size: 0.85em; color: var(--text-secondary);">
-                        <div style="text-align: center; padding: 20px;">Načítání...</div>
+                    <div style="margin-top: 15px; padding: 8px; background: rgba(0,0,0,0.1); border-radius: 4px; text-align: center; font-size: 0.8em; color: var(--text-secondary);">
+                        👆 Klikněte pro detailní plán režimů
                     </div>
                 </div>
             </div>
         </div>
         <!-- End Pricing Tab -->
 
+        <!-- Mode Timeline Dialog -->
+        <div id="mode-timeline-dialog" class="dialog-overlay" style="display: none;" onclick="closeModeTimelineDialog()">
+            <div class="dialog-content timeline-dialog" onclick="event.stopPropagation()">
+                <div class="dialog-header">
+                    <h3>📅 Optimalizovaný plán režimů na dnes</h3>
+                    <button class="dialog-close" onclick="closeModeTimelineDialog()">&times;</button>
+                </div>
 
+                <div class="dialog-body">
+                    <!-- Summary -->
+                    <div class="timeline-summary">
+                        <div class="summary-metric">
+                            <span class="metric-label">Celkové náklady:</span>
+                            <span class="metric-value" id="timeline-total-cost">--</span>
+                        </div>
+                        <div class="summary-metric success">
+                            <span class="metric-label">Úspora:</span>
+                            <span class="metric-value" id="timeline-total-savings">--</span>
+                        </div>
+                        <div class="summary-metric">
+                            <span class="metric-label">Přepnutí:</span>
+                            <span class="metric-value" id="timeline-total-switches">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Timeline visualization -->
+                    <div class="timeline-container">
+                        <div class="timeline-hour-markers" id="timeline-hour-markers"></div>
+                        <div class="timeline-blocks" id="timeline-blocks"></div>
+                        <div class="timeline-now-indicator" id="timeline-now-indicator"></div>
+                    </div>
+
+                    <!-- Detailed blocks -->
+                    <div class="timeline-details" id="timeline-details"></div>
+
+                    <!-- What-if alternatives -->
+                    <div class="timeline-alternatives">
+                        <h4>ℹ️ Co kdyby jinak?</h4>
+                        <div id="timeline-alternatives-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Extrahovaný JavaScript -->
         <script src="dashboard-tiles.js?v=20241024&t=1761367326"></script>

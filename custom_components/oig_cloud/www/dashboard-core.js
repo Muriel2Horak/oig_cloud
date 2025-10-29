@@ -8616,72 +8616,38 @@ async function updateWhatIfAnalysis() {
     // Check if sensor is available
     if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
         console.log('[What-if] Battery forecast sensor not available');
-        updateElementIfChanged('whatif-savings-main', '--', 'whatif-main');
-        updateElementIfChanged('whatif-best-alternative', 'Čekám na data...', 'whatif-best');
-        updateElementIfChanged('whatif-home-i-delta', '--', 'whatif-home-i');
-        updateElementIfChanged('whatif-do-nothing-delta', '--', 'whatif-do-nothing');
-        updateElementIfChanged('whatif-full-ups-delta', '--', 'whatif-full-ups');
+        updateElementIfChanged('whatif-optimized-cost', '--', 'whatif-main');
+        updateElementIfChanged('whatif-savings-main', '--', 'whatif-savings');
         return;
     }
 
-    // Get mode_optimization data
+    // Get mode_recommendations and whatif_analysis data
     const attrs = forecastSensor.attributes || {};
-    const modeOpt = attrs.mode_optimization || {};
-    const alternatives = modeOpt.alternatives || {};
-    const optimizedCost = modeOpt.total_cost_czk || 0;
+    const recommendations = attrs.mode_recommendations || [];
+    const whatifData = attrs.whatif_analysis || {};
+    const alternatives = whatifData.alternatives || [];
 
-    // Find best saving (highest delta)
-    let maxSavings = 0;
-    let bestAlt = '';
+    // Calculate total cost and savings from recommendations
+    let totalCost = 0;
+    let totalSavings = 0;
 
-    Object.entries(alternatives).forEach(([name, data]) => {
-        const delta = data.delta_czk || 0;
-        if (delta > maxSavings) {
-            maxSavings = delta;
-            bestAlt = name;
-        }
+    recommendations.forEach(block => {
+        totalCost += block.cost || 0;
+        totalSavings += block.savings_vs_home_i || 0;
     });
 
-    // Update main display
-    if (maxSavings > 0) {
-        updateElementIfChanged('whatif-savings-main', `+${maxSavings.toFixed(1)} Kč`, 'whatif-main');
-        updateElementIfChanged('whatif-best-alternative', `Oproti ${bestAlt} (${alternatives[bestAlt]?.delta_percent || 0}%)`, 'whatif-best');
+    // Update compact What-if card
+    updateElementIfChanged('whatif-optimized-cost', `${totalCost.toFixed(2)} Kč`, 'whatif-main');
+
+    if (totalSavings > 0) {
+        updateElementIfChanged('whatif-savings-main', `+${totalSavings.toFixed(2)} Kč`, 'whatif-savings');
+    } else if (totalSavings < 0) {
+        updateElementIfChanged('whatif-savings-main', `${totalSavings.toFixed(2)} Kč`, 'whatif-savings');
     } else {
-        updateElementIfChanged('whatif-savings-main', '0 Kč', 'whatif-main');
-        updateElementIfChanged('whatif-best-alternative', 'Optimalizace aktivní', 'whatif-best');
-    }
-
-    // Update individual deltas
-    const homeI = alternatives['HOME I'] || {};
-    const doNothing = alternatives['DO NOTHING'] || {};
-    const fullUps = alternatives['FULL HOME UPS'] || {};
-
-    updateElementIfChanged('whatif-home-i-delta',
-        homeI.delta_czk ? `+${homeI.delta_czk.toFixed(1)} Kč` : '--',
-        'whatif-home-i');
-    updateElementIfChanged('whatif-do-nothing-delta',
-        doNothing.delta_czk ? `+${doNothing.delta_czk.toFixed(1)} Kč` : '--',
-        'whatif-do-nothing');
-    updateElementIfChanged('whatif-full-ups-delta',
-        fullUps.delta_czk ? `+${fullUps.delta_czk.toFixed(1)} Kč` : '--',
-        'whatif-full-ups');
-
-    // Update savings bar (0-100% based on max possible savings)
-    const savingsBar = document.getElementById('whatif-savings-bar');
-    const savingsLabel = document.getElementById('whatif-savings-label');
-
-    if (savingsBar && savingsLabel && maxSavings > 0) {
-        // Calculate percentage: current savings vs worst alternative
-        const worstCost = Math.max(...Object.values(alternatives).map(a => a.total_cost_czk || 0));
-        const savingsPercent = worstCost > 0 ? ((worstCost - optimizedCost) / worstCost * 100) : 0;
-
-        savingsBar.style.width = `${Math.min(savingsPercent, 100)}%`;
-        savingsLabel.textContent = `Úspora ${savingsPercent.toFixed(0)}%`;
-    } else if (savingsBar && savingsLabel) {
-        savingsBar.style.width = '0%';
-        savingsLabel.textContent = 'Načítání...';
+        updateElementIfChanged('whatif-savings-main', '0 Kč', 'whatif-savings');
     }
 }
+
 
 /**
  * Update mode recommendations timeline on Pricing tab
@@ -9185,5 +9151,270 @@ function formatChmuDateTime(isoString) {
         return isoString;
     }
 }
+
+// ========================================================================
+// MODE TIMELINE DIALOG - Phase 2.7
+// ========================================================================
+
+// Mode configuration
+const MODE_CONFIG = {
+    'HOME I': { icon: '🏠', color: 'rgba(76, 175, 80, 0.7)', label: 'HOME I' },
+    'HOME II': { icon: '⚡', color: 'rgba(33, 150, 243, 0.7)', label: 'HOME II' },
+    'HOME III': { icon: '🔋', color: 'rgba(156, 39, 176, 0.7)', label: 'HOME III' },
+    'FULL HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'FULL HOME UPS' },
+    'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.7)', label: 'DO NOTHING' }
+};
+
+// Open mode timeline dialog
+function openModeTimelineDialog() {
+    const dialog = document.getElementById('mode-timeline-dialog');
+    if (!dialog) return;
+
+    // Build timeline
+    buildModeTimeline();
+
+    // Show dialog
+    dialog.style.display = 'flex';
+
+    // Update current time indicator
+    updateTimelineNowIndicator();
+    setInterval(updateTimelineNowIndicator, 60000); // Update every minute
+}
+
+// Close mode timeline dialog
+function closeModeTimelineDialog() {
+    const dialog = document.getElementById('mode-timeline-dialog');
+    if (dialog) {
+        dialog.style.display = 'none';
+    }
+}
+
+// Build mode timeline from mode_recommendations
+function buildModeTimeline() {
+    const entity = haData.entities[`sensor.oig_${boxId}_battery_forecast`];
+    if (!entity || !entity.attributes || !entity.attributes.mode_recommendations) {
+        console.warn('No mode recommendations data available');
+        return;
+    }
+
+    const recommendations = entity.attributes.mode_recommendations;
+    const whatifData = entity.attributes.whatif_analysis || {};
+    const alternatives = whatifData.alternatives || [];
+
+    // Calculate summary metrics
+    let totalCost = 0;
+    let totalSavings = 0;
+    let switchCount = 0;
+    let lastMode = null;
+
+    recommendations.forEach(block => {
+        totalCost += block.cost || 0;
+        totalSavings += block.savings_vs_home_i || 0;
+        if (lastMode && lastMode !== block.mode) {
+            switchCount++;
+        }
+        lastMode = block.mode;
+    });
+
+    // Update summary
+    document.getElementById('timeline-total-cost').textContent = `${totalCost.toFixed(2)} Kč`;
+    document.getElementById('timeline-total-savings').textContent = `${totalSavings.toFixed(2)} Kč`;
+    document.getElementById('timeline-total-switches').textContent = `${switchCount}×`;
+
+    // Build timeline blocks
+    buildTimelineBlocks(recommendations);
+
+    // Build hour markers
+    buildHourMarkers();
+
+    // Build detail cards
+    buildDetailCards(recommendations);
+
+    // Build alternatives
+    buildAlternatives(alternatives);
+}
+
+// Build visual timeline blocks
+function buildTimelineBlocks(recommendations) {
+    const container = document.getElementById('timeline-blocks');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    recommendations.forEach((block, index) => {
+        const startHour = parseInt(block.time_from.split(':')[0]);
+        const startMin = parseInt(block.time_from.split(':')[1]);
+        const endHour = parseInt(block.time_to.split(':')[0]);
+        const endMin = parseInt(block.time_to.split(':')[1]);
+
+        const startPercent = ((startHour * 60 + startMin) / 1440) * 100;
+        const endPercent = ((endHour * 60 + endMin) / 1440) * 100;
+        const widthPercent = endPercent - startPercent;
+
+        const config = MODE_CONFIG[block.mode] || MODE_CONFIG['HOME I'];
+
+        const blockEl = document.createElement('div');
+        blockEl.className = 'timeline-block';
+        blockEl.style.left = `${startPercent}%`;
+        blockEl.style.width = `${widthPercent}%`;
+        blockEl.style.background = config.color;
+        blockEl.setAttribute('data-block-index', index);
+
+        blockEl.innerHTML = `
+            <div class="block-icon">${config.icon}</div>
+            <div class="block-label">${config.label}</div>
+            ${widthPercent > 8 ? `<div class="block-time">${block.time_from}</div>` : ''}
+        `;
+
+        blockEl.onclick = () => toggleDetailBlock(index);
+
+        container.appendChild(blockEl);
+    });
+}
+
+// Build hour markers
+function buildHourMarkers() {
+    const container = document.getElementById('timeline-hour-markers');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    for (let h = 0; h < 24; h += 3) {
+        const marker = document.createElement('div');
+        marker.className = 'hour-marker';
+        marker.textContent = `${h.toString().padStart(2, '0')}:00`;
+        container.appendChild(marker);
+    }
+}
+
+// Build detail cards
+function buildDetailCards(recommendations) {
+    const container = document.getElementById('timeline-details');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    recommendations.forEach((block, index) => {
+        const config = MODE_CONFIG[block.mode] || MODE_CONFIG['HOME I'];
+        const savings = block.savings_vs_home_i || 0;
+        const savingsClass = savings > 0 ? 'positive' : savings < 0 ? 'negative' : '';
+        const savingsText = savings > 0 ? `+${savings.toFixed(2)} Kč` : `${savings.toFixed(2)} Kč`;
+
+        const card = document.createElement('div');
+        card.className = 'detail-block';
+        card.setAttribute('data-block-index', index);
+
+        card.innerHTML = `
+            <div class="detail-header">
+                <div class="detail-time">${block.time_from} - ${block.time_to}</div>
+                <div class="detail-mode">
+                    <span class="detail-mode-icon">${config.icon}</span>
+                    <span>${block.mode}</span>
+                </div>
+                <div class="detail-cost">${(block.cost || 0).toFixed(2)} Kč</div>
+                <div class="detail-savings ${savingsClass}">${savingsText}</div>
+                <div class="detail-expand">▼</div>
+            </div>
+            <div class="detail-body">
+                <div class="detail-rationale">
+                    <strong>📋 Odůvodnění:</strong><br>
+                    ${block.rationale || 'Optimalizováno podle aktuální ceny elektřiny a predikce spotřeby.'}
+                </div>
+                <div class="detail-metrics">
+                    <div class="metric-row">
+                        <span>Spotřeba baterie:</span>
+                        <span>${(block.batt_consumption || 0).toFixed(2)} kWh</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>Nabití baterie:</span>
+                        <span>${(block.batt_charging || 0).toFixed(2)} kWh</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>FVE produkce:</span>
+                        <span>${(block.solar_production || 0).toFixed(2)} kWh</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>Spotřeba z FVE:</span>
+                        <span>${(block.consumption_from_solar || 0).toFixed(2)} kWh</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    // Add click handlers
+    container.querySelectorAll('.detail-header').forEach(header => {
+        header.onclick = () => {
+            const card = header.closest('.detail-block');
+            const index = card.getAttribute('data-block-index');
+            toggleDetailBlock(index);
+        };
+    });
+}
+
+// Toggle detail card expansion
+function toggleDetailBlock(index) {
+    const cards = document.querySelectorAll('.detail-block');
+    cards.forEach((card, i) => {
+        if (i == index) {
+            card.classList.toggle('expanded');
+        }
+    });
+}
+
+// Build alternatives section
+function buildAlternatives(alternatives) {
+    const container = document.getElementById('timeline-alternatives-list');
+    if (!container) return;
+
+    if (!alternatives || alternatives.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">Žádné alternativy k zobrazení.</p>';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    alternatives.forEach(alt => {
+        const delta = alt.cost_difference || 0;
+        const deltaClass = delta > 0 ? 'negative' : delta < 0 ? 'positive' : '';
+        const deltaText = delta > 0 ? `+${delta.toFixed(2)} Kč` : `${delta.toFixed(2)} Kč`;
+
+        const item = document.createElement('div');
+        item.className = 'alt-item';
+
+        item.innerHTML = `
+            <div class="alt-header">
+                <div class="alt-name">${alt.scenario_name || 'Neznámá alternativa'}</div>
+                <div class="alt-cost">${(alt.total_cost || 0).toFixed(2)} Kč</div>
+                <div class="alt-delta ${deltaClass}">${deltaText}</div>
+            </div>
+            <div class="alt-explain">${alt.why_more_expensive || alt.explanation || 'Žádné vysvětlení není k dispozici.'}</div>
+        `;
+
+        container.appendChild(item);
+    });
+}
+
+// Update current time indicator
+function updateTimelineNowIndicator() {
+    const indicator = document.getElementById('timeline-now-indicator');
+    if (!indicator) return;
+
+    const now = new Date();
+    const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
+    const percent = (minutesFromMidnight / 1440) * 100;
+
+    indicator.style.left = `${percent}%`;
+}
+
+// Close dialog on overlay click
+document.addEventListener('click', (e) => {
+    const dialog = document.getElementById('mode-timeline-dialog');
+    if (dialog && e.target === dialog) {
+        closeModeTimelineDialog();
+    }
+});
 
 

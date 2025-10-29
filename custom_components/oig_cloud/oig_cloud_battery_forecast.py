@@ -608,11 +608,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         ]:
             # Night mode (FVE=0): HOME I/II/III identical → discharge battery to load
             available_battery = battery_soc - min_capacity
-            
+
             # VALIDATION: Never discharge below minimum
             if available_battery < 0:
                 available_battery = 0.0
-                
+
             discharge_amount = min(load_kwh, available_battery / efficiency)
 
             if discharge_amount > 0.001:
@@ -630,7 +630,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Clamp SoC (SAFETY: Should never discharge below min_capacity)
             result["new_soc"] = max(min_capacity, min(max_capacity, result["new_soc"]))
-            
+
             # DEBUG VALIDATION: Verify we respect minimum
             if result["new_soc"] < min_capacity - 0.01:  # 0.01 kWh tolerance
                 _LOGGER.warning(
