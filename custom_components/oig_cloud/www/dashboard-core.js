@@ -9191,15 +9191,26 @@ function closeModeTimelineDialog() {
 
 // Build mode timeline from mode_recommendations
 function buildModeTimeline() {
-    const entity = haData.entities[`sensor.oig_${boxId}_battery_forecast`];
-    if (!entity || !entity.attributes || !entity.attributes.mode_recommendations) {
-        console.warn('No mode recommendations data available');
+    const hass = getHass();
+    if (!hass) return;
+
+    const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
+    const forecastSensor = hass.states[forecastSensorId];
+    
+    if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
+        console.warn('Battery forecast sensor not available');
         return;
     }
 
-    const recommendations = entity.attributes.mode_recommendations;
-    const whatifData = entity.attributes.whatif_analysis || {};
+    const attrs = forecastSensor.attributes || {};
+    const recommendations = attrs.mode_recommendations || [];
+    const whatifData = attrs.whatif_analysis || {};
     const alternatives = whatifData.alternatives || [];
+
+    if (!recommendations || recommendations.length === 0) {
+        console.warn('No mode recommendations data available');
+        return;
+    }
 
     // Calculate summary metrics
     let totalCost = 0;
