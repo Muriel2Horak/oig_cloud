@@ -8632,7 +8632,7 @@ async function updateWhatIfAnalysis() {
     let totalSavings = 0;
 
     recommendations.forEach(block => {
-        totalCost += block.cost || 0;
+        totalCost += block.total_cost || 0;
         totalSavings += block.savings_vs_home_i || 0;
     });
 
@@ -9196,7 +9196,7 @@ function buildModeTimeline() {
 
     const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
     const forecastSensor = hass.states[forecastSensorId];
-    
+
     if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
         console.warn('Battery forecast sensor not available');
         return;
@@ -9219,12 +9219,12 @@ function buildModeTimeline() {
     let lastMode = null;
 
     recommendations.forEach(block => {
-        totalCost += block.cost || 0;
+        totalCost += block.total_cost || 0;
         totalSavings += block.savings_vs_home_i || 0;
-        if (lastMode && lastMode !== block.mode) {
+        if (lastMode && lastMode !== block.mode_name) {
             switchCount++;
         }
-        lastMode = block.mode;
+        lastMode = block.mode_name;
     });
 
     // Update summary
@@ -9253,16 +9253,20 @@ function buildTimelineBlocks(recommendations) {
     container.innerHTML = '';
 
     recommendations.forEach((block, index) => {
-        const startHour = parseInt(block.time_from.split(':')[0]);
-        const startMin = parseInt(block.time_from.split(':')[1]);
-        const endHour = parseInt(block.time_to.split(':')[0]);
-        const endMin = parseInt(block.time_to.split(':')[1]);
+        // Parse ISO datetime to get hours and minutes
+        const fromTime = new Date(block.from_time);
+        const toTime = new Date(block.to_time);
+        
+        const startHour = fromTime.getHours();
+        const startMin = fromTime.getMinutes();
+        const endHour = toTime.getHours();
+        const endMin = toTime.getMinutes();
 
         const startPercent = ((startHour * 60 + startMin) / 1440) * 100;
         const endPercent = ((endHour * 60 + endMin) / 1440) * 100;
         const widthPercent = endPercent - startPercent;
 
-        const config = MODE_CONFIG[block.mode] || MODE_CONFIG['HOME I'];
+        const config = MODE_CONFIG[block.mode_name] || MODE_CONFIG['HOME I'];
 
         const blockEl = document.createElement('div');
         blockEl.className = 'timeline-block';
@@ -9271,10 +9275,12 @@ function buildTimelineBlocks(recommendations) {
         blockEl.style.background = config.color;
         blockEl.setAttribute('data-block-index', index);
 
+        const timeStr = `${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+
         blockEl.innerHTML = `
             <div class="block-icon">${config.icon}</div>
             <div class="block-label">${config.label}</div>
-            ${widthPercent > 8 ? `<div class="block-time">${block.time_from}</div>` : ''}
+            ${widthPercent > 8 ? `<div class="block-time">${timeStr}</div>` : ''}
         `;
 
         blockEl.onclick = () => toggleDetailBlock(index);
@@ -9306,10 +9312,16 @@ function buildDetailCards(recommendations) {
     container.innerHTML = '';
 
     recommendations.forEach((block, index) => {
-        const config = MODE_CONFIG[block.mode] || MODE_CONFIG['HOME I'];
+        const config = MODE_CONFIG[block.mode_name] || MODE_CONFIG['HOME I'];
         const savings = block.savings_vs_home_i || 0;
         const savingsClass = savings > 0 ? 'positive' : savings < 0 ? 'negative' : '';
         const savingsText = savings > 0 ? `+${savings.toFixed(2)} Kč` : `${savings.toFixed(2)} Kč`;
+
+        // Format times
+        const fromTime = new Date(block.from_time);
+        const toTime = new Date(block.to_time);
+        const fromStr = `${fromTime.getHours().toString().padStart(2, '0')}:${fromTime.getMinutes().toString().padStart(2, '0')}`;
+        const toStr = `${toTime.getHours().toString().padStart(2, '0')}:${toTime.getMinutes().toString().padStart(2, '0')}`;
 
         const card = document.createElement('div');
         card.className = 'detail-block';
@@ -9317,12 +9329,12 @@ function buildDetailCards(recommendations) {
 
         card.innerHTML = `
             <div class="detail-header">
-                <div class="detail-time">${block.time_from} - ${block.time_to}</div>
+                <div class="detail-time">${fromStr} - ${toStr}</div>
                 <div class="detail-mode">
                     <span class="detail-mode-icon">${config.icon}</span>
-                    <span>${block.mode}</span>
+                    <span>${block.mode_name}</span>
                 </div>
-                <div class="detail-cost">${(block.cost || 0).toFixed(2)} Kč</div>
+                <div class="detail-cost">${(block.total_cost || 0).toFixed(2)} Kč</div>
                 <div class="detail-savings ${savingsClass}">${savingsText}</div>
                 <div class="detail-expand">▼</div>
             </div>
@@ -9333,20 +9345,20 @@ function buildDetailCards(recommendations) {
                 </div>
                 <div class="detail-metrics">
                     <div class="metric-row">
-                        <span>Spotřeba baterie:</span>
-                        <span>${(block.batt_consumption || 0).toFixed(2)} kWh</span>
+                        <span>Průměrná FVE výroba:</span>
+                        <span>${(block.avg_solar_kw || 0).toFixed(2)} kW</span>
                     </div>
                     <div class="metric-row">
-                        <span>Nabití baterie:</span>
-                        <span>${(block.batt_charging || 0).toFixed(2)} kWh</span>
+                        <span>Průměrná spotřeba:</span>
+                        <span>${(block.avg_load_kw || 0).toFixed(2)} kW</span>
                     </div>
                     <div class="metric-row">
-                        <span>FVE produkce:</span>
-                        <span>${(block.solar_production || 0).toFixed(2)} kWh</span>
+                        <span>Průměrná spot cena:</span>
+                        <span>${(block.avg_spot_price || 0).toFixed(2)} Kč/kWh</span>
                     </div>
                     <div class="metric-row">
-                        <span>Spotřeba z FVE:</span>
-                        <span>${(block.consumption_from_solar || 0).toFixed(2)} kWh</span>
+                        <span>Trvání:</span>
+                        <span>${(block.duration_hours || 0).toFixed(1)} h</span>
                     </div>
                 </div>
             </div>
