@@ -1643,6 +1643,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         else:
             _LOGGER.info("Using FALLBACK load_avg sensors")
 
+        # Phase 2.5: Připravit DP mode lookup pro timeline
+        # Pokud máme DP optimalizaci, vytvoříme mapu timestamp → optimal mode
+        dp_mode_lookup: Dict[str, int] = {}
+        if hasattr(self, "_mode_optimization_result") and self._mode_optimization_result:
+            optimal_timeline = self._mode_optimization_result.get("optimal_timeline", [])
+            for dp_point in optimal_timeline:
+                dp_time = dp_point.get("time", "")
+                dp_mode = dp_point.get("mode", CBB_MODE_HOME_UPS)  # Default UPS
+                if dp_time:
+                    dp_mode_lookup[dp_time] = dp_mode
+            _LOGGER.info(f"DP mode lookup prepared: {len(dp_mode_lookup)} optimal modes")
+        else:
+            _LOGGER.debug("No DP optimization result - using default mode logic")
+
         for price_point in spot_prices:
             timestamp_str = price_point.get("time")
             if not timestamp_str:
@@ -1847,11 +1861,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 else:
                     reason = f"balancing_{balancing_reason}"
 
-            # OPRAVA: Při balancování VŽDY použít UPS režim (držení baterie na 100%)
-            # Standardní logika: UPS když grid_kwh > 0, jinak Home I
-            final_is_ups_mode = (
-                is_ups_mode or is_balancing_charging or is_balancing_holding
-            )
+            # PHASE 2.5: Určit MODE pro tento interval
+            # Priorita:
+            # 1. Balancing má prioritu (UPS pro charging i holding)
+            # 2. DP optimalizace (pokud existuje)
+            # 3. Fallback: Podle mode parametru
+            
+            interval_mode_num = mode  # Default: použít mode parametr
+            interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
+            
+            if is_balancing_charging or is_balancing_holding:
+                # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
+                interval_mode_num = CBB_MODE_HOME_UPS
+                interval_mode_name = "Home UPS"
+            elif timestamp_str in dp_mode_lookup:
+                # Použít optimální mode z DP
+                interval_mode_num = dp_mode_lookup[timestamp_str]
+                interval_mode_name = CBB_MODE_NAMES.get(interval_mode_num, f"MODE_{interval_mode_num}")
+            # else: použít mode parametr (už nastaveno výše)
 
             # Přidat bod do timeline
             # Phase 1.5: Lookup export price for this timestamp
@@ -1871,7 +1898,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
                     "consumption_kwh": round(load_kwh, 2),
                     "grid_charge_kwh": round(grid_kwh, 2),
-                    "mode": "Home UPS" if final_is_ups_mode else "Home I",
+                    "mode": interval_mode_name,  # Použít optimální mode (ne jen UPS/HOME I)
                     "reason": reason,
                 }
             )

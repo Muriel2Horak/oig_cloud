@@ -776,11 +776,11 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         # Nejlevnější okno je pro CHARGING (všech 8h)
         charging_start = best_window["start"]
         charging_end = best_window["end"]
-        
-        # Get hold_hours from config  
+
+        # Get hold_hours from config
         config = self._get_balancing_config()
         hold_hours = config.get("hold_hours", 3)
-        
+
         # Holding následuje hned po charging
         holding_start = charging_end
         holding_end = holding_start + timedelta(hours=hold_hours)
