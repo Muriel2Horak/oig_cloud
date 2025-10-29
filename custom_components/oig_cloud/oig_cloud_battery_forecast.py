@@ -444,6 +444,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Vypočítat optimální sekvenci CBB režimů před timeline calculation
             _LOGGER.info("Phase 2.5: Running DP multi-mode optimization...")
 
+            # PHASE 2.8 + REFACTORING: Get target from new getter
+            target_capacity = self._get_target_battery_capacity()
+            current_soc_percent = self._get_current_battery_soc_percent()
+
+            _LOGGER.info(
+                f"🔋 Battery state: current={current_capacity:.2f} kWh ({current_soc_percent:.1f}%), "
+                f"total={max_capacity:.2f} kWh, min={min_capacity:.2f} kWh, target={target_capacity:.2f} kWh"
+            )
+
             # Build load forecast list (kWh/15min for each interval)
             load_forecast = []
             today = dt_util.now().date()
@@ -477,21 +486,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     _LOGGER.warning(f"Failed to get load for {sp.get('time')}: {e}")
                     load_forecast.append(0.125)  # 500W fallback
 
-            # Run DP optimization
+            # Run HYBRID optimization (simplified, reliable)
             try:
-                self._mode_optimization_result = (
-                    self._calculate_optimal_mode_timeline_dp(
-                        current_capacity=current_capacity,
-                        max_capacity=max_capacity,
-                        min_capacity=min_capacity,
-                        spot_prices=spot_prices,
-                        export_prices=export_prices,
-                        solar_forecast=solar_forecast,
-                        load_forecast=load_forecast,
-                    )
+                self._mode_optimization_result = self._calculate_optimal_modes_hybrid(
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    min_capacity=min_capacity,
+                    target_capacity=target_capacity,
+                    spot_prices=spot_prices,
+                    export_prices=export_prices,
+                    solar_forecast=solar_forecast,
+                    load_forecast=load_forecast,
                 )
                 _LOGGER.info(
-                    f"✅ DP optimization completed: total_cost={self._mode_optimization_result['total_cost']:.2f} Kč"
+                    f"✅ HYBRID optimization completed: total_cost={self._mode_optimization_result['total_cost']:.2f} Kč, "
+                    f"target={target_capacity:.2f} kWh"
                 )
 
                 # Phase 2.8: Store mode_recommendations for API endpoint
@@ -500,44 +509,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
 
             except Exception as e:
-                _LOGGER.error(f"DP optimization failed: {e}", exc_info=True)
+                _LOGGER.error(f"HYBRID optimization failed: {e}", exc_info=True)
                 self._mode_optimization_result = None
                 self._mode_recommendations = []
 
-            # STEP 1: Vypočítat BASELINE timeline (bez jakéhokoli plánu)
-            # Toto je ČISTÁ predikce pro simulace a plánování
-            _LOGGER.debug("Calculating BASELINE timeline (no plan)")
-            self._baseline_timeline = self._calculate_timeline(
+            # SIMPLIFIED: VŽDY počítat JEN ACTIVE timeline s DP módy
+            # Baseline timeline byl zbytečný a způsoboval přepis ACTIVE dat
+            has_dp_results = (
+                hasattr(self, "_mode_optimization_result")
+                and self._mode_optimization_result is not None
+            )
+
+            _LOGGER.debug(
+                f"Calculating timeline with HYBRID={'yes' if has_dp_results else 'no'}, "
+                f"balancing={'yes' if self._active_charging_plan else 'no'}"
+            )
+            self._timeline_data = self._calculate_timeline(
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
                 min_capacity=min_capacity,
                 spot_prices=spot_prices,
-                export_prices=export_prices,  # Phase 1.5: Export prices
+                export_prices=export_prices,
                 solar_forecast=solar_forecast,
                 load_avg_sensors=load_avg_sensors,
                 adaptive_profiles=adaptive_profiles,
-                balancing_plan=None,  # ALWAYS None for baseline!
+                balancing_plan=balancing_plan,
             )
 
-            # STEP 2: Vypočítat ACTIVE timeline (s aplikovaným plánem)
-            # Toto je pro UI/dashboard - ukazuje skutečný stav
-            if self._active_charging_plan:
-                _LOGGER.debug("Calculating ACTIVE timeline (with applied plan)")
-                self._timeline_data = self._calculate_timeline(
-                    current_capacity=current_capacity,
-                    max_capacity=max_capacity,
-                    min_capacity=min_capacity,
-                    spot_prices=spot_prices,
-                    export_prices=export_prices,  # Phase 1.5: Export prices
-                    solar_forecast=solar_forecast,
-                    load_avg_sensors=load_avg_sensors,
-                    adaptive_profiles=adaptive_profiles,
-                    balancing_plan=balancing_plan,
-                )
-            else:
-                # Bez aktivního plánu: baseline = active
-                _LOGGER.debug("No active plan, using baseline as active timeline")
-                self._timeline_data = self._baseline_timeline
+            # Keep baseline timeline empty for backwards compatibility
+            self._baseline_timeline = []
 
             # Phase 1.5: Calculate hash for change detection
             new_hash = self._calculate_data_hash(self._timeline_data)
@@ -551,8 +551,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             self._last_update = datetime.now()
             _LOGGER.debug(
-                f"Battery forecast updated: {len(self._timeline_data)} active points, "
-                f"{len(self._baseline_timeline)} baseline points"
+                f"Battery forecast updated: {len(self._timeline_data)} timeline points"
             )
 
             # Vypočítat consumption summary pro dashboard
@@ -1716,11 +1715,282 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(f"Failed to find next expensive period: {e}")
             return None
 
+    def _calculate_optimal_modes_hybrid(
+        self,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        target_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> Dict[str, Any]:
+        """
+        Hybridní algoritmus pro optimalizaci CBB režimů - JEDNODUCHÝ a SPOLEHLIVÝ.
+
+        Strategie:
+        1. Forward pass: Simulace s HOME I, detekce minimum violations
+        2. Backward pass: Výpočet required battery pro dosažení target
+        3. Price-aware charging: HOME UPS jen v nejlevnějších hodinách
+
+        Hard constraint: Baterie NESMÍ klesnout pod min_capacity
+        Soft constraint: Dosáhnout alespoň target_capacity na konci
+        Optimalizace: Minimální náklady na grid charging
+        """
+        n = len(spot_prices)
+        modes = [CBB_MODE_HOME_I] * n  # Začít s HOME I všude (nejlevnější)
+        efficiency = 0.88  # DC/AC losses
+
+        # Parametry nabíjení
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        charging_power_kw = config.get("home_charge_rate", 2.8)
+        max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
+
+        _LOGGER.info(
+            f"🔄 HYBRID algorithm: current={current_capacity:.2f}, min={min_capacity:.2f}, "
+            f"target={target_capacity:.2f}, max={max_capacity:.2f}, intervals={n}"
+        )
+
+        # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
+        battery_trajectory = [current_capacity]
+        battery = current_capacity
+
+        for i in range(n):
+            solar_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
+            # Oprava: solar z forecast, load z load_forecast
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            # HOME I logika: solar → baterie nebo baterie → load
+            if solar_kwh >= load_kwh:
+                net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
+            else:
+                net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
+
+            battery += net_energy
+            battery = max(0, min(battery, max_capacity))
+            battery_trajectory.append(battery)
+
+        min_reached = min(battery_trajectory)
+        final_capacity = battery_trajectory[-1]
+
+        _LOGGER.info(
+            f"📊 Forward pass: min_reached={min_reached:.2f} kWh, "
+            f"final={final_capacity:.2f} kWh (target={target_capacity:.2f})"
+        )
+
+        # PHASE 2: Rozhodnout zda potřebujeme nabíjet
+        needs_charging_for_minimum = min_reached < min_capacity
+        needs_charging_for_target = final_capacity < target_capacity
+
+        if not needs_charging_for_minimum and not needs_charging_for_target:
+            _LOGGER.info("✅ No charging needed - HOME I everywhere is optimal")
+            return self._build_result(
+                modes,
+                spot_prices,
+                solar_forecast,
+                load_forecast,
+                current_capacity,
+                max_capacity,
+                min_capacity,
+                efficiency,
+            )
+
+        # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
+        required_battery = [0.0] * (n + 1)
+        required_battery[n] = max(
+            target_capacity, min_capacity
+        )  # Na konci chceme alespoň target
+
+        for i in range(n - 1, -1, -1):
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            # Co musí být NA ZAČÁTKU intervalu aby NA KONCI bylo required_battery[i+1]?
+            if solar_kwh >= load_kwh:
+                net_energy = solar_kwh - load_kwh
+                required_battery[i] = required_battery[i + 1] - net_energy
+            else:
+                drain = (load_kwh - solar_kwh) / efficiency
+                required_battery[i] = required_battery[i + 1] + drain
+
+            # KRITICKÉ: NEPOUŽÍVAT min clamp! Pokud baterie klesá pod minimum,
+            # required_battery MUSÍ být VYŠŠÍ než min_capacity aby trigger nabíjení!
+            # Jen clamp na max kapacitu
+            required_battery[i] = min(required_battery[i], max_capacity)
+
+        _LOGGER.info(
+            f"📈 Backward pass: required_start={required_battery[0]:.2f} kWh "
+            f"(current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f})"
+        )
+
+        # PHASE 4: Najít intervaly kde musíme nabíjet (deficit > 0)
+        charge_opportunities = []
+        battery = current_capacity
+
+        for i in range(n):
+            deficit = required_battery[i] - battery
+            price = spot_prices[i].get("price", 0)
+
+            if deficit > 0.1:  # Potřebujeme nabít alespoň 100Wh
+                charge_opportunities.append(
+                    {
+                        "index": i,
+                        "deficit": deficit,
+                        "price": price,
+                        "time": spot_prices[i].get("time", ""),
+                    }
+                )
+
+            # Simulace intervalu s HOME I
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            if solar_kwh >= load_kwh:
+                battery += solar_kwh - load_kwh
+            else:
+                battery -= (load_kwh - solar_kwh) / efficiency
+
+            battery = max(0, min(battery, max_capacity))
+
+        # PHASE 5: Seřadit charging opportunities podle ceny (vzestupně)
+        charge_opportunities.sort(key=lambda x: x["price"])
+
+        _LOGGER.info(f"⚡ Found {len(charge_opportunities)} charging opportunities")
+
+        # PHASE 6: Přidat HOME UPS na nejlevnějších intervalech s deficitem
+        for opp in charge_opportunities[:20]:  # Max 20 nabíjecích intervalů (5h)
+            idx = opp["index"]
+            modes[idx] = CBB_MODE_HOME_UPS
+            _LOGGER.debug(
+                f"  → Interval {idx}: price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
+            )
+
+        # Count modes
+        mode_counts = {
+            "HOME I": modes.count(CBB_MODE_HOME_I),
+            "HOME UPS": modes.count(CBB_MODE_HOME_UPS),
+        }
+        _LOGGER.info(
+            f"✅ Hybrid result: HOME I={mode_counts['HOME I']}, HOME UPS={mode_counts['HOME UPS']}"
+        )
+
+        return self._build_result(
+            modes,
+            spot_prices,
+            solar_forecast,
+            load_forecast,
+            current_capacity,
+            max_capacity,
+            min_capacity,
+            efficiency,
+        )
+
+    def _build_result(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        efficiency: float,
+    ) -> Dict[str, Any]:
+        """Sestavit výsledek ve formátu kompatibilním s timeline."""
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        charging_power_kw = config.get("home_charge_rate", 2.8)
+        max_charge_per_interval = charging_power_kw / 4.0
+
+        timeline = []
+        battery = current_capacity
+        total_cost = 0.0
+
+        for i, mode in enumerate(modes):
+            timestamp_str = spot_prices[i].get("time", "")
+            price = spot_prices[i].get("price", 0)
+
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            # Fyzika podle módu
+            if mode == CBB_MODE_HOME_UPS:
+                # UPS: spotřeba ze sítě, baterie nabíjí ze solaru + gridu
+                battery_space = max_capacity - battery
+                grid_charge = min(max_charge_per_interval, battery_space / efficiency)
+                battery += solar_kwh + grid_charge
+                total_cost += (load_kwh + grid_charge) * price  # Grid cost
+            else:
+                # HOME I: solar → baterie nebo baterie → load
+                if solar_kwh >= load_kwh:
+                    battery += solar_kwh - load_kwh
+                else:
+                    battery -= (load_kwh - solar_kwh) / efficiency
+
+            battery = max(0, min(battery, max_capacity))
+
+            timeline.append(
+                {
+                    "time": timestamp_str,
+                    "battery_soc": battery,
+                    "mode": mode,
+                    "mode_name": CBB_MODE_NAMES.get(mode, "Unknown"),
+                }
+            )
+
+        # Mode recommendations (první 8 intervalů = 2h)
+        mode_recommendations = []
+        for i in range(min(8, len(modes))):
+            mode_recommendations.append(
+                {
+                    "time": spot_prices[i].get("time", ""),
+                    "mode": modes[i],
+                    "mode_name": CBB_MODE_NAMES.get(modes[i], "Unknown"),
+                }
+            )
+
+        return {
+            "optimal_timeline": timeline,
+            "optimal_modes": modes,
+            "total_cost": total_cost,
+            "mode_recommendations": mode_recommendations,
+        }
+
     def _calculate_optimal_mode_timeline_dp(
         self,
         current_capacity: float,
         max_capacity: float,
         min_capacity: float,
+        target_capacity: float,
         spot_prices: List[Dict[str, Any]],
         export_prices: List[Dict[str, Any]],
         solar_forecast: Dict[str, Any],
@@ -1730,15 +2000,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Dynamic Programming optimization pro nalezení optimální sekvence CBB režimů.
 
         Phase 2.5: Multi-Mode Cost Comparison s globální optimalizací.
+        Phase 2.8: Target Capacity Constraint - DP musí dosáhnout target_capacity na konci forecast.
 
         DP State: (time_index, battery_soc_discrete)
         DP Decision: Který CBB režim (0-3) použít v daném intervalu
         DP Objective: Minimalizovat celkové náklady (direct + opportunity cost)
+        DP Constraint:
+            - Nikdy neklesat pod min_capacity (config minimum - bezpečný buffer)
+            - Dosáhnout target_capacity na konci forecast periody
 
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
             max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh) - config minimum (33%), bezpečný buffer nad HW minimem (20%)
+            target_capacity: Cílová kapacita na konci forecast (kWh) - typicky 80%
             spot_prices: Timeline spotových cen
             export_prices: Timeline prodejních cen
             solar_forecast: Solární předpověď
@@ -1764,8 +2039,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         n_soc_states = len(soc_states)
 
         _LOGGER.info(
-            f"DP optimization: {n_intervals} intervals, {n_soc_states} SoC states "
-            f"({min_capacity:.1f}-{max_capacity:.1f} kWh, step {soc_step} kWh)"
+            f"DP optimization PHASE 2.8: {n_intervals} intervals, {n_soc_states} SoC states "
+            f"({min_capacity:.1f}-{max_capacity:.1f} kWh, step {soc_step} kWh), "
+            f"target={target_capacity:.1f} kWh"
         )
 
         # DP tables
@@ -1777,8 +2053,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         next_soc_map = [[{} for _ in range(n_soc_states)] for _ in range(n_intervals)]
 
         # Base case: poslední interval (t = n_intervals)
+        # PHASE 2.8: Penalizace za nedosažení target_capacity
+        # DP musí dosáhnout target na konci, ne jen přežít s jakýmkoliv SoC
+        target_penalty_multiplier = 100.0  # Vysoká penalizace (100 Kč/kWh rozdílu)
+
         for s in range(n_soc_states):
-            dp[n_intervals][s] = 0.0  # Žádné další náklady po posledním intervalu
+            soc = soc_states[s]
+            if soc < target_capacity:
+                # Penalizace: čím víc chybí k targetu, tím vyšší náklady
+                deficit = target_capacity - soc
+                dp[n_intervals][s] = deficit * target_penalty_multiplier
+                _LOGGER.debug(
+                    f"Base case penalty: SoC {soc:.2f} kWh < target {target_capacity:.2f} kWh, "
+                    f"penalty = {dp[n_intervals][s]:.2f} Kč"
+                )
+            else:
+                # Dosáhli jsme targetu nebo víc - bez penalizace
+                dp[n_intervals][s] = 0.0
 
         # Backward induction (od konce k začátku)
         for t in range(n_intervals - 1, -1, -1):
@@ -1837,6 +2128,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         export_price=export_price,
                     )
 
+                    new_soc = sim_result["new_soc"]
+
                     # Vypočítat náklady včetně opportunity cost
                     cost_analysis = self._calculate_interval_cost(
                         simulation_result=sim_result,
@@ -1848,7 +2141,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     interval_cost = cost_analysis["total_cost"]
 
                     # Najít nejbližší SoC state pro new_soc
-                    new_soc = sim_result["new_soc"]
                     next_s = min(
                         range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
                     )
@@ -1862,6 +2154,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         best_next_s = next_s
 
                 # Uložit nejlepší rozhodnutí
+                # PHASE 2.8: Safety check - pokud žádný mode není povolen (all continue),
+                # force HOME UPS mode jako fallback (jediný mode který může nabíjet ze sítě)
+                if best_mode == -1:
+                    _LOGGER.warning(
+                        f"⚠️ DP interval {t}: No valid mode found for SoC={battery_soc:.2f} kWh! "
+                        f"Forcing HOME UPS mode as emergency fallback."
+                    )
+                    best_mode = CBB_MODE_HOME_UPS
+                    # Re-simulate with HOME UPS to get valid next state
+                    sim_result = self._simulate_interval_with_mode(
+                        mode=CBB_MODE_HOME_UPS,
+                        solar_kwh=solar_kwh,
+                        load_kwh=load_kwh,
+                        battery_soc=battery_soc,
+                        max_capacity=max_capacity,
+                        min_capacity=min_capacity,
+                        spot_price=spot_price,
+                        export_price=export_price,
+                    )
+                    new_soc = sim_result["new_soc"]
+                    best_next_s = min(
+                        range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
+                    )
+                    cost_analysis = self._calculate_interval_cost(
+                        simulation_result=sim_result,
+                        spot_price=spot_price,
+                        export_price=export_price,
+                        time_of_day=time_of_day,
+                    )
+                    best_cost = cost_analysis["total_cost"] + dp[t + 1][best_next_s]
+
                 dp[t][s] = best_cost
                 policy[t][s] = best_mode
                 next_soc_map[t][s][best_mode] = best_next_s
@@ -1870,6 +2193,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Najít startovní SoC state
         start_s = min(
             range(n_soc_states), key=lambda i: abs(soc_states[i] - current_capacity)
+        )
+
+        # DEBUG: Log initial discretization difference
+        discretized_soc = soc_states[start_s]
+        _LOGGER.info(
+            f"DP Forward Pass: current_capacity={current_capacity:.2f} kWh → "
+            f"discretized to {discretized_soc:.2f} kWh (delta={discretized_soc - current_capacity:+.2f} kWh)"
         )
 
         optimal_modes = []
@@ -1921,6 +2251,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "solar_kwh": solar_kwh,  # For detailed recommendations
                     "load_kwh": load_kwh,  # For detailed recommendations
                     "spot_price": spot_price,  # For detailed recommendations
+                    "export_price": export_price,  # For post-processing
                 }
             )
 
@@ -2239,8 +2570,52 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"{alternatives.get('FULL HOME UPS', {}).get('delta_czk', 0):.2f} Kč vs FULL UPS"
         )
 
-        # Phase 2.6: Mode Recommendations - User-friendly DNES+ZÍTRA schedule
-        # Phase 2.8: Pouze 2 dny (DNES a ZÍTRA), bloky přes půlnoc splitnuty
+        # =====================================================================
+        # PHASE 2.8: POST-PROCESSING - Enforce min_capacity constraint
+        # =====================================================================
+        # Strategie: Pokud timeline klesá pod minimum, vrat se zpět a oprav:
+        # 1. Najdi první bod kde battery < min_capacity
+        # 2. Najdi nejlevnější hodiny PŘED tímto bodem
+        # 3. Přidej HOME UPS nabíjení nebo změň HOME II→HOME I
+        # 4. Opakuj dokud žádný bod není pod minimem
+
+        _LOGGER.info(
+            f"POST-PROCESSING: Enforcing min_capacity constraint ({min_capacity:.2f} kWh)"
+        )
+
+        optimal_timeline, optimal_modes = self._enforce_min_capacity_constraint(
+            optimal_timeline=optimal_timeline,
+            optimal_modes=optimal_modes,
+            min_capacity=min_capacity,
+            max_capacity=max_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+        )
+
+        # KRITICKÉ: Překalkulovat total_cost po post-processingu
+        total_cost_corrected = sum(
+            point.get("net_cost", 0.0) for point in optimal_timeline
+        )
+        final_soc_corrected = (
+            optimal_timeline[-1].get("new_soc", current_capacity)
+            if optimal_timeline
+            else current_capacity
+        )
+
+        _LOGGER.info(
+            f"POST-PROCESSING RESULT: total_cost={total_cost_corrected:.2f} Kč, final_soc={final_soc_corrected:.2f} kWh, "
+            f"modes: HOME I={optimal_modes.count(0)}, HOME II={optimal_modes.count(1)}, "
+            f"HOME III={optimal_modes.count(2)}, HOME UPS={optimal_modes.count(3)}"
+        )
+
+        # =====================================================================
+        # Phase 2.6: Mode Recommendations - AFTER post-processing!
+        # =====================================================================
+        # DŮLEŽITÉ: Vytváříme recommendations AŽ PO post-processingu,
+        # aby odrážely OPRAVENÝ plán který respektuje min_capacity
         mode_recommendations = self._create_mode_recommendations(
             optimal_timeline, hours_ahead=48
         )
@@ -2279,15 +2654,164 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"48h (DNES+ZÍTRA)={total_cost_48h:.2f} Kč, savings={total_savings_48h:.2f} Kč"
         )
 
+        # Store results in format compatible with API endpoints
         return {
-            "optimal_modes": optimal_modes,
             "optimal_timeline": optimal_timeline,
-            "total_cost": total_cost,  # 72h total (for DP comparison)
-            "total_cost_48h": total_cost_48h,  # DNES+ZÍTRA only (for frontend tile)
-            "total_savings_48h": total_savings_48h,  # Savings vs HOME I for DNES+ZÍTRA
-            "alternatives": alternatives,  # Phase 2.6: What-if comparison
-            "mode_recommendations": mode_recommendations,  # Phase 2.6: User-friendly schedule
+            "optimal_modes": optimal_modes,
+            "total_cost": total_cost,
+            "mode_recommendations": mode_recommendations,
         }
+
+    def _enforce_min_capacity_constraint(
+        self,
+        optimal_timeline: List[Dict[str, Any]],
+        optimal_modes: List[int],
+        min_capacity: float,
+        max_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+    ) -> tuple[List[Dict[str, Any]], List[int]]:
+        """
+        PHASE 2.8: Post-processing - oprav timeline aby nikdy neklesl pod min_capacity.
+
+        Strategie:
+        1. Simuluj timeline s DP módy a najdi první porušení min_capacity
+        2. Vrat se zpět k nejlevnějším intervalům PŘED porušením
+        3. Přidej HOME UPS nabíjení nebo změň HOME II→HOME I (podle ceny)
+        4. Opakuj dokud žádné porušení neexistuje
+
+        Args:
+            optimal_timeline: Timeline z DP optimalizace
+            optimal_modes: Módy z DP optimalizace
+            min_capacity: Minimální povolená kapacita baterie
+            max_capacity: Maximální kapacita baterie
+            spot_prices: Spotové ceny
+            export_prices: Export prices
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby
+            current_capacity: Aktuální kapacita baterie
+
+        Returns:
+            (opravený_timeline, opravené_módy)
+        """
+        MAX_ITERATIONS = 10  # Ochrana proti nekonečné smyčce
+        iteration = 0
+
+        while iteration < MAX_ITERATIONS:
+            iteration += 1
+
+            # 1. Simuluj timeline a najdi porušení
+            violation_index = None
+            battery_soc = current_capacity
+
+            _LOGGER.debug(
+                f"POST-PROC Iteration {iteration}: Starting simulation from battery={battery_soc:.2f} kWh"
+            )
+
+            for i, (timeline_point, mode) in enumerate(
+                zip(optimal_timeline, optimal_modes)
+            ):
+                # Timeline má klíče: solar_kwh, load_kwh, spot_price (ne solar_production!)
+                solar_kwh = timeline_point.get("solar_kwh", 0.0)
+                load_kwh = timeline_point.get("load_kwh", 0.0)
+
+                # Simuluj interval
+                sim_result = self._simulate_interval_with_mode(
+                    mode=mode,
+                    solar_kwh=solar_kwh,
+                    load_kwh=load_kwh,
+                    battery_soc=battery_soc,
+                    max_capacity=max_capacity,
+                    min_capacity=min_capacity,  # Pro info, ale nespolehlivé
+                    spot_price=timeline_point.get("spot_price", 0.0),
+                    export_price=timeline_point.get("export_price", 0.0),
+                )
+
+                battery_soc = sim_result["new_soc"]
+
+                # Debug: Log každých 10 intervalů + kritické případy
+                if i % 10 == 0 or battery_soc < min_capacity + 0.5 or i < 5:
+                    mode_name = CBB_MODE_NAMES.get(mode, f"MODE_{mode}")
+                    _LOGGER.debug(
+                        f"POST-PROC [{iteration}] interval {i:3d}: battery={battery_soc:.2f} kWh, "
+                        f"mode={mode_name}, solar={solar_kwh:.3f}, load={load_kwh:.3f}, "
+                        f"grid_import={sim_result.get('grid_import', 0):.3f}"
+                    )
+
+                # Zkontroluj porušení
+                if battery_soc < min_capacity:
+                    violation_index = i
+                    _LOGGER.info(
+                        f"⚠️ Iteration {iteration}: Violation at interval {i} "
+                        f"(battery={battery_soc:.2f} < min={min_capacity:.2f})"
+                    )
+                    break
+
+            # 2. Pokud žádné porušení, hotovo!
+            if violation_index is None:
+                _LOGGER.info(
+                    f"✅ Min capacity constraint satisfied after {iteration} iteration(s)"
+                )
+                break
+
+            # 3. Najdi nejlevnější intervaly PŘED porušením
+            # Potřebujeme nabít baterii o deficit_kwh
+            deficit_kwh = min_capacity - battery_soc
+
+            # Vytvoř list kandidátů: intervaly PŘED violation_index
+            candidates = []
+            for i in range(violation_index):
+                mode = optimal_modes[i]
+                price = spot_prices[i].get("price", 0.0)
+
+                # Kandidát: intervaly kde můžeme přidat nabíjení nebo snížit vybíjení
+                # HOME I/II/III → můžeme změnit na HOME UPS (nabíjení)
+                # HOME UPS → už nabíjí, můžeme skipnout
+                if mode != CBB_MODE_HOME_UPS:
+                    candidates.append(
+                        {
+                            "index": i,
+                            "price": price,
+                            "current_mode": mode,
+                        }
+                    )
+
+            # Seřaď podle ceny (nejlevnější první)
+            candidates.sort(key=lambda x: x["price"])
+
+            # 4. Přidej HOME UPS nabíjení v nejlevnějších intervalech
+            # Potřebujeme nabít deficit_kwh
+            # HOME UPS nabíjí ~0.7 kWh/15min (2.8 kW * 0.25h)
+            charge_per_interval = 0.7  # kWh
+            intervals_needed = int(np.ceil(deficit_kwh / charge_per_interval))
+
+            _LOGGER.info(
+                f"  Need {deficit_kwh:.2f} kWh → {intervals_needed} intervals of HOME UPS charging"
+            )
+
+            # Změň módy v nejlevnějších intervalech
+            changed_count = 0
+            for candidate in candidates[:intervals_needed]:
+                idx = candidate["index"]
+                optimal_modes[idx] = CBB_MODE_HOME_UPS
+                optimal_timeline[idx]["mode"] = CBB_MODE_HOME_UPS
+                optimal_timeline[idx]["mode_name"] = "HOME UPS"
+                changed_count += 1
+
+            _LOGGER.info(
+                f"  Changed {changed_count} intervals to HOME UPS (cheapest before violation)"
+            )
+
+        if iteration >= MAX_ITERATIONS:
+            _LOGGER.error(
+                f"❌ Failed to enforce min_capacity after {MAX_ITERATIONS} iterations! "
+                "Timeline may still violate minimum."
+            )
+
+        return optimal_timeline, optimal_modes
 
     def _calculate_timeline(
         self,
@@ -2325,7 +2849,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             List timeline bodů s predikcí
         """
         timeline = []
-        battery_kwh = current_capacity
+
+        # REFACTORING: Use DP discretized battery_soc if available
+        # This ensures timeline matches DP/POST-PROC physics exactly
+        if (
+            hasattr(self, "_mode_optimization_result")
+            and self._mode_optimization_result
+        ):
+            optimal_timeline = self._mode_optimization_result.get(
+                "optimal_timeline", []
+            )
+            if optimal_timeline and len(optimal_timeline) > 0:
+                # Use DP's discretized initial SoC
+                battery_kwh = optimal_timeline[0].get("battery_soc", current_capacity)
+                _LOGGER.info(
+                    f"Timeline using DP discretized start: {battery_kwh:.2f} kWh "
+                    f"(vs parameter {current_capacity:.2f} kWh, delta={battery_kwh - current_capacity:+.2f} kWh)"
+                )
+            else:
+                battery_kwh = current_capacity
+        else:
+            battery_kwh = current_capacity
 
         today = dt_util.now().date()
 
@@ -2423,13 +2967,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             optimal_timeline = self._mode_optimization_result.get(
                 "optimal_timeline", []
             )
+            optimal_modes = self._mode_optimization_result.get("optimal_modes", [])
+
             for dp_point in optimal_timeline:
                 dp_time = dp_point.get("time", "")
                 dp_mode = dp_point.get("mode", CBB_MODE_HOME_UPS)  # Default UPS
                 if dp_time:
                     dp_mode_lookup[dp_time] = dp_mode
+
+            # DEBUG: Check if post-processing modes are included
+            mode_counts = {
+                "HOME I": optimal_modes.count(0),
+                "HOME II": optimal_modes.count(1),
+                "HOME III": optimal_modes.count(2),
+                "HOME UPS": optimal_modes.count(3),
+            }
             _LOGGER.info(
-                f"DP mode lookup prepared: {len(dp_mode_lookup)} optimal modes"
+                f"DP mode lookup prepared: {len(dp_mode_lookup)} optimal modes, "
+                f"HOME I={mode_counts['HOME I']}, HOME II={mode_counts['HOME II']}, "
+                f"HOME III={mode_counts['HOME III']}, HOME UPS={mode_counts['HOME UPS']}"
             )
         else:
             _LOGGER.debug("No DP optimization result - using default mode logic")
@@ -2505,6 +3061,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             interval_mode_num = mode  # Default: použít mode parametr
             interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
+
+            # DEBUG first 3 intervals
+            if len(timeline) < 3:
+                _LOGGER.debug(
+                    f"Mode selection [{len(timeline)}]: timestamp_str={timestamp_str}, "
+                    f"in_dp_lookup={timestamp_str in dp_mode_lookup}, "
+                    f"dp_lookup_size={len(dp_mode_lookup)}"
+                )
 
             if is_balancing_charging or is_balancing_holding:
                 # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
@@ -2614,21 +3178,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # UPS režim: spotřeba ze sítě (100% účinnost)
                     # Baterie roste jen díky solar + grid nabíjení
 
-                    # CRITICAL: V UPS režimu můžeme nabíjet z gridu!
-                    # Pokud baterie není plná, přidáme grid charging
-                    if battery_kwh < max_capacity - 0.1:  # Není plná (s malou rezervou)
-                        # Kolik můžeme nabít z gridu?
-                        config = (
-                            self._config_entry.options
-                            if self._config_entry and self._config_entry.options
-                            else self._config_entry.data if self._config_entry else {}
-                        )
-                        charging_power_kw = config.get("home_charge_rate", 2.8)
-                        max_charge_per_15min = (
-                            charging_power_kw / 4.0
-                        )  # kW → kWh za 15min
+                    # CRITICAL: V UPS režimu VŽDY nabíjíme z gridu (DP optimization rozhodla)
+                    # DP módy jsou autoritativní - pokud je HOME UPS, nabíjíme!
+                    config = (
+                        self._config_entry.options
+                        if self._config_entry and self._config_entry.options
+                        else self._config_entry.data if self._config_entry else {}
+                    )
+                    charging_power_kw = config.get("home_charge_rate", 2.8)
+                    max_charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
 
-                        battery_space = max_capacity - battery_kwh
+                    battery_space = max_capacity - battery_kwh
+                    # FIX: Nabíjet VŽDY když není úplně plná (DP už rozhodl že má smysl)
+                    # Původní podmínka "battery_space > 0.1" byla ŠPATNĚ - blokovala nabíjení!
+                    if battery_kwh < max_capacity - 0.1:
                         grid_kwh = min(max_charge_per_15min, battery_space / efficiency)
 
                     net_energy = solar_kwh + grid_kwh
@@ -2654,18 +3217,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Výpočet nové kapacity baterie
                 battery_kwh = battery_kwh + net_energy
 
-                # Clamp na maximum i minimum
-                # OPRAVA: MUSÍME clampovat na minimum (min_capacity nebo 0 kWh), jinak baterie jde pod limit!
-                # Grid charging algoritmus funguje správně i s clampem - detekuje když battery_kwh <= min_capacity
+                # Clamp na maximum
+                # PHASE 2.8: ODSTRANĚNÍ MIN CLAMPU!
+                # DP optimization zajistí, že baterie nikdy neklesne pod min_capacity
+                # pomocí HOME UPS nabíjení. Clamp maskoval chyby v DP optimalizaci.
                 if battery_kwh > max_capacity:
                     battery_kwh = max_capacity
-                if battery_kwh < min_capacity:
-                    # ⚠️ ENFORCEMENT: Battery NESMÍ klesnout pod min_capacity (2.458 kWh = 20%)
-                    _LOGGER.warning(
-                        f"Battery would drop below minimum ({min_capacity:.2f} kWh), "
-                        f"clamping from {battery_kwh:.2f} kWh"
+
+                # Debug: Log každých 10 intervalů pro porovnání s post-processing
+                if (
+                    len(timeline) % 10 == 0
+                    or battery_kwh < min_capacity + 0.5
+                    or len(timeline) < 5
+                ):
+                    _LOGGER.debug(
+                        f"TIMELINE interval {len(timeline):3d}: battery={battery_kwh:.2f} kWh, "
+                        f"mode={interval_mode_name}, solar={solar_kwh:.3f}, load={load_kwh:.3f}, "
+                        f"grid_kwh={grid_kwh:.3f}, net_energy={net_energy:.3f}"
                     )
-                    battery_kwh = min_capacity
+
+                # Debug: Pokud baterie klesla pod minimum, je to chyba v DP optimalizaci!
+                if battery_kwh < min_capacity:
+                    _LOGGER.error(
+                        f"🔴 DP BUG: Battery dropped below minimum! "
+                        f"battery={battery_kwh:.2f} kWh < min={min_capacity:.2f} kWh, "
+                        f"mode={interval_mode_name}, time={timestamp.isoformat()}"
+                    )
 
             # Určit reason pro tento interval
             reason = "normal"
@@ -2739,53 +3316,148 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return timeline
 
-    def _get_current_battery_capacity(self) -> Optional[float]:
-        """Získat aktuální kapacitu baterie z remaining_usable_capacity."""
+    def _get_total_battery_capacity(self) -> float:
+        """Získat CELKOVOU kapacitu baterie z API (box_prms.p_bat → kWh).
+
+        Toto je FYZICKÁ celková kapacita baterie (0-100%).
+        """
         if not self._hass:
-            return None
+            return 15.36  # Default fallback
 
-        sensor_id = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
-        state = self._hass.states.get(sensor_id)
+        # Zkusit získat z PV data (box_prms.p_bat)
+        pv_data_sensor = f"sensor.oig_{self._box_id}_pv_data"
+        state = self._hass.states.get(pv_data_sensor)
 
-        if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.debug(f"Sensor {sensor_id} not available")
-            return None
+        if state and hasattr(state, "attributes"):
+            try:
+                pv_data = state.attributes.get("data", {})
+                if isinstance(pv_data, dict):
+                    p_bat_wp = pv_data.get("box_prms", {}).get("p_bat")
+                    if p_bat_wp:
+                        total_kwh = float(p_bat_wp) / 1000.0
+                        _LOGGER.debug(
+                            f"Total battery capacity from API: {p_bat_wp} Wp = {total_kwh:.2f} kWh"
+                        )
+                        return total_kwh
+            except (KeyError, ValueError, TypeError) as e:
+                _LOGGER.debug(f"Error reading p_bat from pv_data: {e}")
 
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            _LOGGER.debug(f"Invalid value for {sensor_id}: {state.state}")
-            return None
+        # Fallback: vypočítat z usable_battery_capacity (backwards compatibility)
+        usable_sensor = f"sensor.oig_{self._box_id}_usable_battery_capacity"
+        usable_state = self._hass.states.get(usable_sensor)
+
+        if usable_state and usable_state.state not in ["unknown", "unavailable"]:
+            try:
+                usable_kwh = float(usable_state.state)
+                total_kwh = usable_kwh / 0.8  # Usable je 80% z total
+                _LOGGER.debug(
+                    f"Total battery capacity from usable: {usable_kwh:.2f} kWh × 1.25 = {total_kwh:.2f} kWh"
+                )
+                return total_kwh
+            except (ValueError, TypeError):
+                pass
+
+        _LOGGER.warning("Unable to get total battery capacity, using default 15.36 kWh")
+        return 15.36
+
+    def _get_current_battery_soc_percent(self) -> float:
+        """Získat aktuální SoC v % z API (actual.bat_c).
+
+        Toto je SKUTEČNÝ SoC% vůči celkové kapacitě (0-100%).
+        """
+        if not self._hass:
+            return 46.0  # Default fallback
+
+        # Hlavní sensor: batt_bat_c (Battery Percent z API)
+        soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
+        state = self._hass.states.get(soc_sensor)
+
+        if state and state.state not in ["unknown", "unavailable"]:
+            try:
+                soc_percent = float(state.state)
+                _LOGGER.debug(f"Battery SoC from API: {soc_percent:.1f}%")
+                return soc_percent
+            except (ValueError, TypeError):
+                _LOGGER.debug(f"Invalid SoC value: {state.state}")
+
+        _LOGGER.warning("Unable to get battery SoC%, using default 46%")
+        return 46.0
+
+    def _get_current_battery_capacity(self) -> float:
+        """Získat aktuální kapacitu baterie v kWh.
+
+        NOVÝ VÝPOČET: total_capacity × soc_percent / 100
+        (místo remaining_usable_capacity computed sensoru)
+        """
+        total = self._get_total_battery_capacity()
+        soc_percent = self._get_current_battery_soc_percent()
+        current_kwh = total * soc_percent / 100.0
+
+        _LOGGER.debug(
+            f"Current battery capacity: {total:.2f} kWh × {soc_percent:.1f}% = {current_kwh:.2f} kWh"
+        )
+        return current_kwh
 
     def _get_max_battery_capacity(self) -> float:
-        """Získat maximální kapacitu baterie z usable_battery_capacity."""
-        if not self._hass:
-            return 10.0  # Default fallback
+        """Získat maximální kapacitu baterie (= total capacity).
 
-        sensor_id = f"sensor.oig_{self._box_id}_usable_battery_capacity"
-        state = self._hass.states.get(sensor_id)
-
-        if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.debug(f"Sensor {sensor_id} not available, using default 10.0")
-            return 10.0
-
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            _LOGGER.debug(f"Invalid value for {sensor_id}: {state.state}")
-            return 10.0
+        DEPRECATED: Kept for backwards compatibility.
+        Use _get_total_battery_capacity() instead.
+        """
+        return self._get_total_battery_capacity()
 
     def _get_min_battery_capacity(self) -> float:
-        """Získat minimální kapacitu baterie z config flow."""
-        # Získat z config entry
-        if self._config_entry and self._config_entry.data:
-            min_capacity_percent = self._config_entry.data.get(
-                "min_capacity_percent", 20.0
-            )
-            max_capacity = self._get_max_battery_capacity()
-            return (min_capacity_percent / 100.0) * max_capacity
+        """Získat minimální kapacitu baterie z config flow.
 
-        return 2.0  # Default 20% z 10kWh
+        NOVÝ VÝPOČET: min_percent × total_capacity
+        (místo min_percent × usable_capacity)
+        """
+        total = self._get_total_battery_capacity()
+
+        if self._config_entry:
+            min_percent = (
+                self._config_entry.options.get("min_capacity_percent")
+                if self._config_entry.options
+                else self._config_entry.data.get("min_capacity_percent", 33.0)
+            )
+            if min_percent is None:
+                min_percent = 33.0
+            min_kwh = total * float(min_percent) / 100.0
+
+            _LOGGER.debug(
+                f"Min battery capacity: {min_percent:.0f}% × {total:.2f} kWh = {min_kwh:.2f} kWh "
+                f"(source={'options' if self._config_entry.options else 'data'})"
+            )
+            return min_kwh
+
+        # Default: 33% z total
+        return total * 0.33
+
+    def _get_target_battery_capacity(self) -> float:
+        """Získat cílovou kapacitu baterie z config flow.
+
+        NOVÝ: Target capacity pro DP optimalizaci (kWh).
+        """
+        total = self._get_total_battery_capacity()
+
+        if self._config_entry:
+            target_percent = (
+                self._config_entry.options.get("target_capacity_percent")
+                if self._config_entry.options
+                else self._config_entry.data.get("target_capacity_percent", 80.0)
+            )
+            if target_percent is None:
+                target_percent = 80.0
+            target_kwh = total * float(target_percent) / 100.0
+
+            _LOGGER.debug(
+                f"Target battery capacity: {target_percent:.0f}% × {total:.2f} kWh = {target_kwh:.2f} kWh "
+                f"(source={'options' if self._config_entry.options else 'data'})"
+            )
+            return target_kwh
+
+        # Default: 80% z total
+        return total * 0.80
 
     # =========================================================================
     # PHASE 2.9: DAILY PLAN TRACKING - Historie vs Plán
@@ -7125,7 +7797,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         for point in timeline_data:
             grid_charge_kwh = point.get("grid_charge_kwh", 0)
             battery_capacity = point.get("battery_capacity_kwh", 0)
-            mode = point.get("mode", "")
+            # FIX: Timeline má klíč "mode_name" ne "mode"
+            mode = point.get("mode_name", point.get("mode", ""))
 
             # OPRAVA: Detekce nabíjení podle režimu UPS místo grid_charge_kwh
             # Při balancování může být grid_charge_kwh=0 (nabíjení ze solaru)
@@ -7298,186 +7971,89 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Vrátí stav senzoru - on/off jestli nabíjení PROBÍHÁ nebo brzy začne."""
-        intervals, _, _ = self._calculate_charging_intervals()
+        """Vrátí stav senzoru - on pokud TEĎKA probíhá HOME UPS interval."""
+        # Načíst battery_forecast data
+        if not self.coordinator.data:
+            return "off"
 
-        # Najít souvislé bloky nabíjení a kontrolovat, jestli jsme v některém
+        battery_forecast = self.coordinator.data.get("battery_forecast")
+        if not battery_forecast or not isinstance(battery_forecast, dict):
+            return "off"
+
+        timeline_data = battery_forecast.get("timeline_data", [])
+        if not timeline_data:
+            return "off"
+
         now = datetime.now()
 
-        # Získat dynamické offsety z ModeTransitionTracker
-        offset_before_start_seconds = self._get_dynamic_offset("Home 1", "Home UPS")
-        offset_before_end_seconds = self._get_dynamic_offset("Home UPS", "Home 1")
-
-        # Logovat jen při změně offsetů
-        if (
-            self._last_offset_start != offset_before_start_seconds
-            or self._last_offset_end != offset_before_end_seconds
-        ):
-            _LOGGER.info(
-                f"[GridChargingPlan] Offset changed: Home 1→Home UPS: {offset_before_start_seconds}s, "
-                f"Home UPS→Home 1: {offset_before_end_seconds}s"
-            )
-            self._last_offset_start = offset_before_start_seconds
-            self._last_offset_end = offset_before_end_seconds
-
-        offset_before_start = timedelta(seconds=offset_before_start_seconds)
-        offset_before_end = timedelta(seconds=offset_before_end_seconds)
-
-        # Projít intervaly a vytvořit bloky
-        charging_blocks = []
-        current_block_start = None
-        current_block_end = None
-
-        for interval in intervals:
-            if not interval.get("is_charging_battery", False):
-                # Přeskočit intervaly bez nabíjení
-                if current_block_start:
-                    # Ukončit aktuální blok
-                    charging_blocks.append((current_block_start, current_block_end))
-                    current_block_start = None
-                    current_block_end = None
-                continue
-
+        # Projít timeline a najít interval který TEĎKA probíhá
+        for point in timeline_data:
             try:
-                interval_time = datetime.fromisoformat(interval["timestamp"])
+                timestamp_str = point.get("timestamp", "")
+                timestamp = datetime.fromisoformat(timestamp_str)
+                interval_end = timestamp + timedelta(minutes=15)
 
-                if current_block_start is None:
-                    # Začátek nového bloku
-                    current_block_start = interval_time
-                    current_block_end = interval_time + timedelta(minutes=15)
-                else:
-                    # Kontrola, jestli navazuje (max 15 min mezera)
-                    if (interval_time - current_block_end).total_seconds() <= 15 * 60:
-                        # Prodloužit blok
-                        current_block_end = interval_time + timedelta(minutes=15)
+                # Pokud NOW je v tomto intervalu (timestamp <= now < interval_end)
+                if timestamp <= now < interval_end:
+                    # Zkontrolovat mód
+                    mode = point.get("mode_name", point.get("mode", ""))
+                    if mode == "Home UPS":
+                        return "on"
                     else:
-                        # Mezera větší než 15 min -> nový blok
-                        charging_blocks.append((current_block_start, current_block_end))
-                        current_block_start = interval_time
-                        current_block_end = interval_time + timedelta(minutes=15)
+                        return "off"
             except (ValueError, TypeError):
                 continue
-
-        # Nezapomenout přidat poslední blok
-        if current_block_start:
-            charging_blocks.append((current_block_start, current_block_end))
-
-        # Kontrola, jestli je now v nějakém bloku (s offsety)
-        for block_start, block_end in charging_blocks:
-            # ON od (block_start - 5min) do (block_end - 5min)
-            if (
-                (block_start - offset_before_start)
-                <= now
-                <= (block_end - offset_before_end)
-            ):
-                return "on"
 
         return "off"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Atributy s detaily nabíjení."""
-        intervals, total_energy, total_cost = self._calculate_charging_intervals()
+        """Vrátí atributy senzoru - všechny HOME UPS intervaly."""
+        if not self.coordinator.data:
+            return {}
 
-        # Detekovat SOUVISLÉ BLOKY nabíjení (ne jen první a poslední bod!)
-        charging_blocks = []
-        current_block = None
+        battery_forecast = self.coordinator.data.get("battery_forecast")
+        if not battery_forecast or not isinstance(battery_forecast, dict):
+            return {}
 
-        for interval in intervals:
-            if interval.get("is_charging_battery", False):
-                timestamp = datetime.fromisoformat(interval["timestamp"])
+        timeline_data = battery_forecast.get("timeline_data", [])
+        if not timeline_data:
+            return {}
 
-                if current_block is None:
-                    # Začátek nového bloku
-                    current_block = {
-                        "start": timestamp,
-                        "end": timestamp + timedelta(minutes=15),
-                        "intervals": [interval],
-                    }
-                else:
-                    # Zkontrolovat, jestli navazuje na předchozí interval
-                    time_gap = (timestamp - current_block["end"]).total_seconds() / 60
+        now = datetime.now()
+        ups_intervals = []
+        next_ups_start = None
 
-                    if time_gap <= 15:  # Max 15 minut = souvislý blok
-                        # Pokračování bloku
-                        current_block["end"] = timestamp + timedelta(minutes=15)
-                        current_block["intervals"].append(interval)
-                    else:
-                        # Mezera > 15 min → ukončit blok a začít nový
-                        charging_blocks.append(current_block)
-                        current_block = {
-                            "start": timestamp,
-                            "end": timestamp + timedelta(minutes=15),
-                            "intervals": [interval],
+        # Najít všechny HOME UPS intervaly
+        for point in timeline_data:
+            try:
+                timestamp_str = point.get("timestamp", "")
+                timestamp = datetime.fromisoformat(timestamp_str)
+                mode = point.get("mode_name", point.get("mode", ""))
+
+                if mode == "Home UPS":
+                    interval_end = timestamp + timedelta(minutes=15)
+                    ups_intervals.append(
+                        {
+                            "start": timestamp.strftime("%d.%m. %H:%M"),
+                            "end": interval_end.strftime("%H:%M"),
+                            "battery_kwh": round(
+                                point.get("battery_capacity_kwh", 0), 2
+                            ),
                         }
-            else:
-                # Interval bez nabíjení → ukončit aktuální blok
-                if current_block is not None:
-                    charging_blocks.append(current_block)
-                    current_block = None
-
-        # Nezapomenout přidat poslední blok
-        if current_block is not None:
-            charging_blocks.append(current_block)
-
-        # Připravit formátované časy pro UI - ukázat PRVNÍ blok
-        next_charging_start = None
-        next_charging_end = None
-        next_charging_duration = None
-        all_blocks_summary = None
-
-        if charging_blocks:
-            # První blok (nejbližší)
-            first_block = charging_blocks[0]
-            next_charging_start = first_block["start"].strftime("%d.%m. %H:%M")
-            next_charging_end = first_block["end"].strftime("%d.%m. %H:%M")
-
-            # Délka prvního bloku
-            duration = first_block["end"] - first_block["start"]
-            hours = int(duration.total_seconds() // 3600)
-            minutes = int((duration.total_seconds() % 3600) // 60)
-            next_charging_duration = (
-                f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
-            )
-
-            # Souhrn všech bloků (pro detailní zobrazení)
-            if len(charging_blocks) > 1:
-                blocks_summary = []
-                for block in charging_blocks:
-                    start_str = block["start"].strftime("%H:%M")
-                    end_str = block["end"].strftime("%H:%M")
-                    block_duration = block["end"] - block["start"]
-                    block_hours = int(block_duration.total_seconds() // 3600)
-                    block_mins = int((block_duration.total_seconds() % 3600) // 60)
-                    duration_str = (
-                        f"{block_hours}h {block_mins}min"
-                        if block_hours > 0
-                        else f"{block_mins}min"
                     )
-                    blocks_summary.append(f"{start_str}-{end_str} ({duration_str})")
-                all_blocks_summary = " | ".join(blocks_summary)
+
+                    # Najít další UPS interval v budoucnu
+                    if next_ups_start is None and timestamp > now:
+                        next_ups_start = timestamp.strftime("%d.%m. %H:%M")
+            except (ValueError, TypeError):
+                continue
 
         return {
-            "charging_intervals": intervals,
-            "total_energy_kwh": round(total_energy, 2),
-            "total_cost_czk": round(total_cost, 2),
-            "interval_count": len(intervals),
-            "charging_battery_count": sum(
-                1 for i in intervals if i.get("is_charging_battery", False)
-            ),
-            "is_charging_planned": len(intervals) > 0,
-            # Atributy pro první (nejbližší) blok
-            "next_charging_start": next_charging_start,
-            "next_charging_end": next_charging_end,
-            "next_charging_duration": next_charging_duration,
-            "next_charging_time_range": (
-                f"{next_charging_start} - {next_charging_end}"
-                if next_charging_start
-                else None
-            ),
-            # Nové: info o všech blocích
-            "charging_blocks_count": len(charging_blocks),
-            "all_charging_blocks": all_blocks_summary,  # např. "00:00-05:30 (5h 30min) | 16:00-16:15 (15min) | 21:45-23:45 (2h)"
+            "ups_intervals": ups_intervals,
+            "ups_count": len(ups_intervals),
+            "next_ups_start": next_ups_start,
+            "is_charging_planned": len(ups_intervals) > 0,
         }
 
 
