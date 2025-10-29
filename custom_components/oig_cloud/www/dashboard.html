@@ -862,7 +862,7 @@
                     <div style="font-size: 0.85em; color: #4CAF50; margin-top: 5px;">
                         💡 Úspora: <span id="whatif-savings-main">--</span>
                     </div>
-                    
+
                     <!-- What-if comparisons - 4 modes, highlight active -->
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
                         <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">Co kdyby celý den:</div>
@@ -885,7 +885,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div style="margin-top: 8px; font-size: 0.65em; color: var(--text-tertiary); opacity: 0.6; text-align: center;">
                         Klikněte pro detailní timeline
                     </div>
@@ -896,41 +896,45 @@
         <div id="mode-timeline-dialog" class="dialog-overlay" style="display: none;" onclick="closeModeTimelineDialog()">
             <div class="dialog-content timeline-dialog" onclick="event.stopPropagation()">
                 <div class="dialog-header">
-                    <h3>📅 Optimalizovaný plán režimů na dnes</h3>
+                    <h3>📅 Optimalizovaný plán režimů (72h)</h3>
                     <button class="dialog-close" onclick="closeModeTimelineDialog()">&times;</button>
                 </div>
 
                 <div class="dialog-body">
-                    <!-- Summary -->
+                    <!-- Overall Summary -->
                     <div class="timeline-summary">
                         <div class="summary-metric">
-                            <span class="metric-label">Celkové náklady:</span>
+                            <span class="metric-label">💰 Celkové náklady (72h):</span>
                             <span class="metric-value" id="timeline-total-cost">--</span>
                         </div>
                         <div class="summary-metric success">
-                            <span class="metric-label">Úspora:</span>
+                            <span class="metric-label">💡 Celková úspora vs HOME I:</span>
                             <span class="metric-value" id="timeline-total-savings">--</span>
                         </div>
                         <div class="summary-metric">
-                            <span class="metric-label">Přepnutí:</span>
+                            <span class="metric-label">🔄 Přepnutí režimů:</span>
                             <span class="metric-value" id="timeline-total-switches">--</span>
                         </div>
                     </div>
 
-                    <!-- Timeline visualization -->
-                    <div class="timeline-container">
-                        <div class="timeline-hour-markers" id="timeline-hour-markers"></div>
-                        <div class="timeline-blocks" id="timeline-blocks"></div>
-                        <div class="timeline-now-indicator" id="timeline-now-indicator"></div>
+                    <!-- Tabs Navigation -->
+                    <div class="timeline-tabs">
+                        <button class="timeline-tab active" data-tab="today" onclick="showTimelineTab('today')">
+                            📆 DNES
+                        </button>
+                        <button class="timeline-tab" data-tab="tomorrow" onclick="showTimelineTab('tomorrow')">
+                            📅 ZÍTRA
+                        </button>
                     </div>
 
-                    <!-- Detailed blocks -->
-                    <div class="timeline-details" id="timeline-details"></div>
+                    <!-- Tab Content - TODAY -->
+                    <div id="timeline-today-content" class="timeline-tab-content active">
+                        <!-- Filled by JS -->
+                    </div>
 
-                    <!-- What-if alternatives -->
-                    <div class="timeline-alternatives">
-                        <h4>ℹ️ Co kdyby jinak?</h4>
-                        <div id="timeline-alternatives-list"></div>
+                    <!-- Tab Content - TOMORROW -->
+                    <div id="timeline-tomorrow-content" class="timeline-tab-content">
+                        <!-- Filled by JS -->
                     </div>
                 </div>
             </div>

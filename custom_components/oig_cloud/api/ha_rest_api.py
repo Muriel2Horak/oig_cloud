@@ -103,6 +103,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             baseline_timeline = getattr(entity_obj, "_baseline_timeline", [])
             last_update = getattr(entity_obj, "_last_update", None)
 
+            # Phase 2.8: Add mode_recommendations
+            mode_recommendations = getattr(entity_obj, "_mode_recommendations", [])
+
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
 
@@ -111,6 +114,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
             if timeline_type in ("baseline", "both"):
                 response_data["baseline"] = baseline_timeline
+
+            # Always include mode_recommendations (DNES + ZÍTRA only)
+            response_data["mode_recommendations"] = mode_recommendations
 
             # Add metadata
             import sys

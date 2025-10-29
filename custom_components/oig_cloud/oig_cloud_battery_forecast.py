@@ -128,6 +128,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Phase 2.5: DP Multi-Mode Optimization result
         self._mode_optimization_result: Optional[Dict[str, Any]] = None
 
+        # Phase 2.8: Mode recommendations (DNES + ZÍTRA) for API
+        self._mode_recommendations: List[Dict[str, Any]] = []
+
         # Phase 1.5: Hash-based change detection
         self._data_hash: Optional[str] = (
             None  # MD5 hash of timeline_data for efficient change detection
@@ -450,9 +453,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 _LOGGER.info(
                     f"✅ DP optimization completed: total_cost={self._mode_optimization_result['total_cost']:.2f} Kč"
                 )
+
+                # Phase 2.8: Store mode_recommendations for API endpoint
+                self._mode_recommendations = self._mode_optimization_result.get(
+                    "mode_recommendations", []
+                )
+
             except Exception as e:
                 _LOGGER.error(f"DP optimization failed: {e}", exc_info=True)
                 self._mode_optimization_result = None
+                self._mode_recommendations = []
 
             # STEP 1: Vypočítat BASELINE timeline (bez jakéhokoli plánu)
             # Toto je ČISTÁ predikce pro simulace a plánování
@@ -1220,17 +1230,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return total_cost
 
     def _create_mode_recommendations(
-        self, optimal_timeline: List[Dict[str, Any]], hours_ahead: int = 24
+        self, optimal_timeline: List[Dict[str, Any]], hours_ahead: int = 48
     ) -> List[Dict[str, Any]]:
         """
-        Vytvořit user-friendly doporučení režimů pro následujících N hodin.
+        Vytvořit user-friendly doporučení režimů pro DNES a ZÍTRA.
 
         Phase 2.6: Mode Recommendations - Seskupí po sobě jdoucí stejné režimy
         do časových bloků s DETAILNÍM zdůvodněním.
 
+        Phase 2.8: Oprava rozsahu dat a splitování přes půlnoc
+        - Pouze DNES (od teď) a ZÍTRA (celý den)
+        - Bloky přes půlnoc se rozdělí na 2 samostatné bloky
+
         Args:
             optimal_timeline: Timeline z DP optimalizace
-            hours_ahead: Kolik hodin do budoucna zahrnout (default 24h)
+            hours_ahead: Kolik hodin do budoucna zahrnout (default 48h)
 
         Returns:
             List[Dict]: Seskupené režimy s časovými bloky a ekonomickými detaily
@@ -1254,14 +1268,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         try:
             now = datetime.now()
-            cutoff_time = now + timedelta(hours=hours_ahead)
 
-            # Filter next 24h
+            # OPRAVA Phase 2.8: Pouze DNES a ZÍTRA (celé dny)
+            # DNES: celý den (00:00:00 - 23:59:59)
+            # ZÍTRA: celý den (00:00:00 - 23:59:59)
+            today = now.date()
+            today_start = datetime.combine(today, datetime.min.time())
+            tomorrow_end = datetime.combine(
+                today + timedelta(days=1), datetime.max.time()
+            )
+
+            # Filter pouze intervaly DNES a ZÍTRA
             future_intervals = [
                 interval
                 for interval in optimal_timeline
                 if interval.get("time")
-                and datetime.fromisoformat(interval["time"]) < cutoff_time
+                and today_start
+                <= datetime.fromisoformat(interval["time"])
+                <= tomorrow_end
             ]
 
             if not future_intervals:
@@ -1278,22 +1302,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 time_str = interval.get("time", "")
 
                 if current_block is None:
-                    # Start new block
+                    # Start new block - to_time will be set when we know it's the last interval
                     current_block = {
                         "mode": mode,
                         "mode_name": mode_name,
                         "from_time": time_str,
-                        "to_time": time_str,
+                        "to_time": None,  # Will be set later
                         "intervals_count": 1,
                     }
                     block_intervals = [interval]
                 elif current_block["mode"] == mode:
-                    # Extend current block
-                    current_block["to_time"] = time_str
+                    # Extend current block - just increment counter
                     current_block["intervals_count"] += 1
                     block_intervals.append(interval)
                 else:
-                    # Calculate detailed metrics for completed block
+                    # Mode changed - finalize previous block
+                    # Set to_time = last interval's time + 15min
+                    if block_intervals:
+                        last_interval_time = block_intervals[-1].get("time", "")
+                        try:
+                            last_dt = datetime.fromisoformat(last_interval_time)
+                            end_dt = last_dt + timedelta(minutes=15)
+                            current_block["to_time"] = end_dt.isoformat()
+                        except:
+                            current_block["to_time"] = last_interval_time
+
                     self._add_block_details(current_block, block_intervals)
                     recommendations.append(current_block)
 
@@ -1302,17 +1335,61 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "mode": mode,
                         "mode_name": mode_name,
                         "from_time": time_str,
-                        "to_time": time_str,
+                        "to_time": None,  # Will be set later
                         "intervals_count": 1,
                     }
                     block_intervals = [interval]
 
             # Don't forget last block
-            if current_block:
+            if current_block and block_intervals:
+                # Set to_time for last block
+                last_interval_time = block_intervals[-1].get("time", "")
+                try:
+                    last_dt = datetime.fromisoformat(last_interval_time)
+                    end_dt = last_dt + timedelta(minutes=15)
+                    current_block["to_time"] = end_dt.isoformat()
+                except:
+                    current_block["to_time"] = last_interval_time
+
                 self._add_block_details(current_block, block_intervals)
                 recommendations.append(current_block)
 
-            return recommendations
+            # OPRAVA Phase 2.8: Splitovat bloky přes půlnoc
+            # Pokud blok začíná v jeden den a končí v druhý, rozdělit ho
+            split_recommendations = []
+            for block in recommendations:
+                from_dt = datetime.fromisoformat(block["from_time"])
+                to_dt = datetime.fromisoformat(block["to_time"])
+
+                # Pokud blok je ve stejném dni, přidat bez změny
+                if from_dt.date() == to_dt.date():
+                    split_recommendations.append(block)
+                else:
+                    # Blok přes půlnoc - rozdělit na 2
+                    midnight = datetime.combine(
+                        from_dt.date() + timedelta(days=1), datetime.min.time()
+                    )
+
+                    # První část: od from_time do půlnoci
+                    block1 = block.copy()
+                    block1["to_time"] = midnight.isoformat()
+                    # Přepočítat duration a intervals_count pro první část
+                    duration1 = (midnight - from_dt).total_seconds() / 3600
+                    block1["duration_hours"] = round(duration1, 2)
+                    block1["intervals_count"] = int(duration1 * 4)  # 4 intervaly/hodina
+                    split_recommendations.append(block1)
+
+                    # Druhá část: od půlnoci do to_time
+                    block2 = block.copy()
+                    block2["from_time"] = midnight.isoformat()
+                    # to_time zůstává
+                    # Přepočítat duration a intervals_count pro druhou část
+                    duration2 = (to_dt - midnight).total_seconds() / 3600
+                    block2["duration_hours"] = round(duration2, 2)
+                    block2["intervals_count"] = int(duration2 * 4)
+                    split_recommendations.append(block2)
+
+            return split_recommendations
 
         except Exception as e:
             _LOGGER.error(f"Failed to create mode recommendations: {e}")
@@ -1429,70 +1506,64 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # HOME I - Battery Priority
         if mode == CBB_MODE_HOME_I:
-            if solar_kw > load_kw:
+            if (
+                solar_kw > load_kw + 0.1
+            ):  # FVE surplus (threshold 0.1kW to avoid tiny values)
+                surplus_kw = solar_kw - load_kw
                 block["rationale"] = (
-                    "Nabíjíme baterii z FVE přebytku - ukládáme levnou energii na později"
+                    f"Nabíjíme baterii z FVE přebytku ({surplus_kw:.1f} kW) - ukládáme levnou energii na později"
                 )
-            elif solar_kw > 0:
+            elif solar_kw > 0.2:  # Meaningful FVE production
+                deficit_kw = load_kw - solar_kw
                 block["rationale"] = (
-                    "Vybíjíme baterii - doplňujeme FVE pro pokrytí spotřeby"
+                    f"FVE pokrývá část spotřeby ({solar_kw:.1f} kW), baterie doplňuje {deficit_kw:.1f} kW"
                 )
-            else:
+            else:  # Night or minimal FVE
                 block["rationale"] = (
-                    f"Vybíjíme baterii - šetříme za elektřinu ze sítě ({spot_price:.1f} Kč/kWh)"
+                    f"Vybíjíme baterii pro pokrytí spotřeby - šetříme {spot_price:.1f} Kč/kWh ze sítě"
                 )
 
         # HOME II - Grid Supplements (battery saved for expensive periods)
         elif mode == CBB_MODE_HOME_II:
-            if solar_kw > load_kw:
+            if solar_kw > load_kw + 0.1:  # FVE surplus
+                surplus_kw = solar_kw - load_kw
                 block["rationale"] = (
-                    "Nabíjíme baterii z FVE - připravujeme zásobu na večerní špičku"
+                    f"Nabíjíme baterii z FVE přebytku ({surplus_kw:.1f} kW) - připravujeme na večerní špičku"
                 )
             else:
-                # Try to find next expensive period for better explanation
-                if from_dt:
-                    next_peak_time = self._find_next_expensive_hour(from_dt, intervals)
-                    if next_peak_time:
-                        block["rationale"] = (
-                            f"Šetříme baterii na {next_peak_time} - teď grid levnější než vybíjení"
-                        )
-                    else:
-                        block["rationale"] = (
-                            f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - baterie šetřena na dražší období"
-                        )
-                else:
+                # Grid supplements - battery saving mode
+                if spot_price > 4.0:  # Relatively expensive
                     block["rationale"] = (
-                        f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - baterie šetřena na dražší období"
+                        f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - ale ještě ne vrcholová cena"
+                    )
+                else:  # Cheap period
+                    block["rationale"] = (
+                        f"Levný proud ze sítě ({spot_price:.1f} Kč/kWh) - šetříme baterii na dražší období"
                     )
 
         # HOME III - All Solar to Battery
         elif mode == CBB_MODE_HOME_III:
-            if solar_kw > 0:
+            if solar_kw > 0.2:  # Meaningful FVE production
                 block["rationale"] = (
-                    f"Maximální nabíjení baterie z FVE ({solar_kw:.1f} kW) - připravujeme zásobu"
+                    f"Maximální nabíjení baterie - veškeré FVE ({solar_kw:.1f} kW) jde do baterie, spotřeba ze sítě"
                 )
-            else:
-                block["rationale"] = "Vybíjíme baterii - šetříme za elektřinu ze sítě"
+            else:  # Night
+                block["rationale"] = (
+                    f"Vybíjíme baterii pro pokrytí spotřeby - šetříme {spot_price:.1f} Kč/kWh ze sítě"
+                )
 
         # HOME UPS - Grid Charging
         elif mode == CBB_MODE_HOME_UPS:
-            # Try to explain WHY we're charging from grid
-            if from_dt:
-                next_expensive = self._find_next_expensive_hour(from_dt, intervals)
-                if next_expensive:
-                    block["rationale"] = (
-                        f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - připravujeme na {next_expensive}"
-                    )
-                else:
-                    block["rationale"] = (
-                        f"Nabíjíme ze sítě v levných hodinách ({spot_price:.1f} Kč/kWh)"
-                    )
-            else:
+            if spot_price < 3.0:  # Very cheap
                 block["rationale"] = (
-                    f"Nabíjíme ze sítě v levných hodinách ({spot_price:.1f} Kč/kWh)"
+                    f"Nabíjíme ze sítě - velmi levný proud ({spot_price:.1f} Kč/kWh), připravujeme plnou baterii"
+                )
+            else:  # More expensive but still worth it
+                block["rationale"] = (
+                    f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - připravujeme na dražší špičku"
                 )
         else:
-            block["rationale"] = "Neznámý režim"
+            block["rationale"] = "Optimalizovaný režim podle aktuálních podmínek"
 
     def _find_next_expensive_hour(
         self, from_time: datetime, current_intervals: List[Dict[str, Any]]
@@ -1785,15 +1856,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # POST-PROCESSING: Minimalizace přepínání režimů
         # =====================================================================
         # Strategie:
-        # 1. FVE > 0 (den): Použít DP optimální režim
-        # 2. FVE → 0 (západ): ZŮSTAT v aktuálním režimu pokud je I/II/III
-        # 3. FVE = 0 (noc): Preferovat HOME I (jednoduchý, vybíjení)
+        # 1. FVE > Spotřeba: HOME I = HOME II (přebytek→baterie) → nechat HOME I
+        # 2. FVE < Spotřeba: HOME I vs HOME II má smysl (vybíjení vs grid)
+        # 3. FVE = 0 (noc): HOME I = HOME II = HOME III → preferovat HOME I
         # 4. Grid charging: Pouze HOME UPS
         #
-        # Důvod: HOME I/II/III mají při FVE=0 IDENTICKÉ chování (vybíjení),
-        # takže zbytečně nepřepínat střídač.
+        # Důvod: Minimalizovat opotřebení inverteru zbytečnými přepínáními
+        # když výsledek je stejný.
 
-        last_fve_mode = None  # Poslední režim když byla výroba
+        prev_mode = None
 
         for t in range(n_intervals):
             try:
@@ -1802,29 +1873,46 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except:
                 solar_kwh = 0.0
 
+            load_kwh = optimal_timeline[t].get("load_kwh", 0.0)
             current_mode = optimal_modes[t]
 
+            # Detekce zbytečného přepínání
             if solar_kwh > 0.001:
-                # FVE produkuje → použít DP optimální režim
-                if current_mode in [
-                    CBB_MODE_HOME_I,
-                    CBB_MODE_HOME_II,
-                    CBB_MODE_HOME_III,
-                ]:
-                    last_fve_mode = current_mode
+                # Když je FVE > spotřeba: HOME I = HOME II (přebytek→baterie)
+                if solar_kwh > load_kwh:
+                    # Přebytek FVE → oba režimy dělají totéž
+                    if (
+                        current_mode == CBB_MODE_HOME_II
+                        and prev_mode == CBB_MODE_HOME_I
+                    ):
+                        # Zbytečné přepnutí z HOME I na HOME II při přebytku
+                        optimal_modes[t] = CBB_MODE_HOME_I
+                        optimal_timeline[t]["mode"] = CBB_MODE_HOME_I
+                        optimal_timeline[t]["mode_name"] = "HOME I"
+                        current_mode = CBB_MODE_HOME_I
+                    elif (
+                        current_mode == CBB_MODE_HOME_I
+                        and prev_mode == CBB_MODE_HOME_II
+                    ):
+                        # Nechat HOME I, OK
+                        pass
+                # Když FVE < spotřeba: HOME I vs HOME II má smysl (nechat DP volbu)
+
             else:
-                # FVE = 0 (noc) → minimalizovat přepínání
+                # FVE = 0 (noc) → HOME I/II/III jsou identické
                 if current_mode in [
                     CBB_MODE_HOME_I,
                     CBB_MODE_HOME_II,
                     CBB_MODE_HOME_III,
                 ]:
-                    # HOME I/II/III jsou při FVE=0 identické
                     # Preferovat HOME I pro jednoduchost
                     optimal_modes[t] = CBB_MODE_HOME_I
                     optimal_timeline[t]["mode"] = CBB_MODE_HOME_I
                     optimal_timeline[t]["mode_name"] = "HOME I"
+                    current_mode = CBB_MODE_HOME_I
                 # HOME UPS zůstává (grid charging)
+
+            prev_mode = current_mode
 
         _LOGGER.info(
             f"DP optimization completed: total_cost={total_cost:.2f} Kč, "
@@ -1990,9 +2078,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"{alternatives.get('FULL HOME UPS', {}).get('delta_czk', 0):.2f} Kč vs FULL UPS"
         )
 
-        # Phase 2.6: Mode Recommendations - User-friendly 24h schedule
+        # Phase 2.6: Mode Recommendations - User-friendly DNES+ZÍTRA schedule
+        # Phase 2.8: Pouze 2 dny (DNES a ZÍTRA), bloky přes půlnoc splitnuty
         mode_recommendations = self._create_mode_recommendations(
-            optimal_timeline, hours_ahead=24
+            optimal_timeline, hours_ahead=48
         )
 
         if mode_recommendations:
@@ -2859,17 +2948,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return CBB_MODE_HOME_III
 
         try:
-            # Sensor může vracet buď int (0-3) nebo string ("Home I", "Home II", ...)
+            # Sensor může vracet buď int (0-3) nebo string ("Home 1", "Home I", ...)
             mode_value = state.state
 
             # Pokud je to string, převést na int
             if isinstance(mode_value, str):
-                # Mapování string → int
+                # Mapování string → int (podporuje obě varianty: "Home 1" i "Home I")
                 mode_map = {
                     "Home I": CBB_MODE_HOME_I,
                     "Home II": CBB_MODE_HOME_II,
                     "Home III": CBB_MODE_HOME_III,
                     "Home UPS": CBB_MODE_HOME_UPS,
+                    "Home 1": CBB_MODE_HOME_I,
+                    "Home 2": CBB_MODE_HOME_II,
+                    "Home 3": CBB_MODE_HOME_III,
                 }
 
                 if mode_value in mode_map:
