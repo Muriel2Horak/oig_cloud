@@ -8630,10 +8630,15 @@ async function updateWhatIfAnalysis() {
     const modeOptData = attrs.mode_optimization || {};
     const alternatives = modeOptData.alternatives || {};
 
+    console.log('[What-if Tile] modeOptData:', modeOptData);
+    console.log('[What-if Tile] alternatives:', alternatives);
+
     // Phase 2.8: Use cached totals from mode_optimization instead of summing blocks
     // (mode_recommendations are per-interval, mode_optimization has pre-calculated totals for DNES+ZÍTRA)
     const totalCost = modeOptData.total_cost_czk || 0;
     const totalSavings = modeOptData.total_savings_vs_home_i_czk || 0;
+
+    console.log('[What-if Tile] totalCost:', totalCost, 'totalSavings:', totalSavings);
 
     // Update optimized cost and savings
     updateElementIfChanged('whatif-optimized-cost', `${totalCost.toFixed(2)} Kč`, 'whatif-main');
@@ -9235,6 +9240,9 @@ function openModeTimelineDialog() {
     // Build timeline
     buildModeTimeline();
 
+    // Build extended timeline (PHASE 2.9: Historie vs Plán)
+    buildExtendedTimeline();
+
     // Show dialog
     dialog.style.display = 'flex';
 
@@ -9648,5 +9656,254 @@ document.addEventListener('click', (e) => {
         closeModeTimelineDialog();
     }
 });
+
+// =============================================================================
+// PHASE 2.9: EXTENDED TIMELINE - Historie vs Plán
+// =============================================================================
+
+/**
+ * Build extended timeline with historical data (včera + dnes + zítra)
+ * Phase 2.9: Shows actual vs planned for historical intervals
+ */
+async function buildExtendedTimeline() {
+    const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/timeline?type=active`;
+
+    try {
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            console.error('[Extended Timeline] Failed to fetch data:', response.status);
+            return;
+        }
+
+        const data = await response.json();
+        const timelineExtended = data.timeline_extended;
+        const dailyPlanState = data.daily_plan_state;
+
+        if (!timelineExtended) {
+            console.warn('[Extended Timeline] No timeline_extended data available');
+            return;
+        }
+
+        console.log('[Extended Timeline] Loaded data:', {
+            yesterday: timelineExtended.yesterday?.intervals?.length || 0,
+            today: timelineExtended.today?.intervals?.length || 0,
+            tomorrow: timelineExtended.tomorrow?.intervals?.length || 0,
+            dailyPlanStatus: dailyPlanState?.status
+        });
+
+        // Build extended timeline visualization
+        renderExtendedTimeline(timelineExtended, dailyPlanState);
+
+    } catch (error) {
+        console.error('[Extended Timeline] Error fetching data:', error);
+    }
+}
+
+/**
+ * Render extended timeline with 3-day view
+ */
+function renderExtendedTimeline(timelineExtended, dailyPlanState) {
+    const container = document.getElementById('extended-timeline-container');
+    if (!container) {
+        console.warn('[Extended Timeline] Container not found');
+        return;
+    }
+
+    const { yesterday, today, tomorrow } = timelineExtended;
+
+    let html = '<div class="extended-timeline">';
+
+    // Yesterday (historical only)
+    if (yesterday && yesterday.intervals && yesterday.intervals.length > 0) {
+        html += renderDayTimeline('Včera', yesterday, 'historical');
+    }
+
+    // Today (mixed: historical + planned)
+    if (today && today.intervals && today.intervals.length > 0) {
+        html += renderDayTimeline('Dnes', today, 'mixed');
+    }
+
+    // Tomorrow (planned only)
+    if (tomorrow && tomorrow.intervals && tomorrow.intervals.length > 0) {
+        html += renderDayTimeline('Zítra', tomorrow, 'planned');
+    }
+
+    // Daily plan summary
+    if (dailyPlanState && dailyPlanState.status === 'active') {
+        html += renderDailyPlanSummary(dailyPlanState);
+    }
+
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+/**
+ * Render one day timeline
+ */
+function renderDayTimeline(dayLabel, dayData, dayType) {
+    const { date, intervals, summary } = dayData;
+
+    if (!intervals || intervals.length === 0) {
+        return `
+            <div class="day-timeline">
+                <h3>${dayLabel} (${date})</h3>
+                <p class="no-data">Žádná data</p>
+            </div>
+        `;
+    }
+
+    let html = `
+        <div class="day-timeline">
+            <div class="day-timeline-header">
+                <h3>${dayLabel}</h3>
+                <span class="day-date">${date}</span>
+            </div>
+    `;
+
+    // Summary stats
+    if (summary) {
+        html += `
+            <div class="day-summary">
+                ${summary.planned_total_cost !== null ? `
+                    <div class="summary-stat">
+                        <span class="label">Plán:</span>
+                        <span class="value">${summary.planned_total_cost.toFixed(2)} Kč</span>
+                    </div>
+                ` : ''}
+                ${summary.actual_total_cost !== null ? `
+                    <div class="summary-stat">
+                        <span class="label">Skutečnost:</span>
+                        <span class="value">${summary.actual_total_cost.toFixed(2)} Kč</span>
+                    </div>
+                ` : ''}
+                ${summary.delta_cost !== null ? `
+                    <div class="summary-stat ${summary.delta_cost > 0 ? 'negative' : 'positive'}">
+                        <span class="label">Delta:</span>
+                        <span class="value">${summary.delta_cost > 0 ? '+' : ''}${summary.delta_cost.toFixed(2)} Kč</span>
+                    </div>
+                ` : ''}
+                ${summary.accuracy_pct !== null ? `
+                    <div class="summary-stat">
+                        <span class="label">Přesnost:</span>
+                        <span class="value">${summary.accuracy_pct.toFixed(1)}%</span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // Timeline bars
+    html += '<div class="timeline-bars">';
+
+    // Sample first few intervals for visualization
+    const sampleIntervals = intervals.filter((_, i) => i % 4 === 0).slice(0, 24); // Every hour, max 24
+
+    sampleIntervals.forEach(interval => {
+        const time = new Date(interval.time);
+        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+
+        if (interval.status === 'historical' && interval.actual) {
+            // Historical: Show actual vs planned
+            const planned = interval.planned;
+            const actual = interval.actual;
+            const delta = interval.delta;
+
+            const modeConfig = MODE_CONFIG[actual.mode_name] || MODE_CONFIG['HOME I'];
+            const deltaClass = delta && delta.net_cost > 0 ? 'negative' : delta && delta.net_cost < 0 ? 'positive' : '';
+
+            html += `
+                <div class="timeline-bar historical">
+                    <div class="bar-time">${timeStr}</div>
+                    <div class="bar-content">
+                        <div class="bar-actual" style="background: ${modeConfig.color};">
+                            <span class="bar-label">${actual.mode_name}</span>
+                            <span class="bar-value">${actual.battery_kwh.toFixed(1)} kWh</span>
+                        </div>
+                        ${delta && Math.abs(delta.battery_kwh) > 0.1 ? `
+                            <div class="bar-delta ${deltaClass}">
+                                Δ ${delta.battery_kwh > 0 ? '+' : ''}${delta.battery_kwh.toFixed(1)} kWh
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        } else if (interval.status === 'planned' && interval.planned) {
+            // Planned: Show plan only
+            const planned = interval.planned;
+            const modeConfig = MODE_CONFIG[planned.mode_name] || MODE_CONFIG['HOME I'];
+
+            html += `
+                <div class="timeline-bar planned">
+                    <div class="bar-time">${timeStr}</div>
+                    <div class="bar-content">
+                        <div class="bar-planned" style="background: ${modeConfig.color}; opacity: 0.7;">
+                            <span class="bar-label">${planned.mode_name}</span>
+                            <span class="bar-value">${planned.battery_kwh.toFixed(1)} kWh</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (interval.status === 'current' && interval.planned) {
+            // Current: Show as running
+            const planned = interval.planned;
+            const modeConfig = MODE_CONFIG[planned.mode_name] || MODE_CONFIG['HOME I'];
+
+            html += `
+                <div class="timeline-bar current">
+                    <div class="bar-time">${timeStr} ⏱️</div>
+                    <div class="bar-content">
+                        <div class="bar-planned" style="background: ${modeConfig.color}; border: 2px solid #ff5722;">
+                            <span class="bar-label">${planned.mode_name}</span>
+                            <span class="bar-value">${planned.battery_kwh.toFixed(1)} kWh</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+
+    html += '</div>'; // timeline-bars
+    html += '</div>'; // day-timeline
+
+    return html;
+}
+
+/**
+ * Render daily plan summary
+ */
+function renderDailyPlanSummary(dailyPlanState) {
+    const { plan_date, expected_total_cost, planned_timeline, actual_intervals } = dailyPlanState;
+
+    const actualCount = actual_intervals ? actual_intervals.length : 0;
+    const plannedCount = planned_timeline ? planned_timeline.length : 0;
+    const progressPercent = plannedCount > 0 ? (actualCount / plannedCount * 100).toFixed(1) : 0;
+
+    return `
+        <div class="daily-plan-summary">
+            <h3>📊 Denní plán (${plan_date})</h3>
+            <div class="plan-stats">
+                <div class="plan-stat">
+                    <span class="label">Očekávané náklady:</span>
+                    <span class="value">${expected_total_cost.toFixed(2)} Kč</span>
+                </div>
+                <div class="plan-stat">
+                    <span class="label">Trackováno intervalů:</span>
+                    <span class="value">${actualCount} / ${plannedCount}</span>
+                </div>
+                <div class="plan-stat">
+                    <span class="label">Pokrok:</span>
+                    <span class="value">${progressPercent}%</span>
+                </div>
+            </div>
+            <div class="plan-progress">
+                <div class="progress-bar" style="width: ${progressPercent}%;"></div>
+            </div>
+        </div>
+    `;
+}
+
+// Call buildExtendedTimeline when dashboard loads
+// (You can trigger this from existing dashboard initialization)
 
 

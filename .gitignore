@@ -209,3 +209,4 @@ config/
 
 # Legacy config flow (backup)
 custom_components/oig_cloud/config_flow_legacy.py
+.ha_config

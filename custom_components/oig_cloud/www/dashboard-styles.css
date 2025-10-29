@@ -6592,4 +6592,219 @@
             }
         }
 
+        /* =================================================================
+           PHASE 2.9: Extended Timeline - Historie vs Plán
+           ================================================================= */
+        
+        .extended-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            padding: 20px;
+        }
+        
+        .day-timeline {
+            background: var(--card-background, #1e1e1e);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .day-timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--border-color, #333);
+            padding-bottom: 10px;
+        }
+        
+        .day-timeline-header h3 {
+            margin: 0;
+            font-size: 1.3em;
+            color: var(--text-primary, #ffffff);
+        }
+        
+        .day-date {
+            color: var(--text-secondary, #b0b0b0);
+            font-size: 0.9em;
+        }
+        
+        .day-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: var(--summary-bg, #2a2a2a);
+            border-radius: 8px;
+        }
+        
+        .summary-stat {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .summary-stat .label {
+            font-size: 0.85em;
+            color: var(--text-secondary, #b0b0b0);
+        }
+        
+        .summary-stat .value {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: var(--text-primary, #ffffff);
+        }
+        
+        .summary-stat.positive .value {
+            color: var(--success-color, #4caf50);
+        }
+        
+        .summary-stat.negative .value {
+            color: var(--error-color, #f44336);
+        }
+        
+        .timeline-bars {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+        }
+        
+        .timeline-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .bar-time {
+            font-size: 0.75em;
+            color: var(--text-secondary, #b0b0b0);
+            text-align: center;
+        }
+        
+        .bar-content {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .bar-actual,
+        .bar-planned {
+            padding: 8px;
+            border-radius: 6px;
+            text-align: center;
+            min-height: 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 3px;
+        }
+        
+        .bar-label {
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .bar-value {
+            font-size: 0.85em;
+        }
+        
+        .bar-delta {
+            font-size: 0.7em;
+            padding: 3px 6px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .bar-delta.positive {
+            background: var(--success-bg, rgba(76, 175, 80, 0.2));
+            color: var(--success-color, #4caf50);
+        }
+        
+        .bar-delta.negative {
+            background: var(--error-bg, rgba(244, 67, 54, 0.2));
+            color: var(--error-color, #f44336);
+        }
+        
+        .timeline-bar.current .bar-planned {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .daily-plan-summary {
+            background: var(--card-background, #1e1e1e);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .daily-plan-summary h3 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary, #ffffff);
+        }
+        
+        .plan-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .plan-stat {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .plan-stat .label {
+            font-size: 0.85em;
+            color: var(--text-secondary, #b0b0b0);
+        }
+        
+        .plan-stat .value {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: var(--text-primary, #ffffff);
+        }
+        
+        .plan-progress {
+            height: 8px;
+            background: var(--progress-bg, #2a2a2a);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color, #2196f3), var(--success-color, #4caf50));
+            transition: width 0.3s ease;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: var(--text-secondary, #b0b0b0);
+            padding: 40px 20px;
+            font-style: italic;
+        }
+        
+        @media (max-width: 1100px) {
+            .timeline-bars {
+                grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            }
+            
+            .day-summary {
+                grid-template-columns: 1fr;
+            }
+            
+            .plan-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+
 

@@ -106,6 +106,19 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             # Phase 2.8: Add mode_recommendations
             mode_recommendations = getattr(entity_obj, "_mode_recommendations", [])
 
+            # Phase 2.9: Add timeline_extended & daily_plan_state
+            timeline_extended = None
+            daily_plan_state = None
+            if hasattr(entity_obj, "build_timeline_extended"):
+                try:
+                    timeline_extended = entity_obj.build_timeline_extended()
+                except Exception as e:
+                    _LOGGER.warning(
+                        f"Failed to build timeline_extended for {box_id}: {e}"
+                    )
+
+            daily_plan_state = getattr(entity_obj, "_daily_plan_state", None)
+
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
 
@@ -117,6 +130,14 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
             # Always include mode_recommendations (DNES + ZÍTRA only)
             response_data["mode_recommendations"] = mode_recommendations
+
+            # Phase 2.9: Add extended timeline (včera + dnes + zítra)
+            if timeline_extended:
+                response_data["timeline_extended"] = timeline_extended
+
+            # Phase 2.9: Add daily plan state (tracking)
+            if daily_plan_state:
+                response_data["daily_plan_state"] = daily_plan_state
 
             # Add metadata
             import sys
@@ -130,7 +151,8 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
             _LOGGER.debug(
                 f"API: Serving battery timeline for {box_id}, "
-                f"type={timeline_type}, points={len(active_timeline)}"
+                f"type={timeline_type}, points={len(active_timeline)}, "
+                f"extended_days={len(timeline_extended) if timeline_extended else 0}"
             )
 
             return web.json_response(response_data)

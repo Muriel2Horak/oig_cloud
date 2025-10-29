@@ -364,6 +364,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Update plan lifecycle status FIRST
             self.update_plan_lifecycle()
 
+            # PHASE 2.9: Fix daily plan at midnight for tracking
+            await self._maybe_fix_daily_plan()
+
             # Získat všechna potřebná data
             _LOGGER.info("Battery forecast async_update() called")
             current_capacity = self._get_current_battery_capacity()
@@ -381,12 +384,45 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"_get_spot_price_timeline() returned {len(spot_prices)} prices"
             )
 
+            # CRITICAL FIX: Filter spot prices to start from current 15-minute interval
+            # Round NOW down to nearest 15-minute interval (00, 15, 30, 45)
+            now_aware = dt_util.now()
+            current_minute = (now_aware.minute // 15) * 15
+            current_interval_start = now_aware.replace(
+                minute=current_minute, second=0, microsecond=0
+            )
+            # Convert to naive datetime for comparison (spot prices are timezone-naive strings)
+            current_interval_naive = current_interval_start.replace(tzinfo=None)
+
+            _LOGGER.info(
+                f"Filtering timeline from current interval: {current_interval_naive.isoformat()}"
+            )
+
+            spot_prices_filtered = [
+                sp
+                for sp in spot_prices
+                if datetime.fromisoformat(sp["time"]) >= current_interval_naive
+            ]
+            if len(spot_prices_filtered) < len(spot_prices):
+                _LOGGER.info(
+                    f"Filtered spot prices: {len(spot_prices)} → {len(spot_prices_filtered)} "
+                    f"(removed {len(spot_prices) - len(spot_prices_filtered)} past intervals)"
+                )
+            spot_prices = spot_prices_filtered
+
             # Phase 1.5: Load export prices for timeline integration
             _LOGGER.info("Calling _get_export_price_timeline()...")
             export_prices = await self._get_export_price_timeline()  # ASYNC!
             _LOGGER.info(
                 f"_get_export_price_timeline() returned {len(export_prices)} prices"
             )
+
+            # Filter export prices too
+            export_prices = [
+                ep
+                for ep in export_prices
+                if datetime.fromisoformat(ep["time"]) >= current_interval_naive
+            ]
 
             solar_forecast = self._get_solar_forecast()
             load_avg_sensors = self._get_load_avg_sensors()
@@ -540,6 +576,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         if self._timeline_data
                         else 0
                     ),
+                    # Correct key and default: API expects `mode_recommendations` (list)
+                    "mode_recommendations": self._mode_recommendations or [],
                 }
                 _LOGGER.info(
                     "✅ Battery forecast data saved to coordinator - grid_charging_planned will update"
@@ -548,6 +586,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Data jsou už v coordinator.battery_forecast_data
                 # Grid charging sensor je závislý na coordinator update cycle
                 # NEMĚNÍME coordinator.data - jen přidáváme battery_forecast_data
+
+            # PHASE 2.9: Track actual performance každých 15 minut
+            await self._track_actual_performance()
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
@@ -712,6 +753,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 result["battery_discharge"] = discharge_amount
                 result["new_soc"] -= discharge_amount
+
+                # CRITICAL FIX: Pokud baterie nestačí (je na minimu), zbytek deficitu ze sítě!
+                if discharge_amount < deficit / efficiency:
+                    remaining_deficit = deficit - (discharge_amount * efficiency)
+                    result["grid_import"] = remaining_deficit
+                    result["grid_cost"] = remaining_deficit * spot_price
 
                 # If still deficit, import from grid
                 remaining_deficit = deficit - discharge_amount * efficiency
@@ -1273,23 +1320,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             now = datetime.now()
 
-            # OPRAVA Phase 2.8: Pouze DNES a ZÍTRA (celé dny)
-            # DNES: celý den (00:00:00 - 23:59:59)
+            # OPRAVA Phase 2.8: Mode recommendations jen BUDOUCNOST (od NOW)
+            # DNES: od NOW do 23:59:59
             # ZÍTRA: celý den (00:00:00 - 23:59:59)
-            today = now.date()
-            today_start = datetime.combine(today, datetime.min.time())
+            # Důvod: optimal_timeline už je filtrovaný od NOW (řádek 400-408)
             tomorrow_end = datetime.combine(
-                today + timedelta(days=1), datetime.max.time()
+                now.date() + timedelta(days=1), datetime.max.time()
             )
 
-            # Filter pouze intervaly DNES a ZÍTRA
+            # Filter pouze intervaly od NOW do konce zítřka
             future_intervals = [
                 interval
                 for interval in optimal_timeline
                 if interval.get("time")
-                and today_start
-                <= datetime.fromisoformat(interval["time"])
-                <= tomorrow_end
+                and now <= datetime.fromisoformat(interval["time"]) <= tomorrow_end
             ]
 
             if not future_intervals:
@@ -1332,6 +1376,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             current_block["to_time"] = last_interval_time
 
                     self._add_block_details(current_block, block_intervals)
+                    # Store intervals for potential splitting later
+                    current_block["_intervals"] = block_intervals
                     recommendations.append(current_block)
 
                     # Start new block
@@ -1356,6 +1402,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     current_block["to_time"] = last_interval_time
 
                 self._add_block_details(current_block, block_intervals)
+                # Store intervals for potential splitting later
+                current_block["_intervals"] = block_intervals
                 recommendations.append(current_block)
 
             # OPRAVA Phase 2.8: Splitovat bloky přes půlnoc
@@ -1367,6 +1415,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 # Pokud blok je ve stejném dni, přidat bez změny
                 if from_dt.date() == to_dt.date():
+                    # Remove temporary intervals before returning
+                    block.pop("_intervals", None)
                     split_recommendations.append(block)
                 else:
                     # Blok přes půlnoc - rozdělit na 2
@@ -1374,23 +1424,53 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         from_dt.date() + timedelta(days=1), datetime.min.time()
                     )
 
+                    # Get original intervals for precise cost calculation
+                    intervals = block.get("_intervals", [])
+
+                    # Split intervals by midnight
+                    intervals1 = [
+                        i
+                        for i in intervals
+                        if datetime.fromisoformat(i.get("time", "")) < midnight
+                    ]
+                    intervals2 = [
+                        i
+                        for i in intervals
+                        if datetime.fromisoformat(i.get("time", "")) >= midnight
+                    ]
+
                     # První část: od from_time do půlnoci
-                    block1 = block.copy()
-                    block1["to_time"] = midnight.isoformat()
-                    # Přepočítat duration a intervals_count pro první část
+                    block1 = {
+                        "mode": block["mode"],
+                        "mode_name": block["mode_name"],
+                        "from_time": block["from_time"],
+                        "to_time": midnight.isoformat(),
+                        "intervals_count": len(intervals1),
+                    }
                     duration1 = (midnight - from_dt).total_seconds() / 3600
                     block1["duration_hours"] = round(duration1, 2)
-                    block1["intervals_count"] = int(duration1 * 4)  # 4 intervaly/hodina
+
+                    # Recalculate costs from actual intervals (no rounding errors)
+                    if intervals1:
+                        self._add_block_details(block1, intervals1)
+
                     split_recommendations.append(block1)
 
                     # Druhá část: od půlnoci do to_time
-                    block2 = block.copy()
-                    block2["from_time"] = midnight.isoformat()
-                    # to_time zůstává
-                    # Přepočítat duration a intervals_count pro druhou část
+                    block2 = {
+                        "mode": block["mode"],
+                        "mode_name": block["mode_name"],
+                        "from_time": midnight.isoformat(),
+                        "to_time": block["to_time"],
+                        "intervals_count": len(intervals2),
+                    }
                     duration2 = (to_dt - midnight).total_seconds() / 3600
                     block2["duration_hours"] = round(duration2, 2)
-                    block2["intervals_count"] = int(duration2 * 4)
+
+                    # Recalculate costs from actual intervals (no rounding errors)
+                    if intervals2:
+                        self._add_block_details(block2, intervals2)
+
                     split_recommendations.append(block2)
 
             return split_recommendations
@@ -1973,8 +2053,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 for t in range(block["start"], block["end"]):
                     optimal_modes[t] = prev_block["mode"]
                     optimal_timeline[t]["mode"] = prev_block["mode"]
-                    optimal_timeline[t]["mode_name"] = self._get_mode_name(
-                        prev_block["mode"]
+                    optimal_timeline[t]["mode_name"] = CBB_MODE_NAMES.get(
+                        prev_block["mode"], f"Mode {prev_block['mode']}"
                     )
 
                 # Rozšířit předchozí blok
@@ -2417,13 +2497,34 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Celkové balancing window = charging NEBO holding
             is_balancing_window = is_balancing_charging or is_balancing_holding
 
+            # PHASE 2.5: Určit MODE pro tento interval PŘED výpočtem baterie
+            # Priorita:
+            # 1. Balancing má prioritu (UPS pro charging i holding)
+            # 2. DP optimalizace (pokud existuje)
+            # 3. Fallback: Podle mode parametru
+
+            interval_mode_num = mode  # Default: použít mode parametr
+            interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
+
+            if is_balancing_charging or is_balancing_holding:
+                # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
+                interval_mode_num = CBB_MODE_HOME_UPS
+                interval_mode_name = "Home UPS"
+            elif timestamp_str in dp_mode_lookup:
+                # Použít optimální mode z DP
+                interval_mode_num = dp_mode_lookup[timestamp_str]
+                interval_mode_name = CBB_MODE_NAMES.get(
+                    interval_mode_num, f"MODE_{interval_mode_num}"
+                )
+            # else: použít mode parametr (už nastaveno výše)
+
             # Grid charging - normální logika (může být přepsána balancingem)
             grid_kwh = 0.0
 
             # Debug první pár bodů
             if len(timeline) < 3:
                 _LOGGER.info(
-                    f"Timeline point {len(timeline)}: {timestamp_str}, "
+                    f"Timeline point {len(timeline)}: {timestamp_str}, mode={interval_mode_name}, "
                     f"battery_before={battery_kwh:.3f}, solar={solar_kwh:.3f}, "
                     f"load={load_kwh:.3f}, grid={grid_kwh:.3f}, "
                     f"balancing_charging={is_balancing_charging}, balancing_holding={is_balancing_holding}"
@@ -2446,7 +2547,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # V holding period jen držíme baterii na max kapacitě
                 # MODE-AWARE: Balancing vyžaduje HOME_UPS mode (AC charging)
                 # Pokud forecastujeme pro jiný mode, balancing ignorovat
-                mode_allows_ac_charging = mode == CBB_MODE_HOME_UPS
+                mode_allows_ac_charging = interval_mode_num == CBB_MODE_HOME_UPS
                 should_charge = (
                     is_balancing_charging
                     and (not is_balancing_holding)
@@ -2504,14 +2605,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # GAP #1: Při vybíjení z baterie musíme zohlednit DC/AC losses
                 # GAP #3: V UPS režimu spotřeba jde ze sítě (ne z baterie)
 
-                # MODE-AWARE: Použít mode parametr místo detekce z grid_kwh
+                # MODE-AWARE: Použít interval_mode_num místo fixního mode parametru
                 # HOME_UPS (3): AC nabíjení povoleno, spotřeba ze sítě
                 # HOME I/II/III (0/1/2): Jen DC nabíjení ze solaru, spotřeba z baterie
-                is_ups_mode = mode == CBB_MODE_HOME_UPS
+                is_ups_mode = interval_mode_num == CBB_MODE_HOME_UPS
 
                 if is_ups_mode:
                     # UPS režim: spotřeba ze sítě (100% účinnost)
                     # Baterie roste jen díky solar + grid nabíjení
+
+                    # CRITICAL: V UPS režimu můžeme nabíjet z gridu!
+                    # Pokud baterie není plná, přidáme grid charging
+                    if battery_kwh < max_capacity - 0.1:  # Není plná (s malou rezervou)
+                        # Kolik můžeme nabít z gridu?
+                        config = (
+                            self._config_entry.options
+                            if self._config_entry and self._config_entry.options
+                            else self._config_entry.data if self._config_entry else {}
+                        )
+                        charging_power_kw = config.get("home_charge_rate", 2.8)
+                        max_charge_per_15min = (
+                            charging_power_kw / 4.0
+                        )  # kW → kWh za 15min
+
+                        battery_space = max_capacity - battery_kwh
+                        grid_kwh = min(max_charge_per_15min, battery_space / efficiency)
+
                     net_energy = solar_kwh + grid_kwh
                     # load_kwh se NEODEČÍTÁ (jde ze sítě!)
                 else:
@@ -2558,26 +2677,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 else:
                     reason = f"balancing_{balancing_reason}"
 
-            # PHASE 2.5: Určit MODE pro tento interval
-            # Priorita:
-            # 1. Balancing má prioritu (UPS pro charging i holding)
-            # 2. DP optimalizace (pokud existuje)
-            # 3. Fallback: Podle mode parametru
-
-            interval_mode_num = mode  # Default: použít mode parametr
-            interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
-
-            if is_balancing_charging or is_balancing_holding:
-                # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
-                interval_mode_num = CBB_MODE_HOME_UPS
-                interval_mode_name = "Home UPS"
-            elif timestamp_str in dp_mode_lookup:
-                # Použít optimální mode z DP
-                interval_mode_num = dp_mode_lookup[timestamp_str]
-                interval_mode_name = CBB_MODE_NAMES.get(
-                    interval_mode_num, f"MODE_{interval_mode_num}"
-                )
-            # else: použít mode parametr (už nastaveno výše)
+            # NOTE: interval_mode_num už je nastaven výše (před výpočtem baterie)
 
             # Přidat bod do timeline
             # Phase 1.5: Lookup export price for this timestamp
@@ -2605,11 +2705,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Optimalizace nabíjení ze sítě
         # DŮLEŽITÉ: Pokud máme aktivní charging plan, NEVOLAT optimalizaci!
         # Charging plan má prioritu před grid charging optimalizací
+        # DŮLEŽITÉ: Pokud máme DP optimalizaci, NEVOLAT grid charging optimalizaci!
+        # DP už určila optimální režimy včetně HOME UPS nabíjení
         # MODE-AWARE: Grid charging optimalizace pouze v HOME_UPS režimu
-        _LOGGER.debug(f"Timeline before optimization: {len(timeline)} points")
-        if not active_plan:
+        has_dp_optimization = bool(dp_mode_lookup)
+        _LOGGER.debug(
+            f"Timeline before optimization: {len(timeline)} points, has_dp={has_dp_optimization}"
+        )
+
+        if not active_plan and not has_dp_optimization:
             timeline = self._optimize_grid_charging(timeline, mode)
             _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
+        elif has_dp_optimization:
+            _LOGGER.info(
+                f"Skipping grid charging optimization - using DP optimal modes ({len(dp_mode_lookup)} intervals)"
+            )
         else:
             _LOGGER.info(
                 f"Skipping grid charging optimization - active charging plan from {plan_requester}"
@@ -2676,6 +2786,452 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return (min_capacity_percent / 100.0) * max_capacity
 
         return 2.0  # Default 20% z 10kWh
+
+    # =========================================================================
+    # PHASE 2.9: DAILY PLAN TRACKING - Historie vs Plán
+    # =========================================================================
+
+    async def _maybe_fix_daily_plan(self) -> None:
+        """
+        Fixovat denní plán při prvním výpočtu po půlnoci.
+
+        Phase 2.9: Daily Plan Tracking
+        - Volá se na začátku async_update()
+        - Kontroluje jestli je nový den
+        - Fixuje plán z DP optimalizace pro celý dnešek
+        - Ukládá do self._daily_plan_state pro pozdější tracking
+
+        Logika:
+        1. Je nový den? (plan_date != today)
+        2. Máme fresh DP výsledek? (optimal_timeline existuje)
+        3. FIXUJ: Ulož celý dnešní plán do daily_plan_state
+        """
+        now = dt_util.now()
+        today_str = now.strftime("%Y-%m-%d")
+
+        # Inicializace state při prvním běhu
+        if not hasattr(self, "_daily_plan_state"):
+            self._daily_plan_state = None
+
+        # Je nový den?
+        if (
+            self._daily_plan_state is None
+            or self._daily_plan_state.get("plan_date") != today_str
+        ):
+            # Archivovat včerejší plán pokud existuje
+            if (
+                self._daily_plan_state
+                and self._daily_plan_state.get("status") == "active"
+            ):
+                self._daily_plan_state["status"] = "completed"
+                _LOGGER.info(
+                    f"📦 Archived daily plan for {self._daily_plan_state.get('plan_date')}"
+                )
+
+            # Máme DP výsledek?
+            if (
+                hasattr(self, "_mode_optimization_result")
+                and self._mode_optimization_result
+            ):
+                optimal_timeline = self._mode_optimization_result.get(
+                    "optimal_timeline", []
+                )
+                mode_recommendations = self._mode_optimization_result.get(
+                    "mode_recommendations", []
+                )
+
+                # Filtrovat jen dnešní intervaly (00:00 - 23:45)
+                today_start = datetime.combine(now.date(), datetime.min.time())
+                today_end = datetime.combine(now.date(), datetime.max.time())
+
+                today_timeline = [
+                    interval
+                    for interval in optimal_timeline
+                    if interval.get("time")
+                    and today_start
+                    <= datetime.fromisoformat(interval["time"])
+                    <= today_end
+                ]
+
+                today_blocks = [
+                    block
+                    for block in mode_recommendations
+                    if block.get("from_time")
+                    and today_start
+                    <= datetime.fromisoformat(block["from_time"])
+                    <= today_end
+                ]
+
+                expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
+
+                # FIXUJ PLÁN
+                self._daily_plan_state = {
+                    "plan_date": today_str,
+                    "plan_fixed_at": now.isoformat(),
+                    "status": "active",
+                    "planned_timeline": today_timeline,
+                    "mode_blocks": today_blocks,
+                    "expected_total_cost": round(expected_total_cost, 2),
+                    "actual_intervals": [],  # Postupně se plní během dne
+                }
+
+                _LOGGER.info(
+                    f"🎯 Fixed daily plan for {today_str}: "
+                    f"{len(today_timeline)} intervals, "
+                    f"expected_cost={expected_total_cost:.2f} Kč, "
+                    f"{len(today_blocks)} mode blocks"
+                )
+            else:
+                _LOGGER.warning(
+                    f"No DP optimization result available to fix daily plan for {today_str}"
+                )
+                # Vytvořit prázdný stav
+                self._daily_plan_state = {
+                    "plan_date": today_str,
+                    "plan_fixed_at": now.isoformat(),
+                    "status": "no_plan",
+                    "planned_timeline": [],
+                    "mode_blocks": [],
+                    "expected_total_cost": 0.0,
+                    "actual_intervals": [],
+                }
+
+    async def _track_actual_performance(self) -> None:
+        """
+        Průběžně trackovat skutečné náklady vs plán.
+
+        Phase 2.9: Actual Data Tracking
+        - Volá se na konci async_update() každých 15 minut
+        - Načítá actual values z HA sensorů
+        - Porovnává s planned values z daily_plan_state
+        - Ukládá delta pro analýzy
+
+        Logika:
+        1. Máme aktivní plán? (daily_plan_state.status == "active")
+        2. Načíst actual values z HA sensorů
+        3. Najít odpovídající planned interval
+        4. Uložit porovnání
+        """
+        if (
+            not hasattr(self, "_daily_plan_state")
+            or not self._daily_plan_state
+            or self._daily_plan_state.get("status") != "active"
+        ):
+            return
+
+        now = dt_util.now()
+
+        # Round na 15min interval
+        current_minute = (now.minute // 15) * 15
+        current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
+        interval_str = current_interval.isoformat()
+
+        # Skip pokud už máme tento interval
+        actual_intervals = self._daily_plan_state.get("actual_intervals", [])
+        if any(a.get("time") == interval_str for a in actual_intervals):
+            return  # Už trackováno
+
+        # Načíst actual values
+        try:
+            actual_battery = self._get_current_battery_capacity()  # kWh
+            actual_mode = self._get_current_mode()  # 0-3
+            actual_mode_name = CBB_MODE_NAMES.get(actual_mode, f"MODE_{actual_mode}")
+
+            # TODO: Grid import/export - potřebujeme DELTA za poslední 15min
+            # Pro teď: placeholder (implementovat v další fázi)
+            actual_grid_import = 0.0  # kWh za 15min
+            actual_grid_export = 0.0
+
+            # Spot price - najít v timeline
+            spot_price = 0.0
+            if hasattr(self, "_timeline_data") and self._timeline_data:
+                for point in self._timeline_data:
+                    if point.get("time") == interval_str:
+                        spot_price = point.get("spot_price", 0.0)
+                        break
+
+            actual_cost = (actual_grid_import * spot_price) - (
+                actual_grid_export * spot_price
+            )
+
+        except Exception as e:
+            _LOGGER.warning(f"Failed to get actual values for {interval_str}: {e}")
+            return
+
+        # Najít odpovídající planned interval
+        planned_interval = None
+        planned_timeline = self._daily_plan_state.get("planned_timeline", [])
+
+        for interval in planned_timeline:
+            if interval.get("time") == interval_str:
+                planned_interval = interval
+                break
+
+        if not planned_interval:
+            _LOGGER.debug(f"No planned interval found for {interval_str}")
+            # Může být interval mimo plán (např. pokud plán začíná od NOW)
+            return
+
+        # Uložit tracking data
+        tracking_entry = {
+            "time": interval_str,
+            "actual": {
+                "battery_kwh": round(actual_battery, 2),
+                "mode": actual_mode,
+                "mode_name": actual_mode_name,
+                "grid_import": round(actual_grid_import, 3),
+                "grid_export": round(actual_grid_export, 3),
+                "net_cost": round(actual_cost, 2),
+            },
+            "planned": {
+                "battery_kwh": round(planned_interval.get("battery_soc", 0), 2),
+                "mode": planned_interval.get("mode", 0),
+                "mode_name": planned_interval.get("mode_name", "HOME I"),
+                "net_cost": round(planned_interval.get("net_cost", 0), 2),
+            },
+            "delta": {
+                "battery_kwh": round(
+                    actual_battery - planned_interval.get("battery_soc", 0), 2
+                ),
+                "net_cost": round(actual_cost - planned_interval.get("net_cost", 0), 2),
+            },
+        }
+
+        actual_intervals.append(tracking_entry)
+        self._daily_plan_state["actual_intervals"] = actual_intervals
+
+        _LOGGER.debug(
+            f"✅ Tracked {interval_str}: "
+            f"actual={actual_mode_name} ({actual_battery:.2f} kWh), "
+            f"planned={planned_interval.get('mode_name')} ({planned_interval.get('battery_soc', 0):.2f} kWh), "
+            f"delta_battery={tracking_entry['delta']['battery_kwh']:.2f} kWh"
+        )
+
+    def build_timeline_extended(self) -> Dict[str, Any]:
+        """
+        Postavit rozšířenou timeline strukturu pro API.
+
+        Phase 2.9: Timeline Extended Builder
+        - Kombinuje historická data (včera) + mixed (dnes) + plánovaná (zítra)
+        - Používá daily_plan_state pro historical tracking
+        - Používá DP optimalizaci pro planned data
+
+        Returns:
+            Dict s yesterday/today/tomorrow sekcemi
+        """
+        now = dt_util.now()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        tomorrow = today + timedelta(days=1)
+
+        return {
+            "yesterday": self._build_day_timeline(yesterday),
+            "today": self._build_day_timeline(today),
+            "tomorrow": self._build_day_timeline(tomorrow),
+        }
+
+    def _build_day_timeline(self, date: datetime.date) -> Dict[str, Any]:
+        """
+        Postavit timeline pro jeden den.
+
+        Args:
+            date: Datum dne
+
+        Returns:
+            Dict s intervals a summary pro daný den
+        """
+        now = dt_util.now()
+        today = now.date()
+
+        day_start = datetime.combine(date, datetime.min.time())
+        day_end = datetime.combine(date, datetime.max.time())
+
+        intervals: List[Dict[str, Any]] = []
+
+        # Určit zdroj dat podle dne
+        if date < today:
+            # VČERA - pouze historical (pokud máme archivovaná data)
+            # TODO: Load z persistent storage
+            source = "historical_only"
+        elif date == today:
+            # DNES - historical (00:00-NOW) + planned (NOW-23:45)
+            source = "mixed"
+        else:
+            # ZÍTRA - pouze planned
+            source = "planned_only"
+
+        # Build intervals podle source
+        if source == "historical_only":
+            # TODO: Load včerejší data z archivovaného daily_plan_state
+            # Pro teď: prázdné (implementovat v další fázi)
+            pass
+
+        elif source == "mixed":
+            # DNES: Combine historical + planned
+            if (
+                hasattr(self, "_daily_plan_state")
+                and self._daily_plan_state
+                and self._daily_plan_state.get("plan_date") == date.strftime("%Y-%m-%d")
+            ):
+                actual_intervals = self._daily_plan_state.get("actual_intervals", [])
+                planned_timeline = self._daily_plan_state.get("planned_timeline", [])
+
+                for planned in planned_timeline:
+                    interval_time_str = planned.get("time", "")
+                    if not interval_time_str:
+                        continue
+
+                    try:
+                        interval_time = datetime.fromisoformat(interval_time_str)
+                    except:
+                        continue
+
+                    # Round current time na 15min
+                    current_minute = (now.minute // 15) * 15
+                    current_interval = now.replace(
+                        minute=current_minute, second=0, microsecond=0
+                    )
+
+                    if interval_time < current_interval:
+                        # Historical - hledat actual
+                        actual = next(
+                            (
+                                a
+                                for a in actual_intervals
+                                if a.get("time") == interval_time_str
+                            ),
+                            None,
+                        )
+
+                        interval_entry = {
+                            "time": interval_time_str,
+                            "status": "historical",
+                            "planned": self._format_planned_data(planned),
+                            "actual": (
+                                self._format_actual_data(actual.get("actual"))
+                                if actual
+                                else None
+                            ),
+                            "delta": (actual.get("delta") if actual else None),
+                        }
+
+                    elif interval_time == current_interval:
+                        # Current interval
+                        interval_entry = {
+                            "time": interval_time_str,
+                            "status": "current",
+                            "planned": self._format_planned_data(planned),
+                            "actual": None,
+                            "delta": None,
+                        }
+
+                    else:
+                        # Future (dnes večer)
+                        interval_entry = {
+                            "time": interval_time_str,
+                            "status": "planned",
+                            "planned": self._format_planned_data(planned),
+                            "actual": None,
+                            "delta": None,
+                        }
+
+                    intervals.append(interval_entry)
+
+        elif source == "planned_only":
+            # ZÍTRA - pouze planned z DP výsledku
+            if (
+                hasattr(self, "_mode_optimization_result")
+                and self._mode_optimization_result
+            ):
+                optimal_timeline = self._mode_optimization_result.get(
+                    "optimal_timeline", []
+                )
+
+                for interval in optimal_timeline:
+                    interval_time_str = interval.get("time", "")
+                    if not interval_time_str:
+                        continue
+
+                    try:
+                        interval_time = datetime.fromisoformat(interval_time_str)
+                    except:
+                        continue
+
+                    if day_start <= interval_time <= day_end:
+                        intervals.append(
+                            {
+                                "time": interval_time_str,
+                                "status": "planned",
+                                "planned": self._format_planned_data(interval),
+                                "actual": None,
+                                "delta": None,
+                            }
+                        )
+
+        # Calculate summary
+        summary = self._calculate_day_summary(intervals)
+
+        return {
+            "date": date.strftime("%Y-%m-%d"),
+            "intervals": intervals,
+            "summary": summary,
+        }
+
+    def _format_planned_data(self, planned: Dict[str, Any]) -> Dict[str, Any]:
+        """Formátovat planned data pro API."""
+        return {
+            "mode": planned.get("mode", 0),
+            "mode_name": planned.get("mode_name", "HOME I"),
+            "battery_kwh": round(planned.get("battery_soc", 0), 2),
+            "solar_kwh": round(planned.get("solar_kwh", 0), 3),
+            "consumption_kwh": round(planned.get("load_kwh", 0), 3),
+            "grid_import": round(planned.get("grid_import", 0), 3),
+            "grid_export": round(planned.get("grid_export", 0), 3),
+            "spot_price": round(planned.get("spot_price", 0), 2),
+            "net_cost": round(planned.get("net_cost", 0), 2),
+        }
+
+    def _format_actual_data(self, actual: Dict[str, Any]) -> Dict[str, Any]:
+        """Formátovat actual data pro API."""
+        if not actual:
+            return None
+        return {
+            "mode": actual.get("mode", 0),
+            "mode_name": actual.get("mode_name", "HOME I"),
+            "battery_kwh": round(actual.get("battery_kwh", 0), 2),
+            "grid_import": round(actual.get("grid_import", 0), 3),
+            "grid_export": round(actual.get("grid_export", 0), 3),
+            "net_cost": round(actual.get("net_cost", 0), 2),
+        }
+
+    def _calculate_day_summary(self, intervals: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Vypočítat summary pro den."""
+        planned_cost = sum(
+            i.get("planned", {}).get("net_cost", 0)
+            for i in intervals
+            if i.get("planned")
+        )
+        actual_cost = sum(
+            i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual")
+        )
+
+        historical_count = sum(1 for i in intervals if i.get("status") == "historical")
+
+        delta_cost = actual_cost - planned_cost if historical_count > 0 else None
+        accuracy_pct = (
+            round((1 - abs(delta_cost) / planned_cost) * 100, 1)
+            if planned_cost > 0 and delta_cost is not None
+            else None
+        )
+
+        return {
+            "planned_total_cost": round(planned_cost, 2) if planned_cost > 0 else None,
+            "actual_total_cost": round(actual_cost, 2) if actual_cost > 0 else None,
+            "delta_cost": round(delta_cost, 2) if delta_cost is not None else None,
+            "accuracy_pct": accuracy_pct,
+            "intervals_count": len(intervals),
+            "historical_count": historical_count,
+        }
 
     # =========================================================================
     # ECONOMIC CHARGING - Nové metody pro ekonomické rozhodování

@@ -632,6 +632,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                         if temp_sensor._timeline_data
                         else 0
                     ),
+                    # Use consistent API key name and ensure default list when empty
+                    "mode_recommendations": temp_sensor._mode_recommendations or [],
                 }
                 _LOGGER.debug(
                     f"🔋 Battery forecast data updated in coordinator: {len(temp_sensor._timeline_data)} points"

@@ -925,6 +925,9 @@
                         <button class="timeline-tab" data-tab="tomorrow" onclick="showTimelineTab('tomorrow')">
                             📅 ZÍTRA
                         </button>
+                        <button class="timeline-tab" data-tab="extended" onclick="showTimelineTab('extended')">
+                            📊 HISTORIE vs PLÁN
+                        </button>
                     </div>
 
                     <!-- Tab Content - TODAY -->
@@ -935,6 +938,13 @@
                     <!-- Tab Content - TOMORROW -->
                     <div id="timeline-tomorrow-content" class="timeline-tab-content">
                         <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Tab Content - EXTENDED (PHASE 2.9) -->
+                    <div id="timeline-extended-content" class="timeline-tab-content">
+                        <div id="extended-timeline-container">
+                            <!-- Filled by buildExtendedTimeline() -->
+                        </div>
                     </div>
                 </div>
             </div>

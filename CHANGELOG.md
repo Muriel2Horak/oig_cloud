@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2025-10-29
+
+### ✨ Added
+
+- **Extended Timeline API - Historie vs Plán** - Complete historical tracking system
+  - New `timeline_extended` field with 3-day view (yesterday/today/tomorrow)
+  - Historical data with actual vs planned comparison for each 15-min interval
+  - `daily_plan_state` tracking with plan fixation at midnight
+  - Actual performance tracking every 15 minutes
+  - Daily summary calculation at end of day
+  - New dashboard tab "📊 HISTORIE vs PLÁN" for visualization
+  - Accuracy metrics: delta kWh, delta cost, percentage accuracy
+  - Mode recommendations now show full today+tomorrow (not just from NOW)
+  - Backward compatible - existing API fields unchanged
+  - Complete implementation documentation in `docs/TIMELINE_API_ENHANCEMENT_PLAN.md`
+
+### 🔧 Changed
+
+- **Battery Forecast Timeline**
+  - Mode recommendations filter changed from `today_start` to `NOW` for future-only data
+  - Timeline extended to show full historical + planned data
+  - Separate attributes for plan fixation vs real-time recommendations
+  - Enhanced visualization with historical vs planned bars
+  - Color-coded deltas (green = better than plan, red = worse than plan)
+
+### 🐛 Fixed
+
+- **DP Optimization Mode Application**
+  - Fixed critical bug where DP optimal modes were calculated but not applied to battery calculations
+  - Moved `interval_mode_num` determination BEFORE battery calculation
+  - Added grid import in HOME I mode when battery at minimum capacity
+  - Fixed timeline starting from yesterday midnight instead of NOW
+
+### 📚 Documentation
+
+- New: `TIMELINE_API_ENHANCEMENT_PLAN.md` - Complete implementation plan and API documentation
+- Updated: API response structure with `timeline_extended` and `daily_plan_state` examples
+- Updated: Frontend dashboard code with extended timeline functions
+- Implementation: 7 phases (100% complete)
+
+---
+
 ## [2.0.4] - 2025-10-24
 
 ### ✨ Added
