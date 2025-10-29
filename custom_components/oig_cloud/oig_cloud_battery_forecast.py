@@ -700,100 +700,124 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 result["grid_import"] = deficit
                 result["grid_cost"] = deficit * spot_price
 
-        # HOME III (2): All FVE to battery (DC/DC, NO AC LIMIT!), load from grid
-        # Critical: DC/DC path has NO 2.8kW AC limit
+        # HOME III (2): ALL FVE to battery (DC/DC, UNLIMITED!), load from grid
+        # KLÍČOVÉ: DC/DC nabíjení BEZ omezení výkonu (ne jen 0.7 kWh/15min!)
+        # Spotřeba VŽDY ze sítě, až když baterie = 100% → FVE pomáhá spotřebě
         elif mode == CBB_MODE_HOME_III:
-            # ALL FVE → battery (DC/DC 95%)
+            # ALL FVE → battery (DC/DC 95%, UNLIMITED power)
             battery_space = max_capacity - battery_soc
-            charge_amount = min(solar_kwh, battery_space / efficiency)
-
-            result["battery_charge"] = charge_amount
-            result["new_soc"] = battery_soc + charge_amount * efficiency
-
-            # Load ALWAYS from grid
-            result["grid_import"] = load_kwh
-            result["grid_cost"] = load_kwh * spot_price
-
-            # Phase 2.5: Export price protection with boiler support
-            # If battery full and still FVE surplus → boiler > export
-            if charge_amount < solar_kwh:
-                surplus = solar_kwh - charge_amount
-
-                # Try boiler first if export would be lossy
-                if export_price <= 0:
-                    boiler_capacity = self._get_boiler_available_capacity()
-                    boiler_usage = min(surplus, boiler_capacity)
-
-                    result["boiler_charge"] = boiler_usage
-                    surplus -= boiler_usage
-
-                # Export remaining (profitable or forced curtailment)
-                if surplus > 0.001:
-                    if export_price > 0:
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price
-                    else:
-                        # Forced curtailment (battery full, boiler full/unavailable)
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price  # NEGATIVE
-                        result["curtailed_loss"] = abs(surplus * export_price)
-
-        # HOME UPS (3): AC charging from grid
-        # AC charging limit: 2.8 kW → 0.7 kWh/15min (per module)
-        elif mode == CBB_MODE_HOME_UPS:
-            # Get AC charging limit from config
-            ac_limit = self._get_ac_charging_limit_kwh_15min()
-
-            # Charge from FVE first (DC/DC)
-            battery_space = max_capacity - battery_soc
-            fve_charge = min(solar_kwh, battery_space / efficiency)
-
-            result["battery_charge"] = fve_charge
-            result["new_soc"] = battery_soc + fve_charge * efficiency
-
-            # Then charge from grid (AC/DC) up to limit
-            remaining_space = max_capacity - result["new_soc"]
-            grid_charge = min(ac_limit, remaining_space / efficiency)
-
-            if grid_charge > 0.001:
-                result["battery_charge"] += grid_charge
-                result["new_soc"] += grid_charge * efficiency
-                result["grid_import"] += grid_charge
-                result["grid_cost"] += grid_charge * spot_price
-
-            # Cover load
-            remaining_solar = solar_kwh - fve_charge
-            if remaining_solar >= load_kwh:
-                # Enough FVE
-                surplus = remaining_solar - load_kwh
-
-                # Phase 2.5: Export price protection with boiler support
-                if surplus > 0.001:
+            
+            if battery_space > 0.001:
+                # Battery NOT full → ALL FVE to battery
+                charge_amount = min(solar_kwh, battery_space / efficiency)
+                result["battery_charge"] = charge_amount
+                result["new_soc"] = battery_soc + charge_amount * efficiency
+                
+                # Load ALWAYS from grid (i když máme FVE!)
+                result["grid_import"] = load_kwh
+                result["grid_cost"] = load_kwh * spot_price
+                
+                # Surplus only if battery full
+                if charge_amount < solar_kwh:
+                    surplus = solar_kwh - charge_amount
+                    
                     # Try boiler first if export would be lossy
                     if export_price <= 0:
                         boiler_capacity = self._get_boiler_available_capacity()
                         boiler_usage = min(surplus, boiler_capacity)
-
                         result["boiler_charge"] = boiler_usage
                         surplus -= boiler_usage
-
-                    # Export remaining (profitable or forced curtailment)
+                    
+                    # Export remaining
                     if surplus > 0.001:
-                        if export_price > 0:
-                            result["grid_export"] = surplus
-                            result["export_revenue"] = surplus * export_price
-                        else:
-                            # Forced curtailment (boiler full/unavailable)
-                            result["grid_export"] = surplus
-                            result["export_revenue"] = (
-                                surplus * export_price
-                            )  # NEGATIVE
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price
+                        if export_price <= 0:
                             result["curtailed_loss"] = abs(surplus * export_price)
             else:
-                # Import for load
-                deficit = load_kwh - remaining_solar
-                result["grid_import"] += deficit
-                result["grid_cost"] += deficit * spot_price
+                # Battery FULL (100%) → FVE pomáhá spotřebě
+                result["new_soc"] = battery_soc
+                
+                if solar_kwh >= load_kwh:
+                    # FVE pokryje spotřebu
+                    surplus = solar_kwh - load_kwh
+                    
+                    # Try boiler first if export would be lossy
+                    if surplus > 0.001 and export_price <= 0:
+                        boiler_capacity = self._get_boiler_available_capacity()
+                        boiler_usage = min(surplus, boiler_capacity)
+                        result["boiler_charge"] = boiler_usage
+                        surplus -= boiler_usage
+                    
+                    # Export remaining
+                    if surplus > 0.001:
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price
+                        if export_price <= 0:
+                            result["curtailed_loss"] = abs(surplus * export_price)
+                else:
+                    # FVE nestačí → doplnit ze sítě
+                    deficit = load_kwh - solar_kwh
+                    result["grid_import"] = deficit
+                    result["grid_cost"] = deficit * spot_price
+
+        # HOME UPS (3): Grid + FVE to battery, consumption from grid
+        # Grid → battery: max 2.8 kW (0.7 kWh/15min)
+        # FVE → battery: UNLIMITED (DC/DC path)
+        # Spotřeba: VŽDY ze sítě (i když je FVE!)
+        # Až když baterie = 100% → FVE pomáhá spotřebě
+        elif mode == CBB_MODE_HOME_UPS:
+            battery_space = max_capacity - battery_soc
+            
+            if battery_space > 0.001:
+                # Battery NOT full → charge from Grid + FVE
+                
+                # 1. FVE → battery (DC/DC, UNLIMITED)
+                fve_charge = min(solar_kwh, battery_space / efficiency)
+                result["battery_charge"] = fve_charge
+                result["new_soc"] = battery_soc + fve_charge * efficiency
+                
+                # 2. Grid → battery (AC/DC, max 2.8 kW limit)
+                ac_limit = self._get_ac_charging_limit_kwh_15min()
+                remaining_space = max_capacity - result["new_soc"]
+                grid_charge = min(ac_limit, remaining_space / efficiency)
+                
+                if grid_charge > 0.001:
+                    result["battery_charge"] += grid_charge
+                    result["new_soc"] += grid_charge * efficiency
+                    result["grid_import"] += grid_charge
+                    result["grid_cost"] += grid_charge * spot_price
+                
+                # 3. Spotřeba VŽDY ze sítě (i když máme FVE!)
+                result["grid_import"] += load_kwh
+                result["grid_cost"] += load_kwh * spot_price
+                
+            else:
+                # Battery FULL (100%) → FVE pomáhá spotřebě
+                result["new_soc"] = battery_soc
+                
+                if solar_kwh >= load_kwh:
+                    # FVE pokryje spotřebu
+                    surplus = solar_kwh - load_kwh
+                    
+                    # Try boiler first if export would be lossy
+                    if surplus > 0.001 and export_price <= 0:
+                        boiler_capacity = self._get_boiler_available_capacity()
+                        boiler_usage = min(surplus, boiler_capacity)
+                        result["boiler_charge"] = boiler_usage
+                        surplus -= boiler_usage
+                    
+                    # Export remaining
+                    if surplus > 0.001:
+                        result["grid_export"] = surplus
+                        result["export_revenue"] = surplus * export_price
+                        if export_price <= 0:
+                            result["curtailed_loss"] = abs(surplus * export_price)
+                else:
+                    # FVE nestačí → doplnit ze sítě
+                    deficit = load_kwh - solar_kwh
+                    result["grid_import"] = deficit
+                    result["grid_cost"] = deficit * spot_price
 
         # Calculate net cost
         result["net_cost"] = result["grid_cost"] - result["export_revenue"]
@@ -1646,14 +1670,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Phase 2.5: Připravit DP mode lookup pro timeline
         # Pokud máme DP optimalizaci, vytvoříme mapu timestamp → optimal mode
         dp_mode_lookup: Dict[str, int] = {}
-        if hasattr(self, "_mode_optimization_result") and self._mode_optimization_result:
-            optimal_timeline = self._mode_optimization_result.get("optimal_timeline", [])
+        if (
+            hasattr(self, "_mode_optimization_result")
+            and self._mode_optimization_result
+        ):
+            optimal_timeline = self._mode_optimization_result.get(
+                "optimal_timeline", []
+            )
             for dp_point in optimal_timeline:
                 dp_time = dp_point.get("time", "")
                 dp_mode = dp_point.get("mode", CBB_MODE_HOME_UPS)  # Default UPS
                 if dp_time:
                     dp_mode_lookup[dp_time] = dp_mode
-            _LOGGER.info(f"DP mode lookup prepared: {len(dp_mode_lookup)} optimal modes")
+            _LOGGER.info(
+                f"DP mode lookup prepared: {len(dp_mode_lookup)} optimal modes"
+            )
         else:
             _LOGGER.debug("No DP optimization result - using default mode logic")
 
@@ -1866,10 +1897,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # 1. Balancing má prioritu (UPS pro charging i holding)
             # 2. DP optimalizace (pokud existuje)
             # 3. Fallback: Podle mode parametru
-            
+
             interval_mode_num = mode  # Default: použít mode parametr
             interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
-            
+
             if is_balancing_charging or is_balancing_holding:
                 # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
                 interval_mode_num = CBB_MODE_HOME_UPS
@@ -1877,7 +1908,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             elif timestamp_str in dp_mode_lookup:
                 # Použít optimální mode z DP
                 interval_mode_num = dp_mode_lookup[timestamp_str]
-                interval_mode_name = CBB_MODE_NAMES.get(interval_mode_num, f"MODE_{interval_mode_num}")
+                interval_mode_name = CBB_MODE_NAMES.get(
+                    interval_mode_num, f"MODE_{interval_mode_num}"
+                )
             # else: použít mode parametr (už nastaveno výše)
 
             # Přidat bod do timeline
@@ -4332,7 +4365,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     async def _get_adaptive_load_prediction(self) -> Optional[Dict[str, Any]]:
         """
         Načte adaptive load prediction přímo z adaptive_load_profiles sensoru.
-        
+
         Sensor už má předpočítané today_profile a tomorrow_profile z 72h matching algoritmu.
 
         Returns:
@@ -4360,14 +4393,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Zkontrolovat jestli má today_profile a tomorrow_profile
             if "today_profile" not in attrs or "tomorrow_profile" not in attrs:
-                _LOGGER.debug("Adaptive sensor missing today_profile or tomorrow_profile")
+                _LOGGER.debug(
+                    "Adaptive sensor missing today_profile or tomorrow_profile"
+                )
                 return None
 
             # Vrátit profily přímo - sensor už udělal matching a prediction
             result = {
                 "today_profile": attrs["today_profile"],
                 "tomorrow_profile": attrs["tomorrow_profile"],
-                "match_score": attrs.get("prediction_summary", {}).get("similarity_score", 0.0),
+                "match_score": attrs.get("prediction_summary", {}).get(
+                    "similarity_score", 0.0
+                ),
                 "prediction_summary": attrs.get("prediction_summary", {}),
             }
 
