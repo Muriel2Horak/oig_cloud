@@ -9253,7 +9253,7 @@ function openModeTimelineDialog() {
 
     // Update current time indicator
     updateTimelineNowIndicator();
-    
+
     // OPRAVENO: Nejdřív zrušit starý interval, pak vytvořit nový
     if (timelineUpdateInterval) {
         clearInterval(timelineUpdateInterval);
@@ -9267,7 +9267,7 @@ function closeModeTimelineDialog() {
     if (dialog) {
         dialog.style.display = 'none';
     }
-    
+
     // OPRAVENO: Zrušit interval při zavření dialogu
     if (timelineUpdateInterval) {
         clearInterval(timelineUpdateInterval);

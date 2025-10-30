@@ -160,6 +160,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Phase 2.9: Daily plans archive (včera, předevčírem, ...)
         self._daily_plans_archive: Dict[str, Dict[str, Any]] = {}  # {date: plan_state}
+        
+        # Phase 2.9: Last tracking time (aby se tracking nevolal při každém update)
+        self._last_tracking_time: Optional[datetime] = None
 
         # Phase 1.5: Hash-based change detection
         self._data_hash: Optional[str] = (
@@ -3415,7 +3418,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Průběžně trackovat skutečné náklady vs plán.
 
         Phase 2.9: Actual Data Tracking
-        - Volá se na konci async_update() každých 15 minut
+        - Volá se MAX každých 15 minut (throttled)
         - Načítá actual values z HA sensorů
         - Porovnává s planned values z daily_plan_state
         - Ukládá delta pro analýzy
@@ -3426,6 +3429,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         3. Najít odpovídající planned interval
         4. Uložit porovnání
         """
+        now = dt_util.now()
+        
+        # THROTTLING: Volat max každých 15 minut (900s)
+        if hasattr(self, "_last_tracking_time") and self._last_tracking_time:
+            time_since_last = (now - self._last_tracking_time).total_seconds()
+            if time_since_last < 900:  # 15 minut
+                return  # Skip, tracking byl nedávno
+        
         if (
             not hasattr(self, "_daily_plan_state")
             or not self._daily_plan_state
@@ -3433,8 +3444,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         ):
             _LOGGER.debug("⏭️ Tracking skipped: no active daily plan")
             return
-
-        now = dt_util.now()
 
         # Round na 15min interval
         current_minute = (now.minute // 15) * 15
@@ -3445,6 +3454,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         actual_intervals = self._daily_plan_state.get("actual_intervals", [])
         if any(a.get("time") == interval_str for a in actual_intervals):
             _LOGGER.debug(f"⏭️ Interval {interval_str} already tracked")
+            return  # Už trackováno
+        
+        # Update last tracking time
+        self._last_tracking_time = now
             return  # Už trackováno
 
         _LOGGER.info(f"📊 Tracking actual performance for {interval_str}...")
