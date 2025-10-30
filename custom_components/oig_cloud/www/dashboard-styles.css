@@ -6594,216 +6594,281 @@
 
         /* =================================================================
            PHASE 2.9: Extended Timeline - Historie vs Plán
+           Simplified: Only TODAY's plan vs actual comparison
            ================================================================= */
-        
-        .extended-timeline {
-            display: flex;
-            flex-direction: column;
-            gap: 30px;
+
+        .today-comparison {
             padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
         }
-        
-        .day-timeline {
-            background: var(--card-background, #1e1e1e);
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+
+        .comparison-header {
+            margin-bottom: 30px;
         }
-        
-        .day-timeline-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid var(--border-color, #333);
-            padding-bottom: 10px;
-        }
-        
-        .day-timeline-header h3 {
-            margin: 0;
-            font-size: 1.3em;
+
+        .comparison-header h2 {
+            margin: 0 0 20px 0;
             color: var(--text-primary, #ffffff);
+            font-size: 1.5em;
         }
-        
-        .day-date {
-            color: var(--text-secondary, #b0b0b0);
-            font-size: 0.9em;
-        }
-        
-        .day-summary {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: var(--summary-bg, #2a2a2a);
-            border-radius: 8px;
-        }
-        
-        .summary-stat {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        
-        .summary-stat .label {
-            font-size: 0.85em;
-            color: var(--text-secondary, #b0b0b0);
-        }
-        
-        .summary-stat .value {
-            font-size: 1.1em;
-            font-weight: 600;
-            color: var(--text-primary, #ffffff);
-        }
-        
-        .summary-stat.positive .value {
-            color: var(--success-color, #4caf50);
-        }
-        
-        .summary-stat.negative .value {
-            color: var(--error-color, #f44336);
-        }
-        
-        .timeline-bars {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap: 10px;
-        }
-        
-        .timeline-bar {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        
-        .bar-time {
-            font-size: 0.75em;
-            color: var(--text-secondary, #b0b0b0);
-            text-align: center;
-        }
-        
-        .bar-content {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-        
-        .bar-actual,
-        .bar-planned {
-            padding: 8px;
-            border-radius: 6px;
-            text-align: center;
-            min-height: 50px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            gap: 3px;
-        }
-        
-        .bar-label {
-            font-size: 0.75em;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .bar-value {
-            font-size: 0.85em;
-        }
-        
-        .bar-delta {
-            font-size: 0.7em;
-            padding: 3px 6px;
-            border-radius: 4px;
-            text-align: center;
-        }
-        
-        .bar-delta.positive {
-            background: var(--success-bg, rgba(76, 175, 80, 0.2));
-            color: var(--success-color, #4caf50);
-        }
-        
-        .bar-delta.negative {
-            background: var(--error-bg, rgba(244, 67, 54, 0.2));
-            color: var(--error-color, #f44336);
-        }
-        
-        .timeline-bar.current .bar-planned {
-            animation: pulse 2s ease-in-out infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        .daily-plan-summary {
-            background: var(--card-background, #1e1e1e);
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .daily-plan-summary h3 {
-            margin: 0 0 15px 0;
-            color: var(--text-primary, #ffffff);
-        }
-        
-        .plan-stats {
+
+        /* Summary Cards */
+        .summary-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
-            margin-bottom: 15px;
+            margin-bottom: 30px;
         }
-        
-        .plan-stat {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
+
+        .summary-card {
+            background: var(--card-background, #1e1e1e);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border: 2px solid var(--border-color, #333);
         }
-        
-        .plan-stat .label {
+
+        .summary-card.better {
+            border-color: var(--success-color, #4caf50);
+            background: linear-gradient(135deg, var(--card-background, #1e1e1e) 0%, rgba(76, 175, 80, 0.1) 100%);
+        }
+
+        .summary-card.worse {
+            border-color: var(--error-color, #f44336);
+            background: linear-gradient(135deg, var(--card-background, #1e1e1e) 0%, rgba(244, 67, 54, 0.1) 100%);
+        }
+
+        .card-label {
             font-size: 0.85em;
             color: var(--text-secondary, #b0b0b0);
+            margin-bottom: 8px;
         }
-        
-        .plan-stat .value {
-            font-size: 1.1em;
+
+        .card-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: var(--text-primary, #ffffff);
+            margin-bottom: 5px;
+        }
+
+        .card-value.better {
+            color: var(--success-color, #4caf50);
+        }
+
+        .card-value.worse {
+            color: var(--error-color, #f44336);
+        }
+
+        .card-sublabel {
+            font-size: 0.75em;
+            color: var(--text-tertiary, #888);
+        }
+
+        /* Top Deviations */
+        .top-deviations {
+            margin-bottom: 30px;
+            background: var(--card-background, #1e1e1e);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .top-deviations h3 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary, #ffffff);
+            font-size: 1.2em;
+        }
+
+        .deviation-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .deviation-item {
+            display: grid;
+            grid-template-columns: 40px 60px 1fr auto;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 15px;
+            background: var(--summary-bg, #2a2a2a);
+            border-radius: 8px;
+            border-left: 4px solid var(--border-color, #333);
+        }
+
+        .deviation-item.worse {
+            border-left-color: var(--error-color, #f44336);
+        }
+
+        .deviation-item.better {
+            border-left-color: var(--success-color, #4caf50);
+        }
+
+        .deviation-item .rank {
+            font-size: 1.3em;
+        }
+
+        .deviation-item .time {
             font-weight: 600;
             color: var(--text-primary, #ffffff);
         }
-        
-        .plan-progress {
-            height: 8px;
-            background: var(--progress-bg, #2a2a2a);
-            border-radius: 4px;
-            overflow: hidden;
+
+        .deviation-item .modes {
+            color: var(--text-secondary, #b0b0b0);
+            font-size: 0.9em;
         }
-        
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--primary-color, #2196f3), var(--success-color, #4caf50));
-            transition: width 0.3s ease;
+
+        .deviation-item .delta {
+            font-weight: 700;
+            font-size: 1.1em;
         }
-        
-        .no-data {
+
+        .deviation-item .delta.worse {
+            color: var(--error-color, #f44336);
+        }
+
+        .deviation-item .delta.better {
+            color: var(--success-color, #4caf50);
+        }
+
+        /* Comparison Table */
+        .comparison-table {
+            background: var(--card-background, #1e1e1e);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+
+        .comparison-table h3 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary, #ffffff);
+            font-size: 1.2em;
+        }
+
+        .comparison-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table thead th {
+            background: var(--summary-bg, #2a2a2a);
+            color: var(--text-secondary, #b0b0b0);
+            font-weight: 600;
+            text-align: left;
+            padding: 12px 10px;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            border-bottom: 2px solid var(--border-color, #333);
+        }
+
+        .comparison-table tbody tr {
+            border-bottom: 1px solid var(--border-color, #333);
+            transition: background 0.2s ease;
+        }
+
+        .comparison-table tbody tr:hover {
+            background: var(--summary-bg, #2a2a2a);
+        }
+
+        .comparison-table tbody tr.match {
+            background: rgba(76, 175, 80, 0.05);
+        }
+
+        .comparison-table tbody tr.mismatch {
+            background: rgba(244, 67, 54, 0.05);
+        }
+
+        .comparison-table tbody td {
+            padding: 10px;
+            color: var(--text-primary, #ffffff);
+        }
+
+        .time-cell {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .mode-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: white;
+        }
+
+        .soc-cell,
+        .cost-cell {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .delta-cell {
+            text-align: right;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .delta-cell.better {
+            color: var(--success-color, #4caf50);
+        }
+
+        .delta-cell.worse {
+            color: var(--error-color, #f44336);
+        }
+
+        .no-historical {
             text-align: center;
             color: var(--text-secondary, #b0b0b0);
-            padding: 40px 20px;
-            font-style: italic;
+            padding: 60px 20px;
         }
-        
+
+        /* Responsive */
         @media (max-width: 1100px) {
-            .timeline-bars {
-                grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            .summary-cards {
+                grid-template-columns: repeat(2, 1fr);
             }
-            
-            .day-summary {
+
+            .comparison-table {
+                font-size: 0.9em;
+            }
+
+            .deviation-item {
+                grid-template-columns: 30px 50px 1fr auto;
+                gap: 10px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .summary-cards {
                 grid-template-columns: 1fr;
             }
-            
-            .plan-stats {
-                grid-template-columns: 1fr;
+
+            .comparison-table table {
+                font-size: 0.8em;
+            }
+
+            .comparison-table thead th,
+            .comparison-table tbody td {
+                padding: 8px 5px;
+            }
+
+            .deviation-item {
+                grid-template-columns: 30px 1fr auto;
+                font-size: 0.9em;
+            }
+
+            .deviation-item .time {
+                display: none;
             }
         }
 

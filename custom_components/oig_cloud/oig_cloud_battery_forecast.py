@@ -2405,13 +2405,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             battery = 0
                             net_cost = grid_import * price
                             total_cost += net_cost
-                    
+
                     # Phase 2.7: Cache timeline for HOME I
-                    home_i_timeline_cache.append({
-                        "time": timestamp_str,
-                        "net_cost": net_cost
-                    })
-                    
+                    home_i_timeline_cache.append(
+                        {"time": timestamp_str, "net_cost": net_cost}
+                    )
+
                 # HOME II: Grid supplements, battery saved
                 elif mode == 1:
                     if solar_kwh >= load_kwh:
