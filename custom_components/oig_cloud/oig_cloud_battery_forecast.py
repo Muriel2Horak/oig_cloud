@@ -3462,6 +3462,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Skip pokud už máme tento interval
         actual_intervals = self._daily_plan_state.get("actual_intervals", [])
+        _LOGGER.debug(
+            f"🔍 Check if {interval_str} already tracked: "
+            f"actual_intervals={len(actual_intervals)}, "
+            f"times={[a.get('time') for a in actual_intervals]}"
+        )
         if any(a.get("time") == interval_str for a in actual_intervals):
             _LOGGER.debug(f"⏭️ Interval {interval_str} already tracked")
             return  # Už trackováno
