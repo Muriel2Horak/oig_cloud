@@ -3313,10 +3313,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             ):
                 yesterday_date = self._daily_plan_state.get("plan_date")
                 self._daily_plan_state["status"] = "completed"
-                
+
                 # NOVĚ: Uložit do archivu (max 7 dní)
-                self._daily_plans_archive[yesterday_date] = self._daily_plan_state.copy()
-                
+                self._daily_plans_archive[yesterday_date] = (
+                    self._daily_plan_state.copy()
+                )
+
                 # Vyčistit staré plány (starší než 7 dní)
                 cutoff_date = (now.date() - timedelta(days=7)).strftime("%Y-%m-%d")
                 self._daily_plans_archive = {
@@ -3324,7 +3326,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     for date, plan in self._daily_plans_archive.items()
                     if date >= cutoff_date
                 }
-                
+
                 _LOGGER.info(
                     f"📦 Archived daily plan for {yesterday_date} "
                     f"(archive size: {len(self._daily_plans_archive)} days)"
@@ -3429,6 +3431,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             or not self._daily_plan_state
             or self._daily_plan_state.get("status") != "active"
         ):
+            _LOGGER.debug("⏭️ Tracking skipped: no active daily plan")
             return
 
         now = dt_util.now()
@@ -3441,7 +3444,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Skip pokud už máme tento interval
         actual_intervals = self._daily_plan_state.get("actual_intervals", [])
         if any(a.get("time") == interval_str for a in actual_intervals):
+            _LOGGER.debug(f"⏭️ Interval {interval_str} already tracked")
             return  # Už trackováno
+
+        _LOGGER.info(f"📊 Tracking actual performance for {interval_str}...")
 
         # Načíst actual values
         try:
@@ -3512,11 +3518,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         actual_intervals.append(tracking_entry)
         self._daily_plan_state["actual_intervals"] = actual_intervals
 
-        _LOGGER.debug(
+        _LOGGER.info(
             f"✅ Tracked {interval_str}: "
             f"actual={actual_mode_name} ({actual_battery:.2f} kWh), "
             f"planned={planned_interval.get('mode_name')} ({planned_interval.get('battery_soc', 0):.2f} kWh), "
-            f"delta_battery={tracking_entry['delta']['battery_kwh']:.2f} kWh"
+            f"delta_battery={tracking_entry['delta']['battery_kwh']:.2f} kWh, "
+            f"total_tracked={len(actual_intervals)}"
         )
 
     def build_timeline_extended(self) -> Dict[str, Any]:
@@ -3578,7 +3585,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # VČERA - zkontrolovat archiv
             date_str = date.strftime("%Y-%m-%d")
             archived_plan = self._daily_plans_archive.get(date_str)
-            
+
             if archived_plan:
                 # Máme archivovaný plán - použít actual_intervals jako historii
                 actual_intervals = archived_plan.get("actual_intervals", [])
