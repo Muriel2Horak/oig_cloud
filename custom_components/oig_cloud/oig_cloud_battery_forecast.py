@@ -2352,6 +2352,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         today_start = dt_util.as_local(today_start)
         tomorrow_end = today_start + timedelta(hours=48)
 
+        # Phase 2.7: Cache timeline for HOME I
+        home_i_timeline_cache = []
+
         def simulate_mode(mode: int) -> float:
             """Simulate 48h cost with fixed mode"""
             battery = current_capacity
@@ -2382,6 +2385,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 grid_import = 0.0
                 grid_export = 0.0
+                net_cost = 0.0
 
                 # HOME I: Battery priority (NO GRID CHARGING - this is the baseline)
                 if mode == 0:
@@ -2391,16 +2395,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         if battery > max_capacity:
                             grid_export = battery - max_capacity
                             battery = max_capacity
-                            total_cost -= grid_export * price
+                            net_cost = -grid_export * price
+                            total_cost += net_cost
                     else:
                         deficit = load_kwh - solar_kwh
                         battery -= deficit / efficiency
                         if battery < 0:
                             grid_import = -battery * efficiency
                             battery = 0
-                            total_cost += (
-                                grid_import * price
-                            )  # HOME II: Grid supplements, battery saved
+                            net_cost = grid_import * price
+                            total_cost += net_cost
+                    
+                    # Phase 2.7: Cache timeline for HOME I
+                    home_i_timeline_cache.append({
+                        "time": timestamp_str,
+                        "net_cost": net_cost
+                    })
+                    
+                # HOME II: Grid supplements, battery saved
                 elif mode == 1:
                     if solar_kwh >= load_kwh:
                         surplus = solar_kwh - load_kwh
@@ -2471,6 +2483,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "cost_czk": round(cost, 2),
                 "delta_czk": round(delta, 2),
             }
+
+        # Phase 2.7: Store HOME I timeline cache for savings calculation
+        if home_i_timeline_cache:
+            self._home_i_timeline_cache = home_i_timeline_cache
+            _LOGGER.debug(
+                f"[What-If] Cached HOME I timeline: {len(home_i_timeline_cache)} intervals, "
+                f"total_cost={alternatives['HOME I']['cost_czk']:.2f} Kč"
+            )
 
         # Add DO NOTHING (current optimized plan)
         alternatives["DO NOTHING"] = {
