@@ -559,9 +559,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._mode_optimization_result = None
                 self._mode_recommendations = []
 
-            # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER optimization)
-            await self._maybe_fix_daily_plan()
-
             # Use HYBRID timeline if available (nový formát s mode, mode_name, net_cost)
             # Jinak fallback na _calculate_timeline (starý formát)
             has_dp_results = (
@@ -593,6 +590,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     adaptive_profiles=adaptive_profiles,
                     balancing_plan=balancing_plan,
                 )
+
+            # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER _timeline_data is set)
+            await self._maybe_fix_daily_plan()
 
             # Keep baseline timeline empty for backwards compatibility
             self._baseline_timeline = []
