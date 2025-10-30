@@ -3448,7 +3448,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Round na 15min interval
         current_minute = (now.minute // 15) * 15
         current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
-        interval_str = current_interval.isoformat()
+        # OPRAVENO: Odstranit timezone pro konzistenci s planned_timeline (HYBRID výstup je bez TZ)
+        interval_str = current_interval.replace(tzinfo=None).isoformat()
 
         # Skip pokud už máme tento interval
         actual_intervals = self._daily_plan_state.get("actual_intervals", [])
