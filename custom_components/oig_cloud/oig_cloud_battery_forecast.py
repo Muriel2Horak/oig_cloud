@@ -2261,6 +2261,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         total_savings_48h = max(0, baseline_cost_48h - total_cost_48h)
 
+        # Generate what-if alternatives for dashboard tile
+        alternatives = self._generate_alternatives(
+            timeline=timeline,
+            optimal_cost_48h=total_cost_48h,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            efficiency=efficiency,
+        )
+
         return {
             "optimal_timeline": timeline,
             "optimal_modes": modes,
@@ -2268,7 +2277,153 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "total_cost_48h": total_cost_48h,  # For dashboard tile (DNES+ZÍTRA)
             "total_savings_48h": total_savings_48h,  # Savings vs HOME I baseline
             "mode_recommendations": mode_recommendations,
+            "alternatives": alternatives,  # What-if analysis for tile
         }
+
+    def _generate_alternatives(
+        self,
+        timeline: List[Dict[str, Any]],
+        optimal_cost_48h: float,
+        current_capacity: float,
+        max_capacity: float,
+        efficiency: float,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate what-if alternatives: what would cost be if we used only one mode all day?
+        
+        Returns dict with structure:
+        {
+            "HOME I": {"cost_czk": 50.5, "delta_czk": 5.2},
+            "HOME II": {"cost_czk": 48.0, "delta_czk": 2.7},
+            ...
+        }
+        """
+        now = dt_util.now()
+        today_start = datetime.combine(now.date(), datetime.min.time())
+        today_start = dt_util.as_local(today_start)
+        tomorrow_end = today_start + timedelta(hours=48)
+
+        def simulate_mode(mode: int) -> float:
+            """Simulate 48h cost with fixed mode"""
+            battery = current_capacity
+            total_cost = 0.0
+            
+            for interval in timeline:
+                if not interval.get("time"):
+                    continue
+                try:
+                    interval_time = datetime.fromisoformat(interval["time"])
+                    if interval_time.tzinfo is None:
+                        interval_time = dt_util.as_local(interval_time)
+                    if not (today_start <= interval_time < tomorrow_end):
+                        continue
+                except:
+                    continue
+
+                solar_kwh = interval.get("solar_kwh", 0)
+                load_kwh = interval.get("load_kwh", 0.125)
+                price = interval.get("spot_price", 0)
+                
+                grid_import = 0.0
+                grid_export = 0.0
+
+                # HOME I: Battery priority
+                if mode == 0:
+                    if solar_kwh >= load_kwh:
+                        surplus = solar_kwh - load_kwh
+                        battery += surplus
+                        if battery > max_capacity:
+                            grid_export = battery - max_capacity
+                            battery = max_capacity
+                            total_cost -= grid_export * price
+                    else:
+                        deficit = load_kwh - solar_kwh
+                        battery -= deficit / efficiency
+                        if battery < 0:
+                            grid_import = -battery * efficiency
+                            battery = 0
+                            total_cost += grid_import * price
+
+                # HOME II: Grid supplements, battery saved
+                elif mode == 1:
+                    if solar_kwh >= load_kwh:
+                        surplus = solar_kwh - load_kwh
+                        battery += surplus
+                        if battery > max_capacity:
+                            grid_export = battery - max_capacity
+                            battery = max_capacity
+                            total_cost -= grid_export * price
+                    else:
+                        # Grid covers load, battery untouched
+                        grid_import = load_kwh - solar_kwh
+                        total_cost += grid_import * price
+
+                # HOME III: Max charge
+                elif mode == 2:
+                    battery += solar_kwh
+                    if battery > max_capacity:
+                        grid_export = battery - max_capacity
+                        battery = max_capacity
+                        total_cost -= grid_export * price
+                    # Load from grid
+                    grid_import = load_kwh
+                    total_cost += grid_import * price
+
+                # HOME UPS: Grid charging allowed
+                elif mode == 3:
+                    # Nabít baterii z gridu pokud je levné
+                    if price < 1.5:  # Threshold for charging
+                        charge_amount = min(2.8 / 4.0, max_capacity - battery)
+                        if charge_amount > 0:
+                            grid_import += charge_amount
+                            total_cost += charge_amount * price
+                            battery += charge_amount * efficiency
+                    
+                    # Stejná logika jako HOME I pro FVE
+                    if solar_kwh >= load_kwh:
+                        surplus = solar_kwh - load_kwh
+                        battery += surplus
+                        if battery > max_capacity:
+                            grid_export = battery - max_capacity
+                            battery = max_capacity
+                            total_cost -= grid_export * price
+                    else:
+                        deficit = load_kwh - solar_kwh
+                        battery -= deficit / efficiency
+                        if battery < 0:
+                            extra_import = -battery * efficiency
+                            battery = 0
+                            grid_import += extra_import
+                            total_cost += extra_import * price
+
+                battery = max(0, min(battery, max_capacity))
+
+            return total_cost
+
+        alternatives = {}
+        mode_names = {
+            0: "HOME I",
+            1: "HOME II", 
+            2: "HOME III",
+            3: "HOME UPS",
+        }
+
+        for mode, name in mode_names.items():
+            cost = simulate_mode(mode)
+            delta = cost - optimal_cost_48h
+            alternatives[name] = {
+                "cost_czk": round(cost, 2),
+                "delta_czk": round(delta, 2),
+            }
+
+        # Add DO NOTHING (current optimized plan)
+        alternatives["DO NOTHING"] = {
+            "cost_czk": round(optimal_cost_48h, 2),
+            "delta_czk": 0.0,
+            "current_mode": "Optimized",
+        }
+
+        return alternatives
 
     def _enforce_min_capacity_constraint(
         self,
