@@ -540,28 +540,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER optimization)
             await self._maybe_fix_daily_plan()
 
-            # SIMPLIFIED: VŽDY počítat JEN ACTIVE timeline s DP módy
-            # Baseline timeline byl zbytečný a způsoboval přepis ACTIVE dat
+            # Use HYBRID timeline if available (nový formát s mode, mode_name, net_cost)
+            # Jinak fallback na _calculate_timeline (starý formát)
             has_dp_results = (
                 hasattr(self, "_mode_optimization_result")
                 and self._mode_optimization_result is not None
             )
 
-            _LOGGER.debug(
-                f"Calculating timeline with HYBRID={'yes' if has_dp_results else 'no'}, "
-                f"balancing={'yes' if self._active_charging_plan else 'no'}"
-            )
-            self._timeline_data = self._calculate_timeline(
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_avg_sensors=load_avg_sensors,
-                adaptive_profiles=adaptive_profiles,
-                balancing_plan=balancing_plan,
-            )
+            if has_dp_results:
+                # Use HYBRID optimal_timeline (nový formát)
+                self._timeline_data = self._mode_optimization_result.get("optimal_timeline", [])
+                _LOGGER.debug(
+                    f"Using HYBRID timeline: {len(self._timeline_data)} intervals"
+                )
+            else:
+                # Fallback: old format timeline
+                _LOGGER.debug(
+                    f"Calculating timeline with HYBRID=no, balancing={'yes' if self._active_charging_plan else 'no'}"
+                )
+                self._timeline_data = self._calculate_timeline(
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    min_capacity=min_capacity,
+                    spot_prices=spot_prices,
+                    export_prices=export_prices,
+                    solar_forecast=solar_forecast,
+                    load_avg_sensors=load_avg_sensors,
+                    adaptive_profiles=adaptive_profiles,
+                    balancing_plan=balancing_plan,
+                )
 
             # Keep baseline timeline empty for backwards compatibility
             self._baseline_timeline = []
