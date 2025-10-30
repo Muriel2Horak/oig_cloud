@@ -2290,7 +2290,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     ) -> Dict[str, Dict[str, Any]]:
         """
         Generate what-if alternatives: what would cost be if we used only one mode all day?
-        
+
         Returns dict with structure:
         {
             "HOME I": {"cost_czk": 50.5, "delta_czk": 5.2},
@@ -2307,7 +2307,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             """Simulate 48h cost with fixed mode"""
             battery = current_capacity
             total_cost = 0.0
-            
+
             for interval in timeline:
                 if not interval.get("time"):
                     continue
@@ -2327,7 +2327,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 grid_import = 0.0
                 grid_export = 0.0
 
-                # HOME I: Battery priority
+                # HOME I: Battery priority (NO GRID CHARGING - this is the baseline)
                 if mode == 0:
                     if solar_kwh >= load_kwh:
                         surplus = solar_kwh - load_kwh
@@ -2342,9 +2342,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         if battery < 0:
                             grid_import = -battery * efficiency
                             battery = 0
-                            total_cost += grid_import * price
-
-                # HOME II: Grid supplements, battery saved
+                            total_cost += grid_import * price                # HOME II: Grid supplements, battery saved
                 elif mode == 1:
                     if solar_kwh >= load_kwh:
                         surplus = solar_kwh - load_kwh
@@ -2378,7 +2376,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             grid_import += charge_amount
                             total_cost += charge_amount * price
                             battery += charge_amount * efficiency
-                    
+
                     # Stejná logika jako HOME I pro FVE
                     if solar_kwh >= load_kwh:
                         surplus = solar_kwh - load_kwh
@@ -2403,7 +2401,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         alternatives = {}
         mode_names = {
             0: "HOME I",
-            1: "HOME II", 
+            1: "HOME II",
             2: "HOME III",
             3: "HOME UPS",
         }
@@ -3508,9 +3506,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Build intervals podle source
         if source == "historical_only":
-            # TODO: Load včerejší data z archivovaného daily_plan_state
-            # Pro teď: prázdné (implementovat v další fázi)
-            pass
+            # VČERA - zkontrolovat jestli máme daily_plan_state pro včerejší den
+            if (
+                hasattr(self, "_daily_plan_state")
+                and self._daily_plan_state
+                and self._daily_plan_state.get("plan_date") == date.strftime("%Y-%m-%d")
+            ):
+                # Máme včerejší plán - použít actual_intervals jako historii
+                actual_intervals = self._daily_plan_state.get("actual_intervals", [])
+                planned_timeline = self._daily_plan_state.get("planned_timeline", [])
+                
+                for planned in planned_timeline:
+                    interval_time_str = planned.get("time", "")
+                    if not interval_time_str:
+                        continue
+
+                    # Najít actual data pro tento interval
+                    actual = next(
+                        (a for a in actual_intervals if a.get("time") == interval_time_str),
+                        None,
+                    )
+
+                    intervals.append({
+                        "time": interval_time_str,
+                        "status": "historical",
+                        "planned": {
+                            "mode": planned.get("mode"),
+                            "mode_name": planned.get("mode_name"),
+                            "battery_kwh": planned.get("battery_soc", 0),
+                            "solar_kwh": planned.get("solar_kwh", 0),
+                            "consumption_kwh": planned.get("load_kwh", 0),
+                            "grid_import": planned.get("grid_import", 0),
+                            "grid_export": planned.get("grid_export", 0),
+                            "spot_price": planned.get("spot_price", 0),
+                            "net_cost": planned.get("net_cost", 0),
+                        },
+                        "actual": {
+                            "mode": actual.get("mode") if actual else None,
+                            "mode_name": actual.get("mode_name") if actual else None,
+                            "battery_kwh": actual.get("battery_kwh") if actual else None,
+                        } if actual else None,
+                        "delta": None,  # Calculate if needed
+                    })
+            # Else: prázdné intervaly (plán již archivován nebo neexistuje)
 
         elif source == "mixed":
             # DNES: Combine historical + planned
