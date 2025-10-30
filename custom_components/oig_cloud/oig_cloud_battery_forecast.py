@@ -160,7 +160,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Phase 2.9: Daily plans archive (včera, předevčírem, ...)
         self._daily_plans_archive: Dict[str, Dict[str, Any]] = {}  # {date: plan_state}
-        
+
         # Phase 2.9: Last tracking time (aby se tracking nevolal při každém update)
         self._last_tracking_time: Optional[datetime] = None
 
@@ -3430,13 +3430,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         4. Uložit porovnání
         """
         now = dt_util.now()
-        
+
         # THROTTLING: Volat max každých 15 minut (900s)
         if hasattr(self, "_last_tracking_time") and self._last_tracking_time:
             time_since_last = (now - self._last_tracking_time).total_seconds()
             if time_since_last < 900:  # 15 minut
                 return  # Skip, tracking byl nedávno
-        
+
         if (
             not hasattr(self, "_daily_plan_state")
             or not self._daily_plan_state
@@ -3455,10 +3455,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if any(a.get("time") == interval_str for a in actual_intervals):
             _LOGGER.debug(f"⏭️ Interval {interval_str} already tracked")
             return  # Už trackováno
-        
+
         # Update last tracking time
         self._last_tracking_time = now
-            return  # Už trackováno
 
         _LOGGER.info(f"📊 Tracking actual performance for {interval_str}...")
 
