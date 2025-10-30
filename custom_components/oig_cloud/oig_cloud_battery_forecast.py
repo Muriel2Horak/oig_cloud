@@ -3304,11 +3304,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not hasattr(self, "_daily_plan_state"):
             self._daily_plan_state = None
 
-        # Je nový den?
+        # Je nový den? NEBO ještě nemáme dnešní plán?
         if (
             self._daily_plan_state is None
             or self._daily_plan_state.get("plan_date") != today_str
         ):
+            # Pokud už máme aktivní plán pro dnešek, NEPŘEPISOVAT ho!
+            if (
+                self._daily_plan_state
+                and self._daily_plan_state.get("plan_date") == today_str
+                and self._daily_plan_state.get("status") == "active"
+            ):
+                _LOGGER.debug(f"Daily plan for {today_str} already active, skipping fix")
+                return
+
             # Archivovat včerejší plán pokud existuje
             if (
                 self._daily_plan_state
