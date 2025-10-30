@@ -3126,8 +3126,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         now = dt_util.now()
         today = now.date()
 
-        day_start = datetime.combine(date, datetime.min.time())
-        day_end = datetime.combine(date, datetime.max.time())
+        # Make day_start and day_end timezone-aware
+        day_start = dt_util.as_local(datetime.combine(date, datetime.min.time()))
+        day_end = dt_util.as_local(datetime.combine(date, datetime.max.time()))
 
         intervals: List[Dict[str, Any]] = []
 
@@ -3166,6 +3167,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     try:
                         interval_time = datetime.fromisoformat(interval_time_str)
+                        # Make timezone-aware if naive
+                        if interval_time.tzinfo is None:
+                            interval_time = dt_util.as_local(interval_time)
                     except:
                         continue
 
@@ -3237,6 +3241,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     try:
                         interval_time = datetime.fromisoformat(interval_time_str)
+                        # Make timezone-aware if naive
+                        if interval_time.tzinfo is None:
+                            interval_time = dt_util.as_local(interval_time)
                     except:
                         continue
 
