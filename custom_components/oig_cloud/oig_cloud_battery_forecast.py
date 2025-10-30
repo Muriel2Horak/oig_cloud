@@ -2263,7 +2263,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Generate what-if alternatives for dashboard tile
         alternatives = self._generate_alternatives(
-            timeline=timeline,
+            spot_prices=spot_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
             optimal_cost_48h=total_cost_48h,
             current_capacity=current_capacity,
             max_capacity=max_capacity,
@@ -2282,7 +2284,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     def _generate_alternatives(
         self,
-        timeline: List[Dict[str, Any]],
+        spot_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
         optimal_cost_48h: float,
         current_capacity: float,
         max_capacity: float,
@@ -2308,22 +2312,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             battery = current_capacity
             total_cost = 0.0
 
-            for interval in timeline:
-                if not interval.get("time"):
+            for i, price_data in enumerate(spot_prices):
+                timestamp_str = price_data.get("time", "")
+                if not timestamp_str:
                     continue
+                    
                 try:
-                    interval_time = datetime.fromisoformat(interval["time"])
-                    if interval_time.tzinfo is None:
-                        interval_time = dt_util.as_local(interval_time)
-                    if not (today_start <= interval_time < tomorrow_end):
+                    timestamp = datetime.fromisoformat(timestamp_str)
+                    if timestamp.tzinfo is None:
+                        timestamp = dt_util.as_local(timestamp)
+                    if not (today_start <= timestamp < tomorrow_end):
                         continue
                 except:
                     continue
 
-                solar_kwh = interval.get("solar_kwh", 0)
-                load_kwh = interval.get("load_kwh", 0.125)
-                price = interval.get("spot_price", 0)
-                
+                # Get input data from forecasts
+                try:
+                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+                except:
+                    solar_kwh = 0.0
+                    
+                load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+                price = price_data.get("price", 0)
+
                 grid_import = 0.0
                 grid_export = 0.0
 
@@ -3515,7 +3526,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Máme včerejší plán - použít actual_intervals jako historii
                 actual_intervals = self._daily_plan_state.get("actual_intervals", [])
                 planned_timeline = self._daily_plan_state.get("planned_timeline", [])
-                
+
                 for planned in planned_timeline:
                     interval_time_str = planned.get("time", "")
                     if not interval_time_str:
