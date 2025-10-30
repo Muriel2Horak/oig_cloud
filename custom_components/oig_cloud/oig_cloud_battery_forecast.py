@@ -325,6 +325,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "HOME_III": mo["optimal_modes"].count(2),
                     "HOME_UPS": mo["optimal_modes"].count(3),
                 },
+                # Backwards compatibility: lowercase keys for old dashboard
+                "home_i_intervals": mo["optimal_modes"].count(0),
+                "home_ii_intervals": mo["optimal_modes"].count(1),
+                "home_iii_intervals": mo["optimal_modes"].count(2),
+                "home_ups_intervals": mo["optimal_modes"].count(3),
                 "timeline_length": len(mo.get("optimal_timeline", [])),
             }
 
