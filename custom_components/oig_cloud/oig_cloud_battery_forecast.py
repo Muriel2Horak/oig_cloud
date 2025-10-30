@@ -219,7 +219,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         State = current battery capacity in kWh.
 
         Dashboard graph needs numeric value to display battery timeline.
-        
+
         Returns:
             Current battery capacity (kWh) or 0 if no data
         """
@@ -252,14 +252,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "data_source": "simplified_calculation",
             # Current state
             "current_battery_kwh": (
-                round(self._timeline_data[0].get("battery_soc", 
-                      self._timeline_data[0].get("battery_capacity_kwh", 0)), 2)
+                round(
+                    self._timeline_data[0].get(
+                        "battery_soc",
+                        self._timeline_data[0].get("battery_capacity_kwh", 0),
+                    ),
+                    2,
+                )
                 if self._timeline_data and len(self._timeline_data) > 0
                 else 0
             ),
             "current_timestamp": (
-                self._timeline_data[0].get("time", 
-                self._timeline_data[0].get("timestamp"))
+                self._timeline_data[0].get(
+                    "time", self._timeline_data[0].get("timestamp")
+                )
                 if self._timeline_data and len(self._timeline_data) > 0
                 else None
             ),
@@ -2167,7 +2173,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             timeline.append(
                 {
                     "time": timestamp_str,
+                    "timestamp": timestamp_str,  # Alias pro zpětnou kompatibilitu s dashboardem
                     "battery_soc": battery,
+                    "battery_capacity_kwh": battery,  # Alias pro zpětnou kompatibilitu s dashboardem
                     "mode": mode,
                     "mode_name": CBB_MODE_NAMES.get(mode, "Unknown"),
                     "solar_kwh": solar_kwh,
@@ -2175,6 +2183,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "grid_import": grid_import,
                     "grid_export": grid_export,
                     "spot_price": price,
+                    "spot_price_czk": price,  # Alias pro zpětnou kompatibilitu
                     "net_cost": interval_cost,
                 }
             )
