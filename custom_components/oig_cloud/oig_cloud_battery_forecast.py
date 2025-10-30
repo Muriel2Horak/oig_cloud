@@ -3492,13 +3492,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         planned_interval = None
         planned_timeline = self._daily_plan_state.get("planned_timeline", [])
 
+        _LOGGER.debug(
+            f"🔍 Tracking {interval_str}: planned_timeline has {len(planned_timeline)} intervals"
+        )
+
         for interval in planned_timeline:
             if interval.get("time") == interval_str:
                 planned_interval = interval
                 break
 
         if not planned_interval:
-            _LOGGER.debug(f"No planned interval found for {interval_str}")
+            _LOGGER.debug(
+                f"No planned interval found for {interval_str} (timeline length={len(planned_timeline)})"
+            )
             # Může být interval mimo plán (např. pokud plán začíná od NOW)
             return
 
