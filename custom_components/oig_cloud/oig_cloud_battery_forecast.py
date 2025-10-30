@@ -2879,14 +2879,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Fixovat denní plán při prvním výpočtu po půlnoci.
 
         Phase 2.9: Daily Plan Tracking
-        - Volá se na začátku async_update()
+        - Volá se po HYBRID optimalizaci
         - Kontroluje jestli je nový den
-        - Fixuje plán z DP optimalizace pro celý dnešek
+        - Fixuje plán z HYBRID optimalizace pro celý dnešek
         - Ukládá do self._daily_plan_state pro pozdější tracking
 
         Logika:
         1. Je nový den? (plan_date != today)
-        2. Máme fresh DP výsledek? (optimal_timeline existuje)
+        2. Máme fresh HYBRID výsledek? (optimal_timeline existuje)
         3. FIXUJ: Ulož celý dnešní plán do daily_plan_state
         """
         now = dt_util.now()
@@ -2966,7 +2966,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
             else:
                 _LOGGER.warning(
-                    f"No DP optimization result available to fix daily plan for {today_str}"
+                    f"No HYBRID optimization result available to fix daily plan for {today_str}"
                 )
                 # Vytvořit prázdný stav
                 self._daily_plan_state = {
