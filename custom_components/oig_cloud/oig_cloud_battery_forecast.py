@@ -2173,16 +2173,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Calculate 48h cost for dashboard (DNES+ZÍTRA only, bez včera)
         now = dt_util.now()
         today_start = datetime.combine(now.date(), datetime.min.time())
-        if today_start.tzinfo is None:
-            today_start = dt_util.as_local(today_start)
+        today_start = dt_util.as_local(today_start)  # Always timezone-aware
         tomorrow_end = today_start + timedelta(hours=48)
 
-        total_cost_48h = sum(
-            interval.get("net_cost", 0)
-            for interval in timeline
-            if interval.get("time")
-            and today_start <= datetime.fromisoformat(interval["time"]) < tomorrow_end
-        )
+        total_cost_48h = 0.0
+        for interval in timeline:
+            if not interval.get("time"):
+                continue
+            try:
+                interval_time = datetime.fromisoformat(interval["time"])
+                # Normalize timezone for comparison
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
+                if today_start <= interval_time < tomorrow_end:
+                    total_cost_48h += interval.get("net_cost", 0)
+            except:
+                continue
 
         # Calculate HOME I baseline cost for 48h (pro výpočet úspory)
         baseline_cost_48h = 0.0
@@ -2192,6 +2198,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
             try:
                 interval_time = datetime.fromisoformat(interval["time"])
+                # Normalize timezone for comparison
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
                 if not (today_start <= interval_time < tomorrow_end):
                     continue
             except:
