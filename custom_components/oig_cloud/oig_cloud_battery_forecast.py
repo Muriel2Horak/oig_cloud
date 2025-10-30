@@ -7972,11 +7972,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         """Vrátí stav senzoru - on pokud TEĎKA probíhá HOME UPS interval."""
-        # Načíst battery_forecast data
-        if not self.coordinator.data:
-            return "off"
-
-        battery_forecast = self.coordinator.data.get("battery_forecast")
+        # Data jsou v coordinator.battery_forecast_data
+        battery_forecast = getattr(self.coordinator, "battery_forecast_data", None)
         if not battery_forecast or not isinstance(battery_forecast, dict):
             return "off"
 
@@ -7995,9 +7992,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
                 # Pokud NOW je v tomto intervalu (timestamp <= now < interval_end)
                 if timestamp <= now < interval_end:
-                    # Zkontrolovat mód
+                    # Zkontrolovat mód (může být "Home UPS" nebo "HOME UPS")
                     mode = point.get("mode_name", point.get("mode", ""))
-                    if mode == "Home UPS":
+                    if mode.upper() == "HOME UPS":
                         return "on"
                     else:
                         return "off"
@@ -8009,20 +8006,29 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Vrátí atributy senzoru - všechny HOME UPS intervaly."""
-        if not self.coordinator.data:
-            return {}
-
-        battery_forecast = self.coordinator.data.get("battery_forecast")
+        # Data jsou v coordinator.battery_forecast_data
+        battery_forecast = getattr(self.coordinator, "battery_forecast_data", None)
         if not battery_forecast or not isinstance(battery_forecast, dict):
+            _LOGGER.warning(
+                f"[GridChargingPlan] No battery_forecast_data in coordinator"
+            )
             return {}
 
         timeline_data = battery_forecast.get("timeline_data", [])
         if not timeline_data:
+            _LOGGER.warning(
+                f"[GridChargingPlan] Empty timeline_data in battery_forecast"
+            )
             return {}
 
+        _LOGGER.info(
+            f"[GridChargingPlan] Processing {len(timeline_data)} timeline points"
+        )
+
         now = datetime.now()
-        ups_intervals = []
-        next_ups_start = None
+        charging_intervals = []  # Dashboard očekává "charging_intervals"
+        next_charging_start = None
+        next_charging_end = None
 
         # Najít všechny HOME UPS intervaly
         for point in timeline_data:
@@ -8031,29 +8037,60 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 timestamp = datetime.fromisoformat(timestamp_str)
                 mode = point.get("mode_name", point.get("mode", ""))
 
-                if mode == "Home UPS":
+                # Porovnat case-insensitive (může být "Home UPS" nebo "HOME UPS")
+                if mode.upper() == "HOME UPS":
                     interval_end = timestamp + timedelta(minutes=15)
-                    ups_intervals.append(
+                    energy_kwh = point.get("grid_charge_kwh", 0)
+                    spot_price = point.get("spot_price_czk", 0)
+                    cost_czk = energy_kwh * spot_price
+
+                    charging_intervals.append(
                         {
-                            "start": timestamp.strftime("%d.%m. %H:%M"),
+                            "timestamp": timestamp_str,  # ISO format pro backend
+                            "start": timestamp.strftime("%H:%M"),  # Jen čas
                             "end": interval_end.strftime("%H:%M"),
-                            "battery_kwh": round(
+                            "energy_kwh": round(energy_kwh, 3),
+                            "spot_price_czk": round(spot_price, 2),
+                            "cost_czk": round(cost_czk, 2),
+                            "battery_capacity_kwh": round(
                                 point.get("battery_capacity_kwh", 0), 2
                             ),
+                            "is_charging_battery": True,  # HOME UPS znamená nabíjení
                         }
                     )
 
-                    # Najít další UPS interval v budoucnu
-                    if next_ups_start is None and timestamp > now:
-                        next_ups_start = timestamp.strftime("%d.%m. %H:%M")
+                    # Najít další nabíjecí interval v budoucnu
+                    if next_charging_start is None and timestamp > now:
+                        next_charging_start = timestamp
+                        next_charging_end = interval_end
             except (ValueError, TypeError):
                 continue
 
+        # Vypočítat celkovou energii a cenu
+        total_energy_kwh = sum(i.get("energy_kwh", 0) for i in charging_intervals)
+        total_cost_czk = sum(
+            i.get("energy_kwh", 0) * i.get("spot_price_czk", 0)
+            for i in charging_intervals
+        )
+
+        # Formátovat next_charging_time_range a duration
+        next_charging_time_range = None
+        next_charging_duration = None
+        if next_charging_start:
+            next_charging_time_range = (
+                f"{next_charging_start.strftime('%H:%M')} - "
+                f"{next_charging_end.strftime('%H:%M')}"
+            )
+            duration_minutes = (next_charging_end - next_charging_start).seconds // 60
+            next_charging_duration = f"{duration_minutes} min"
+
         return {
-            "ups_intervals": ups_intervals,
-            "ups_count": len(ups_intervals),
-            "next_ups_start": next_ups_start,
-            "is_charging_planned": len(ups_intervals) > 0,
+            "charging_intervals": charging_intervals,  # Dashboard očekává tento klíč
+            "total_energy_kwh": round(total_energy_kwh, 2),
+            "total_cost_czk": round(total_cost_czk, 2),
+            "next_charging_time_range": next_charging_time_range,
+            "next_charging_duration": next_charging_duration,
+            "is_charging_planned": len(charging_intervals) > 0,
         }
 
 
