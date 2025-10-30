@@ -2180,19 +2180,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # grid_charge_kwh = how much grid went into battery (not consumption!)
             if mode == CBB_MODE_HOME_UPS:
                 # UPS: grid_charge went to battery, solar also went to battery
-                solar_charge_kwh = min(solar_kwh, max_capacity - (battery - solar_kwh - grid_charge))
+                solar_charge_kwh = min(
+                    solar_kwh, max_capacity - (battery - solar_kwh - grid_charge)
+                )
                 grid_charge_kwh = grid_charge
             elif mode == CBB_MODE_HOME_I:
                 # HOME I: surplus solar went to battery OR battery discharged
                 if solar_kwh >= load_kwh:
-                    solar_charge_kwh = min(solar_kwh - load_kwh, max_capacity - (battery - (solar_kwh - load_kwh)))
+                    solar_charge_kwh = min(
+                        solar_kwh - load_kwh,
+                        max_capacity - (battery - (solar_kwh - load_kwh)),
+                    )
                 else:
                     solar_charge_kwh = 0.0
                 grid_charge_kwh = 0.0
             elif mode == CBB_MODE_HOME_II:
                 # HOME II: surplus solar to battery
                 if solar_kwh >= load_kwh:
-                    solar_charge_kwh = min(solar_kwh - load_kwh, max_capacity - (battery - (solar_kwh - load_kwh)))
+                    solar_charge_kwh = min(
+                        solar_kwh - load_kwh,
+                        max_capacity - (battery - (solar_kwh - load_kwh)),
+                    )
                 else:
                     solar_charge_kwh = 0.0
                 grid_charge_kwh = 0.0

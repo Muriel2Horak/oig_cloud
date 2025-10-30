@@ -8295,27 +8295,29 @@ function updateChmuWarningBadge() {
 
     const severity = parseInt(localSensor.state) || 0;
     const attrs = localSensor.attributes || {};
+    const warningsCount = attrs.warnings_count || 0;
+    const eventType = attrs.event_type || '';
+
+    // OPRAVENO: Pokud je warnings_count=0 nebo event_type obsahuje "Žádná výstraha", zobraz jako severity 0
+    const effectiveSeverity = (warningsCount === 0 || eventType.includes('Žádná výstraha')) ? 0 : severity;
 
     // Store data for modal
     chmuWarningData = {
         local: localSensor,
         global: globalSensor,
-        severity: severity
+        severity: effectiveSeverity
     };
 
     // Remove all severity classes
     badge.className = 'chmu-warning-badge';
-    badge.classList.add(`severity-${severity}`);
+    badge.classList.add(`severity-${effectiveSeverity}`);
 
-    // Update icon and text based on severity
-    if (severity === 0) {
+    // Update icon and text based on effective severity
+    if (effectiveSeverity === 0) {
         icon.textContent = '✓';
         text.textContent = 'Bez výstrah';
     } else {
-        const eventType = attrs.event_type || 'Varování';
-        const warningsCount = attrs.warnings_count || 1;
-
-        if (severity >= 3) {
+        if (effectiveSeverity >= 3) {
             icon.textContent = '🚨';
         } else {
             icon.textContent = '⚠️';

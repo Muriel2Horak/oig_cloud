@@ -30,6 +30,103 @@ WEIGHT_RMSE = 0.30  # RMSE weight (inverted)
 WEIGHT_TOTAL = 0.20  # Total consumption difference weight (inverted)
 
 
+def _get_season(dt: datetime) -> str:
+    """Určit roční období z data."""
+    month = dt.month
+    if month in [12, 1, 2]:
+        return "winter"
+    elif month in [3, 4, 5]:
+        return "spring"
+    elif month in [6, 7, 8]:
+        return "summer"
+    else:
+        return "autumn"
+
+
+def _generate_profile_name(
+    hourly_consumption: List[float], season: str, is_weekend: bool
+) -> str:
+    """
+    Generuje lidsky čitelný název profilu na základě charakteristik spotřeby.
+    
+    Args:
+        hourly_consumption: 24h profil hodinové spotřeby [kWh]
+        season: roční období ('winter', 'spring', 'summer', 'autumn')
+        is_weekend: True pokud jde o víkend
+        
+    Returns:
+        Lidsky čitelný název (např. "Pracovní den s topením", "Víkend s praním")
+    """
+    if not hourly_consumption or len(hourly_consumption) != 24:
+        return "Neznámý profil"
+    
+    # 1. ZÁKLADNÍ KLASIFIKACE
+    day_name = "Víkend" if is_weekend else "Pracovní den"
+    
+    # Celková denní spotřeba
+    total = sum(hourly_consumption)
+    daily_avg = total / 24
+    
+    # 2. ANALÝZA PATTERN SHAPE
+    morning_avg = float(np.mean(hourly_consumption[6:12]))    # 6-12h
+    afternoon_avg = float(np.mean(hourly_consumption[12:18]))  # 12-18h
+    evening_avg = float(np.mean(hourly_consumption[18:24]))    # 18-24h
+    night_avg = float(np.mean(hourly_consumption[0:6]))        # 0-6h
+    
+    # Detekce špiček (špička > 1.3× průměr)
+    has_morning_spike = morning_avg > daily_avg * 1.3
+    has_evening_spike = evening_avg > daily_avg * 1.3
+    has_afternoon_spike = afternoon_avg > daily_avg * 1.3
+    
+    # 3. SPECIÁLNÍ DETEKCE
+    special_tags = []
+    
+    # Topení (zimní vysoká večerní spotřeba)
+    if season == "winter" and evening_avg > 1.2:
+        special_tags.append("topení")
+    
+    # Klimatizace (letní vysoká odpolední spotřeba)
+    if season == "summer" and afternoon_avg > 1.0:
+        special_tags.append("klimatizace")
+    
+    # Praní (víkend s ranní špičkou)
+    if is_weekend and has_morning_spike:
+        special_tags.append("praní")
+    
+    # Home office (pracovní den s vysokou denní spotřebou)
+    if not is_weekend and afternoon_avg > 0.8:
+        special_tags.append("home office")
+    
+    # Vysoká noční spotřeba (bojler?)
+    if night_avg > 0.5:
+        special_tags.append("noční ohřev")
+    
+    # 4. SESTAVENÍ NÁZVU
+    if special_tags:
+        # Preferovat speciální tag
+        main_tag = special_tags[0]
+        if main_tag == "topení":
+            return f"{day_name} s topením"
+        elif main_tag == "klimatizace":
+            return f"{day_name} s klimatizací"
+        elif main_tag == "praní":
+            return f"{day_name} s praním"
+        elif main_tag == "home office":
+            return "Home office"
+        elif main_tag == "noční ohřev":
+            return f"{day_name} s nočním ohřevem"
+    
+    # Fallback podle špičky
+    if has_evening_spike:
+        return f"{day_name} - večerní špička"
+    elif has_morning_spike:
+        return f"{day_name} - ranní špička"
+    elif has_afternoon_spike:
+        return f"{day_name} - polední špička"
+    else:
+        return f"{day_name} - běžný"
+
+
 class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     """
     Sensor pro automatickou analýzu a tvorbu profilů spotřeby.
@@ -633,12 +730,36 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 "predicted_consumption_24h", []
             )
             if predicted_24h and len(predicted_24h) == 24:
+                similarity_score = self._current_prediction.get("similarity_score", 0)
+                
+                # Vytvoř základní metadata profilu
+                now = dt_util.now()
+                season = _get_season(now)
+                is_weekend = now.weekday() >= 5  # 5=Sobota, 6=Neděle
+                
+                # Vytvoř UI-friendly název profilu pomocí inteligentní logiky
+                profile_name = _generate_profile_name(
+                    hourly_consumption=predicted_24h,
+                    season=season,
+                    is_weekend=is_weekend
+                )
+                
                 profile_data = {
                     "hourly_consumption": predicted_24h,
                     "total_kwh": self._current_prediction.get(
                         "predicted_total_kwh", 0.0
                     ),
                     "avg_kwh_h": self._current_prediction.get("predicted_avg_kwh", 0.0),
+                    # Přidej metadata pro _format_profile_description()
+                    "ui": {
+                        "name": profile_name,
+                        "similarity_score": similarity_score,
+                    },
+                    "characteristics": {
+                        "season": season,
+                        "is_weekend": is_weekend,
+                    },
+                    "sample_count": 1,  # Reprezentuje 1 matched profil
                 }
                 attrs["today_profile"] = profile_data
                 attrs["tomorrow_profile"] = (
