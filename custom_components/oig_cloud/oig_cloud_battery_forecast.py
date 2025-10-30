@@ -1868,7 +1868,66 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"(current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f})"
         )
 
-        # PHASE 4: Najít intervaly kde musíme nabíjet (deficit > 0)
+        # PHASE 4: Inteligentní výběr režimu (HOME I/II/III) podle FVE a cen
+        # Pravidlo: HOME II/III jen když FVE > 0, jinak HOME I
+
+        # Najít průměrnou cenu pro porovnání
+        avg_price = sum(sp.get("price", 0) for sp in spot_prices) / len(spot_prices)
+
+        for i in range(n):
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+            current_price = spot_prices[i].get("price", 0)
+
+            # Základní pravidlo: Když FVE = 0 → vždy HOME I
+            if solar_kwh < 0.01:
+                modes[i] = CBB_MODE_HOME_I
+                continue
+
+            # FVE > 0: Rozhodnout mezi HOME I, II, III
+
+            # HOME III: Když chceme maximálně nabít baterii a je levná elektřina
+            # Celá FVE → baterie, spotřeba → grid
+            # Vyplatí se když: FVE je slušná + grid je levný + baterie nízká
+            if (
+                solar_kwh > 0.3  # Slušná FVE (>1.2kW)
+                and current_price < avg_price * 0.8  # Levná elektřina (< 80% průměru)
+                and i < n - 8
+            ):  # Není poslední 2h (baterii stačí nabít)
+                # TODO: Zjistit SoC v tomto intervalu pro lepší rozhodování
+                modes[i] = CBB_MODE_HOME_III
+
+            # HOME II: Šetří baterii na drahou špičku
+            # FVE → spotřeba, deficit → grid, baterie NETOUCHED
+            # Vyplatí se když: Je drahou špičku později + grid je teď levnější
+            elif (
+                solar_kwh > 0
+                and solar_kwh < load_kwh  # FVE nestačí na spotřebu
+                and i < n - 4
+            ):  # Není poslední hodina
+                # Hledat drahou špičku v budoucnu
+                future_prices = [
+                    spot_prices[j].get("price", 0) for j in range(i + 1, min(i + 12, n))
+                ]
+                if future_prices:
+                    max_future_price = max(future_prices)
+                    # Pokud budoucí špička >40% dražší než teď → HOME II (šetři baterii)
+                    if max_future_price > current_price * 1.4:
+                        modes[i] = CBB_MODE_HOME_II
+                    else:
+                        modes[i] = CBB_MODE_HOME_I  # Normální provoz
+                else:
+                    modes[i] = CBB_MODE_HOME_I
+            else:
+                # HOME I: Výchozí režim
+                modes[i] = CBB_MODE_HOME_I
+
+        # PHASE 5: Najít intervaly kde musíme nabíjet ze sítě (deficit > 0)
         charge_opportunities = []
         battery = current_capacity
 
@@ -1886,7 +1945,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     }
                 )
 
-            # Simulace intervalu s HOME I
+            # Simulace intervalu s aktuálním režimem
             try:
                 timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
@@ -1895,19 +1954,30 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
-            if solar_kwh >= load_kwh:
-                battery += solar_kwh - load_kwh
-            else:
-                battery -= (load_kwh - solar_kwh) / efficiency
+            # Simulace podle režimu
+            if modes[i] == CBB_MODE_HOME_I:
+                if solar_kwh >= load_kwh:
+                    battery += solar_kwh - load_kwh
+                else:
+                    battery -= (load_kwh - solar_kwh) / efficiency
+            elif modes[i] == CBB_MODE_HOME_II:
+                # Grid doplňuje, baterie netouched když FVE < load
+                if solar_kwh >= load_kwh:
+                    battery += solar_kwh - load_kwh
+                # else: baterie nezmění (grid pokrývá deficit)
+            elif modes[i] == CBB_MODE_HOME_III:
+                # Celá FVE → baterie, spotřeba → grid
+                battery += solar_kwh  # Vše do baterie
+                # Spotřeba je ze gridu, baterie se netýká
 
             battery = max(0, min(battery, max_capacity))
 
-        # PHASE 5: Seřadit charging opportunities podle ceny (vzestupně)
+        # PHASE 6: Seřadit charging opportunities podle ceny (vzestupně)
         charge_opportunities.sort(key=lambda x: x["price"])
 
         _LOGGER.info(f"⚡ Found {len(charge_opportunities)} charging opportunities")
 
-        # PHASE 6: Přidat HOME UPS na nejlevnějších intervalech s deficitem
+        # PHASE 7: Přidat HOME UPS na nejlevnějších intervalech s deficitem
         for opp in charge_opportunities[:20]:  # Max 20 nabíjecích intervalů (5h)
             idx = opp["index"]
             modes[idx] = CBB_MODE_HOME_UPS
@@ -1915,7 +1985,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"  → Interval {idx}: price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
             )
 
-        # PHASE 7: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
+        # PHASE 8: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
         min_duration = MIN_MODE_DURATION.get("Home UPS", 2)
         i = 0
         while i < len(modes):
@@ -1927,13 +1997,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 i += 1
 
-        # PHASE 8: Transition optimization - merge blízké UPS intervaly
+        # PHASE 9: Transition optimization - merge blízké UPS intervaly
         # Pokud je gap jen 1 interval a cena gap < transition cost → merge
         i = 0
         while i < len(modes) - 2:
             if (
                 modes[i] == CBB_MODE_HOME_UPS
-                and modes[i + 1] == CBB_MODE_HOME_I
+                and modes[i + 1]
+                in [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]
                 and modes[i + 2] == CBB_MODE_HOME_UPS
             ):
                 # Gap of 1 interval - check if worth merging
@@ -1959,10 +2030,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Count modes
         mode_counts = {
             "HOME I": modes.count(CBB_MODE_HOME_I),
+            "HOME II": modes.count(CBB_MODE_HOME_II),
+            "HOME III": modes.count(CBB_MODE_HOME_III),
             "HOME UPS": modes.count(CBB_MODE_HOME_UPS),
         }
         _LOGGER.info(
-            f"✅ Hybrid result: HOME I={mode_counts['HOME I']}, HOME UPS={mode_counts['HOME UPS']}"
+            f"✅ Hybrid result: HOME I={mode_counts['HOME I']}, "
+            f"HOME II={mode_counts['HOME II']}, HOME III={mode_counts['HOME III']}, "
+            f"HOME UPS={mode_counts['HOME UPS']}"
         )
 
         return self._build_result(
@@ -2024,7 +2099,36 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 grid_import = load_kwh + grid_charge  # Import na spotřebu + nabíjení
                 battery += solar_kwh + grid_charge
                 total_cost += grid_import * price
-            else:
+
+            elif mode == CBB_MODE_HOME_II:
+                # HOME II: FVE → spotřeba, grid doplňuje, baterie netouched (když FVE < load)
+                if solar_kwh >= load_kwh:
+                    # Přebytek → baterie
+                    surplus = solar_kwh - load_kwh
+                    battery += surplus
+                    if battery > max_capacity:
+                        grid_export = battery - max_capacity
+                        battery = max_capacity
+                        total_cost -= grid_export * price
+                else:
+                    # Deficit → GRID (ne baterie!)
+                    deficit = load_kwh - solar_kwh
+                    grid_import = deficit
+                    total_cost += grid_import * price
+                    # Baterie se nemění
+
+            elif mode == CBB_MODE_HOME_III:
+                # HOME III: CELÁ FVE → baterie, spotřeba → grid
+                battery += solar_kwh  # Vše do baterie (bez limitu!)
+                if battery > max_capacity:
+                    grid_export = battery - max_capacity
+                    battery = max_capacity
+                    total_cost -= grid_export * price
+                # Spotřeba vždy ze sítě
+                grid_import = load_kwh
+                total_cost += grid_import * price
+
+            else:  # HOME I (default)
                 # HOME I: solar → baterie nebo baterie → load
                 if solar_kwh >= load_kwh:
                     surplus = solar_kwh - load_kwh
@@ -2066,10 +2170,66 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             timeline, hours_ahead=48
         )
 
+        # Calculate 48h cost for dashboard (DNES+ZÍTRA only, bez včera)
+        now = dt_util.now()
+        today_start = datetime.combine(now.date(), datetime.min.time())
+        if today_start.tzinfo is None:
+            today_start = dt_util.as_local(today_start)
+        tomorrow_end = today_start + timedelta(hours=48)
+
+        total_cost_48h = sum(
+            interval.get("net_cost", 0)
+            for interval in timeline
+            if interval.get("time")
+            and today_start <= datetime.fromisoformat(interval["time"]) < tomorrow_end
+        )
+
+        # Calculate HOME I baseline cost for 48h (pro výpočet úspory)
+        baseline_cost_48h = 0.0
+        battery_baseline = current_capacity
+        for interval in timeline:
+            if not interval.get("time"):
+                continue
+            try:
+                interval_time = datetime.fromisoformat(interval["time"])
+                if not (today_start <= interval_time < tomorrow_end):
+                    continue
+            except:
+                continue
+
+            # HOME I simulation
+            solar_kwh = interval.get("solar_kwh", 0)
+            load_kwh = interval.get("load_kwh", 0.125)
+            price = interval.get("spot_price", 0)
+            
+            grid_import = 0.0
+            grid_export = 0.0
+            
+            if solar_kwh >= load_kwh:
+                surplus = solar_kwh - load_kwh
+                battery_baseline += surplus
+                if battery_baseline > max_capacity:
+                    grid_export = battery_baseline - max_capacity
+                    battery_baseline = max_capacity
+                    baseline_cost_48h -= grid_export * price
+            else:
+                deficit = load_kwh - solar_kwh
+                battery_baseline -= deficit / efficiency
+                if battery_baseline < 0:
+                    grid_import = -battery_baseline * efficiency
+                    battery_baseline = 0
+                    baseline_cost_48h += grid_import * price
+            
+            battery_baseline = max(0, min(battery_baseline, max_capacity))
+
+        total_savings_48h = max(0, baseline_cost_48h - total_cost_48h)
+
         return {
             "optimal_timeline": timeline,
             "optimal_modes": modes,
             "total_cost": total_cost,
+            "total_cost_48h": total_cost_48h,  # For dashboard tile (DNES+ZÍTRA)
+            "total_savings_48h": total_savings_48h,  # Savings vs HOME I baseline
             "mode_recommendations": mode_recommendations,
         }
 
