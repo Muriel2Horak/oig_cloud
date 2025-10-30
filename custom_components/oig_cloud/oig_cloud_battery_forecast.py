@@ -41,6 +41,33 @@ CBB_MODE_NAMES = {
     CBB_MODE_HOME_UPS: "HOME UPS",
 }
 
+# Mode transition costs (energy loss + time delay)
+TRANSITION_COSTS = {
+    ("Home I", "Home UPS"): {
+        "energy_loss_kwh": 0.05,  # Energy loss when switching to UPS
+        "time_delay_intervals": 1,  # Delay in 15-min intervals
+    },
+    ("Home UPS", "Home I"): {
+        "energy_loss_kwh": 0.02,  # Energy loss when switching from UPS
+        "time_delay_intervals": 0,
+    },
+    ("Home I", "Home II"): {
+        "energy_loss_kwh": 0.0,  # No loss between Home modes
+        "time_delay_intervals": 0,
+    },
+    ("Home II", "Home I"): {
+        "energy_loss_kwh": 0.0,
+        "time_delay_intervals": 0,
+    },
+}
+
+# Minimum mode duration (in 15-min intervals)
+MIN_MODE_DURATION = {
+    "Home UPS": 2,  # UPS must run at least 30 minutes (2×15min)
+    "Home I": 1,
+    "Home II": 1,
+}
+
 # AC Charging - modes where charging is DISABLED (only solar DC/DC allowed)
 AC_CHARGING_DISABLED_MODES = [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]
 
@@ -1759,6 +1786,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
         battery_trajectory = [current_capacity]
         battery = current_capacity
+        total_transition_cost = 0.0  # Track transition costs
+        prev_mode_name = "Home I"  # Start mode
 
         for i in range(n):
             solar_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
@@ -1886,6 +1915,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"  → Interval {idx}: price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
             )
 
+        # PHASE 7: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
+        min_duration = MIN_MODE_DURATION.get("Home UPS", 2)
+        i = 0
+        while i < len(modes):
+            if modes[i] == CBB_MODE_HOME_UPS:
+                # Extend UPS to minimum duration
+                for j in range(i, min(i + min_duration, len(modes))):
+                    modes[j] = CBB_MODE_HOME_UPS
+                i += min_duration
+            else:
+                i += 1
+
+        # PHASE 8: Transition optimization - merge blízké UPS intervaly
+        # Pokud je gap jen 1 interval a cena gap < transition cost → merge
+        i = 0
+        while i < len(modes) - 2:
+            if modes[i] == CBB_MODE_HOME_UPS and modes[i + 1] == CBB_MODE_HOME_I and modes[i + 2] == CBB_MODE_HOME_UPS:
+                # Gap of 1 interval - check if worth merging
+                gap_price = spot_prices[i + 1].get("price", 0)
+                gap_cost = gap_price * max_charge_per_interval  # Cost to charge in gap
+                
+                # Transition cost: 2× switch (UPS→I + I→UPS)
+                transition_loss = TRANSITION_COSTS.get(("Home UPS", "Home I"), {}).get("energy_loss_kwh", 0.02)
+                transition_loss += TRANSITION_COSTS.get(("Home I", "Home UPS"), {}).get("energy_loss_kwh", 0.05)
+                transition_cost_czk = transition_loss * gap_price
+                
+                if gap_cost < transition_cost_czk:
+                    modes[i + 1] = CBB_MODE_HOME_UPS  # Merge gap
+                    _LOGGER.debug(f"🔀 Merged gap at interval {i+1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}")
+            i += 1
+
         # Count modes
         mode_counts = {
             "HOME I": modes.count(CBB_MODE_HOME_I),
@@ -1981,683 +2041,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return {
             "optimal_timeline": timeline,
             "optimal_modes": modes,
-            "total_cost": total_cost,
-            "mode_recommendations": mode_recommendations,
-        }
-
-    def _calculate_optimal_mode_timeline_dp(
-        self,
-        current_capacity: float,
-        max_capacity: float,
-        min_capacity: float,
-        target_capacity: float,
-        spot_prices: List[Dict[str, Any]],
-        export_prices: List[Dict[str, Any]],
-        solar_forecast: Dict[str, Any],
-        load_forecast: List[float],
-    ) -> Dict[str, Any]:
-        """
-        Dynamic Programming optimization pro nalezení optimální sekvence CBB režimů.
-
-        Phase 2.5: Multi-Mode Cost Comparison s globální optimalizací.
-        Phase 2.8: Target Capacity Constraint - DP musí dosáhnout target_capacity na konci forecast.
-
-        DP State: (time_index, battery_soc_discrete)
-        DP Decision: Který CBB režim (0-3) použít v daném intervalu
-        DP Objective: Minimalizovat celkové náklady (direct + opportunity cost)
-        DP Constraint:
-            - Nikdy neklesat pod min_capacity (config minimum - bezpečný buffer)
-            - Dosáhnout target_capacity na konci forecast periody
-
-        Args:
-            current_capacity: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh) - config minimum (33%), bezpečný buffer nad HW minimem (20%)
-            target_capacity: Cílová kapacita na konci forecast (kWh) - typicky 80%
-            spot_prices: Timeline spotových cen
-            export_prices: Timeline prodejních cen
-            solar_forecast: Solární předpověď
-            load_forecast: List spotřeby pro každý interval (kWh/15min)
-
-        Returns:
-            Dict s optimalizovaným timeline:
-                - optimal_modes: List[int] - optimální režim pro každý interval
-                - optimal_timeline: List[Dict] - kompletní timeline s SoC, costs, etc.
-                - total_cost: float - celkové minimalizované náklady
-                - alternatives: Dict - srovnání s jinými strategiemi
-        """
-        n_intervals = len(spot_prices)
-
-        # Discretize SoC space pro DP (0.5 kWh kroky)
-        soc_step = 0.5  # kWh
-        soc_states = []
-        soc = min_capacity
-        while soc <= max_capacity:
-            soc_states.append(round(soc, 2))
-            soc += soc_step
-
-        n_soc_states = len(soc_states)
-
-        _LOGGER.info(
-            f"DP optimization PHASE 2.8: {n_intervals} intervals, {n_soc_states} SoC states "
-            f"({min_capacity:.1f}-{max_capacity:.1f} kWh, step {soc_step} kWh), "
-            f"target={target_capacity:.1f} kWh"
-        )
-
-        # DP tables
-        # dp[t][s] = minimální náklady od intervalu t do konce, začínající se SoC state s
-        dp = [[float("inf")] * n_soc_states for _ in range(n_intervals + 1)]
-        # policy[t][s] = optimální režim v intervalu t při SoC state s
-        policy = [[-1] * n_soc_states for _ in range(n_intervals)]
-        # next_soc[t][s][mode] = následující SoC state při použití mode v intervalu t
-        next_soc_map = [[{} for _ in range(n_soc_states)] for _ in range(n_intervals)]
-
-        # Base case: poslední interval (t = n_intervals)
-        # PHASE 2.8: Penalizace za nedosažení target_capacity
-        # DP musí dosáhnout target na konci, ne jen přežít s jakýmkoliv SoC
-        target_penalty_multiplier = 100.0  # Vysoká penalizace (100 Kč/kWh rozdílu)
-
-        for s in range(n_soc_states):
-            soc = soc_states[s]
-            if soc < target_capacity:
-                # Penalizace: čím víc chybí k targetu, tím vyšší náklady
-                deficit = target_capacity - soc
-                dp[n_intervals][s] = deficit * target_penalty_multiplier
-                _LOGGER.debug(
-                    f"Base case penalty: SoC {soc:.2f} kWh < target {target_capacity:.2f} kWh, "
-                    f"penalty = {dp[n_intervals][s]:.2f} Kč"
-                )
-            else:
-                # Dosáhli jsme targetu nebo víc - bez penalizace
-                dp[n_intervals][s] = 0.0
-
-        # Backward induction (od konce k začátku)
-        for t in range(n_intervals - 1, -1, -1):
-            spot_price = spot_prices[t].get("price", 0.0)
-            export_price = (
-                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-            )
-
-            # Determine time of day for opportunity cost
-            timestamp_str = spot_prices[t].get("time", "")
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                hour = timestamp.hour
-                if 0 <= hour < 6:
-                    time_of_day = "night"
-                elif 6 <= hour < 10:
-                    time_of_day = "morning"
-                elif 10 <= hour < 17:
-                    time_of_day = "midday"
-                else:
-                    time_of_day = "evening"
-            except:
-                time_of_day = "midday"
-                timestamp = None
-
-            # Get solar and load for this interval using existing interpolation methods
-            solar_kwh = 0.0
-            if timestamp:
-                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-
-            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-            # Pro každý SoC state
-            for s in range(n_soc_states):
-                battery_soc = soc_states[s]
-                best_cost = float("inf")
-                best_mode = -1
-                best_next_s = -1
-
-                # Zkusit všechny 4 režimy
-                for mode in [
-                    CBB_MODE_HOME_I,
-                    CBB_MODE_HOME_II,
-                    CBB_MODE_HOME_III,
-                    CBB_MODE_HOME_UPS,
-                ]:
-                    # Simulovat interval s tímto režimem
-                    sim_result = self._simulate_interval_with_mode(
-                        mode=mode,
-                        solar_kwh=solar_kwh,
-                        load_kwh=load_kwh,
-                        battery_soc=battery_soc,
-                        max_capacity=max_capacity,
-                        min_capacity=min_capacity,
-                        spot_price=spot_price,
-                        export_price=export_price,
-                    )
-
-                    new_soc = sim_result["new_soc"]
-
-                    # Vypočítat náklady včetně opportunity cost
-                    cost_analysis = self._calculate_interval_cost(
-                        simulation_result=sim_result,
-                        spot_price=spot_price,
-                        export_price=export_price,
-                        time_of_day=time_of_day,
-                    )
-
-                    interval_cost = cost_analysis["total_cost"]
-
-                    # Najít nejbližší SoC state pro new_soc
-                    next_s = min(
-                        range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
-                    )
-
-                    # Bellman equation: V(t,s) = min_mode [ cost(t,s,mode) + V(t+1, s') ]
-                    total_cost = interval_cost + dp[t + 1][next_s]
-
-                    if total_cost < best_cost:
-                        best_cost = total_cost
-                        best_mode = mode
-                        best_next_s = next_s
-
-                # Uložit nejlepší rozhodnutí
-                # PHASE 2.8: Safety check - pokud žádný mode není povolen (all continue),
-                # force HOME UPS mode jako fallback (jediný mode který může nabíjet ze sítě)
-                if best_mode == -1:
-                    _LOGGER.warning(
-                        f"⚠️ DP interval {t}: No valid mode found for SoC={battery_soc:.2f} kWh! "
-                        f"Forcing HOME UPS mode as emergency fallback."
-                    )
-                    best_mode = CBB_MODE_HOME_UPS
-                    # Re-simulate with HOME UPS to get valid next state
-                    sim_result = self._simulate_interval_with_mode(
-                        mode=CBB_MODE_HOME_UPS,
-                        solar_kwh=solar_kwh,
-                        load_kwh=load_kwh,
-                        battery_soc=battery_soc,
-                        max_capacity=max_capacity,
-                        min_capacity=min_capacity,
-                        spot_price=spot_price,
-                        export_price=export_price,
-                    )
-                    new_soc = sim_result["new_soc"]
-                    best_next_s = min(
-                        range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
-                    )
-                    cost_analysis = self._calculate_interval_cost(
-                        simulation_result=sim_result,
-                        spot_price=spot_price,
-                        export_price=export_price,
-                        time_of_day=time_of_day,
-                    )
-                    best_cost = cost_analysis["total_cost"] + dp[t + 1][best_next_s]
-
-                dp[t][s] = best_cost
-                policy[t][s] = best_mode
-                next_soc_map[t][s][best_mode] = best_next_s
-
-        # Forward pass: Rekonstruovat optimální trajektorii
-        # Najít startovní SoC state
-        start_s = min(
-            range(n_soc_states), key=lambda i: abs(soc_states[i] - current_capacity)
-        )
-
-        # DEBUG: Log initial discretization difference
-        discretized_soc = soc_states[start_s]
-        _LOGGER.info(
-            f"DP Forward Pass: current_capacity={current_capacity:.2f} kWh → "
-            f"discretized to {discretized_soc:.2f} kWh (delta={discretized_soc - current_capacity:+.2f} kWh)"
-        )
-
-        optimal_modes = []
-        optimal_timeline = []
-        current_s = start_s
-
-        for t in range(n_intervals):
-            mode = policy[t][current_s]
-            battery_soc = soc_states[current_s]
-
-            # Simulovat tento interval s optimálním režimem
-            timestamp_str = spot_prices[t].get("time", "")
-            spot_price = spot_prices[t].get("price", 0.0)
-            export_price = (
-                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-            )
-            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-            # Get solar using existing interpolation
-            solar_kwh = 0.0
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
-                solar_kwh = 0.0
-
-            sim_result = self._simulate_interval_with_mode(
-                mode=mode,
-                solar_kwh=solar_kwh,
-                load_kwh=load_kwh,
-                battery_soc=battery_soc,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_price=spot_price,
-                export_price=export_price,
-            )
-
-            optimal_modes.append(mode)
-            optimal_timeline.append(
-                {
-                    "time": spot_prices[t].get("time", ""),
-                    "mode": mode,
-                    "mode_name": CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}"),
-                    "battery_soc": battery_soc,
-                    "new_soc": sim_result["new_soc"],
-                    "grid_import": sim_result["grid_import"],
-                    "grid_export": sim_result["grid_export"],
-                    "net_cost": sim_result["net_cost"],
-                    "solar_kwh": solar_kwh,  # For detailed recommendations
-                    "load_kwh": load_kwh,  # For detailed recommendations
-                    "spot_price": spot_price,  # For detailed recommendations
-                    "export_price": export_price,  # For post-processing
-                }
-            )
-
-            # Přesunout se na další SoC state
-            if mode in next_soc_map[t][current_s]:
-                current_s = next_soc_map[t][current_s][mode]
-            else:
-                # Fallback: najít nejbližší state k new_soc
-                new_soc = sim_result["new_soc"]
-                current_s = min(
-                    range(n_soc_states), key=lambda i: abs(soc_states[i] - new_soc)
-                )
-
-        total_cost = dp[0][start_s]
-
-        # =====================================================================
-        # POST-PROCESSING: Minimalizace přepínání režimů
-        # =====================================================================
-        # Strategie:
-        # 1. FVE > Spotřeba: HOME I = HOME II (přebytek→baterie) → nechat HOME I
-        # 2. FVE < Spotřeba: HOME I vs HOME II má smysl (vybíjení vs grid)
-        # 3. FVE = 0 (noc): HOME I = HOME II = HOME III → preferovat HOME I
-        # 4. Grid charging: Pouze HOME UPS
-        #
-        # Důvod: Minimalizovat opotřebení inverteru zbytečnými přepínáními
-        # když výsledek je stejný.
-
-        prev_mode = None
-
-        for t in range(n_intervals):
-            try:
-                timestamp = datetime.fromisoformat(optimal_timeline[t]["time"])
-                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
-                solar_kwh = 0.0
-
-            load_kwh = optimal_timeline[t].get("load_kwh", 0.0)
-            current_mode = optimal_modes[t]
-
-            # Detekce zbytečného přepínání
-            if solar_kwh > 0.001:
-                # Když je FVE > spotřeba: HOME I = HOME II (přebytek→baterie)
-                if solar_kwh > load_kwh:
-                    # Přebytek FVE → oba režimy dělají totéž
-                    if (
-                        current_mode == CBB_MODE_HOME_II
-                        and prev_mode == CBB_MODE_HOME_I
-                    ):
-                        # Zbytečné přepnutí z HOME I na HOME II při přebytku
-                        optimal_modes[t] = CBB_MODE_HOME_I
-                        optimal_timeline[t]["mode"] = CBB_MODE_HOME_I
-                        optimal_timeline[t]["mode_name"] = "HOME I"
-                        current_mode = CBB_MODE_HOME_I
-                    elif (
-                        current_mode == CBB_MODE_HOME_I
-                        and prev_mode == CBB_MODE_HOME_II
-                    ):
-                        # Nechat HOME I, OK
-                        pass
-                # Když FVE < spotřeba: HOME I vs HOME II má smysl (nechat DP volbu)
-
-            else:
-                # FVE = 0 (noc) → HOME I/II/III jsou identické
-                if current_mode in [
-                    CBB_MODE_HOME_I,
-                    CBB_MODE_HOME_II,
-                    CBB_MODE_HOME_III,
-                ]:
-                    # Preferovat HOME I pro jednoduchost
-                    optimal_modes[t] = CBB_MODE_HOME_I
-                    optimal_timeline[t]["mode"] = CBB_MODE_HOME_I
-                    optimal_timeline[t]["mode_name"] = "HOME I"
-                    current_mode = CBB_MODE_HOME_I
-                # HOME UPS zůstává (grid charging)
-
-            prev_mode = current_mode
-
-        # =====================================================================
-        # POST-PROCESSING 2: Minimální délka bloku (kvůli switching overhead)
-        # =====================================================================
-        # Problém: Přepnutí režimu trvá ~5 min tam + 5 min zpět = 10 min overhead
-        # Pro 15min blok = 67% času v přechodovém stavu → neefektivní
-        # Řešení: Sloučit bloky kratší než 2 intervaly (30 min)
-
-        MIN_BLOCK_INTERVALS = 2  # 30 minut (2 × 15min)
-
-        # Identifikovat krátké bloky
-        mode_changes = []
-        current_block_start = 0
-        current_block_mode = optimal_modes[0]
-
-        for t in range(1, n_intervals):
-            if optimal_modes[t] != current_block_mode:
-                # Konec bloku
-                block_length = t - current_block_start
-                mode_changes.append(
-                    {
-                        "start": current_block_start,
-                        "end": t,
-                        "mode": current_block_mode,
-                        "length": block_length,
-                    }
-                )
-                current_block_start = t
-                current_block_mode = optimal_modes[t]
-
-        # Poslední blok
-        block_length = n_intervals - current_block_start
-        mode_changes.append(
-            {
-                "start": current_block_start,
-                "end": n_intervals,
-                "mode": current_block_mode,
-                "length": block_length,
-            }
-        )
-
-        # Sloučit krátké bloky s sousedními
-        merged_blocks = []
-        i = 0
-        while i < len(mode_changes):
-            block = mode_changes[i]
-
-            if block["length"] < MIN_BLOCK_INTERVALS and len(merged_blocks) > 0:
-                # Krátký blok - sloučit s předchozím
-                prev_block = merged_blocks[-1]
-                # Rozhodnout: použít režim předchozího nebo následujícího?
-                # Preferovat režim, který je "bližší" k tomuto (méně nákladný přechod)
-                # Pro jednoduchost: vždy použít režim předchozího bloku
-                for t in range(block["start"], block["end"]):
-                    optimal_modes[t] = prev_block["mode"]
-                    optimal_timeline[t]["mode"] = prev_block["mode"]
-                    optimal_timeline[t]["mode_name"] = CBB_MODE_NAMES.get(
-                        prev_block["mode"], f"Mode {prev_block['mode']}"
-                    )
-
-                # Rozšířit předchozí blok
-                prev_block["end"] = block["end"]
-                prev_block["length"] += block["length"]
-
-                _LOGGER.debug(
-                    f"Merged short block ({block['length']} intervals, mode {block['mode']}) "
-                    f"with previous block (mode {prev_block['mode']})"
-                )
-            else:
-                merged_blocks.append(block)
-
-            i += 1
-
-        _LOGGER.info(
-            f"Block merging: {len(mode_changes)} blocks → {len(merged_blocks)} blocks "
-            f"(removed {len(mode_changes) - len(merged_blocks)} short blocks < {MIN_BLOCK_INTERVALS} intervals)"
-        )
-
-        _LOGGER.info(
-            f"DP optimization completed: total_cost={total_cost:.2f} Kč, "
-            f"modes distribution (pre-optimization): HOME I={optimal_modes.count(0)}, "
-            f"HOME II={optimal_modes.count(1)}, HOME III={optimal_modes.count(2)}, "
-            f"HOME UPS={optimal_modes.count(3)}"
-        )
-
-        # Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategiemi
-        # Get current mode for DO NOTHING explanation
-        current_mode = self._get_current_mode()
-        current_mode_name = CBB_MODE_NAMES.get(current_mode, f"MODE_{current_mode}")
-
-        alternatives = {}
-        for mode_id in range(4):
-            mode_name = CBB_MODE_NAMES.get(mode_id, f"MODE_{mode_id}")
-            try:
-                fixed_cost = self._calculate_fixed_mode_cost(
-                    fixed_mode=mode_id,
-                    current_capacity=current_capacity,
-                    max_capacity=max_capacity,
-                    min_capacity=min_capacity,
-                    spot_prices=spot_prices,
-                    export_prices=export_prices,
-                    solar_forecast=solar_forecast,
-                    load_forecast=load_forecast,
-                )
-
-                delta_czk = round(fixed_cost - total_cost, 2)
-
-                # Human-friendly explanation
-                explanation = f"Kdybyste zůstali v {mode_name} celý den"
-
-                # Why more expensive (or cheaper)
-                if delta_czk > 0.5:
-                    if mode_id == CBB_MODE_HOME_I:
-                        why_more = "Vybíjeli byste baterii i když lepší šetřit na večerní špičku"
-                    elif mode_id == CBB_MODE_HOME_II:
-                        why_more = (
-                            "Zbytečně byste kupovali ze sítě i když máte plnou baterii"
-                        )
-                    elif mode_id == CBB_MODE_HOME_III:
-                        why_more = "V noci byste vybíjeli baterii místo použití levné elektřiny"
-                    else:  # HOME UPS
-                        why_more = (
-                            "Zbytečně byste nabíjeli i když stačí využít FVE přes den"
-                        )
-                elif delta_czk < -0.5:
-                    why_more = (
-                        f"V tomto případě je {mode_name} výhodnější než optimalizace"
-                    )
-                else:
-                    why_more = "Téměř stejné náklady jako optimalizace"
-
-                alternatives[mode_name] = {
-                    "total_cost_czk": round(fixed_cost, 2),
-                    "delta_czk": delta_czk,
-                    "delta_percent": (
-                        round((fixed_cost - total_cost) / fixed_cost * 100, 1)
-                        if fixed_cost > 0
-                        else 0.0
-                    ),
-                    "explanation": explanation,
-                    "why_more_expensive": why_more,
-                }
-            except Exception as e:
-                _LOGGER.warning(
-                    f"Failed to calculate alternative cost for {mode_name}: {e}"
-                )
-                alternatives[mode_name] = {
-                    "total_cost_czk": 0.0,
-                    "delta_czk": 0.0,
-                    "delta_percent": 0.0,
-                    "explanation": f"Chyba při výpočtu {mode_name}",
-                    "why_more_expensive": "Výpočet selhal",
-                }
-
-        # Phase 2.6: DO NOTHING scénář (současný režim bez změn)
-        try:
-            do_nothing_cost = self._calculate_do_nothing_cost(
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-            )
-
-            delta_czk = round(do_nothing_cost - total_cost, 2)
-
-            alternatives["DO NOTHING"] = {
-                "total_cost_czk": round(do_nothing_cost, 2),
-                "delta_czk": delta_czk,
-                "delta_percent": (
-                    round((do_nothing_cost - total_cost) / do_nothing_cost * 100, 1)
-                    if do_nothing_cost > 0
-                    else 0.0
-                ),
-                "current_mode": current_mode_name,
-                "explanation": f"Kdybyste nechali současný režim ({current_mode_name}) celý den bez změn",
-                "why_more_expensive": (
-                    "Neoptimální timing - kupovali byste ze sítě v drahých hodinách"
-                    if delta_czk > 0.5
-                    else "Váš současný režim je dostatečně dobrý"
-                ),
-            }
-        except Exception as e:
-            _LOGGER.warning(f"Failed to calculate DO NOTHING cost: {e}")
-            alternatives["DO NOTHING"] = {
-                "total_cost_czk": 0.0,
-                "delta_czk": 0.0,
-                "delta_percent": 0.0,
-                "current_mode": current_mode_name,
-                "explanation": "Chyba při výpočtu",
-                "why_more_expensive": "Výpočet selhal",
-            }
-
-        # Phase 2.6: FULL HOME UPS scénář (nabíjení na 100% v nejlevnějších nočních intervalech)
-        try:
-            full_ups_cost = self._calculate_full_ups_cost(
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-            )
-
-            delta_czk = round(full_ups_cost - total_cost, 2)
-
-            alternatives["FULL HOME UPS"] = {
-                "total_cost_czk": round(full_ups_cost, 2),
-                "delta_czk": delta_czk,
-                "delta_percent": (
-                    round((full_ups_cost - total_cost) / full_ups_cost * 100, 1)
-                    if full_ups_cost > 0
-                    else 0.0
-                ),
-                "explanation": "Kdybyste nabíjeli baterii na 100% v nejlevnějších nočních hodinách",
-                "why_more_expensive": (
-                    "Zbytečné nabíjení - často nepotřebujete plnou baterii"
-                    if delta_czk > 0.5
-                    else "V tomto případě je noční nabíjení výhodné"
-                ),
-            }
-        except Exception as e:
-            _LOGGER.warning(f"Failed to calculate FULL HOME UPS cost: {e}")
-            alternatives["FULL HOME UPS"] = {
-                "total_cost_czk": 0.0,
-                "delta_czk": 0.0,
-                "delta_percent": 0.0,
-                "explanation": "Chyba při výpočtu",
-                "why_more_expensive": "Výpočet selhal",
-            }
-
-        _LOGGER.info(
-            f"What-if analysis: DP saves "
-            f"{alternatives.get('HOME I', {}).get('delta_czk', 0):.2f} Kč vs HOME I, "
-            f"{alternatives.get('HOME II', {}).get('delta_czk', 0):.2f} Kč vs HOME II, "
-            f"{alternatives.get('DO NOTHING', {}).get('delta_czk', 0):.2f} Kč vs DO NOTHING, "
-            f"{alternatives.get('FULL HOME UPS', {}).get('delta_czk', 0):.2f} Kč vs FULL UPS"
-        )
-
-        # =====================================================================
-        # PHASE 2.8: POST-PROCESSING - Enforce min_capacity constraint
-        # =====================================================================
-        # Strategie: Pokud timeline klesá pod minimum, vrat se zpět a oprav:
-        # 1. Najdi první bod kde battery < min_capacity
-        # 2. Najdi nejlevnější hodiny PŘED tímto bodem
-        # 3. Přidej HOME UPS nabíjení nebo změň HOME II→HOME I
-        # 4. Opakuj dokud žádný bod není pod minimem
-
-        _LOGGER.info(
-            f"POST-PROCESSING: Enforcing min_capacity constraint ({min_capacity:.2f} kWh)"
-        )
-
-        optimal_timeline, optimal_modes = self._enforce_min_capacity_constraint(
-            optimal_timeline=optimal_timeline,
-            optimal_modes=optimal_modes,
-            min_capacity=min_capacity,
-            max_capacity=max_capacity,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-        )
-
-        # KRITICKÉ: Překalkulovat total_cost po post-processingu
-        total_cost_corrected = sum(
-            point.get("net_cost", 0.0) for point in optimal_timeline
-        )
-        final_soc_corrected = (
-            optimal_timeline[-1].get("new_soc", current_capacity)
-            if optimal_timeline
-            else current_capacity
-        )
-
-        _LOGGER.info(
-            f"POST-PROCESSING RESULT: total_cost={total_cost_corrected:.2f} Kč, final_soc={final_soc_corrected:.2f} kWh, "
-            f"modes: HOME I={optimal_modes.count(0)}, HOME II={optimal_modes.count(1)}, "
-            f"HOME III={optimal_modes.count(2)}, HOME UPS={optimal_modes.count(3)}"
-        )
-
-        # =====================================================================
-        # Phase 2.6: Mode Recommendations - AFTER post-processing!
-        # =====================================================================
-        # DŮLEŽITÉ: Vytváříme recommendations AŽ PO post-processingu,
-        # aby odrážely OPRAVENÝ plán který respektuje min_capacity
-        mode_recommendations = self._create_mode_recommendations(
-            optimal_timeline, hours_ahead=48
-        )
-
-        if mode_recommendations:
-            _LOGGER.info(
-                f"Mode recommendations created: {len(mode_recommendations)} blocks, "
-                f"first block: {mode_recommendations[0].get('mode_name')} "
-                f"from {mode_recommendations[0].get('from_time', '')[:16]}"
-            )
-
-        # Phase 2.8: Calculate total_cost POUZE za DNES+ZÍTRA (48h max)
-        # Frontend dlaždice má zobrazovat náklady pouze za dnešek a zítřek
-        now = datetime.now()
-        today = now.date()
-        today_start = datetime.combine(today, datetime.min.time())
-        tomorrow_end = datetime.combine(today + timedelta(days=1), datetime.max.time())
-
-        total_cost_48h = 0.0
-        for interval in optimal_timeline:
-            try:
-                interval_time = datetime.fromisoformat(interval.get("time", ""))
-                if today_start <= interval_time <= tomorrow_end:
-                    total_cost_48h += interval.get("net_cost", 0.0)
-            except:
-                pass
-
-        # Calculate total savings vs HOME I for DNES+ZÍTRA
-        total_savings_48h = 0.0
-        if mode_recommendations:
-            for block in mode_recommendations:
-                total_savings_48h += block.get("savings_vs_home_i", 0.0)
-
-        _LOGGER.info(
-            f"Cost breakdown: 72h total={total_cost:.2f} Kč, "
-            f"48h (DNES+ZÍTRA)={total_cost_48h:.2f} Kč, savings={total_savings_48h:.2f} Kč"
-        )
-
-        # Store results in format compatible with API endpoints
-        return {
-            "optimal_timeline": optimal_timeline,
-            "optimal_modes": optimal_modes,
             "total_cost": total_cost,
             "mode_recommendations": mode_recommendations,
         }
