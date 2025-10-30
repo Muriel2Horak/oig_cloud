@@ -391,9 +391,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Update plan lifecycle status FIRST
             self.update_plan_lifecycle()
 
-            # PHASE 2.9: Fix daily plan at midnight for tracking
-            await self._maybe_fix_daily_plan()
-
             # Získat všechna potřebná data
             _LOGGER.info("Battery forecast async_update() called")
             current_capacity = self._get_current_battery_capacity()
@@ -539,6 +536,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 _LOGGER.error(f"HYBRID optimization failed: {e}", exc_info=True)
                 self._mode_optimization_result = None
                 self._mode_recommendations = []
+
+            # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER optimization)
+            await self._maybe_fix_daily_plan()
 
             # SIMPLIFIED: VŽDY počítat JEN ACTIVE timeline s DP módy
             # Baseline timeline byl zbytečný a způsoboval přepis ACTIVE dat
