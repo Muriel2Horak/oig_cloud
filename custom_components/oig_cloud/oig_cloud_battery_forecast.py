@@ -3493,7 +3493,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         planned_timeline = self._daily_plan_state.get("planned_timeline", [])
 
         _LOGGER.debug(
-            f"🔍 Tracking {interval_str}: planned_timeline has {len(planned_timeline)} intervals"
+            f"🔍 Tracking {interval_str}: planned_timeline has {len(planned_timeline)} intervals, "
+            f"first 3: {[p.get('time') for p in planned_timeline[:3]]}"
         )
 
         for interval in planned_timeline:
