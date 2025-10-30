@@ -158,6 +158,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Phase 2.8: Mode recommendations (DNES + ZÍTRA) for API
         self._mode_recommendations: List[Dict[str, Any]] = []
 
+        # Phase 2.9: Daily plans archive (včera, předevčírem, ...)
+        self._daily_plans_archive: Dict[str, Dict[str, Any]] = {}  # {date: plan_state}
+
         # Phase 1.5: Hash-based change detection
         self._data_hash: Optional[str] = (
             None  # MD5 hash of timeline_data for efficient change detection
@@ -3308,9 +3311,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._daily_plan_state
                 and self._daily_plan_state.get("status") == "active"
             ):
+                yesterday_date = self._daily_plan_state.get("plan_date")
                 self._daily_plan_state["status"] = "completed"
+                
+                # NOVĚ: Uložit do archivu (max 7 dní)
+                self._daily_plans_archive[yesterday_date] = self._daily_plan_state.copy()
+                
+                # Vyčistit staré plány (starší než 7 dní)
+                cutoff_date = (now.date() - timedelta(days=7)).strftime("%Y-%m-%d")
+                self._daily_plans_archive = {
+                    date: plan
+                    for date, plan in self._daily_plans_archive.items()
+                    if date >= cutoff_date
+                }
+                
                 _LOGGER.info(
-                    f"📦 Archived daily plan for {self._daily_plan_state.get('plan_date')}"
+                    f"📦 Archived daily plan for {yesterday_date} "
+                    f"(archive size: {len(self._daily_plans_archive)} days)"
                 )
 
             # Máme DP výsledek?
@@ -3558,15 +3575,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Build intervals podle source
         if source == "historical_only":
-            # VČERA - zkontrolovat jestli máme daily_plan_state pro včerejší den
-            if (
-                hasattr(self, "_daily_plan_state")
-                and self._daily_plan_state
-                and self._daily_plan_state.get("plan_date") == date.strftime("%Y-%m-%d")
-            ):
-                # Máme včerejší plán - použít actual_intervals jako historii
-                actual_intervals = self._daily_plan_state.get("actual_intervals", [])
-                planned_timeline = self._daily_plan_state.get("planned_timeline", [])
+            # VČERA - zkontrolovat archiv
+            date_str = date.strftime("%Y-%m-%d")
+            archived_plan = self._daily_plans_archive.get(date_str)
+            
+            if archived_plan:
+                # Máme archivovaný plán - použít actual_intervals jako historii
+                actual_intervals = archived_plan.get("actual_intervals", [])
+                planned_timeline = archived_plan.get("planned_timeline", [])
 
                 for planned in planned_timeline:
                     interval_time_str = planned.get("time", "")
