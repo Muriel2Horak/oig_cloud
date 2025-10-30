@@ -9234,6 +9234,9 @@ const MODE_CONFIG = {
     'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.7)', label: 'DO NOTHING' }
 };
 
+// Global interval ID for timeline updates
+let timelineUpdateInterval = null;
+
 // Open mode timeline dialog
 function openModeTimelineDialog() {
     const dialog = document.getElementById('mode-timeline-dialog');
@@ -9250,7 +9253,12 @@ function openModeTimelineDialog() {
 
     // Update current time indicator
     updateTimelineNowIndicator();
-    setInterval(updateTimelineNowIndicator, 60000); // Update every minute
+    
+    // OPRAVENO: Nejdřív zrušit starý interval, pak vytvořit nový
+    if (timelineUpdateInterval) {
+        clearInterval(timelineUpdateInterval);
+    }
+    timelineUpdateInterval = setInterval(updateTimelineNowIndicator, 60000); // Update every minute
 }
 
 // Close mode timeline dialog
@@ -9258,6 +9266,12 @@ function closeModeTimelineDialog() {
     const dialog = document.getElementById('mode-timeline-dialog');
     if (dialog) {
         dialog.style.display = 'none';
+    }
+    
+    // OPRAVENO: Zrušit interval při zavření dialogu
+    if (timelineUpdateInterval) {
+        clearInterval(timelineUpdateInterval);
+        timelineUpdateInterval = null;
     }
 }
 
