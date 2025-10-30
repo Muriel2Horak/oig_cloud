@@ -216,20 +216,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     @property
     def state(self) -> Optional[Union[float, str]]:
         """
-        State = hash of timeline data (first 8 chars).
+        State = current battery capacity in kWh.
 
-        Phase 1.5: Hash-based change detection
-        - State changes only when timeline data actually changes
-        - Frontend watches state via WebSocket
-        - On change -> fetch new data from API
-        - Current capacity moved to attributes
-
+        Dashboard graph needs numeric value to display battery timeline.
+        
         Returns:
-            First 8 chars of MD5 hash or "unknown"
+            Current battery capacity (kWh) or 0 if no data
         """
-        if self._data_hash:
-            return self._data_hash[:8]
-        return "unknown"
+        if self._timeline_data and len(self._timeline_data) > 0:
+            # Try new format first (battery_soc from HYBRID)
+            capacity = self._timeline_data[0].get("battery_soc")
+            if capacity is None:
+                # Fallback: old format (battery_capacity_kwh)
+                capacity = self._timeline_data[0].get("battery_capacity_kwh", 0)
+            return round(capacity, 2)
+        return 0
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -249,14 +250,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._last_update.isoformat() if self._last_update else None
             ),
             "data_source": "simplified_calculation",
-            # Current state (moved from state property)
+            # Current state
             "current_battery_kwh": (
-                round(self._timeline_data[0].get("battery_capacity_kwh", 0), 2)
-                if self._timeline_data
+                round(self._timeline_data[0].get("battery_soc", 
+                      self._timeline_data[0].get("battery_capacity_kwh", 0)), 2)
+                if self._timeline_data and len(self._timeline_data) > 0
                 else 0
             ),
             "current_timestamp": (
-                self._timeline_data[0].get("timestamp") if self._timeline_data else None
+                self._timeline_data[0].get("time", 
+                self._timeline_data[0].get("timestamp"))
+                if self._timeline_data and len(self._timeline_data) > 0
+                else None
             ),
             # Capacity limits
             "max_capacity_kwh": self._get_max_battery_capacity(),
@@ -549,7 +554,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             if has_dp_results:
                 # Use HYBRID optimal_timeline (nový formát)
-                self._timeline_data = self._mode_optimization_result.get("optimal_timeline", [])
+                self._timeline_data = self._mode_optimization_result.get(
+                    "optimal_timeline", []
+                )
                 _LOGGER.debug(
                     f"Using HYBRID timeline: {len(self._timeline_data)} intervals"
                 )
