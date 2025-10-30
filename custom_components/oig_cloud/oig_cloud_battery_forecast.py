@@ -2175,6 +2175,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             battery = max(0, min(battery, max_capacity))
             interval_cost = grid_import * price - grid_export * price
 
+            # Calculate charge values for stacked graph
+            # solar_charge_kwh = how much solar went into battery
+            # grid_charge_kwh = how much grid went into battery (not consumption!)
+            if mode == CBB_MODE_HOME_UPS:
+                # UPS: grid_charge went to battery, solar also went to battery
+                solar_charge_kwh = min(solar_kwh, max_capacity - (battery - solar_kwh - grid_charge))
+                grid_charge_kwh = grid_charge
+            elif mode == CBB_MODE_HOME_I:
+                # HOME I: surplus solar went to battery OR battery discharged
+                if solar_kwh >= load_kwh:
+                    solar_charge_kwh = min(solar_kwh - load_kwh, max_capacity - (battery - (solar_kwh - load_kwh)))
+                else:
+                    solar_charge_kwh = 0.0
+                grid_charge_kwh = 0.0
+            elif mode == CBB_MODE_HOME_II:
+                # HOME II: surplus solar to battery
+                if solar_kwh >= load_kwh:
+                    solar_charge_kwh = min(solar_kwh - load_kwh, max_capacity - (battery - (solar_kwh - load_kwh)))
+                else:
+                    solar_charge_kwh = 0.0
+                grid_charge_kwh = 0.0
+            elif mode == CBB_MODE_HOME_III:
+                # HOME III: ALL solar to battery
+                solar_charge_kwh = min(solar_kwh, max_capacity - (battery - solar_kwh))
+                grid_charge_kwh = 0.0
+            else:
+                solar_charge_kwh = 0.0
+                grid_charge_kwh = 0.0
+
             timeline.append(
                 {
                     "time": timestamp_str,
@@ -2190,6 +2219,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "spot_price": price,
                     "spot_price_czk": price,  # Alias pro zpětnou kompatibilitu
                     "net_cost": interval_cost,
+                    "solar_charge_kwh": round(solar_charge_kwh, 3),  # For stacked graph
+                    "grid_charge_kwh": round(grid_charge_kwh, 3),  # For stacked graph
                 }
             )
 
@@ -2316,7 +2347,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 timestamp_str = price_data.get("time", "")
                 if not timestamp_str:
                     continue
-                    
+
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
                     if timestamp.tzinfo is None:
@@ -2331,7 +2362,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
                 except:
                     solar_kwh = 0.0
-                    
+
                 load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
                 price = price_data.get("price", 0)
 
@@ -2353,7 +2384,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         if battery < 0:
                             grid_import = -battery * efficiency
                             battery = 0
-                            total_cost += grid_import * price                # HOME II: Grid supplements, battery saved
+                            total_cost += (
+                                grid_import * price
+                            )  # HOME II: Grid supplements, battery saved
                 elif mode == 1:
                     if solar_kwh >= load_kwh:
                         surplus = solar_kwh - load_kwh
@@ -3534,31 +3567,45 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     # Najít actual data pro tento interval
                     actual = next(
-                        (a for a in actual_intervals if a.get("time") == interval_time_str),
+                        (
+                            a
+                            for a in actual_intervals
+                            if a.get("time") == interval_time_str
+                        ),
                         None,
                     )
 
-                    intervals.append({
-                        "time": interval_time_str,
-                        "status": "historical",
-                        "planned": {
-                            "mode": planned.get("mode"),
-                            "mode_name": planned.get("mode_name"),
-                            "battery_kwh": planned.get("battery_soc", 0),
-                            "solar_kwh": planned.get("solar_kwh", 0),
-                            "consumption_kwh": planned.get("load_kwh", 0),
-                            "grid_import": planned.get("grid_import", 0),
-                            "grid_export": planned.get("grid_export", 0),
-                            "spot_price": planned.get("spot_price", 0),
-                            "net_cost": planned.get("net_cost", 0),
-                        },
-                        "actual": {
-                            "mode": actual.get("mode") if actual else None,
-                            "mode_name": actual.get("mode_name") if actual else None,
-                            "battery_kwh": actual.get("battery_kwh") if actual else None,
-                        } if actual else None,
-                        "delta": None,  # Calculate if needed
-                    })
+                    intervals.append(
+                        {
+                            "time": interval_time_str,
+                            "status": "historical",
+                            "planned": {
+                                "mode": planned.get("mode"),
+                                "mode_name": planned.get("mode_name"),
+                                "battery_kwh": planned.get("battery_soc", 0),
+                                "solar_kwh": planned.get("solar_kwh", 0),
+                                "consumption_kwh": planned.get("load_kwh", 0),
+                                "grid_import": planned.get("grid_import", 0),
+                                "grid_export": planned.get("grid_export", 0),
+                                "spot_price": planned.get("spot_price", 0),
+                                "net_cost": planned.get("net_cost", 0),
+                            },
+                            "actual": (
+                                {
+                                    "mode": actual.get("mode") if actual else None,
+                                    "mode_name": (
+                                        actual.get("mode_name") if actual else None
+                                    ),
+                                    "battery_kwh": (
+                                        actual.get("battery_kwh") if actual else None
+                                    ),
+                                }
+                                if actual
+                                else None
+                            ),
+                            "delta": None,  # Calculate if needed
+                        }
+                    )
             # Else: prázdné intervaly (plán již archivován nebo neexistuje)
 
         elif source == "mixed":
