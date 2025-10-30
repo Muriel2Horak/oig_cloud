@@ -9718,6 +9718,16 @@ function renderExtendedTimeline(timelineExtended, dailyPlanState) {
     // Yesterday (historical only)
     if (yesterday && yesterday.intervals && yesterday.intervals.length > 0) {
         html += renderDayTimeline('Včera', yesterday, 'historical');
+    } else {
+        html += `
+            <div class="day-timeline">
+                <h3>Včera</h3>
+                <p class="no-data" style="padding: 20px; text-align: center; color: var(--text-tertiary);">
+                    📅 Včerejší data ještě nejsou dostupná.<br>
+                    <span style="font-size: 0.9em;">Archivace začne zítra v půlnoci.</span>
+                </p>
+            </div>
+        `;
     }
 
     // Today (mixed: historical + planned)
