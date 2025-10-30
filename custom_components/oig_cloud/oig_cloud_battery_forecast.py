@@ -1931,19 +1931,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Pokud je gap jen 1 interval a cena gap < transition cost → merge
         i = 0
         while i < len(modes) - 2:
-            if modes[i] == CBB_MODE_HOME_UPS and modes[i + 1] == CBB_MODE_HOME_I and modes[i + 2] == CBB_MODE_HOME_UPS:
+            if (
+                modes[i] == CBB_MODE_HOME_UPS
+                and modes[i + 1] == CBB_MODE_HOME_I
+                and modes[i + 2] == CBB_MODE_HOME_UPS
+            ):
                 # Gap of 1 interval - check if worth merging
                 gap_price = spot_prices[i + 1].get("price", 0)
                 gap_cost = gap_price * max_charge_per_interval  # Cost to charge in gap
-                
+
                 # Transition cost: 2× switch (UPS→I + I→UPS)
-                transition_loss = TRANSITION_COSTS.get(("Home UPS", "Home I"), {}).get("energy_loss_kwh", 0.02)
-                transition_loss += TRANSITION_COSTS.get(("Home I", "Home UPS"), {}).get("energy_loss_kwh", 0.05)
+                transition_loss = TRANSITION_COSTS.get(("Home UPS", "Home I"), {}).get(
+                    "energy_loss_kwh", 0.02
+                )
+                transition_loss += TRANSITION_COSTS.get(("Home I", "Home UPS"), {}).get(
+                    "energy_loss_kwh", 0.05
+                )
                 transition_cost_czk = transition_loss * gap_price
-                
+
                 if gap_cost < transition_cost_czk:
                     modes[i + 1] = CBB_MODE_HOME_UPS  # Merge gap
-                    _LOGGER.debug(f"🔀 Merged gap at interval {i+1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}")
+                    _LOGGER.debug(
+                        f"🔀 Merged gap at interval {i+1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}"
+                    )
             i += 1
 
         # Count modes
@@ -2003,20 +2013,38 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
             # Fyzika podle módu
+            grid_import = 0.0
+            grid_export = 0.0
+            grid_charge = 0.0
+
             if mode == CBB_MODE_HOME_UPS:
                 # UPS: spotřeba ze sítě, baterie nabíjí ze solaru + gridu
                 battery_space = max_capacity - battery
                 grid_charge = min(max_charge_per_interval, battery_space / efficiency)
+                grid_import = load_kwh + grid_charge  # Import na spotřebu + nabíjení
                 battery += solar_kwh + grid_charge
-                total_cost += (load_kwh + grid_charge) * price  # Grid cost
+                total_cost += grid_import * price
             else:
                 # HOME I: solar → baterie nebo baterie → load
                 if solar_kwh >= load_kwh:
-                    battery += solar_kwh - load_kwh
+                    surplus = solar_kwh - load_kwh
+                    battery += surplus
+                    # Pokud je baterie plná, přebytek jde do sítě
+                    if battery > max_capacity:
+                        grid_export = battery - max_capacity
+                        battery = max_capacity
+                        total_cost -= grid_export * price  # Export kredit
                 else:
-                    battery -= (load_kwh - solar_kwh) / efficiency
+                    deficit = load_kwh - solar_kwh
+                    battery -= deficit / efficiency
+                    # Pokud je baterie prázdná, dobrání ze sítě
+                    if battery < 0:
+                        grid_import = -battery * efficiency
+                        battery = 0
+                        total_cost += grid_import * price
 
             battery = max(0, min(battery, max_capacity))
+            interval_cost = grid_import * price - grid_export * price
 
             timeline.append(
                 {
@@ -2024,19 +2052,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "battery_soc": battery,
                     "mode": mode,
                     "mode_name": CBB_MODE_NAMES.get(mode, "Unknown"),
+                    "solar_kwh": solar_kwh,
+                    "load_kwh": load_kwh,
+                    "grid_import": grid_import,
+                    "grid_export": grid_export,
+                    "spot_price": price,
+                    "net_cost": interval_cost,
                 }
             )
 
-        # Mode recommendations (první 8 intervalů = 2h)
-        mode_recommendations = []
-        for i in range(min(8, len(modes))):
-            mode_recommendations.append(
-                {
-                    "time": spot_prices[i].get("time", ""),
-                    "mode": modes[i],
-                    "mode_name": CBB_MODE_NAMES.get(modes[i], "Unknown"),
-                }
-            )
+        # Mode recommendations - použít _create_mode_recommendations() pro bloky s detaily
+        mode_recommendations = self._create_mode_recommendations(
+            timeline, hours_ahead=48
+        )
 
         return {
             "optimal_timeline": timeline,
