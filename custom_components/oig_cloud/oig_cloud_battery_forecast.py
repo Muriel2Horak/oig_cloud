@@ -2210,10 +2210,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             solar_kwh = interval.get("solar_kwh", 0)
             load_kwh = interval.get("load_kwh", 0.125)
             price = interval.get("spot_price", 0)
-            
+
             grid_import = 0.0
             grid_export = 0.0
-            
+
             if solar_kwh >= load_kwh:
                 surplus = solar_kwh - load_kwh
                 battery_baseline += surplus
@@ -2228,7 +2228,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     grid_import = -battery_baseline * efficiency
                     battery_baseline = 0
                     baseline_cost_48h += grid_import * price
-            
+
             battery_baseline = max(0, min(battery_baseline, max_capacity))
 
         total_savings_48h = max(0, baseline_cost_48h - total_cost_48h)
@@ -3094,25 +3094,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 # Filtrovat jen dnešní intervaly (00:00 - 23:45)
                 today_start = datetime.combine(now.date(), datetime.min.time())
+                today_start = dt_util.as_local(today_start)  # Timezone-aware
                 today_end = datetime.combine(now.date(), datetime.max.time())
+                today_end = dt_util.as_local(today_end)  # Timezone-aware
 
-                today_timeline = [
-                    interval
-                    for interval in optimal_timeline
-                    if interval.get("time")
-                    and today_start
-                    <= datetime.fromisoformat(interval["time"])
-                    <= today_end
-                ]
+                today_timeline = []
+                for interval in optimal_timeline:
+                    if not interval.get("time"):
+                        continue
+                    try:
+                        interval_time = datetime.fromisoformat(interval["time"])
+                        if interval_time.tzinfo is None:
+                            interval_time = dt_util.as_local(interval_time)
+                        if today_start <= interval_time <= today_end:
+                            today_timeline.append(interval)
+                    except:
+                        continue
 
-                today_blocks = [
-                    block
-                    for block in mode_recommendations
-                    if block.get("from_time")
-                    and today_start
-                    <= datetime.fromisoformat(block["from_time"])
-                    <= today_end
-                ]
+                today_blocks = []
+                for block in mode_recommendations:
+                    if not block.get("from_time"):
+                        continue
+                    try:
+                        block_time = datetime.fromisoformat(block["from_time"])
+                        if block_time.tzinfo is None:
+                            block_time = dt_util.as_local(block_time)
+                        if today_start <= block_time <= today_end:
+                            today_blocks.append(block)
+                    except:
+                        continue
 
                 expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
 
