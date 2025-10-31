@@ -9292,6 +9292,9 @@ function closeModeTimelineDialog() {
         clearInterval(timelineUpdateInterval);
         timelineUpdateInterval = null;
     }
+    
+    // Clear building views set to allow rebuild on next open
+    buildingViews.clear();
 }
 
 // Build mode timeline from mode_recommendations (Phase 2.8: Load from API)
@@ -10195,14 +10198,27 @@ function renderYesterdayAnalysis(yesterdayData) {
  * Build unified day view for YESTERDAY, TODAY, or TOMORROW
  * Uses ORIGINAL visual style - blocks with time ranges like mode recommendation
  */
+
+// Track which views are currently being built to prevent duplicates
+const buildingViews = new Set();
+
 async function buildUnifiedDayView(dayType) {
     console.log(`[Unified Timeline] Building ${dayType} view...`);
+    
+    // Prevent duplicate builds
+    if (buildingViews.has(dayType)) {
+        console.warn(`[Unified Timeline] ${dayType} view is already being built, skipping`);
+        return;
+    }
+    
+    buildingViews.add(dayType);
 
     const containerId = `${dayType}-timeline-container`;
     const container = document.getElementById(containerId);
 
     if (!container) {
         console.warn(`[Unified Timeline] Container ${containerId} not found`);
+        buildingViews.delete(dayType);
         return;
     }
 
@@ -10259,10 +10275,14 @@ async function buildUnifiedDayView(dayType) {
 
         // Then add variance chart at the TOP (after innerHTML is set)
         renderVarianceChart(dayData.intervals, dayType, containerId);
+        
+        // Mark as completed
+        buildingViews.delete(dayType);
 
     } catch (error) {
         console.error(`[Unified Timeline] Error building ${dayType} view:`, error);
         container.innerHTML = `<p class="no-data">❌ Chyba při načítání dat</p>`;
+        buildingViews.delete(dayType);
     }
 }
 
@@ -10383,6 +10403,13 @@ function renderVarianceChart(intervals, dayType, containerId) {
     const container = document.getElementById(containerId);
     if (!container) {
         console.warn(`[Variance Chart] Container ${containerId} not found`);
+        return;
+    }
+    
+    // Check if chart already exists - prevent duplicates
+    const existingWrapper = document.getElementById(`variance-chart-wrapper-${dayType}`);
+    if (existingWrapper) {
+        console.log(`[Variance Chart] Chart for ${dayType} already exists, skipping`);
         return;
     }
     
