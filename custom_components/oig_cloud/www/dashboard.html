@@ -15,6 +15,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="dashboard-styles.css">
+    <link rel="stylesheet" href="css/today-plan-tile.css">
 </head>
 
 <body>
@@ -181,6 +182,11 @@
                 <svg class="connections" id="connections">
                     <!-- Lines will be drawn dynamically -->
                 </svg>
+
+                <!-- Today Plan Tile - Live tracking of today's battery plan vs actual -->
+                <div id="today-plan-tile-container" style="position: absolute; top: 20px; right: 20px; z-index: 100;">
+                    <!-- TodayPlanTile component will be rendered here dynamically -->
+                </div>
 
                 <!-- Custom Tiles Section - uvnitř flow canvas -->
                 <div class="custom-tiles-section">
@@ -919,31 +925,35 @@
 
                     <!-- Tabs Navigation -->
                     <div class="timeline-tabs">
+                        <button class="timeline-tab" data-tab="yesterday" onclick="showTimelineTab('yesterday')">
+                            📊 VČERA
+                        </button>
                         <button class="timeline-tab active" data-tab="today" onclick="showTimelineTab('today')">
                             📆 DNES
                         </button>
                         <button class="timeline-tab" data-tab="tomorrow" onclick="showTimelineTab('tomorrow')">
                             📅 ZÍTRA
                         </button>
-                        <button class="timeline-tab" data-tab="extended" onclick="showTimelineTab('extended')">
-                            📊 HISTORIE vs PLÁN
-                        </button>
+                    </div>
+
+                    <!-- Tab Content - YESTERDAY -->
+                    <div id="timeline-yesterday-content" class="timeline-tab-content">
+                        <div id="yesterday-timeline-container">
+                            <!-- Filled by buildUnifiedDayView('yesterday') -->
+                        </div>
                     </div>
 
                     <!-- Tab Content - TODAY -->
                     <div id="timeline-today-content" class="timeline-tab-content active">
-                        <!-- Filled by JS -->
+                        <div id="today-timeline-container">
+                            <!-- Filled by buildUnifiedDayView('today') -->
+                        </div>
                     </div>
 
                     <!-- Tab Content - TOMORROW -->
                     <div id="timeline-tomorrow-content" class="timeline-tab-content">
-                        <!-- Filled by JS -->
-                    </div>
-
-                    <!-- Tab Content - EXTENDED (PHASE 2.9) -->
-                    <div id="timeline-extended-content" class="timeline-tab-content">
-                        <div id="extended-timeline-container">
-                            <!-- Filled by buildExtendedTimeline() -->
+                        <div id="tomorrow-timeline-container">
+                            <!-- Filled by buildUnifiedDayView('tomorrow') -->
                         </div>
                     </div>
                 </div>

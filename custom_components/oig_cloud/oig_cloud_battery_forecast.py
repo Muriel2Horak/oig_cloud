@@ -3589,17 +3589,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Používá DP optimalizaci pro planned data
 
         Returns:
-            Dict s yesterday/today/tomorrow sekcemi
+            Dict s yesterday/today/tomorrow sekcemi + today_tile_summary
         """
         now = dt_util.now()
         today = now.date()
         yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=1)
 
+        # Build timelines
+        yesterday_data = self._build_day_timeline(yesterday)
+        today_data = self._build_day_timeline(today)
+        tomorrow_data = self._build_day_timeline(tomorrow)
+
+        # NOVÉ: Build today tile summary pro dlaždici "Dnes - Plnění plánu"
+        today_tile_summary = self._build_today_tile_summary(
+            today_data.get("intervals", []), now
+        )
+
         return {
-            "yesterday": self._build_day_timeline(yesterday),
-            "today": self._build_day_timeline(today),
-            "tomorrow": self._build_day_timeline(tomorrow),
+            "yesterday": yesterday_data,
+            "today": today_data,
+            "tomorrow": tomorrow_data,
+            "today_tile_summary": today_tile_summary,  # ← NOVÉ pro dlaždici
         }
 
     def _build_day_timeline(self, date: datetime.date) -> Dict[str, Any]:
@@ -3650,7 +3661,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         continue
 
                     # Najít actual data pro tento interval
-                    actual = next(
+                    actual_entry = next(
                         (
                             a
                             for a in actual_intervals
@@ -3659,35 +3670,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         None,
                     )
 
+                    planned_data = self._format_planned_data(planned)
+
                     intervals.append(
                         {
                             "time": interval_time_str,
                             "status": "historical",
-                            "planned": {
-                                "mode": planned.get("mode"),
-                                "mode_name": planned.get("mode_name"),
-                                "battery_kwh": planned.get("battery_soc", 0),
-                                "solar_kwh": planned.get("solar_kwh", 0),
-                                "consumption_kwh": planned.get("load_kwh", 0),
-                                "grid_import": planned.get("grid_import", 0),
-                                "grid_export": planned.get("grid_export", 0),
-                                "spot_price": planned.get("spot_price", 0),
-                                "net_cost": planned.get("net_cost", 0),
-                            },
+                            "planned": planned_data,
                             "actual": (
-                                {
-                                    "mode": actual.get("mode") if actual else None,
-                                    "mode_name": (
-                                        actual.get("mode_name") if actual else None
-                                    ),
-                                    "battery_kwh": (
-                                        actual.get("battery_kwh") if actual else None
-                                    ),
-                                }
-                                if actual
+                                self._format_actual_data(
+                                    actual_entry.get("actual"), planned_data
+                                )
+                                if actual_entry
                                 else None
                             ),
-                            "delta": None,  # Calculate if needed
+                            "delta": (
+                                actual_entry.get("delta") if actual_entry else None
+                            ),
                         }
                     )
             # Else: prázdné intervaly (plán již archivován nebo neexistuje)
@@ -3723,7 +3722,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     if interval_time < current_interval:
                         # Historical - hledat actual
-                        actual = next(
+                        actual_entry = next(
                             (
                                 a
                                 for a in actual_intervals
@@ -3732,16 +3731,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             None,
                         )
 
+                        planned_data = self._format_planned_data(planned)
+
                         interval_entry = {
                             "time": interval_time_str,
                             "status": "historical",
-                            "planned": self._format_planned_data(planned),
+                            "planned": planned_data,
                             "actual": (
-                                self._format_actual_data(actual.get("actual"))
-                                if actual
+                                self._format_actual_data(
+                                    actual_entry.get("actual"), planned_data
+                                )
+                                if actual_entry
                                 else None
                             ),
-                            "delta": (actual.get("delta") if actual else None),
+                            "delta": (
+                                actual_entry.get("delta") if actual_entry else None
+                            ),
                         }
 
                     elif interval_time == current_interval:
@@ -3821,13 +3826,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "grid_export": round(planned.get("grid_export", 0), 3),
             "spot_price": round(planned.get("spot_price", 0), 2),
             "net_cost": round(planned.get("net_cost", 0), 2),
+            "savings_vs_home_i": round(planned.get("savings_vs_home_i", 0), 2),
         }
 
-    def _format_actual_data(self, actual: Dict[str, Any]) -> Dict[str, Any]:
-        """Formátovat actual data pro API."""
+    def _format_actual_data(
+        self, actual: Dict[str, Any], planned: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Formátovat actual data pro API.
+
+        Args:
+            actual: Actual data z trackingu
+            planned: Planned data pro doplnění chybějících hodnot (optional)
+        """
         if not actual:
             return None
-        return {
+
+        result = {
             "mode": actual.get("mode", 0),
             "mode_name": actual.get("mode_name", "HOME I"),
             "battery_kwh": round(actual.get("battery_kwh", 0), 2),
@@ -3835,6 +3850,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "grid_export": round(actual.get("grid_export", 0), 3),
             "net_cost": round(actual.get("net_cost", 0), 2),
         }
+
+        # Add missing fields from planned if available
+        if planned:
+            result["solar_kwh"] = round(planned.get("solar_kwh", 0), 3)
+            result["consumption_kwh"] = round(planned.get("consumption_kwh", 0), 3)
+            result["spot_price"] = round(planned.get("spot_price", 0), 2)
+            result["savings_vs_home_i"] = round(planned.get("savings_vs_home_i", 0), 2)
+        else:
+            result["solar_kwh"] = 0
+            result["consumption_kwh"] = 0
+            result["spot_price"] = 0
+            result["savings_vs_home_i"] = 0
+
+        return result
 
     def _calculate_day_summary(self, intervals: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Vypočítat summary pro den."""
@@ -3863,6 +3892,173 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "accuracy_pct": accuracy_pct,
             "intervals_count": len(intervals),
             "historical_count": historical_count,
+        }
+
+    def _build_today_tile_summary(
+        self, intervals: List[Dict[str, Any]], now: datetime
+    ) -> Dict[str, Any]:
+        """
+        Vytvořit summary pro dlaždici "Dnes - Plnění plánu".
+
+        NOVÉ v Phase 2.9 - pro dlaždici místo 48h okna cen.
+
+        Args:
+            intervals: Seznam intervalů pro dnešek
+            now: Aktuální čas
+
+        Returns:
+            Dict s metrikami pro dlaždici:
+            - progress_pct: % dne uběhlo
+            - planned_so_far: Plán dosud (00:00 - NOW)
+            - actual_so_far: Skutečně dosud
+            - delta: Odchylka (Kč)
+            - delta_pct: Odchylka (%)
+            - eod_prediction: End-of-day predikce
+            - eod_plan: EOD plán celkem
+            - eod_delta_pct: EOD odchylka (%)
+            - mini_chart_data: Data pro mini graf
+            - current_time: Aktuální čas (HH:MM)
+        """
+        if not intervals:
+            return self._get_empty_tile_summary(now)
+
+        # Round current time na 15min
+        current_minute = (now.minute // 15) * 15
+        current_interval_time = now.replace(
+            minute=current_minute, second=0, microsecond=0
+        )
+
+        # Rozdělit intervaly na historical vs future
+        historical = []
+        future = []
+
+        for interval in intervals:
+            try:
+                interval_time_str = interval.get("time", "")
+                if not interval_time_str:
+                    continue
+
+                interval_time = datetime.fromisoformat(interval_time_str)
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
+
+                if interval_time < current_interval_time and interval.get("actual"):
+                    historical.append(interval)
+                else:
+                    future.append(interval)
+            except:
+                continue
+
+        # Spočítat plán vs skutečnost dosud
+        planned_so_far = sum(
+            h.get("planned", {}).get("net_cost", 0) for h in historical
+        )
+        actual_so_far = sum(h.get("actual", {}).get("net_cost", 0) for h in historical)
+        delta = actual_so_far - planned_so_far
+        delta_pct = (delta / planned_so_far * 100) if planned_so_far > 0 else 0.0
+
+        # EOD predikce
+        planned_future = sum(f.get("planned", {}).get("net_cost", 0) for f in future)
+        eod_plan = planned_so_far + planned_future
+
+        # Varianta B: Realistická predikce s drift ratio
+        if planned_so_far > 0:
+            drift_ratio = actual_so_far / planned_so_far
+        else:
+            drift_ratio = 1.0
+
+        eod_prediction = actual_so_far + (planned_future * drift_ratio)
+        eod_delta = eod_prediction - eod_plan
+        eod_delta_pct = (eod_delta / eod_plan * 100) if eod_plan > 0 else 0.0
+
+        # Progress
+        total_intervals = len(intervals)
+        historical_count = len(historical)
+        progress_pct = (
+            (historical_count / total_intervals * 100) if total_intervals > 0 else 0.0
+        )
+
+        # Confidence level (pro UI indikátor)
+        if progress_pct < 25:
+            confidence = "low"
+        elif progress_pct < 50:
+            confidence = "medium"
+        elif progress_pct < 75:
+            confidence = "good"
+        else:
+            confidence = "high"
+
+        # Mini chart data (jen delty pro variance chart)
+        mini_chart_data = []
+        for interval in intervals:
+            interval_time_str = interval.get("time", "")
+            if not interval_time_str:
+                continue
+
+            try:
+                interval_time = datetime.fromisoformat(interval_time_str)
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
+
+                is_current = (
+                    current_interval_time
+                    <= interval_time
+                    < current_interval_time + timedelta(minutes=15)
+                )
+
+                delta_value = None
+                if interval.get("actual") and interval.get("delta"):
+                    delta_value = interval["delta"].get("net_cost")
+
+                mini_chart_data.append(
+                    {
+                        "time": interval_time_str,
+                        "delta": delta_value,
+                        "is_historical": bool(interval.get("actual")),
+                        "is_current": is_current,
+                    }
+                )
+            except:
+                continue
+
+        return {
+            "progress_pct": round(progress_pct, 1),
+            "planned_so_far": round(planned_so_far, 2),
+            "actual_so_far": round(actual_so_far, 2),
+            "delta": round(delta, 2),
+            "delta_pct": round(delta_pct, 1),
+            "eod_prediction": round(eod_prediction, 2),
+            "eod_plan": round(eod_plan, 2),
+            "eod_delta": round(eod_delta, 2),
+            "eod_delta_pct": round(eod_delta_pct, 1),
+            "confidence": confidence,
+            "mini_chart_data": mini_chart_data,
+            "current_time": now.strftime("%H:%M"),
+            "last_updated": now.isoformat(),
+            "intervals_total": total_intervals,
+            "intervals_historical": historical_count,
+            "intervals_future": len(future),
+        }
+
+    def _get_empty_tile_summary(self, now: datetime) -> Dict[str, Any]:
+        """Prázdné tile summary pokud nejsou data."""
+        return {
+            "progress_pct": 0.0,
+            "planned_so_far": 0.0,
+            "actual_so_far": 0.0,
+            "delta": 0.0,
+            "delta_pct": 0.0,
+            "eod_prediction": 0.0,
+            "eod_plan": 0.0,
+            "eod_delta": 0.0,
+            "eod_delta_pct": 0.0,
+            "confidence": "none",
+            "mini_chart_data": [],
+            "current_time": now.strftime("%H:%M"),
+            "last_updated": now.isoformat(),
+            "intervals_total": 0,
+            "intervals_historical": 0,
+            "intervals_future": 0,
         }
 
     # =========================================================================
