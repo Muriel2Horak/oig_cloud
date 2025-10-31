@@ -27,7 +27,7 @@ class TodayPlanTile {
     }
 
     /**
-     * Hlavní render metoda - vykreslí celou dlaždici
+     * Hlavní render metoda - vykreslí dlaždici ve stat-card stylu
      */
     render() {
         if (!this.data) {
@@ -50,68 +50,42 @@ class TodayPlanTile {
 
         // Určit CSS třídy podle delta
         const deltaClass = delta < 0 ? 'better' : (delta > 0 ? 'worse' : 'neutral');
-        const deltaIcon = delta < 0 ? '✅' : (delta > 0 ? '⚠️' : '➡️');
-        const eodClass = eod_delta_pct < 0 ? 'better' : (eod_delta_pct > 0 ? 'worse' : 'neutral');
-        const eodIcon = eod_delta_pct < 0 ? '✅' : (eod_delta_pct > 0 ? '⚠️' : '➡️');
+        const deltaIcon = delta < 0 ? '↓' : (delta > 0 ? '↑' : '→');
+        
+        // Barva podle výsledku (zelená = lepší, červená = horší)
+        const tileColor = delta < 0 ? '#4CAF50' : '#2196F3'; // Zelená nebo modrá
+        const bgGradient = delta < 0 
+            ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%)'
+            : 'linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%)';
+        const borderColor = delta < 0 ? 'rgba(76, 175, 80, 0.3)' : 'rgba(33, 150, 243, 0.3)';
 
-        // Vytvořit HTML
+        // Vytvořit HTML ve stat-card stylu
+        this.container.style.background = bgGradient;
+        this.container.style.border = `1px solid ${borderColor}`;
+        
         this.container.innerHTML = `
-            <div class="tile today-plan-tile" data-confidence="${confidence}">
-                <div class="tile-header">
-                    <span class="tile-title">📆 DNES - Plnění plánu</span>
-                    <span class="tile-time">🕐 ${current_time}</span>
-                </div>
-
-                <div class="mini-chart-container">
-                    <canvas id="today-mini-chart"></canvas>
-                </div>
-
-                <div class="tile-metrics">
-                    <div class="metric">
-                        <div class="metric-label">💰 Plán</div>
-                        <div class="metric-value">${planned_so_far.toFixed(2)} Kč</div>
-                        <div class="metric-sublabel">(dosud)</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">💸 Skutečně</div>
-                        <div class="metric-value">${actual_so_far.toFixed(2)} Kč</div>
-                        <div class="metric-sublabel">(dosud)</div>
-                    </div>
-                    <div class="metric ${deltaClass}">
-                        <div class="metric-label">📊 Odchylka</div>
-                        <div class="metric-value">
-                            ${delta.toFixed(2)} Kč
-                        </div>
-                        <div class="metric-sublabel">
-                            ${deltaIcon} ${Math.abs(delta_pct).toFixed(1)}%
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tile-prediction">
-                    🔮 EOD: <strong>${eod_prediction.toFixed(2)} Kč</strong>
-                    <span class="prediction-plan">(plán: ${eod_plan.toFixed(2)})</span>
-                    <span class="${eodClass}">${eodIcon} ${eod_delta_pct.toFixed(1)}%</span>
-                </div>
-
-                <div class="tile-footer">
-                    <span class="detail-link">[Detail →]</span>
-                    <span class="auto-refresh">🔄 Auto 15min</span>
-                </div>
+            <div class="stat-label" style="color: ${tileColor}; font-weight: 600;">
+                📆 Dnes - Plnění plánu
             </div>
+            <div class="stat-value" style="font-size: 1.8em; margin: 10px 0;">
+                ${actual_so_far.toFixed(1)} Kč
+            </div>
+            <div style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
+                ${deltaIcon} ${Math.abs(delta).toFixed(1)} Kč (${delta_pct > 0 ? '+' : ''}${delta_pct.toFixed(1)}%)
+                <br>
+                <span style="font-size: 0.9em; opacity: 0.8;">Plán: ${planned_so_far.toFixed(1)} Kč • EOD: ${eod_prediction.toFixed(1)} Kč</span>
+            </div>
+            <canvas id="today-mini-chart" style="height: 40px; max-height: 40px; margin-top: auto; display: block;"></canvas>
         `;
+
+        // Vykreslit mini chart
+        this.renderMiniChart();
 
         // Přidat click handler
         if (this.onClickHandler) {
-            const tileEl = this.container.querySelector('.today-plan-tile');
-            if (tileEl) {
-                tileEl.style.cursor = 'pointer';
-                tileEl.addEventListener('click', this.onClickHandler);
-            }
+            this.container.style.cursor = 'pointer';
+            this.container.onclick = this.onClickHandler;
         }
-
-        // Render mini chart
-        this.renderMiniChart();
     }
 
     /**
@@ -119,14 +93,14 @@ class TodayPlanTile {
      */
     renderEmpty() {
         this.container.innerHTML = `
-            <div class="tile today-plan-tile today-plan-tile--empty">
-                <div class="tile-header">
-                    <span class="tile-title">📆 DNES - Plnění plánu</span>
-                </div>
-                <div class="tile-empty-state">
-                    <p>⏳ Načítání dat...</p>
-                    <p class="tile-empty-hint">Data budou k dispozici po prvním 15minutovém intervalu.</p>
-                </div>
+            <div class="stat-label" style="color: var(--text-tertiary); font-weight: 600;">
+                📆 Dnes - Plnění plánu
+            </div>
+            <div class="stat-value" style="font-size: 1.2em; margin: 20px 0; color: var(--text-tertiary);">
+                ⏳ Načítání...
+            </div>
+            <div style="font-size: 0.85em; color: var(--text-secondary); text-align: center;">
+                Data budou k dispozici po prvním 15min intervalu.
             </div>
         `;
     }

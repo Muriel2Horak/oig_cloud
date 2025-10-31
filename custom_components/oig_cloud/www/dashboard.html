@@ -183,11 +183,6 @@
                     <!-- Lines will be drawn dynamically -->
                 </svg>
 
-                <!-- Today Plan Tile - Live tracking of today's battery plan vs actual -->
-                <div id="today-plan-tile-container" style="position: absolute; top: 20px; right: 20px; z-index: 100;">
-                    <!-- TodayPlanTile component will be rendered here dynamically -->
-                </div>
-
                 <!-- Custom Tiles Section - uvnitř flow canvas -->
                 <div class="custom-tiles-section">
                     <div class="tiles-container">
@@ -658,7 +653,7 @@
 
         <!-- Tab: Pricing & Forecast -->
         <div id="pricing-tab" class="tab-content">
-            <!-- Nové karty s extrémními cenami -->
+            <!-- Top cards row: Pozitivní metriky + Today Plan -->
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                 <!-- Nejlevnější období NÁKUPU -->
                 <div class="stat-card"
@@ -672,22 +667,10 @@
                         style="height: 40px; max-height: 40px; margin-top: auto; display: block; align-self: flex-end;"></canvas>
                 </div>
 
-                <!-- Nejdražší období NÁKUPU -->
-                <div class="stat-card"
-                    style="background: linear-gradient(135deg, rgba(244, 67, 54, 0.15) 0%, rgba(244, 67, 54, 0.05) 100%); border: 1px solid rgba(244, 67, 54, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #F44336; font-weight: 600;">🔴 Nejdražší nákup</div>
-                    <div class="stat-value" id="expensive-buy-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                    <div id="expensive-buy-time"
-                        style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
-                        --</div>
-                    <canvas id="expensive-buy-chart"
-                        style="height: 40px; max-height: 40px; margin-top: auto; display: block; align-self: flex-end;"></canvas>
-                </div>
-
                 <!-- Nejlepší období PRODEJE (nejvyšší cena) -->
                 <div class="stat-card"
                     style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">💰 Nejlepší prodej</div>
+                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">� Nejlepší prodej</div>
                     <div class="stat-value" id="best-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
                     <div id="best-export-time"
                         style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
@@ -696,16 +679,15 @@
                         style="height: 40px; max-height: 40px; margin-top: auto; display: block; align-self: flex-end;"></canvas>
                 </div>
 
-                <!-- Nejhorší období PRODEJE (nejnižší cena) -->
-                <div class="stat-card"
-                    style="background: linear-gradient(135deg, rgba(255, 167, 38, 0.15) 0%, rgba(255, 167, 38, 0.05) 100%); border: 1px solid rgba(255, 167, 38, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #FFA726; font-weight: 600;">📉 Nejhorší prodej</div>
-                    <div class="stat-value" id="worst-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
-                    <div id="worst-export-time"
-                        style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">
-                        --</div>
-                    <canvas id="worst-export-chart"
-                        style="height: 40px; max-height: 40px; margin-top: auto; display: block; align-self: flex-end;"></canvas>
+                <!-- Today Plan Tile - Dnes plnění plánu -->
+                <div id="today-plan-tile-container" class="stat-card" style="min-height: 160px; cursor: pointer;">
+                    <!-- TodayPlanTile component will be rendered here -->
+                </div>
+
+                <!-- Placeholder pro další metriku -->
+                <div class="stat-card" style="min-height: 160px; opacity: 0.5;">
+                    <div class="stat-label" style="color: var(--text-tertiary);">� Připraveno pro další metriku</div>
+                    <div class="stat-value" style="font-size: 1.2em; margin: 20px 0; color: var(--text-tertiary);">--</div>
                 </div>
             </div>
 
