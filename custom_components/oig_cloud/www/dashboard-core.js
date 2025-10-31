@@ -10254,11 +10254,11 @@ async function buildUnifiedDayView(dayType) {
         const blocks = convertIntervalsToBlocks(dayData.intervals, dayType);
         const stats = calculateStatsFromBlocks(blocks, dayData.summary);
 
-        // Render variance chart FIRST (shows plan vs actual visual comparison)
-        renderVarianceChart(dayData.intervals, dayType, containerId);
-
-        // Then render detail blocks
+        // First render detail blocks (sets innerHTML)
         renderDayTabOriginal(containerId, blocks, stats, dayType);
+
+        // Then add variance chart at the TOP (after innerHTML is set)
+        renderVarianceChart(dayData.intervals, dayType, containerId);
 
     } catch (error) {
         console.error(`[Unified Timeline] Error building ${dayType} view:`, error);
@@ -10378,20 +10378,41 @@ function calculateStatsFromBlocks(blocks, summary) {
  * Shows bar chart with delta values (positive = worse, negative = better)
  */
 function renderVarianceChart(intervals, dayType, containerId) {
+    console.log(`[Variance Chart] Rendering for ${dayType}, intervals: ${intervals.length}`);
+    
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.warn(`[Variance Chart] Container ${containerId} not found`);
+        return;
+    }
+    
+    // Create wrapper div for chart
+    const chartWrapper = document.createElement('div');
+    chartWrapper.id = `variance-chart-wrapper-${dayType}`;
+    chartWrapper.style.marginBottom = '30px';
+    chartWrapper.style.padding = '15px';
+    chartWrapper.style.background = 'rgba(0,0,0,0.2)';
+    chartWrapper.style.borderRadius = '8px';
+    
+    // Create title
+    const title = document.createElement('h4');
+    title.textContent = '📊 Variance Analysis - Plán vs Skutečnost';
+    title.style.marginTop = '0';
+    title.style.marginBottom = '15px';
+    title.style.color = 'var(--text-primary)';
+    chartWrapper.appendChild(title);
+    
+    // Create canvas
     const canvas = document.createElement('canvas');
     canvas.id = `variance-chart-${dayType}`;
     canvas.style.height = '250px';
-    canvas.style.marginBottom = '20px';
+    chartWrapper.appendChild(canvas);
     
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    
-    // Insert chart before detail blocks
-    const firstChild = container.firstChild;
-    if (firstChild) {
-        container.insertBefore(canvas, firstChild);
+    // Insert wrapper at the beginning of container
+    if (container.firstChild) {
+        container.insertBefore(chartWrapper, container.firstChild);
     } else {
-        container.appendChild(canvas);
+        container.appendChild(chartWrapper);
     }
 
     // Prepare data for Chart.js
