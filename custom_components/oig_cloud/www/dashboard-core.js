@@ -9790,9 +9790,17 @@ function initTodayPlanTile(container, tileSummary) {
     try {
         todayPlanTileInstance = new TodayPlanTile(
             container,
-            tileSummary
-            // No click handler - tile provides summary info inline
-            // Future: Could open a detail modal or navigate to DNES tab when implemented
+            tileSummary,
+            () => {
+                // Click handler - open timeline dialog and show DNES tab
+                console.log('[Today Plan Tile] Opening timeline dialog with DNES view...');
+                
+                // Open the timeline dialog (loads all 3 day views)
+                openModeTimelineDialog();
+                
+                // Switch to DNES tab
+                showTimelineTab('today');
+            }
         );
         console.log('[Today Plan Tile] Instance created successfully');
     } catch (error) {
