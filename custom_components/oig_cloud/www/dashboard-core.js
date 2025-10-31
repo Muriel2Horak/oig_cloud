@@ -10254,7 +10254,10 @@ async function buildUnifiedDayView(dayType) {
         const blocks = convertIntervalsToBlocks(dayData.intervals, dayType);
         const stats = calculateStatsFromBlocks(blocks, dayData.summary);
 
-        // Use original buildDayTab rendering
+        // Render variance chart FIRST (shows plan vs actual visual comparison)
+        renderVarianceChart(dayData.intervals, dayType, containerId);
+
+        // Then render detail blocks
         renderDayTabOriginal(containerId, blocks, stats, dayType);
 
     } catch (error) {
@@ -10368,6 +10371,179 @@ function calculateStatsFromBlocks(blocks, summary) {
         delta_cost: summary?.delta_cost || 0,
         accuracy_pct: summary?.accuracy_pct || 100
     };
+}
+
+/**
+ * Render Variance Chart for plan vs actual comparison
+ * Shows bar chart with delta values (positive = worse, negative = better)
+ */
+function renderVarianceChart(intervals, dayType, containerId) {
+    const canvas = document.createElement('canvas');
+    canvas.id = `variance-chart-${dayType}`;
+    canvas.style.height = '250px';
+    canvas.style.marginBottom = '20px';
+    
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // Insert chart before detail blocks
+    const firstChild = container.firstChild;
+    if (firstChild) {
+        container.insertBefore(canvas, firstChild);
+    } else {
+        container.appendChild(canvas);
+    }
+
+    // Prepare data for Chart.js
+    const labels = [];
+    const deltaData = [];
+    const colors = [];
+    const now = new Date();
+    let nowIndex = -1;
+
+    intervals.forEach((interval, idx) => {
+        const intervalTime = new Date(interval.time);
+        const timeStr = `${intervalTime.getHours().toString().padStart(2, '0')}:${intervalTime.getMinutes().toString().padStart(2, '0')}`;
+        
+        // Only show every 4th label (1 hour) to avoid clutter
+        labels.push(idx % 4 === 0 ? timeStr : '');
+
+        // Calculate delta
+        let delta = 0;
+        let color = 'rgba(150, 150, 150, 0.5)'; // Gray for planned (future)
+        
+        const isHistorical = (interval.status === 'historical' || interval.status === 'current');
+        
+        if (isHistorical && interval.actual && interval.planned) {
+            // Historical: actual vs planned
+            delta = (interval.actual.net_cost || 0) - (interval.planned.net_cost || 0);
+            
+            if (delta < -0.05) {
+                color = 'rgba(76, 175, 80, 0.8)'; // Green - better than plan
+            } else if (delta > 0.05) {
+                color = 'rgba(244, 67, 54, 0.8)'; // Red - worse than plan
+            } else {
+                color = 'rgba(33, 150, 243, 0.8)'; // Blue - neutral
+            }
+        } else if (interval.planned) {
+            // Planned only (future) - show as 0 with gray
+            delta = 0;
+            color = 'rgba(150, 150, 150, 0.3)';
+        }
+
+        deltaData.push(delta);
+        colors.push(color);
+
+        // Find NOW marker for today
+        if (dayType === 'today' && intervalTime <= now) {
+            nowIndex = idx;
+        }
+    });
+
+    // Create Chart.js chart
+    const ctx = canvas.getContext('2d');
+    
+    const chartConfig = {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Odchylka od plánu (Kč)',
+                data: deltaData,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c.replace('0.8', '1').replace('0.5', '0.8').replace('0.3', '0.5')),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        title: (context) => {
+                            const idx = context[0].dataIndex;
+                            const interval = intervals[idx];
+                            const time = new Date(interval.time);
+                            return `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')} - ${time.getHours().toString().padStart(2, '0')}:${(time.getMinutes() + 15).toString().padStart(2, '0')}`;
+                        },
+                        label: (context) => {
+                            const idx = context.dataIndex;
+                            const interval = intervals[idx];
+                            const delta = context.parsed.y;
+                            
+                            if (!interval.actual) {
+                                return 'Plánováno (ještě nenastalo)';
+                            }
+                            
+                            return [
+                                `Odchylka: ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} Kč`,
+                                `Plán: ${(interval.planned?.net_cost || 0).toFixed(2)} Kč`,
+                                `Skutečnost: ${(interval.actual?.net_cost || 0).toFixed(2)} Kč`,
+                                `Režim: ${interval.actual?.mode_name || interval.planned?.mode_name || '?'}`
+                            ];
+                        }
+                    }
+                },
+                annotation: nowIndex >= 0 ? {
+                    annotations: {
+                        nowLine: {
+                            type: 'line',
+                            xMin: nowIndex,
+                            xMax: nowIndex,
+                            borderColor: 'rgba(255, 152, 0, 0.8)',
+                            borderWidth: 2,
+                            label: {
+                                display: true,
+                                content: 'TEĎKA',
+                                position: 'start',
+                                backgroundColor: 'rgba(255, 152, 0, 0.8)',
+                                color: '#fff',
+                                font: {
+                                    size: 10,
+                                    weight: 'bold'
+                                }
+                            }
+                        }
+                    }
+                } : undefined
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        color: 'var(--text-secondary)',
+                        maxRotation: 0,
+                        autoSkip: false
+                    }
+                },
+                y: {
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    },
+                    ticks: {
+                        color: 'var(--text-secondary)',
+                        callback: function(value) {
+                            return value.toFixed(1) + ' Kč';
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Odchylka od plánu',
+                        color: 'var(--text-secondary)'
+                    }
+                }
+            }
+        }
+    };
+
+    new Chart(ctx, chartConfig);
 }
 
 /**
