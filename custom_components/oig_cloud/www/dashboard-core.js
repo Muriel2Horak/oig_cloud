@@ -9758,7 +9758,7 @@ function renderTodayPlanTile(tileSummary) {
         console.log('[Today Plan Tile] Loading module...');
         const script = document.createElement('script');
         script.type = 'module';
-        script.src = '/local/oig_cloud/www/modules/today-plan-tile.js';
+        script.src = 'modules/today-plan-tile.js';  // Relativní cesta (stejný základ jako dashboard-core.js)
         script.onload = () => {
             console.log('[Today Plan Tile] Module loaded, rendering...');
             initTodayPlanTile(container, tileSummary);
