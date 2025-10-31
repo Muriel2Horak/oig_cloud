@@ -9728,8 +9728,8 @@ async function buildExtendedTimeline() {
             todayTileSummary: todayTileSummary ? 'present' : 'missing'
         });
 
-        // Build TODAY's plan vs actual comparison
-        renderTodayComparison(timelineExtended.today, dailyPlanState);
+        // NOTE: renderTodayComparison() removed - replaced by Today Plan Tile
+        // Old timeline comparison view is deprecated
 
         // Update Today Plan Tile (event-driven refresh)
         if (todayTileSummary) {
