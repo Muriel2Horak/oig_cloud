@@ -401,6 +401,7 @@ function toggleControlPanel() {
 let loadDataTimer = null;
 let loadDetailsTimer = null;
 let shieldMonitorTimer = null;
+let timelineRefreshTimer = null;
 
 // Debounced loadData() - prevents excessive calls
 function debouncedLoadData() {
@@ -427,6 +428,14 @@ function debouncedShieldMonitor() {
         updateShieldUI();
         updateButtonStates();
     }, 100); // Wait 100ms before executing (shorter delay for responsive UI)
+}
+
+// Debounced timeline refresh - for Today Plan Tile updates
+function debouncedTimelineRefresh() {
+    if (timelineRefreshTimer) clearTimeout(timelineRefreshTimer);
+    timelineRefreshTimer = setTimeout(() => {
+        buildExtendedTimeline();
+    }, 300); // Wait 300ms before executing
 }
 
 // Subscribe to shield status changes
@@ -500,6 +509,11 @@ function subscribeToShield() {
                     entityId.includes('_export_price_current_15min') || // Export prices
                     entityId.includes('_solar_forecast') ||              // Solar forecast
                     entityId.includes('_battery_forecast')) {            // Battery forecast (OPRAVENO: prediction → forecast)
+
+                    // Battery forecast also triggers timeline refresh for Today Plan Tile
+                    if (entityId.includes('_battery_forecast')) {
+                        debouncedTimelineRefresh();
+                    }
 
                     // Check if actual data changed (not just last_updated timestamp)
                     const oldState = event.data.old_state;
@@ -5292,6 +5306,9 @@ function init() {
         // Initial full load
         forceFullRefresh();
         updateTime();
+
+        // NOVÉ: Load extended timeline for Today Plan Tile
+        buildExtendedTimeline();
 
         // OPRAVA: Načíst pricing data pokud je pricing tab aktivní při načtení stránky
         const pricingTab = document.getElementById('pricing-tab');
