@@ -51,10 +51,10 @@ class TodayPlanTile {
         // Určit CSS třídy podle delta
         const deltaClass = delta < 0 ? 'better' : (delta > 0 ? 'worse' : 'neutral');
         const deltaIcon = delta < 0 ? '↓' : (delta > 0 ? '↑' : '→');
-        
+
         // Barva podle výsledku (zelená = lepší, červená = horší)
         const tileColor = delta < 0 ? '#4CAF50' : '#2196F3'; // Zelená nebo modrá
-        const bgGradient = delta < 0 
+        const bgGradient = delta < 0
             ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%)'
             : 'linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%)';
         const borderColor = delta < 0 ? 'rgba(76, 175, 80, 0.3)' : 'rgba(33, 150, 243, 0.3)';
@@ -62,7 +62,7 @@ class TodayPlanTile {
         // Vytvořit HTML ve stat-card stylu
         this.container.style.background = bgGradient;
         this.container.style.border = `1px solid ${borderColor}`;
-        
+
         this.container.innerHTML = `
             <div class="stat-label" style="color: ${tileColor}; font-weight: 600;">
                 📆 Dnes - Plnění plánu

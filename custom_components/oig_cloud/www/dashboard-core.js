@@ -9713,7 +9713,7 @@ async function buildExtendedTimeline() {
         const data = await response.json();
         const timelineExtended = data.timeline_extended;
         const dailyPlanState = data.daily_plan_state;
-        
+
         // today_tile_summary je UVNITŘ timeline_extended (API struktura)
         const todayTileSummary = timelineExtended?.today_tile_summary;
 
@@ -9790,12 +9790,9 @@ function initTodayPlanTile(container, tileSummary) {
     try {
         todayPlanTileInstance = new TodayPlanTile(
             container,
-            tileSummary,
-            () => {
-                // Click handler - open DNES tab
-                console.log('[Today Plan Tile] Opening DNES tab');
-                openTab('today'); // Assuming openTab() exists in dashboard-core.js
-            }
+            tileSummary
+            // No click handler - tile provides summary info inline
+            // Future: Could open a detail modal or navigate to DNES tab when implemented
         );
         console.log('[Today Plan Tile] Instance created successfully');
     } catch (error) {
