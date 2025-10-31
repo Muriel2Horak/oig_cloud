@@ -9713,7 +9713,9 @@ async function buildExtendedTimeline() {
         const data = await response.json();
         const timelineExtended = data.timeline_extended;
         const dailyPlanState = data.daily_plan_state;
-        const todayTileSummary = data.today_tile_summary;
+        
+        // today_tile_summary je UVNITŘ timeline_extended (API struktura)
+        const todayTileSummary = timelineExtended?.today_tile_summary;
 
         if (!timelineExtended || !timelineExtended.today) {
             console.warn('[Extended Timeline] No today data available');
