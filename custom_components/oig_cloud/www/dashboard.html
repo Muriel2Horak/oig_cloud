@@ -887,7 +887,7 @@
             <div class="dialog-content timeline-dialog" onclick="event.stopPropagation()">
                 <div class="dialog-header">
                     <h3>📅 Optimalizovaný plán režimů (72h)</h3>
-                    <button class="dialog-close" onclick="closeModeTimelineDialog()">&times;</button>
+                    <button class="dialog-close close-timeline-dialog" onclick="closeModeTimelineDialog()">&times;</button>
                 </div>
 
                 <div class="dialog-body">
@@ -909,35 +909,45 @@
 
                     <!-- Tabs Navigation -->
                     <div class="timeline-tabs">
-                        <button class="timeline-tab" data-tab="yesterday" onclick="showTimelineTab('yesterday')">
+                        <button class="timeline-tab timeline-tab-btn" data-tab="yesterday">
                             📊 VČERA
                         </button>
-                        <button class="timeline-tab active" data-tab="today" onclick="showTimelineTab('today')">
+                        <button class="timeline-tab timeline-tab-btn active" data-tab="today">
                             📆 DNES
                         </button>
-                        <button class="timeline-tab" data-tab="tomorrow" onclick="showTimelineTab('tomorrow')">
+                        <button class="timeline-tab timeline-tab-btn" data-tab="tomorrow">
                             📅 ZÍTRA
+                        </button>
+                        <button class="timeline-tab timeline-tab-btn" data-tab="history">
+                            📈 HISTORIE
                         </button>
                     </div>
 
                     <!-- Tab Content - YESTERDAY -->
                     <div id="timeline-yesterday-content" class="timeline-tab-content">
                         <div id="yesterday-timeline-container">
-                            <!-- Filled by buildUnifiedDayView('yesterday') -->
+                            <!-- Filled by TimelineDialog.renderYesterdayTab() -->
                         </div>
                     </div>
 
                     <!-- Tab Content - TODAY -->
                     <div id="timeline-today-content" class="timeline-tab-content active">
                         <div id="today-timeline-container">
-                            <!-- Filled by buildUnifiedDayView('today') -->
+                            <!-- Filled by TimelineDialog.renderTodayTab() -->
                         </div>
                     </div>
 
                     <!-- Tab Content - TOMORROW -->
                     <div id="timeline-tomorrow-content" class="timeline-tab-content">
                         <div id="tomorrow-timeline-container">
-                            <!-- Filled by buildUnifiedDayView('tomorrow') -->
+                            <!-- Filled by TimelineDialog.renderTomorrowTab() -->
+                        </div>
+                    </div>
+
+                    <!-- Tab Content - HISTORY -->
+                    <div id="timeline-history-content" class="timeline-tab-content">
+                        <div id="history-timeline-container">
+                            <!-- Filled by TimelineDialog.renderHistoryTab() -->
                         </div>
                     </div>
                 </div>
@@ -945,10 +955,10 @@
         </div>
 
         <!-- Extrahovaný JavaScript -->
-        <script src="dashboard-tiles.js?v=20241024&t=1761367326"></script>
-        <script src="dashboard-dialog.js?v=20241024&t=1761367326"></script>
-        <script src="dashboard-core.js?v=20241024&t=1761367326"></script>
-        <script src="dashboard-boiler.js?v=20241027"></script>
+        <script src="dashboard-tiles.js?v=20241031&t=1761920000"></script>
+        <script src="dashboard-dialog.js?v=20241031&t=1761920000"></script>
+        <script src="dashboard-core.js?v=20241031&t=1761920000"></script>
+        <script src="dashboard-boiler.js?v=20241031"></script>
 </body>
 
 </html>

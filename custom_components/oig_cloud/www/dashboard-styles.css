@@ -6872,4 +6872,252 @@
             }
         }
 
+        /* =============================================================================
+         * TIMELINE DIALOG - New Clean Implementation Styles
+         * ============================================================================= */
+
+        /* Yesterday Header */
+        .yesterday-header h3,
+        .today-header h3 {
+            margin: 0 0 20px 0;
+            color: var(--text-primary);
+            font-size: 1.3em;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .stat-box {
+            background: rgba(33, 150, 243, 0.08);
+            border-radius: 6px;
+            padding: 8px 10px;
+            text-align: center;
+            border: 1px solid rgba(33, 150, 243, 0.2);
+        }
+
+        .stat-box.positive {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: rgba(76, 175, 80, 0.3);
+        }
+
+        .stat-box.negative {
+            background: rgba(244, 67, 54, 0.1);
+            border-color: rgba(244, 67, 54, 0.3);
+        }
+
+        .stat-label {
+            font-size: 0.7em;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+
+        .stat-value {
+            font-size: 1.05em;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .stat-value small {
+            font-size: 0.75em;
+            font-weight: 400;
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* Header Footer - Mode adherence and biggest variance */
+        .header-footer {
+            margin-top: 15px;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .footer-stat {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        /* Top Variances */
+        .top-variances {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .top-variances h4 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary);
+            font-size: 1.1em;
+        }
+
+        .variance-item {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            gap: 15px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+            border-left: 4px solid transparent;
+        }
+
+        .variance-item.positive {
+            border-left-color: #4CAF50;
+        }
+
+        .variance-item.negative {
+            border-left-color: #F44336;
+        }
+
+        .variance-rank {
+            font-size: 2em;
+            text-align: center;
+            line-height: 1;
+        }
+
+        .variance-details {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .variance-time {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .variance-modes {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .variance-impact {
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .variance-item.positive .variance-impact {
+            color: #4CAF50;
+        }
+
+        .variance-item.negative .variance-impact {
+            color: #F44336;
+        }
+
+        .variance-reason {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Variance Chart Container */
+        .variance-chart-container,
+        .timeline-chart-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .variance-chart-container h4,
+        .timeline-chart-container h4 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary);
+            font-size: 1.1em;
+        }
+
+        .variance-chart-container canvas,
+        .timeline-chart-container canvas {
+            width: 100% !important;
+            max-height: 350px !important;
+        }
+
+        /* Today Tab - Live Status */
+        .live-status {
+            margin-bottom: 30px;
+        }
+
+        .live-time {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .progress-section {
+            margin: 20px 0;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2196F3, #4CAF50);
+            transition: width 0.5s ease;
+            border-radius: 15px;
+        }
+
+        /* EOD Prediction */
+        .eod-prediction {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(33, 150, 243, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(33, 150, 243, 0.2);
+        }
+
+        .eod-prediction h4 {
+            margin: 0 0 15px 0;
+            color: var(--text-primary);
+            font-size: 1.1em;
+        }
+
+        .trend-message {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+
+            .variance-item {
+                grid-template-columns: 40px 1fr;
+            }
+
+            .variance-rank {
+                font-size: 1.5em;
+            }
+        }
+
 

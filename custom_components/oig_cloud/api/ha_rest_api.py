@@ -106,9 +106,8 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             # Phase 2.8: Add mode_recommendations
             mode_recommendations = getattr(entity_obj, "_mode_recommendations", [])
 
-            # Phase 2.9: Add timeline_extended & daily_plan_state
+            # Phase 2.9: Build timeline_extended (obsahuje actual_intervals z JSON)
             timeline_extended = None
-            daily_plan_state = None
             if hasattr(entity_obj, "build_timeline_extended"):
                 try:
                     timeline_extended = entity_obj.build_timeline_extended()
@@ -116,8 +115,6 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     _LOGGER.warning(
                         f"Failed to build timeline_extended for {box_id}: {e}"
                     )
-
-            daily_plan_state = getattr(entity_obj, "_daily_plan_state", None)
 
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
@@ -135,9 +132,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             if timeline_extended:
                 response_data["timeline_extended"] = timeline_extended
 
-            # Phase 2.9: Add daily plan state (tracking)
-            if daily_plan_state:
-                response_data["daily_plan_state"] = daily_plan_state
+            # Phase 2.9: REMOVED daily_plan_state from API response
+            # Důvod: actual_intervals se nyní načítají z JSON storage v build_timeline_extended()
+            # místo vracení velkých dat v API response (optimalizace velikosti response)
 
             # Add metadata
             import sys
@@ -531,9 +528,97 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class OIGCloudUnifiedCostTileView(HomeAssistantView):
+    """
+    API endpoint for Unified Cost Tile data.
+
+    Phase V2: PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1
+    Consolidates 2 cost tiles into one with today/yesterday/tomorrow context.
+    """
+
+    url = f"{API_BASE}/battery_forecast/{{box_id}}/unified_cost_tile"
+    name = "api:oig_cloud:unified_cost_tile"
+    requires_auth = False
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        """
+        Get unified cost tile data.
+
+        Returns:
+            JSON with today/yesterday/tomorrow cost data:
+            {
+                "today": {
+                    "plan_total_cost": 45.50,
+                    "actual_total_cost": 42.30,
+                    "delta": -3.20,
+                    "performance": "better",
+                    "completed_intervals": 32,
+                    "total_intervals": 96,
+                    "progress_pct": 33,
+                    "eod_prediction": {
+                        "predicted_total": 128.50,
+                        "vs_plan": -4.50,
+                        "confidence": "medium"
+                    }
+                },
+                "yesterday": {
+                    "plan_total_cost": 125.00,
+                    "actual_total_cost": 118.50,
+                    "delta": -6.50,
+                    "performance": "better"
+                },
+                "tomorrow": {
+                    "plan_total_cost": 135.00
+                }
+            }
+        """
+        hass: HomeAssistant = request.app["hass"]
+
+        try:
+            # Find sensor entity
+            sensor_id = f"sensor.oig_{box_id}_battery_forecast"
+            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+
+            if not component:
+                return web.json_response(
+                    {"error": "Sensor component not found"}, status=500
+                )
+
+            entity_obj = None
+            for entity in component.entities:
+                if entity.entity_id == sensor_id:
+                    entity_obj = entity
+                    break
+
+            if not entity_obj:
+                return web.json_response(
+                    {"error": f"Sensor {sensor_id} not found"}, status=404
+                )
+
+            # Build unified cost tile data
+            if hasattr(entity_obj, "build_unified_cost_tile"):
+                tile_data = entity_obj.build_unified_cost_tile()
+            else:
+                return web.json_response(
+                    {"error": "build_unified_cost_tile method not found"}, status=500
+                )
+
+            _LOGGER.debug(
+                f"API: Serving unified cost tile for {box_id}, "
+                f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč"
+            )
+
+            return web.json_response(tile_data)
+
+        except Exception as e:
+            _LOGGER.error(f"Error serving unified cost tile API: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+
+@callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
-    Register all OIG Cloud REST API endpoints.
+    Register all REST API endpoints for OIG Cloud integration.
 
     Args:
         hass: Home Assistant instance
@@ -542,6 +627,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
 
     # Register views
     hass.http.register_view(OIGCloudBatteryTimelineView())
+    hass.http.register_view(OIGCloudUnifiedCostTileView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
@@ -550,6 +636,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     _LOGGER.info(
         "✅ OIG Cloud REST API endpoints registered:\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/timeline\n"
+        f"  - {API_BASE}/battery_forecast/<box_id>/unified_cost_tile\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
