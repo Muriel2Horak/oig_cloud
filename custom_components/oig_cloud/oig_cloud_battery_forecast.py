@@ -1,5 +1,6 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
+import asyncio
 import logging
 import math
 import numpy as np
@@ -177,6 +178,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._active_charging_plan: Optional[Dict[str, Any]] = None
         self._plan_status: str = "none"  # none | pending | active | completed
 
+        # Phase 2.9: Hourly history update tracking
+        self._last_history_update_hour: Optional[int] = None
+        self._initial_history_update_done: bool = False
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
@@ -239,6 +244,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             )
                     except (json.decoder.JSONDecodeError, TypeError) as e:
                         _LOGGER.warning(f"Failed to restore daily plan state: {e}")
+
+        # Phase 2.9: Naplánovat initial history update (60s po startu)
+        async def _initial_history_update():
+            """Initial update actual values 60s po startu/reloadu."""
+            await asyncio.sleep(60)  # Počkat minutu po startu
+            if not self._initial_history_update_done:
+                _LOGGER.info("🚀 Initial history update triggered (60s after startup)")
+                await self._update_actual_from_history()
+                self._initial_history_update_done = True
+
+        self.hass.async_create_task(_initial_history_update())
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
@@ -689,11 +705,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Grid charging sensor je závislý na coordinator update cycle
                 # NEMĚNÍME coordinator.data - jen přidáváme battery_forecast_data
 
-            # PHASE 2.9: Update actual values from history (jednou za hodinu)
+            # PHASE 2.9: Update actual values from history (spolehlivě jednou za hodinu)
             now = dt_util.now()
-            if now.minute == 0:  # Run only at the top of each hour
-                _LOGGER.info("⏰ Hourly history update triggered")
+            current_hour = now.hour
+
+            # Spustit update pokud:
+            # 1. Jsme v prvních 5 minutách hodiny (0-4)
+            # 2. Ještě jsme neprovedli update pro tuto hodinu
+            should_update = (
+                now.minute < 5 and self._last_history_update_hour != current_hour
+            )
+
+            if should_update:
+                _LOGGER.info(
+                    f"⏰ Hourly history update triggered: hour={current_hour}, minute={now.minute}"
+                )
                 await self._update_actual_from_history()
+                self._last_history_update_hour = current_hour
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
