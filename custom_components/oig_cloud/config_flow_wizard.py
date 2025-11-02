@@ -592,6 +592,9 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("battery_max_price", default=10.0): vol.All(
                 vol.Coerce(float), vol.Range(min=1.0, max=50.0)
             ),
+            vol.Optional("threshold_cheap_czk", default=1.5): vol.All(
+                vol.Coerce(float), vol.Range(min=0.5, max=5.0)
+            ),
             vol.Optional("battery_percentile", default=75.0): vol.All(
                 vol.Coerce(float), vol.Range(min=50.0, max=95.0)
             ),
@@ -618,6 +621,9 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "💰 Max. cena (CZK/kWh):\n"
                     "  Nikdy nenabíjet dráž\n"
                     "  Doporučeno: 8-12 CZK/kWh\n\n"
+                    "💡 Levná elektřina (CZK/kWh):\n"
+                    "  Práh pro \"levnou\" hodinu (UPS režim)\n"
+                    "  Doporučeno: 1.0-2.0 CZK/kWh\n\n"
                     "📊 Percentil špičky (%):\n"
                     "  Ceny nad tímto = špička\n"
                     "  Doporučeno: 75-85%"

@@ -44,11 +44,15 @@ CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
 
+# Battery Planning constants (BR-0.2)
+CONF_THRESHOLD_CHEAP_CZK = "threshold_cheap_czk"  # Threshold for "cheap" electricity
+
 # Default values
 DEFAULT_UPDATE_INTERVAL = 20
 DEFAULT_NAME = "ČEZ Battery Box"
 DEFAULT_STANDARD_SCAN_INTERVAL = 30
 DEFAULT_EXTENDED_SCAN_INTERVAL = 300
+DEFAULT_THRESHOLD_CHEAP_CZK = 1.5  # Default 1.5 CZK/kWh
 
 # Boiler defaults
 DEFAULT_BOILER_TARGET_TEMP_C = 60.0
