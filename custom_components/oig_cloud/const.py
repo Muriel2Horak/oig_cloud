@@ -97,3 +97,16 @@ OT_HEADERS = [
     )
 ]
 OT_INSECURE = False
+
+# CBB Modes (Battery Box Control Modes) per BR-1
+HOME_I = 0  # Grid priority (normal operation)
+HOME_II = 1  # Battery savings (grid import, no battery discharge)
+HOME_III = 2  # Solar priority (FVE to battery first)
+HOME_UPS = 3  # UPS mode (grid charging enabled)
+
+CBB_MODE_NAMES = {
+    HOME_I: "HOME I",
+    HOME_II: "HOME II",
+    HOME_III: "HOME III",
+    HOME_UPS: "UPS",
+}
