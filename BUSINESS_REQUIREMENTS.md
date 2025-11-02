@@ -554,11 +554,13 @@ await plan_manager.apply_plan(
 - **"manual"** - Manuální plán (na požadavek)
 
 #### Plan Status:
-- **"pending"** - Vytvořen, čeká na aplikaci (pouze manual)
-- **"active"** - Aktuálně aplikovaný (VŽDY právě 1)
-- **"reverted"** - Byl aktivní, pak nahrazen
-- **"invalidated"** - Simulace zneplatněná aplikací
-- **"expired"** - Prošel deadline, smazat
+- **"simulated"** - Vypočítaný plán (manual/simulation), NENÍ aplikován
+- **"active"** - Aktuálně běžící plán (VŽDY max 1)
+- **"deactivated"** - Předchozí plán nahrazený novým
+
+**Pravidla:**
+- **Exactly one active plan:** V každém okamžiku max 1 active plán
+- Při aplikaci nového: `current_active.status = "deactivated"`, `new_plan.status = "active"`
 
 #### 2.4.1 Automatic Plan
 
@@ -569,43 +571,41 @@ await plan_manager.apply_plan(
 - **Auto-apply:** ANO
 
 **Workflow:**
-1. Trigger (každou hodinu)
+1. Trigger (každou hodinu nebo OTE update)
 2. Calculate plan
-3. Apply okamžitě
-4. Status → "active"
+3. Apply okamžitě → status = "active"
+4. Předchozí active → status = "deactivated"
 
 #### 2.4.2 Manual Plan
 
 **Charakteristika:**
 - Plan_type: "manual"
-- Target: User zadá
+- Target: User zadá (HARD constraint)
 - Deadline: User zadá
 - Holding: Možnost
 - **Auto-apply:** NE
 
 **Workflow:**
 1. User: "create manual plan" (API)
-2. Calculate plan
-3. Status → "pending"
-4. User: review v FE (data z BE)
-5. User: "apply plan" (API)
-6. Apply plan
-7. Status → "active"
+2. Calculate plan → status = "simulated"
+3. User: review v FE (data z BE)
+4. User: "apply plan" (API)
+5. Apply plan → status = "active"
+6. Předchozí active → status = "deactivated"
 
 #### 2.4.3 Simulation
 
 **Charakteristika:**
-- Plan_type: "manual"
-- **NIKDY se neaplikuje**
-- Více najednou
+- Plan_type: "simulation"
+- **NIKDY se neaplikuje** (jen pro srovnání)
+- Může jich být víc najednou (všechny status="simulated")
 
 **Workflow:**
 1. User: "create simulation" × N
-2. Calculate × N
-3. Status → "pending"
-4. User: porovnání v FE
-5. User: "apply simulation X" → apply
-6. Ostatní: status → "invalidated"
+2. Calculate × N → všechny status = "simulated"
+3. User: porovnání v FE (cost, timeline, violations)
+4. Optional: User: "apply simulation X" → status = "active"
+5. Ostatní simulace zůstávají "simulated" (pro archiv)
 
 ### 2.5 Perzistence a Storage
 
