@@ -1158,28 +1158,51 @@ Definovat bezpečnostní rezervy a limity pro ochranu baterie a sítě.
    - ČHMÚ sensor hlásí varování úrovně "red" (nebo "orange" pokud v config)
    - Načíst `warning_start` (začátek varování) a `warning_end` (konec varování)
 
-2. **Naplánovat emergency nabíjení:**
+2. **Naplánovat emergency nabíjení (EXPLICITNÍ HOLDING):**
+   - Vypočítat dynamickou holding_hours:
+   ```python
+   warning_duration = (warning_end - warning_start).hours
+   holding_hours = warning_duration  # Může být 48h+
+   ```
+   
    - Zavolat plánovač s emergency parametry:
    ```python
    request = {
      "current_soc_kwh": current,
-     "target_soc_kwh": 15.36,              # 100%
-     "target_time": warning_start,         # K začátku varování
-     "holding_hours": None,                # Držet do konce varování
-     "holding_end": warning_end,           # Explicitní konec holdingu
-     "mode": "emergency_weather",          # Emergency režim
-     "priority": "speed_over_cost"         # Rychlost > cena
+     "target_soc": 100.0,                  # Vždy 100%
+     "target_time": warning_start,         # ZAČÁTEK holdingu (warning_start)
+     "holding_hours": holding_hours,       # EXPLICITNÍ (celá doba varování)
+     "holding_mode": HOME_III,             # HOME III během holdingu
+     "priority": "emergency"               # Highest priority
    }
    ```
 
 3. **Během emergency:**
-   - Nabít na 100% K ZAČÁTKU varování (nejlevnější cesta do `warning_start`)
-   - Držet na 100% režimem **HOME III** (nedovolit vybíjení)
-   - Kompenzovat spotřebu ze sítě
-   - **Ignorovat `warning_end`** - držet dokud ČHMÚ sensor nehlásí konec varování
+   - Nabít na 100% K ZAČÁTKU varování (`target_time`)
+   - Držet na 100% režimem **HOME III** (FVE→baterie, spotřeba→grid)
+   - Export povolen (přebytky FVE → export/bojler)
+   - **SoC maintenance:** Pokud SoC klesne < 100% → přepnout na **UPS** → dobít zpět na 100%
+   - **Ignorovat `warning_end`** - skutečný konec až po ČHMÚ sensor = "inactive"
 
-4. **Ukončení:**
-   - ČHMÚ sensor změní stav z "active" → "inactive" (varování pominulo)
+4. **Dynamic Update (každou hodinu):**
+   - Weather monitor kontroluje ČHMÚ sensor
+   ```python
+   if chmu_warning_active:
+       remaining_hours = calculate_remaining_duration(chmu_sensor)
+       planner.update_plan(
+           target_time=now,
+           target_soc=100.0,
+           holding_hours=remaining_hours,  # Updated dynamicky
+           holding_mode=HOME_III
+       )
+   else:
+       # Varování skončilo → cancel emergency
+       planner.cancel_emergency()
+       planner.calculate_automatic()  # Návrat na normální plánování
+   ```
+
+5. **Ukončení:**
+   - ČHMÚ sensor state != "active" (varování pominulo)
    - Ukončit holding
    - Vrátit se k běžnému automatic plánování
 
@@ -1187,7 +1210,7 @@ Definovat bezpečnostní rezervy a limity pro ochranu baterie a sítě.
 - Priorita: dosažení 100% > náklady
 - Použít nejrychlejší cestu (může kombinovat UPS + HOME III)
 - Holding: režim HOME III, kompenzace spotřeby
-- `holding_end` je INFORMATIVNÍ - skutečný konec až po zrušení ČHMÚ varování
+- Timeline MUSÍ obsahovat holding intervaly (holding_hours od target_time)
 
 **Fallback:**
 - Pokud nelze dosáhnout 100% do `warning_start` → nabít maximum možné
