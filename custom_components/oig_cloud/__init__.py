@@ -846,6 +846,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             register_boiler_api_views(hass)
             _LOGGER.info("Boiler API endpoints registered")
 
+        # NOVÉ: Registrace Planning API endpointů
+        from .api.planning_api import setup_planning_api_views
+        setup_planning_api_views(hass)
+        _LOGGER.info("Planning API endpoints registered")
+
         # NOVÉ: Registrace OIG Cloud REST API endpointů pro heavy data
         # (timeline, spot prices, analytics)
         try:
