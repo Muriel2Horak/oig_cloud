@@ -425,6 +425,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "avoided_export_loss_czk": round(curtailed_total, 2),
                 }
 
+        # Phase V2: Unified Cost Tile (UCT-BE-001)
+        # PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1
+        try:
+            unified_cost_tile = self.build_unified_cost_tile()
+            attrs["unified_cost_tile"] = unified_cost_tile
+            _LOGGER.info(
+                f"💰 Unified Cost Tile built successfully: "
+                f"today={unified_cost_tile.get('today', {}).get('current_total', 0):.2f} Kč"
+            )
+        except Exception as e:
+            _LOGGER.warning(f"Failed to build unified cost tile: {e}", exc_info=True)
+
         # DEBUG MODE: Expose full timeline pouze pro development/testing
         # V produkci: False (timeline přes API)
         if DEBUG_EXPOSE_BASELINE_TIMELINE:
@@ -4011,9 +4023,46 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         tomorrow = today + timedelta(days=1)
 
         # Build data for each day
-        today_data = self._build_today_cost_data()
-        yesterday_data = self._get_yesterday_cost_from_archive()
-        tomorrow_data = self._build_tomorrow_cost_data()
+        try:
+            today_data = self._build_today_cost_data()
+        except Exception as e:
+            _LOGGER.error(f"Failed to build today cost data: {e}", exc_info=True)
+            today_data = {
+                "plan_total_cost": 0.0,
+                "actual_total_cost": 0.0,
+                "delta": 0.0,
+                "performance": "on_plan",
+                "completed_intervals": 0,
+                "total_intervals": 0,
+                "progress_pct": 0,
+                "eod_prediction": {
+                    "predicted_total": 0.0,
+                    "vs_plan": 0.0,
+                    "confidence": "low",
+                },
+                "error": str(e),
+            }
+
+        try:
+            yesterday_data = self._get_yesterday_cost_from_archive()
+        except Exception as e:
+            _LOGGER.error(f"Failed to get yesterday cost data: {e}", exc_info=True)
+            yesterday_data = {
+                "plan_total_cost": 0.0,
+                "actual_total_cost": 0.0,
+                "delta": 0.0,
+                "performance": "on_plan",
+                "error": str(e),
+            }
+
+        try:
+            tomorrow_data = self._build_tomorrow_cost_data()
+        except Exception as e:
+            _LOGGER.error(f"Failed to build tomorrow cost data: {e}", exc_info=True)
+            tomorrow_data = {
+                "plan_total_cost": 0.0,
+                "error": str(e),
+            }
 
         return {
             "today": today_data,
@@ -4036,7 +4085,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Get today's timeline
         today_timeline = self._build_day_timeline(today)
+        _LOGGER.info(
+            f"[UCT] _build_day_timeline returned: type={type(today_timeline)}, value={today_timeline is not None}"
+        )
+        if not today_timeline:
+            _LOGGER.warning("_build_day_timeline returned None for today")
+            today_timeline = {}
         intervals = today_timeline.get("intervals", [])
+        _LOGGER.info(f"[UCT] Intervals count: {len(intervals)}")
 
         if not intervals:
             return {
@@ -4144,6 +4200,90 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         else:
             confidence = "high"
 
+        # Calculate savings vs HOME I (v2.1 requirement)
+        plan_savings_completed = sum(
+            c.get("planned", {}).get("savings", 0) for c in completed
+        )
+        actual_savings_completed = sum(
+            c.get("actual", {}).get("savings", 0) for c in completed
+        )
+        plan_savings_future = sum(
+            f.get("planned", {}).get("savings", 0) for f in future
+        )
+        if active:
+            plan_savings_future += active.get("planned", {}).get("savings", 0)
+
+        plan_savings_total = plan_savings_completed + plan_savings_future
+        predicted_savings = actual_savings_completed + (
+            plan_savings_future * drift_ratio
+        )
+
+        # Count mode switches and blocks (v2.1 metadata requirement)
+        mode_switches = 0
+        total_blocks = 0
+        last_mode = None
+        for interval in intervals:
+            current_mode = interval.get("planned", {}).get("mode", "")
+            if current_mode != last_mode:
+                if last_mode is not None:
+                    mode_switches += 1
+                total_blocks += 1
+                last_mode = current_mode
+
+        # Calculate partial performance for active interval (v2.1 requirement)
+        active_interval_data = None
+        if active:
+            interval_time_str = active.get("time", "")
+            if interval_time_str:
+                interval_time = datetime.fromisoformat(interval_time_str)
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
+
+                duration_minutes = active.get("duration_minutes", 120)
+                elapsed_minutes = int((now - interval_time).total_seconds() / 60)
+                progress_pct = min(
+                    100, max(0, (elapsed_minutes / duration_minutes) * 100)
+                )
+
+                # Get planned values
+                planned_cost = active.get("planned", {}).get("net_cost", 0)
+                planned_savings = active.get("planned", {}).get("savings", 0)
+
+                # Expected values at current progress
+                expected_cost = planned_cost * (progress_pct / 100)
+                expected_savings = planned_savings * (progress_pct / 100)
+
+                # Get actual values so far (if available)
+                actual_data = active.get("actual") or {}
+                actual_cost_so_far = actual_data.get("net_cost", expected_cost)
+                actual_savings_so_far = actual_data.get("savings", expected_savings)
+
+                # Calculate partial performance
+                cost_delta = actual_cost_so_far - expected_cost
+                cost_delta_pct = (
+                    (cost_delta / expected_cost * 100) if expected_cost > 0 else 0
+                )
+
+                active_interval_data = {
+                    "time": interval_time_str,
+                    "duration_minutes": duration_minutes,
+                    "elapsed_minutes": elapsed_minutes,
+                    "progress_pct": round(progress_pct, 1),
+                    "planned_cost": round(planned_cost, 2),
+                    "planned_savings": round(planned_savings, 2),
+                    "expected_cost_at_progress": round(expected_cost, 2),
+                    "expected_savings_at_progress": round(expected_savings, 2),
+                    "actual_cost_so_far": round(actual_cost_so_far, 2),
+                    "actual_savings_so_far": round(actual_savings_so_far, 2),
+                    "cost_delta": round(cost_delta, 2),
+                    "cost_delta_pct": round(cost_delta_pct, 1),
+                    "performance": (
+                        "better"
+                        if cost_delta < -0.5
+                        else "worse" if cost_delta > 0.5 else "on_plan"
+                    ),
+                }
+
         return {
             "plan_total_cost": round(plan_total, 2),
             "actual_total_cost": round(actual_total, 2),
@@ -4156,6 +4296,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "predicted_total": round(eod_predicted, 2),
                 "vs_plan": round(eod_vs_plan, 2),
                 "confidence": confidence,
+                "predicted_savings": round(predicted_savings, 2),
+                "planned_savings": round(plan_savings_total, 2),
+            },
+            "completed_so_far": {
+                "actual_cost": round(actual_completed, 2),
+                "planned_cost": round(plan_completed, 2),
+                "delta_cost": round(delta, 2),
+                "delta_pct": round(delta_pct if plan_completed > 0 else 0, 1),
+                "actual_savings": round(actual_savings_completed, 2),
+                "planned_savings": round(plan_savings_completed, 2),
+                "performance": performance,
+            },
+            "active_interval": active_interval_data,
+            "metadata": {
+                "mode_switches": mode_switches,
+                "total_blocks": total_blocks,
+                "completed_intervals": completed_count,
+                "active_intervals": 1 if active else 0,
+                "future_intervals": len(future),
             },
         }
 

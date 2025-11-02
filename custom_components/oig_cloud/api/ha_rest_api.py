@@ -597,7 +597,21 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
 
             # Build unified cost tile data
             if hasattr(entity_obj, "build_unified_cost_tile"):
-                tile_data = entity_obj.build_unified_cost_tile()
+                try:
+                    _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
+                    tile_data = entity_obj.build_unified_cost_tile()
+                    _LOGGER.info(
+                        f"API: Unified cost tile built successfully: {tile_data.keys()}"
+                    )
+                except Exception as build_error:
+                    _LOGGER.error(
+                        f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
+                        exc_info=True,
+                    )
+                    return web.json_response(
+                        {"error": f"Failed to build tile: {str(build_error)}"},
+                        status=500,
+                    )
             else:
                 return web.json_response(
                     {"error": "build_unified_cost_tile method not found"}, status=500
@@ -611,7 +625,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             return web.json_response(tile_data)
 
         except Exception as e:
-            _LOGGER.error(f"Error serving unified cost tile API: {e}")
+            _LOGGER.error(f"Error serving unified cost tile API: {e}", exc_info=True)
             return web.json_response({"error": str(e)}, status=500)
 
 

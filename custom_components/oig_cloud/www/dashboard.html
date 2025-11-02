@@ -680,16 +680,13 @@
                         style="height: 40px; max-height: 40px; margin-top: auto; display: block; align-self: flex-end;"></canvas>
                 </div>
 
-                <!-- Today Plan Tile - Dnes plnění plánu -->
-                <div id="today-plan-tile-container" class="stat-card" style="min-height: 160px; cursor: pointer;">
-                    <!-- TodayPlanTile component will be rendered here -->
-                    <!-- Click: opens timeline dialog with DNES tab (VČERA/DNES/ZÍTRA) -->
-                </div>
-
-                <!-- Placeholder pro další metriku -->
-                <div class="stat-card" style="min-height: 160px; opacity: 0.5;">
-                    <div class="stat-label" style="color: var(--text-tertiary);">� Připraveno pro další metriku</div>
-                    <div class="stat-value" style="font-size: 1.2em; margin: 20px 0; color: var(--text-tertiary);">--</div>
+                <!-- Unified Cost Tile - PLAN_VS_ACTUAL_UX_REDESIGN_V2.md Fáze 1 -->
+                <div id="unified-cost-tile-container" class="stat-card" style="min-height: 160px; cursor: pointer;">
+                    <!-- UnifiedCostTile component loaded via lazy module -->
+                    <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                        <div style="font-size: 1.2em; margin-bottom: 10px;">💰 Náklady</div>
+                        <div style="font-size: 0.9em;">Načítání...</div>
+                    </div>
                 </div>
             </div>
 
@@ -716,7 +713,7 @@
                 </button>
                 <button id="datalabel-toggle-btn" onclick="toggleDatalabelMode()"
                     style="background: rgba(76,175,80,0.2); border: 1px solid rgba(76,175,80,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
-                    � Ceny: <span id="datalabel-mode-text">Auto</span>
+                    📊 Ceny: <span id="datalabel-mode-text">Auto</span>
                 </button>
             </div>
 
@@ -842,44 +839,7 @@
                     </div>
                 </div>
 
-
-                <!-- Optimized Plan Card (Clickable) -->
-
-                <!-- Optimized Plan Card (Clickable) -->
-                <div class="stat-card clickable-card" onclick="openModeTimelineDialog()" style="background: linear-gradient(135deg, rgba(156, 39, 176, 0.15) 0%, rgba(156, 39, 176, 0.05) 100%); border: 1px solid rgba(156, 39, 176, 0.3); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
-                    <div class="stat-label" style="color: #9C27B0; font-weight: 600;">💰 Optimalizované náklady</div>
-                    <div class="stat-value" id="whatif-optimized-cost" style="color: #9C27B0;">--</div>
-                    <div style="font-size: 0.85em; color: #4CAF50; margin-top: 5px;">
-                        💡 Úspora: <span id="whatif-savings-main">--</span>
-                    </div>
-
-                    <!-- What-if comparisons - 4 modes, highlight active -->
-                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 5px;">Co kdyby celý den:</div>
-                        <div style="font-size: 0.7em;">
-                            <div id="whatif-home-i-row" style="display: flex; justify-content: space-between; margin-bottom: 2px; padding: 2px 4px; border-radius: 3px;">
-                                <span style="color: var(--text-tertiary);">🏠 HOME I:</span>
-                                <span id="whatif-home-i-delta" style="color: var(--text-tertiary);">--</span>
-                            </div>
-                            <div id="whatif-home-ii-row" style="display: flex; justify-content: space-between; margin-bottom: 2px; padding: 2px 4px; border-radius: 3px;">
-                                <span style="color: var(--text-tertiary);">⚡ HOME II:</span>
-                                <span id="whatif-home-ii-delta" style="color: var(--text-tertiary);">--</span>
-                            </div>
-                            <div id="whatif-home-iii-row" style="display: flex; justify-content: space-between; margin-bottom: 2px; padding: 2px 4px; border-radius: 3px;">
-                                <span style="color: var(--text-tertiary);">🔋 HOME III:</span>
-                                <span id="whatif-home-iii-delta" style="color: var(--text-tertiary);">--</span>
-                            </div>
-                            <div id="whatif-home-ups-row" style="display: flex; justify-content: space-between; padding: 2px 4px; border-radius: 3px;">
-                                <span style="color: var(--text-tertiary);">🛡️ HOME UPS:</span>
-                                <span id="whatif-home-ups-delta" style="color: var(--text-tertiary);">--</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 8px; font-size: 0.65em; color: var(--text-tertiary); opacity: 0.6; text-align: center;">
-                        Klikněte pro detailní timeline
-                    </div>
-                </div>
+            </div>
         <!-- End Pricing Tab -->
 
         <!-- Mode Timeline Dialog -->
@@ -957,7 +917,7 @@
         <!-- Extrahovaný JavaScript -->
         <script src="dashboard-tiles.js?v=20241031&t=1761920000"></script>
         <script src="dashboard-dialog.js?v=20241031&t=1761920000"></script>
-        <script src="dashboard-core.js?v=20241031&t=1761920000"></script>
+        <script src="dashboard-core.js?v=20251102&t=1761920000"></script>
         <script src="dashboard-boiler.js?v=20241031"></script>
 </body>
 

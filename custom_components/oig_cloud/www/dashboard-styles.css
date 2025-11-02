@@ -7120,4 +7120,1032 @@
             }
         }
 
+        /* ===================================================================
+           UNIFIED COST TILE - COMPACT VERSION - Fáze 1 V2
+           =================================================================== */
 
+        .unified-cost-tile-compact {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 10px;
+            padding: 10px 14px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .unified-cost-tile-compact:hover {
+            background: var(--bg-hover);
+            border-color: rgba(66, 165, 245, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px var(--shadow-color);
+        }
+
+        /* Header with inline progress */
+        .uct-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .uct-label {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .uct-progress {
+            font-size: 0.75em;
+            color: var(--text-tertiary);
+            margin-left: 4px;
+        }
+
+        .uct-status {
+            font-size: 1.2em;
+        }
+
+        /* Main cost number */
+        .uct-main {
+            font-size: 1.6em;
+            font-weight: 700;
+            text-align: center;
+            margin: 8px 0;
+            transition: color 0.3s ease;
+        }
+
+        .uct-main.cost-better {
+            color: #4CAF50;
+        }
+
+        .uct-main.cost-worse {
+            color: #F44336;
+        }
+
+        .uct-main.cost-on-plan {
+            color: var(--text-primary);
+        }
+
+        /* Compact progress bar */
+        .uct-bar {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .uct-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2196F3, #4CAF50);
+            transition: width 0.5s ease;
+            border-radius: 2px;
+        }
+
+        /* Compact stats row */
+        .uct-stats {
+            display: flex;
+            justify-content: space-around;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .uct-stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            flex: 1;
+        }
+
+        .uct-stat-icon {
+            font-size: 0.8em;
+            color: var(--text-tertiary);
+        }
+
+        .uct-stat-value {
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .uct-stat.cost-better .uct-stat-value {
+            color: #4CAF50;
+        }
+
+        .uct-stat.cost-worse .uct-stat-value {
+            color: #F44336;
+        }
+
+        .uct-stat.cost-on-plan .uct-stat-value {
+            color: var(--text-secondary);
+        }
+
+        /* Context row (yesterday/tomorrow) */
+        .uct-context {
+            display: flex;
+            justify-content: space-around;
+            gap: 12px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-tertiary);
+        }
+
+        .uct-ctx {
+            font-size: 0.7em;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .uct-ctx.muted {
+            color: var(--text-disabled);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .unified-cost-tile-compact {
+                padding: 8px 12px;
+            }
+
+            .uct-main {
+                font-size: 1.4em;
+            }
+
+            .uct-stats {
+                gap: 4px;
+            }
+        }
+
+        /* ===================================================================
+           DNES DIALOG - COMPACT HEADER v2.1
+           =================================================================== */
+
+        .today-header-compact {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .compact-live-status h3 {
+            margin: 0 0 12px 0;
+            color: var(--text-primary);
+            font-size: 1.3em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .live-time {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        /* Progress bar - compact */
+        .progress-bar-compact {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 8px 0 4px 0;
+        }
+
+        .progress-bar-compact .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.5s ease;
+            border-radius: 3px;
+        }
+
+        .progress-label-compact {
+            text-align: center;
+            font-size: 0.75em;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        /* Compact metrics rows */
+        .compact-metrics {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .metric-row {
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 0.9em;
+        }
+
+        .metric-row.dosud-section {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .metric-row.dosud-details {
+            margin-top: 2px;
+            margin-left: 20px;
+            font-size: 0.85em;
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .metric-label-big {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 1.05em;
+        }
+
+        .metric-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .metric-value.positive {
+            color: #4CAF50;
+        }
+
+        .metric-value.negative {
+            color: #F44336;
+        }
+
+        .metric-value.neutral {
+            color: var(--text-secondary);
+        }
+
+        .plan-in-parentheses {
+            font-weight: 400;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .metric-separator {
+            color: var(--border-primary);
+            margin: 0 4px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .metric-row {
+                font-size: 0.85em;
+            }
+
+            .metric-row.dosud-details {
+                margin-left: 10px;
+            }
+        }
+
+/* ===============================================
+   DNES DIALOG - INTERVAL LIST v2.1
+   =============================================== */
+
+.interval-section {
+    margin: 1.5rem 0;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.interval-section.collapsible .section-header:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.section-icon {
+    font-size: 1.1rem;
+}
+
+.section-title {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.section-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-left: auto;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.meta-item {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.meta-item.positive {
+    color: #4CAF50;
+}
+
+.meta-item.negative {
+    color: #F44336;
+}
+
+.meta-item.neutral {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.section-count {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.8rem;
+}
+
+.section-toggle {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.9rem;
+    margin-left: 0.5rem;
+    transition: transform 0.2s ease;
+}
+
+.interval-section.collapsed .section-toggle {
+    transform: rotate(-90deg);
+}
+
+.interval-list {
+    padding: 0.5rem;
+}
+
+/* Interval rows */
+.interval-row {
+    padding: 0.75rem 1rem;
+    margin: 0.25rem 0;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+.interval-row.completed {
+    background: rgba(255, 255, 255, 0.02);
+    border-left: 3px solid rgba(76, 175, 80, 0.3);
+}
+
+.interval-row.completed:hover {
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.interval-row.future {
+    background: rgba(255, 255, 255, 0.01);
+    border-left: 3px solid rgba(255, 255, 255, 0.1);
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+}
+
+.interval-row.future.muted {
+    opacity: 0.4;
+    font-style: italic;
+    justify-content: center;
+    border-left: none;
+}
+
+/* Interval summary (one-line) */
+.interval-summary {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.95rem;
+}
+
+.interval-time {
+    font-family: 'Roboto Mono', monospace;
+    color: rgba(255, 255, 255, 0.6);
+    min-width: 3rem;
+}
+
+.interval-mode {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.interval-cost {
+    font-weight: 600;
+    min-width: 5rem;
+    text-align: right;
+}
+
+.interval-delta {
+    min-width: 3rem;
+    text-align: right;
+    font-weight: 600;
+}
+
+.interval-toggle {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.8rem;
+    transition: transform 0.2s ease;
+}
+
+.interval-row.expanded .interval-toggle {
+    transform: rotate(180deg);
+}
+
+.interval-progress {
+    color: rgba(255, 152, 0, 0.9);
+    font-weight: 600;
+    min-width: 4rem;
+    text-align: right;
+}
+
+.interval-count {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+}
+
+.interval-row.future .interval-count {
+    margin-left: auto;
+}
+
+/* Interval detail (collapsible) */
+.interval-detail {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.detail-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85rem;
+}
+
+.detail-value {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.detail-plan {
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: normal;
+    font-size: 0.9rem;
+}
+
+/* Active interval */
+.interval-section.active {
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    background: rgba(255, 152, 0, 0.05);
+}
+
+.interval-row.active-interval {
+    background: transparent;
+    border-left: 3px solid rgba(255, 152, 0, 0.6);
+}
+
+.active-progress-bar {
+    margin: 0.5rem 0;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.active-progress-bar .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #FF9800 0%, #FFB74D 100%);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.active-details {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Color classes for deltas */
+.interval-cost.positive,
+.interval-delta.positive {
+    color: #4CAF50;
+}
+
+.interval-cost.negative,
+.interval-delta.negative {
+    color: #F44336;
+}
+
+.interval-cost.neutral,
+.interval-delta.neutral {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .interval-summary {
+        font-size: 0.85rem;
+        gap: 0.5rem;
+    }
+
+    .interval-time {
+        min-width: 2.5rem;
+    }
+
+    .interval-cost {
+        min-width: 4rem;
+    }
+
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .section-meta {
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+        font-size: 0.8rem;
+    }
+
+    .section-header {
+        flex-wrap: wrap;
+    }
+}
+
+
+
+
+
+/* ===============================================
+   DNES DIALOG - SIMPLE CARD HEADER v2.2
+   =============================================== */
+
+.today-header-simple {
+    padding: 1.5rem;
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(156, 39, 176, 0.1) 100%);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+/* Progress Bar */
+.header-progress {
+    margin-bottom: 1.5rem;
+}
+
+.progress-bar-large {
+    position: relative;
+    height: 32px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.progress-bar-large .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
+    transition: width 0.5s ease;
+}
+
+.progress-bar-large .progress-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    z-index: 2;
+}
+
+/* Cards Grid */
+.header-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.card-icon {
+    font-size: 2.5rem;
+    flex-shrink: 0;
+}
+
+.card-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.card-title {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.card-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.25rem;
+    line-height: 1.2;
+}
+
+.card-value.positive {
+    color: #4CAF50;
+}
+
+.card-value.negative {
+    color: #F44336;
+}
+
+.card-sub {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 400;
+}
+
+/* Card variants */
+.card-primary {
+    border-left: 4px solid #2196F3;
+}
+
+.card-secondary {
+    border-left: 4px solid #FF9800;
+}
+
+.card-accent {
+    border-left: 4px solid #9C27B0;
+}
+
+/* Mobile responsive */
+@media (max-width: 1024px) {
+    .header-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .card-value {
+        font-size: 1.5rem;
+    }
+}
+
+
+
+/* ============================================
+   DNES DIALOG - CARD-BASED HEADER v2.2 DARK
+   ============================================ */
+
+.today-header-cards {
+    padding: 1.5rem;
+    background: rgba(30, 40, 50, 0.6);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Large Progress Bar with Gradient */
+.header-progress-large {
+    margin-bottom: 1.5rem;
+}
+
+.progress-bar-gradient {
+    position: relative;
+    width: 100%;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.progress-fill-gradient {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50 0%, #66BB6A 100%);
+    transition: width 0.3s ease;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.progress-label-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+    font-size: 1rem;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    z-index: 1;
+}
+
+/* Card Grid Layout */
+.metric-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+    .metric-cards-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual Metric Cards */
+.metric-card {
+    background: rgba(40, 50, 60, 0.5);
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(10px);
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(45, 55, 65, 0.6);
+}
+
+.card-completed {
+    border-left: 3px solid rgba(76, 175, 80, 0.6);
+}
+
+.card-active {
+    border-left: 3px solid rgba(255, 152, 0, 0.6);
+}
+
+.card-eod {
+    border-left: 3px solid rgba(33, 150, 243, 0.6);
+}
+
+/* Card Header */
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.card-icon {
+    font-size: 1.75rem;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Card Body */
+.card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.card-main-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.95);
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.card-details {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.detail-item {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.detail-separator {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.detail-delta {
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+    border-radius: 12px;
+}
+
+.detail-delta.positive {
+    color: #66BB6A;
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.detail-delta.negative {
+    color: #EF5350;
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.detail-delta.neutral {
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.card-savings {
+    font-size: 0.875rem;
+    color: #66BB6A;
+    font-weight: 600;
+    margin-top: 0.25rem;
+}
+
+/* Mini Progress Bar for Active Card */
+.card-progress-mini {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.mini-progress-bar {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.mini-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #FF9800 0%, #FFB74D 100%);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.mini-progress-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+/* ========================================
+   VČERA TAB - INTERVAL ANALYSIS
+   ======================================== */
+
+.yesterday-interval-analysis {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: rgba(30, 40, 50, 0.4);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.yesterday-interval-analysis h4 {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.125rem;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.interval-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.interval-group {
+    background: rgba(40, 50, 60, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+}
+
+.interval-group:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.interval-group-header {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.interval-group-mode {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.mode-emoji {
+    font-size: 1.5rem;
+}
+
+.mode-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.mode-count {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0.25rem 0.75rem;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+}
+
+.interval-group-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.stat-item.positive .stat-value {
+    color: #66BB6A;
+}
+
+.stat-item.negative .stat-value {
+    color: #EF5350;
+}
+
+.stat-item.neutral .stat-value {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .interval-group-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .interval-group-stats {
+        grid-template-columns: 1fr;
+    }
+}
