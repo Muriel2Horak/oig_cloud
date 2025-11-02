@@ -800,14 +800,31 @@ cost = import_kwh * spot_price - export_kwh * export_price
 
 ---
 
-### 3.6 Cílová Kapacita (Soft Constraint)
-**Požadavek:** Snažit se dosáhnout `target_capacity` v intervalech s levnou cenou nebo vysokým FVE.
+### 3.6 Cílová Kapacita (Target Capacity)
+**Požadavek:** `target_capacity` má různé chování podle typu plánu:
 
-**Strategie:**
-- Pokud `battery_soc < target` A levná hodina → nabíjet (UPS nebo HOME III podle FVE).
-- Pokud `battery_soc ≥ target` → není nutné nabíjet, pokud není speciální důvod (očekávaný deficit).
+#### 3.6.1 **SOFT Constraint (Automatic Plans)**
+- **Kontext:** Běžné automatic plánování (background).
+- **Chování:** Snažit se dosáhnout `target_capacity`, ale není POVINNÉ.
+- **Strategie:**
+  - Pokud `battery_soc < target` A levná hodina → nabíjet (UPS nebo HOME III podle FVE).
+  - Pokud `battery_soc ≥ target` → není nutné nabíjet, pokud není speciální důvod (očekávaný deficit).
+  - Optimalizace nákladů MAY přeskočit nabíjení, pokud je drahé nebo neefektivní.
 
-**Priorita:** P1 (viz BR-0.5) – po dodržení min_capacity (P0), před optimalizací nákladů (P2).
+#### 3.6.2 **HARD Constraint (Manual/Weather/Balancing)**
+- **Kontext:** 
+  - Manual plány (uživatel nastavil `target_soc` + `target_time`)
+  - Weather emergency plány (nabít 100% před varováním)
+  - Balancing plány (dosáhnout target_soc K target_time pro holding)
+- **Chování:** Target SoC MUSÍ být dosažen K target_time - POVINNÉ.
+- **Strategie:**
+  - Priorita: dosažení target_soc > náklady
+  - Algoritmus MUSÍ najít cestu k dosažení target (může použít dražší UPS)
+  - Pokud nelze dosáhnout (fyzikální limit) → vrátit error
+
+**Priorita (pro soft):** P1 (viz BR-0.5) – po dodržení min_capacity (P0), před optimalizací nákladů (P2).
+
+**Poznámka:** Plánovač musí rozlišovat kontext volání (automatic vs manual/weather/balancing) a aplikovat odpovídající constraint.
 
 ---
 
