@@ -878,8 +878,9 @@ Zajistit pravidelné vyrovnání napětí jednotlivých článků baterie držen
 
 **Pravidla:**
 1. Pokud baterie dosáhne 100% (z jakéhokoli důvodu - FVE, plánované nabití, apod.)
-2. A `spot_price < median(future_prices)` - import není nad mediánem budoucích cen od tohoto okamžiku do konce dostupných OTE cen
-3. → Spustit balancing holding **okamžitě** (držet `hold_hours`, kompenzovat pouze spotřebu)
+2. Vypočítat mediánu: `median(ote_prices[NOW : OTE_end])`
+3. Validovat holding intervaly: KAŽDÝ interval během `hold_hours` musí mít `spot_price < median`
+4. Pokud validace OK → Spustit balancing holding **okamžitě**
 
 **Režim během holdingu:**
 - **HOME III** (nedovolit vybíjení baterie, držet na 100%)
@@ -888,7 +889,7 @@ Zajistit pravidelné vyrovnání napětí jednotlivých článků baterie držen
 
 **Výhoda:** Žádné extra náklady na nabíjení, využít "zadarmo" dosažené 100%.
 
-**Poznámka:** Mediána se počítá z budoucích importních cen od aktuálního okamžiku do konce OTE forecast.
+**Poznámka:** Mediána se počítá od NOW (kdy baterie dosáhla 100%) do konce OTE dat.
 
 ---
 
@@ -908,14 +909,17 @@ Zajistit pravidelné vyrovnání napětí jednotlivých článků baterie držen
 
 **Požadavek:** Balancer používá plánovač (BR-3) pro nalezení optimální cesty k 100% + holding.
 
+**EXPLICITNÍ holding parametry (POVINNÉ):**
+Balancing sensor/Weather monitor MUSÍ explicitně specifikovat:
+
 **Vstup pro plánovač:**
 ```python
 request = {
   "current_soc_kwh": 8.5,                    # Aktuální stav baterie
-  "target_soc_kwh": 15.36,                   # 100% kapacity
-  "target_time": "2025-11-03T22:00:00",      # Deadline pro dosažení 100%
-  "holding_hours": 3,                        # Doba držení na 100%
-  "mode": "balancing",                       # Speciální režim
+  "target_soc": 100.0,                       # Cílový SoC (%)
+  "target_time": "2025-11-03T22:00:00",      # ZAČÁTEK holdingu (ne dosažení 100%)
+  "holding_hours": 3,                        # EXPLICITNÍ doba držení
+  "holding_mode": 2,                         # HOME_III během holdingu
   "import_prices": [...],                    # OTE timeline
   "export_prices": [...],
   "solar_forecast": [...],
@@ -928,52 +932,85 @@ request = {
 {
   "timeline": [
     {"interval": 0, "mode": 0, "battery_soc_kwh": 8.5, ...},
-    {"interval": 1, "mode": 3, "battery_soc_kwh": 9.2, ...},
+    {"interval": 1, "mode": 3, "battery_soc_kwh": 9.2, ...},    // Nabíjení na 100%
     ...
-    {"interval": 28, "mode": 2, "battery_soc_kwh": 15.36, ...},  // Dosaženo 100%
-    {"interval": 29, "mode": 2, "battery_soc_kwh": 15.36, ...},  // Holding
-    {"interval": 30, "mode": 2, "battery_soc_kwh": 15.36, ...},  // Holding
-    {"interval": 31, "mode": 2, "battery_soc_kwh": 15.36, ...},  // Holding konec
+    {"interval": 27, "mode": 3, "battery_soc_kwh": 15.36, ...}, // Dosaženo 100% K target_time
+    {"interval": 28, "mode": 2, "battery_soc_kwh": 15.36, ...}, // Holding START (target_time)
+    {"interval": 29, "mode": 2, "battery_soc_kwh": 15.36, ...}, // Holding
+    {"interval": 30, "mode": 2, "battery_soc_kwh": 15.36, ...}, // Holding
+    {"interval": 31, "mode": 2, "battery_soc_kwh": 15.36, ...}, // Holding END
+    {"interval": 32, "mode": 0, "battery_soc_kwh": 15.20, ...}, // Normální provoz
     ...
   ],
   "metadata": {
-    "achieved_soc": 15.36,                   // Dosažený SoC v kWh
-    "total_cost": 42.50,                     // Kč za celý plán (nabití + holding)
-    "feasible": true,                        // true = dosáhne 100% + udrží holding
-    "holding_start": "2025-11-03T22:00:00",  // Začátek holdingu
-    "holding_end": "2025-11-04T01:00:00",    // Konec holdingu
-    "target_achieved": true                  // Dosáhl target_soc po holding_hours
+    "projected_100pct_time": "2025-11-03T21:45:00",  // Kdy dosáhne 100% (pro mediánu)
+    "total_cost": 42.50,                             // Kč za celý plán (nabití + holding)
+    "feasible": true,                                // true = dosáhne 100% + udrží holding
+    "target_achieved": true                          // Dosáhl target_soc K target_time
   }
 }
 ```
 
 **Povinnost plánovače:**
-- Vrátit timeline, který dosáhne `target_soc_kwh` v čase `target_time`
-- Následně držet baterii na této úrovni po dobu `holding_hours`
+- Nabít baterii na `target_soc` K času `target_time` (začátek holdingu)
+- Držet baterii na této úrovni po dobu `holding_hours` (mode = `holding_mode`)
+- Vrátit `projected_100pct_time` - kdy baterie dosáhne 100% (pro výpočet mediány)
 - V metadata vrátit, zda bylo dosaženo cíle (`feasible`, `target_achieved`)
-- Holding intervaly jsou **součástí výstupu** plánovače, ne přidané balancerem
+- Holding intervaly jsou **SOUČÁSTÍ timeline** od plánovače (ne přidané balancerem)
 
 ---
 
 ### 4.5 Výběr Kandidátního Okna (Economic Mode)
 
-**Požadavek:** Vyzkoušet různé časy pro `target_time` a vybrat nejlevnější.
+**Požadavek:** Vyzkoušet různé časy pro `target_time` a vybrat nejlevnější VČETNĚ mediána validace.
 
-**Proces:**
+**ITERATIVNÍ PROCES:**
 1. Získat timeline OTE cen (délka = kolik hodin máme ceny)
 2. Pro každou celou hodinu v okně jako kandidátní `target_time`:
-   - Zavolat plánovač s tímto `target_time` a `holding_hours`
-   - Plánovač vrátí plán + `total_cost`
-3. Filtrovat pouze feasible plány (`feasible = true`)
+   
+   a) **Zavolat plánovač:**
+   ```python
+   result = planner.optimize(
+       target_time=window_start,
+       target_soc=100,
+       holding_hours=holding_hours,
+       holding_mode=HOME_III
+   )
+   ```
+   
+   b) **Zjistit kdy dosáhne 100%:**
+   ```python
+   time_100pct = result.metadata["projected_100pct_time"]
+   ```
+   
+   c) **Vypočítat mediánu OD 100%:**
+   ```python
+   median = calculate_median(ote_prices[time_100pct : OTE_end])
+   ```
+   
+   d) **Validovat KAŽDÝ interval holdingu:**
+   ```python
+   holding_intervals = result.timeline[target_time : target_time + holding_hours]
+   for interval in holding_intervals:
+       if interval.spot_price >= median:
+           reject_window()  # Okno ZAMÍTNUTO
+       if interval.has_min_capacity_violation():
+           reject_window()  # Porušení constraints
+   ```
+   
+   e) **Pokud validace OK:**
+   ```python
+   approve_window(result)  # Okno SCHVÁLENO
+   ```
+
+3. Filtrovat pouze schválené feasible plány
 4. Vybrat kandidáta s **nejnižšími celkovými náklady** (`min(total_cost)`)
 5. Uložit jako `planned_window`
 
-**Validace kandidáta:**
-- `target_time >= now + 2h` (časová rezerva)
-- `holding_end <= konec_OTE_forecast` (stihne se holding v dostupných cenách)
-- `feasible = true` (plánovač potvrdil dosažitelnost)
-
-**Scoring:** Vyber kandidáta s `min(total_cost)` kde `feasible = true`.
+**Důležité:**
+- Mediána se počítá od **okamžiku kdy baterie dosáhne 100%** (ne od NOW)
+- Validuje se **KAŽDÝ interval holdingu** (ne jen průměr)
+- Každý interval MUSÍ mít: `spot_price < median` A žádné violations
 
 ---
 
