@@ -10262,9 +10262,11 @@ class TimelineDialog {
         }
 
         const totalPlannedCost = groups.reduce((sum, g) => sum + (g.planned_cost || 0), 0);
+        const totalPlannedSavings = groups.reduce((sum, g) => sum + (g.planned_savings || 0), 0);
 
         const rows = groups.map((group, idx) => {
             const modeIcon = group.mode.includes('HOME I') ? '🏠' : group.mode.includes('HOME UPS') ? '⚡' : '🔋';
+            const plannedSavings = group.planned_savings || 0;
 
             return `
                 <div class="interval-row future">
@@ -10273,6 +10275,7 @@ class TimelineDialog {
                         <span class="interval-mode">${modeIcon} ${group.mode}</span>
                         <span class="interval-count">(${group.interval_count}×15min)</span>
                         <span class="interval-cost">${group.planned_cost.toFixed(2)} Kč</span>
+                        ${plannedSavings > 0 ? `<span class="interval-savings">💎 ${plannedSavings.toFixed(2)} Kč</span>` : ''}
                     </div>
                 </div>
             `;
@@ -10285,6 +10288,7 @@ class TimelineDialog {
                     <span class="section-title">BUDOUCÍ PLÁN</span>
                     <span class="section-meta">
                         <span class="meta-item">💰 ${totalPlannedCost.toFixed(2)} Kč</span>
+                        ${totalPlannedSavings > 0 ? `<span class="meta-item">💎 ${totalPlannedSavings.toFixed(2)} Kč</span>` : ''}
                     </span>
                     <span class="section-toggle">▶</span>
                 </div>
@@ -10374,14 +10378,18 @@ class TimelineDialog {
             const modeIcon = mode.includes('HOME I') ? '🏠' : mode.includes('HOME UPS') ? '⚡' : '🔋';
 
             const plannedCost = group.intervals.reduce((sum, iv) => sum + (iv.planned?.net_cost || 0), 0);
+            const plannedSavings = group.intervals.reduce((sum, iv) => sum + (iv.planned?.savings_vs_home_i || 0), 0);
             const intervalCount = group.intervals.length;
 
             return `
                 <div class="interval-row future">
-                    <span class="interval-time">${timeRange}</span>
-                    <span class="interval-mode">${modeIcon} ${mode}</span>
-                    <span class="interval-cost">${plannedCost.toFixed(2)} Kč</span>
-                    <span class="interval-count">(${intervalCount}×15min)</span>
+                    <div class="interval-summary">
+                        <span class="interval-time">${timeRange}</span>
+                        <span class="interval-mode">${modeIcon} ${mode}</span>
+                        <span class="interval-count">(${intervalCount}×15min)</span>
+                        <span class="interval-cost">${plannedCost.toFixed(2)} Kč</span>
+                        ${plannedSavings > 0 ? `<span class="interval-savings">💎 ${plannedSavings.toFixed(2)} Kč</span>` : ''}
+                    </div>
                 </div>
             `;
         }).join('');
@@ -10413,15 +10421,31 @@ class TimelineDialog {
     renderTomorrowTab(data) {
         const { intervals, summary } = data;
 
+        // Load unified_cost_tile.tomorrow data
+        let tomorrowCostData = null;
+        try {
+            const hass = getHass();
+            const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
+            if (hass && hass.states && hass.states[forecastSensorId]) {
+                const forecastState = hass.states[forecastSensorId];
+                if (forecastState.attributes && forecastState.attributes.unified_cost_tile) {
+                    tomorrowCostData = forecastState.attributes.unified_cost_tile.tomorrow;
+                    console.log('[TimelineDialog ZÍTRA] Loaded unified_cost_tile.tomorrow data', tomorrowCostData);
+                }
+            }
+        } catch (error) {
+            console.warn('[TimelineDialog ZÍTRA] Could not load unified_cost_tile:', error);
+        }
+
         // FÁZE 3: Use BE data if available
-        if (summary && summary.mode_distribution && summary.dominant_mode_name) {
+        if (tomorrowCostData && tomorrowCostData.mode_distribution && tomorrowCostData.dominant_mode_name) {
             console.log('[TimelineDialog ZÍTRA] Using BE mode distribution:', {
-                total_modes: Object.keys(summary.mode_distribution).length,
-                dominant: summary.dominant_mode_name,
-                planned_groups: summary.planned_groups?.length || 0
+                total_modes: Object.keys(tomorrowCostData.mode_distribution).length,
+                dominant: tomorrowCostData.dominant_mode_name,
+                planned_groups: tomorrowCostData.planned_groups?.length || 0
             });
 
-            return this.renderTomorrowTabBE(summary);
+            return this.renderTomorrowTabBE(tomorrowCostData);
         }
 
         // Fallback: FE calculation (backward compatibility)
@@ -10561,15 +10585,7 @@ class TimelineDialog {
                     </div>
                 </div>
 
-                <div class="tomorrow-intervals">
-                    <h4>📅 Plán intervalů</h4>
-                    ${this.renderTomorrowPlannedGroupsBE(summary.planned_groups || [])}
-                </div>
-
-                <div class="tomorrow-mode-distribution">
-                    <h4>📊 Rozložení režimů</h4>
-                    ${this.renderModeDistributionBE(summary.mode_distribution || {})}
-                </div>
+                ${this.renderTomorrowPlannedGroupsBE(summary.planned_groups || [])}
             </div>
         `;
     }
@@ -10589,21 +10605,42 @@ class TimelineDialog {
             'HOME UPS': '⚡'
         };
 
-        return groups.map(group => {
+        const totalCost = groups.reduce((sum, g) => sum + (g.planned_cost || 0), 0);
+        const totalSavings = groups.reduce((sum, g) => sum + (g.planned_savings || 0), 0);
+
+        const rows = groups.map(group => {
             const icon = modeIcons[group.mode] || '🎯';
-            const timeRange = `${group.start_time} - ${group.end_time}`;
+            const timeRange = `${group.start_time || 'N/A'} - ${group.end_time || 'N/A'}`;
 
             return `
-                <div class="interval-group tomorrow-group">
-                    <div class="group-header">
-                        <span class="mode-badge">${icon} ${group.mode}</span>
-                        <span class="time-range">${timeRange}</span>
-                        <span class="interval-count">${group.interval_count} bloků</span>
-                        <span class="group-cost">${group.planned_cost.toFixed(2)} Kč</span>
+                <div class="interval-row future">
+                    <div class="interval-summary">
+                        <span class="interval-time">${timeRange}</span>
+                        <span class="interval-mode">${icon} ${group.mode}</span>
+                        <span class="interval-count">(${group.interval_count}×15min)</span>
+                        <span class="interval-cost">${group.planned_cost.toFixed(2)} Kč</span>
+                        ${group.planned_savings > 0 ? `<span class="interval-savings">💎 ${group.planned_savings.toFixed(2)} Kč</span>` : ''}
                     </div>
                 </div>
             `;
         }).join('');
+
+        return `
+            <div class="interval-section collapsible collapsed">
+                <div class="section-header" onclick="toggleSection('tomorrow-intervals-be')">
+                    <span class="section-icon">📅</span>
+                    <span class="section-title">PLÁN INTERVALŮ</span>
+                    <span class="section-meta">
+                        <span class="meta-item">💰 ${totalCost.toFixed(2)} Kč</span>
+                        ${totalSavings > 0 ? `<span class="meta-item">💎 ${totalSavings.toFixed(2)} Kč</span>` : ''}
+                    </span>
+                    <span class="section-toggle">▶</span>
+                </div>
+                <div class="interval-list" id="tomorrow-intervals-be" style="display: none;">
+                    ${rows}
+                </div>
+            </div>
+        `;
     }
 
     /**

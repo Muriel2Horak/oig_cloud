@@ -848,6 +848,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # NOVÉ: Registrace Planning API endpointů
         from .api.planning_api import setup_planning_api_views
+
         setup_planning_api_views(hass)
         _LOGGER.info("Planning API endpoints registered")
 

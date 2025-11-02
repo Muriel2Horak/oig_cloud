@@ -812,7 +812,7 @@ cost = import_kwh * spot_price - export_kwh * export_price
   - Optimalizace nákladů MAY přeskočit nabíjení, pokud je drahé nebo neefektivní.
 
 #### 3.6.2 **HARD Constraint (Manual/Weather/Balancing)**
-- **Kontext:** 
+- **Kontext:**
   - Manual plány (uživatel nastavil `target_soc` + `target_time`)
   - Weather emergency plány (nabít 100% před varováním)
   - Balancing plány (dosáhnout target_soc K target_time pro holding)
@@ -984,7 +984,7 @@ request = {
 **ITERATIVNÍ PROCES:**
 1. Získat timeline OTE cen (délka = kolik hodin máme ceny)
 2. Pro každou celou hodinu v okně jako kandidátní `target_time`:
-   
+
    a) **Zavolat plánovač:**
    ```python
    result = planner.optimize(
@@ -994,17 +994,17 @@ request = {
        holding_mode=HOME_III
    )
    ```
-   
+
    b) **Zjistit kdy dosáhne 100%:**
    ```python
    time_100pct = result.metadata["projected_100pct_time"]
    ```
-   
+
    c) **Vypočítat mediánu OD 100%:**
    ```python
    median = calculate_median(ote_prices[time_100pct : OTE_end])
    ```
-   
+
    d) **Validovat KAŽDÝ interval holdingu:**
    ```python
    holding_intervals = result.timeline[target_time : target_time + holding_hours]
@@ -1014,7 +1014,7 @@ request = {
        if interval.has_min_capacity_violation():
            reject_window()  # Porušení constraints
    ```
-   
+
    e) **Pokud validace OK:**
    ```python
    approve_window(result)  # Okno SCHVÁLENO
@@ -1181,7 +1181,7 @@ Definovat bezpečnostní rezervy a limity pro ochranu baterie a sítě.
    warning_duration = (warning_end - warning_start).hours
    holding_hours = warning_duration  # Může být 48h+
    ```
-   
+
    - Zavolat plánovač s emergency parametry:
    ```python
    request = {

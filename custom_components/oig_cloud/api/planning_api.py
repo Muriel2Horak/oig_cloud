@@ -52,8 +52,7 @@ class OIGCloudActivePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # Get active plan
@@ -67,10 +66,7 @@ class OIGCloudActivePlanView(HomeAssistantView):
 
         except Exception as e:
             _LOGGER.error(f"Error getting active plan: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 class OIGCloudPlanListView(HomeAssistantView):
@@ -104,8 +100,7 @@ class OIGCloudPlanListView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # List plans
@@ -128,22 +123,21 @@ class OIGCloudPlanListView(HomeAssistantView):
             # Convert to dicts
             plans_data = [plan.to_dict() for plan in plans]
 
-            return web.json_response({
-                "plans": plans_data,
-                "count": len(plans_data),
-                "filters": {
-                    "type": plan_type,
-                    "status": status,
-                    "limit": limit,
+            return web.json_response(
+                {
+                    "plans": plans_data,
+                    "count": len(plans_data),
+                    "filters": {
+                        "type": plan_type,
+                        "status": status,
+                        "limit": limit,
+                    },
                 }
-            })
+            )
 
         except Exception as e:
             _LOGGER.error(f"Error listing plans: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 class OIGCloudPlanDetailView(HomeAssistantView):
@@ -153,7 +147,9 @@ class OIGCloudPlanDetailView(HomeAssistantView):
     name = "api:oig_cloud:plan_detail"
     requires_auth = True
 
-    async def get(self, request: web.Request, box_id: str, plan_id: str) -> web.Response:
+    async def get(
+        self, request: web.Request, box_id: str, plan_id: str
+    ) -> web.Response:
         """
         Get specific plan by ID.
 
@@ -167,26 +163,21 @@ class OIGCloudPlanDetailView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # Get plan
             plan = planning_system.plan_manager.get_plan(plan_id)
             if not plan:
                 return web.json_response(
-                    {"error": f"Plan {plan_id} not found"},
-                    status=404
+                    {"error": f"Plan {plan_id} not found"}, status=404
                 )
 
             return web.json_response(plan.to_dict())
 
         except Exception as e:
             _LOGGER.error(f"Error getting plan {plan_id}: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 class OIGCloudCreateManualPlanView(HomeAssistantView):
@@ -220,16 +211,14 @@ class OIGCloudCreateManualPlanView(HomeAssistantView):
             # Validate required fields
             if "target_soc_percent" not in data or "target_time" not in data:
                 return web.json_response(
-                    {"error": "target_soc_percent and target_time required"},
-                    status=400
+                    {"error": "target_soc_percent and target_time required"}, status=400
                 )
 
             # Get planning system
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # Parse parameters
@@ -246,17 +235,16 @@ class OIGCloudCreateManualPlanView(HomeAssistantView):
                 holding_mode=holding_mode,
             )
 
-            return web.json_response({
-                "success": True,
-                "plan": plan.to_dict(),
-            })
+            return web.json_response(
+                {
+                    "success": True,
+                    "plan": plan.to_dict(),
+                }
+            )
 
         except Exception as e:
             _LOGGER.error(f"Error creating manual plan: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 class OIGCloudActivatePlanView(HomeAssistantView):
@@ -266,7 +254,9 @@ class OIGCloudActivatePlanView(HomeAssistantView):
     name = "api:oig_cloud:activate_plan"
     requires_auth = True
 
-    async def post(self, request: web.Request, box_id: str, plan_id: str) -> web.Response:
+    async def post(
+        self, request: web.Request, box_id: str, plan_id: str
+    ) -> web.Response:
         """
         Activate plan.
 
@@ -280,24 +270,22 @@ class OIGCloudActivatePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # Activate plan
             plan = planning_system.plan_manager.activate_plan(plan_id)
 
-            return web.json_response({
-                "success": True,
-                "plan": plan.to_dict(),
-            })
+            return web.json_response(
+                {
+                    "success": True,
+                    "plan": plan.to_dict(),
+                }
+            )
 
         except Exception as e:
             _LOGGER.error(f"Error activating plan {plan_id}: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 class OIGCloudDeactivatePlanView(HomeAssistantView):
@@ -307,7 +295,9 @@ class OIGCloudDeactivatePlanView(HomeAssistantView):
     name = "api:oig_cloud:deactivate_plan"
     requires_auth = True
 
-    async def post(self, request: web.Request, box_id: str, plan_id: str) -> web.Response:
+    async def post(
+        self, request: web.Request, box_id: str, plan_id: str
+    ) -> web.Response:
         """
         Deactivate plan.
 
@@ -321,29 +311,27 @@ class OIGCloudDeactivatePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"},
-                    status=503
+                    {"error": "Planning system not initialized"}, status=503
                 )
 
             # Deactivate plan
             plan = planning_system.plan_manager.deactivate_plan(plan_id)
 
-            return web.json_response({
-                "success": True,
-                "plan": plan.to_dict(),
-            })
+            return web.json_response(
+                {
+                    "success": True,
+                    "plan": plan.to_dict(),
+                }
+            )
 
         except Exception as e:
             _LOGGER.error(f"Error deactivating plan {plan_id}: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500
-            )
+            return web.json_response({"error": str(e)}, status=500)
 
 
 def setup_planning_api_views(hass: HomeAssistant) -> None:
     """Register all planning API views.
-    
+
     Call this from __init__.py during setup.
     """
     hass.http.register_view(OIGCloudActivePlanView())
@@ -352,5 +340,5 @@ def setup_planning_api_views(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudCreateManualPlanView())
     hass.http.register_view(OIGCloudActivatePlanView())
     hass.http.register_view(OIGCloudDeactivatePlanView())
-    
+
     _LOGGER.info("Planning API endpoints registered")

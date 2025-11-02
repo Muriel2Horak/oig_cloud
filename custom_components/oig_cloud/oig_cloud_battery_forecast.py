@@ -3587,7 +3587,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"sensor.oig_{self._box_id}_ac_in_ac_pd",  # Grid export [Wh kumulativně]
                 f"sensor.oig_{self._box_id}_dc_in_fv_ad",  # Solar [Wh kumulativně]
                 f"sensor.oig_{self._box_id}_battery_soc",  # Baterie [%]
-                f"sensor.oig_{self._box_id}_mode",  # Režim [0-3]
+                f"sensor.oig_{self._box_id}_box_prms_mode",  # Režim střídače (box_prms_mode)
                 f"sensor.oig_{self._box_id}_spot_price_current_15min",  # Import spot price [Kč/kWh]
                 f"sensor.oig_{self._box_id}_export_price_current_15min",  # Export price [Kč/kWh]
             ]
@@ -3643,7 +3643,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             solar_kwh = get_delta(f"sensor.oig_{self._box_id}_dc_in_fv_ad")
 
             battery_soc = get_last_value(f"sensor.oig_{self._box_id}_battery_soc")
-            mode = get_last_value(f"sensor.oig_{self._box_id}_mode")
+            mode_raw = get_last_value(f"sensor.oig_{self._box_id}_box_prms_mode")
 
             # Vypočítat battery_kwh z SOC
             battery_kwh = 0.0
@@ -3665,13 +3665,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             export_revenue = grid_export_kwh * export_price
             net_cost = import_cost - export_revenue
 
-            mode_name = CBB_MODE_NAMES.get(
-                int(mode) if mode is not None else 0, "HOME I"
-            )
+            # Převést mode z textové hodnoty na int
+            # box_prms_mode vrací "Home 1", "Home 3", "Home UPS" atd.
+            mode = 0  # Default HOME I
+            if mode_raw is not None:
+                mode_str = str(mode_raw).strip()
+                # Mapování textových hodnot na mode ID
+                if "Home 1" in mode_str or "HOME I" in mode_str:
+                    mode = 0
+                elif "Home 3" in mode_str or "HOME III" in mode_str:
+                    mode = 2
+                elif "UPS" in mode_str or "Home UPS" in mode_str:
+                    mode = 3
+                elif "Home 2" in mode_str or "HOME II" in mode_str:
+                    mode = 1
+
+            mode_name = CBB_MODE_NAMES.get(mode, "HOME I")
 
             return {
                 "battery_kwh": round(battery_kwh, 2),
-                "mode": int(mode) if mode is not None else 0,
+                "mode": mode,
                 "mode_name": mode_name,
                 "solar_kwh": round(solar_kwh, 3),
                 "consumption_kwh": round(consumption_kwh, 3),
@@ -4113,7 +4126,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Určit režim podle data_type
             if data_type == "completed":
                 actual = interval.get("actual") or {}
-                mode = actual.get("mode", "Unknown")
+                planned = interval.get("planned") or {}
+                actual_mode = actual.get("mode")
+                planned_mode = planned.get("mode")
+                # Pro completed: použít actual mode, fallback na planned
+                mode = (
+                    actual_mode
+                    if actual_mode is not None
+                    else (planned_mode if planned_mode is not None else "Unknown")
+                )
+                # Log prvních 3 intervalů pro debug
+                if len(groups) < 3:
+                    _LOGGER.info(
+                        f"[_group_intervals_by_mode] COMPLETED: time={interval.get('time', '?')[:16]}, "
+                        f"actual_mode={actual_mode}, planned_mode={planned_mode}, final_mode={mode}, "
+                        f"has_actual={bool(actual)}"
+                    )
             elif data_type == "planned":
                 planned = interval.get("planned") or {}
                 mode = planned.get("mode", "Unknown")
@@ -4171,11 +4199,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     (iv.get("planned") or {}).get("net_cost", 0)
                     for iv in group["intervals"]
                 )
+                actual_savings = sum(
+                    (iv.get("actual") or {}).get("savings_vs_home_i", 0)
+                    for iv in group["intervals"]
+                )
+                planned_savings = sum(
+                    (iv.get("planned") or {}).get("savings_vs_home_i", 0)
+                    for iv in group["intervals"]
+                )
                 delta = actual_cost - planned_cost
                 delta_pct = (delta / planned_cost * 100) if planned_cost > 0 else 0.0
 
                 group["actual_cost"] = round(actual_cost, 2)
                 group["planned_cost"] = round(planned_cost, 2)
+                group["actual_savings"] = round(actual_savings, 2)
+                group["planned_savings"] = round(planned_savings, 2)
                 group["delta"] = round(delta, 2)
                 group["delta_pct"] = round(delta_pct, 1)
 
@@ -4185,7 +4223,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     (iv.get("planned") or {}).get("net_cost", 0)
                     for iv in group["intervals"]
                 )
+                planned_savings = sum(
+                    (iv.get("planned") or {}).get("savings_vs_home_i", 0)
+                    for iv in group["intervals"]
+                )
                 group["planned_cost"] = round(planned_cost, 2)
+                group["planned_savings"] = round(planned_savings, 2)
 
             # Formátovat časy
             if group["start_time"]:
@@ -4255,6 +4298,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             minute=current_minute, second=0, microsecond=0
         )
 
+        # Konec dnešního dne (půlnoc)
+        end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
         for interval in intervals:
             interval_time_str = interval.get("time", "")
             if not interval_time_str:
@@ -4263,6 +4309,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             interval_time = datetime.fromisoformat(interval_time_str)
             if interval_time.tzinfo is None:
                 interval_time = dt_util.as_local(interval_time)
+
+            # Skip intervals after midnight (patří do zítřka)
+            if interval_time > end_of_today:
+                continue
 
             if interval_time < current_interval_time:
                 if interval.get("actual"):
@@ -4311,12 +4361,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         else:
             performance = "on_plan"
 
-        # Progress
+        # Progress - % času dne (nikoli % intervalů!)
+        now_time = now.time()
+        seconds_since_midnight = (
+            now_time.hour * 3600 + now_time.minute * 60 + now_time.second
+        )
+        total_seconds_in_day = 24 * 3600
+        progress_pct = seconds_since_midnight / total_seconds_in_day * 100
+
         total_intervals = len(intervals)
         completed_count = len(completed)
-        progress_pct = (
-            (completed_count / total_intervals * 100) if total_intervals > 0 else 0.0
-        )
 
         # EOD prediction
         # ZMĚNA: Používáme plán pro budoucí intervaly, ne drift ratio
@@ -4466,6 +4520,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # FÁZE 1 - Nové metriky
             "remaining_to_eod": round(remaining_to_eod, 2),
             "future_plan_cost": round(plan_future, 2),
+            "future_plan_savings": round(plan_savings_future, 2),
             "vs_plan_pct": round(vs_plan_pct, 1),
             "performance_class": performance_class,
             "performance_icon": performance_icon,

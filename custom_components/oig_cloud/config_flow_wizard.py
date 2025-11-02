@@ -622,7 +622,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "  Nikdy nenabíjet dráž\n"
                     "  Doporučeno: 8-12 CZK/kWh\n\n"
                     "💡 Levná elektřina (CZK/kWh):\n"
-                    "  Práh pro \"levnou\" hodinu (UPS režim)\n"
+                    '  Práh pro "levnou" hodinu (UPS režim)\n'
                     "  Doporučeno: 1.0-2.0 CZK/kWh\n\n"
                     "📊 Percentil špičky (%):\n"
                     "  Ceny nad tímto = špička\n"
