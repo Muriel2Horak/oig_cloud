@@ -85,16 +85,9 @@ Definovat základní parametry a omezení pro plánování nabíjení a vybíjen
    - Význam: Pokud `spot_price < threshold_cheap`, považovat hodinu za "levnou" pro nabíjení
    - Použití: Rozhodování v algoritmu, kdy nabíjet ze sítě (režim UPS)
 
-5. **Margin nad minimum** (`margin`)
-   - Default: 2.0 kWh
-   - Rozsah: 0.0 až 5.0 kWh
-   - Význam: Rezerva nad `min_capacity` pro rozhodování o vybíjení
-   - Použití: `if battery_soc > min_capacity + margin` → lze vybíjet
-
 **Validační pravidla:**
 - `hardware_min_soc <= min_capacity_percent <= target_capacity_percent <= 100%`
 - `threshold_cheap >= 0` A `threshold_cheap <= 10.0`
-- `margin >= 0` A `margin <= 5.0`
 
 ### 0.3 Omezení min_capacity - HARD CONSTRAINT při plánování
 
@@ -784,8 +777,8 @@ cost = import_kwh * spot_price - export_kwh * export_price
 **Základní rozhodovací logika:**
 
 **FVE = 0 (Noc/bez FVE):**
-- Pokud `battery_soc > min_capacity + margin` A `spot_price < threshold_cheap` → **UPS** (nabít levně)
-- Pokud `battery_soc > min_capacity + margin` → **HOME I** (vybíjet)
+- Pokud `spot_price < threshold_cheap` → **UPS** (nabít levně)
+- Pokud `battery_soc > min_capacity` → **HOME I** (vybíjet)
 - Pokud `battery_soc ≈ min_capacity` → **HOME UPS** (dobít)
 
 **FVE > 0, Přebytek (solar >= consumption):**
@@ -795,16 +788,15 @@ cost = import_kwh * spot_price - export_kwh * export_price
 **FVE > 0, Deficit (solar < consumption):**
 - **Důležité:** Nemá smysl přepínat HOME II/III z HOME I, pokud FVE ≤ 500 W (režijní ztráty).
 - Pokud drahá hodina A budou levnější → **HOME II** (šetři baterii)
-- Pokud `battery_soc > min_capacity + margin` → **HOME I** (vybíjet)
+- Pokud `battery_soc > min_capacity` → **HOME I** (vybíjet)
 - Jinak → **HOME III** (nabít z FVE) nebo **HOME UPS** (dobít ze sítě)
 
 **Parametry rozhodování:**
 - `threshold_cheap`: **UŽIVATELSKY KONFIGUROVATELNÉ** (config flow), doporučená výchozí hodnota např. 1.5 Kč/kWh
-- `margin`: **UŽIVATELSKY KONFIGUROVATELNÉ** (config flow), doporučená výchozí hodnota např. 2.0 kWh (nad minimum)
 - `tolerance`: **500 Wh** (0.5 kWh) – tolerance pro floating point porovnání
 - `fve_switch_threshold`: **500 W** – minimální FVE pro přepínání mezi HOME I/II/III
 
-**Poznámka:** Parametry `threshold_cheap` a `margin` MUSÍ být přidány do config flow (BR-0.2).
+**Poznámka:** Parametr `threshold_cheap` MUSÍ být přidán do config flow (BR-0.2).
 
 ---
 
