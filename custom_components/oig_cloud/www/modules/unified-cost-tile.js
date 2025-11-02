@@ -65,11 +65,16 @@ class UnifiedCostTile {
 
     /**
      * Render main tile HTML - COMPACT VERSION with visual elements
+     * Now uses BE-calculated data (FÁZE 1-3 migration)
      */
     renderTileHTML(today, yesterday, tomorrow) {
-        const performanceClass = this.getPerformanceClass(today.eod_prediction.vs_plan, today.plan_total_cost);
-        const performanceIcon = this.getPerformanceIcon(today.eod_prediction.vs_plan, today.plan_total_cost);
-        const progressPct = Math.round(today.progress_pct);
+        // FÁZE 1: Use BE performance metrics
+        const performanceClass = today.performance_class || 'on_plan';
+        const performanceIcon = today.performance_icon || '⚪';
+        const progressPct = Math.round(today.progress_pct || 0);
+
+        // EOD prediction from BE
+        const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
 
         // Včera comparison
         const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
@@ -90,12 +95,12 @@ class UnifiedCostTile {
 
                 <!-- Main cost number -->
                 <div class="uct-main ${performanceClass}">
-                    ${this.formatCostCompact(today.eod_prediction.predicted_total)}
+                    ${this.formatCostCompact(predictedTotal)}
                 </div>
 
                 <!-- Progress bar -->
                 <div class="uct-bar">
-                    <div class="uct-bar-fill" style="width: ${today.progress_pct}%"></div>
+                    <div class="uct-bar-fill" style="width: ${progressPct}%"></div>
                 </div>
 
                 <!-- Compact stats -->
@@ -106,11 +111,11 @@ class UnifiedCostTile {
                     </div>
                     <div class="uct-stat">
                         <span class="uct-stat-icon">→</span>
-                        <span class="uct-stat-value">${this.formatCostCompact(today.plan_total_cost - today.actual_total_cost)}</span>
+                        <span class="uct-stat-value">${this.formatCostCompact(today.remaining_to_eod || 0)}</span>
                     </div>
                     <div class="uct-stat ${performanceClass}">
                         <span class="uct-stat-icon">△</span>
-                        <span class="uct-stat-value">${this.formatDeltaCompact(today.eod_prediction.vs_plan, today.plan_total_cost)}</span>
+                        <span class="uct-stat-value">${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)}</span>
                     </div>
                 </div>
 

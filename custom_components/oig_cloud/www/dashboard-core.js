@@ -7028,18 +7028,28 @@ async function loadPricingData() {
 
         // === NOVÉ: Extrémní bloky pro EXPORT (prodej) - OBRÁCENÁ LOGIKA ===
         // Nejlepší prodej = NEJVYŠŠÍ cena (findLowest = false)
+        console.log('[Pricing] exportPrices count:', exportPrices.length, 'sample:', exportPrices.slice(0, 3));
         const bestExportBlock = findExtremePriceBlock(exportPrices, false, 3);
-        if (bestExportBlock) {
+        console.log('[Pricing] bestExportBlock:', bestExportBlock);
+
+        const priceEl = document.getElementById('best-export-price');
+        const timeEl = document.getElementById('best-export-time');
+
+        if (bestExportBlock && bestExportBlock.avg > 0) {
             currentPriceBlocks.bestExport = bestExportBlock;
 
-            const priceEl = document.getElementById('best-export-price');
-            const timeEl = document.getElementById('best-export-time');
             if (priceEl && timeEl) {
                 priceEl.innerHTML = bestExportBlock.avg.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
                 const startTime = new Date(bestExportBlock.start);
                 const endTime = new Date(bestExportBlock.end);
                 timeEl.textContent = `${startTime.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })} ${startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`;
                 createMiniPriceChart('best-export-chart', bestExportBlock.values, 'rgba(76, 175, 80, 1)', bestExportBlock.start, bestExportBlock.end);
+            }
+        } else {
+            console.warn('[Pricing] No best export block found - all prices are 0 or export pricing not configured');
+            if (priceEl && timeEl) {
+                priceEl.innerHTML = '<span style="color: var(--text-secondary); font-size: 0.9em;">Není nakonfigurováno</span>';
+                timeEl.textContent = 'Nastavte export price sensor v konfiguraci';
             }
         }
 
@@ -9494,13 +9504,26 @@ class TimelineDialog {
     renderYesterdayTab(data) {
         const { intervals, summary } = data;
 
-        // Calculate statistics
-        const stats = this.calculateStats(intervals);
+        // FÁZE 2: Use BE data if available
+        if (summary && summary.mode_groups && summary.mode_adherence_pct !== undefined) {
+            console.log('[TimelineDialog VČERA] Using BE mode statistics:', {
+                mode_groups: summary.mode_groups.length,
+                adherence: summary.mode_adherence_pct,
+                top_variances: summary.top_variances?.length || 0
+            });
 
-        // Get top 3 variances
+            return `
+                ${this.renderYesterdayHeaderBE(summary)}
+                ${this.renderYesterdayModeGroupsBE(summary.mode_groups)}
+                ${this.renderTopVariancesBE(summary.top_variances || [])}
+            `;
+        }
+
+        // Fallback: FE calculation (backward compatibility)
+        console.log('[TimelineDialog VČERA] Using FE calculations (BE data not available)');
+        const stats = this.calculateStats(intervals);
         const topVariances = this.getTopVariances(intervals, 3);
 
-        // Enhance summary with calculated stats
         const enhancedSummary = {
             ...summary,
             mode_adherence_pct: stats.adherence,
@@ -9518,7 +9541,156 @@ class TimelineDialog {
     }
 
     /**
-     * Render card-based header for VČERA tab (v2.2 Dark)
+     * Render VČERA header from BE data (FÁZE 2)
+     */
+    renderYesterdayHeaderBE(summary) {
+        const plannedCost = summary.plan_total_cost || 0;
+        const actualCost = summary.actual_total_cost || 0;
+        const deltaCost = summary.delta || 0;
+        const deltaPercent = summary.vs_plan_pct || 0;
+        const modeAdherence = summary.mode_adherence_pct || 0;
+
+        // Calculate total intervals from mode_groups
+        const totalIntervals = summary.mode_groups?.reduce((sum, g) => sum + (g.interval_count || 0), 0) || 96;
+        const totalMatches = summary.mode_groups?.reduce((sum, g) => sum + (g.mode_matches || 0), 0) || 0;
+
+        return `
+            <div class="today-header-cards">
+                <div class="header-progress-large">
+                    <div class="progress-bar-gradient">
+                        <div class="progress-fill-gradient" style="width: ${modeAdherence}%"></div>
+                        <div class="progress-label-overlay">${modeAdherence.toFixed(0)}% shoda režimů</div>
+                    </div>
+                </div>
+
+                <div class="metric-cards-grid">
+                    <div class="metric-card card-completed">
+                        <div class="card-header">
+                            <span class="card-icon">💰</span>
+                            <span class="card-title">Plán</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${plannedCost.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">${totalIntervals} intervalů</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-active">
+                        <div class="card-header">
+                            <span class="card-icon">💸</span>
+                            <span class="card-title">Skutečnost</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${actualCost.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">režimy OK ${totalMatches}/${totalIntervals}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-eod">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <span class="card-title">Výsledek</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${deltaCost > 0 ? '+' : ''}${deltaCost.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-separator">•</span>
+                                <span class="detail-delta ${deltaPercent < -2 ? 'positive' : deltaPercent > 2 ? 'negative' : 'neutral'}">
+                                    ${deltaPercent > 0 ? '+' : ''}${deltaPercent.toFixed(1)}%
+                                </span>
+                                <span class="detail-separator">•</span>
+                                <span class="detail-item">${deltaCost < 0 ? 'lepší' : deltaCost > 0 ? 'horší' : 'na plánu'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render mode groups from BE data (FÁZE 2)
+     */
+    renderYesterdayModeGroupsBE(groups) {
+        if (!groups || groups.length === 0) {
+            return '<div class="interval-section"><p>Žádné skupiny</p></div>';
+        }
+
+        const modeIcons = {
+            'HOME I': '🏠',
+            'HOME II': '⚡',
+            'HOME III': '🔋',
+            'HOME UPS': '⚡'
+        };
+
+        const rows = groups.map(group => {
+            const delta = group.delta || 0;
+            const deltaClass = delta < -0.5 ? 'positive' : delta > 0.5 ? 'negative' : 'neutral';
+            const icon = modeIcons[group.mode] || '🎯';
+            const adherence = group.adherence_pct || 0;
+
+            return `
+                <div class="interval-section">
+                    <div class="section-header">
+                        <span class="section-icon">${icon}</span>
+                        <span class="section-title">${group.mode}</span>
+                        <span class="section-meta">
+                            <span class="meta-item">⏱️ ${group.interval_count}×15min</span>
+                            <span class="meta-item">💰 ${group.actual_cost.toFixed(2)} Kč</span>
+                            <span class="meta-item ${deltaClass}">△ ${delta > 0 ? '+' : ''}${delta.toFixed(2)} Kč</span>
+                            <span class="meta-item">✅ ${adherence.toFixed(0)}% shoda</span>
+                        </span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return rows;
+    }
+
+    /**
+     * Render top variances from BE data (FÁZE 2)
+     */
+    renderTopVariancesBE(variances) {
+        if (!variances || variances.length === 0) {
+            return '';
+        }
+
+        const rows = variances.map((v, idx) => {
+            const deltaClass = v.variance < 0 ? 'positive' : 'negative';
+            const icon = v.variance < 0 ? '✅' : '❌';
+
+            return `
+                <div class="variance-row">
+                    <span class="variance-rank">#${idx + 1}</span>
+                    <span class="variance-time">${v.time}</span>
+                    <span class="variance-planned">Plán: ${v.planned} Kč</span>
+                    <span class="variance-actual">Skutečnost: ${v.actual} Kč</span>
+                    <span class="variance-delta ${deltaClass}">${icon} ${v.variance > 0 ? '+' : ''}${v.variance} Kč (${v.variance_pct > 0 ? '+' : ''}${v.variance_pct}%)</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="interval-section collapsible collapsed">
+                <div class="section-header" onclick="toggleSection('top-variances-be')">
+                    <span class="section-icon">📊</span>
+                    <span class="section-title">TOP 3 ODCHYLKY</span>
+                    <span class="section-toggle">▶</span>
+                </div>
+                <div class="interval-list" id="top-variances-be" style="display: none;">
+                    ${rows}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render card-based header for VČERA tab (v2.2 Dark) - FE fallback
      */
     renderYesterdayHeader(summary) {
         const plannedCost = summary?.planned_total_cost || 0;
@@ -9713,8 +9885,88 @@ class TimelineDialog {
 
         return `
             <div class="today-content">
-                ${this.renderLiveHeader(progress, eodPrediction, unifiedCostData)}
+                ${unifiedCostData ? this.renderTodayHeaderBE(unifiedCostData) : ''}
                 ${this.renderTodayIntervals(intervals, unifiedCostData)}
+            </div>
+        `;
+    }
+
+    /**
+     * Render DNES header from BE data (FÁZE 1)
+     */
+    renderTodayHeaderBE(data) {
+        const eodPredicted = data.eod_prediction?.predicted_total || 0;
+        const eodPlan = data.plan_total_cost || 0;
+        const eodVsPlan = data.eod_prediction?.vs_plan || 0;
+        const eodVsPlanPct = data.vs_plan_pct || 0;
+
+        const actualSoFar = data.actual_total_cost || 0;
+        const planSoFar = data.completed_so_far?.planned_cost || 0;
+        const deltaSoFar = data.completed_so_far?.delta_cost || 0;
+        const deltaSoFarPct = data.completed_so_far?.delta_pct || 0;
+
+        const predictedSavings = data.eod_prediction?.predicted_savings || 0;
+        const plannedSavings = data.eod_prediction?.planned_savings || 0;
+
+        const progressPct = data.progress_pct || 0;
+
+        return `
+            <div class="today-header-cards">
+                <div class="header-progress-large">
+                    <div class="progress-bar-gradient">
+                        <div class="progress-fill-gradient" style="width: ${progressPct}%"></div>
+                        <div class="progress-label-overlay">${progressPct.toFixed(0)}% dne • ${new Date().toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'})}</div>
+                    </div>
+                </div>
+
+                <div class="metric-cards-grid">
+                    <div class="metric-card card-completed">
+                        <div class="card-header">
+                            <span class="card-icon">💰</span>
+                            <span class="card-title">Odhad nákladů na konec dne</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${eodPredicted.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">plán: ${eodPlan.toFixed(2)} Kč</span>
+                                <span class="detail-separator">•</span>
+                                <span class="detail-delta ${eodVsPlanPct < -2 ? 'positive' : eodVsPlanPct > 2 ? 'negative' : 'neutral'}">
+                                    ${eodVsPlanPct > 0 ? '+' : ''}${eodVsPlanPct.toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-active">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <span class="card-title">Dosud skutečně</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${actualSoFar.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">plán: ${planSoFar.toFixed(2)} Kč</span>
+                                <span class="detail-separator">•</span>
+                                <span class="detail-delta ${deltaSoFarPct < -2 ? 'positive' : deltaSoFarPct > 2 ? 'negative' : 'neutral'}">
+                                    ${deltaSoFarPct > 0 ? '+' : ''}${deltaSoFarPct.toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-eod">
+                        <div class="card-header">
+                            <span class="card-icon">💎</span>
+                            <span class="card-title">Předpokládaná úspora</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${predictedSavings.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">vs. HOME I režim</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -9756,9 +10008,28 @@ class TimelineDialog {
 
     /**
      * Render intervals for DNES tab (v2.1 compact format)
+     * FÁZE 1-3: Now uses BE grouped data
      */
     renderTodayIntervals(intervals, unifiedCostData) {
         const now = new Date();
+
+        // FÁZE 1: Use BE grouped data if available
+        if (unifiedCostData && unifiedCostData.completed_groups && unifiedCostData.future_groups) {
+            console.log('[TimelineDialog DNES] Using BE grouped data:', {
+                completed: unifiedCostData.completed_groups.length,
+                active: unifiedCostData.active_group ? 1 : 0,
+                future: unifiedCostData.future_groups.length
+            });
+
+            return `
+                ${this.renderCompletedIntervalGroupsBE(unifiedCostData.completed_groups)}
+                ${unifiedCostData.active_group ? this.renderActiveIntervalBE(unifiedCostData.active_group) : ''}
+                ${this.renderFutureIntervalGroupsBE(unifiedCostData.future_groups)}
+            `;
+        }
+
+        // Fallback to FE grouping (backward compatibility)
+        console.log('[TimelineDialog DNES] BE grouped data not available, using FE grouping');
 
         // Separate intervals by status
         const completed = [];
@@ -9789,7 +10060,7 @@ class TimelineDialog {
         return `
             ${this.renderCompletedIntervalGroups(completedGroups)}
             ${active ? this.renderActiveInterval(active, activeIntervalData) : ''}
-            ${this.renderFutureIntervalGroups(futureGroups)}
+            ${this.renderFutureIntervalGroups(futureGroups, unifiedCostData)}
         `;
     }
 
@@ -9901,6 +10172,130 @@ class TimelineDialog {
     }
 
     /**
+     * Render completed interval groups from BE data (FÁZE 1)
+     */
+    renderCompletedIntervalGroupsBE(groups) {
+        if (!groups || groups.length === 0) {
+            return '<div class="interval-section"><p>Žádné uplynulé intervaly</p></div>';
+        }
+
+        const totalActualCost = groups.reduce((sum, g) => sum + (g.actual_cost || 0), 0);
+        const totalPlannedCost = groups.reduce((sum, g) => sum + (g.planned_cost || 0), 0);
+        const totalDelta = groups.reduce((sum, g) => sum + (g.delta || 0), 0);
+        const totalDeltaPct = totalPlannedCost > 0 ? ((totalDelta / totalPlannedCost) * 100) : 0;
+        const deltaClass = totalDelta < -0.5 ? 'positive' : totalDelta > 0.5 ? 'negative' : 'neutral';
+
+        const rows = groups.map((group, idx) => {
+            const deltaClass = group.delta < -0.5 ? 'positive' : group.delta > 0.5 ? 'negative' : 'neutral';
+            const deltaIcon = group.delta < -0.5 ? '✅' : group.delta > 0.5 ? '❌' : '⚪';
+            const modeIcon = group.mode.includes('HOME I') ? '🏠' : group.mode.includes('HOME UPS') ? '⚡' : '🔋';
+
+            return `
+                <div class="interval-row completed">
+                    <div class="interval-summary">
+                        <span class="interval-time">${group.start_time} - ${group.end_time}</span>
+                        <span class="interval-mode">${modeIcon} ${group.mode}</span>
+                        <span class="interval-count">(${group.interval_count}×15min)</span>
+                        <span class="interval-cost ${deltaClass}">${group.actual_cost.toFixed(2)} Kč</span>
+                        <span class="interval-delta ${deltaClass}">${deltaIcon} ${Math.abs(group.delta_pct || 0).toFixed(0)}%</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="interval-section collapsible collapsed">
+                <div class="section-header" onclick="toggleSection('completed-intervals-be')">
+                    <span class="section-icon">✅</span>
+                    <span class="section-title">UPLYNULÉ</span>
+                    <span class="section-meta">
+                        <span class="meta-item">💰 ${totalActualCost.toFixed(2)} Kč</span>
+                        <span class="meta-item ${deltaClass}">△ ${totalDelta > 0 ? '+' : ''}${totalDelta.toFixed(2)} Kč</span>
+                    </span>
+                    <span class="section-toggle">▶</span>
+                </div>
+                <div class="interval-list" id="completed-intervals-be" style="display: none;">
+                    ${rows}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render active interval from BE data (FÁZE 1)
+     */
+    renderActiveIntervalBE(group) {
+        const modeIcon = group.mode.includes('HOME I') ? '🏠' : group.mode.includes('HOME UPS') ? '⚡' : '🔋';
+        const plannedCost = group.planned_cost || 0;
+        const actualCost = group.actual_cost || 0;
+        const progress = 50; // Default mid-interval
+
+        return `
+            <div class="interval-section active">
+                <div class="section-header">
+                    <span class="section-icon">🔥</span>
+                    <span class="section-title">AKTIVNÍ INTERVAL</span>
+                </div>
+                <div class="interval-list">
+                    <div class="interval-row active-interval">
+                        <div class="interval-summary">
+                            <span class="interval-time">${group.start_time}</span>
+                            <span class="interval-mode">${modeIcon} ${group.mode}</span>
+                            <span class="interval-cost">${plannedCost.toFixed(2)} Kč plán</span>
+                            <span class="interval-progress">⏳ ${progress}%</span>
+                        </div>
+                        <div class="active-progress-bar">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render future interval groups from BE data (FÁZE 1)
+     */
+    renderFutureIntervalGroupsBE(groups) {
+        if (!groups || groups.length === 0) {
+            return '<div class="interval-section"><p>Žádné budoucí intervaly</p></div>';
+        }
+
+        const totalPlannedCost = groups.reduce((sum, g) => sum + (g.planned_cost || 0), 0);
+
+        const rows = groups.map((group, idx) => {
+            const modeIcon = group.mode.includes('HOME I') ? '🏠' : group.mode.includes('HOME UPS') ? '⚡' : '🔋';
+
+            return `
+                <div class="interval-row future">
+                    <div class="interval-summary">
+                        <span class="interval-time">${group.start_time} - ${group.end_time}</span>
+                        <span class="interval-mode">${modeIcon} ${group.mode}</span>
+                        <span class="interval-count">(${group.interval_count}×15min)</span>
+                        <span class="interval-cost">${group.planned_cost.toFixed(2)} Kč</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="interval-section collapsible collapsed">
+                <div class="section-header" onclick="toggleSection('future-intervals-be')">
+                    <span class="section-icon">🔮</span>
+                    <span class="section-title">BUDOUCÍ PLÁN</span>
+                    <span class="section-meta">
+                        <span class="meta-item">💰 ${totalPlannedCost.toFixed(2)} Kč</span>
+                    </span>
+                    <span class="section-toggle">▶</span>
+                </div>
+                <div class="interval-list" id="future-intervals-be" style="display: none;">
+                    ${rows}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
      * Render active interval with progress bar
      */
     renderActiveInterval(interval, activeData) {
@@ -9950,14 +10345,14 @@ class TimelineDialog {
     /**
      * Render future interval groups - minimalist format
      */
-    renderFutureIntervalGroups(groups) {
+    renderFutureIntervalGroups(groups, unifiedCostData) {
         if (groups.length === 0) {
             return '';
         }
 
         const totalIntervals = groups.reduce((sum, g) => sum + g.intervals.length, 0);
 
-        // Calculate aggregated planned costs
+        // Calculate aggregated planned costs for FUTURE intervals only
         const totalPlannedCost = groups.reduce((sum, g) => {
             return sum + g.intervals.reduce((s, iv) => s + (iv.planned?.net_cost || 0), 0);
         }, 0);
@@ -9999,7 +10394,7 @@ class TimelineDialog {
                     <span class="section-icon">📅</span>
                     <span class="section-title">BUDOUCÍ</span>
                     <span class="section-meta">
-                        <span class="meta-item">💰 ${totalPlannedCost.toFixed(2)} Kč plán</span>
+                        <span class="meta-item">💰 ${totalPlannedCost.toFixed(2)} Kč</span>
                     </span>
                     <span class="section-toggle">▶</span>
                 </div>
@@ -10018,7 +10413,19 @@ class TimelineDialog {
     renderTomorrowTab(data) {
         const { intervals, summary } = data;
 
-        // Get tomorrow's plan total
+        // FÁZE 3: Use BE data if available
+        if (summary && summary.mode_distribution && summary.dominant_mode_name) {
+            console.log('[TimelineDialog ZÍTRA] Using BE mode distribution:', {
+                total_modes: Object.keys(summary.mode_distribution).length,
+                dominant: summary.dominant_mode_name,
+                planned_groups: summary.planned_groups?.length || 0
+            });
+
+            return this.renderTomorrowTabBE(summary);
+        }
+
+        // Fallback: FE calculation (backward compatibility)
+        console.log('[TimelineDialog ZÍTRA] Using FE calculations (BE data not available)');
         const plannedCost = summary?.planned_total_cost || 0;
         const intervalCount = intervals?.length || 0;
 
@@ -10091,6 +10498,148 @@ class TimelineDialog {
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Render ZÍTRA tab from BE data (FÁZE 3)
+     */
+    renderTomorrowTabBE(summary) {
+        const plannedCost = summary.plan_total_cost || 0;
+        const dominantMode = summary.dominant_mode_name || 'N/A';
+        const dominantCount = summary.dominant_mode_count || 0;
+        const dominantPct = summary.dominant_mode_pct || 0;
+        const modeCount = Object.keys(summary.mode_distribution || {}).length;
+        const totalIntervals = Object.values(summary.mode_distribution || {}).reduce((a, b) => a + b, 0);
+
+        return `
+            <div class="today-header-cards">
+                <div class="header-progress-large">
+                    <div class="progress-bar-gradient">
+                        <div class="progress-fill-gradient" style="width: ${dominantPct}%"></div>
+                        <div class="progress-label-overlay">${dominantMode} ${dominantPct.toFixed(0)}%</div>
+                    </div>
+                </div>
+
+                <div class="metric-cards-grid">
+                    <div class="metric-card card-completed">
+                        <div class="card-header">
+                            <span class="card-icon">💰</span>
+                            <span class="card-title">Plánované náklady</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${plannedCost.toFixed(2)} Kč</div>
+                            <div class="card-details">
+                                <span class="detail-item">${totalIntervals} intervalů</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-active">
+                        <div class="card-header">
+                            <span class="card-icon">⚡</span>
+                            <span class="card-title">Dominantní režim</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value" style="font-size: 1.5rem;">${dominantMode}</div>
+                            <div class="card-details">
+                                <span class="detail-item">${dominantCount} intervalů (${dominantPct.toFixed(0)}%)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card card-eod">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <span class="card-title">Režimy celkem</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-main-value">${modeCount}</div>
+                            <div class="card-details">
+                                <span class="detail-item">různých režimů</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tomorrow-intervals">
+                    <h4>📅 Plán intervalů</h4>
+                    ${this.renderTomorrowPlannedGroupsBE(summary.planned_groups || [])}
+                </div>
+
+                <div class="tomorrow-mode-distribution">
+                    <h4>📊 Rozložení režimů</h4>
+                    ${this.renderModeDistributionBE(summary.mode_distribution || {})}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render planned groups from BE (FÁZE 3)
+     */
+    renderTomorrowPlannedGroupsBE(groups) {
+        if (!groups || groups.length === 0) {
+            return '<p style="color: var(--text-secondary);">Žádné intervaly k dispozici</p>';
+        }
+
+        const modeIcons = {
+            'HOME I': '🏠',
+            'HOME II': '⚡',
+            'HOME III': '🔋',
+            'HOME UPS': '⚡'
+        };
+
+        return groups.map(group => {
+            const icon = modeIcons[group.mode] || '🎯';
+            const timeRange = `${group.start_time} - ${group.end_time}`;
+
+            return `
+                <div class="interval-group tomorrow-group">
+                    <div class="group-header">
+                        <span class="mode-badge">${icon} ${group.mode}</span>
+                        <span class="time-range">${timeRange}</span>
+                        <span class="interval-count">${group.interval_count} bloků</span>
+                        <span class="group-cost">${group.planned_cost.toFixed(2)} Kč</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Render mode distribution chart (FÁZE 3)
+     */
+    renderModeDistributionBE(distribution) {
+        if (!distribution || Object.keys(distribution).length === 0) {
+            return '<p style="color: var(--text-secondary);">Žádná distribuce</p>';
+        }
+
+        const total = Object.values(distribution).reduce((a, b) => a + b, 0);
+        const modeIcons = {
+            'HOME I': '🏠',
+            'HOME II': '⚡',
+            'HOME III': '🔋',
+            'HOME UPS': '⚡'
+        };
+
+        const bars = Object.entries(distribution)
+            .sort((a, b) => b[1] - a[1])
+            .map(([mode, count]) => {
+                const pct = total > 0 ? (count / total * 100) : 0;
+                const icon = modeIcons[mode] || '🎯';
+
+                return `
+                    <div class="mode-dist-row">
+                        <span class="mode-name">${icon} ${mode}</span>
+                        <div class="mode-bar-container">
+                            <div class="mode-bar-fill" style="width: ${pct}%"></div>
+                            <span class="mode-bar-label">${count} intervalů (${pct.toFixed(0)}%)</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+        return `<div class="mode-distribution">${bars}</div>`;
     }
 
     /**
@@ -10262,7 +10811,8 @@ class TimelineDialog {
 
         const progressPercent = today.progress_pct || progress.percent || 0;
         const eodPredicted = eod.predicted_total || eodPrediction.predicted || 0;
-        const eodPlanned = eod.planned_total || today.plan_total_cost || eodPrediction.planned || 0;
+        // FIX: Use today.plan_total_cost FIRST (contains full day plan), not eod.planned_total
+        const eodPlanned = today.plan_total_cost || eod.planned_total || eodPrediction.planned || 0;
         const eodSavingsPredicted = eod.predicted_savings || 0;
 
         const completedCost = completed.actual_cost || progress.actualCost || 0;

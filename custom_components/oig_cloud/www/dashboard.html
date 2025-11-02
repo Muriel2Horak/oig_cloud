@@ -681,9 +681,9 @@
                 </div>
 
                 <!-- Unified Cost Tile - PLAN_VS_ACTUAL_UX_REDESIGN_V2.md Fáze 1 -->
-                <div id="unified-cost-tile-container" class="stat-card" style="min-height: 160px; cursor: pointer;">
+                <div id="unified-cost-tile-container" class="stat-card" style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); border: 1px solid rgba(33, 150, 243, 0.3); min-height: 160px; cursor: pointer; display: flex; flex-direction: column;">
                     <!-- UnifiedCostTile component loaded via lazy module -->
-                    <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                    <div style="padding: 20px; text-align: center; color: var(--text-secondary); flex: 1; display: flex; flex-direction: column; justify-content: center;">
                         <div style="font-size: 1.2em; margin-bottom: 10px;">💰 Náklady</div>
                         <div style="font-size: 0.9em;">Načítání...</div>
                     </div>
@@ -851,22 +851,6 @@
                 </div>
 
                 <div class="dialog-body">
-                    <!-- Overall Summary -->
-                    <div class="timeline-summary">
-                        <div class="summary-metric">
-                            <span class="metric-label">💰 Celkové náklady (72h):</span>
-                            <span class="metric-value" id="timeline-total-cost">--</span>
-                        </div>
-                        <div class="summary-metric success">
-                            <span class="metric-label">💡 Celková úspora vs HOME I:</span>
-                            <span class="metric-value" id="timeline-total-savings">--</span>
-                        </div>
-                        <div class="summary-metric">
-                            <span class="metric-label">🔄 Přepnutí režimů:</span>
-                            <span class="metric-value" id="timeline-total-switches">--</span>
-                        </div>
-                    </div>
-
                     <!-- Tabs Navigation -->
                     <div class="timeline-tabs">
                         <button class="timeline-tab timeline-tab-btn" data-tab="yesterday">

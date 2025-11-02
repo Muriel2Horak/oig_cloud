@@ -1946,6 +1946,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return self._build_result(
                 modes,
                 spot_prices,
+                export_prices,
                 solar_forecast,
                 load_forecast,
                 current_capacity,
@@ -2162,6 +2163,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return self._build_result(
             modes,
             spot_prices,
+            export_prices,
             solar_forecast,
             load_forecast,
             current_capacity,
@@ -2174,6 +2176,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self,
         modes: List[int],
         spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
         current_capacity: float,
@@ -2190,6 +2193,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0
 
+        # Create export price lookup by timestamp
+        export_price_lookup = {
+            ep["time"]: ep["price"]
+            for ep in export_prices
+            if "time" in ep and "price" in ep
+        }
+
         timeline = []
         battery = current_capacity
         total_cost = 0.0
@@ -2197,6 +2207,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         for i, mode in enumerate(modes):
             timestamp_str = spot_prices[i].get("time", "")
             price = spot_prices[i].get("price", 0)
+            export_price = export_price_lookup.get(timestamp_str, 0)
 
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
@@ -2320,6 +2331,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "grid_export": grid_export,
                     "spot_price": price,
                     "spot_price_czk": price,  # Alias pro zpětnou kompatibilitu
+                    "export_price_czk": export_price,  # Phase 1.5: Export (sell) price
                     "net_cost": interval_cost,
                     "solar_charge_kwh": round(solar_charge_kwh, 3),  # For stacked graph
                     "grid_charge_kwh": round(grid_charge_kwh, 3),  # For stacked graph
@@ -4074,6 +4086,129 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             },
         }
 
+    def _group_intervals_by_mode(
+        self, intervals: List[Dict[str, Any]], data_type: str = "both"
+    ) -> List[Dict[str, Any]]:
+        """
+        Seskupit intervaly podle režimu do časových bloků.
+
+        Args:
+            intervals: Seznam intervalů
+            data_type: "completed" (má actual), "planned" (jen plan), "both" (oboje)
+
+        Returns:
+            Seznam skupin [{mode, start_time, end_time, interval_count, costs...}]
+        """
+        if not intervals:
+            return []
+
+        groups = []
+        current_group = None
+
+        for interval in intervals:
+            # Skip None intervals
+            if interval is None:
+                continue
+
+            # Určit režim podle data_type
+            if data_type == "completed":
+                actual = interval.get("actual") or {}
+                mode = actual.get("mode", "Unknown")
+            elif data_type == "planned":
+                planned = interval.get("planned") or {}
+                mode = planned.get("mode", "Unknown")
+            else:  # both - priorita actual, fallback na planned
+                actual = interval.get("actual") or {}
+                planned = interval.get("planned") or {}
+                # POZOR: 0 je validní mode, nesmíme použít simple `or`!
+                actual_mode = actual.get("mode")
+                planned_mode = planned.get("mode")
+                mode = (
+                    actual_mode
+                    if actual_mode is not None
+                    else (planned_mode if planned_mode is not None else "Unknown")
+                )
+                _LOGGER.debug(
+                    f"[_group_intervals_by_mode] data_type=both: "
+                    f"actual_mode={actual_mode}, planned_mode={planned_mode}, final_mode={mode}"
+                )
+
+            # Převést mode ID na jméno (mode může být int nebo string)
+            if isinstance(mode, int):
+                mode = CBB_MODE_NAMES.get(mode, f"Mode {mode}")
+            elif mode != "Unknown":
+                mode = str(mode).strip()
+
+            # Fallback pokud je mode prázdný
+            if not mode or mode == "":
+                mode = "Unknown"
+
+            # Nová skupina nebo pokračování?
+            if not current_group or current_group["mode"] != mode:
+                current_group = {
+                    "mode": mode,
+                    "start_time": interval.get("time", ""),
+                    "end_time": interval.get("time", ""),
+                    "intervals": [interval],
+                }
+                groups.append(current_group)
+            else:
+                current_group["intervals"].append(interval)
+                current_group["end_time"] = interval.get("time", "")
+
+        # Agregovat náklady pro každou skupinu
+        for group in groups:
+            interval_count = len(group["intervals"])
+            group["interval_count"] = interval_count
+
+            if data_type in ["completed", "both"]:
+                # Má actual data
+                actual_cost = sum(
+                    (iv.get("actual") or {}).get("net_cost", 0)
+                    for iv in group["intervals"]
+                )
+                planned_cost = sum(
+                    (iv.get("planned") or {}).get("net_cost", 0)
+                    for iv in group["intervals"]
+                )
+                delta = actual_cost - planned_cost
+                delta_pct = (delta / planned_cost * 100) if planned_cost > 0 else 0.0
+
+                group["actual_cost"] = round(actual_cost, 2)
+                group["planned_cost"] = round(planned_cost, 2)
+                group["delta"] = round(delta, 2)
+                group["delta_pct"] = round(delta_pct, 1)
+
+            if data_type == "planned":
+                # Jen plánovaná data
+                planned_cost = sum(
+                    (iv.get("planned") or {}).get("net_cost", 0)
+                    for iv in group["intervals"]
+                )
+                group["planned_cost"] = round(planned_cost, 2)
+
+            # Formátovat časy
+            if group["start_time"]:
+                try:
+                    start_dt = datetime.fromisoformat(group["start_time"])
+                    group["start_time"] = start_dt.strftime("%H:%M")
+                except:
+                    pass
+
+            if group["end_time"]:
+                try:
+                    end_dt = datetime.fromisoformat(group["end_time"])
+                    # Přidat 15 minut pro konec intervalu
+                    end_dt = end_dt + timedelta(minutes=15)
+                    group["end_time"] = end_dt.strftime("%H:%M")
+                except:
+                    pass
+
+            # Odstranit raw intervals z výstupu
+            del group["intervals"]
+
+        return groups
+
     def _build_today_cost_data(self) -> Dict[str, Any]:
         """
         Build today's cost data with actual vs plan tracking.
@@ -4184,12 +4319,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # EOD prediction
+        # ZMĚNA: Používáme plán pro budoucí intervaly, ne drift ratio
+        # (drift ratio platí jen pro již proběhlé intervaly)
         if plan_completed > 0:
             drift_ratio = actual_completed / plan_completed
         else:
             drift_ratio = 1.0
 
-        eod_predicted = actual_completed + (plan_future * drift_ratio)
+        # EOD = actual (dosud) + plánované budoucí náklady
+        eod_predicted = actual_completed + plan_future
         eod_vs_plan = eod_predicted - plan_total
 
         # Confidence based on how much data we have
@@ -4202,21 +4340,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Calculate savings vs HOME I (v2.1 requirement)
         plan_savings_completed = sum(
-            c.get("planned", {}).get("savings", 0) for c in completed
+            c.get("planned", {}).get("savings_vs_home_i", 0) for c in completed
         )
         actual_savings_completed = sum(
-            c.get("actual", {}).get("savings", 0) for c in completed
+            c.get("actual", {}).get("savings_vs_home_i", 0) for c in completed
         )
         plan_savings_future = sum(
-            f.get("planned", {}).get("savings", 0) for f in future
+            f.get("planned", {}).get("savings_vs_home_i", 0) for f in future
         )
         if active:
-            plan_savings_future += active.get("planned", {}).get("savings", 0)
+            plan_savings_future += active.get("planned", {}).get("savings_vs_home_i", 0)
 
         plan_savings_total = plan_savings_completed + plan_savings_future
-        predicted_savings = actual_savings_completed + (
-            plan_savings_future * drift_ratio
-        )
+        # ZMĚNA: Používáme plán pro budoucí úspory, ne drift
+        predicted_savings = actual_savings_completed + plan_savings_future
 
         # Count mode switches and blocks (v2.1 metadata requirement)
         mode_switches = 0
@@ -4284,6 +4421,33 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     ),
                 }
 
+        # FÁZE 1 - Nové metriky pro FE (BE-centralizace)
+        # remaining_to_eod = zbývající PLÁNOVANÉ náklady (ne predikce!)
+        remaining_to_eod = plan_future
+        vs_plan_pct = (eod_vs_plan / plan_total * 100) if plan_total > 0 else 0.0
+
+        # Performance klasifikace (±2% tolerance)
+        if vs_plan_pct <= -2:
+            performance_class = "better"
+            performance_icon = "✅"
+        elif vs_plan_pct >= 2:
+            performance_class = "worse"
+            performance_icon = "❌"
+        else:
+            performance_class = "on_plan"
+            performance_icon = "⚪"
+
+        # FÁZE 1.2 - Seskupené intervaly podle režimů
+        completed_groups = self._group_intervals_by_mode(completed, "completed")
+        future_groups = self._group_intervals_by_mode(future, "planned")
+
+        # Active group (pokud existuje)
+        active_group = None
+        if active is not None:
+            active_groups = self._group_intervals_by_mode([active], "both")
+            if active_groups:
+                active_group = active_groups[0]
+
         return {
             "plan_total_cost": round(plan_total, 2),
             "actual_total_cost": round(actual_total, 2),
@@ -4299,6 +4463,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "predicted_savings": round(predicted_savings, 2),
                 "planned_savings": round(plan_savings_total, 2),
             },
+            # FÁZE 1 - Nové metriky
+            "remaining_to_eod": round(remaining_to_eod, 2),
+            "future_plan_cost": round(plan_future, 2),
+            "vs_plan_pct": round(vs_plan_pct, 1),
+            "performance_class": performance_class,
+            "performance_icon": performance_icon,
+            # FÁZE 1.2 - Seskupené intervaly
+            "completed_groups": completed_groups,
+            "active_group": active_group,
+            "future_groups": future_groups,
             "completed_so_far": {
                 "actual_cost": round(actual_completed, 2),
                 "planned_cost": round(plan_completed, 2),
@@ -4348,18 +4522,114 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 delta_pct = (delta / plan_total) * 100
                 if delta_pct < -2:
                     performance = "better"
+                    performance_icon = "✅"
                 elif delta_pct > 2:
                     performance = "worse"
+                    performance_icon = "❌"
                 else:
                     performance = "on_plan"
+                    performance_icon = "⚪"
             else:
                 performance = "on_plan"
+                performance_icon = "⚪"
+                delta_pct = 0.0
+
+            # FÁZE 2 - Mode statistiky a skupiny
+            mode_groups = self._group_intervals_by_mode(actual_intervals, "completed")
+
+            # Helper: normalizace mode na jméno
+            def normalize_mode(mode_raw):
+                if isinstance(mode_raw, int):
+                    return CBB_MODE_NAMES.get(mode_raw, f"Mode {mode_raw}")
+                elif mode_raw:
+                    return str(mode_raw).strip()
+                return "Unknown"
+
+            # Přidat mode matching statistiky ke každé skupině
+            for group in mode_groups:
+                # Najít originální intervaly pro tuto skupinu
+                group_intervals = [
+                    iv
+                    for iv in actual_intervals
+                    if iv is not None
+                    and (
+                        normalize_mode((iv.get("actual") or {}).get("mode"))
+                        == group["mode"]
+                        or normalize_mode((iv.get("planned") or {}).get("mode"))
+                        == group["mode"]
+                    )
+                ]
+
+                mode_matches = sum(
+                    1
+                    for iv in group_intervals
+                    if normalize_mode((iv.get("actual") or {}).get("mode"))
+                    == normalize_mode((iv.get("planned") or {}).get("mode"))
+                )
+                mode_mismatches = len(group_intervals) - mode_matches
+                adherence_pct = (
+                    (mode_matches / len(group_intervals) * 100)
+                    if len(group_intervals) > 0
+                    else 0.0
+                )
+
+                group["mode_matches"] = mode_matches
+                group["mode_mismatches"] = mode_mismatches
+                group["adherence_pct"] = round(adherence_pct, 1)
+
+            # Celková shoda režimů
+            total_matches = sum(
+                1
+                for iv in actual_intervals
+                if iv is not None
+                and normalize_mode((iv.get("actual") or {}).get("mode"))
+                == normalize_mode((iv.get("planned") or {}).get("mode"))
+            )
+            mode_adherence_pct = (
+                (total_matches / len(actual_intervals) * 100)
+                if len(actual_intervals) > 0
+                else 0.0
+            )
+
+            # Top 3 největší odchylky
+            variances = []
+            for iv in actual_intervals:
+                planned_cost = iv.get("planned", {}).get("net_cost", 0)
+                actual_cost = iv.get("actual", {}).get("net_cost", 0)
+                variance = actual_cost - planned_cost
+                if abs(variance) > 0.5:  # Jen významné odchylky
+                    variances.append(
+                        {
+                            "time": iv.get("time", ""),
+                            "planned": round(planned_cost, 2),
+                            "actual": round(actual_cost, 2),
+                            "variance": round(variance, 2),
+                            "variance_pct": round(
+                                (
+                                    (variance / planned_cost * 100)
+                                    if planned_cost > 0
+                                    else 0
+                                ),
+                                1,
+                            ),
+                        }
+                    )
+
+            # Seřadit podle absolutní velikosti odchylky
+            variances.sort(key=lambda x: abs(x["variance"]), reverse=True)
+            top_variances = variances[:3]
 
             return {
                 "plan_total_cost": round(plan_total, 2),
                 "actual_total_cost": round(actual_total, 2),
                 "delta": round(delta, 2),
                 "performance": performance,
+                # FÁZE 2 - Nové metriky
+                "performance_icon": performance_icon,
+                "vs_plan_pct": round(delta_pct, 1),
+                "mode_groups": mode_groups,
+                "mode_adherence_pct": round(mode_adherence_pct, 1),
+                "top_variances": top_variances,
             }
         else:
             # No archive data
@@ -4393,8 +4663,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             interval.get("planned", {}).get("net_cost", 0) for interval in intervals
         )
 
+        # FÁZE 3 - Mode distribuce a skupiny
+        mode_distribution = {}
+        for interval in intervals:
+            if interval is None:
+                continue
+            mode_raw = (interval.get("planned") or {}).get("mode", "Unknown")
+
+            # Převést mode ID na jméno
+            if isinstance(mode_raw, int):
+                mode = CBB_MODE_NAMES.get(mode_raw, f"Mode {mode_raw}")
+            elif mode_raw and mode_raw != "Unknown":
+                mode = str(mode_raw).strip()
+            else:
+                mode = "Unknown"
+
+            mode_distribution[mode] = mode_distribution.get(mode, 0) + 1
+
+        # Dominantní režim
+        if mode_distribution:
+            dominant_mode = max(mode_distribution.items(), key=lambda x: x[1])
+            dominant_mode_name = dominant_mode[0]
+            dominant_mode_count = dominant_mode[1]
+            dominant_mode_pct = (
+                (dominant_mode_count / len(intervals) * 100)
+                if len(intervals) > 0
+                else 0.0
+            )
+        else:
+            dominant_mode_name = "Unknown"
+            dominant_mode_count = 0
+            dominant_mode_pct = 0.0
+
+        # Seskupené intervaly
+        planned_groups = self._group_intervals_by_mode(intervals, "planned")
+
         return {
             "plan_total_cost": round(plan_total, 2),
+            # FÁZE 3 - Nové metriky
+            "mode_distribution": mode_distribution,
+            "dominant_mode_name": dominant_mode_name,
+            "dominant_mode_count": dominant_mode_count,
+            "dominant_mode_pct": round(dominant_mode_pct, 1),
+            "planned_groups": planned_groups,
         }
 
     def _build_day_timeline(self, date: datetime.date) -> Dict[str, Any]:
@@ -4846,17 +5157,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         delta = actual_so_far - planned_so_far
         delta_pct = (delta / planned_so_far * 100) if planned_so_far > 0 else 0.0
 
-        # EOD predikce
+        # EOD = skutečnost uplynulých + plán budoucích (včetně aktivního)
         planned_future = sum(f.get("planned", {}).get("net_cost", 0) for f in future)
-        eod_plan = planned_so_far + planned_future
+        eod_plan = planned_so_far + planned_future  # Původní celý denní plán
 
-        # Varianta B: Realistická predikce s drift ratio
-        if planned_so_far > 0:
-            drift_ratio = actual_so_far / planned_so_far
-        else:
-            drift_ratio = 1.0
-
-        eod_prediction = actual_so_far + (planned_future * drift_ratio)
+        # NOVÁ LOGIKA: EOD je skutečnost + budoucí plán (BEZ drift ratio)
+        eod_prediction = actual_so_far + planned_future
         eod_delta = eod_prediction - eod_plan
         eod_delta_pct = (eod_delta / eod_plan * 100) if eod_plan > 0 else 0.0
 
