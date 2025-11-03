@@ -624,6 +624,684 @@ function initTooltips() {
 // === GRID CHARGING (moved to dashboard-grid-charging.js) ===
 const openGridChargingDialog = window.DashboardGridCharging.openGridChargingDialog;
 const closeGridChargingDialog = window.DashboardGridCharging.closeGridChargingDialog;
+const saveGridChargingPlan = window.DashboardGridCharging.saveGridChargingPlan;
+
+        return;
+    }
+
+    const attrs = forecastData.attributes;
+    const targetAchieved = attrs.target_achieved;
+    const minAchieved = attrs.min_achieved;
+    const finalCapacityKwh = attrs.final_capacity_kwh;
+    const targetCapacityKwh = attrs.target_capacity_kwh;
+    const minCapacityKwh = attrs.min_capacity_kwh;
+    const shortageKwh = attrs.shortage_kwh || 0;
+
+    // Pokud nejsou dostupná data, skrýt
+    if (targetAchieved === undefined) {
+        warningRow.style.display = 'none';
+        return;
+    }
+
+    // Pokud je vše OK (target dosažen), skrýt warning
+    if (targetAchieved) {
+        warningRow.style.display = 'none';
+        return;
+    }
+
+    // Target NENÍ dosažen - zobrazit warning
+    warningRow.style.display = 'flex';
+
+    const maxCapacityKwh = attrs.max_capacity_kwh || 12.29;
+    const finalPercentage = ((finalCapacityKwh / maxCapacityKwh) * 100).toFixed(0);
+    const targetPercentage = ((targetCapacityKwh / maxCapacityKwh) * 100).toFixed(0);
+
+    // Rozhodnout barvu a text podle závažnosti
+    let color, icon, text, tooltipText;
+
+    if (!minAchieved) {
+        // KRITICKÉ: Nedosáhne ani minimum
+        color = '#f44336'; // červená
+        icon = '🔴';
+        text = `⚠️ Dosáhne ${finalPercentage}%`;
+        tooltipText = `
+            <div style="padding: 8px; text-align: left;">
+                <strong style="color: ${color};">⚠️ KRITICKÉ VAROVÁNÍ</strong><br><br>
+                <strong>Nedosáhne minimální kapacity!</strong><br>
+                <span style="opacity: 0.8;">
+                    Cílová kapacita: ${targetPercentage}% (${targetCapacityKwh.toFixed(1)} kWh)<br>
+                    Minimální kapacita: ${((minCapacityKwh / maxCapacityKwh) * 100).toFixed(0)}% (${minCapacityKwh.toFixed(1)} kWh)<br>
+                    <strong>Dosažitelná: ${finalPercentage}% (${finalCapacityKwh.toFixed(1)} kWh)</strong><br>
+                    Chybí: ${shortageKwh.toFixed(1)} kWh
+                </span>
+                <hr style="margin: 6px 0; border: none; border-top: 1px solid rgba(255,255,255,0.2);">
+                <span style="font-size: 0.9em; opacity: 0.9;">
+                    💡 Není dostatek levných hodin pro nabíjení.<br>
+                    Zvyšte max. cenu nebo snižte cílovou kapacitu.
+                </span>
+            </div>
+        `;
+    } else {
+        // VAROVÁNÍ: Nedosáhne target, ale dosáhne minimum
+        color = '#ff9800'; // oranžová
+        icon = '🟠';
+        text = `⚠️ Dosáhne ${finalPercentage}%`;
+        tooltipText = `
+            <div style="padding: 8px; text-align: left;">
+                <strong style="color: ${color};">⚠️ VAROVÁNÍ</strong><br><br>
+                <strong>Nedosáhne cílové kapacity</strong><br>
+                <span style="opacity: 0.8;">
+                    Cílová kapacita: ${targetPercentage}% (${targetCapacityKwh.toFixed(1)} kWh)<br>
+                    <strong>Dosažitelná: ${finalPercentage}% (${finalCapacityKwh.toFixed(1)} kWh)</strong><br>
+                    Chybí: ${shortageKwh.toFixed(1)} kWh
+                </span>
+                <hr style="margin: 6px 0; border: none; border-top: 1px solid rgba(255,255,255,0.2);">
+                <span style="font-size: 0.9em; opacity: 0.9;">
+                    💡 Není dostatek levných hodin pro dosažení targetu.<br>
+                    Minimální kapacita bude zajištěna.
+                </span>
+            </div>
+        `;
+    }
+
+    // Nastavit text a barvu
+    warningIndicator.textContent = text;
+    warningIndicator.style.color = color;
+    warningIndicator.setAttribute('data-tooltip-html', tooltipText);
+
+    // Přidat blikání (použít existující animaci)
+    warningIndicator.style.animation = 'pulse-warning 2s ease-in-out infinite';
+}
+
+async function updateGridChargingPlan() {
+    const gridChargingData = await getSensorString(getSensorId('grid_charging_planned'));
+    const isPlanned = gridChargingData.value === 'on';
+
+    // console.log('[Grid Charging] updateGridChargingPlan() called');
+    // console.log('[Grid Charging] Sensor ID:', getSensorId('grid_charging_planned'));
+    // console.log('[Grid Charging] Sensor value:', gridChargingData.value);
+    // console.log('[Grid Charging] Is planned:', isPlanned);
+    // console.log('[Grid Charging] Attributes:', gridChargingData.attributes);
+
+    // Update indicator in battery card - always visible, but with active/inactive state
+    const indicator = document.getElementById('battery-grid-charging-indicator');
+    if (indicator) {
+        // console.log('[Grid Charging] Indicator found, setting active class:', isPlanned);
+        if (isPlanned) {
+            indicator.classList.add('active');
+        } else {
+            indicator.classList.remove('active');
+        }
+
+        // Build tooltip with charging intervals table
+        if (gridChargingData.attributes?.charging_intervals?.length > 0) {
+            const intervals = gridChargingData.attributes.charging_intervals;
+            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+
+            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 250px;">';
+            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px;">Plánované nabíjení z gridu</strong>';
+            tooltipHTML += '<table style="width: 100%; border-collapse: collapse;">';
+            tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
+            tooltipHTML += '<th style="padding: 4px; text-align: left;">Čas</th>';
+            tooltipHTML += '<th style="padding: 4px; text-align: right;">Energie</th>';
+            tooltipHTML += '<th style="padding: 4px; text-align: right;">Cena</th>';
+            tooltipHTML += '</tr></thead>';
+            tooltipHTML += '<tbody>';
+
+            intervals.forEach(interval => {
+                if (interval.is_charging_battery) {
+                    const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const energy = (interval.energy_kwh || 0).toFixed(2);
+                    const cost = (interval.cost_czk || 0).toFixed(2);
+                    tooltipHTML += '<tr>';
+                    tooltipHTML += `<td style="padding: 2px 4px;">${time}</td>`;
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${energy} kWh</td>`;
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${cost} Kč</td>`;
+                    tooltipHTML += '</tr>';
+                }
+            });
+
+            tooltipHTML += '</tbody>';
+            tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
+            tooltipHTML += '<td style="padding: 4px;">Celkem</td>';
+            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalEnergy.toFixed(2)} kWh</td>`;
+            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCost.toFixed(2)} Kč</td>`;
+            tooltipHTML += '</tr></tfoot>';
+            tooltipHTML += '</table>';
+            tooltipHTML += '</div>';
+
+            indicator.setAttribute('data-tooltip-html', tooltipHTML);
+        } else {
+            indicator.setAttribute('data-tooltip', 'Žádné plánované nabíjení');
+        }
+
+        // Re-inicializovat tooltips aby fungovaly i na dynamicky přidaných elementech
+        initTooltips();
+    }
+    // else {
+    //     console.error('[Grid Charging] Indicator element NOT FOUND!');
+    // }
+
+    // Show/hide section in battery details
+    // OPRAVA: Zobrazit když existují intervaly (ne jen když sensor je ON)
+    const section = document.getElementById('grid-charging-plan-section');
+    if (section) {
+        const hasIntervals = gridChargingData.attributes?.charging_intervals?.length > 0;
+        const shouldShow = hasIntervals; // Zobrazit když jsou plánované intervaly
+        // console.log('[Grid Charging] Section found, hasIntervals:', hasIntervals, 'shouldShow:', shouldShow);
+        section.style.display = shouldShow ? 'block' : 'none';
+    }
+    // else {
+    //     console.error('[Grid Charging] Section element NOT FOUND!');
+    // }
+
+    // Update energy (total_energy_kwh)
+    const energyElement = document.getElementById('grid-charging-energy');
+    if (energyElement && gridChargingData.attributes && gridChargingData.attributes.total_energy_kwh !== undefined) {
+        const energy = parseFloat(gridChargingData.attributes.total_energy_kwh);
+        energyElement.textContent = energy.toFixed(1) + ' kWh';
+    }
+
+    // Update cost
+    const costElement = document.getElementById('grid-charging-cost');
+    if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
+        const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
+        costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
+    }
+
+    // Update start time - relativní čas
+    const startElement = document.getElementById('grid-charging-start');
+    if (startElement && gridChargingData.attributes) {
+        if (gridChargingData.attributes.next_charging_start) {
+            // Get first charging interval to calculate relative time
+            const intervals = gridChargingData.attributes.charging_intervals || [];
+            const firstChargingInterval = intervals.find(i => i.is_charging_battery);
+
+            if (firstChargingInterval) {
+                const startTime = new Date(firstChargingInterval.timestamp);
+                const now = new Date();
+                const diffMs = startTime - now;
+                const diffMinutes = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMinutes / 60);
+                const remainingMinutes = diffMinutes % 60;
+
+                let relativeText = '';
+                if (diffMinutes < 0) {
+                    relativeText = 'Probíhá';
+                } else if (diffMinutes < 60) {
+                    relativeText = `za ${diffMinutes} min`;
+                } else if (diffMinutes < 1440) { // méně než 24h
+                    if (remainingMinutes > 0) {
+                        relativeText = `za ${diffHours}h ${remainingMinutes}min`;
+                    } else {
+                        relativeText = `za ${diffHours}h`;
+                    }
+                } else {
+                    const days = Math.floor(diffHours / 24);
+                    relativeText = `za ${days}d`;
+                }
+
+                startElement.textContent = relativeText;
+                startElement.setAttribute('title', gridChargingData.attributes.next_charging_start);
+            } else {
+                startElement.textContent = gridChargingData.attributes.next_charging_start;
+            }
+        } else {
+            startElement.textContent = '--';
+        }
+    }
+
+    // Update target warning indicator - načíst data z battery_forecast sensoru
+    await updateTargetWarningIndicator();
+
+    // Build tooltip HTML with intervals table - na IKONĚ indikátoru
+    if (indicator && gridChargingData.attributes) {
+        if (gridChargingData.attributes.charging_intervals && gridChargingData.attributes.charging_intervals.length > 0) {
+            const intervals = gridChargingData.attributes.charging_intervals;
+            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+            const startTimeFormatted = gridChargingData.attributes.next_charging_start || '';
+
+            let tooltipHtml = `
+                <div style="padding: 8px;">
+                    <strong>Start:</strong> ${startTimeFormatted}<br>
+                    <strong>Plánované dobití:</strong> ${totalEnergy.toFixed(1)} kWh<br>
+                    <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+                    <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border-secondary);">
+                    <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-primary);">
+                                <th style="padding: 4px; text-align: left;">Čas</th>
+                                <th style="padding: 4px; text-align: right;">kWh</th>
+                                <th style="padding: 4px; text-align: right;">Kč</th>
+                                <th style="padding: 4px; text-align: center;">⚡</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            intervals.forEach((interval, index) => {
+                if (!interval.is_charging_battery) return; // Skip non-charging intervals
+
+                const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                const energy = interval.energy_kwh ? interval.energy_kwh.toFixed(2) : '-';
+                const cost = interval.cost_czk ? interval.cost_czk.toFixed(2) : '-';
+
+                tooltipHtml += `
+                    <tr style="border-bottom: 1px solid var(--border-tertiary);">
+                        <td style="padding: 4px;">${time}</td>
+                        <td style="padding: 4px; text-align: right;">${energy}</td>
+                        <td style="padding: 4px; text-align: right;">${cost}</td>
+                        <td style="padding: 4px; text-align: center;">⚡</td>
+                    </tr>
+                `;
+            });
+
+            tooltipHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            indicator.setAttribute('data-tooltip-html', tooltipHtml);
+        }
+    }
+}
+
+async function updateBatteryBalancingCard() {
+    try {
+        const balancingData = await getSensorString(getSensorId('battery_balancing'));
+        const forecastData = await getSensorString(getSensorId('battery_forecast'));
+
+        if (!balancingData || !balancingData.attributes) {
+            console.warn('[Balancing] No balancing data available');
+            return;
+        }
+
+        const attrs = balancingData.attributes;
+        const status = balancingData.value; // ok, due_soon, critical, overdue, disabled
+        const daysSince = attrs.days_since_last ?? null;
+        const intervalDays = attrs.config?.interval_days ?? 7;
+        const lastBalancing = attrs.last_balancing ? new Date(attrs.last_balancing) : null;
+        const planned = attrs.planned;
+        const currentState = attrs.current_state ?? 'standby'; // charging/balancing/planned/standby
+        const timeRemaining = attrs.time_remaining; // HH:MM
+
+        // Získat přesnou cenu z forecast sensoru
+        const balancingCost = forecastData?.attributes?.balancing_cost;
+
+        console.log('[Balancing] Forecast data:', {
+            hasForecast: !!forecastData,
+            hasAttributes: !!forecastData?.attributes,
+            balancingCost: balancingCost,
+            allAttributes: forecastData?.attributes ? Object.keys(forecastData.attributes) : []
+        });
+
+        // Vypočítat dny do dalšího balancingu
+        let daysRemaining = null;
+        if (daysSince !== null) {
+            daysRemaining = Math.max(0, intervalDays - daysSince);
+        }
+
+        // Status barvy
+        const statusColors = {
+            ok: '#4CAF50',           // zelená
+            due_soon: '#FFC107',     // žlutá
+            critical: '#FF9800',     // oranžová
+            overdue: '#F44336',      // červená
+            disabled: '#757575'      // šedá
+        };
+        const statusColor = statusColors[status] || '#757575';
+
+        // Current state texty a barvy
+        const stateTexts = {
+            charging: 'Příprava na 100%',
+            balancing: 'Vyrovnávání článků',
+            completed: 'Vybalancováno',
+            planned: 'Čeká na zahájení',
+            standby: 'Standby'
+        };
+
+        const stateColors = {
+            charging: '#FFC107',    // žlutá
+            balancing: '#FF9800',   // oranžová
+            completed: '#4CAF50',   // zelená
+            planned: '#2196F3',     // modrá
+            standby: '#757575'      // šedá
+        };
+
+        // Update status label s detailním stavem
+        const statusLabel = document.getElementById('balancing-status-label');
+        if (statusLabel) {
+            const stateText = stateTexts[currentState] || currentState;
+            const stateColor = stateColors[currentState] || '#757575';
+
+            if (currentState === 'charging' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (${timeRemaining} do balancování)`;
+            } else if (currentState === 'balancing' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (zbývá ${timeRemaining})`;
+            } else if (currentState === 'planned' && timeRemaining) {
+                statusLabel.textContent = `${stateText} (start za ${timeRemaining})`;
+            } else if (currentState === 'completed' && timeRemaining) {
+                statusLabel.textContent = `${stateText} ${timeRemaining}`;
+            } else {
+                statusLabel.textContent = stateText;
+            }
+
+            statusLabel.style.color = stateColor;
+        }
+
+        // OPRAVA: Update nadpisu karty podle aktuálního stavu
+        const cardTitle = document.getElementById('balancing-card-title');
+        if (cardTitle) {
+            if (currentState === 'balancing') {
+                cardTitle.textContent = '⚡ Probíhá balancování';
+                cardTitle.style.color = '#FF9800';
+            } else if (currentState === 'charging') {
+                cardTitle.textContent = '🔋 Příprava na balancování';
+                cardTitle.style.color = '#FFC107';
+            } else if (currentState === 'completed') {
+                cardTitle.textContent = '✅ Balancování dokončeno';
+                cardTitle.style.color = '#4CAF50';
+            } else if (currentState === 'planned') {
+                cardTitle.textContent = '📅 Balancování naplánováno';
+                cardTitle.style.color = '#2196F3';
+            } else {
+                cardTitle.textContent = '🔋 Vyrovnání baterie';
+                cardTitle.style.color = '#FF9800';
+            }
+        }
+
+        // Update velké číslo - dny
+        const daysNumber = document.getElementById('balancing-days-number');
+        if (daysNumber) {
+            if (daysRemaining !== null) {
+                daysNumber.textContent = daysRemaining;
+                daysNumber.style.color = statusColor;
+            } else {
+                daysNumber.textContent = '?';
+                daysNumber.style.color = '#757575';
+            }
+        }
+
+        // Update poslední balancing (krátký formát)
+        const lastDateShort = document.getElementById('balancing-last-date-short');
+        if (lastDateShort && lastBalancing) {
+            const dateStr = lastBalancing.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+            lastDateShort.textContent = `${dateStr} (${daysSince}d)`;
+        } else if (lastDateShort) {
+            lastDateShort.textContent = 'Žádné';
+        }
+
+        // Update plánované balancing (krátký formát)
+        const plannedShort = document.getElementById('balancing-planned-short');
+        const plannedTimeShort = document.getElementById('balancing-planned-time-short');
+        const costValueShort = document.getElementById('balancing-cost-value-short');
+
+        if (planned && plannedTimeShort && costValueShort && plannedShort) {
+            // Zobrazit plánovanou řádku
+            plannedShort.style.display = 'flex';
+
+            // Parsovat časy
+            const startTime = new Date(planned.holding_start);
+            const startStr = startTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+
+            // Zobrazit info o charging intervalech
+            const chargingIntervals = planned.charging_intervals || [];
+            const chargingAvgPrice = planned.charging_avg_price_czk || 0;
+            const endTime = new Date(planned.holding_end);
+            const endStr = endTime.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+
+            // Sestavit detailní tooltip s tabulkou (zmenšená šířka aby se vešla)
+            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 200px; max-width: 250px;">';
+            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px; color: #FFA726;">🔋 Plán balancování</strong>';
+
+            // Sekce: Příprava (nabíjení)
+            if (chargingIntervals.length > 0) {
+                tooltipHTML += '<div style="margin-bottom: 10px;">';
+                tooltipHTML += '<div style="font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.9);">📊 Příprava (nabíjení na 100%)</div>';
+                tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-left: 8px;">';
+
+                // Formátovat intervaly s datem (dnes/zítra)
+                const now = new Date();
+                const todayDate = now.getDate();
+                const chargingTimes = chargingIntervals.map(t => {
+                    const time = new Date(t);
+                    const timeStr = time.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+                    const isTomorrow = time.getDate() !== todayDate;
+                    return isTomorrow ? `zítra ${timeStr}` : timeStr;
+                });
+
+                // Rozdělit intervaly pod sebe pro lepší čitelnost
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7); vertical-align: top;">Intervaly:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right; line-height: 1.4;">${chargingTimes.join('<br>')}</td></tr>`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Průměrná cena:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingAvgPrice.toFixed(2)} Kč/kWh</td></tr>`;
+                tooltipHTML += '</table>';
+                tooltipHTML += '</div>';
+            }
+
+            // Sekce: Balancování (držení)
+            tooltipHTML += '<div style="margin-bottom: 10px;">';
+            tooltipHTML += '<div style="font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.9);">⚡ Balancování (držení na 100%)</div>';
+            tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-left: 8px;">';
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Začátek:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${startStr}</td></tr>`;
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Konec:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${endStr}</td></tr>`;
+            tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Délka:</td>';
+            tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${attrs.config?.hold_hours ?? 3} hodiny</td></tr>`;
+            tooltipHTML += '</table>';
+            tooltipHTML += '</div>';
+
+            // Sekce: Náklady (pokud jsou k dispozici)
+            if (balancingCost) {
+                const chargingCostVal = balancingCost.charging_cost_czk ?? 0;
+                const holdingCostVal = balancingCost.holding_cost_czk ?? 0;
+                const totalCostVal = balancingCost.total_cost_czk ?? 0;
+
+                tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-top: 8px;">';
+                tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
+                tooltipHTML += '<th style="padding: 4px; text-align: left; color: rgba(255,255,255,0.9);">💰 Náklady</th>';
+                tooltipHTML += '<th style="padding: 4px; text-align: right;"></th>';
+                tooltipHTML += '</tr></thead>';
+                tooltipHTML += '<tbody>';
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Nabíjení:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingCostVal.toFixed(2)} Kč</td></tr>`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Držení:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${holdingCostVal.toFixed(2)} Kč</td></tr>`;
+                tooltipHTML += '</tbody>';
+                tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
+                tooltipHTML += '<td style="padding: 4px;">Celkem:</td>';
+                tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCostVal.toFixed(2)} Kč</td>`;
+                tooltipHTML += '</tr></tfoot>';
+                tooltipHTML += '</table>';
+            }
+
+            tooltipHTML += '</div>';
+
+            plannedTimeShort.textContent = `dnes ${startStr}`;
+            plannedTimeShort.setAttribute('data-tooltip-html', tooltipHTML);
+
+            // Přesné náklady pokud jsou k dispozici
+            if (balancingCost) {
+                const totalCost = balancingCost.total_cost_czk ?? 0;
+                const chargingCost = balancingCost.charging_cost_czk ?? 0;
+                const holdingCost = balancingCost.holding_cost_czk ?? 0;
+
+                console.log('[Balancing] Cost data:', { totalCost, chargingCost, holdingCost, balancingCost });
+
+                costValueShort.textContent = `${totalCost.toFixed(1)} Kč`;
+                costValueShort.title = `Nabíjení: ${chargingCost.toFixed(2)} Kč\nDržení: ${holdingCost.toFixed(2)} Kč\nCelkem: ${totalCost.toFixed(2)} Kč`;
+            } else {
+                // Fallback odhad
+                console.warn('[Balancing] No balancing_cost in forecast, using estimate');
+                const avgPrice = planned.avg_price_czk ?? 0;
+                const holdHours = attrs.config?.hold_hours ?? 3;
+                const estimatedCost = avgPrice * holdHours * 0.7;
+                costValueShort.textContent = `~${estimatedCost.toFixed(1)} Kč`;
+                costValueShort.title = `Odhad (přesné náklady nejsou k dispozici)`;
+            }
+        } else if (plannedShort) {
+            // Skrýt plánovanou řádku
+            plannedShort.style.display = 'none';
+            if (costValueShort) costValueShort.textContent = '--';
+        }
+
+        // Update timeline bar
+        const timelineBar = document.getElementById('balancing-timeline-bar');
+        const timelineLabel = document.getElementById('balancing-timeline-label');
+
+        if (timelineBar && timelineLabel && daysSince !== null) {
+            const progressPercent = Math.min(100, (daysSince / intervalDays) * 100);
+
+            timelineBar.style.width = `${progressPercent}%`;
+            timelineBar.style.background = `linear-gradient(90deg, ${statusColor} 0%, ${statusColor}aa 100%)`;
+
+            timelineLabel.textContent = `${daysSince}/${intervalDays} dní`;
+        }
+
+        // Re-inicializovat tooltips aby fungovaly na dynamicky přidaných elementech
+        initTooltips();
+
+        // NOVÉ: Aktualizovat baterie balancing indikátor
+        updateBatteryBalancingIndicator(currentState, timeRemaining, balancingCost);
+
+    } catch (error) {
+        console.error('[Balancing] Error updating battery balancing card:', error);
+    }
+}
+
+/**
+ * Aktualizuje indikátor balancování baterie v boxu baterie
+ * @param {string} state - Aktuální stav: 'charging', 'balancing', 'planned', 'standby'
+ * @param {string} timeRemaining - Zbývající čas ve formátu HH:MM
+ * @param {object} balancingCost - Objekt s náklady na balancování
+ */
+function updateBatteryBalancingIndicator(state, timeRemaining, balancingCost) {
+    const indicator = document.getElementById('battery-balancing-indicator');
+    const icon = document.getElementById('balancing-icon');
+    const text = document.getElementById('balancing-text');
+
+    if (!indicator || !icon || !text) return;
+
+    // Zobrazit indikátor jen během aktivního balancování
+    if (state === 'charging' || state === 'balancing') {
+        indicator.style.display = 'flex';
+
+        // Ikona podle stavu
+        if (state === 'charging') {
+            icon.textContent = '⚡';
+            text.textContent = 'Nabíjení...';
+            indicator.className = 'battery-balancing-indicator charging';
+        } else if (state === 'balancing') {
+            icon.textContent = '⏸️';
+            text.textContent = 'Balancuje...';
+            indicator.className = 'battery-balancing-indicator holding';
+        }
+
+        // Sestavit tooltip s detaily
+        let tooltipHtml = '<div style="text-align: left; min-width: 200px;">';
+        tooltipHtml += `<strong>🔋 Balancování baterie</strong><br><br>`;
+
+        if (state === 'charging') {
+            tooltipHtml += `<strong>Fáze:</strong> Nabíjení baterie<br>`;
+            tooltipHtml += `<em>Baterie se nabíjí před vyvažováním článků</em><br><br>`;
+        } else {
+            tooltipHtml += `<strong>Fáze:</strong> Držení (balancování)<br>`;
+            tooltipHtml += `<em>Články baterie se vyvažují na stejnou úroveň</em><br><br>`;
+        }
+
+        if (timeRemaining) {
+            tooltipHtml += `⏱️ <strong>Zbývá:</strong> ${timeRemaining}<br>`;
+        }
+
+        if (balancingCost) {
+            const totalCost = balancingCost.total_cost_czk ?? 0;
+            const chargingCost = balancingCost.charging_cost_czk ?? 0;
+            const holdingCost = balancingCost.holding_cost_czk ?? 0;
+
+            tooltipHtml += `<br><strong>💰 Náklady:</strong><br>`;
+            tooltipHtml += `• Nabíjení: ${chargingCost.toFixed(2)} Kč<br>`;
+            tooltipHtml += `• Držení: ${holdingCost.toFixed(2)} Kč<br>`;
+            tooltipHtml += `• <strong>Celkem: ${totalCost.toFixed(2)} Kč</strong><br>`;
+        }
+
+        tooltipHtml += `<br><small style="opacity: 0.7;">ℹ️ Balancování prodlužuje životnost baterie tím, že vyrovná napětí všech článků</small>`;
+        tooltipHtml += `</div>`;
+
+        indicator.setAttribute('data-tooltip-html', tooltipHtml);
+
+    } else {
+        // Skrýt indikátor pokud není aktivní balancování
+        indicator.style.display = 'none';
+    }
+
+    // Reinicializovat tooltips
+    initTooltips();
+}
+
+function showGridChargingPopup() {
+    getSensorString(getSensorId('grid_charging_planned')).then(gridChargingData => {
+        if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
+            showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
+            return;
+        }
+
+        const intervals = gridChargingData.attributes.charging_intervals;
+        const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
+        const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+
+        // Build table HTML
+        let tableHtml = `
+            <div style="margin-bottom: 15px;">
+                <strong>Celková energie:</strong> ${totalEnergy.toFixed(2)} kWh<br>
+                <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-primary);">
+                        <th style="padding: 8px; text-align: left;">Čas</th>
+                        <th style="padding: 8px; text-align: right;">Energie</th>
+                        <th style="padding: 8px; text-align: right;">Cena</th>
+                        <th style="padding: 8px; text-align: center;">Stav</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        intervals.forEach((interval, index) => {
+            const rowBg = index % 2 === 0 ? 'var(--bg-tertiary)' : 'transparent';
+            const isCharging = interval.is_charging_battery;
+            const statusIcon = isCharging ? '⚡' : '🔋';
+            const statusText = isCharging ? 'Nabíjí' : interval.note || 'Baterie plná';
+            const energyText = interval.grid_charge_kwh ? interval.grid_charge_kwh.toFixed(2) + ' kWh' : '-';
+            const costText = interval.grid_charge_cost ? '~' + interval.grid_charge_cost.toFixed(2) + ' Kč' : '-';
+
+            tableHtml += `
+                <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-tertiary);">
+                    <td style="padding: 8px;">${interval.time_from} - ${interval.time_to}</td>
+                    <td style="padding: 8px; text-align: right;">${energyText}</td>
+                    <td style="padding: 8px; text-align: right;">${costText}</td>
+                    <td style="padding: 8px; text-align: center;" title="${statusText}">${statusIcon}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `
+                </tbody>
+            </table>
+        `;
+
+        showDialog('⚡ Plánované nabíjení ze sítě', tableHtml);
+    });
+}
+
+// === INITIALIZATION ===
+
+function init() {
+    drawConnections();
 
     // Detekovat a aplikovat téma z Home Assistantu
     detectAndApplyTheme();
@@ -1041,9 +1719,545 @@ function switchTab(tabName) {
     }
 }
 
-// === BOILER (enhanced in dashboard-boiler.js) ===
-const loadBoilerData = window.DashboardBoiler.loadBoilerData;
-const updateBoilerChart = window.DashboardBoiler.updateBoilerChart;
+// === BOILER DATA & CHART ===
+let boilerChartInstance = null;
+
+async function loadBoilerData() {
+    console.log('[Boiler] Loading boiler data...');
+
+    try {
+        // Update boiler sensor values
+        await updateBoilerSensors();
+
+        // Update boiler profile
+        await updateBoilerProfile();
+
+        // NEW: Update energy breakdown
+        await updateBoilerEnergyBreakdown();
+
+        // NEW: Update predicted usage
+        await updateBoilerPredictedUsage();
+
+        // NEW: Update grade thermometer
+        await updateBoilerGradeThermometer();
+
+        // NEW: Render profiling chart
+        await renderBoilerProfilingChart();
+
+        // NEW: Render heatmap
+        await renderBoilerHeatmap();
+
+        // Initialize or refresh boiler chart
+        await initializeBoilerChart();
+
+        console.log('[Boiler] Data loaded successfully');
+    } catch (error) {
+        console.error('[Boiler] Failed to load data:', error);
+    }
+}
+
+async function updateBoilerSensors() {
+    const hass = getHass();
+    if (!hass) return;
+
+    // Boiler sensors have different naming: sensor.oig_bojler_*
+    const sensorMap = {
+        'boiler-soc-value': 'sensor.oig_bojler_stav_nabiti',
+        'boiler-temp-top-value': 'sensor.oig_bojler_teplota_nahore',
+        'boiler-energy-required-value': 'sensor.oig_bojler_pozadovana_energie',
+        'boiler-plan-cost-value': 'sensor.oig_bojler_cena_planu_ohrevu'
+    };
+
+    for (const [elementId, entityId] of Object.entries(sensorMap)) {
+        const state = hass?.states?.[entityId];
+
+        const element = document.getElementById(elementId);
+        if (element && state) {
+            const value = parseFloat(state.state);
+            if (!isNaN(value)) {
+                if (entityId.includes('stav_nabiti')) {
+                    element.textContent = `${value.toFixed(0)} %`;
+                } else if (entityId.includes('teplota')) {
+                    element.textContent = `${value.toFixed(1)} °C`;
+                } else if (entityId.includes('energie')) {
+                    element.textContent = `${value.toFixed(2)} kWh`;
+                } else if (entityId.includes('cena')) {
+                    element.textContent = `${value.toFixed(2)} Kč`;
+                }
+            }
+        }
+    }
+
+    // Update plan info
+    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+    const planState = hass?.states?.[planEntityId];
+
+    if (planState?.attributes?.plan) {
+        const plan = planState.attributes.plan;
+        const slots = plan.slots || [];
+        const activeSlots = slots.filter(s => s.heating).length;
+
+        document.getElementById('boiler-plan-digest').textContent = plan.digest || 'N/A';
+        document.getElementById('boiler-plan-slots').textContent = slots.length;
+        document.getElementById('boiler-plan-active-slots').textContent = activeSlots;
+
+        if (slots.length > 0) {
+            const startTime = new Date(slots[0].start_time);
+            const endTime = new Date(slots[slots.length - 1].start_time);
+
+            document.getElementById('boiler-plan-start').textContent = startTime.toLocaleString('cs-CZ', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('boiler-plan-end').textContent = endTime.toLocaleString('cs-CZ', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    }
+}
+
+async function updateBoilerProfile() {
+    // Get configuration from energy sensor attributes
+    const hass = getHass();
+    if (!hass) return;
+
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (energyState?.attributes) {
+        const attrs = energyState.attributes;
+
+        document.getElementById('boiler-profile-volume').textContent = `${attrs.volume_l || '--'} L`;
+        document.getElementById('boiler-profile-target-temp').textContent = `${attrs.target_temp_c || '--'} °C`;
+
+        // Deadline from plan or config
+        const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+        const planState = hass?.states?.[planEntityId];
+        const deadline = planState?.attributes?.plan?.deadline || attrs.deadline || '--:--';
+        document.getElementById('boiler-profile-deadline').textContent = deadline;
+
+        document.getElementById('boiler-profile-stratification').textContent = attrs.stratification_mode || attrs.method || '--';
+        document.getElementById('boiler-profile-k-constant').textContent = attrs.k_constant?.toFixed(4) || '--';
+
+        // Heater power - hide if element doesn't exist
+        const heaterPowerEl = document.getElementById('boiler-profile-heater-power');
+        if (heaterPowerEl) {
+            heaterPowerEl.textContent = '--'; // Not available in attributes
+        }
+    }
+}
+
+async function initializeBoilerChart() {
+    const canvas = document.getElementById('boiler-chart');
+    if (!canvas) {
+        console.warn('[Boiler] Chart canvas not found');
+        return;
+    }
+
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Boiler] Hass not available for chart');
+        return;
+    }
+
+    // Lazy load boiler chart module
+    if (!window.BoilerChartModule) {
+        try {
+            const module = await import('./modules/boiler-chart.js');
+            window.BoilerChartModule = module.BoilerChartModule;
+        } catch (error) {
+            console.error('[Boiler] Failed to load boiler-chart.js:', error);
+            return;
+        }
+    }
+
+    // Create or refresh chart instance
+    if (!boilerChartInstance) {
+        boilerChartInstance = new window.BoilerChartModule();
+        await boilerChartInstance.init(canvas, hass, INVERTER_SN);
+    } else {
+        await boilerChartInstance.refresh();
+    }
+}
+
+// Boiler control functions (will use ServiceShield)
+async function planBoilerHeating() {
+    console.log('[Boiler] Planning heating...');
+
+    const hass = getHass();
+    if (!hass) return;
+
+    const service = 'oig_cloud.plan_boiler_heating';
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+
+    try {
+        await hass.callService('oig_cloud', 'plan_boiler_heating', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl úspěšně vytvořen', 'success');
+
+        // Refresh after planning
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to plan heating:', error);
+        showNotification('❌ Chyba při plánování topení', 'error');
+    }
+}
+
+async function applyBoilerPlan() {
+    console.log('[Boiler] Applying heating plan...');
+
+    const hass = getHass();
+    if (!hass) return;
+
+    const service = 'oig_cloud.apply_boiler_plan';
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+
+    try {
+        await hass.callService('oig_cloud', 'apply_boiler_plan', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl aplikován', 'success');
+
+        // Refresh after applying
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to apply plan:', error);
+        showNotification('❌ Chyba při aplikaci plánu', 'error');
+    }
+}
+
+async function cancelBoilerPlan() {
+    console.log('[Boiler] Canceling heating plan...');
+
+    const hass = getHass();
+    if (!hass) return;
+
+    const service = 'oig_cloud.cancel_boiler_plan';
+    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+
+    try {
+        await hass.callService('oig_cloud', 'cancel_boiler_plan', {
+            entity_id: entityId
+        });
+
+        showNotification('✅ Plán topení byl zrušen', 'success');
+
+        // Refresh after canceling
+        setTimeout(() => loadBoilerData(), 2000);
+    } catch (error) {
+        console.error('[Boiler] Failed to cancel plan:', error);
+        showNotification('❌ Chyba při rušení plánu', 'error');
+    }
+}
+
+// NEW: Update energy breakdown (grid vs alternative)
+async function updateBoilerEnergyBreakdown() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+    const planState = hass?.states?.[planEntityId];
+
+    if (planState?.attributes?.plan) {
+        const plan = planState.attributes.plan;
+        const gridEnergy = plan.grid_energy_kwh || 0;
+        const gridCost = plan.grid_cost_czk || 0;
+        const altEnergy = plan.alt_energy_kwh || 0;
+        const altCost = plan.alt_cost_czk || 0;
+
+        // Update breakdown cards
+        document.getElementById('boiler-grid-energy-value').textContent =
+            `${gridEnergy.toFixed(2)} kWh (${gridCost.toFixed(2)} Kč)`;
+        document.getElementById('boiler-alt-energy-value').textContent =
+            `${altEnergy.toFixed(2)} kWh (${altCost.toFixed(2)} Kč)`;
+
+        // Update heating ratio bar
+        const totalEnergy = gridEnergy + altEnergy;
+        if (totalEnergy > 0) {
+            const gridPercent = (gridEnergy / totalEnergy) * 100;
+            const altPercent = (altEnergy / totalEnergy) * 100;
+
+            document.getElementById('boiler-ratio-grid').style.width = `${gridPercent}%`;
+            document.getElementById('boiler-ratio-alt').style.width = `${altPercent}%`;
+            document.getElementById('boiler-ratio-grid-label').textContent = `${gridPercent.toFixed(0)}% síť`;
+            document.getElementById('boiler-ratio-alt-label').textContent = `${altPercent.toFixed(0)}% alternativa`;
+        }
+    }
+}
+
+// NEW: Update predicted usage
+async function updateBoilerPredictedUsage() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (energyState?.attributes) {
+        const predictedToday = energyState.attributes.predicted_usage_today || 0;
+        const peakHours = energyState.attributes.peak_hours || [];
+
+        document.getElementById('boiler-predicted-today').textContent = `${predictedToday.toFixed(2)} kWh`;
+        document.getElementById('boiler-peak-hours').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+
+        // Calculate approximate liters at 40°C
+        // Energy = Volume × (40 - 15) × 0.00116
+        // Volume = Energy / (25 × 0.00116)
+        const liters = predictedToday / (25 * 0.00116);
+        document.getElementById('boiler-water-liters').textContent = `${liters.toFixed(0)} L`;
+    }
+}
+
+// NEW: Update grade thermometer
+async function updateBoilerGradeThermometer() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const tempTopEntityId = 'sensor.oig_bojler_teplota_nahore';
+    const socEntityId = 'sensor.oig_bojler_stav_nabiti';
+    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+
+    const tempTopState = hass?.states?.[tempTopEntityId];
+    const socState = hass?.states?.[socEntityId];
+    const energyState = hass?.states?.[energyEntityId];
+
+    if (tempTopState && socState) {
+        const tempTop = parseFloat(tempTopState.state);
+        const soc = parseFloat(socState.state);
+        const tempBottom = energyState?.attributes?.temp_bottom_c || tempTop * 0.8;
+        const targetTemp = energyState?.attributes?.target_temp_c || 60;
+
+        // Update water level (based on SOC)
+        document.getElementById('boiler-water-level').style.height = `${soc}%`;
+
+        // Update grade label
+        document.getElementById('boiler-grade-label').textContent = `${soc.toFixed(0)}% nahřáto`;
+
+        // Update sensor markers
+        // Temperature range: 10°C (bottom) to 70°C (top)
+        // Position calculation: (temp - 10) / (70 - 10) * 100
+        const topPosition = ((tempTop - 10) / 60) * 100;
+        const bottomPosition = ((tempBottom - 10) / 60) * 100;
+        const targetPosition = ((targetTemp - 10) / 60) * 100;
+
+        document.getElementById('boiler-sensor-top').style.bottom = `${topPosition}%`;
+        document.getElementById('boiler-sensor-top').querySelector('.sensor-label').textContent = `${tempTop.toFixed(1)}°C`;
+
+        document.getElementById('boiler-sensor-bottom').style.bottom = `${bottomPosition}%`;
+        document.getElementById('boiler-sensor-bottom').querySelector('.sensor-label').textContent = `${tempBottom.toFixed(1)}°C`;
+
+        document.getElementById('boiler-target-line').style.bottom = `${targetPosition}%`;
+    }
+}
+
+// NEW: Render profiling chart
+async function renderBoilerProfilingChart() {
+    const canvas = document.getElementById('boiler-profile-chart');
+    if (!canvas) return;
+
+    try {
+        const hass = getHass();
+        if (!hass) {
+            console.warn('[Boiler] Hass not available');
+            return;
+        }
+
+        // Get data from sensor attributes
+        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
+        if (!energySensor || !energySensor.attributes) {
+            console.warn('[Boiler] Energy sensor not available');
+            return;
+        }
+
+        const attrs = energySensor.attributes;
+        const hourlyData = attrs.hourly_avg_kwh || {};
+        const peakHours = attrs.peak_hours || [];
+        const predictedToday = attrs.predicted_usage_today || 0;
+        const daysTracked = attrs.days_tracked || 7;
+
+        // Prepare data for chart
+        const labels = Array.from({ length: 24 }, (_, i) => `${i}h`);
+        const data = labels.map((_, i) => parseFloat(hourlyData[i] || 0));
+
+        // Destroy existing chart
+        if (window.boilerProfileChart) {
+            window.boilerProfileChart.destroy();
+        }
+
+        // Create new chart
+        const ctx = canvas.getContext('2d');
+        window.boilerProfileChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Průměrná spotřeba (kWh)',
+                    data: data,
+                    backgroundColor: labels.map((_, i) =>
+                        peakHours.includes(i)
+                            ? 'rgba(244, 67, 54, 0.6)'
+                            : 'rgba(33, 150, 243, 0.6)'
+                    ),
+                    borderColor: labels.map((_, i) =>
+                        peakHours.includes(i)
+                            ? 'rgba(244, 67, 54, 1)'
+                            : 'rgba(33, 150, 243, 1)'
+                    ),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `${context.parsed.y.toFixed(2)} kWh`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'kWh'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Hodina'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Update stats
+        document.getElementById('profile-stat-today').textContent = `${predictedToday.toFixed(2)} kWh`;
+        document.getElementById('profile-stat-peaks').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+        document.getElementById('profile-stat-days').textContent = `${daysTracked} dní`;
+
+    } catch (error) {
+        console.error('[Boiler] Error rendering profiling chart:', error);
+    }
+}
+
+// NEW: Render heatmap
+async function renderBoilerHeatmap() {
+    const container = document.getElementById('boiler-heatmap');
+    if (!container) return;
+
+    try {
+        const hass = getHass();
+        if (!hass) {
+            console.warn('[Boiler] Hass not available');
+            return;
+        }
+
+        // Get data from sensor attributes
+        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
+        if (!energySensor || !energySensor.attributes) {
+            console.warn('[Boiler] Energy sensor not available for heatmap');
+            return;
+        }
+
+        const attrs = energySensor.attributes;
+        const heatmapData = attrs.heatmap_data || [];
+
+        // If no heatmap_data, build from hourly_avg_kwh
+        let dataMatrix = heatmapData;
+        if (!heatmapData || heatmapData.length === 0) {
+            const hourlyData = attrs.hourly_avg_kwh || {};
+            dataMatrix = Array.from({ length: 7 }, () =>
+                Array.from({ length: 24 }, (_, hour) => parseFloat(hourlyData[hour] || 0))
+            );
+        }
+
+        // Calculate thresholds
+        const allValues = dataMatrix.flat();
+        const maxValue = Math.max(...allValues, 0.1);
+        const lowThreshold = maxValue * 0.3;
+        const highThreshold = maxValue * 0.7;
+
+        // Clear container
+        container.innerHTML = '';
+
+        // Day labels
+        const days = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+
+        // Header row with hour labels
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'heatmap-day-label';
+        container.appendChild(headerDiv);
+
+        for (let hour = 0; hour < 24; hour++) {
+            const hourLabel = document.createElement('div');
+            hourLabel.className = 'heatmap-hour-label';
+            hourLabel.textContent = hour;
+            container.appendChild(hourLabel);
+        }
+
+        // Rows for each day
+        days.forEach((day, dayIndex) => {
+            const dayLabel = document.createElement('div');
+            dayLabel.className = 'heatmap-day-label';
+            dayLabel.textContent = day;
+            container.appendChild(dayLabel);
+
+            for (let hour = 0; hour < 24; hour++) {
+                const value = dataMatrix[dayIndex]?.[hour] || 0;
+                const cell = document.createElement('div');
+                cell.className = 'heatmap-cell';
+
+                if (value === 0) {
+                    cell.classList.add('none');
+                } else if (value < lowThreshold) {
+                    cell.classList.add('low');
+                } else if (value < highThreshold) {
+                    cell.classList.add('medium');
+                } else {
+                    cell.classList.add('high');
+                }
+
+                cell.title = `${day} ${hour}h: ${value.toFixed(2)} kWh`;
+                container.appendChild(cell);
+            }
+        });
+
+    } catch (error) {
+        console.error('[Boiler] Error rendering heatmap:', error);
+    }
+}
+
+function toggleBoilerControlPanel() {
+    const panel = document.getElementById('boiler-control-panel');
+    const icon = document.getElementById('boiler-panel-toggle-icon');
+
+    if (panel.classList.contains('minimized')) {
+        panel.classList.remove('minimized');
+        icon.textContent = '−';
+    } else {
+        panel.classList.add('minimized');
+        icon.textContent = '+';
+    }
+}
+
+// Removed duplicate showNotification - using DashboardUtils.showNotification instead
+
+// === PRICING (moved to dashboard-pricing.js) ===
+const debouncedLoadPricingData = window.DashboardPricing.debouncedLoadPricingData;
+const debouncedUpdatePlannedConsumption = window.DashboardPricing.debouncedUpdatePlannedConsumption;
 const loadPricingData = window.DashboardPricing.loadPricingData;
 const updatePlannedConsumptionStats = window.DashboardPricing.updatePlannedConsumptionStats;
 let tileDialog = null;
@@ -1618,11 +2832,78 @@ function executeTileButtonAction(entityId, action) {
         });
 }
 
-// === ČHMÚ (moved to dashboard-chmu.js) ===
-const updateChmuWarningBadge = window.DashboardChmu.updateChmuWarningBadge;
-const toggleChmuWarningModal = window.DashboardChmu.toggleChmuWarningModal;
-const openChmuWarningModal = window.DashboardChmu.openChmuWarningModal;
-const closeChmuWarningModal = window.DashboardChmu.closeChmuWarningModal;
+// === ČHMÚ WEATHER WARNING FUNCTIONS ===
+
+let chmuWarningData = null;
+
+// Update ČHMÚ warning badge
+function updateChmuWarningBadge() {
+    const hass = getHass();
+    if (!hass) return;
+
+    const localSensorId = `sensor.oig_${INVERTER_SN}_chmu_warning_level`;
+    const globalSensorId = `sensor.oig_${INVERTER_SN}_chmu_warning_level_global`;
+
+    const localSensor = hass.states[localSensorId];
+    const globalSensor = hass.states[globalSensorId];
+
+    if (!localSensor) {
+        console.log('[ČHMÚ] Local sensor not found:', localSensorId);
+        return;
+    }
+
+    const badge = document.getElementById('chmu-warning-badge');
+    const icon = document.getElementById('chmu-icon');
+    const text = document.getElementById('chmu-text');
+
+    if (!badge || !icon || !text) return;
+
+    const severity = parseInt(localSensor.state) || 0;
+    const attrs = localSensor.attributes || {};
+    const warningsCount = attrs.warnings_count || 0;
+    const eventType = attrs.event_type || '';
+
+    // OPRAVENO: Pokud je warnings_count=0 nebo event_type obsahuje "Žádná výstraha", zobraz jako severity 0
+    const effectiveSeverity = (warningsCount === 0 || eventType.includes('Žádná výstraha')) ? 0 : severity;
+
+    // Store data for modal
+    chmuWarningData = {
+        local: localSensor,
+        global: globalSensor,
+        severity: effectiveSeverity
+    };
+
+    // Remove all severity classes
+    badge.className = 'chmu-warning-badge';
+    badge.classList.add(`severity-${effectiveSeverity}`);
+
+    // Update icon and text based on effective severity
+    if (effectiveSeverity === 0) {
+        icon.textContent = '✓';
+        text.textContent = 'Bez výstrah';
+    } else {
+        if (effectiveSeverity >= 3) {
+            icon.textContent = '🚨';
+        } else {
+            icon.textContent = '⚠️';
+        }
+
+        // Show event type instead of generic "Oranžové varování"
+        text.textContent = eventType;
+
+        // If multiple warnings, show count
+        if (warningsCount > 1) {
+            text.textContent = `${eventType} +${warningsCount - 1}`;
+        }
+    }
+}
+
+/**
+ * Update battery efficiency statistics on Pricing tab
+ * Loads data from battery_efficiency sensor and displays monthly stats
+ */
+async function updateBatteryEfficiencyStats() {
+    const hass = getHass();
     if (!hass) return;
 
     const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
@@ -2269,6 +3550,250 @@ async function updatePerformanceChart() {
 // Toggle ČHMÚ warning modal
 function toggleChmuWarningModal() {
     const modal = document.getElementById('chmu-modal');
+    if (!modal) return;
+
+    if (modal.classList.contains('active')) {
+        closeChmuWarningModal();
+    } else {
+        openChmuWarningModal();
+    }
+}
+
+// Open ČHMÚ warning modal
+function openChmuWarningModal() {
+    const modal = document.getElementById('chmu-modal');
+    const modalBody = document.getElementById('chmu-modal-body');
+
+    if (!modal || !modalBody || !chmuWarningData) return;
+
+    modal.classList.add('active');
+
+    // Render modal content
+    renderChmuWarningModal(modalBody);
+}
+
+// Close ČHMÚ warning modal
+function closeChmuWarningModal(event) {
+    const modal = document.getElementById('chmu-modal');
+    if (!modal) return;
+
+    // If event is provided, check if we clicked outside the content
+    if (event && event.target !== modal) return;
+
+    modal.classList.remove('active');
+}
+
+// Render ČHMÚ warning modal content
+function renderChmuWarningModal(container) {
+    if (!chmuWarningData || !container) return;
+
+    const { local, global } = chmuWarningData;
+    const attrs = local.attributes || {};
+    const severity = parseInt(local.state) || 0;
+
+    // If no warnings
+    if (severity === 0) {
+        container.innerHTML = `
+            <div class="chmu-no-warnings">
+                <div class="chmu-no-warnings-icon">☀️</div>
+                <h4>Žádná meteorologická výstraha</h4>
+                <p>V současné době nejsou aktivní žádná varování pro váš region.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Get warnings from new structure
+    const allWarningsDetails = attrs.all_warnings_details || [];
+    const topEventType = attrs.event_type;
+    const topSeverity = attrs.severity;
+    const topDescription = attrs.description;
+    const topInstruction = attrs.instruction;
+    const topOnset = attrs.onset;
+    const topExpires = attrs.expires;
+    const topEtaHours = attrs.eta_hours;
+
+    if (allWarningsDetails.length === 0) {
+        container.innerHTML = `
+            <div class="chmu-no-warnings">
+                <div class="chmu-no-warnings-icon">❓</div>
+                <h4>Data nejsou k dispozici</h4>
+                <p>Varování byla detekována, ale detaily nejsou dostupné.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const icon = getWarningIcon(topEventType);
+    const severityLabel = getSeverityLabel(severity);
+    const onset = topOnset ? formatChmuDateTime(topOnset) : '--';
+    const expires = topExpires ? formatChmuDateTime(topExpires) : '--';
+
+    let etaText = '';
+    if (topEtaHours !== null && topEtaHours !== undefined) {
+        if (topEtaHours <= 0) {
+            etaText = '<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Status</div><div class="chmu-info-value" style="color: #ef4444; font-weight: 700;">PROBÍHÁ NYNÍ</div></div></div>';
+        } else if (topEtaHours < 24) {
+            etaText = `<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Začátek za</div><div class="chmu-info-value">${Math.round(topEtaHours)} hodin</div></div></div>`;
+        }
+    }
+
+    // TOP WARNING (hlavní sekce)
+    let html = `
+        <div class="chmu-warning-item chmu-warning-top severity-${severity}">
+            <div class="chmu-warning-header">
+                <div class="chmu-warning-icon">${icon}</div>
+                <div class="chmu-warning-title">
+                    <h4>${topEventType}</h4>
+                    <span class="chmu-warning-severity severity-${severity}">${severityLabel}</span>
+                </div>
+            </div>
+
+            <div class="chmu-warning-info">
+                <div class="chmu-info-item">
+                    <div class="chmu-info-icon">⏰</div>
+                    <div class="chmu-info-content">
+                        <div class="chmu-info-label">Začátek</div>
+                        <div class="chmu-info-value">${onset}</div>
+                    </div>
+                </div>
+                <div class="chmu-info-item">
+                    <div class="chmu-info-icon">⏳</div>
+                    <div class="chmu-info-content">
+                        <div class="chmu-info-label">Konec</div>
+                        <div class="chmu-info-value">${expires}</div>
+                    </div>
+                </div>
+                ${etaText}
+            </div>
+
+            ${topDescription ? `
+                <div class="chmu-warning-description">
+                    <strong>📋 Popis</strong>
+                    <p>${topDescription}</p>
+                </div>
+            ` : ''}
+
+            ${topInstruction ? `
+                <div class="chmu-warning-description">
+                    <strong>💡 Doporučení</strong>
+                    <p>${topInstruction}</p>
+                </div>
+            ` : ''}
+        </div>
+    `;
+
+    // ALL WARNINGS (seznam všech aktivních)
+    if (allWarningsDetails.length > 1) {
+        html += '<div class="chmu-all-warnings-header"><h5>📋 Všechny aktivní výstrahy</h5></div>';
+
+        allWarningsDetails.forEach((warning, index) => {
+            const wEventType = warning.event || 'Varování';
+            const wSeverity = getSeverityLevelFromName(warning.severity);
+            const wOnset = warning.onset ? formatChmuDateTime(warning.onset) : '--';
+            const wExpires = warning.expires ? formatChmuDateTime(warning.expires) : '--';
+            const wRegions = (warning.regions || []).join(', ') || 'Celá ČR';
+            const wIcon = getWarningIcon(wEventType);
+            const wSeverityLabel = warning.severity || 'Neznámá';
+
+            html += `
+                <div class="chmu-warning-item chmu-warning-compact severity-${wSeverity}">
+                    <div class="chmu-warning-header">
+                        <div class="chmu-warning-icon">${wIcon}</div>
+                        <div class="chmu-warning-title">
+                            <h5>${wEventType}</h5>
+                            <span class="chmu-warning-severity severity-${wSeverity}">${wSeverityLabel}</span>
+                        </div>
+                    </div>
+                    <div class="chmu-warning-info-compact">
+                        <div class="chmu-info-row">
+                            <span class="chmu-info-label">📍 Regiony:</span>
+                            <span class="chmu-info-value">${wRegions}</span>
+                        </div>
+                        <div class="chmu-info-row">
+                            <span class="chmu-info-label">⏰ Platnost:</span>
+                            <span class="chmu-info-value">${wOnset} – ${wExpires}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    container.innerHTML = html;
+}
+
+// Helper: Convert severity name to level
+function getSeverityLevelFromName(severityName) {
+    const map = {
+        'Minor': 1,
+        'Moderate': 2,
+        'Severe': 3,
+        'Extreme': 4
+    };
+    return map[severityName] || 1;
+}
+
+// Get icon for warning type
+function getWarningIcon(eventType) {
+    const icons = {
+        'Vítr': '🌪️',
+        'Silný vítr': '💨',
+        'Déšť': '🌧️',
+        'Silný déšť': '⛈️',
+        'Sníh': '❄️',
+        'Sněžení': '🌨️',
+        'Bouřky': '⛈️',
+        'Mráz': '🥶',
+        'Vedro': '🌡️',
+        'Mlha': '🌫️',
+        'Náledí': '🧊',
+        'Laviny': '⚠️'
+    };
+
+    for (const [key, icon] of Object.entries(icons)) {
+        if (eventType.includes(key)) return icon;
+    }
+
+    return '⚠️';
+}
+
+// Get severity label
+function getSeverityLabel(severity) {
+    const labels = {
+        1: 'Minor',
+        2: 'Moderate',
+        3: 'Severe',
+        4: 'Extreme'
+    };
+    return labels[severity] || 'Unknown';
+}
+
+// Format ČHMÚ datetime
+function formatChmuDateTime(isoString) {
+    if (!isoString) return '--';
+
+    try {
+        const date = new Date(isoString);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+
+        return `${day}.${month}. ${hours}:${minutes}`;
+    } catch (e) {
+        return isoString;
+    }
+}
+
+// ========================================================================
+// MODE TIMELINE DIALOG - Phase 2.7
+// ========================================================================
+
+// === TIMELINE (moved to dashboard-timeline.js) ===
+const MODE_CONFIG = window.DashboardTimeline.MODE_CONFIG;
+const initTimelineDialog = window.DashboardTimeline.initTimelineDialog;
+const openModeTimelineDialog = window.DashboardTimeline.openModeTimelineDialog;
 const openTimelineDialog = window.DashboardTimeline.openTimelineDialog;
 const closeModeTimelineDialog = window.DashboardTimeline.closeModeTimelineDialog;
 const buildModeTimeline = window.DashboardTimeline.buildModeTimeline;
