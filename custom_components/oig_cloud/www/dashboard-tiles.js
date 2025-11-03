@@ -370,3 +370,273 @@ class DashboardTileManager {
 
 // Export pro použití v ostatních souborech
 window.DashboardTileManager = DashboardTileManager;
+async function initCustomTiles() {
+    console.log('[Tiles] Initializing custom tiles system...');
+
+    // Initialize tile dialog only if not already initialized
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Tiles] Cannot initialize - no HA connection, retrying...');
+        setTimeout(initCustomTiles, 1000); // Retry
+        return;
+    }
+
+    // Initialize tile manager (only once)
+    if (!tileManager) {
+        tileManager = new DashboardTileManager(hass);
+        window.tileManager = tileManager; // Export for dialog access
+
+        // Listen for config changes
+        tileManager.addChangeListener(() => {
+            console.log('[Tiles] Config changed, re-rendering...');
+            renderAllTiles();
+            updateTileControlsUI();
+        });
+
+        // ASYNCHRONNĚ načíst konfiguraci z HA storage
+        console.log('[Tiles] Loading configuration...');
+        await tileManager.init();
+        console.log('[Tiles] Configuration loaded');
+    }
+
+    // Initialize tile dialog (only once)
+    if (!tileDialog) {
+        tileDialog = new TileConfigDialog(hass, tileManager);
+        window.tileDialog = tileDialog; // Export for onclick handlers
+    }
+
+    // Initial render
+    renderAllTiles();
+    updateTileControlsUI();
+
+    console.log('[Tiles] Initialization complete');
+}
+
+/**
+ * Update tile count from UI input
+ */
+function updateTileCount(side, value) {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    tileManager.setTileCount(side, value);
+}
+
+/**
+ * Toggle tiles section visibility
+ */
+function toggleTilesVisibility() {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    tileManager.toggleVisibility();
+
+    const section = document.querySelector('.custom-tiles-section');
+    if (section) {
+        section.style.display = tileManager.isVisible() ? 'block' : 'none';
+    }
+}
+
+/**
+ * Reset all tiles to default
+ */
+function resetAllTiles() {
+    if (!tileManager) {
+        console.error('[Tiles] Tile manager not initialized');
+        return;
+    }
+
+    if (!confirm('Opravdu smazat všechny dlaždice a vrátit nastavení na výchozí?')) {
+        return;
+    }
+
+    tileManager.reset();
+
+    // Reset UI inputs
+    document.getElementById('tiles-left-count').value = 6;
+    document.getElementById('tiles-right-count').value = 6;
+}
+
+/**
+ * Update tile controls UI (inputs visibility toggle button)
+ */
+function updateTileControlsUI() {
+    if (!tileManager) return;
+
+    // Update inputs
+    const leftInput = document.getElementById('tiles-left-count');
+    const rightInput = document.getElementById('tiles-right-count');
+
+    if (leftInput) {
+        leftInput.value = tileManager.getTileCount('left');
+    }
+    if (rightInput) {
+        rightInput.value = tileManager.getTileCount('right');
+    }
+
+    // Update visibility
+    const section = document.querySelector('.custom-tiles-section');
+    if (section) {
+        const isVisible = tileManager.isVisible();
+        section.style.display = isVisible ? 'block' : 'none';
+        console.log(`[Tiles] Section visibility updated: ${isVisible}`);
+    }
+
+    // Update toggle button text
+    const toggleBtn = document.getElementById('btn-tiles-toggle');
+    if (toggleBtn && tileManager.isVisible()) {
+        toggleBtn.style.background = 'rgba(76, 175, 80, 0.2)';
+        toggleBtn.style.borderColor = 'rgba(76, 175, 80, 0.5)';
+    } else if (toggleBtn) {
+        toggleBtn.style.background = 'var(--button-bg)';
+        toggleBtn.style.borderColor = 'var(--button-border)';
+    }
+}
+
+/**
+ * Render all tiles (both blocks)
+ */
+function renderAllTiles() {
+    renderTilesBlock('left');
+    renderTilesBlock('right');
+}
+
+/**
+ * Render one tiles block
+ * @param {string} side - 'left' or 'right'
+ */
+function renderTilesBlock(side) {
+    const blockElement = document.getElementById(`tiles-${side}`);
+    if (!blockElement) {
+        console.warn(`[Tiles] Block element not found: tiles-${side}`);
+        return;
+    }
+
+    const gridElement = blockElement.querySelector('.tiles-grid');
+    if (!gridElement) {
+        console.warn(`[Tiles] Grid element not found in tiles-${side}`);
+        return;
+    }
+
+    // Get tile count for this side
+    const tileCount = tileManager.getTileCount(side);
+
+    // Hide block if count is 0
+    if (tileCount === 0) {
+        blockElement.style.display = 'none';
+        return;
+    } else {
+        blockElement.style.display = 'block';
+    }
+
+    // Get configuration
+    const tiles = tileManager.getTiles(side);
+
+    // Debug log pro diagnostiku
+    // console.log(`[Tiles] DEBUG ${side} tiles:`, tiles, 'non-null:', tiles.filter(t => t !== null));
+
+    // Render tiles up to count
+    gridElement.innerHTML = '';
+    for (let i = 0; i < tileCount; i++) {
+        const tileConfig = tiles[i];
+        const tileElement = renderTile(side, i, tileConfig);
+        gridElement.appendChild(tileElement);
+    }
+
+    // console.log(`[Tiles] Rendered ${side} block with ${tileCount} slots (${tiles.filter(t => t !== null).length} configured)`);
+}
+
+/**
+ * Render single tile
+ * @param {string} side - 'left' or 'right'
+ * @param {number} index - Tile index (0-5)
+ * @param {object|null} config - Tile configuration
+ * @returns {HTMLElement} - Tile element
+ */
+function renderTile(side, index, config) {
+    const tile = document.createElement('div');
+    tile.className = 'dashboard-tile';
+    tile.dataset.side = side;
+    tile.dataset.index = index.toString();
+
+    if (!config) {
+        // Placeholder tile
+        tile.classList.add('tile-placeholder');
+        tile.innerHTML = `
+            <div class="tile-placeholder-content" onclick="window.tileDialog.open(${index}, '${side}')">
+                <div class="tile-placeholder-icon">➕</div>
+                <div class="tile-placeholder-text">Přidat dlaždici</div>
+            </div>
+        `;
+    } else if (config.type === 'entity') {
+        // Entity tile
+        tile.classList.add('tile-entity');
+        tile.innerHTML = renderEntityTile(config, side, index);
+    } else if (config.type === 'button') {
+        // Button tile
+        tile.classList.add('tile-button');
+        tile.innerHTML = renderButtonTile(config, side, index);
+    }
+
+    // Add edit button (visible on hover)
+    if (config) {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'tile-edit';
+        editBtn.innerHTML = '⚙️';
+        editBtn.title = 'Upravit dlaždici';
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
+            window.tileDialog.open(index, side);
+        };
+        tile.appendChild(editBtn);
+    }
+
+    // Add remove button (visible on hover)
+    if (config) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'tile-remove';
+        removeBtn.innerHTML = '✕';
+        removeBtn.title = 'Odstranit dlaždici';
+        removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (confirm('Opravdu odstranit tuto dlaždici?')) {
+                tileManager.removeTile(side, index);
+            }
+        };
+        tile.appendChild(removeBtn);
+    }
+
+    return tile;
+}
+
+/**
+ * Render icon - podporuje emoji i MDI ikony
+ * @param {string} icon - Icon string (emoji nebo mdi:xxx)
+ * @param {string} color - Icon color
+ * @returns {string} - HTML string
+ */
+
+// Export all tile functions
+window.DashboardTiles = Object.assign(window.DashboardTiles || {}, {
+    // Existing TileManager
+    DashboardTileManager,
+    // Add rendering functions
+    initCustomTiles,
+    renderAllTiles,
+    renderTilesBlock,
+    renderTile,
+    renderIcon,
+    renderEntityTile,
+    renderButtonTile,
+    executeTileButtonAction,
+    updateTileCount,
+    toggleTilesVisibility,
+    resetAllTiles,
+    updateTileControlsUI
+});
+
+console.log('[DashboardTiles] Enhanced with rendering functions');

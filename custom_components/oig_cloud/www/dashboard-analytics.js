@@ -767,9 +767,52 @@ window.toggleSection = function(sectionId) {
     }
 };
 
+/**
+ * Update battery efficiency bar visualization
+ * Shows comparison between last month and current month efficiency
+ * @param {number} lastMonthEff - Last month efficiency percentage
+ * @param {number} currentMonthEff - Current month efficiency percentage
+ */
+function updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff) {
+    const barLast = document.getElementById('battery-efficiency-bar-last');
+    const barCurrent = document.getElementById('battery-efficiency-bar-current');
+    const labelLast = document.getElementById('battery-efficiency-bar-last-label');
+    const labelCurrent = document.getElementById('battery-efficiency-bar-current-label');
 
+    if (!barLast || !barCurrent || !labelLast || !labelCurrent) return;
 
+    // Pokud máme obě hodnoty, zobraz poměr
+    if (lastMonthEff !== null && lastMonthEff !== undefined &&
+        currentMonthEff !== null && currentMonthEff !== undefined) {
 
+        const total = lastMonthEff + currentMonthEff;
+        const lastPercent = (lastMonthEff / total) * 100;
+        const currentPercent = (currentMonthEff / total) * 100;
+
+        barLast.style.width = `${lastPercent}%`;
+        barCurrent.style.width = `${currentPercent}%`;
+        labelLast.textContent = `${lastMonthEff.toFixed(1)}%`;
+        labelCurrent.textContent = `${currentMonthEff.toFixed(1)}%`;
+    } else if (lastMonthEff !== null && lastMonthEff !== undefined) {
+        // Jen minulý měsíc
+        barLast.style.width = '100%';
+        barCurrent.style.width = '0%';
+        labelLast.textContent = `${lastMonthEff.toFixed(1)}%`;
+        labelCurrent.textContent = '--';
+    } else if (currentMonthEff !== null && currentMonthEff !== undefined) {
+        // Jen tento měsíc
+        barLast.style.width = '0%';
+        barCurrent.style.width = '100%';
+        labelLast.textContent = '--';
+        labelCurrent.textContent = `${currentMonthEff.toFixed(1)}%`;
+    } else {
+        // Žádná data
+        barLast.style.width = '0%';
+        barCurrent.style.width = '0%';
+        labelLast.textContent = '--';
+        labelCurrent.textContent = '--';
+    }
+}
 
 // Export analytics functions
 window.DashboardAnalytics = {
@@ -778,6 +821,7 @@ window.DashboardAnalytics = {
     buildYesterdayAnalysis,
     showYesterdayNoData,
     renderYesterdayAnalysis,
+    updateBatteryEfficiencyBar,
     init: function() {
         console.log('[DashboardAnalytics] Initialized');
     }
