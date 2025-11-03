@@ -917,8 +917,17 @@ function toggleBoilerControlPanel() {
 
 // Export enhanced boiler functions
 window.DashboardBoiler = Object.assign(window.DashboardBoiler || {}, {
-    loadBoilerData,
-    updateBoilerChart,
+    initBoilerDashboard,
+    loadBasicBoilerData,
+    loadExtendedBoilerData,
+    initializeBoilerChart,
+    renderBoilerProfilingChart,
+    renderBoilerHeatmap,
+    updateBoilerSensors,
+    updateBoilerProfile,
+    planBoilerHeating,
+    applyBoilerPlan,
+    cancelBoilerPlan,
     init: function() {
         console.log('[DashboardBoiler] Enhanced - Data & Chart loaded');
     }

@@ -15,8 +15,12 @@ function updateTime() {
     document.getElementById('current-time').textContent = now.toLocaleTimeString('cs-CZ');
 }
 
-// Debounced version of drawConnections to prevent excessive redraws
+// Debouncing timers
 let drawConnectionsTimeout = null;
+let loadDataTimer = null;
+let loadDetailsTimer = null;
+
+// Debounced version of drawConnections to prevent excessive redraws
 function debouncedDrawConnections(delay = 100) {
     if (drawConnectionsTimeout) {
         clearTimeout(drawConnectionsTimeout);
@@ -25,6 +29,22 @@ function debouncedDrawConnections(delay = 100) {
         drawConnections();
         drawConnectionsTimeout = null;
     }, delay);
+}
+
+// Debounced loadData() - prevents excessive calls
+function debouncedLoadData() {
+    if (loadDataTimer) clearTimeout(loadDataTimer);
+    loadDataTimer = setTimeout(() => {
+        loadData();
+    }, 200); // Wait 200ms before executing
+}
+
+// Debounced loadNodeDetails() - prevents excessive calls
+function debouncedLoadNodeDetails() {
+    if (loadDetailsTimer) clearTimeout(loadDetailsTimer);
+    loadDetailsTimer = setTimeout(() => {
+        loadNodeDetails();
+    }, 500); // Wait 500ms before executing
 }
 
 // Draw connection lines
@@ -1897,9 +1917,8 @@ window.DashboardFlow = {
     debouncedDrawConnections,
     drawConnections,
     getNodeCenters,
-    updateNode,
-    updateNodeDetails,
     loadData,
+    loadNodeDetails,
     debouncedLoadData,
     debouncedLoadNodeDetails,
     init: function() {

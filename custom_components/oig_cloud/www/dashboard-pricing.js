@@ -1789,8 +1789,6 @@ window.DashboardPricing = {
     updatePlannedConsumptionStats,
     updateWhatIfAnalysis,
     updateModeRecommendations,
-    initCombinedChart,
-    updateCombinedChart,
     init: function() {
         console.log('[DashboardPricing] Initialized');
     }

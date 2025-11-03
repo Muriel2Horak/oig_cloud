@@ -1900,12 +1900,14 @@ async function loadControlStatus() {
 window.DashboardShield = {
     startShieldQueueLiveUpdate,
     stopShieldQueueLiveUpdate,
-    loadShieldData,
     debouncedShieldMonitor,
-    setShieldMode,
-    setShieldModeWithConfirmation,
-    cancelShieldAction,
-    loadControlPanelStatus,
+    monitorShieldActivity,
+    updateShieldUI,
+    updateButtonStates,
+    setBoxMode,
+    setGridDelivery,
+    setBoilerMode,
+    loadControlStatus,
     init: function() {
         console.log('[DashboardShield] Initialized');
         startShieldQueueLiveUpdate();
