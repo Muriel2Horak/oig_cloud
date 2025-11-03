@@ -977,27 +977,8 @@ async function callService(domain, service, data) {
     }
 }
 
-// Show notification toast
-function showNotification(title, message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `notification-toast toast-${type}`;
-    toast.innerHTML = `
-        <div class="toast-header">
-            <strong>${title}</strong>
-            <button onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-
-    document.body.appendChild(toast);
-
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (toast.parentElement) {
-            toast.remove();
-        }
-    }, 5000);
-}
+// Use notification from DashboardUtils module
+const showNotification = window.DashboardUtils.showNotification;
 
 // Track mode change state
 let modeChangeInProgress = false;
@@ -2356,141 +2337,13 @@ function findShieldSensorId(sensorName) {
     }
 }
 
-// Get HA token from parent
-function getHAToken() {
-    try {
-        return parent.document.querySelector('home-assistant').hass.auth.data.access_token;
-    } catch (e) {
-        console.error('Cannot get HA token:', e);
-        return null;
-    }
-}
-
-// Fetch sensor data (returns { value, lastUpdated, attributes })
-// OPTIMIZED: Uses direct hass.states access instead of API calls
-async function getSensor(entityId) {
-    try {
-        const hass = getHass();
-        if (!hass || !hass.states) {
-            return { value: 0, lastUpdated: null, attributes: {} };
-        }
-
-        const state = hass.states[entityId];
-        if (!state) {
-            return { value: 0, lastUpdated: null, attributes: {} };
-        }
-
-        const value = state.state !== 'unavailable' && state.state !== 'unknown'
-            ? parseFloat(state.state) || 0
-            : 0;
-        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
-        const attributes = state.attributes || {};
-        return { value, lastUpdated, attributes };
-    } catch (e) {
-        return { value: 0, lastUpdated: null, attributes: {} };
-    }
-}
-
-// Fetch sensor data as string (for non-numeric sensors like box_prms_mode)
-// OPTIMIZED: Uses direct hass.states access instead of API calls
-async function getSensorString(entityId) {
-    try {
-        const hass = getHass();
-        if (!hass || !hass.states) {
-            return { value: '', lastUpdated: null, attributes: {} };
-        }
-
-        const state = hass.states[entityId];
-        if (!state) {
-            return { value: '', lastUpdated: null, attributes: {} };
-        }
-
-        const value = (state.state !== 'unavailable' && state.state !== 'unknown')
-            ? state.state
-            : '';
-        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
-        const attributes = state.attributes || {};
-        return { value, lastUpdated, attributes };
-    } catch (e) {
-        return { value: '', lastUpdated: null, attributes: {} };
-    }
-}
-
-// Safe sensor fetch with optional logging
-// OPTIMIZED: Uses direct hass.states access instead of API calls
-async function getSensorSafe(entityId, silent = true) {
-    try {
-        const hass = getHass();
-        if (!hass || !hass.states) {
-            return { value: 0, lastUpdated: null, attributes: {}, exists: false };
-        }
-
-        const state = hass.states[entityId];
-        if (!state) {
-            if (!silent) console.log(`Sensor ${entityId} not available`);
-            return { value: 0, lastUpdated: null, attributes: {}, exists: false };
-        }
-
-        const value = state.state !== 'unavailable' && state.state !== 'unknown'
-            ? parseFloat(state.state) || 0
-            : 0;
-        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
-        const attributes = state.attributes || {};
-        return { value, lastUpdated, attributes, exists: true };
-    } catch (e) {
-        if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
-        return { value: 0, lastUpdated: null, attributes: {}, exists: false };
-    }
-}
-
-// Safe string sensor fetch with optional logging
-// OPTIMIZED: Uses direct hass.states access instead of API calls
-async function getSensorStringSafe(entityId, silent = true) {
-    try {
-        const hass = getHass();
-        if (!hass || !hass.states) {
-            return { value: '', lastUpdated: null, exists: false };
-        }
-
-        const state = hass.states[entityId];
-        if (!state) {
-            if (!silent) console.log(`Sensor ${entityId} not available`);
-            return { value: '', lastUpdated: null, exists: false };
-        }
-
-        const value = (state.state !== 'unavailable' && state.state !== 'unknown')
-            ? state.state
-            : '';
-        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
-        return { value, lastUpdated, exists: true };
-    } catch (e) {
-        if (!silent) console.error(`Error fetching sensor ${entityId}:`, e);
-        return { value: '', lastUpdated: null, exists: false };
-    }
-}
-
-// Format relative time (like Home Assistant)
-function formatRelativeTime(date) {
-    if (!date) return '';
-
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHour = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHour / 24);
-
-    if (diffSec < 10) return 'právě teď';
-    if (diffSec < 60) return `před ${diffSec} sekundami`;
-    if (diffMin === 1) return 'před minutou';
-    if (diffMin < 60) return `před ${diffMin} minutami`;
-    if (diffHour === 1) return 'před hodinou';
-    if (diffHour < 24) return `před ${diffHour} hodinami`;
-    if (diffDay === 1) return 'včera';
-    if (diffDay < 7) return `před ${diffDay} dny`;
-
-    return date.toLocaleDateString('cs-CZ');
-}
+// Use API functions from DashboardAPI module
+const getHAToken = window.DashboardAPI.getHAToken;
+const getSensor = window.DashboardAPI.getSensor;
+const getSensorString = window.DashboardAPI.getSensorString;
+const getSensorSafe = window.DashboardAPI.getSensorSafe;
+const getSensorStringSafe = window.DashboardAPI.getSensorStringSafe;
+const formatRelativeTime = window.DashboardUtils.formatRelativeTime;
 
 // Update time
 function updateTime() {
@@ -3482,30 +3335,13 @@ function animateFlow(data) {
 // Cache for previous values to detect changes
 const previousValues = {};
 
-// Helper to format power: < 1000 → W, >= 1000 → kW
-function formatPower(watts) {
-    if (watts === null || watts === undefined || isNaN(watts)) return '-- W';
-    const absWatts = Math.abs(watts);
-    if (absWatts >= 1000) {
-        return (watts / 1000).toFixed(2) + ' kW';
-    } else {
-        return Math.round(watts) + ' W';
-    }
-}
+// Use utils from DashboardUtils module
+const formatPower = window.DashboardUtils.formatPower;
+const formatEnergy = window.DashboardUtils.formatEnergy;
+const updateElementIfChanged = window.DashboardUtils.updateElementIfChanged;
 
-// Helper to format energy: < 1000 → Wh, >= 1000 → kWh
-function formatEnergy(wattHours) {
-    if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
-    const absWh = Math.abs(wattHours);
-    if (absWh >= 1000) {
-        return (wattHours / 1000).toFixed(2) + ' kWh';
-    } else {
-        return Math.round(wattHours) + ' Wh';
-    }
-}
-
-// Helper to update element only if value changed (or first load)
-function updateElementIfChanged(elementId, newValue, cacheKey) {
+// Legacy wrapper kept for backward compatibility
+function updateElementIfChanged_legacy(elementId, newValue, cacheKey) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
@@ -6215,32 +6051,7 @@ function toggleBoilerControlPanel() {
     }
 }
 
-function showNotification(message, type = 'info') {
-    // Simple notification system (can be enhanced)
-    const notification = document.createElement('div');
-    notification.textContent = message;
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 20px;
-        background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
-        color: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        z-index: 10000;
-        font-size: 14px;
-        max-width: 300px;
-    `;
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        notification.style.opacity = '0';
-        notification.style.transition = 'opacity 0.3s';
-        setTimeout(() => notification.remove(), 300);
-    }, 3000);
-}
+// Removed duplicate showNotification - using DashboardUtils.showNotification instead
 
 // === PRICING CHARTS ===
 let loadPricingDataTimer = null;
