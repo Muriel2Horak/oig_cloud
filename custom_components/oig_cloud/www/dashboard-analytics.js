@@ -189,12 +189,20 @@ async function updatePerformanceChart() {
 // END PHASE 2.7
 // ============================================================================
 
-// Toggle ČHMÚ warning modal
-function toggleChmuWarningModal() {
-    const modal = document.getElementById('chmu-modal');
+// Import ČHMÚ functions from dashboard-chmu.js
+const toggleChmuWarningModal = window.DashboardChmu?.toggleChmuWarningModal;
+
+// Import Timeline functions from dashboard-timeline.js
 const openTimelineDialog = window.DashboardTimeline.openTimelineDialog;
 const closeModeTimelineDialog = window.DashboardTimeline.closeModeTimelineDialog;
 const buildModeTimeline = window.DashboardTimeline.buildModeTimeline;
+
+/**
+ * Initialize Today Plan Tile instance
+ * @param {HTMLElement} container - Container element
+ * @param {object} tileSummary - Tile summary data from API
+ */
+function initTodayPlanTile(container, tileSummary) {
     if (!container) {
         console.warn('[Today Plan Tile] Container not found - skipping render');
         return;
@@ -227,35 +235,9 @@ const buildModeTimeline = window.DashboardTimeline.buildModeTimeline;
     }
 }
 
-
 /**
- * Initialize Today Plan Tile instance
- * @param {HTMLElement} container - Container element
- * @param {object} tileSummary - Tile summary data from API
+ * Load unified cost tile data from API
  */
-function initTodayPlanTile(container, tileSummary) {
-    try {
-        todayPlanTileInstance = new TodayPlanTile(
-            container,
-            tileSummary,
-            () => {
-                // Click handler - open timeline dialog and show DNES tab
-                console.log('[Today Plan Tile] Opening timeline dialog with DNES view...');
-
-                // Initialize dialog if needed
-                if (!timelineDialogInstance) {
-                    initTimelineDialog();
-                }
-
-                // Open dialog (will automatically show 'today' tab via TimelineDialog.open())
-                timelineDialogInstance.open();
-            }
-        );
-        console.log('[Today Plan Tile] Instance created successfully');
-    } catch (error) {
-        console.error('[Today Plan Tile] Failed to create instance:', error);
-    }
-}
 
 
 /**

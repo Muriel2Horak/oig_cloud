@@ -317,6 +317,51 @@ export function formatDuration(seconds) {
 // ============================================================================
 
 if (typeof window !== 'undefined') {
+/**
+ * Find shield sensor ID with support for numeric suffixes
+ * Handles: sensor.oig_<SN>_<name> or sensor.oig_<SN>_<name>_2, _3, etc.
+ * @param {string} sensorName - Sensor name (without prefix)
+ * @returns {string} - Full entity ID
+ */
+function findShieldSensorId(sensorName) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            console.warn(`[Shield] Cannot find ${sensorName} - hass not available`);
+            return `sensor.oig_${INVERTER_SN}_${sensorName}`; // Fallback to basic pattern
+        }
+
+        const sensorPrefix = `sensor.oig_${INVERTER_SN}_${sensorName}`;
+
+        // Find matching entity with strict pattern:
+        // - sensor.oig_<SN>_<name> (exact match)
+        // - sensor.oig_<SN>_<name>_2, _3, etc. (with numeric suffix)
+        const entityId = Object.keys(hass.states).find(id => {
+            if (id === sensorPrefix) {
+                return true; // Exact match
+            }
+            if (id.startsWith(sensorPrefix + '_')) {
+                // Check if suffix is numeric (e.g., _2, _3)
+                const suffix = id.substring(sensorPrefix.length + 1);
+                return /^\d+$/.test(suffix);
+            }
+            return false;
+        });
+
+        if (!entityId) {
+            console.warn(`[Shield] Sensor not found with prefix: ${sensorPrefix}`);
+            return `sensor.oig_${INVERTER_SN}_${sensorName}`; // Fallback to basic pattern
+        }
+
+        return entityId;
+    } catch (e) {
+        console.error(`[Shield] Error finding sensor ${sensorName}:`, e);
+        return `sensor.oig_${INVERTER_SN}_${sensorName}`; // Fallback to basic pattern
+    }
+}
+
+// Export utilities
+if (typeof window !== 'undefined') {
     window.DashboardUtils = {
         formatPower,
         formatEnergy,
@@ -334,6 +379,8 @@ if (typeof window !== 'undefined') {
         waitForElement,
         isNumberInRange,
         isValidEntityId,
-        getCurrentTimeString
+        getCurrentTimeString,
+        findShieldSensorId
     };
 }
+

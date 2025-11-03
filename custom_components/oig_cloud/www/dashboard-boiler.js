@@ -60,7 +60,11 @@ async function initBoilerDashboard() {
 /**
  * Načtení dat z backend API
  */
-async function loadBoilerData() {
+/**
+ * Load basic boiler data (profiles and plan)
+ * Used for simple boiler tab
+ */
+async function loadBasicBoilerData() {
     try {
         console.log('🔥 [Boiler] Loading data from API');
 
@@ -373,7 +377,11 @@ console.log('🔥 [Boiler] Dashboard script loaded');
 // === BOILER DATA & CHART ===
 let boilerChartInstance = null;
 
-async function loadBoilerData() {
+/**
+ * Load extended boiler data (sensors, profile, energy breakdown, predictions, charts)
+ * Used for advanced boiler dashboard
+ */
+async function loadExtendedBoilerData() {
     console.log('[Boiler] Loading boiler data...');
 
     try {

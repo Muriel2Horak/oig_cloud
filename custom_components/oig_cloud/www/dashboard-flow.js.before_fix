@@ -6,8 +6,50 @@ function getSensorId(sensor) {
 }
 
 // Find shield sensor dynamically (may have suffix like _2, _3)
-// Import findShieldSensorId from utils
-const findShieldSensorId = window.DashboardUtils.findShieldSensorId;
+function findShieldSensorId(sensorName) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            console.warn(`[Shield] Cannot find ${sensorName} - hass not available`);
+            return getSensorId(sensorName); // Fallback to basic pattern
+        }
+
+        const sensorPrefix = `sensor.oig_${INVERTER_SN}_${sensorName}`;
+
+        // Find matching entity with strict pattern:
+        // - sensor.oig_<SN>_<name> (exact match)
+        // - sensor.oig_<SN>_<name>_2, _3, etc. (with numeric suffix)
+        const entityId = Object.keys(hass.states).find(id => {
+            if (id === sensorPrefix) {
+                return true; // Exact match
+            }
+            if (id.startsWith(sensorPrefix + '_')) {
+                // Check if suffix is numeric (e.g., _2, _3)
+                const suffix = id.substring(sensorPrefix.length + 1);
+                return /^\d+$/.test(suffix);
+            }
+            return false;
+        });
+
+        if (!entityId) {
+            console.warn(`[Shield] Sensor not found with prefix: ${sensorPrefix}`);
+            return getSensorId(sensorName); // Fallback to basic pattern
+        }
+
+        return entityId;
+    } catch (e) {
+        console.error(`[Shield] Error finding sensor ${sensorName}:`, e);
+        return getSensorId(sensorName); // Fallback to basic pattern
+    }
+}
+
+// Use API functions from DashboardAPI module
+const getHAToken = window.DashboardAPI.getHAToken;
+const getSensor = window.DashboardAPI.getSensor;
+const getSensorString = window.DashboardAPI.getSensorString;
+const getSensorSafe = window.DashboardAPI.getSensorSafe;
+const getSensorStringSafe = window.DashboardAPI.getSensorStringSafe;
+const formatRelativeTime = window.DashboardUtils.formatRelativeTime;
 
 // Update time
 function updateTime() {
