@@ -1,0 +1,416 @@
+/**
+ * OIG Cloud Dashboard - API & Data Loading
+ *
+ * Funkce pro načítání dat ze senzorů, REST API a služeb Home Assistant.
+ * Extrahováno z monolitického dashboard-core.js
+ *
+ * @module dashboard-api
+ * @version 1.0.0
+ * @date 2025-11-02
+ */
+
+// Global inverter SN (může být přepsán)
+let INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+
+// ============================================================================
+// HOME ASSISTANT ACCESS
+// ============================================================================
+
+/**
+ * Získá přístup k Home Assistant objektu
+ * @returns {object|null} Home Assistant objekt nebo null
+ */
+export function getHass() {
+    try {
+        return parent.document.querySelector('home-assistant')?.hass || null;
+    } catch (e) {
+        console.error('[API] Cannot access hass:', e);
+        return null;
+    }
+}
+
+/**
+ * Získá HA autentizační token
+ * @returns {string|null} Token nebo null
+ */
+export function getHAToken() {
+    try {
+        return parent.document.querySelector('home-assistant').hass.auth.data.access_token;
+    } catch (e) {
+        console.error('[API] Cannot get HA token:', e);
+        return null;
+    }
+}
+
+// ============================================================================
+// SENSOR ID HELPERS
+// ============================================================================
+
+/**
+ * Vytvoří sensor entity ID
+ * @param {string} sensor - Název senzoru
+ * @returns {string} Entity ID
+ */
+export function getSensorId(sensor) {
+    return `sensor.oig_${INVERTER_SN}_${sensor}`;
+}
+
+/**
+ * Najde shield sensor s dynamickým suffixem (_2, _3, ...)
+ * @param {string} sensorName - Název senzoru
+ * @returns {string} Entity ID
+ */
+export function findShieldSensorId(sensorName) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            console.warn(`[API] Cannot find ${sensorName} - hass not available`);
+            return getSensorId(sensorName);
+        }
+
+        const sensorPrefix = `sensor.oig_${INVERTER_SN}_${sensorName}`;
+
+        // Find exact match or with numeric suffix
+        const entityId = Object.keys(hass.states).find(id => {
+            if (id === sensorPrefix) return true;
+            if (id.startsWith(sensorPrefix + '_')) {
+                const suffix = id.substring(sensorPrefix.length + 1);
+                return /^\d+$/.test(suffix);
+            }
+            return false;
+        });
+
+        if (!entityId) {
+            console.warn(`[API] Sensor not found: ${sensorPrefix}`);
+            return getSensorId(sensorName);
+        }
+
+        return entityId;
+    } catch (e) {
+        console.error(`[API] Error finding sensor ${sensorName}:`, e);
+        return getSensorId(sensorName);
+    }
+}
+
+// ============================================================================
+// SENSOR DATA LOADING
+// ============================================================================
+
+/**
+ * Načte numerický sensor
+ * @param {string} entityId - Entity ID
+ * @returns {Promise<object>} {value, lastUpdated, attributes}
+ */
+export async function getSensor(entityId) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            return { value: 0, lastUpdated: null, attributes: {} };
+        }
+
+        const state = hass.states[entityId];
+        if (!state) {
+            return { value: 0, lastUpdated: null, attributes: {} };
+        }
+
+        const value = state.state !== 'unavailable' && state.state !== 'unknown'
+            ? parseFloat(state.state) || 0
+            : 0;
+        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+        const attributes = state.attributes || {};
+        return { value, lastUpdated, attributes };
+    } catch (e) {
+        return { value: 0, lastUpdated: null, attributes: {} };
+    }
+}
+
+/**
+ * Načte string sensor
+ * @param {string} entityId - Entity ID
+ * @returns {Promise<object>} {value, lastUpdated, attributes}
+ */
+export async function getSensorString(entityId) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            return { value: '', lastUpdated: null, attributes: {} };
+        }
+
+        const state = hass.states[entityId];
+        if (!state) {
+            return { value: '', lastUpdated: null, attributes: {} };
+        }
+
+        const value = (state.state !== 'unavailable' && state.state !== 'unknown')
+            ? state.state
+            : '';
+        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+        const attributes = state.attributes || {};
+        return { value, lastUpdated, attributes };
+    } catch (e) {
+        return { value: '', lastUpdated: null, attributes: {} };
+    }
+}
+
+/**
+ * Načte sensor s kontrolou existence
+ * @param {string} entityId - Entity ID
+ * @param {boolean} silent - Potlačit logy
+ * @returns {Promise<object>} {value, lastUpdated, attributes, exists}
+ */
+export async function getSensorSafe(entityId, silent = true) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+        }
+
+        const state = hass.states[entityId];
+        if (!state) {
+            if (!silent) console.log(`[API] Sensor ${entityId} not available`);
+            return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+        }
+
+        const value = state.state !== 'unavailable' && state.state !== 'unknown'
+            ? parseFloat(state.state) || 0
+            : 0;
+        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+        const attributes = state.attributes || {};
+        return { value, lastUpdated, attributes, exists: true };
+    } catch (e) {
+        if (!silent) console.error(`[API] Error fetching ${entityId}:`, e);
+        return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+    }
+}
+
+/**
+ * Načte string sensor s kontrolou existence
+ * @param {string} entityId - Entity ID
+ * @param {boolean} silent - Potlačit logy
+ * @returns {Promise<object>} {value, lastUpdated, exists}
+ */
+export async function getSensorStringSafe(entityId, silent = true) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.states) {
+            return { value: '', lastUpdated: null, exists: false };
+        }
+
+        const state = hass.states[entityId];
+        if (!state) {
+            if (!silent) console.log(`[API] Sensor ${entityId} not available`);
+            return { value: '', lastUpdated: null, exists: false };
+        }
+
+        const value = (state.state !== 'unavailable' && state.state !== 'unknown')
+            ? state.state
+            : '';
+        const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
+        return { value, lastUpdated, exists: true };
+    } catch (e) {
+        if (!silent) console.error(`[API] Error fetching ${entityId}:`, e);
+        return { value: '', lastUpdated: null, exists: false };
+    }
+}
+
+// ============================================================================
+// REST API CALLS
+// ============================================================================
+
+/**
+ * Načte data z OIG Cloud REST API
+ * @param {string} endpoint - API endpoint (bez /api/oig_cloud prefix)
+ * @param {object} options - Fetch options
+ * @returns {Promise<object>} API response nebo null
+ */
+export async function fetchOIGAPI(endpoint, options = {}) {
+    try {
+        const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+
+        if (!response.ok) {
+            console.error(`[API] Error fetching ${url}: ${response.status}`);
+            return null;
+        }
+
+        return await response.json();
+    } catch (e) {
+        console.error(`[API] Fetch error for ${endpoint}:`, e);
+        return null;
+    }
+}
+
+/**
+ * Načte battery forecast timeline
+ * @param {string} inverterSn - Inverter SN
+ * @returns {Promise<object>} Timeline data
+ */
+export async function loadBatteryTimeline(inverterSn) {
+    return await fetchOIGAPI(`/battery_forecast/${inverterSn}/timeline`);
+}
+
+/**
+ * Načte unified cost tile
+ * @param {string} inverterSn - Inverter SN
+ * @returns {Promise<object>} Cost tile data
+ */
+export async function loadUnifiedCostTile(inverterSn) {
+    return await fetchOIGAPI(`/battery_forecast/${inverterSn}/unified_cost_tile`);
+}
+
+/**
+ * Načte spot prices
+ * @returns {Promise<object>} Spot price data
+ */
+export async function loadSpotPrices() {
+    return await fetchOIGAPI('/spot_prices');
+}
+
+/**
+ * Načte analytics data
+ * @param {string} inverterSn - Inverter SN
+ * @returns {Promise<object>} Analytics data
+ */
+export async function loadAnalytics(inverterSn) {
+    return await fetchOIGAPI(`/analytics/${inverterSn}`);
+}
+
+// ============================================================================
+// SERVICE CALLS
+// ============================================================================
+
+/**
+ * Zavolá Home Assistant service
+ * @param {string} domain - Service domain
+ * @param {string} service - Service name
+ * @param {object} data - Service data
+ * @returns {Promise<boolean>} Success
+ */
+export async function callService(domain, service, data = {}) {
+    try {
+        const hass = getHass();
+        if (!hass || !hass.callService) {
+            console.error('[API] Cannot call service - hass not available');
+            return false;
+        }
+
+        await hass.callService(domain, service, data);
+        return true;
+    } catch (e) {
+        console.error(`[API] Service call failed (${domain}.${service}):`, e);
+        return false;
+    }
+}
+
+/**
+ * Otevře entity dialog
+ * @param {string} entityId - Entity ID
+ * @returns {boolean} Success
+ */
+export function openEntityDialog(entityId) {
+    try {
+        const event = new Event('hass-more-info', { bubbles: true, composed: true });
+        event.detail = { entityId };
+        parent.document.querySelector('home-assistant').dispatchEvent(event);
+        return true;
+    } catch (e) {
+        console.error('[API] Cannot open entity dialog:', e);
+        return false;
+    }
+}
+
+// ============================================================================
+// BATCH LOADING
+// ============================================================================
+
+/**
+ * Načte multiple senzory najednou (optimalizováno)
+ * @param {string[]} entityIds - Array of entity IDs
+ * @returns {Promise<object>} Map entityId → sensor data
+ */
+export async function batchLoadSensors(entityIds) {
+    const hass = getHass();
+    if (!hass || !hass.states) {
+        return {};
+    }
+
+    const result = {};
+    for (const entityId of entityIds) {
+        const state = hass.states[entityId];
+        if (state) {
+            const value = state.state !== 'unavailable' && state.state !== 'unknown'
+                ? parseFloat(state.state) || 0
+                : 0;
+            result[entityId] = {
+                value,
+                lastUpdated: state.last_updated ? new Date(state.last_updated) : null,
+                attributes: state.attributes || {},
+                exists: true
+            };
+        } else {
+            result[entityId] = {
+                value: 0,
+                lastUpdated: null,
+                attributes: {},
+                exists: false
+            };
+        }
+    }
+    return result;
+}
+
+// ============================================================================
+// INVERTER SN MANAGEMENT
+// ============================================================================
+
+/**
+ * Nastaví inverter SN
+ * @param {string} sn - Inverter serial number
+ */
+export function setInverterSN(sn) {
+    INVERTER_SN = sn;
+}
+
+/**
+ * Získá aktuální inverter SN
+ * @returns {string} Inverter SN
+ */
+export function getInverterSN() {
+    return INVERTER_SN;
+}
+
+// ============================================================================
+// EXPORT DEFAULT (backward compatibility)
+// ============================================================================
+
+if (typeof window !== 'undefined') {
+    window.DashboardAPI = {
+        getHass,
+        getHAToken,
+        getSensorId,
+        findShieldSensorId,
+        getSensor,
+        getSensorString,
+        getSensorSafe,
+        getSensorStringSafe,
+        fetchOIGAPI,
+        loadBatteryTimeline,
+        loadUnifiedCostTile,
+        loadSpotPrices,
+        loadAnalytics,
+        callService,
+        openEntityDialog,
+        batchLoadSensors,
+        setInverterSN,
+        getInverterSN
+    };
+
+    // Backward compatibility - expose getHass globally
+    window.getHass = getHass;
+}
