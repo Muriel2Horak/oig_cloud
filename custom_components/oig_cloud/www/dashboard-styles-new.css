@@ -1,0 +1,24 @@
+/**
+ * OIG Cloud Dashboard - Modular Styles
+ * 
+ * Main stylesheet that imports all CSS modules.
+ * Modules are loaded in dependency order.
+ */
+
+/* Core variables and theme definitions */
+@import url('css/variables.css');
+
+/* Light theme overrides */
+@import url('css/theme-light.css');
+
+/* Layout components */
+@import url('css/tabs.css');
+@import url('css/flow-canvas.css');
+
+/* Feature-specific styles */
+@import url('css/shield.css');
+@import url('css/custom-tiles.css');
+
+/* Tab-specific styles */
+@import url('css/boiler-tab.css');
+@import url('css/pricing-tab.css');

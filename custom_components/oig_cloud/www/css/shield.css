@@ -1,0 +1,220 @@
+        /* === SHIELD INTEGRATION STYLES === */
+
+        /* Global shield status bar */
+        .shield-status {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .shield-status.idle {
+            background: var(--shield-idle-bg);
+            border: 1px solid var(--shield-idle-border);
+            color: var(--shield-idle-text);
+        }
+
+        .shield-status.pending {
+            background: var(--shield-pending-bg);
+            border: 1px solid var(--shield-pending-border);
+            color: var(--shield-pending-text);
+            animation: pulse-status 1.5s ease-in-out infinite;
+        }
+
+        .shield-status.processing {
+            background: var(--shield-processing-bg);
+            border: 1px solid var(--shield-processing-border);
+            color: var(--shield-processing-text);
+        }
+
+        @keyframes pulse-status {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: var(--shield-pending-shadow);
+            }
+
+            50% {
+                opacity: 0.8;
+                box-shadow: var(--shield-pending-shadow);
+            }
+        }
+
+        /* Button states for shield */
+        .button-group button.active {
+            background: var(--shield-button-active-bg);
+            border-color: var(--shield-button-active-border);
+            box-shadow: var(--shield-button-active-shadow);
+            font-weight: 600;
+        }
+
+        .button-group button.active::before {
+            content: '✓ ';
+            color: var(--shield-button-active-check);
+            font-weight: bold;
+            margin-right: 2px;
+        }
+
+        .button-group button.pending {
+            background: var(--shield-pending-bg);
+            border-color: var(--shield-pending-border);
+            animation: pulse-pending 1.5s ease-in-out infinite;
+        }
+
+        .button-group button.pending::before {
+            content: '⏳ ';
+            margin-right: 2px;
+        }
+
+        @keyframes pulse-pending {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+                box-shadow: var(--shield-pending-shadow);
+            }
+
+            50% {
+                opacity: 0.75;
+                transform: scale(1.02);
+                box-shadow: var(--shield-pending-shadow);
+            }
+        }
+
+        .button-group button.processing {
+            background: var(--shield-processing-bg);
+            border-color: var(--shield-processing-border);
+            box-shadow: var(--shield-processing-shadow);
+        }
+
+        .button-group button.processing::before {
+            content: '🔄 ';
+            display: inline-block;
+            margin-right: 2px;
+            animation: spin 1.2s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Status text transitions */
+        .status .transitioning {
+            color: var(--shield-pending-text);
+            animation: pulse-text 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-text {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        /* Queue indicator */
+        .queue-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--shield-queue-bg);
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+            color: var(--shield-pending-text);
+        }
+
+        /* Shield Queue Table */
+        .shield-queue-table {
+            width: 100%;
+            max-width: 1600px;
+            margin: 10px auto 0;
+            border-collapse: collapse;
+            font-size: 12px;
+            table-layout: fixed;
+        }
+
+        .shield-queue-table th {
+            background: var(--table-header-bg);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 1px solid var(--table-border);
+            white-space: nowrap;
+        }
+
+        .shield-queue-table th:nth-child(1) {
+            width: 140px;
+        }
+
+        /* Stav */
+        .shield-queue-table th:nth-child(2) {
+            width: 200px;
+        }
+
+        /* Služba */
+        .shield-queue-table th:nth-child(3) {
+            width: auto;
+        }
+
+        /* Změny (zbytek prostoru) */
+        .shield-queue-table th:nth-child(4) {
+            width: 90px;
+        }
+
+        /* Vytvořeno */
+        .shield-queue-table th:nth-child(5) {
+            width: 90px;
+        }
+
+        /* Trvání */
+
+        .shield-queue-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--table-border-light);
+            vertical-align: top;
+        }
+
+        .shield-queue-table td:nth-child(3) {
+            word-break: break-word;
+        }
+
+        .shield-queue-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .queue-status-running {
+            color: #42a5f5;
+            font-weight: 600;
+        }
+
+        .queue-status-queued {
+            color: #ffc107;
+        }
+
+        .queue-time {
+            opacity: 0.7;
+            font-size: 11px;
+        }
+
+        .queue-empty {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.5;
+        }
+

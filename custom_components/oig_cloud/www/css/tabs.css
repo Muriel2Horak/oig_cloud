@@ -1,0 +1,165 @@
+        /* === TABS === */
+        .dashboard-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: var(--bg-secondary);
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border-primary);
+            align-items: center;
+        }
+
+        .dashboard-tab {
+            flex: 1;
+            padding: 12px;
+            background: var(--button-bg);
+            border: 1px solid var(--button-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .dashboard-tab:hover {
+            background: var(--button-hover);
+            color: var(--text-primary);
+        }
+
+        .dashboard-tab.active {
+            background: linear-gradient(135deg, rgba(66, 165, 245, 0.5), rgba(33, 150, 243, 0.5));
+            border-color: rgba(66, 165, 245, 0.8);
+            box-shadow: 0 0 15px rgba(66, 165, 245, 0.4);
+            color: var(--text-primary);
+        }
+
+        /* Layout controls */
+        .layout-controls {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .btn-layout-edit,
+        .btn-layout-reset {
+            padding: 10px 14px;
+            background: var(--button-bg);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        .btn-layout-edit:hover,
+        .btn-layout-reset:hover {
+            background: var(--button-hover);
+            color: var(--text-primary);
+            transform: scale(1.05);
+        }
+
+        .btn-layout-edit.active {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.5), rgba(255, 152, 0, 0.5));
+            border-color: rgba(255, 193, 7, 0.8);
+            box-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
+            color: var(--text-primary);
+        }
+
+        .btn-layout-reset {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.3), rgba(211, 47, 47, 0.3));
+        }
+
+        .btn-layout-reset:hover {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.5), rgba(211, 47, 47, 0.5));
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .chart-container {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-primary);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 18px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-primary);
+            padding: 15px;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.3s, background 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card.zoom-active {
+            border-color: rgba(33, 150, 243, 0.8);
+            box-shadow: 0 0 20px rgba(33, 150, 243, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%);
+            transform: scale(1.02);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .stat-unit {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-left: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-tabs {
+                flex-direction: column;
+            }
+
+            .chart-wrapper {
+                height: 300px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
