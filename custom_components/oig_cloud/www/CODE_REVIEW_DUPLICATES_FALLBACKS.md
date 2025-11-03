@@ -82,3 +82,51 @@ updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main', true);
 // Reálná hodnota
 updateElementIfChanged('battery-efficiency-main', '85.2%', 'batt-eff-main', false);
 ```
+
+## ✅ IMPLEMENTOVÁNO
+
+### Fallback Indikátor - HOTOVO!
+
+**CSS Styling** (css/variables.css):
+```css
+.fallback-value {
+    opacity: 0.5;
+    font-style: italic;
+    color: var(--text-secondary, #888) !important;
+    cursor: help;
+}
+
+.fallback-value::after {
+    content: ' ⚠';
+    font-size: 0.8em;
+    margin-left: 2px;
+}
+```
+
+**Enhanced updateElementIfChanged** (dashboard-utils.js):
+- Přidán 4. parametr `isFallback` (výchozí false)
+- Automaticky přidává CSS třídu `.fallback-value`
+- Přidává tooltip "Data nejsou k dispozici"
+
+**Příklady použití**:
+```javascript
+// SPRÁVNĚ - Fallback s indikátorem
+updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main', true);
+// Zobrazí: -- ⚠ (šedě, kurzívou, s tooltipem)
+
+// SPRÁVNĚ - Reálná hodnota
+updateElementIfChanged('battery-efficiency-main', '85.2%', 'batt-eff-main', false);
+// Zobrazí: 85.2% (normálně)
+
+// CHYBA - Starý způsob (nebude vizuálně odlišitelný)
+updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main');
+// Zobrazí: -- (ale vypadá jako reálná hodnota!)
+```
+
+**TODO: Refaktorovat všechny moduly**
+Najít všechny volání:
+```bash
+grep -n "updateElementIfChanged.*'--'" dashboard-*.js
+```
+
+A přidat čtvrtý parametr `true` pro fallback hodnoty.

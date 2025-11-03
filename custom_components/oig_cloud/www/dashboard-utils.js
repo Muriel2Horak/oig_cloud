@@ -202,13 +202,24 @@ const previousValues = {};
  * @param {string} elementId - ID elementu
  * @param {string} newValue - Nová hodnota
  * @param {string} cacheKey - Klíč pro cache (optional)
+ * @param {boolean} isFallback - True pokud je hodnota fallback (např. '--')
  * @returns {boolean} True pokud se změnilo
  */
-export function updateElementIfChanged(elementId, newValue, cacheKey) {
+export function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
 
+    // Update fallback visualization
+    if (isFallback) {
+        element.classList.add('fallback-value');
+        element.setAttribute('title', 'Data nejsou k dispozici');
+    } else {
+        element.classList.remove('fallback-value');
+        element.removeAttribute('title');
+    }
+
+    // Update value if changed
     if (previousValues[cacheKey] === undefined || previousValues[cacheKey] !== newValue) {
         element.textContent = newValue;
         previousValues[cacheKey] = newValue;

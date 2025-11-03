@@ -1022,3 +1022,17 @@
             transform: var(--inverter-transform) scale(1.05);
         }
 
+
+/* === FALLBACK VALUES === */
+.fallback-value {
+    opacity: 0.5;
+    font-style: italic;
+    color: var(--text-secondary, #888) !important;
+    cursor: help;
+}
+
+.fallback-value::after {
+    content: ' ⚠';
+    font-size: 0.8em;
+    margin-left: 2px;
+}
