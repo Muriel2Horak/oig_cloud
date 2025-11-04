@@ -174,48 +174,33 @@ class UnifiedCostTile {
     }
 
     /**
-     * Render baseline comparison section
-     * Shows savings vs best fixed mode (HOME I/II/III)
+     * Render baseline comparison section - ultra compact
+     * Shows savings vs best fixed mode in one line
      */
     renderBaselineComparison(baselineComp) {
         if (!baselineComp || !baselineComp.best_baseline) {
             return ''; // No baseline data available
         }
 
-        const { best_baseline, savings, savings_pct, best_baseline_cost } = baselineComp;
+        const { best_baseline, savings, savings_pct } = baselineComp;
         
-        // Determine color class based on savings
-        const savingsClass = savings > 0 ? 'savings-positive' : (savings < 0 ? 'savings-negative' : 'savings-neutral');
+        // Savings are shown as negative (less cost = savings)
+        const savingsAmount = -Math.round(savings);
+        const savingsPct = -Math.round(savings_pct);
+        
+        // Determine color class (negative = we saved money = good)
+        const savingsClass = savingsAmount < 0 ? 'savings-positive' : (savingsAmount > 0 ? 'savings-negative' : 'savings-neutral');
         
         // Format baseline name for display
         const baselineName = best_baseline.replace('HOME_', 'H');
         
         return `
-            <!-- Baseline comparison -->
-            <div class="uct-baseline">
-                <div class="uct-baseline-label">
-                    📊 vs ${baselineName}: 
-                    <span class="uct-baseline-value ${savingsClass}">
-                        ${savings >= 0 ? '+' : ''}${Math.round(savings)} Kč 
-                        (${savings_pct >= 0 ? '+' : ''}${Math.round(savings_pct)}%)
-                    </span>
-                </div>
-                <div class="uct-baseline-hint">
-                    ↑ ušetříte oproti fixnímu módu
-                </div>
-                <div class="uct-baseline-indicator">
-                    <div class="uct-baseline-bar">
-                        <span class="uct-baseline-marker">○</span>
-                        <span class="uct-baseline-dashes">━━ ━━ ━━ ━━</span>
-                        <span class="uct-baseline-peak">▲</span>
-                    </div>
-                    <div class="uct-baseline-cost">${Math.round(best_baseline_cost)} Kč</div>
-                </div>
+            <!-- Baseline comparison - compact -->
+            <div class="uct-baseline-compact">
+                📊 <span class="uct-baseline-value ${savingsClass}">${savingsAmount > 0 ? '+' : ''}${savingsAmount} Kč</span> vs ${baselineName} (${savingsPct > 0 ? '+' : ''}${savingsPct}%)
             </div>
         `;
-    }
-
-    /**
+    }    /**
      * Attach event listeners
      */
     attachEventListeners() {
