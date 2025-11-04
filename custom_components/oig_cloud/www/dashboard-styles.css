@@ -7150,7 +7150,52 @@
             box-shadow: 0 3px 8px var(--shadow-color);
         }
 
-        /* Header with inline progress */
+        /* COMPACT HEADER: DNES 51 Kč [===] 3% ✅ */
+        .uct-header-compact {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .uct-label-inline {
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--text-tertiary);
+        }
+
+        .uct-cost-inline {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .uct-progress-inline {
+            flex: 1;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            overflow: hidden;
+            min-width: 40px;
+        }
+
+        .uct-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #2196F3, #4CAF50);
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+
+        .uct-progress-text {
+            font-size: 0.7em;
+            color: var(--text-tertiary);
+        }
+
+        .uct-status {
+            font-size: 1.1em;
+        }
+
+        /* OLD HEADER - keeping for backward compat */
         .uct-header {
             display: flex;
             justify-content: space-between;
@@ -7168,10 +7213,6 @@
             font-size: 0.75em;
             color: var(--text-tertiary);
             margin-left: 4px;
-        }
-
-        .uct-status {
-            font-size: 1.2em;
         }
 
         /* Main cost number */
@@ -7279,6 +7320,58 @@
 
         .uct-ctx.muted {
             color: var(--text-disabled);
+        }
+
+        /* INFO ROW: Savings + Plan vs Actual */
+        .uct-info-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 6px 0;
+            font-size: 0.75em;
+        }
+
+        .uct-savings {
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .uct-savings.positive {
+            color: #4CAF50;
+        }
+
+        .uct-savings.negative {
+            color: #F44336;
+        }
+
+        .uct-savings.neutral {
+            color: var(--text-secondary);
+        }
+
+        .uct-delta {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .uct-delta.cost-better {
+            color: #4CAF50;
+        }
+
+        .uct-delta.cost-worse {
+            color: #F44336;
+        }
+
+        /* FOOTER: Včera | Zítra */
+        .uct-footer {
+            display: flex;
+            justify-content: space-around;
+            gap: 12px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-tertiary);
+            font-size: 0.7em;
+            color: var(--text-tertiary);
+            margin-top: 6px;
         }
 
         /* Baseline comparison - ultra compact single line */

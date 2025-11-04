@@ -64,52 +64,59 @@ class UnifiedCostTile {
     }
 
     /**
-     * Render main tile HTML - REDESIGNED with visual focus
-     * Emphasizes savings with minigraph and larger fonts
+     * Render main tile HTML - COMPACT & INFO-RICH
+     * Maximum info density in minimal space
      */
     renderTileHTML(today, yesterday, tomorrow) {
-        // FÁZE 1: Use BE performance metrics
         const performanceClass = today.performance_class || 'on_plan';
         const performanceIcon = today.performance_icon || '⚪';
         const progressPct = Math.round(today.progress_pct || 0);
-
-        // EOD prediction from BE
         const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
+        
+        // Baseline comparison
+        const bc = today.baseline_comparison;
+        const savings = bc ? -Math.round(bc.savings) : 0;
+        const savingsPct = bc ? -Math.round(bc.savings_pct) : 0;
+        const baselineName = bc ? bc.best_baseline.replace('HOME_', 'H') : '';
+        const savingsClass = savings < 0 ? 'positive' : (savings > 0 ? 'negative' : 'neutral');
 
-        // Baseline comparison data
-        const baselineComp = today.baseline_comparison;
-        const hasSavings = baselineComp && baselineComp.best_baseline;
+        // Yesterday/tomorrow context
+        const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
+        const hasTomorrow = tomorrow && tomorrow.plan_total_cost > 0;
 
         return `
             <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true">
-                <!-- Header with progress -->
-                <div class="uct-header">
-                    <div class="uct-label">💰 DNES <span class="uct-progress">${progressPct}%</span></div>
-                    <div class="uct-status">${performanceIcon}</div>
+                <!-- Compact header: DNES 51 Kč  [progress] 3% ✅ -->
+                <div class="uct-header-compact">
+                    <span class="uct-label-inline">💰 DNES</span>
+                    <span class="uct-cost-inline">${this.formatCostCompact(predictedTotal)}</span>
+                    <div class="uct-progress-inline">
+                        <div class="uct-progress-bar" style="width: ${progressPct}%"></div>
+                    </div>
+                    <span class="uct-progress-text">${progressPct}%</span>
+                    <span class="uct-status">${performanceIcon}</span>
                 </div>
 
-                <!-- Main cost number - LARGER -->
-                <div class="uct-main-large">
-                    ${this.formatCostCompact(predictedTotal)}
-                </div>
-
-                <!-- Progress bar -->
-                <div class="uct-bar">
-                    <div class="uct-bar-fill" style="width: ${progressPct}%"></div>
-                </div>
-
-                <!-- Spot price minigraph -->
+                <!-- Minigraph -->
                 ${this.renderSpotPriceMinigraph(today.spot_prices_today)}
 
-                <!-- Savings highlight - GREEN & BIG if positive -->
-                ${this.renderSavingsHighlight(baselineComp)}
-
-                <!-- Compact stats -->
-                <div class="uct-stats-row">
-                    <span class="uct-stat-inline">✓ ${this.formatCostCompact(today.actual_total_cost)}</span>
-                    <span class="uct-stat-inline">→ ${this.formatCostCompact(today.remaining_to_eod || 0)}</span>
-                    <span class="uct-stat-inline ${performanceClass}">△ ${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)}</span>
+                <!-- Savings + Plan vs Actual in ONE row -->
+                <div class="uct-info-row">
+                    <div class="uct-savings ${savingsClass}">
+                        💚 ${savings < 0 ? '' : '+'}${savings} Kč vs ${baselineName}
+                    </div>
+                    <div class="uct-delta ${performanceClass}">
+                        ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})
+                    </div>
                 </div>
+
+                <!-- Context footer: Včera | Zítra -->
+                ${(hasYesterday || hasTomorrow) ? `
+                <div class="uct-footer">
+                    ${hasYesterday ? `<span>Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasTomorrow ? `<span>Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
+                </div>
+                ` : ''}
             </div>
         `;
     }
@@ -152,7 +159,7 @@ class UnifiedCostTile {
 
         // Sparkline characters from lowest to highest
         const chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        
+
         // Sample every 4th interval to fit ~24 chars (96 intervals / 4 = 24)
         const step = Math.ceil(prices.length / 24);
         const sampledPrices = prices.filter((_, i) => i % step === 0);
@@ -180,14 +187,14 @@ class UnifiedCostTile {
         }
 
         const { best_baseline, savings, savings_pct } = baselineComp;
-        
+
         // Savings shown as negative (intuitive: -15 = saved 15)
         const savingsAmount = -Math.round(savings);
         const savingsPct = -Math.round(savings_pct);
-        
+
         // Color class
         const savingsClass = savingsAmount < 0 ? 'savings-positive' : (savingsAmount > 0 ? 'savings-negative' : 'savings-neutral');
-        
+
         // Format baseline name
         const baselineName = best_baseline.replace('HOME_', 'H');
 
@@ -246,17 +253,17 @@ class UnifiedCostTile {
         }
 
         const { best_baseline, savings, savings_pct } = baselineComp;
-        
+
         // Savings are shown as negative (less cost = savings)
         const savingsAmount = -Math.round(savings);
         const savingsPct = -Math.round(savings_pct);
-        
+
         // Determine color class (negative = we saved money = good)
         const savingsClass = savingsAmount < 0 ? 'savings-positive' : (savingsAmount > 0 ? 'savings-negative' : 'savings-neutral');
-        
+
         // Format baseline name for display
         const baselineName = best_baseline.replace('HOME_', 'H');
-        
+
         return `
             <!-- Baseline comparison - compact -->
             <div class="uct-baseline-compact">
