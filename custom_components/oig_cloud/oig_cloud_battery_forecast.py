@@ -4957,6 +4957,178 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "all_baselines": all_baselines,
         }
 
+    def _analyze_today_variance(
+        self, intervals: List[Dict], plan_total: float, predicted_total: float
+    ) -> str:
+        """
+        Analyze today's variance from plan and generate human-readable explanation.
+
+        Compares planned vs actual for completed intervals, identifies biggest impacts.
+
+        Returns:
+            Human-readable text explaining what happened and why costs differ from plan.
+        """
+        # Separate completed intervals
+        completed = [i for i in intervals if i.get("actual")]
+
+        if not completed:
+            return f"Dnes plánujeme utratit {plan_total:.0f} Kč. Den právě začal, zatím žádná data."
+
+        # Aggregate planned vs actual metrics
+        total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in completed)
+        total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in completed)
+
+        total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in completed)
+        total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in completed)
+
+        total_plan_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in completed)
+        total_actual_cost = sum(i.get("actual", {}).get("net_cost", 0) for i in completed)
+
+        # Calculate variances
+        solar_diff = total_actual_solar - total_plan_solar
+        load_diff = total_actual_load - total_plan_load
+        cost_diff = predicted_total - plan_total
+
+        # Build explanation
+        text = f"Měli jsme naplánováno {plan_total:.0f} Kč, ale vypadá to na {predicted_total:.0f} Kč"
+
+        if abs(cost_diff) >= 1:
+            text += f" ({cost_diff:+.0f} Kč).\n"
+        else:
+            text += " (přesně dle plánu).\n"
+
+        # Solar variance
+        if abs(solar_diff) >= 0.5:
+            text += f"Slunce svítilo o {abs(solar_diff):.1f} kWh {'VÍC' if solar_diff > 0 else 'MÉNĚ'} než odhad (plán: {total_plan_solar:.1f} kWh, real: {total_actual_solar:.1f} kWh).\n"
+
+        # Load variance
+        if abs(load_diff) >= 0.5:
+            text += f"Spotřeba byla o {abs(load_diff):.1f} kWh {'VĚTŠÍ' if load_diff > 0 else 'MENŠÍ'} (plán: {total_plan_load:.1f} kWh, real: {total_actual_load:.1f} kWh).\n"
+
+        # Identify biggest impact
+        solar_cost_impact = abs(solar_diff) * 4.0  # rough estimate Kč/kWh
+        load_cost_impact = abs(load_diff) * 4.0
+
+        if solar_cost_impact > load_cost_impact and abs(solar_diff) >= 0.5:
+            text += f"Největší dopad: {'menší' if solar_diff < 0 else 'větší'} solární výroba ({solar_cost_impact:+.0f} Kč)."
+        elif abs(load_diff) >= 0.5:
+            text += f"Největší dopad: {'vyšší' if load_diff > 0 else 'nižší'} spotřeba ({load_cost_impact:+.0f} Kč)."
+
+        return text
+
+    def _analyze_yesterday_performance(self) -> str:
+        """
+        Analyze yesterday's performance - post-mortem of plan vs actual.
+
+        Returns:
+            Human-readable explanation of what happened yesterday and biggest variances.
+        """
+        now = dt_util.now()
+        yesterday = (now - timedelta(days=1)).date()
+
+        yesterday_timeline = self._build_day_timeline(yesterday)
+        if not yesterday_timeline:
+            return "Včera: Žádná data k dispozici."
+
+        intervals = yesterday_timeline.get("intervals", [])
+        if not intervals:
+            return "Včera: Žádné intervaly."
+
+        # Aggregate full day
+        total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in intervals)
+        total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in intervals if i.get("actual"))
+
+        total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in intervals)
+        total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in intervals if i.get("actual"))
+
+        total_plan_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
+        total_actual_cost = sum(i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual"))
+
+        cost_diff = total_actual_cost - total_plan_cost
+        solar_diff = total_actual_solar - total_plan_solar
+        load_diff = total_actual_load - total_plan_load
+
+        # Build text
+        text = f"Včera jsme plánovali {total_plan_cost:.0f} Kč, utratili jsme {total_actual_cost:.0f} Kč"
+
+        if abs(cost_diff) >= 1:
+            text += f" ({cost_diff:+.0f} Kč).\n"
+        else:
+            text += " (přesně dle plánu).\n"
+
+        if abs(solar_diff) >= 0.5:
+            text += f"Solární výroba: plán {total_plan_solar:.1f} kWh, real {total_actual_solar:.1f} kWh ({solar_diff:+.1f} kWh).\n"
+
+        if abs(load_diff) >= 0.5:
+            text += f"Spotřeba: plán {total_plan_load:.1f} kWh, real {total_actual_load:.1f} kWh ({load_diff:+.1f} kWh).\n"
+
+        # Biggest impacts
+        impacts = []
+        if abs(solar_diff) >= 0.5:
+            impacts.append(f"{'menší' if solar_diff < 0 else 'větší'} solár ({abs(solar_diff) * 4:.0f} Kč)")
+        if abs(load_diff) >= 0.5:
+            impacts.append(f"{'vyšší' if load_diff > 0 else 'nižší'} spotřeba ({abs(load_diff) * 4:.0f} Kč)")
+
+        if impacts:
+            text += f"Největší dopad: {', '.join(impacts)}."
+
+        return text
+
+    def _analyze_tomorrow_plan(self) -> str:
+        """
+        Analyze tomorrow's plan - expected production, consumption, charging, battery state.
+
+        Returns:
+            Human-readable explanation of tomorrow's plan and expectations.
+        """
+        now = dt_util.now()
+        tomorrow = (now + timedelta(days=1)).date()
+
+        tomorrow_timeline = self._build_day_timeline(tomorrow)
+        if not tomorrow_timeline:
+            return "Zítra: Žádný plán k dispozici."
+
+        intervals = tomorrow_timeline.get("intervals", [])
+        if not intervals:
+            return "Zítra: Žádné intervaly naplánované."
+
+        # Aggregate planned metrics
+        total_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in intervals)
+        total_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in intervals)
+        total_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
+
+        # Find charging intervals (HOME_UPS mode)
+        charging_intervals = [i for i in intervals if i.get("planned", {}).get("mode") == "HOME_UPS"]
+        total_charging = sum(i.get("planned", {}).get("grid_charge_kwh", 0) for i in charging_intervals)
+
+        # Get last interval battery state
+        last_interval = intervals[-1] if intervals else None
+        final_battery = last_interval.get("planned", {}).get("battery_kwh", 0) if last_interval else 0
+        final_battery_pct = (final_battery / 10.0 * 100) if final_battery else 0  # assuming 10 kWh capacity
+
+        # Average spot price
+        avg_price = sum(i.get("planned", {}).get("spot_price", 0) for i in intervals) / len(intervals) if intervals else 0
+
+        # Build text
+        text = f"Zítra plánujeme {total_cost:.0f} Kč.\n"
+        text += f"Očekávaná solární výroba: {total_solar:.1f} kWh"
+
+        if total_solar < 5:
+            text += " (zataženo)"
+        elif total_solar > 15:
+            text += " (slunečno)"
+        text += ".\n"
+
+        text += f"Očekávaná spotřeba: {total_load:.1f} kWh.\n"
+
+        if total_charging >= 0.5:
+            avg_charging_price = sum(i.get("planned", {}).get("spot_price", 0) for i in charging_intervals) / len(charging_intervals) if charging_intervals else 0
+            text += f"Plánované nabíjení: {total_charging:.1f} kWh v noci (průměr {avg_charging_price:.1f} Kč/kWh).\n"
+
+        text += f"Stav baterie na konci dne: {final_battery:.1f} kWh ({final_battery_pct:.0f}%)."
+
+        return text
+
     def _build_today_cost_data(self) -> Dict[str, Any]:
         """
         Build today's cost data with actual vs plan tracking.
@@ -4982,27 +5154,33 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if self.coordinator and self.coordinator.data:
             spot_data = self.coordinator.data.get("spot_prices", {})
             timeline = spot_data.get("timeline", [])
-            
+
             if timeline:
                 today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+                today_end = now.replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
 
                 for sp in timeline:
                     sp_time_str = sp.get("time", "")
                     if not sp_time_str:
                         continue
-                        
+
                     sp_time = datetime.fromisoformat(sp_time_str)
                     if sp_time.tzinfo is None:
                         sp_time = dt_util.as_local(sp_time)
 
                     if today_start <= sp_time <= today_end:
-                        spot_prices_today.append({
-                            "time": sp_time_str,
-                            "price": sp.get("spot_price_czk", 0.0)
-                        })
-                
-                _LOGGER.info(f"[UCT] Extracted {len(spot_prices_today)} spot prices for today")
+                        spot_prices_today.append(
+                            {
+                                "time": sp_time_str,
+                                "price": sp.get("spot_price_czk", 0.0),
+                            }
+                        )
+
+                _LOGGER.info(
+                    f"[UCT] Extracted {len(spot_prices_today)} spot prices for today"
+                )
 
         if not intervals:
             return {
@@ -5238,6 +5416,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # PHASE 2.10: Baseline comparison for cost tile
         baseline_comparison = self._build_baseline_comparison(plan_total)
 
+        # Generate human-readable tooltips for cost analysis
+        today_tooltip = self._analyze_today_variance(intervals, plan_total, eod_predicted)
+        yesterday_tooltip = self._analyze_yesterday_performance()
+        tomorrow_tooltip = self._analyze_tomorrow_plan()
+
         return {
             "plan_total_cost": round(plan_total, 2),
             "actual_total_cost": round(actual_total, 2),
@@ -5264,6 +5447,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "baseline_comparison": baseline_comparison,
             # Spot prices for visualization (minigraph)
             "spot_prices_today": spot_prices_today,
+            # Human-readable tooltips
+            "tooltips": {
+                "today": today_tooltip,
+                "yesterday": yesterday_tooltip,
+                "tomorrow": tomorrow_tooltip,
+            },
             # FÁZE 1.2 - Seskupené intervaly
             "completed_groups": completed_groups,
             "active_group": active_group,

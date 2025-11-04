@@ -84,8 +84,13 @@ class UnifiedCostTile {
         const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
         const hasTomorrow = tomorrow && tomorrow.plan_total_cost > 0;
 
+        // Tooltips from backend
+        const todayTooltip = today.tooltips?.today || '';
+        const yesterdayTooltip = today.tooltips?.yesterday || '';
+        const tomorrowTooltip = today.tooltips?.tomorrow || '';
+
         return `
-            <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true">
+            <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true" title="${todayTooltip}">
                 <!-- Compact header: DNES 51 Kč  [progress] 3% ✅ -->
                 <div class="uct-header-compact">
                     <span class="uct-label-inline">💰 DNES</span>
@@ -113,8 +118,8 @@ class UnifiedCostTile {
                 <!-- Context footer: Včera | Zítra -->
                 ${(hasYesterday || hasTomorrow) ? `
                 <div class="uct-footer">
-                    ${hasYesterday ? `<span>Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
-                    ${hasTomorrow ? `<span>Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasYesterday ? `<span title="${yesterdayTooltip}">Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasTomorrow ? `<span title="${tomorrowTooltip}">Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
                 </div>
                 ` : ''}
             </div>
