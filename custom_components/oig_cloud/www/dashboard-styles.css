@@ -7272,6 +7272,79 @@
             color: var(--text-disabled);
         }
 
+        /* Baseline comparison section */
+        .uct-baseline {
+            padding: 8px 0 4px;
+            border-top: 1px dashed var(--border-tertiary);
+            margin-top: 6px;
+        }
+
+        .uct-baseline-label {
+            font-size: 0.72em;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 3px;
+        }
+
+        .uct-baseline-value {
+            font-weight: 600;
+        }
+
+        .uct-baseline-value.savings-positive {
+            color: #4CAF50;
+        }
+
+        .uct-baseline-value.savings-negative {
+            color: #F44336;
+        }
+
+        .uct-baseline-value.savings-neutral {
+            color: var(--text-secondary);
+        }
+
+        .uct-baseline-hint {
+            font-size: 0.65em;
+            color: var(--text-tertiary);
+            text-align: center;
+            margin-bottom: 4px;
+            font-style: italic;
+        }
+
+        .uct-baseline-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .uct-baseline-bar {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            font-size: 0.7em;
+            color: var(--text-tertiary);
+        }
+
+        .uct-baseline-marker {
+            font-size: 1.1em;
+        }
+
+        .uct-baseline-dashes {
+            letter-spacing: 1px;
+        }
+
+        .uct-baseline-peak {
+            font-size: 1.2em;
+            color: #FF9800;
+        }
+
+        .uct-baseline-cost {
+            font-size: 0.72em;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .unified-cost-tile-compact {

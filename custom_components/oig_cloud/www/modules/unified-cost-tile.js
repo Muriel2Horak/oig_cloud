@@ -119,6 +119,8 @@ class UnifiedCostTile {
                     </div>
                 </div>
 
+                ${this.renderBaselineComparison(today.baseline_comparison)}
+
                 <!-- Context row -->
                 <div class="uct-context">
                     ${hasYesterday
@@ -169,6 +171,48 @@ class UnifiedCostTile {
         if (pct <= -2) return '✅';
         if (pct >= 2) return '❌';
         return '⚪';
+    }
+
+    /**
+     * Render baseline comparison section
+     * Shows savings vs best fixed mode (HOME I/II/III)
+     */
+    renderBaselineComparison(baselineComp) {
+        if (!baselineComp || !baselineComp.best_baseline) {
+            return ''; // No baseline data available
+        }
+
+        const { best_baseline, savings, savings_pct, best_baseline_cost } = baselineComp;
+        
+        // Determine color class based on savings
+        const savingsClass = savings > 0 ? 'savings-positive' : (savings < 0 ? 'savings-negative' : 'savings-neutral');
+        
+        // Format baseline name for display
+        const baselineName = best_baseline.replace('HOME_', 'H');
+        
+        return `
+            <!-- Baseline comparison -->
+            <div class="uct-baseline">
+                <div class="uct-baseline-label">
+                    📊 vs ${baselineName}: 
+                    <span class="uct-baseline-value ${savingsClass}">
+                        ${savings >= 0 ? '+' : ''}${Math.round(savings)} Kč 
+                        (${savings_pct >= 0 ? '+' : ''}${Math.round(savings_pct)}%)
+                    </span>
+                </div>
+                <div class="uct-baseline-hint">
+                    ↑ ušetříte oproti fixnímu módu
+                </div>
+                <div class="uct-baseline-indicator">
+                    <div class="uct-baseline-bar">
+                        <span class="uct-baseline-marker">○</span>
+                        <span class="uct-baseline-dashes">━━ ━━ ━━ ━━</span>
+                        <span class="uct-baseline-peak">▲</span>
+                    </div>
+                    <div class="uct-baseline-cost">${Math.round(best_baseline_cost)} Kč</div>
+                </div>
+            </div>
+        `;
     }
 
     /**
