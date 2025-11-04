@@ -281,7 +281,7 @@ function renderUnifiedCostTile(unifiedCostData) {
     if (typeof UnifiedCostTile === 'undefined') {
         console.log('[Unified Cost Tile] Loading module...');
         const script = document.createElement('script');
-        script.src = 'modules/unified-cost-tile.js';
+        script.src = `modules/unified-cost-tile.js?v=${Date.now()}`;
         script.onload = () => {
             console.log('[Unified Cost Tile] Module loaded, rendering...');
             initUnifiedCostTile(container, unifiedCostData);

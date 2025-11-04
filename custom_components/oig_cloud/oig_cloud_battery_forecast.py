@@ -4975,14 +4975,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return f"Dnes plánujeme utratit {plan_total:.0f} Kč. Den právě začal, zatím žádná data."
 
         # Aggregate planned vs actual metrics
-        total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in completed)
-        total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in completed)
+        total_plan_solar = sum(
+            i.get("planned", {}).get("solar_kwh", 0) for i in completed
+        )
+        total_actual_solar = sum(
+            i.get("actual", {}).get("solar_kwh", 0) for i in completed
+        )
 
-        total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in completed)
-        total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in completed)
+        total_plan_load = sum(
+            i.get("planned", {}).get("load_kwh", 0) for i in completed
+        )
+        total_actual_load = sum(
+            i.get("actual", {}).get("load_kwh", 0) for i in completed
+        )
 
-        total_plan_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in completed)
-        total_actual_cost = sum(i.get("actual", {}).get("net_cost", 0) for i in completed)
+        total_plan_cost = sum(
+            i.get("planned", {}).get("net_cost", 0) for i in completed
+        )
+        total_actual_cost = sum(
+            i.get("actual", {}).get("net_cost", 0) for i in completed
+        )
 
         # Calculate variances
         solar_diff = total_actual_solar - total_plan_solar
@@ -5035,14 +5047,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return "Včera: Žádné intervaly."
 
         # Aggregate full day
-        total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in intervals)
-        total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in intervals if i.get("actual"))
+        total_plan_solar = sum(
+            i.get("planned", {}).get("solar_kwh", 0) for i in intervals
+        )
+        total_actual_solar = sum(
+            i.get("actual", {}).get("solar_kwh", 0)
+            for i in intervals
+            if i.get("actual")
+        )
 
-        total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in intervals)
-        total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in intervals if i.get("actual"))
+        total_plan_load = sum(
+            i.get("planned", {}).get("load_kwh", 0) for i in intervals
+        )
+        total_actual_load = sum(
+            i.get("actual", {}).get("load_kwh", 0) for i in intervals if i.get("actual")
+        )
 
-        total_plan_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
-        total_actual_cost = sum(i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual"))
+        total_plan_cost = sum(
+            i.get("planned", {}).get("net_cost", 0) for i in intervals
+        )
+        total_actual_cost = sum(
+            i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual")
+        )
 
         cost_diff = total_actual_cost - total_plan_cost
         solar_diff = total_actual_solar - total_plan_solar
@@ -5065,9 +5091,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Biggest impacts
         impacts = []
         if abs(solar_diff) >= 0.5:
-            impacts.append(f"{'menší' if solar_diff < 0 else 'větší'} solár ({abs(solar_diff) * 4:.0f} Kč)")
+            impacts.append(
+                f"{'menší' if solar_diff < 0 else 'větší'} solár ({abs(solar_diff) * 4:.0f} Kč)"
+            )
         if abs(load_diff) >= 0.5:
-            impacts.append(f"{'vyšší' if load_diff > 0 else 'nižší'} spotřeba ({abs(load_diff) * 4:.0f} Kč)")
+            impacts.append(
+                f"{'vyšší' if load_diff > 0 else 'nižší'} spotřeba ({abs(load_diff) * 4:.0f} Kč)"
+            )
 
         if impacts:
             text += f"Největší dopad: {', '.join(impacts)}."
@@ -5098,16 +5128,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         total_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
 
         # Find charging intervals (HOME_UPS mode)
-        charging_intervals = [i for i in intervals if i.get("planned", {}).get("mode") == "HOME_UPS"]
-        total_charging = sum(i.get("planned", {}).get("grid_charge_kwh", 0) for i in charging_intervals)
+        charging_intervals = [
+            i for i in intervals if i.get("planned", {}).get("mode") == "HOME_UPS"
+        ]
+        total_charging = sum(
+            i.get("planned", {}).get("grid_charge_kwh", 0) for i in charging_intervals
+        )
 
         # Get last interval battery state
         last_interval = intervals[-1] if intervals else None
-        final_battery = last_interval.get("planned", {}).get("battery_kwh", 0) if last_interval else 0
-        final_battery_pct = (final_battery / 10.0 * 100) if final_battery else 0  # assuming 10 kWh capacity
+        final_battery = (
+            last_interval.get("planned", {}).get("battery_kwh", 0)
+            if last_interval
+            else 0
+        )
+        final_battery_pct = (
+            (final_battery / 10.0 * 100) if final_battery else 0
+        )  # assuming 10 kWh capacity
 
         # Average spot price
-        avg_price = sum(i.get("planned", {}).get("spot_price", 0) for i in intervals) / len(intervals) if intervals else 0
+        avg_price = (
+            sum(i.get("planned", {}).get("spot_price", 0) for i in intervals)
+            / len(intervals)
+            if intervals
+            else 0
+        )
 
         # Build text
         text = f"Zítra plánujeme {total_cost:.0f} Kč.\n"
@@ -5122,7 +5167,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         text += f"Očekávaná spotřeba: {total_load:.1f} kWh.\n"
 
         if total_charging >= 0.5:
-            avg_charging_price = sum(i.get("planned", {}).get("spot_price", 0) for i in charging_intervals) / len(charging_intervals) if charging_intervals else 0
+            avg_charging_price = (
+                sum(
+                    i.get("planned", {}).get("spot_price", 0)
+                    for i in charging_intervals
+                )
+                / len(charging_intervals)
+                if charging_intervals
+                else 0
+            )
             text += f"Plánované nabíjení: {total_charging:.1f} kWh v noci (průměr {avg_charging_price:.1f} Kč/kWh).\n"
 
         text += f"Stav baterie na konci dne: {final_battery:.1f} kWh ({final_battery_pct:.0f}%)."
@@ -5417,7 +5470,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         baseline_comparison = self._build_baseline_comparison(plan_total)
 
         # Generate human-readable tooltips for cost analysis
-        today_tooltip = self._analyze_today_variance(intervals, plan_total, eod_predicted)
+        today_tooltip = self._analyze_today_variance(
+            intervals, plan_total, eod_predicted
+        )
         yesterday_tooltip = self._analyze_yesterday_performance()
         tomorrow_tooltip = self._analyze_tomorrow_plan()
 
