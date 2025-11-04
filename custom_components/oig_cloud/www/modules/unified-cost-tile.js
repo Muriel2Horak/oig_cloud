@@ -64,8 +64,8 @@ class UnifiedCostTile {
     }
 
     /**
-     * Render main tile HTML - COMPACT VERSION with visual elements
-     * Now uses BE-calculated data (FÁZE 1-3 migration)
+     * Render main tile HTML - REDESIGNED with visual focus
+     * Emphasizes savings with minigraph and larger fonts
      */
     renderTileHTML(today, yesterday, tomorrow) {
         // FÁZE 1: Use BE performance metrics
@@ -76,14 +76,9 @@ class UnifiedCostTile {
         // EOD prediction from BE
         const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
 
-        // Včera comparison
-        const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
-        const yIcon = hasYesterday ? this.getPerformanceIcon(yesterday.delta, yesterday.plan_total_cost) : '○';
-
-        // Zítra comparison
-        const hasTomorrow = tomorrow && tomorrow.plan_total_cost > 0;
-        const tDelta = hasTomorrow ? tomorrow.plan_total_cost - today.plan_total_cost : 0;
-        const tIcon = tDelta < 0 ? '▼' : (tDelta > 0 ? '▲' : '○');
+        // Baseline comparison data
+        const baselineComp = today.baseline_comparison;
+        const hasSavings = baselineComp && baselineComp.best_baseline;
 
         return `
             <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true">
@@ -93,8 +88,8 @@ class UnifiedCostTile {
                     <div class="uct-status">${performanceIcon}</div>
                 </div>
 
-                <!-- Main cost number -->
-                <div class="uct-main ${performanceClass}">
+                <!-- Main cost number - LARGER -->
+                <div class="uct-main-large">
                     ${this.formatCostCompact(predictedTotal)}
                 </div>
 
@@ -103,32 +98,17 @@ class UnifiedCostTile {
                     <div class="uct-bar-fill" style="width: ${progressPct}%"></div>
                 </div>
 
+                <!-- Spot price minigraph -->
+                ${this.renderSpotPriceMinigraph(today.spot_prices_today)}
+
+                <!-- Savings highlight - GREEN & BIG if positive -->
+                ${this.renderSavingsHighlight(baselineComp)}
+
                 <!-- Compact stats -->
-                <div class="uct-stats">
-                    <div class="uct-stat">
-                        <span class="uct-stat-icon">✓</span>
-                        <span class="uct-stat-value">${this.formatCostCompact(today.actual_total_cost)}</span>
-                    </div>
-                    <div class="uct-stat">
-                        <span class="uct-stat-icon">→</span>
-                        <span class="uct-stat-value">${this.formatCostCompact(today.remaining_to_eod || 0)}</span>
-                    </div>
-                    <div class="uct-stat ${performanceClass}">
-                        <span class="uct-stat-icon">△</span>
-                        <span class="uct-stat-value">${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)}</span>
-                    </div>
-                </div>
-
-                ${this.renderBaselineComparison(today.baseline_comparison)}
-
-                <!-- Context row -->
-                <div class="uct-context">
-                    ${hasYesterday
-                        ? `<span class="uct-ctx">${yIcon} ${this.formatCostCompact(yesterday.actual_total_cost)}</span>`
-                        : '<span class="uct-ctx muted">○ --</span>'}
-                    ${hasTomorrow
-                        ? `<span class="uct-ctx">${tIcon} ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>`
-                        : '<span class="uct-ctx muted">○ --</span>'}
+                <div class="uct-stats-row">
+                    <span class="uct-stat-inline">✓ ${this.formatCostCompact(today.actual_total_cost)}</span>
+                    <span class="uct-stat-inline">→ ${this.formatCostCompact(today.remaining_to_eod || 0)}</span>
+                    <span class="uct-stat-inline ${performanceClass}">△ ${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)}</span>
                 </div>
             </div>
         `;
@@ -149,6 +129,89 @@ class UnifiedCostTile {
         if (!total || total === 0) return '0%';
         const pct = Math.round((delta / total) * 100);
         return `${pct > 0 ? '+' : ''}${pct}%`;
+    }
+
+    /**
+     * Render spot price minigraph - ASCII sparkline
+     * Shows today's spot price trend visually
+     */
+    renderSpotPriceMinigraph(spotPrices) {
+        if (!spotPrices || spotPrices.length === 0) {
+            return ''; // No data
+        }
+
+        // Get price values and normalize to 0-7 scale for characters
+        const prices = spotPrices.map(sp => sp.price);
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        const range = maxPrice - minPrice;
+
+        if (range === 0) {
+            return `<div class="uct-minigraph">━━━━━━━━━━━━━━━━━━━━</div>`;
+        }
+
+        // Sparkline characters from lowest to highest
+        const chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+        
+        // Sample every 4th interval to fit ~24 chars (96 intervals / 4 = 24)
+        const step = Math.ceil(prices.length / 24);
+        const sampledPrices = prices.filter((_, i) => i % step === 0);
+
+        const sparkline = sampledPrices.map(price => {
+            const normalized = (price - minPrice) / range;
+            const charIndex = Math.min(Math.floor(normalized * 8), 7);
+            return chars[charIndex];
+        }).join('');
+
+        return `
+            <div class="uct-minigraph" title="Spotové ceny dnes (${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)} Kč/kWh)">
+                ${sparkline}
+            </div>
+        `;
+    }
+
+    /**
+     * Render savings highlight - BIG & GREEN
+     * Main value proposition of HYBRID optimization
+     */
+    renderSavingsHighlight(baselineComp) {
+        if (!baselineComp || !baselineComp.best_baseline) {
+            return ''; // No baseline data
+        }
+
+        const { best_baseline, savings, savings_pct } = baselineComp;
+        
+        // Savings shown as negative (intuitive: -15 = saved 15)
+        const savingsAmount = -Math.round(savings);
+        const savingsPct = -Math.round(savings_pct);
+        
+        // Color class
+        const savingsClass = savingsAmount < 0 ? 'savings-positive' : (savingsAmount > 0 ? 'savings-negative' : 'savings-neutral');
+        
+        // Format baseline name
+        const baselineName = best_baseline.replace('HOME_', 'H');
+
+        // Show different format based on savings magnitude
+        if (Math.abs(savingsAmount) >= 10) {
+            // BIG savings - emphasize with larger font
+            return `
+                <div class="uct-savings-big">
+                    <div class="uct-savings-amount ${savingsClass}">
+                        💚 ${savingsAmount < 0 ? '' : '+'}${savingsAmount} Kč
+                    </div>
+                    <div class="uct-savings-label">
+                        vs ${baselineName} (${savingsPct < 0 ? '' : '+'}${savingsPct}%)
+                    </div>
+                </div>
+            `;
+        } else {
+            // Small savings - compact format
+            return `
+                <div class="uct-savings-compact">
+                    📊 <span class="${savingsClass}">${savingsAmount < 0 ? '' : '+'}${savingsAmount} Kč</span> vs ${baselineName} (${savingsPct < 0 ? '' : '+'}${savingsPct}%)
+                </div>
+            `;
+        }
     }
 
     /**

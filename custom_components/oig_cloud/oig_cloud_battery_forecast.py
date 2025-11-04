@@ -4894,12 +4894,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _build_baseline_comparison(self, hybrid_cost: float) -> Dict[str, Any]:
         """
         Build baseline comparison data for cost tile.
-        
+
         Compares HYBRID optimization cost against best fixed mode baseline.
-        
+
         Args:
             hybrid_cost: Total cost of HYBRID plan (Kč)
-            
+
         Returns:
             Dict with baseline comparison:
             {
@@ -4912,44 +4912,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
         """
         # Get baselines from mode_optimization_result
-        if not hasattr(self, "_mode_optimization_result") or not self._mode_optimization_result:
+        if (
+            not hasattr(self, "_mode_optimization_result")
+            or not self._mode_optimization_result
+        ):
             return {}
-            
+
         baselines = self._mode_optimization_result.get("baselines", {})
         if not baselines:
             return {}
-        
+
         # Find best baseline (lowest adjusted cost, excluding HOME_UPS)
         best_baseline = None
-        best_cost = float('inf')
-        
+        best_cost = float("inf")
+
         for mode_name in ["HOME_I", "HOME_II", "HOME_III"]:
             if mode_name in baselines:
-                cost = baselines[mode_name].get("adjusted_total_cost", float('inf'))
+                cost = baselines[mode_name].get("adjusted_total_cost", float("inf"))
                 if cost < best_cost:
                     best_cost = cost
                     best_baseline = mode_name
-        
+
         if not best_baseline:
             return {}
-        
+
         # Calculate savings
         savings = best_cost - hybrid_cost
         savings_pct = (savings / best_cost * 100) if best_cost > 0 else 0
-        
+
         # Build all baselines summary (only HOME I/II/III for display)
         all_baselines = {}
         for mode_name in ["HOME_I", "HOME_II", "HOME_III"]:
             if mode_name in baselines:
-                all_baselines[mode_name] = round(baselines[mode_name].get("adjusted_total_cost", 0), 2)
-        
+                all_baselines[mode_name] = round(
+                    baselines[mode_name].get("adjusted_total_cost", 0), 2
+                )
+
         return {
             "hybrid_cost": round(hybrid_cost, 2),
             "best_baseline": best_baseline,
             "best_baseline_cost": round(best_cost, 2),
             "savings": round(savings, 2),
             "savings_pct": round(savings_pct, 1),
-            "all_baselines": all_baselines
+            "all_baselines": all_baselines,
         }
 
     def _build_today_cost_data(self) -> Dict[str, Any]:
@@ -4972,6 +4977,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         intervals = today_timeline.get("intervals", [])
         _LOGGER.info(f"[UCT] Intervals count: {len(intervals)}")
 
+        # Extract spot prices for today (for minigraph visualization)
+        spot_prices_today = []
+        if hasattr(self, "_spot_prices") and self._spot_prices:
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            for sp in self._spot_prices:
+                sp_time = datetime.fromisoformat(sp["time"])
+                if sp_time.tzinfo is None:
+                    sp_time = dt_util.as_local(sp_time)
+                
+                if today_start <= sp_time <= today_end:
+                    spot_prices_today.append({
+                        "time": sp["time"],
+                        "price": sp.get("spot_price_czk", 0.0)
+                    })
+
         if not intervals:
             return {
                 "plan_total_cost": 0.0,
@@ -4986,6 +5008,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "vs_plan": 0.0,
                     "confidence": "low",
                 },
+                "spot_prices_today": spot_prices_today,
             }
 
         # Separate completed vs future intervals
@@ -5229,6 +5252,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "performance_icon": performance_icon,
             # PHASE 2.10 - Baseline comparison
             "baseline_comparison": baseline_comparison,
+            # Spot prices for visualization (minigraph)
+            "spot_prices_today": spot_prices_today,
             # FÁZE 1.2 - Seskupené intervaly
             "completed_groups": completed_groups,
             "active_group": active_group,

@@ -7195,6 +7195,15 @@
             color: var(--text-primary);
         }
 
+        /* Main cost number - LARGER variant */
+        .uct-main-large {
+            font-size: 2.2em;
+            font-weight: 700;
+            text-align: center;
+            margin: 12px 0;
+            color: var(--text-primary);
+        }
+
         /* Compact progress bar */
         .uct-bar {
             width: 100%;
@@ -7296,6 +7305,82 @@
 
         .uct-baseline-value.savings-neutral {
             color: var(--text-secondary);
+        }
+
+        /* Spot price minigraph - ASCII sparkline */
+        .uct-minigraph {
+            font-family: monospace;
+            font-size: 0.85em;
+            line-height: 1.2;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 6px 0;
+            letter-spacing: 1px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            margin: 6px 0;
+        }
+
+        /* Savings highlight - BIG version */
+        .uct-savings-big {
+            text-align: center;
+            padding: 8px 0;
+            margin: 6px 0;
+            border-top: 1px dashed var(--border-tertiary);
+            border-bottom: 1px dashed var(--border-tertiary);
+        }
+
+        .uct-savings-amount {
+            font-size: 1.4em;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .uct-savings-amount.savings-positive {
+            color: #4CAF50;
+        }
+
+        .uct-savings-amount.savings-negative {
+            color: #F44336;
+        }
+
+        .uct-savings-amount.savings-neutral {
+            color: var(--text-secondary);
+        }
+
+        .uct-savings-label {
+            font-size: 0.75em;
+            color: var(--text-tertiary);
+        }
+
+        /* Savings highlight - COMPACT version */
+        .uct-savings-compact {
+            font-size: 0.75em;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 4px 0;
+            margin: 4px 0;
+        }
+
+        /* Stats row - inline format */
+        .uct-stats-row {
+            display: flex;
+            justify-content: space-around;
+            gap: 8px;
+            margin: 6px 0;
+            font-size: 0.75em;
+        }
+
+        .uct-stat-inline {
+            color: var(--text-secondary);
+        }
+
+        .uct-stat-inline.cost-better {
+            color: #4CAF50;
+        }
+
+        .uct-stat-inline.cost-worse {
+            color: #F44336;
         }
 
         /* Responsive */
