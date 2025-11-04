@@ -644,16 +644,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 # Extract balancing_plan from active_charging_plan if exists
                 balancing_plan_for_hybrid = None
-                if hasattr(self, "_active_charging_plan") and self._active_charging_plan:
+                if (
+                    hasattr(self, "_active_charging_plan")
+                    and self._active_charging_plan
+                ):
                     # Pass charging_plan portion to HYBRID
-                    balancing_plan_for_hybrid = self._active_charging_plan.get("charging_plan")
+                    balancing_plan_for_hybrid = self._active_charging_plan.get(
+                        "charging_plan"
+                    )
                     if balancing_plan_for_hybrid:
                         _LOGGER.info(
                             f"🔋 Passing balancing plan to HYBRID: "
                             f"requester={self._active_charging_plan.get('requester')}, "
                             f"mode={self._active_charging_plan.get('mode')}"
                         )
-                
+
                 self._mode_optimization_result = self._calculate_optimal_modes_hybrid(
                     current_capacity=current_capacity,
                     max_capacity=max_capacity,
@@ -2096,7 +2101,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Hard constraint: Baterie NESMÍ klesnout pod min_capacity
         Soft constraint: Dosáhnout alespoň target_capacity na konci
         Optimalizace: Minimální náklady na grid charging
-        
+
         BALANCING MODE:
         Pokud je předán balancing_plan, algoritmus se přepne do balancing režimu:
         - Target SoC = 100% (ignoruje target_capacity parametr)
@@ -2133,24 +2138,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Parse balancing plan
                 holding_start = datetime.fromisoformat(balancing_plan["holding_start"])
                 holding_end = datetime.fromisoformat(balancing_plan["holding_end"])
-                
+
                 # Normalize timezone
                 if holding_start.tzinfo is None:
                     holding_start = dt_util.as_local(holding_start)
                 if holding_end.tzinfo is None:
                     holding_end = dt_util.as_local(holding_end)
-                
+
                 charging_deadline = holding_start  # MUSÍME být na 100% do tohoto času
                 target_capacity = max_capacity  # Balancing VŽDY 100%
                 balancing_reason = balancing_plan.get("reason", "unknown")
-                
+
                 # Preferované charging intervaly
                 for iv in balancing_plan.get("charging_intervals", []):
                     ts = datetime.fromisoformat(iv["timestamp"])
                     if ts.tzinfo is None:
                         ts = dt_util.as_local(ts)
                     preferred_charging_intervals.add(ts)
-                
+
                 _LOGGER.warning(
                     f"🔋 BALANCING MODE ACTIVE: reason={balancing_reason}, "
                     f"target=100%, deadline={charging_deadline.strftime('%H:%M')}, "
@@ -2205,10 +2210,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
 
             battery += net_energy
-            # CRITICAL FIX: Clamp to min_capacity, not 0
-            # Battery MUST NOT go below user-configured minimum
-            battery = max(min_capacity, min(battery, max_capacity))
+            # CRITICAL: Save UNCLAMPED value to trajectory for minimum violation detection
+            # This allows algorithm to detect when battery WOULD drop below minimum
             battery_trajectory.append(battery)
+            # THEN clamp for next iteration (prevents negative battery in simulation)
+            battery = max(min_capacity, min(battery, max_capacity))
 
         min_reached = min(battery_trajectory)
         final_capacity = battery_trajectory[-1]
@@ -2266,7 +2272,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # ECONOMIC CHECK: Calculate cheap price threshold for smart charging
         # SKIP pro balancing mode - balancing MUSÍ proběhnout bez ohledu na cenu
         if is_balancing_mode:
-            _LOGGER.info("🔋 Balancing mode - skipping economic checks (MUST charge to 100%)")
+            _LOGGER.info(
+                "🔋 Balancing mode - skipping economic checks (MUST charge to 100%)"
+            )
         else:
             # Cheap hours = bottom X percentile (default 30% = cheapest 30% of hours)
             CHEAP_PRICE_PERCENTILE = 30  # TODO: Make configurable in config_flow
@@ -2294,7 +2302,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 deficit_kwh = target_capacity - final_capacity
                 max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
-                required_cheap_intervals = int(deficit_kwh / max_charge_per_interval) + 1
+                required_cheap_intervals = (
+                    int(deficit_kwh / max_charge_per_interval) + 1
+                )
 
                 if len(cheap_intervals) < required_cheap_intervals:
                     _LOGGER.info(
@@ -2330,7 +2340,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
         required_battery = [0.0] * (n + 1)
-        
+
         # === BALANCING MODE: Backward pass s deadline ===
         if is_balancing_mode and charging_deadline:
             # Najít index charging_deadline v spot_prices
@@ -2345,22 +2355,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                 except (ValueError, TypeError):
                     continue
-            
+
             if deadline_index is None:
                 _LOGGER.warning(
                     f"⚠️  Charging deadline {charging_deadline.strftime('%H:%M')} "
                     f"not found in spot_prices range. Using last interval."
                 )
                 deadline_index = n
-            
+
             _LOGGER.info(
                 f"🎯 Balancing deadline: index={deadline_index}/{n}, "
                 f"time={charging_deadline.strftime('%H:%M')}"
             )
-            
+
             # Backward pass JEN DO DEADLINE - musíme být na 100%
             required_battery[deadline_index] = max_capacity  # MUSÍ být 100% na deadline
-            
+
             for i in range(deadline_index - 1, -1, -1):
                 try:
                     timestamp = datetime.fromisoformat(spot_prices[i]["time"])
@@ -2380,17 +2390,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 # Jen clamp na max kapacitu
                 required_battery[i] = min(required_battery[i], max_capacity)
-            
+
             # OD DEADLINE DO KONCE: holding na 100% (HOME UPS celou dobu)
             for i in range(deadline_index, n + 1):
                 required_battery[i] = max_capacity  # Držet 100%
-            
+
             _LOGGER.info(
                 f"📈 Balancing backward pass: required_start={required_battery[0]:.2f} kWh, "
                 f"required_at_deadline={required_battery[deadline_index]:.2f} kWh (target=100%), "
                 f"current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f}"
             )
-            
+
         else:
             # === NORMÁLNÍ HYBRID: Backward pass do konce ===
             required_battery[n] = max(
@@ -2536,12 +2546,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # PHASE 7: Přidat HOME UPS na nejlevnějších intervalech
         # BALANCING MODE: Speciální logika s deadline a holding period
         # NORMAL MODE: Nejlevnější intervaly pro minimum/target
-        
+
         ups_intervals_added = 0
-        
+
         if is_balancing_mode and charging_deadline and holding_start and holding_end:
             # === BALANCING MODE: 3 priority charging selection ===
-            
+
             # Priorita 1: Preferované charging_intervals (pokud jsou dostupné)
             preferred_used = 0
             for i, sp in enumerate(spot_prices):
@@ -2549,7 +2559,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     ts = datetime.fromisoformat(sp["time"])
                     if ts.tzinfo is None:
                         ts = dt_util.as_local(ts)
-                    
+
                     # Pokud je to preferovaný interval A potřebujeme nabíjet A je před deadline
                     if ts in preferred_charging_intervals and ts < charging_deadline:
                         deficit = required_battery[i] - current_capacity
@@ -2562,7 +2572,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             )
                 except (ValueError, TypeError):
                     continue
-            
+
             # Priorita 2: Doplnit nejlevnější intervaly PŘED deadline pokud preferované nestačí
             # Filtrovat jen intervaly před deadline
             deadline_index = None
@@ -2576,18 +2586,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                 except (ValueError, TypeError):
                     continue
-            
+
             if deadline_index is None:
                 deadline_index = n
-            
+
             opportunities_before_deadline = [
-                opp for opp in charge_opportunities
-                if opp["index"] < deadline_index and modes[opp["index"]] != CBB_MODE_HOME_UPS
+                opp
+                for opp in charge_opportunities
+                if opp["index"] < deadline_index
+                and modes[opp["index"]] != CBB_MODE_HOME_UPS
             ]
             opportunities_before_deadline.sort(key=lambda x: x["price"])
-            
+
             additional_added = 0
-            for opp in opportunities_before_deadline[:20]:  # Max 20 dodatečných intervalů
+            for opp in opportunities_before_deadline[
+                :20
+            ]:  # Max 20 dodatečných intervalů
                 idx = opp["index"]
                 modes[idx] = CBB_MODE_HOME_UPS
                 additional_added += 1
@@ -2595,7 +2609,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"  → [BALANCING-CHEAPEST] Interval {idx}, "
                     f"price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
                 )
-            
+
             # Priorita 3: HOLDING period - HOME UPS po celou dobu držení
             holding_intervals = 0
             for i, sp in enumerate(spot_prices):
@@ -2604,7 +2618,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if ts.tzinfo is None:
                         ts = dt_util.as_local(ts)
                     ts_end = ts + timedelta(minutes=15)
-                    
+
                     # Interval překrývá holding period?
                     if ts < holding_end and ts_end > holding_start:
                         if modes[i] != CBB_MODE_HOME_UPS:
@@ -2612,19 +2626,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         modes[i] = CBB_MODE_HOME_UPS  # Držet 100%
                 except (ValueError, TypeError):
                     continue
-            
+
             ups_intervals_added = preferred_used + additional_added + holding_intervals
-            
+
             _LOGGER.warning(
                 f"⚡ BALANCING charging plan: preferred={preferred_used}, "
                 f"additional_cheapest={additional_added}, holding={holding_intervals}, "
                 f"total_UPS={ups_intervals_added}"
             )
-            
+
             # Feasibility check: Máme dost času na nabití?
-            total_charging_kwh = (preferred_used + additional_added) * max_charge_per_interval
+            total_charging_kwh = (
+                preferred_used + additional_added
+            ) * max_charge_per_interval
             required_kwh = max(0, max_capacity - current_capacity)
-            
+
             if total_charging_kwh < required_kwh * 0.95:  # Safety margin 5%
                 _LOGGER.error(
                     f"⚠️  BALANCING WARNING: May NOT reach 100% by deadline! "
@@ -2636,7 +2652,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"✅ Balancing feasibility OK: can charge {total_charging_kwh:.2f} kWh, "
                     f"need {required_kwh:.2f} kWh"
                 )
-        
+
         else:
             # === NORMAL HYBRID MODE: Nejlevnější intervaly ===
             charging_reason = "MINIMUM" if needs_charging_for_minimum else "TARGET"
@@ -2831,13 +2847,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 else:
                     deficit = load_kwh - solar_kwh
                     battery -= deficit / efficiency
-                    # Pokud je baterie prázdná, dobrání ze sítě
-                    if battery < 0:
-                        grid_import = -battery * efficiency
-                        battery = 0
+                    # CRITICAL: Pokud baterie klesne pod minimum, dobrání ze sítě
+                    if battery < min_capacity:
+                        grid_import = (min_capacity - battery) * efficiency
+                        battery = min_capacity
                         total_cost += grid_import * price
 
-            battery = max(0, min(battery, max_capacity))
+            # Enforce hard constraints
+            battery = max(min_capacity, min(battery, max_capacity))
             interval_cost = grid_import * price - grid_export * price
 
             # Calculate charge values for stacked graph
@@ -6722,6 +6739,59 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         return planned
+
+    async def handle_balancing_plan(self, plan: Dict[str, Any]) -> None:
+        """
+        Accept balancing plan from balancing sensor and set as active charging plan.
+
+        This method is called by battery_balancing sensor when it creates a new plan.
+        It converts the balancing plan format to unified charging plan format and
+        triggers timeline recalculation.
+
+        Args:
+            plan: Balancing plan dict with:
+                - reason: "opportunistic" | "interval" | "emergency"
+                - holding_start: ISO timestamp
+                - holding_end: ISO timestamp
+                - charging_intervals: List of preferred charging intervals
+                - target_soc_percent: Target SoC (always 100 for balancing)
+                - deadline: ISO timestamp (same as holding_start)
+        """
+        try:
+            _LOGGER.warning(
+                f"📥 Received balancing plan: reason={plan.get('reason')}, "
+                f"holding_start={plan.get('holding_start')}, "
+                f"holding_end={plan.get('holding_end')}, "
+                f"charging_intervals={len(plan.get('charging_intervals', []))}"
+            )
+
+            # Convert to unified charging plan format
+            self._active_charging_plan = {
+                "requester": "balancing",
+                "mode": plan.get(
+                    "reason", "unknown"
+                ),  # opportunistic, interval, emergency
+                "deadline": plan.get("deadline", plan.get("holding_start")),
+                "charging_plan": {
+                    "holding_start": plan.get("holding_start"),
+                    "holding_end": plan.get("holding_end"),
+                    "charging_intervals": plan.get("charging_intervals", []),
+                    "target_soc_percent": plan.get("target_soc_percent", 100.0),
+                },
+            }
+
+            _LOGGER.warning(
+                f"✅ Active charging plan set: requester=balancing, "
+                f"mode={plan.get('reason')}, "
+                f"will trigger HYBRID with balancing constraints"
+            )
+
+            # Trigger timeline recalculation immediately
+            await self.async_update()
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to handle balancing plan: {e}", exc_info=True)
+            self._active_charging_plan = None
 
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """
