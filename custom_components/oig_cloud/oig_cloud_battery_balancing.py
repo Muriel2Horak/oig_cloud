@@ -18,6 +18,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.components.recorder import history
 
+from .const import DOMAIN
+
 _LOGGER = logging.getLogger(__name__)
 
 # ============================================================================
@@ -181,9 +183,11 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
     async def _planning_loop(self) -> None:
         """
-        Hodinový planning loop - validace a plánování balancování.
+        Continuous planning loop - validace a opportunistic balancing.
 
-        Běží samostatně 1× za hodinu místo při každém coordinator update.
+        Běží samostatně každých 30 minut:
+        - Každých 30 min: Kontrola opportunistic balancing (rychlá reakce na příležitosti)
+        - Každou 1 hodinu: Kompletní validace a plánování (interval-based)
         """
         try:
             # Počkat na forecast data (max 5 min)
@@ -193,30 +197,56 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
             await self._wait_for_forecast_ready(timeout=300)
 
-            _LOGGER.info("✅ Planning loop started - will run every hour")
+            _LOGGER.info(
+                "✅ Planning loop started - opportunistic check every 30min, full planning every 60min"
+            )
             self._planning_status = "idle"
             self.async_schedule_update_ha_state(force_refresh=True)
 
             # První běh okamžitě po startu
             first_run = True
+            iteration_counter = 0
 
             while True:
                 try:
+                    iteration_counter += 1
+                    is_full_planning_cycle = (
+                        iteration_counter % 2 == 1
+                    )  # Každou lichou iteraci (0, 2, 4 = opportunistic, 1, 3, 5 = full)
+
                     _LOGGER.info(
-                        f"🔄 Planning loop iteration starting (first_run={first_run})"
+                        f"🔄 Planning loop iteration #{iteration_counter} starting "
+                        f"(first_run={first_run}, full_planning={is_full_planning_cycle})"
                     )
 
-                    # FIRST: Detect natural balancing completion (runs every hour)
-                    # This updates _last_balancing if battery was at 100% for hold_hours
-                    await self._detect_last_balancing_from_history()
+                    # FIRST: Detect natural balancing completion (běží každou hodinu při full cycle)
+                    if is_full_planning_cycle:
+                        await self._detect_last_balancing_from_history()
 
                     # Nastavit stav calculating
                     self._planning_status = "calculating"
                     self._planning_error = None
                     self.async_schedule_update_ha_state(force_refresh=True)
 
-                    # Validovat/naplánovat
-                    await self._validate_and_plan()
+                    # FULL CYCLE: Kompletní validace + plánování
+                    if is_full_planning_cycle:
+                        _LOGGER.info("🔍 Full planning cycle - validating and planning")
+                        await self._validate_and_plan()
+
+                    # OPPORTUNISTIC CYCLE: Jen rychlá kontrola opportunistic conditions
+                    else:
+                        _LOGGER.info(
+                            "⚡ Opportunistic cycle - checking for early balancing opportunities"
+                        )
+                        opportunistic_triggered = (
+                            await self._check_opportunistic_balancing()
+                        )
+                        if opportunistic_triggered:
+                            _LOGGER.warning(
+                                "✅ Opportunistic balancing triggered in fast cycle!"
+                            )
+                            # Update current state
+                            self._update_current_state()
 
                     # Update timestamp a stav OK
                     self._last_planning_check = dt_util.now()
@@ -225,7 +255,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     self.async_schedule_update_ha_state(force_refresh=True)
 
                     _LOGGER.info(
-                        f"✅ Planning loop iteration completed at {self._last_planning_check}"
+                        f"✅ Planning loop iteration #{iteration_counter} completed at {self._last_planning_check}"
                     )
 
                 except Exception as e:
@@ -236,7 +266,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     self._planning_error = str(e)
                     self.async_schedule_update_ha_state(force_refresh=True)
 
-                # První běh: čekat jen 60s, pak normálně 1h
+                # První běh: čekat jen 60s, pak normálně 30 min
                 if first_run:
                     _LOGGER.info(
                         "⏱️ First run completed, waiting 60s before next iteration"
@@ -246,10 +276,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     await asyncio.sleep(60)
                     first_run = False
                 else:
-                    _LOGGER.info("⏱️ Waiting 3600s (1 hour) until next iteration")
+                    _LOGGER.info("⏱️ Waiting 1800s (30 minutes) until next iteration")
                     self._planning_status = "idle"
                     self.async_schedule_update_ha_state(force_refresh=True)
-                    await asyncio.sleep(3600)
+                    await asyncio.sleep(1800)  # 30 minut místo 3600
 
         except asyncio.CancelledError:
             _LOGGER.info("Planning loop cancelled")
@@ -737,10 +767,15 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         Podmínky:
         1. Baterie >= 95% SoC
-        2. Spot cena < opportunistic_threshold (default 1.1 Kč/kWh)
+        2. Multi-faktorové skóre >= 0.6 (kombinace SoC, ceny, spotřeby)
         3. Lze držet 100% minimálně hold_hours (default 3h)
         4. Není již naplánované balancování
         5. Od posledního balancování uplynulo alespoň 3 dny (aby se nespouštělo moc často)
+
+        Skórovací systém:
+        - SoC factor (40% váha): 1.0 při 100%, klesá k 0.0 při 95%
+        - Price factor (30% váha): 1.0 při levné ceně, 0.0 při drahé
+        - Load factor (30% váha): 1.0 při nízké spotřebě, 0.0 při vysoké
 
         Returns:
             True pokud byly splněny podmínky a byl vytvořen plán
@@ -755,7 +790,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             return False
 
         opportunistic_threshold = config.get("opportunistic_threshold", 1.1)
+        economic_threshold = config.get("economic_threshold", 2.5)
         hold_hours = config.get("hold_hours", 3)
+        min_score = config.get("opportunistic_min_score", 0.6)  # Nový parametr
 
         # 3. Kontrola že od posledního balancování uplynulo alespoň 3 dny
         if self._days_since_last < 3:
@@ -768,10 +805,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         _LOGGER.info(
             f"🔍 Opportunistic check: SoC={current_soc:.1f}%, "
-            f"days_since={self._days_since_last}, threshold={opportunistic_threshold}"
+            f"days_since={self._days_since_last}"
         )
 
-        # 5. Získat spot ceny
+        # 5. Získat spot ceny a spotřebu
         forecast_sensor = self._get_forecast_sensor()
         if not forecast_sensor:
             return False
@@ -798,23 +835,98 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             if not prices_in_window:
                 return False
 
-            # Kontrola že VŠECHNY ceny jsou pod threshold
-            max_price = max(prices_in_window)
+            # Spočítat průměrnou cenu v okně
             avg_price = sum(prices_in_window) / len(prices_in_window)
+            max_price = max(prices_in_window)
 
-            _LOGGER.info(
-                f"💰 Opportunistic prices: avg={avg_price:.2f}, max={max_price:.2f}, "
-                f"threshold={opportunistic_threshold}"
+            # Získat průměrnou cenu za následujících 24h pro srovnání
+            end_24h = now + timedelta(hours=24)
+            prices_24h = []
+            for item in price_timeline:
+                item_time = datetime.fromisoformat(item["time"])
+                if item_time.tzinfo is None:
+                    item_time = dt_util.as_local(item_time)
+                if now <= item_time < end_24h:
+                    prices_24h.append(item["price"])
+
+            avg_price_24h = (
+                sum(prices_24h) / len(prices_24h) if prices_24h else avg_price
             )
 
-            if max_price > opportunistic_threshold:
+            # === MULTI-FAKTOROVÉ SKÓROVÁNÍ ===
+
+            # 1. SoC factor (40% váha): lineární škála 95% → 100%
+            soc_factor = (current_soc - 95.0) / 5.0  # 0.0 až 1.0
+            soc_factor = max(0.0, min(1.0, soc_factor))
+
+            # 2. Price factor (30% váha): normalizace mezi opportunistic a economic threshold
+            # Levná cena (< opportunistic_threshold) = 1.0
+            # Střední cena (mezi thresholdy) = lineární škála
+            # Drahá cena (> economic_threshold) = 0.0
+            if avg_price <= opportunistic_threshold:
+                price_factor = 1.0
+            elif avg_price >= economic_threshold:
+                price_factor = 0.0
+            else:
+                # Lineární interpolace mezi thresholdy
+                price_range = economic_threshold - opportunistic_threshold
+                price_factor = 1.0 - (
+                    (avg_price - opportunistic_threshold) / price_range
+                )
+
+            # 3. Load factor (30% váha): porovnat aktuální spotřebu s průměrem
+            current_load_kwh = 0.0
+            avg_load_kwh = 0.5  # Default fallback
+
+            # Získat aktuální spotřebu z adaptive profiles pokud jsou k dispozici
+            adaptive_sensor = self._hass.data.get(DOMAIN, {}).get(
+                f"adaptive_load_profiles_{self._box_id}"
+            )
+            if adaptive_sensor and hasattr(adaptive_sensor, "_current_prediction"):
+                prediction = adaptive_sensor._current_prediction
+                if prediction:
+                    # Získat průměrnou hodinovou spotřebu
+                    today_profile = prediction.get("today_profile", {})
+                    hourly = today_profile.get("hourly_consumption", [])
+                    if hourly:
+                        avg_load_kwh = sum(hourly) / len(hourly)
+                        # Aktuální spotřeba = průměr poslední hodiny
+                        current_hour = now.hour
+                        start_hour = today_profile.get("start_hour", 0)
+                        index = current_hour - start_hour
+                        if 0 <= index < len(hourly):
+                            current_load_kwh = hourly[index]
+
+            # Nízká spotřeba = vysoký faktor (inverzní škála)
+            if avg_load_kwh > 0:
+                load_ratio = current_load_kwh / avg_load_kwh
+                load_factor = max(
+                    0.0, 1.0 - min(1.0, load_ratio)
+                )  # Inverzní: nízká spotřeba = 1.0
+            else:
+                load_factor = 0.5  # Neutral pokud nemáme data
+
+            # === CELKOVÉ SKÓRE ===
+            total_score = soc_factor * 0.4 + price_factor * 0.3 + load_factor * 0.3
+
+            _LOGGER.info(
+                f"💯 Opportunistic score: {total_score:.2f} "
+                f"(SoC:{soc_factor:.2f}, Price:{price_factor:.2f}, Load:{load_factor:.2f}) "
+                f"| avg_price={avg_price:.2f} Kč/kWh, avg_24h={avg_price_24h:.2f} Kč/kWh, "
+                f"load={current_load_kwh:.2f}/{avg_load_kwh:.2f} kWh"
+            )
+
+            # Kontrola minimálního skóre
+            if total_score < min_score:
+                _LOGGER.debug(
+                    f"❌ Score {total_score:.2f} < min {min_score:.2f}, not triggering"
+                )
                 return False
 
             # 6. PODMÍNKY SPLNĚNY - vytvoř opportunistic balancing plán
             _LOGGER.warning(
-                f"✅ OPPORTUNISTIC BALANCING: SoC={current_soc:.1f}%, "
-                f"price={avg_price:.2f} < {opportunistic_threshold}, "
-                f"can hold {hold_hours}h"
+                f"✅ OPPORTUNISTIC BALANCING TRIGGERED! Score={total_score:.2f} >= {min_score:.2f} "
+                f"(SoC={current_soc:.1f}%, price={avg_price:.2f} Kč, load={current_load_kwh:.2f} kWh)"
             )
 
             # Vytvoř plán - začít držet IHNED
