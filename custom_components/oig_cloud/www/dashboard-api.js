@@ -10,7 +10,7 @@
  */
 
 // Global inverter SN (může být přepsán)
-let INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+var INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
 
 // ============================================================================
 // HOME ASSISTANT ACCESS
@@ -20,7 +20,7 @@ let INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn')
  * Získá přístup k Home Assistant objektu
  * @returns {object|null} Home Assistant objekt nebo null
  */
-export function getHass() {
+function getHass() {
     try {
         return parent.document.querySelector('home-assistant')?.hass || null;
     } catch (e) {
@@ -33,7 +33,7 @@ export function getHass() {
  * Získá HA autentizační token
  * @returns {string|null} Token nebo null
  */
-export function getHAToken() {
+function getHAToken() {
     try {
         return parent.document.querySelector('home-assistant').hass.auth.data.access_token;
     } catch (e) {
@@ -51,7 +51,7 @@ export function getHAToken() {
  * @param {string} sensor - Název senzoru
  * @returns {string} Entity ID
  */
-export function getSensorId(sensor) {
+function getSensorId(sensor) {
     return `sensor.oig_${INVERTER_SN}_${sensor}`;
 }
 
@@ -60,7 +60,7 @@ export function getSensorId(sensor) {
  * @param {string} sensorName - Název senzoru
  * @returns {string} Entity ID
  */
-export function findShieldSensorId(sensorName) {
+function findShieldSensorId(sensorName) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
@@ -101,7 +101,7 @@ export function findShieldSensorId(sensorName) {
  * @param {string} entityId - Entity ID
  * @returns {Promise<object>} {value, lastUpdated, attributes}
  */
-export async function getSensor(entityId) {
+async function getSensor(entityId) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
@@ -129,7 +129,7 @@ export async function getSensor(entityId) {
  * @param {string} entityId - Entity ID
  * @returns {Promise<object>} {value, lastUpdated, attributes}
  */
-export async function getSensorString(entityId) {
+async function getSensorString(entityId) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
@@ -158,7 +158,7 @@ export async function getSensorString(entityId) {
  * @param {boolean} silent - Potlačit logy
  * @returns {Promise<object>} {value, lastUpdated, attributes, exists}
  */
-export async function getSensorSafe(entityId, silent = true) {
+async function getSensorSafe(entityId, silent = true) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
@@ -189,7 +189,7 @@ export async function getSensorSafe(entityId, silent = true) {
  * @param {boolean} silent - Potlačit logy
  * @returns {Promise<object>} {value, lastUpdated, exists}
  */
-export async function getSensorStringSafe(entityId, silent = true) {
+async function getSensorStringSafe(entityId, silent = true) {
     try {
         const hass = getHass();
         if (!hass || !hass.states) {
@@ -223,7 +223,7 @@ export async function getSensorStringSafe(entityId, silent = true) {
  * @param {object} options - Fetch options
  * @returns {Promise<object>} API response nebo null
  */
-export async function fetchOIGAPI(endpoint, options = {}) {
+async function fetchOIGAPI(endpoint, options = {}) {
     try {
         const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
         const response = await fetch(url, {
@@ -251,7 +251,7 @@ export async function fetchOIGAPI(endpoint, options = {}) {
  * @param {string} inverterSn - Inverter SN
  * @returns {Promise<object>} Timeline data
  */
-export async function loadBatteryTimeline(inverterSn) {
+async function loadBatteryTimeline(inverterSn) {
     return await fetchOIGAPI(`/battery_forecast/${inverterSn}/timeline`);
 }
 
@@ -260,7 +260,7 @@ export async function loadBatteryTimeline(inverterSn) {
  * @param {string} inverterSn - Inverter SN
  * @returns {Promise<object>} Cost tile data
  */
-export async function loadUnifiedCostTile(inverterSn) {
+async function loadUnifiedCostTile(inverterSn) {
     return await fetchOIGAPI(`/battery_forecast/${inverterSn}/unified_cost_tile`);
 }
 
@@ -268,7 +268,7 @@ export async function loadUnifiedCostTile(inverterSn) {
  * Načte spot prices
  * @returns {Promise<object>} Spot price data
  */
-export async function loadSpotPrices() {
+async function loadSpotPrices() {
     return await fetchOIGAPI('/spot_prices');
 }
 
@@ -277,7 +277,7 @@ export async function loadSpotPrices() {
  * @param {string} inverterSn - Inverter SN
  * @returns {Promise<object>} Analytics data
  */
-export async function loadAnalytics(inverterSn) {
+async function loadAnalytics(inverterSn) {
     return await fetchOIGAPI(`/analytics/${inverterSn}`);
 }
 
@@ -292,7 +292,7 @@ export async function loadAnalytics(inverterSn) {
  * @param {object} data - Service data
  * @returns {Promise<boolean>} Success
  */
-export async function callService(domain, service, data = {}) {
+async function callService(domain, service, data = {}) {
     try {
         const hass = getHass();
         if (!hass || !hass.callService) {
@@ -313,7 +313,7 @@ export async function callService(domain, service, data = {}) {
  * @param {string} entityId - Entity ID
  * @returns {boolean} Success
  */
-export function openEntityDialog(entityId) {
+function openEntityDialog(entityId) {
     try {
         const event = new Event('hass-more-info', { bubbles: true, composed: true });
         event.detail = { entityId };
@@ -334,7 +334,7 @@ export function openEntityDialog(entityId) {
  * @param {string[]} entityIds - Array of entity IDs
  * @returns {Promise<object>} Map entityId → sensor data
  */
-export async function batchLoadSensors(entityIds) {
+async function batchLoadSensors(entityIds) {
     const hass = getHass();
     if (!hass || !hass.states) {
         return {};
@@ -373,7 +373,7 @@ export async function batchLoadSensors(entityIds) {
  * Nastaví inverter SN
  * @param {string} sn - Inverter serial number
  */
-export function setInverterSN(sn) {
+function setInverterSN(sn) {
     INVERTER_SN = sn;
 }
 
@@ -381,7 +381,7 @@ export function setInverterSN(sn) {
  * Získá aktuální inverter SN
  * @returns {string} Inverter SN
  */
-export function getInverterSN() {
+function getInverterSN() {
     return INVERTER_SN;
 }
 

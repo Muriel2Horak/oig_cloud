@@ -2432,6 +2432,22 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     # Safety limit
                     "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
+                    # Battery balancing
+                    "balancing_enabled": self._wizard_data.get(
+                        "balancing_enabled", True
+                    ),
+                    "balancing_interval_days": self._wizard_data.get(
+                        "balancing_interval_days", 7
+                    ),
+                    "balancing_hold_hours": self._wizard_data.get(
+                        "balancing_hold_hours", 3
+                    ),
+                    "balancing_opportunistic_threshold": self._wizard_data.get(
+                        "balancing_opportunistic_threshold", 1.1
+                    ),
+                    "balancing_economic_threshold": self._wizard_data.get(
+                        "balancing_economic_threshold", 2.5
+                    ),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
                     # Dashboard
@@ -2678,6 +2694,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 # Safety limit
                 "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
+                # Battery balancing
+                "balancing_enabled": self._wizard_data.get("balancing_enabled", True),
+                "balancing_interval_days": self._wizard_data.get(
+                    "balancing_interval_days", 7
+                ),
+                "balancing_hold_hours": self._wizard_data.get(
+                    "balancing_hold_hours", 3
+                ),
+                "balancing_opportunistic_threshold": self._wizard_data.get(
+                    "balancing_opportunistic_threshold", 1.1
+                ),
+                "balancing_economic_threshold": self._wizard_data.get(
+                    "balancing_economic_threshold", 2.5
+                ),
                 # Pricing - použít mapované backend atributy
                 **pricing_backend,
                 # Dashboard

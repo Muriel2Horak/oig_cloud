@@ -1,17 +1,17 @@
-const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+// === INVERTER SN (from api.js) ===
+// INVERTER_SN is defined in dashboard-api.js (loaded before this file)
 
 // === LAYOUT (using dashboard-layout.js module) ===
-// Import layout functions
-const getCurrentBreakpoint = window.DashboardLayout.getCurrentBreakpoint;
-const saveLayout = window.DashboardLayout.saveLayout;
-const loadLayout = window.DashboardLayout.loadLayout;
-const resetLayout = window.DashboardLayout.resetLayout;
-const toggleEditMode = window.DashboardLayout.toggleEditMode;
+// Import layout functions (var allows re-declaration if script re-runs)
+var getCurrentBreakpoint = window.DashboardLayout?.getCurrentBreakpoint;
+var saveLayout = window.DashboardLayout?.saveLayout;
+var loadLayout = window.DashboardLayout?.loadLayout;
+var resetLayout = window.DashboardLayout?.resetLayout;
+var toggleEditMode = window.DashboardLayout?.toggleEditMode;
 
 // === GLOBAL VARIABLES FOR CHART DATA ===
-// === GLOBAL VARIABLES FOR CHART DATA ===
 // Store complete dataset for extremes calculation regardless of zoom
-let originalPriceData = null;
+var originalPriceData = null;
 
 // === TOOLTIP POSITIONING ===
 
@@ -25,34 +25,32 @@ function toggleControlPanel() {
     icon.textContent = panel.classList.contains('minimized') ? '+' : '−';
 }
 
-// Toggle queue section
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
-const startShieldQueueLiveUpdate = window.DashboardShield.startShieldQueueLiveUpdate;
-const stopShieldQueueLiveUpdate = window.DashboardShield.stopShieldQueueLiveUpdate;
-const loadShieldData = window.DashboardShield.loadShieldData;
-const debouncedShieldMonitor = window.DashboardShield.debouncedShieldMonitor;
-const setShieldMode = window.DashboardShield.setShieldMode;
-const setShieldModeWithConfirmation = window.DashboardShield.setShieldModeWithConfirmation;
-const cancelShieldAction = window.DashboardShield.cancelShieldAction;
-const loadControlPanelStatus = window.DashboardShield.loadControlPanelStatus;
-}
+var startShieldQueueLiveUpdate = window.DashboardShield?.startShieldQueueLiveUpdate;
+var stopShieldQueueLiveUpdate = window.DashboardShield?.stopShieldQueueLiveUpdate;
+var loadShieldData = window.DashboardShield?.loadShieldData;
+var debouncedShieldMonitor = window.DashboardShield?.debouncedShieldMonitor;
+var setShieldMode = window.DashboardShield?.setShieldMode;
+var setShieldModeWithConfirmation = window.DashboardShield?.setShieldModeWithConfirmation;
+var cancelShieldAction = window.DashboardShield?.cancelShieldAction;
+var loadControlPanelStatus = window.DashboardShield?.loadControlPanelStatus;
 
 // === FLOW DIAGRAM (moved to dashboard-flow.js) ===
 // Import functions from DashboardFlow module
-const getSensorId = window.DashboardFlow.getSensorId;
-const updateTime = window.DashboardFlow.updateTime;
-const debouncedDrawConnections = window.DashboardFlow.debouncedDrawConnections;
-const drawConnections = window.DashboardFlow.drawConnections;
-const getNodeCenters = window.DashboardFlow.getNodeCenters;
-const updateNode = window.DashboardFlow.updateNode;
-const updateNodeDetails = window.DashboardFlow.updateNodeDetails;
-const loadData = window.DashboardFlow.loadData;
-const debouncedLoadData = window.DashboardFlow.debouncedLoadData;
-const debouncedLoadNodeDetails = window.DashboardFlow.debouncedLoadNodeDetails;
+var getSensorId = window.DashboardFlow?.getSensorId;
+var updateTime = window.DashboardFlow?.updateTime;
+var debouncedDrawConnections = window.DashboardFlow?.debouncedDrawConnections;
+var drawConnections = window.DashboardFlow?.drawConnections;
+var getNodeCenters = window.DashboardFlow?.getNodeCenters;
+var updateNode = window.DashboardFlow?.updateNode;
+var updateNodeDetails = window.DashboardFlow?.updateNodeDetails;
+var loadData = window.DashboardFlow?.loadData;
+var debouncedLoadData = window.DashboardFlow?.debouncedLoadData;
+var debouncedLoadNodeDetails = window.DashboardFlow?.debouncedLoadNodeDetails;
 
 // Import findShieldSensorId from utils
-const findShieldSensorId = window.DashboardUtils.findShieldSensorId;
+var findShieldSensorId = window.DashboardUtils?.findShieldSensorId;
 
 // === THEME DETECTION ===
 
@@ -246,8 +244,12 @@ function initTooltips() {
 }
 
 // === GRID CHARGING (moved to dashboard-grid-charging.js) ===
-const openGridChargingDialog = window.DashboardGridCharging.openGridChargingDialog;
-const closeGridChargingDialog = window.DashboardGridCharging.closeGridChargingDialog;
+var openGridChargingDialog = window.DashboardGridCharging?.openGridChargingDialog;
+var closeGridChargingDialog = window.DashboardGridCharging?.closeGridChargingDialog;
+
+// === INITIALIZATION ===
+function init() {
+    console.log('[Dashboard] Initializing...');
 
     // Detekovat a aplikovat téma z Home Assistantu
     detectAndApplyTheme();
@@ -521,8 +523,8 @@ if (document.readyState === 'loading') {
 }
 
 // === TAB SWITCHING ===
-let pricingTabActive = false;
-let needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
+var pricingTabActive = false;
+var needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
 
 function switchTab(tabName) {
     // Zapamatuj si předchozí tab PŘED změnou
@@ -666,18 +668,29 @@ function switchTab(tabName) {
 }
 
 // === BOILER (enhanced in dashboard-boiler.js) ===
-const loadBoilerData = window.DashboardBoiler.loadBoilerData;
-const updateBoilerChart = window.DashboardBoiler.updateBoilerChart;
-const loadPricingData = window.DashboardPricing.loadPricingData;
-const updatePlannedConsumptionStats = window.DashboardPricing.updatePlannedConsumptionStats;
-let tileDialog = null;
+var loadBoilerData = window.DashboardBoiler.loadBoilerData;
+var updateBoilerChart = window.DashboardBoiler.updateBoilerChart;
+var loadPricingData = window.DashboardPricing.loadPricingData;
+var updatePlannedConsumptionStats = window.DashboardPricing.updatePlannedConsumptionStats;
+var tileDialog = null;
 
 // === CUSTOM TILES (moved to dashboard-tiles.js) ===
-const initCustomTiles = window.DashboardTiles.initCustomTiles;
-const renderAllTiles = window.DashboardTiles.renderAllTiles;
-const updateTileCount = window.DashboardTiles.updateTileCount;
-const toggleTilesVisibility = window.DashboardTiles.toggleTilesVisibility;
-const resetAllTiles = window.DashboardTiles.resetAllTiles;
+var initCustomTiles = window.DashboardTiles.initCustomTiles;
+var renderAllTiles = window.DashboardTiles.renderAllTiles;
+var updateTileCount = window.DashboardTiles.updateTileCount;
+var toggleTilesVisibility = window.DashboardTiles.toggleTilesVisibility;
+var resetAllTiles = window.DashboardTiles.resetAllTiles;
+
+/**
+ * Render icon - podporuje emoji i MDI ikony
+ * @param {string} icon - Icon string (emoji nebo mdi:xxx)
+ * @param {string} color - Icon color
+ * @returns {string} - HTML string
+ */
+function renderIcon(icon, color) {
+    if (!icon) return '';
+
+    // MDI ikona (formát mdi:xxx) - použít emoji fallback protože ha-icon nefunguje v iframe
     if (icon.startsWith('mdi:')) {
         const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
 
@@ -993,116 +1006,18 @@ function executeTileButtonAction(entityId, action) {
 }
 
 // === ČHMÚ (moved to dashboard-chmu.js) ===
-const updateChmuWarningBadge = window.DashboardChmu.updateChmuWarningBadge;
-const toggleChmuWarningModal = window.DashboardChmu.toggleChmuWarningModal;
-const openChmuWarningModal = window.DashboardChmu.openChmuWarningModal;
-const closeChmuWarningModal = window.DashboardChmu.closeChmuWarningModal;
-    if (!hass) return;
-
-    const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
-    const sensor = hass.states[sensorId];
-
-    if (!sensor || sensor.state === 'unavailable' || sensor.state === 'unknown') {
-        console.log('[Battery Efficiency] Sensor not available:', sensorId);
-        return;
-    }
-
-    const attrs = sensor.attributes || {};
-
-    // Prefer last month (complete), fallback to current month (partial)
-    let displayEff, displayLossesPct, displayLossesKwh, displayCharge, displayDischarge, displayLabel;
-
-    const lastMonthEff = attrs.efficiency_last_month_pct;
-    const lastMonthLossesPct = attrs.losses_last_month_pct;
-    const lastMonthLossesKwh = attrs.losses_last_month_kwh;
-    const lastMonthCharge = attrs.last_month_charge_kwh;
-    const lastMonthDischarge = attrs.last_month_discharge_kwh;
-
-    const currentMonthEff = attrs.efficiency_current_month_pct;
-    const currentMonthLossesPct = attrs.losses_current_month_pct;
-    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
-    const currentMonthCharge = attrs.current_month_charge_kwh;
-    const currentMonthDischarge = attrs.current_month_discharge_kwh;
-    const currentMonthDays = attrs.current_month_days;
-
-    // Use last month if available (complete data), otherwise use current month (partial)
-    if (lastMonthEff !== null && lastMonthEff !== undefined &&
-        lastMonthCharge !== null && lastMonthDischarge !== null) {
-        displayEff = lastMonthEff;
-        displayLossesPct = lastMonthLossesPct;
-        displayLossesKwh = lastMonthLossesKwh;
-        displayCharge = lastMonthCharge;
-        displayDischarge = lastMonthDischarge;
-        displayLabel = 'Minulý měsíc';
-    } else if (currentMonthEff !== null && currentMonthEff !== undefined) {
-        displayEff = currentMonthEff;
-        displayLossesPct = currentMonthLossesPct;
-        displayLossesKwh = currentMonthLossesKwh;
-        displayCharge = currentMonthCharge;
-        displayDischarge = currentMonthDischarge;
-        displayLabel = `Tento měsíc (${currentMonthDays} dní)`;
-    }
-
-    if (displayEff !== undefined) {
-        // Main value
-        updateElementIfChanged('battery-efficiency-main', `${displayEff.toFixed(1)}%`, 'batt-eff-main');
-
-        // Trend comparison
-        if (lastMonthEff !== null && currentMonthEff !== null &&
-            lastMonthEff !== undefined && currentMonthEff !== undefined) {
-            const diff = currentMonthEff - lastMonthEff;
-            const diffAbs = Math.abs(diff);
-            let trendText = '';
-            let trendColor = '';
-
-            if (diff > 0.5) {
-                trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
-                trendColor = '#4CAF50';
-            } else if (diff < -0.5) {
-                trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
-                trendColor = '#FF5722';
-            } else {
-                trendText = `➡️ Podobně jako minulý měsíc`;
-                trendColor = 'var(--text-secondary)';
-            }
-
-            const trendEl = document.getElementById('battery-efficiency-trend');
-            if (trendEl) {
-                trendEl.textContent = trendText;
-                trendEl.style.color = trendColor;
-            }
-        } else {
-            updateElementIfChanged('battery-efficiency-trend', displayLabel, 'batt-trend');
-        }
-
-        // Detail values
-        updateElementIfChanged('battery-charge-value', `${displayCharge?.toFixed(1) || '--'} kWh`, 'batt-charge-val');
-        updateElementIfChanged('battery-discharge-value', `${displayDischarge?.toFixed(1) || '--'} kWh`, 'batt-discharge-val');
-        updateElementIfChanged('battery-losses-value', `${displayLossesKwh?.toFixed(1) || '--'} kWh (${displayLossesPct?.toFixed(1) || '--'}%)`, 'batt-loss-val');
-
-        // Update period label
-        updateElementIfChanged('battery-efficiency-period-label', displayLabel, 'batt-period-label');
-
-        // Update gradient bar comparison
-        updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
-    } else {
-        updateElementIfChanged('battery-efficiency-main', '--', 'batt-eff-main');
-        updateElementIfChanged('battery-efficiency-period-label', 'Čekám na data...', 'batt-period-label');
-        updateElementIfChanged('battery-efficiency-trend', 'Čekám na data...', 'batt-trend');
-        updateElementIfChanged('battery-charge-value', '--', 'batt-charge-val');
-        updateElementIfChanged('battery-discharge-value', '--', 'batt-discharge-val');
-        updateElementIfChanged('battery-losses-value', '--', 'batt-loss-val');
-    }
-}
-
+var updateChmuWarningBadge = window.DashboardChmu?.updateChmuWarningBadge;
+var toggleChmuWarningModal = window.DashboardChmu?.toggleChmuWarningModal;
+var openChmuWarningModal = window.DashboardChmu?.openChmuWarningModal;
+var closeChmuWarningModal = window.DashboardChmu?.closeChmuWarningModal;
 
 // === BATTERY & PRICING ANALYTICS (moved to modules) ===
-const updateBatteryEfficiencyBar = window.DashboardAnalytics.updateBatteryEfficiencyBar;
-const updateWhatIfAnalysis = window.DashboardPricing.updateWhatIfAnalysis;
-const updateModeRecommendations = window.DashboardPricing.updateModeRecommendations;
+var updateBatteryEfficiencyBar = window.DashboardAnalytics?.updateBatteryEfficiencyBar;
+var updateWhatIfAnalysis = window.DashboardPricing?.updateWhatIfAnalysis;
+var updateModeRecommendations = window.DashboardPricing?.updateModeRecommendations;
 
 // === ANALYTICS (moved to dashboard-analytics.js) ===
-const initPerformanceChart = window.DashboardAnalytics.initPerformanceChart;
-const updatePerformanceChart = window.DashboardAnalytics.updatePerformanceChart;
-const buildYesterdayAnalysis = window.DashboardAnalytics.buildYesterdayAnalysis;
-const renderYesterdayAnalysis = window.DashboardAnalytics.renderYesterdayAnalysis;
+var initPerformanceChart = window.DashboardAnalytics?.initPerformanceChart;
+var updatePerformanceChart = window.DashboardAnalytics.updatePerformanceChart;
+var buildYesterdayAnalysis = window.DashboardAnalytics.buildYesterdayAnalysis;
+var renderYesterdayAnalysis = window.DashboardAnalytics.renderYesterdayAnalysis;

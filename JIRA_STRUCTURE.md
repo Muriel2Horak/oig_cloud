@@ -1,22 +1,22 @@
 # JIRA Project Structure - OIG Cloud Dashboard Refactoring
 
 ## EPIC 1: Dashboard Monolith Refactoring
-**Epic Key**: OIG-EPIC-001  
-**Summary**: Refaktorovat monolitický dashboard na modulární architekturu  
-**Description**: Rozdělit 12,310 řádků dashboard-core.js do specializovaných modulů pro lepší maintainability a scalability  
-**Status**: ✅ DONE  
+**Epic Key**: OIG-EPIC-001
+**Summary**: Refaktorovat monolitický dashboard na modulární architekturu
+**Description**: Rozdělit 12,310 řádků dashboard-core.js do specializovaných modulů pro lepší maintainability a scalability
+**Status**: ✅ DONE
 **Story Points**: 55
 
 ### User Story 1.1: CSS Modularization
-**Story Key**: OIG-US-001  
-**Summary**: Rozdělit monolitické CSS do tématických modulů  
+**Story Key**: OIG-US-001
+**Summary**: Rozdělit monolitické CSS do tématických modulů
 **Acceptance Criteria**:
 - CSS rozděleno do 8+ samostatných souborů podle funkcionality
 - Žádné duplicate selektory
 - Zachována funkcionalita stylování
 - Total lines: ~8,500
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 13
 
 #### Subtask 1.1.1: Vytvořit variables.css
@@ -48,15 +48,15 @@
 ---
 
 ### User Story 1.2: JavaScript Module Extraction
-**Story Key**: OIG-US-002  
-**Summary**: Extrahovat JavaScript funkce do specializovaných modulů  
+**Story Key**: OIG-US-002
+**Summary**: Extrahovat JavaScript funkce do specializovaných modulů
 **Acceptance Criteria**:
 - dashboard-core.js zredukován z 12,310 na ~1,116 řádků (91% redukce)
 - Vytvořeno 14 specializovaných JS modulů
 - Všechny moduly mají window.Dashboard* namespace
 - Zachována backwards compatibility
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 21
 
 #### Subtask 1.2.1: Vytvořit dashboard-api.js
@@ -101,14 +101,14 @@
 ---
 
 ### User Story 1.3: Export Integrity Verification
-**Story Key**: OIG-US-003  
-**Summary**: Zajistit integritu všech exportů mezi moduly  
+**Story Key**: OIG-US-003
+**Summary**: Zajistit integritu všech exportů mezi moduly
 **Acceptance Criteria**:
 - Všechny window.Dashboard* exporty mají definované funkce
 - Žádné obsolete exporty (funkce exportované ale nedefinované)
 - Automatizovaný test exportů
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 8
 
 #### Subtask 1.3.1: Vytvořit export verification script
@@ -136,21 +136,21 @@
 ---
 
 ## EPIC 2: Code Quality Improvements
-**Epic Key**: OIG-EPIC-002  
-**Summary**: Zlepšit kvalitu kódu - odstranit duplicity a přidat fallback handling  
-**Description**: Code review zaměřený na duplicitní kód, fallback values a best practices  
-**Status**: ✅ DONE  
+**Epic Key**: OIG-EPIC-002
+**Summary**: Zlepšit kvalitu kódu - odstranit duplicity a přidat fallback handling
+**Description**: Code review zaměřený na duplicitní kód, fallback values a best practices
+**Status**: ✅ DONE
 **Story Points**: 21
 
 ### User Story 2.1: Duplicate Code Removal
-**Story Key**: OIG-US-004  
-**Summary**: Identifikovat a odstranit duplicitní kód  
+**Story Key**: OIG-US-004
+**Summary**: Identifikovat a odstranit duplicitní kód
 **Acceptance Criteria**:
 - Žádné duplicitní funkce napříč moduly
 - Sdílené funkce v utils nebo příslušném modulu
 - Dokumentované přesuny funkcí
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 8
 
 #### Subtask 2.1.1: Odstranit toggleChmuWarningModal duplicate
@@ -168,14 +168,14 @@
 ---
 
 ### User Story 2.2: Fallback Indicator System
-**Story Key**: OIG-US-005  
-**Summary**: Implementovat vizuální indikaci fallback hodnot  
+**Story Key**: OIG-US-005
+**Summary**: Implementovat vizuální indikaci fallback hodnot
 **Acceptance Criteria**:
 - CSS .fallback-value class s warning ikonou
 - updateElementIfChanged rozšířena o isFallback parameter
 - Uživatel vidí když data nejsou dostupná
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 5
 
 #### Subtask 2.2.1: Vytvořit CSS fallback styles
@@ -194,14 +194,14 @@
 ---
 
 ### User Story 2.3: HTML Integrity Fixes
-**Story Key**: OIG-US-006  
-**Summary**: Opravit problémy v HTML struktuře  
+**Story Key**: OIG-US-006
+**Summary**: Opravit problémy v HTML struktuře
 **Acceptance Criteria**:
 - Žádné duplicitní IDs
 - Všechny getElementById mají validní target
 - Dokumentované elementy v separátních souborech
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 3
 
 #### Subtask 2.3.1: Opravit duplicitní grid-charging-cost ID
@@ -215,15 +215,15 @@
 ---
 
 ### User Story 2.4: Empty Functions Check
-**Story Key**: OIG-US-007  
-**Summary**: Zkontrolovat a odstranit prázdné/stub funkce  
+**Story Key**: OIG-US-007
+**Summary**: Zkontrolovat a odstranit prázdné/stub funkce
 **Acceptance Criteria**:
 - Žádné prázdné funkce
 - Žádné funkce jen s console.log
 - Žádné TODO/FIXME/STUB komentáře
 - Všechny funkce mají implementaci
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 5
 
 #### Subtask 2.4.1: Vytvořit verification script
@@ -238,22 +238,22 @@
 ---
 
 ## EPIC 3: Documentation & Testing
-**Epic Key**: OIG-EPIC-003  
-**Summary**: Kompletní dokumentace refactoringu a testovací skripty  
-**Description**: Vytvořit dokumentaci změn, review summaries a automatizované testy  
-**Status**: ✅ DONE  
+**Epic Key**: OIG-EPIC-003
+**Summary**: Kompletní dokumentace refactoringu a testovací skripty
+**Description**: Vytvořit dokumentaci změn, review summaries a automatizované testy
+**Status**: ✅ DONE
 **Story Points**: 13
 
 ### User Story 3.1: Code Review Documentation
-**Story Key**: OIG-US-008  
-**Summary**: Dokumentovat všechny code review findings  
+**Story Key**: OIG-US-008
+**Summary**: Dokumentovat všechny code review findings
 **Acceptance Criteria**:
 - CODE_REVIEW_SUMMARY.md s přehledem změn
 - EXPORT_REVIEW.md s detaily exportů
 - EXPORT_FIXES_SUMMARY.md s opravami
 - CODE_REVIEW_DUPLICATES_FALLBACKS.md
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 5
 
 #### Subtask 3.1.1: Vytvořit CODE_REVIEW_SUMMARY.md
@@ -271,15 +271,15 @@
 ---
 
 ### User Story 3.2: Automated Verification Scripts
-**Story Key**: OIG-US-009  
-**Summary**: Vytvořit automatizované skripty pro kontrolu integrity  
+**Story Key**: OIG-US-009
+**Summary**: Vytvořit automatizované skripty pro kontrolu integrity
 **Acceptance Criteria**:
 - Export verification script
 - CSS duplicate check
 - HTML integrity check
 - Empty functions check
 
-**Status**: ✅ DONE  
+**Status**: ✅ DONE
 **Story Points**: 8
 
 #### Subtask 3.2.1: final_export_check2.sh
@@ -360,6 +360,6 @@
 
 ---
 
-**Project Status**: ✅ READY FOR DEPLOYMENT  
-**Last Updated**: 2025-11-03  
+**Project Status**: ✅ READY FOR DEPLOYMENT
+**Last Updated**: 2025-11-03
 **Version**: 2.0.0 (Post-Refactoring)

@@ -397,6 +397,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "timeline_length": len(mo.get("optimal_timeline", [])),
             }
 
+            # Phase 2.10: 4-Baseline Comparison
+            if mo.get("baselines"):
+                attrs["mode_optimization"]["baselines"] = mo["baselines"]
+                attrs["mode_optimization"]["best_baseline"] = mo.get("best_baseline")
+                attrs["mode_optimization"]["hybrid_cost"] = round(
+                    mo.get("hybrid_cost", 0), 2
+                )
+                attrs["mode_optimization"]["best_baseline_cost"] = round(
+                    mo.get("best_baseline_cost", 0), 2
+                )
+                attrs["mode_optimization"]["savings_vs_best"] = round(
+                    mo.get("savings_vs_best", 0), 2
+                )
+                attrs["mode_optimization"]["savings_percentage"] = round(
+                    mo.get("savings_percentage", 0), 1
+                )
+
             # Phase 2.6: What-if Analysis - Alternatives
             if mo.get("alternatives"):
                 attrs["mode_optimization"]["alternatives"] = mo["alternatives"]
@@ -667,8 +684,38 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER _timeline_data is set)
             await self._maybe_fix_daily_plan()
 
-            # Keep baseline timeline empty for backwards compatibility
-            self._baseline_timeline = []
+            # Generate BASELINE timeline (without balancing plan) for planning purposes
+            # This is needed by balancing sensor to plan new balancing cycles
+            if self._active_charging_plan:
+                # Only generate baseline if there's an active charging plan
+                _LOGGER.debug("Generating baseline timeline (without charging plan)")
+
+                # CRITICAL: Temporarily disable charging plan for baseline calculation
+                temp_plan = self._active_charging_plan
+                self._active_charging_plan = None
+
+                try:
+                    self._baseline_timeline = self._calculate_timeline(
+                        current_capacity=current_capacity,
+                        max_capacity=max_capacity,
+                        min_capacity=min_capacity,
+                        spot_prices=spot_prices,
+                        export_prices=export_prices,
+                        solar_forecast=solar_forecast,
+                        load_avg_sensors=load_avg_sensors,
+                        adaptive_profiles=adaptive_profiles,
+                        balancing_plan=None,  # Parameter ignored, but keep for clarity
+                    )
+                finally:
+                    # Restore active charging plan
+                    self._active_charging_plan = temp_plan
+
+                _LOGGER.debug(
+                    f"Baseline timeline generated: {len(self._baseline_timeline)} points"
+                )
+            else:
+                # No charging plan, so active timeline is already baseline
+                self._baseline_timeline = []
 
             # Phase 1.5: Calculate hash for change detection
             new_hash = self._calculate_data_hash(self._timeline_data)
@@ -807,17 +854,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             CBB_MODE_HOME_III,
         ]:
             # Night mode (FVE=0): HOME I/II/III identical → discharge battery to load
+            # Asymmetric model: discharge with efficiency losses
             available_battery = battery_soc - min_capacity
 
             # VALIDATION: Never discharge below minimum
             if available_battery < 0:
                 available_battery = 0.0
 
-            discharge_amount = min(load_kwh, available_battery / efficiency)
+            # Discharge amount (from battery) - efficiency applies to usable energy
+            discharge_amount = min(load_kwh / efficiency, available_battery)
 
             if discharge_amount > 0.001:
                 result["battery_discharge"] = discharge_amount
-                result["new_soc"] = battery_soc - discharge_amount * efficiency
+                result["new_soc"] = battery_soc - discharge_amount  # No *efficiency
 
             # Grid covers remaining load
             deficit = load_kwh - discharge_amount
@@ -842,16 +891,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return result
 
         # HOME I (0): Battery Priority
-        # FVE → battery (DC/DC 95%), battery → load (DC/AC 88.2%)
-        # If FVE < load: battery discharges immediately
+        # FVE → battery (no losses in charging), battery → load (efficiency losses on discharge)
+        # Asymmetric model: charging = 100%, discharging = efficiency (88.2% roundtrip)
         if mode == CBB_MODE_HOME_I:
-            # First: Charge battery from FVE (DC/DC)
+            # First: Charge battery from FVE (no losses)
             available_for_battery = solar_kwh
             battery_space = max_capacity - battery_soc
-            charge_amount = min(available_for_battery, battery_space / efficiency)
+            charge_amount = min(available_for_battery, battery_space)  # No /efficiency
 
             result["battery_charge"] = charge_amount
-            result["new_soc"] = battery_soc + charge_amount * efficiency
+            result["new_soc"] = battery_soc + charge_amount  # No *efficiency
 
             # Remaining FVE after battery charging
             remaining_solar = solar_kwh - charge_amount
@@ -866,10 +915,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if export_price <= 0 and battery_soc < max_capacity:
                     # Try to store surplus in battery instead of exporting at loss
                     battery_space = max_capacity - result["new_soc"]
-                    additional_charge = min(surplus, battery_space / efficiency)
+                    additional_charge = min(surplus, battery_space)  # No /efficiency
 
                     result["battery_charge"] += additional_charge
-                    result["new_soc"] += additional_charge * efficiency
+                    result["new_soc"] += additional_charge  # No *efficiency
                     surplus -= additional_charge
 
                 # If still surplus and export would be lossy, try boiler
@@ -917,13 +966,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         elif mode == CBB_MODE_HOME_II:
             # Cover load from FVE first
             if solar_kwh >= load_kwh:
-                # Surplus FVE → battery
+                # Surplus FVE → battery (no charging losses)
                 surplus = solar_kwh - load_kwh
                 battery_space = max_capacity - battery_soc
-                charge_amount = min(surplus, battery_space / efficiency)
+                charge_amount = min(surplus, battery_space)  # No /efficiency
 
                 result["battery_charge"] = charge_amount
-                result["new_soc"] = battery_soc + charge_amount * efficiency
+                result["new_soc"] = battery_soc + charge_amount  # No *efficiency
 
                 # Phase 2.5: Export price protection with boiler support
                 # Remaining surplus → boiler > export (if profitable)
@@ -958,18 +1007,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 result["grid_import"] = deficit
                 result["grid_cost"] = deficit * spot_price
 
-        # HOME III (2): ALL FVE to battery (DC/DC, UNLIMITED!), load from grid
-        # KLÍČOVÉ: DC/DC nabíjení BEZ omezení výkonu (ne jen 0.7 kWh/15min!)
+        # HOME III (2): ALL FVE to battery (no charging losses), load from grid
+        # Asymmetric model: Battery charging = 100%, discharging = efficiency
         # Spotřeba VŽDY ze sítě, až když baterie = 100% → FVE pomáhá spotřebě
         elif mode == CBB_MODE_HOME_III:
-            # ALL FVE → battery (DC/DC 95%, UNLIMITED power)
+            # ALL FVE → battery (no charging losses)
             battery_space = max_capacity - battery_soc
 
             if battery_space > 0.001:
                 # Battery NOT full → ALL FVE to battery
-                charge_amount = min(solar_kwh, battery_space / efficiency)
+                charge_amount = min(solar_kwh, battery_space)  # No /efficiency
                 result["battery_charge"] = charge_amount
-                result["new_soc"] = battery_soc + charge_amount * efficiency
+                result["new_soc"] = battery_soc + charge_amount  # No *efficiency
 
                 # Load ALWAYS from grid (i když máme FVE!)
                 result["grid_import"] = load_kwh
@@ -1019,30 +1068,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     result["grid_import"] = deficit
                     result["grid_cost"] = deficit * spot_price
 
-        # HOME UPS (3): Grid + FVE to battery, consumption from grid
+        # HOME UPS (3): Grid + FVE to battery (no charging losses), consumption from grid
+        # Asymmetric model: Battery charging = 100%, discharging = efficiency
         # Grid → battery: max 2.8 kW (0.7 kWh/15min)
-        # FVE → battery: UNLIMITED (DC/DC path)
+        # FVE → battery: UNLIMITED
         # Spotřeba: VŽDY ze sítě (i když je FVE!)
         # Až když baterie = 100% → FVE pomáhá spotřebě
         elif mode == CBB_MODE_HOME_UPS:
             battery_space = max_capacity - battery_soc
 
             if battery_space > 0.001:
-                # Battery NOT full → charge from Grid + FVE
+                # Battery NOT full → charge from Grid + FVE (no losses)
 
-                # 1. FVE → battery (DC/DC, UNLIMITED)
-                fve_charge = min(solar_kwh, battery_space / efficiency)
+                # 1. FVE → battery (no charging losses)
+                fve_charge = min(solar_kwh, battery_space)  # No /efficiency
                 result["battery_charge"] = fve_charge
-                result["new_soc"] = battery_soc + fve_charge * efficiency
+                result["new_soc"] = battery_soc + fve_charge  # No *efficiency
 
-                # 2. Grid → battery (AC/DC, max 2.8 kW limit)
+                # 2. Grid → battery (AC/DC, max 2.8 kW limit, no charging losses)
                 ac_limit = self._get_ac_charging_limit_kwh_15min()
                 remaining_space = max_capacity - result["new_soc"]
-                grid_charge = min(ac_limit, remaining_space / efficiency)
+                grid_charge = min(ac_limit, remaining_space)  # No /efficiency
 
                 if grid_charge > 0.001:
                     result["battery_charge"] += grid_charge
-                    result["new_soc"] += grid_charge * efficiency
+                    result["new_soc"] += grid_charge  # No *efficiency
                     result["grid_import"] += grid_charge
                     result["grid_cost"] += grid_charge * spot_price
 
@@ -1145,27 +1195,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         export_prices: List[Dict[str, Any]],
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
+        physical_min_capacity: float | None = None,
     ) -> float:
         """
         Vypočítat celkové náklady pokud by uživatel zůstal v jednom režimu celou dobu.
 
         Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategií.
         Phase 2.7: Cache timeline for HOME I (for savings calculation).
+        Phase 2.10: 4-Baseline Comparison - Use physical minimum for baseline simulations.
 
         Args:
             fixed_mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
             current_capacity: Aktuální SoC baterie (kWh)
             max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (kWh) - Planning minimum (33% = 5.07 kWh)
             spot_prices: Timeline spot cen
             export_prices: Timeline export cen
             solar_forecast: Solární předpověď
             load_forecast: Předpověď spotřeby (kWh per interval)
+            physical_min_capacity: Physical/HW minimum (20% = 3.07 kWh). If None, use min_capacity.
+                                   For baseline simulations, pass physical minimum.
+                                   For HYBRID optimization, pass None to use planning minimum.
 
         Returns:
-            Celkové náklady v Kč při použití fixed_mode
+            Dict s výsledky:
+                - total_cost: Celkové náklady v Kč
+                - grid_import_kwh: Celkový import ze sítě (kWh)
+                - final_battery_kwh: Finální stav baterie (kWh)
+                - penalty_cost: Penalizace za porušení planning minima (Kč)
+                - planning_violations: Počet intervalů pod planning minimem
         """
+        # Use physical minimum for baselines, planning minimum for HYBRID
+        effective_min = (
+            physical_min_capacity if physical_min_capacity is not None else min_capacity
+        )
+
+        # Planning minimum penalty tracking
+        planning_minimum = min_capacity  # 33% = 5.07 kWh
+        penalty_cost = 0.0
+        planning_violations = 0
+        efficiency = self._get_battery_efficiency()
+
         total_cost = 0.0
+        total_grid_import = 0.0
         battery_soc = current_capacity
         timeline_cache = []  # Phase 2.7: Cache for savings calculation
 
@@ -1192,13 +1264,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 load_kwh=load_kwh,
                 battery_soc=battery_soc,
                 max_capacity=max_capacity,
-                min_capacity=min_capacity,
+                min_capacity=effective_min,  # Use physical minimum for baselines
                 spot_price=spot_price,
                 export_price=export_price,
             )
 
             total_cost += sim_result["net_cost"]
+            total_grid_import += sim_result.get("grid_import", 0.0)
             battery_soc = sim_result["new_soc"]
+
+            # Planning minimum penalty: když baseline klesne pod planning minimum,
+            # penalizujeme je jako by museli tu energii koupit z gridu
+            if battery_soc < planning_minimum:
+                deficit = planning_minimum - battery_soc
+                # Penalty = deficit musí být pokryt z gridu (s efficiency losses)
+                interval_penalty = (deficit * spot_price) / efficiency
+                penalty_cost += interval_penalty
+                planning_violations += 1
 
             # Phase 2.7: Cache timeline for HOME I (mode 0)
             if fixed_mode == CBB_MODE_HOME_I:
@@ -1213,7 +1295,106 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"Cached HOME I timeline: {len(timeline_cache)} intervals, total_cost={total_cost:.2f} Kč"
             )
 
-        return total_cost
+        # Calculate adjusted total cost (includes penalty)
+        adjusted_total_cost = total_cost + penalty_cost
+
+        return {
+            "total_cost": round(total_cost, 2),
+            "grid_import_kwh": round(total_grid_import, 2),
+            "final_battery_kwh": round(battery_soc, 2),
+            "penalty_cost": round(penalty_cost, 2),
+            "planning_violations": planning_violations,
+            "adjusted_total_cost": round(adjusted_total_cost, 2),
+        }
+
+    def _calculate_mode_baselines(
+        self,
+        current_capacity: float,
+        max_capacity: float,
+        physical_min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Vypočítat baseline scénáře pro všechny 4 CBB režimy.
+
+        Phase 2.10: 4-Baseline Comparison
+
+        Tato funkce simuluje co by se stalo kdyby uživatel zůstal celý den v jednom
+        z fixních CBB režimů (HOME I/II/III/UPS) bez využití HYBRID optimalizace.
+
+        Důležité: Používá FYZICKÉ minimum (20% = 3.07 kWh) aby ukázalo reálné
+        chování systému. HYBRID optimalizace používá user-configured minimum (33%).
+
+        Args:
+            current_capacity: Aktuální SoC baterie (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+            physical_min_capacity: Fyzické/HW minimum (20% = 3.07 kWh)
+            spot_prices: Timeline spot cen
+            export_prices: Timeline export cen
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby (kWh per interval)
+
+        Returns:
+            Dict s baseline pro každý režim:
+            {
+                "HOME_I": {
+                    "total_cost": float,  # Kč
+                    "grid_import_kwh": float,  # kWh
+                    "final_battery_kwh": float,  # kWh
+                },
+                "HOME_II": {...},
+                "HOME_III": {...},
+                "HOME_UPS": {...},
+            }
+        """
+        baselines = {}
+
+        mode_mapping = [
+            (CBB_MODE_HOME_I, "HOME_I"),
+            (CBB_MODE_HOME_II, "HOME_II"),
+            (CBB_MODE_HOME_III, "HOME_III"),
+            (CBB_MODE_HOME_UPS, "HOME_UPS"),
+        ]
+
+        _LOGGER.info(
+            f"🔍 Calculating 4 baselines: physical_min={physical_min_capacity:.2f} kWh "
+            f"({physical_min_capacity/max_capacity*100:.0f}%)"
+        )
+
+        for mode_id, mode_name in mode_mapping:
+            result = self._calculate_fixed_mode_cost(
+                fixed_mode=mode_id,
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=physical_min_capacity,  # DUMMY - not used with physical_min
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+                physical_min_capacity=physical_min_capacity,  # Use physical minimum!
+            )
+
+            baselines[mode_name] = result
+
+            # Log baseline s penalty informací
+            penalty_info = ""
+            if result["planning_violations"] > 0:
+                penalty_info = (
+                    f", penalty={result['penalty_cost']:.2f} Kč "
+                    f"({result['planning_violations']} violations)"
+                )
+
+            _LOGGER.info(
+                f"  {mode_name}: cost={result['total_cost']:.2f} Kč{penalty_info}, "
+                f"grid_import={result['grid_import_kwh']:.2f} kWh, "
+                f"final_battery={result['final_battery_kwh']:.2f} kWh, "
+                f"adjusted_cost={result['adjusted_total_cost']:.2f} Kč"
+            )
+
+        return baselines
 
     def _calculate_do_nothing_cost(
         self,
@@ -1886,7 +2067,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         n = len(spot_prices)
         modes = [CBB_MODE_HOME_I] * n  # Začít s HOME I všude (nejlevnější)
-        efficiency = 0.88  # DC/AC losses
+        efficiency = (
+            self._get_battery_efficiency()
+        )  # Use real measured roundtrip efficiency
 
         # Parametry nabíjení
         config = (
@@ -1900,6 +2083,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         _LOGGER.info(
             f"🔄 HYBRID algorithm: current={current_capacity:.2f}, min={min_capacity:.2f}, "
             f"target={target_capacity:.2f}, max={max_capacity:.2f}, intervals={n}"
+        )
+
+        # PHASE 2.10: Calculate 4-baseline comparison EARLY
+        # (so it's available even if we return early from economic check)
+        physical_min_capacity = max_capacity * 0.20  # 20% SoC = physical/HW minimum
+
+        baselines = self._calculate_mode_baselines(
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            physical_min_capacity=physical_min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
         )
 
         # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
@@ -1926,7 +2123,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
 
             battery += net_energy
-            battery = max(0, min(battery, max_capacity))
+            # CRITICAL FIX: Clamp to min_capacity, not 0
+            # Battery MUST NOT go below user-configured minimum
+            battery = max(min_capacity, min(battery, max_capacity))
             battery_trajectory.append(battery)
 
         min_reached = min(battery_trajectory)
@@ -1941,6 +2140,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         needs_charging_for_minimum = min_reached < min_capacity
         needs_charging_for_target = final_capacity < target_capacity
 
+        # CRITICAL: Hard constraint vs soft constraint
+        # - needs_charging_for_minimum = HARD constraint (MUST charge to avoid violation)
+        # - needs_charging_for_target = SOFT constraint (MAY charge if economically beneficial)
+
         if not needs_charging_for_minimum and not needs_charging_for_target:
             _LOGGER.info("✅ No charging needed - HOME I everywhere is optimal")
             return self._build_result(
@@ -1953,7 +2156,91 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 max_capacity,
                 min_capacity,
                 efficiency,
+                baselines=baselines,  # Pass baselines even on early return
             )
+
+        # ECONOMIC CHECK: Target charging makes sense ONLY if it prevents future grid imports
+        # If battery doesn't drop below minimum with HOME I → NO economic benefit
+        if needs_charging_for_target and not needs_charging_for_minimum:
+            _LOGGER.info(
+                f"⊘ Skipping target charging - battery stays above minimum with HOME I "
+                f"(min_reached={min_reached:.2f} kWh >= min={min_capacity:.2f} kWh). "
+                f"Target charging would cost money with NO benefit (no grid imports prevented)."
+            )
+            # Return HOME I baseline (no charging)
+            return self._build_result(
+                modes,
+                spot_prices,
+                export_prices,
+                solar_forecast,
+                load_forecast,
+                current_capacity,
+                max_capacity,
+                min_capacity,
+                efficiency,
+                baselines=baselines,  # Pass baselines even on early return
+            )
+
+        # ECONOMIC CHECK: Calculate cheap price threshold for smart charging
+        # Cheap hours = bottom X percentile (default 30% = cheapest 30% of hours)
+        CHEAP_PRICE_PERCENTILE = 30  # TODO: Make configurable in config_flow
+        sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
+        percentile_index = int(len(sorted_prices) * CHEAP_PRICE_PERCENTILE / 100)
+        cheap_price_threshold = (
+            sorted_prices[percentile_index] if sorted_prices else 999
+        )
+
+        avg_price = sum(sorted_prices) / len(sorted_prices) if sorted_prices else 0
+        _LOGGER.info(
+            f"💰 Price analysis: avg={avg_price:.2f} Kč/kWh, "
+            f"cheap_threshold (P{CHEAP_PRICE_PERCENTILE})={cheap_price_threshold:.2f} Kč/kWh, "
+            f"min={min(sorted_prices):.2f}, max={max(sorted_prices):.2f}"
+        )
+
+        # If charging is ONLY for target (not minimum violation), charge ONLY in cheap hours
+        if not needs_charging_for_minimum and needs_charging_for_target:
+            # Count how many cheap hours we have
+            cheap_intervals = [
+                i
+                for i, sp in enumerate(spot_prices)
+                if sp.get("price", 999) <= cheap_price_threshold
+            ]
+
+            deficit_kwh = target_capacity - final_capacity
+            max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
+            required_cheap_intervals = int(deficit_kwh / max_charge_per_interval) + 1
+
+            if len(cheap_intervals) < required_cheap_intervals:
+                _LOGGER.info(
+                    f"⚠️  Skipping target charging - not enough cheap hours: "
+                    f"need {required_cheap_intervals} intervals, have {len(cheap_intervals)} cheap intervals, "
+                    f"deficit={deficit_kwh:.2f} kWh"
+                )
+                # Return HOME I baseline (no charging for target)
+                return self._build_result(
+                    modes,
+                    spot_prices,
+                    export_prices,
+                    solar_forecast,
+                    load_forecast,
+                    current_capacity,
+                    max_capacity,
+                    min_capacity,
+                    efficiency,
+                    baselines=baselines,  # Pass baselines even on early return
+                )
+            else:
+                _LOGGER.info(
+                    f"✅ Target charging feasible in cheap hours: "
+                    f"{len(cheap_intervals)} cheap intervals available, "
+                    f"need {required_cheap_intervals} for {deficit_kwh:.2f} kWh"
+                )
+
+        _LOGGER.info(
+            f"🔋 Charging decision: "
+            f"for_minimum={needs_charging_for_minimum}, "
+            f"for_target={needs_charging_for_target}"
+        )
 
         # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
         required_battery = [0.0] * (n + 1)
@@ -2097,13 +2384,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         _LOGGER.info(f"⚡ Found {len(charge_opportunities)} charging opportunities")
 
-        # PHASE 7: Přidat HOME UPS na nejlevnějších intervalech s deficitem
+        # PHASE 7: Přidat HOME UPS na nejlevnějších intervalech
+        # Pro minimum i target používáme stejnou logiku: nejlevnější hodiny
+        # Rozdíl: minimum MUST charge, target MAY charge (economic check už proběhl výše)
+
+        ups_intervals_added = 0
+        charging_reason = "MINIMUM" if needs_charging_for_minimum else "TARGET"
+
         for opp in charge_opportunities[:20]:  # Max 20 nabíjecích intervalů (5h)
             idx = opp["index"]
+            price = opp["price"]
+
             modes[idx] = CBB_MODE_HOME_UPS
+            ups_intervals_added += 1
             _LOGGER.debug(
-                f"  → Interval {idx}: price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
+                f"  → [{charging_reason}] Interval {idx}: price={price:.2f}, deficit={opp['deficit']:.2f} kWh"
             )
+
+        _LOGGER.info(
+            f"✅ Added {ups_intervals_added} HOME UPS intervals for {charging_reason} (charging enabled)"
+        )
 
         # PHASE 8: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
         min_duration = MIN_MODE_DURATION.get("Home UPS", 2)
@@ -2160,6 +2460,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"HOME UPS={mode_counts['HOME UPS']}"
         )
 
+        # PHASE 2.10: Baselines already calculated at function start
+        # (to make them available even if we return early from economic check)
+
         return self._build_result(
             modes,
             spot_prices,
@@ -2170,6 +2473,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             max_capacity,
             min_capacity,
             efficiency,
+            baselines=baselines,  # Pass baselines to _build_result
         )
 
     def _build_result(
@@ -2183,8 +2487,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         max_capacity: float,
         min_capacity: float,
         efficiency: float,
+        baselines: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
-        """Sestavit výsledek ve formátu kompatibilním s timeline."""
+        """
+        Sestavit výsledek ve formátu kompatibilní s timeline.
+
+        Args:
+            baselines: Optional 4-baseline comparison results from _calculate_mode_baselines()
+        """
         config = (
             self._config_entry.options
             if self._config_entry and self._config_entry.options
@@ -2417,7 +2727,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             efficiency=efficiency,
         )
 
-        return {
+        # PHASE 2.10: Add baseline comparison and validation
+        result = {
             "optimal_timeline": timeline,
             "optimal_modes": modes,
             "total_cost": total_cost,
@@ -2426,6 +2737,60 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "mode_recommendations": mode_recommendations,
             "alternatives": alternatives,  # What-if analysis for tile
         }
+
+        # Add 4-baseline comparison if available
+        if baselines:
+            result["baselines"] = baselines
+
+            # Find best baseline - používá ADJUSTED cost (cost + penalty)
+            best_baseline_name = min(
+                baselines.items(), key=lambda x: x[1]["adjusted_total_cost"]
+            )[0]
+            best_baseline = baselines[best_baseline_name]
+            best_baseline_cost = best_baseline["total_cost"]
+            best_baseline_adjusted = best_baseline["adjusted_total_cost"]
+            best_baseline_penalty = best_baseline["penalty_cost"]
+            best_baseline_violations = best_baseline["planning_violations"]
+
+            # Calculate savings vs best baseline (using adjusted costs for fair comparison)
+            savings_vs_best = max(0, best_baseline_adjusted - total_cost)
+            savings_percentage = (
+                (savings_vs_best / best_baseline_adjusted * 100)
+                if best_baseline_adjusted > 0
+                else 0
+            )
+
+            result["best_baseline"] = best_baseline_name
+            result["best_baseline_cost"] = best_baseline_cost
+            result["best_baseline_adjusted"] = best_baseline_adjusted
+            result["best_baseline_penalty"] = best_baseline_penalty
+            result["hybrid_cost"] = total_cost
+            result["savings_vs_best"] = round(savings_vs_best, 2)
+            result["savings_percentage"] = round(savings_percentage, 1)
+
+            # Build penalty info string for logging
+            penalty_info = ""
+            if best_baseline_violations > 0:
+                penalty_info = (
+                    f" (penalty: {best_baseline_penalty:.2f} Kč "
+                    f"for {best_baseline_violations} violations)"
+                )
+
+            # VALIDATION: HYBRID must be <= best baseline (adjusted cost)
+            if total_cost > best_baseline_adjusted + 0.01:  # 0.01 Kč tolerance
+                _LOGGER.warning(
+                    f"⚠️  HYBRID OPTIMIZATION BUG! HYBRID cost ({total_cost:.2f} Kč) > "
+                    f"best baseline {best_baseline_name} ({best_baseline_adjusted:.2f} Kč adjusted){penalty_info}. "
+                    f"This should NEVER happen!"
+                )
+            else:
+                _LOGGER.info(
+                    f"✅ HYBRID validation passed: {total_cost:.2f} Kč <= "
+                    f"{best_baseline_name} {best_baseline_adjusted:.2f} Kč adjusted{penalty_info} "
+                    f"(saves {savings_vs_best:.2f} Kč, {savings_percentage:.1f}%)"
+                )
+
+        return result
 
     def _generate_alternatives(
         self,

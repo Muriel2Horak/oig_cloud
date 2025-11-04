@@ -1,6 +1,6 @@
 // === ČHMÚ WEATHER WARNING FUNCTIONS ===
 
-let chmuWarningData = null;
+var chmuWarningData = null;
 
 // Update ČHMÚ warning badge
 function updateChmuWarningBadge() {
@@ -311,7 +311,8 @@ function formatChmuDateTime(isoString) {
 // ========================================================================
 
 // === TIMELINE (moved to dashboard-timeline.js) ===
-const MODE_CONFIG = window.DashboardTimeline.MODE_CONFIG;
+// MODE_CONFIG is already defined in dashboard-timeline.js as const
+// No need to re-declare it here
 
 // Export ČHMÚ functions
 window.DashboardChmu = {

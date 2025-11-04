@@ -461,7 +461,18 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         else:
             _LOGGER.info("📋 No existing plan found")
 
-        # 2. ZKONTROLOVAT POTŘEBU PLÁNOVÁNÍ
+        # 2. ZKONTROLOVAT OPPORTUNISTIC BALANCING
+        # Opportunistic balancing se kontroluje VŽDY (nezávisle na dni)
+        # Pokud je baterie blízko 100% a elektřina levná, můžeme udržet 100%
+        opportunistic_created = await self._check_opportunistic_balancing()
+        if opportunistic_created:
+            _LOGGER.info("✅ Opportunistic balancing plan created")
+            self._update_current_state()
+            if self._hass:
+                self.async_write_ha_state()
+            return
+
+        # 3. ZKONTROLOVAT POTŘEBU INTERVAL-BASED PLÁNOVÁNÍ
         config = self._get_balancing_config()
         if not config["enabled"]:
             _LOGGER.debug("Balancing disabled in config")
@@ -470,19 +481,27 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         days = self._days_since_last
         interval = config["interval_days"]  # Default 7 dní
         _LOGGER.info(
-            f"📊 Balancing status: days_since_last={days}, interval={interval}"
+            f"📊 Interval-based check: days_since_last={days}, interval={interval}"
         )
 
-        # FORCED MODE ENFORCEMENT (den 8+):
-        # Pokud days >= interval + 1 (den 8+), MUSÍME naplánovat balancování
+        # FORCED MODE ENFORCEMENT (den interval+1):
+        # Pokud days >= interval + 1, MUSÍME naplánovat balancování
         # i když není ideální okno. Forced mode = must run.
         is_forced = days >= interval + 1
 
-        if days < interval - 2:  # < 5. den
-            _LOGGER.debug(f"Day {days} - too early for planning")
+        # Kontrola jestli je čas plánovat (den interval-2 a později)
+        # Příklad: interval=7 → plánovat od dne 5
+        #          interval=8 → plánovat od dne 6
+        planning_threshold = interval - 2
+
+        if days < planning_threshold:
+            _LOGGER.debug(
+                f"Day {days} - too early for interval-based planning "
+                f"(threshold={planning_threshold})"
+            )
             return
 
-        # 3. SPUSTIT PLÁNOVÁNÍ
+        # 4. SPUSTIT INTERVAL-BASED PLÁNOVÁNÍ
         if is_forced:
             _LOGGER.warning(
                 f"⚠️ FORCED MODE - Day {days} - balancing MUST run, "
@@ -708,6 +727,124 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._status = "planned"
         else:
             self._status = "ok"
+
+    async def _check_opportunistic_balancing(self) -> bool:
+        """
+        Zkontrolovat podmínky pro opportunistic balancing.
+
+        Opportunistic balancing = kdykoliv je baterie blízko 100% a elektřina levná,
+        můžeme udržet 100% pro balancování článků.
+
+        Podmínky:
+        1. Baterie >= 95% SoC
+        2. Spot cena < opportunistic_threshold (default 1.1 Kč/kWh)
+        3. Lze držet 100% minimálně hold_hours (default 3h)
+        4. Není již naplánované balancování
+        5. Od posledního balancování uplynulo alespoň 3 dny (aby se nespouštělo moc často)
+
+        Returns:
+            True pokud byly splněny podmínky a byl vytvořen plán
+        """
+        # 1. Kontrola že už není plán
+        if self._planned_window:
+            return False
+
+        # 2. Kontrola config
+        config = self._get_balancing_config()
+        if not config["enabled"]:
+            return False
+
+        opportunistic_threshold = config.get("opportunistic_threshold", 1.1)
+        hold_hours = config.get("hold_hours", 3)
+
+        # 3. Kontrola že od posledního balancování uplynulo alespoň 3 dny
+        if self._days_since_last < 3:
+            return False
+
+        # 4. Kontrola SoC baterie
+        current_soc = self._get_current_soc()
+        if current_soc < 95.0:
+            return False
+
+        _LOGGER.info(
+            f"🔍 Opportunistic check: SoC={current_soc:.1f}%, "
+            f"days_since={self._days_since_last}, threshold={opportunistic_threshold}"
+        )
+
+        # 5. Získat spot ceny
+        forecast_sensor = self._get_forecast_sensor()
+        if not forecast_sensor:
+            return False
+
+        try:
+            price_timeline = await forecast_sensor._get_spot_price_timeline()
+            if not price_timeline:
+                return False
+
+            # Zkontrolovat následujících hold_hours hodin
+            now = dt_util.now()
+            end_check = now + timedelta(hours=hold_hours)
+
+            # Najít všechny ceny v tomto období
+            prices_in_window = []
+            for item in price_timeline:
+                item_time = datetime.fromisoformat(item["time"])
+                if item_time.tzinfo is None:
+                    item_time = dt_util.as_local(item_time)
+
+                if now <= item_time < end_check:
+                    prices_in_window.append(item["price"])
+
+            if not prices_in_window:
+                return False
+
+            # Kontrola že VŠECHNY ceny jsou pod threshold
+            max_price = max(prices_in_window)
+            avg_price = sum(prices_in_window) / len(prices_in_window)
+
+            _LOGGER.info(
+                f"💰 Opportunistic prices: avg={avg_price:.2f}, max={max_price:.2f}, "
+                f"threshold={opportunistic_threshold}"
+            )
+
+            if max_price > opportunistic_threshold:
+                return False
+
+            # 6. PODMÍNKY SPLNĚNY - vytvoř opportunistic balancing plán
+            _LOGGER.warning(
+                f"✅ OPPORTUNISTIC BALANCING: SoC={current_soc:.1f}%, "
+                f"price={avg_price:.2f} < {opportunistic_threshold}, "
+                f"can hold {hold_hours}h"
+            )
+
+            # Vytvoř plán - začít držet IHNED
+            holding_start = now
+            holding_end = now + timedelta(hours=hold_hours)
+
+            # Pro opportunistic balancing NENÍ potřeba nabíjet (už jsme na 95%+)
+            # Vytvoříme plán jen s holding period
+            self._planned_window = {
+                "reason": "opportunistic",
+                "holding_start": holding_start.isoformat(),
+                "holding_end": holding_end.isoformat(),
+                "charging_intervals": [],  # Žádné nabíjení, už jsme nahoře
+                "total_cost_czk": 0.0,  # Aproximace - SoC consumption během hold
+                "deadline": holding_start.isoformat(),
+                "target_soc_percent": 100.0,
+            }
+
+            # Propagovat do forecastu
+            forecast_sensor = self._get_forecast_sensor()
+            if forecast_sensor:
+                await forecast_sensor.handle_balancing_plan(self._planned_window)
+
+            self._planning_status = "opportunistic_planned"
+
+            return True
+
+        except Exception as e:
+            _LOGGER.error(f"Error in opportunistic balancing check: {e}", exc_info=True)
+            return False
 
     async def _create_emergency_balancing_plan(
         self, timeline: List[Dict[str, Any]]
@@ -2567,7 +2704,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
     def _get_balancing_config(self) -> Dict[str, Any]:
         """Get balancing configuration from config_entry."""
-        battery_config = self._config_entry.data.get("battery", {})
+        # FIX: Read from options, not data
+        # Options are user-configurable, data is initial setup
+        battery_config = self._config_entry.options
 
         return {
             "enabled": battery_config.get("balancing_enabled", True),

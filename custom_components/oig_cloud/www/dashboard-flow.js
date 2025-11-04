@@ -1,13 +1,18 @@
 // === EXISTING FUNCTIONS ===
 
+// NOTE: Analytics/Pricing/CHMU functions are called directly via window.Dashboard*
+// to avoid load-order dependency issues (flow.js loads before analytics.js)
+
 // Get sensor entity ID
 function getSensorId(sensor) {
     return `sensor.oig_${INVERTER_SN}_${sensor}`;
 }
 
 // Find shield sensor dynamically (may have suffix like _2, _3)
-// Import findShieldSensorId from utils
-const findShieldSensorId = window.DashboardUtils.findShieldSensorId;
+// Lazy load from utils to avoid load-time dependency
+function findShieldSensorId(sensorName) {
+    return window.DashboardUtils?.findShieldSensorId?.(sensorName) || `sensor.oig_${INVERTER_SN}_${sensorName}`;
+}
 
 // Update time
 function updateTime() {
@@ -16,9 +21,9 @@ function updateTime() {
 }
 
 // Debouncing timers
-let drawConnectionsTimeout = null;
-let loadDataTimer = null;
-let loadDetailsTimer = null;
+var drawConnectionsTimeout = null;
+var loadDataTimer = null;
+var loadDetailsTimer = null;
 
 // Debounced version of drawConnections to prevent excessive redraws
 function debouncedDrawConnections(delay = 100) {
@@ -581,11 +586,11 @@ function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
 }
 
 // Global cache for node positions
-let cachedNodeCenters = null;
-let lastLayoutHash = null;
+var cachedNodeCenters = null;
+var lastLayoutHash = null;
 
 // OPRAVA BUG #4: Cache pro power hodnoty
-let lastPowerValues = null;
+var lastPowerValues = null;
 
 // Calculate layout hash to detect changes
 function getLayoutHash() {
@@ -1016,13 +1021,10 @@ function animateFlow(data) {
     lastPowerValues = { solarPower, batteryPower, gridPower, housePower };
 }
 
-// Cache for previous values to detect changes
-const previousValues = {};
-
-// Use utils from DashboardUtils module
-const formatPower = window.DashboardUtils.formatPower;
-const formatEnergy = window.DashboardUtils.formatEnergy;
-const updateElementIfChanged = window.DashboardUtils.updateElementIfChanged;
+// Use utils from DashboardUtils module (var allows re-declaration)
+var formatPower = window.DashboardUtils?.formatPower;
+var formatEnergy = window.DashboardUtils?.formatEnergy;
+var updateElementIfChanged = window.DashboardUtils?.updateElementIfChanged;
 
 // Legacy wrapper kept for backward compatibility
 function updateElementIfChanged_legacy(elementId, newValue, cacheKey) {
@@ -1443,17 +1445,27 @@ async function loadData() {
     }
 
     // Update ČHMÚ weather warning badge
-    updateChmuWarningBadge();
+    if (window.DashboardChmu?.updateChmuWarningBadge) {
+        window.DashboardChmu.updateChmuWarningBadge();
+    }
 
     // Update battery efficiency statistics
-    updateBatteryEfficiencyStats();
+    if (window.DashboardAnalytics?.updateBatteryEfficiencyStats) {
+        window.DashboardAnalytics.updateBatteryEfficiencyStats();
+    }
 
     // Update planned consumption statistics
-    updatePlannedConsumptionStats();
+    if (window.DashboardPricing?.updatePlannedConsumptionStats) {
+        window.DashboardPricing.updatePlannedConsumptionStats();
+    }
 
     // Phase 2.6: Update what-if analysis and mode recommendations
-    updateWhatIfAnalysis();
-    updateModeRecommendations();
+    if (window.DashboardPricing?.updateWhatIfAnalysis) {
+        window.DashboardPricing.updateWhatIfAnalysis();
+    }
+    if (window.DashboardPricing?.updateModeRecommendations) {
+        window.DashboardPricing.updateModeRecommendations();
+    }
 
     // Phase 2.7: Update performance tracking chart
     updatePerformanceChart();

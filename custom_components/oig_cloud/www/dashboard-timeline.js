@@ -6,6 +6,71 @@ const MODE_CONFIG = {
     'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.7)', label: 'DO NOTHING' }
 };
 
+// Global Today Plan Tile instance
+var todayPlanTileInstance = null;
+
+/**
+ * Render Today Plan Tile - live tracking of today's plan vs actual with EOD prediction
+ * Event-driven refresh triggered by buildExtendedTimeline()
+ */
+function renderTodayPlanTile(tileSummary) {
+    const container = document.getElementById('today-plan-tile-container');
+    if (!container) {
+        console.warn('[Today Plan Tile] Container not found - skipping render');
+        return;
+    }
+
+    // Lazy load TodayPlanTile class if not already loaded
+    if (typeof TodayPlanTile === 'undefined') {
+        console.log('[Today Plan Tile] Loading module...');
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = '/local/oig_cloud/www/modules/today-plan-tile.js';
+        script.onload = () => {
+            console.log('[Today Plan Tile] Module loaded, rendering...');
+            initTodayPlanTile(container, tileSummary);
+        };
+        script.onerror = () => {
+            console.error('[Today Plan Tile] Failed to load module');
+        };
+        document.head.appendChild(script);
+        return;
+    }
+
+    // Update existing instance or create new one
+    if (todayPlanTileInstance) {
+        console.log('[Today Plan Tile] Updating existing instance');
+        todayPlanTileInstance.update(tileSummary);
+    } else {
+        console.log('[Today Plan Tile] Creating new instance');
+        initTodayPlanTile(container, tileSummary);
+    }
+}
+
+/**
+ * Initialize Today Plan Tile instance
+ * @param {HTMLElement} container - Container element
+ * @param {object} tileSummary - Tile summary data from API
+ */
+function initTodayPlanTile(container, tileSummary) {
+    try {
+        todayPlanTileInstance = new TodayPlanTile(
+            container,
+            tileSummary,
+            () => {
+                // Click handler - open DNES tab in timeline dialog
+                console.log('[Today Plan Tile] Opening timeline dialog with DNES tab');
+                if (window.DashboardTimeline?.openTimelineDialog) {
+                    window.DashboardTimeline.openTimelineDialog('today');
+                }
+            }
+        );
+        console.log('[Today Plan Tile] Instance created');
+    } catch (error) {
+        console.error('[Today Plan Tile] Failed to create instance:', error);
+    }
+}
+
 // =============================================================================
 // TIMELINE DIALOG - Clean Implementation
 // =============================================================================
@@ -2184,7 +2249,7 @@ class TimelineDialog {
 }
 
 // Global instance
-let timelineDialogInstance = null;
+var timelineDialogInstance = null;
 
 // Initialize on page load
 function initTimelineDialog() {
@@ -2224,7 +2289,7 @@ function closeModeTimelineDialog() {
 // =============================================================================
 
 // Global instance for Today Plan Tile
-let todayPlanTileInstance = null;
+var todayPlanTileInstance = null;
 
 // Build mode timeline from mode_recommendations (Phase 2.8: Load from API)
 

@@ -606,24 +606,147 @@ def kwh_to_soc(kwh: float) -> float:
 2. **FIX BUG 3:** Odstranit duplicitní výpočet `remaining_deficit` v HOME I
 3. **FIX BUG 2:** Přidat validaci `battery >= min_capacity` do `_build_result()`
 
-### 7.2 Architektonická Refaktorizace (SILNĚ DOPORUČENO)
+### 7.2 Smart Charging Strategy (IMPLEMENTOVÁNO ✅)
+
+#### Charging Constraints
+
+**Hard Constraint (Minimum Protection):**
+- Baterie **NESMÍ** klesnout pod `min_capacity` (33% SoC = 5.07 kWh)
+- Pokud forward pass detekuje že baterie klesne pod minimum → **MUSÍME** nabít
+- Vybíráme nejlevnější hodiny před dosažením minima
+- Ignorujeme percentilový threshold (MUST charge = highest priority)
+
+**Soft Constraint (Target Optimization):**
+- Baterie může zůstat mezi minimum a target
+- Pokud economic check zjistí že nabíjení k targetu je výhodné → **MŮŽEME** nabít
+- Vybíráme nejlevnější hodiny v plánovacím okně
+- Economic check zajišťuje že se to vyplatí (jinak přeskočíme)
+
+#### Economic Check (PHASE 2.5 - Critical!)
+
+**Kontrola 1: Target charging má smysl JEN pokud brání grid importům**
+
+```python
+# Forward pass simuluje HOME I (bez nabíjení) interval po intervalu
+# Používá reálnou efficiency z sensor.oig_<box_id>_battery_efficiency
+min_reached = min(battery_trajectory)  # Nejnižší stav baterie v timeline
+
+# Target charging má smysl JEN když baterie KLESNE POD MINIMUM
+if needs_charging_for_target and not needs_charging_for_minimum:
+    if min_reached >= min_capacity:
+        # Baterie NIKDY neklesne pod minimum → žádný grid import
+        # Target charging by STÁL peníze, ale NIČEHO by nepřinesl!
+        _LOGGER.info(
+            f"⊘ Skipping target charging - battery stays above minimum "
+            f"(min_reached={min_reached:.2f} >= min={min_capacity:.2f}). "
+            "No economic benefit (no grid imports prevented)."
+        )
+        return HOME_I_baseline  # Není co šetřit!
+```
+
+**Kontrola 2: Máme dost cheap intervalů?** (Pouze pokud prošla kontrola 1)
+
+```python
+# Parametr: cheap_price_percentile (default 30%)
+sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
+percentile_index = int(len(sorted_prices) * CHEAP_PRICE_PERCENTILE / 100)
+cheap_price_threshold = sorted_prices[percentile_index]
+
+# Spočítáme kolik máme cheap intervalů
+cheap_intervals = sum(1 for sp in spot_prices
+                      if sp.get("price", 0) <= cheap_price_threshold)
+
+# Potřebné intervaly pro nabití deficitu
+required_intervals = ceil(abs(total_deficit) / max_charge_per_interval)
+
+# Nabíjet jen když máme dost cheap hodin
+if cheap_intervals < required_intervals:
+    _LOGGER.info("⊘ Skipping target charging - not enough cheap intervals")
+    needs_charging_for_target = False
+```
+
+**Příklad scénáře:**
+```
+Baterie: 14.02 kWh (91%)
+Spotřeba dnes: 8.8 kWh
+Solar dnes: 5.24 kWh
+Forward pass (HOME I): min_reached=9.63 kWh, final=9.63 kWh
+
+Analýza:
+- Net spotřeba z baterie: 8.8 - 5.24 = 3.56 kWh (AC)
+- Vybíjení s efficiency 88.2%: 3.56 / 0.882 = 4.04 kWh (DC)
+- Baterie klesne na: 14.02 - 4.04 ≈ 10 kWh
+- Minimum: 5.07 kWh
+- Výsledek: min_reached (9.63) >= min (5.07) ✅
+
+Economic check:
+- HOME I cost: 0.00 Kč (žádný grid import)
+- Target charging cost: 21.78 Kč (nabíjení na 80%)
+- Net benefit: 0 - 21.78 = -21.78 Kč (ZTRÁTA!)
+→ Přeskočit target charging, použít HOME I baseline
+```#### PHASE 7: Charging Opportunity Selection
+
+```python
+# Pro minimum i target používáme STEJNOU logiku: nejlevnější hodiny
+# Rozdíl: minimum MUST charge, target MAY charge (economic check už proběhl)
+
+charging_reason = "MINIMUM" if needs_charging_for_minimum else "TARGET"
+
+for opp in charge_opportunities[:20]:  # Max 20 intervals (5h)
+    idx = opp["index"]
+    price = opp["price"]
+
+    modes[idx] = CBB_MODE_HOME_UPS
+    _LOGGER.debug(
+        f"→ [{charging_reason}] Interval {idx}: price={price:.2f}, "
+        f"deficit={opp['deficit']:.2f} kWh"
+    )
+```
+
+**Klíčové body:**
+- ✅ Economic check filtruje target charging PŘED PHASE 7
+- ✅ PHASE 7 pak jen vybírá nejlevnější hodiny z opportunities
+- ✅ Není hard threshold v PHASE 7 (economic check už udělal svou práci)
+- ✅ Minimum charging má vždy prioritu (prochází economic checkem automaticky)
+
+#### Konfigurace
+
+```python
+# const.py
+CONF_CHARGING_PRICE_PERCENTILE = "charging_price_percentile"  # TODO: Add to config_flow
+DEFAULT_CHARGING_PRICE_PERCENTILE = 30  # Bottom 30% = cheap hours
+```
+
+**Budoucí rozšíření:**
+- Přidat do config_flow wizard (battery configuration step)
+- User může nastavit 10-50% podle preference
+- Nižší % = konzervativnější (jen nejlevnější hodiny)
+- Vyšší % = agresivnější (více možností pro target charging)
+
+### 7.3 Architektonická Refaktorizace (SILNĚ DOPORUČENO)
 
 1. **Migrate to SOC%:** Změnit všechny algoritmy aby pracovaly s SOC% místo kWh
 2. **Unified simulation:** Použít `_simulate_interval_with_mode()` všude místo duplikace
 3. **Constraint enforcement:** Explicitní ověření constraints v každém kroku
 
-### 7.3 Implementační Plán
+### 7.4 Implementační Plán
 
-#### Fáze 1: Quick Fixes (30 min)
-- Opravit BUG 1 (clamp na min_capacity)
-- Opravit BUG 3 (duplicitní deficit)
-- Přidat validation warnings
+#### Fáze 1: Quick Fixes (30 min) ✅ HOTOVO
+- ✅ Opravit BUG 1 (clamp na min_capacity)
+- ✅ Přidat economic check s percentile threshold
+- ✅ Implementovat smart charging v PHASE 7
 
-#### Fáze 2: Unified Simulation (2h)
+#### Fáze 2: Configuration (1h) ⏳ TODO
+- Add `charging_price_percentile` to const.py
+- Add to config_flow wizard
+- Read from config instead of hardcoded value
+- Update documentation
+
+#### Fáze 3: Unified Simulation (2h) 📋 BACKLOG
 - Refaktorovat `_build_result()` aby používal `_simulate_interval_with_mode()`
 - Odstranit duplikaci logiky režimů
 
-#### Fáze 3: SOC% Migration (4-6h)
+#### Fáze 4: SOC% Migration (4-6h) 📋 BACKLOG
 - Přepsat `_calculate_optimal_modes_hybrid()` na SOC%
 - Přepsat `_simulate_interval_with_mode()` na SOC%
 - Upravit API timeline aby vracelo SOC% jako `battery_soc_percent`

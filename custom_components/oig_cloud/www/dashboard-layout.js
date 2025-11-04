@@ -14,17 +14,17 @@
 // STATE
 // ============================================================================
 
-let editMode = false;
-let currentBreakpoint = null;
-let draggedNode = null;
-let dragStartX = 0;
-let dragStartY = 0;
-let dragStartTop = 0;
-let dragStartLeft = 0;
-let resizeTimer = null;
+var editMode = false;
+var currentBreakpoint = null;
+var draggedNode = null;
+var dragStartX = 0;
+var dragStartY = 0;
+var dragStartTop = 0;
+var dragStartLeft = 0;
+var resizeTimer = null;
 
 // Callbacks pro redraw (registruje core)
-let onLayoutChangeCallback = null;
+var onLayoutChangeCallback = null;
 
 // ============================================================================
 // BREAKPOINT DETECTION
@@ -34,7 +34,7 @@ let onLayoutChangeCallback = null;
  * Detekce současného breakpointu
  * @returns {string} 'mobile' | 'tablet' | 'desktop'
  */
-export function getCurrentBreakpoint() {
+function getCurrentBreakpoint() {
     const width = window.innerWidth;
     if (width <= 768) return 'mobile';
     if (width <= 1024) return 'tablet';
@@ -50,7 +50,7 @@ export function getCurrentBreakpoint() {
  * @param {string} breakpoint - Breakpoint name
  * @param {object} positions - Node positions
  */
-export function saveLayout(breakpoint, positions) {
+function saveLayout(breakpoint, positions) {
     const key = `oig-layout-${breakpoint}`;
     localStorage.setItem(key, JSON.stringify(positions));
     console.log(`[Layout] Saved ${breakpoint}:`, positions);
@@ -61,7 +61,7 @@ export function saveLayout(breakpoint, positions) {
  * @param {string} breakpoint - Breakpoint name
  * @returns {boolean} True pokud byl layout načten
  */
-export function loadLayout(breakpoint) {
+function loadLayout(breakpoint) {
     const key = `oig-layout-${breakpoint}`;
     const saved = localStorage.getItem(key);
 
@@ -108,7 +108,7 @@ function applyCustomPositions(positions) {
  * Reset layoutu pro breakpoint
  * @param {string} breakpoint - Breakpoint name
  */
-export function resetLayout(breakpoint) {
+function resetLayout(breakpoint) {
     const key = `oig-layout-${breakpoint}`;
     localStorage.removeItem(key);
     console.log(`[Layout] Reset ${breakpoint}`);
@@ -137,7 +137,7 @@ export function resetLayout(breakpoint) {
  * Toggle edit mode (drag & drop)
  * @returns {boolean} Nový stav edit mode
  */
-export function toggleEditMode() {
+function toggleEditMode() {
     editMode = !editMode;
     const canvas = document.querySelector('.flow-canvas');
     const btn = document.getElementById('edit-layout-btn');
@@ -160,7 +160,7 @@ export function toggleEditMode() {
  * Vrací současný stav edit mode
  * @returns {boolean} Edit mode state
  */
-export function isEditMode() {
+function isEditMode() {
     return editMode;
 }
 
@@ -373,7 +373,7 @@ function saveCurrentLayout() {
 /**
  * Resize handler s debouncing
  */
-export function handleLayoutResize() {
+function handleLayoutResize() {
     if (resizeTimer) clearTimeout(resizeTimer);
 
     resizeTimer = setTimeout(() => {
@@ -404,7 +404,7 @@ export function handleLayoutResize() {
  * Inicializace layout systému
  * @param {Function} changeCallback - Callback volaný při změně layoutu
  */
-export function initLayout(changeCallback) {
+function initLayout(changeCallback) {
     onLayoutChangeCallback = changeCallback;
 
     // Detekce breakpointu
@@ -423,7 +423,7 @@ export function initLayout(changeCallback) {
 /**
  * Cleanup
  */
-export function destroyLayout() {
+function destroyLayout() {
     window.removeEventListener('resize', handleLayoutResize);
     document.removeEventListener('mousemove', handleDragMove);
     document.removeEventListener('mouseup', handleDragEnd);

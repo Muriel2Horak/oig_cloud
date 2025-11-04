@@ -375,7 +375,7 @@ window.toggleBoilerControlPanel = toggleBoilerControlPanel;
 
 console.log('🔥 [Boiler] Dashboard script loaded');
 // === BOILER DATA & CHART ===
-let boilerChartInstance = null;
+var boilerChartInstance = null;
 
 /**
  * Load extended boiler data (sensors, profile, energy breakdown, predictions, charts)

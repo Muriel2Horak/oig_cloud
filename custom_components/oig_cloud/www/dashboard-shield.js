@@ -1,10 +1,10 @@
 // === SHIELD INTEGRATION FUNCTIONS ===
 
 // Debouncing timers
-let loadDataTimer = null;
-let loadDetailsTimer = null;
-let shieldMonitorTimer = null;
-let timelineRefreshTimer = null;
+var loadDataTimer = null;
+var loadDetailsTimer = null;
+var shieldMonitorTimer = null;
+var timelineRefreshTimer = null;
 
 // Debounced loadData() - prevents excessive calls
 function debouncedLoadData() {
@@ -580,15 +580,15 @@ async function callService(domain, service, data) {
     }
 }
 
-// Use notification from DashboardUtils module
-const showNotification = window.DashboardUtils.showNotification;
+// Use notification from DashboardUtils module (var allows re-declaration)
+var showNotification = window.DashboardUtils?.showNotification;
 
 // Track mode change state
-let modeChangeInProgress = false;
-let lastModeChangeNotified = false;
+var modeChangeInProgress = false;
+var lastModeChangeNotified = false;
 
 // Shield Queue live duration update
-let shieldQueueUpdateInterval = null;
+var shieldQueueUpdateInterval = null;
 
 function startShieldQueueLiveUpdate() {
     // Clear existing interval
@@ -902,7 +902,7 @@ function hideChangingIndicator(type) {
 }
 
 // Main monitor function - simplified
-let isMonitoringShieldActivity = false;
+var isMonitoringShieldActivity = false;
 
 async function monitorShieldActivity() {
     if (isMonitoringShieldActivity) {

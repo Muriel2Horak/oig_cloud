@@ -18,7 +18,7 @@
  * @param {number} watts - Výkon ve wattech
  * @returns {string} Formátovaný string s jednotkou
  */
-export function formatPower(watts) {
+function formatPower(watts) {
     if (watts === null || watts === undefined || isNaN(watts)) return '-- W';
     const absWatts = Math.abs(watts);
     if (absWatts >= 1000) {
@@ -33,7 +33,7 @@ export function formatPower(watts) {
  * @param {number} wattHours - Energie ve watthodinách
  * @returns {string} Formátovaný string s jednotkou
  */
-export function formatEnergy(wattHours) {
+function formatEnergy(wattHours) {
     if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
     const absWh = Math.abs(wattHours);
     if (absWh >= 1000) {
@@ -48,7 +48,7 @@ export function formatEnergy(wattHours) {
  * @param {Date} date - Datum k porovnání
  * @returns {string} Lidsky čitelný relativní čas
  */
-export function formatRelativeTime(date) {
+function formatRelativeTime(date) {
     if (!date) return '';
 
     const now = new Date();
@@ -75,7 +75,7 @@ export function formatRelativeTime(date) {
  * @param {string} isoString - ISO datetime string
  * @returns {string} Formátovaný čas
  */
-export function formatChmuDateTime(isoString) {
+function formatChmuDateTime(isoString) {
     if (!isoString) return '';
     try {
         const date = new Date(isoString);
@@ -97,7 +97,7 @@ export function formatChmuDateTime(isoString) {
  * @param {number} decimals - Počet desetinných míst
  * @returns {string} Formátované číslo
  */
-export function formatNumber(value, decimals = 2) {
+function formatNumber(value, decimals = 2) {
     if (value === null || value === undefined || isNaN(value)) return '--';
     return value.toFixed(decimals);
 }
@@ -107,7 +107,7 @@ export function formatNumber(value, decimals = 2) {
  * @param {number} value - Cena
  * @returns {string} Formátovaná cena s jednotkou
  */
-export function formatCurrency(value) {
+function formatCurrency(value) {
     if (value === null || value === undefined || isNaN(value)) return '-- CZK';
     return `${value.toFixed(2)} CZK`;
 }
@@ -117,7 +117,7 @@ export function formatCurrency(value) {
  * @param {number} value - Hodnota (0-100)
  * @returns {string} Formátovaná procenta
  */
-export function formatPercent(value) {
+function formatPercent(value) {
     if (value === null || value === undefined || isNaN(value)) return '-- %';
     return `${Math.round(value)} %`;
 }
@@ -132,7 +132,7 @@ export function formatPercent(value) {
  * @param {string} message - Text zprávy
  * @param {string} type - Typ: 'success', 'error', 'warning', 'info'
  */
-export function showNotification(title, message, type = 'success') {
+function showNotification(title, message, type = 'success') {
     // Pokus o použití HA notification
     const hass = window.getHass?.();
     if (hass?.callService) {
@@ -165,7 +165,7 @@ export function showNotification(title, message, type = 'success') {
  * @param {number} delay - Delay v ms
  * @returns {Function} Debounced funkce
  */
-export function debounce(func, delay) {
+function debounce(func, delay) {
     let timeout;
     return function(...args) {
         clearTimeout(timeout);
@@ -179,7 +179,7 @@ export function debounce(func, delay) {
  * @param {number} limit - Minimální interval v ms
  * @returns {Function} Throttled funkce
  */
-export function throttle(func, limit) {
+function throttle(func, limit) {
     let inThrottle;
     return function(...args) {
         if (!inThrottle) {
@@ -205,7 +205,7 @@ const previousValues = {};
  * @param {boolean} isFallback - True pokud je hodnota fallback (např. '--')
  * @returns {boolean} True pokud se změnilo
  */
-export function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false) {
+function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
@@ -235,7 +235,7 @@ export function updateElementIfChanged(elementId, newValue, cacheKey, isFallback
  * @param {boolean} shouldAdd - True = přidat, False = odebrat
  * @returns {boolean} True pokud se změnilo
  */
-export function updateClassIfChanged(element, className, shouldAdd) {
+function updateClassIfChanged(element, className, shouldAdd) {
     if (!element) return false;
     const hasClass = element.classList.contains(className);
     if (shouldAdd && !hasClass) {
@@ -255,7 +255,7 @@ export function updateClassIfChanged(element, className, shouldAdd) {
  * @param {number} delay - Delay mezi pokusy (ms)
  * @returns {Promise<HTMLElement>} Element nebo null
  */
-export async function waitForElement(selector, maxRetries = 10, delay = 100) {
+async function waitForElement(selector, maxRetries = 10, delay = 100) {
     for (let i = 0; i < maxRetries; i++) {
         const element = document.querySelector(selector);
         if (element) return element;
@@ -275,7 +275,7 @@ export async function waitForElement(selector, maxRetries = 10, delay = 100) {
  * @param {number} max - Maximální hodnota
  * @returns {boolean} True pokud je validní
  */
-export function isNumberInRange(value, min, max) {
+function isNumberInRange(value, min, max) {
     const num = parseFloat(value);
     return !isNaN(num) && num >= min && num <= max;
 }
@@ -285,7 +285,7 @@ export function isNumberInRange(value, min, max) {
  * @param {string} entityId - Entity ID
  * @returns {boolean} True pokud je validní
  */
-export function isValidEntityId(entityId) {
+function isValidEntityId(entityId) {
     if (typeof entityId !== 'string') return false;
     return /^[a-z_]+\.[a-z0-9_]+$/.test(entityId);
 }
@@ -298,7 +298,7 @@ export function isValidEntityId(entityId) {
  * Vrátí aktuální čas ve formátu HH:MM:SS
  * @returns {string} Formátovaný čas
  */
-export function getCurrentTimeString() {
+function getCurrentTimeString() {
     const now = new Date();
     return now.toLocaleTimeString('cs-CZ');
 }
@@ -308,7 +308,7 @@ export function getCurrentTimeString() {
  * @param {number} seconds - Počet sekund
  * @returns {string} Formátovaný čas
  */
-export function formatDuration(seconds) {
+function formatDuration(seconds) {
     if (!seconds || seconds < 0) return '0s';
 
     const hours = Math.floor(seconds / 3600);
@@ -324,10 +324,9 @@ export function formatDuration(seconds) {
 }
 
 // ============================================================================
-// EXPORT DEFAULT (pro backward compatibility s non-module scripts)
+// SHIELD SENSOR UTILITIES
 // ============================================================================
 
-if (typeof window !== 'undefined') {
 /**
  * Find shield sensor ID with support for numeric suffixes
  * Handles: sensor.oig_<SN>_<name> or sensor.oig_<SN>_<name>_2, _3, etc.
@@ -394,4 +393,3 @@ if (typeof window !== 'undefined') {
         findShieldSensorId
     };
 }
-

@@ -3,6 +3,9 @@
  * Správa konfigurace dynamických dlaždic na OIG Dashboard
  */
 
+// Global tile manager instance
+var tileManager = null;
+
 class DashboardTileManager {
     constructor(hass) {
         this.hass = hass;
@@ -629,10 +632,7 @@ window.DashboardTiles = Object.assign(window.DashboardTiles || {}, {
     renderAllTiles,
     renderTilesBlock,
     renderTile,
-    renderIcon,
-    renderEntityTile,
-    renderButtonTile,
-    executeTileButtonAction,
+    // renderEntityTile, renderButtonTile, executeTileButtonAction are in dashboard-core.js
     updateTileCount,
     toggleTilesVisibility,
     resetAllTiles,

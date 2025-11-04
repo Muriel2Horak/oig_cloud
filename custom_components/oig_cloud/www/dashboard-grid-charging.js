@@ -679,6 +679,36 @@ function showGridChargingPopup() {
     });
 }
 
+// Dialog functions (stubs - to be implemented or removed)
+function openGridChargingDialog() {
+    console.log('[GridCharging] openGridChargingDialog - not implemented');
+}
+
+function closeGridChargingDialog() {
+    console.log('[GridCharging] closeGridChargingDialog - not implemented');
+}
+
+function renderGridChargingDialog() {
+    console.log('[GridCharging] renderGridChargingDialog - not implemented');
+    return '';
+}
+
+function selectTimeBlock() {
+    console.log('[GridCharging] selectTimeBlock - not implemented');
+}
+
+function deselectTimeBlock() {
+    console.log('[GridCharging] deselectTimeBlock - not implemented');
+}
+
+function clearAllBlocks() {
+    console.log('[GridCharging] clearAllBlocks - not implemented');
+}
+
+function saveGridChargingPlan() {
+    console.log('[GridCharging] saveGridChargingPlan - not implemented');
+}
+
 
 // Export grid charging functions
 window.DashboardGridCharging = {

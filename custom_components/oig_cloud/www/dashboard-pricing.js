@@ -1,8 +1,8 @@
 // === PRICING CHARTS ===
-let loadPricingDataTimer = null;
-let updatePlannedConsumptionTimer = null;
-let priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
-let currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
+var loadPricingDataTimer = null;
+var updatePlannedConsumptionTimer = null;
+var priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
+var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
     cheapest: null,
     expensive: null,
     bestExport: null,
@@ -29,7 +29,7 @@ function debouncedUpdatePlannedConsumption() {
     }, 300); // Wait 300ms before executing
 }
 
-let combinedChart = null;
+var combinedChart = null;
 
 // Helper funkce pro detekci theme a barvy
 function isLightTheme() {
@@ -138,11 +138,11 @@ function toggleDatalabelMode() {
 }
 
 // Sledování aktuálního zoom stavu
-let currentZoomRange = null;
-let activeZoomCard = null; // Reference na aktuálně aktivní kartu
+var currentZoomRange = null;
+var activeZoomCard = null; // Reference na aktuálně aktivní kartu
 
 // Datalabels režim: 'auto' (závislé na zoomu), 'always', 'never'
-let datalabelMode = 'auto';
+var datalabelMode = 'auto';
 
 // Toggle zoom: pokud není zoom -> zoom IN, pokud je zoom -> zoom OUT
 function zoomToTimeRange(startTime, endTime, cardElement = null) {
