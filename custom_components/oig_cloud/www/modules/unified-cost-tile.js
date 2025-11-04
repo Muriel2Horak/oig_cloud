@@ -90,7 +90,7 @@ class UnifiedCostTile {
         const tomorrowTooltip = today.tooltips?.tomorrow || '';
 
         return `
-            <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true" title="${todayTooltip}">
+            <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true" data-tooltip="${this.escapeHtml(todayTooltip)}">
                 <!-- Compact header: DNES 51 Kč  [progress] 3% ✅ -->
                 <div class="uct-header-compact">
                     <span class="uct-label-inline">💰 DNES</span>
@@ -118,8 +118,8 @@ class UnifiedCostTile {
                 <!-- Context footer: Včera | Zítra -->
                 ${(hasYesterday || hasTomorrow) ? `
                 <div class="uct-footer">
-                    ${hasYesterday ? `<span title="${yesterdayTooltip}">Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
-                    ${hasTomorrow ? `<span title="${tomorrowTooltip}">Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasYesterday ? `<span data-tooltip="${this.escapeHtml(yesterdayTooltip)}">Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasTomorrow ? `<span data-tooltip="${this.escapeHtml(tomorrowTooltip)}">Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
                 </div>
                 ` : ''}
             </div>
@@ -284,5 +284,88 @@ class UnifiedCostTile {
             tile.style.cursor = 'pointer';
             tile.addEventListener('click', this.onClick);
         }
+
+        // Custom tooltip handlers
+        this.attachTooltipListeners();
+    }
+
+    /**
+     * Attach custom tooltip event listeners
+     */
+    attachTooltipListeners() {
+        const elementsWithTooltip = this.container.querySelectorAll('[data-tooltip]');
+        
+        elementsWithTooltip.forEach(element => {
+            element.addEventListener('mouseenter', (e) => this.showTooltip(e));
+            element.addEventListener('mouseleave', () => this.hideTooltip());
+            element.addEventListener('mousemove', (e) => this.moveTooltip(e));
+        });
+    }
+
+    /**
+     * Show custom tooltip
+     */
+    showTooltip(event) {
+        const text = event.currentTarget.getAttribute('data-tooltip');
+        if (!text) return;
+
+        // Remove existing tooltip if any
+        this.hideTooltip();
+
+        // Create tooltip element
+        const tooltip = document.createElement('div');
+        tooltip.className = 'uct-custom-tooltip';
+        tooltip.textContent = text;
+        tooltip.id = 'uct-tooltip';
+        document.body.appendChild(tooltip);
+
+        // Position tooltip
+        this.moveTooltip(event);
+
+        // Show with animation
+        setTimeout(() => tooltip.classList.add('visible'), 10);
+    }
+
+    /**
+     * Move tooltip to follow cursor
+     */
+    moveTooltip(event) {
+        const tooltip = document.getElementById('uct-tooltip');
+        if (!tooltip) return;
+
+        const offset = 15;
+        let x = event.clientX + offset;
+        let y = event.clientY + offset;
+
+        // Keep tooltip within viewport
+        const rect = tooltip.getBoundingClientRect();
+        if (x + rect.width > window.innerWidth) {
+            x = event.clientX - rect.width - offset;
+        }
+        if (y + rect.height > window.innerHeight) {
+            y = event.clientY - rect.height - offset;
+        }
+
+        tooltip.style.left = `${x}px`;
+        tooltip.style.top = `${y}px`;
+    }
+
+    /**
+     * Hide custom tooltip
+     */
+    hideTooltip() {
+        const tooltip = document.getElementById('uct-tooltip');
+        if (tooltip) {
+            tooltip.remove();
+        }
+    }
+
+    /**
+     * Escape HTML for safe insertion
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
