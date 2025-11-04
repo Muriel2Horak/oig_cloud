@@ -609,7 +609,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             )
 
                         hour = timestamp.hour
-                        hourly_kwh = profile["hourly_consumption"][hour]
+                        start_hour = profile.get(
+                            "start_hour", 0
+                        )  # Default 0 for tomorrow
+
+                        # Mapování absolutní hodiny na index v poli
+                        # today_profile: start_hour=14 → hour=14 → index=0, hour=15 → index=1
+                        # tomorrow_profile: start_hour=0 → hour=0 → index=0, hour=1 → index=1
+                        index = hour - start_hour
+
+                        if 0 <= index < len(profile["hourly_consumption"]):
+                            hourly_kwh = profile["hourly_consumption"][index]
+                        else:
+                            # Mimo rozsah - použij průměr nebo fallback
+                            _LOGGER.warning(
+                                f"Hour {hour} out of range for profile starting at {start_hour} "
+                                f"(length={len(profile['hourly_consumption'])}), using average"
+                            )
+                            hourly_kwh = profile.get("avg_kwh_h", 0.5)
+
                         load_kwh = hourly_kwh / 4.0
                     else:
                         # Fallback: load_avg sensors
@@ -3318,9 +3336,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Fallback na today profile pokud nemáme tomorrow
                         profile = adaptive_profiles["today_profile"]
 
-                # Získat hodinovou hodnotu z profilu
+                # Získat hodinovou hodnotu z profilu s plovoucím oknem
                 hour = timestamp.hour
-                hourly_kwh = profile["hourly_consumption"][hour]
+                start_hour = profile.get("start_hour", 0)
+                index = hour - start_hour
+
+                if 0 <= index < len(profile["hourly_consumption"]):
+                    hourly_kwh = profile["hourly_consumption"][index]
+                else:
+                    # Mimo rozsah - použij průměr
+                    hourly_kwh = profile.get("avg_kwh_h", 0.5)
 
                 # Převést na 15min interval
                 load_kwh = hourly_kwh / 4.0
@@ -7873,10 +7898,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if today_profile and isinstance(today_profile, dict):
             hourly = today_profile.get("hourly_consumption", [])
+            start_hour = today_profile.get(
+                "start_hour", 0
+            )  # Plovoucí okno: od které hodiny začíná pole
+
             if isinstance(hourly, list):
+                # Převést absolutní hodinu na index v poli
+                # current_hour=14, start_hour=13 → index=1
                 for hour in range(current_hour, 24):
-                    if hour < len(hourly):
-                        planned_today += hourly[hour]
+                    index = hour - start_hour
+                    if 0 <= index < len(hourly):
+                        planned_today += hourly[index]
             elif isinstance(hourly, dict):
                 for hour in range(current_hour, 24):
                     planned_today += hourly.get(hour, 0.0)
@@ -7887,9 +7919,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if tomorrow_profile and isinstance(tomorrow_profile, dict):
             hourly = tomorrow_profile.get("hourly_consumption", [])
+            start_hour = tomorrow_profile.get(
+                "start_hour", 0
+            )  # Vždy 0, ale pro konzistenci
+
             if isinstance(hourly, list):
+                # Zítřek vždy začíná od půlnoci (start_hour=0), takže index=hour
                 planned_tomorrow = sum(
-                    hourly[h] if h < len(hourly) else 0.0 for h in range(24)
+                    (
+                        hourly[h - start_hour]
+                        if 0 <= (h - start_hour) < len(hourly)
+                        else 0.0
+                    )
+                    for h in range(24)
                 )
             elif isinstance(hourly, dict):
                 planned_tomorrow = sum(hourly.get(h, 0.0) for h in range(24))

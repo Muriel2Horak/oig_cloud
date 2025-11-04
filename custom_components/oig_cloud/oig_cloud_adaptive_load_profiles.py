@@ -20,9 +20,10 @@ from homeassistant.components.recorder import history
 _LOGGER = logging.getLogger(__name__)
 
 # 72h Consumption Profiling Constants
-PROFILE_HOURS = 72  # Délka profilu v hodinách
-PROFILE_MATCH_HOURS = 48  # Kolik hodin aktuálních dat používáme pro matching
-PROFILE_PREDICT_HOURS = 24  # Kolik hodin předpovídáme z matched profilu
+PROFILE_HOURS = 72  # Délka profilu v hodinách (3 dny)
+# Plovoucí okno: matching + predikce = vždy 72h celkem
+# Před půlnocí: matching až do předchozí půlnoci (max 48h), predikce až do další půlnoci (min 24h)
+# Po půlnoci: matching jen 24h zpět, predikce 48h dopředu
 
 # Similarity scoring weights
 WEIGHT_CORRELATION = 0.50  # Correlation coefficient weight
@@ -208,25 +209,28 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
     async def _profiling_loop(self) -> None:
         """
-        Profiling loop - vytváření 72h consumption profilů.
+        Profiling loop - vytváření adaptivní predikce spotřeby.
 
-        První běh okamžitě (s delay 10s), pak denně v 00:30.
+        První běh okamžitě (s delay 10s), pak každých 15 minut.
+        Historické profily se loadují jednou denně v 00:30.
         """
         try:
             # První běh s delay aby HA dostal čas
             await asyncio.sleep(10)
 
-            _LOGGER.info("📊 Consumption profiling loop starting - first run")
+            _LOGGER.info(
+                "📊 Adaptive profiling loop starting - matching every 15 minutes"
+            )
 
             # První běh okamžitě
             await self._create_and_update_profile()
 
-            # Pak čekat do prvního 00:30
-            await self._wait_for_next_profile_window()
-
             while True:
                 try:
-                    _LOGGER.info("📊 Creating daily 72h consumption profile")
+                    # Čekat 15 minut
+                    await asyncio.sleep(15 * 60)
+
+                    _LOGGER.debug("📊 Running adaptive matching (15min update)")
                     await self._create_and_update_profile()
 
                 except Exception as e:
@@ -235,12 +239,8 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                     self._profiling_error = str(e)
                     self.async_schedule_update_ha_state(force_refresh=True)
 
-                # Počkat do dalšího dne 00:30
-                _LOGGER.info("⏱️ Waiting until tomorrow 00:30 for next profile")
-                self._profiling_status = "idle"
-                self.async_schedule_update_ha_state(force_refresh=True)
-
-                await self._wait_for_next_profile_window()
+                    # Počkat 5 minut před retry po chybě
+                    await asyncio.sleep(5 * 60)
 
         except asyncio.CancelledError:
             _LOGGER.info("Profiling loop cancelled")
@@ -544,10 +544,10 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return []
 
     def _calculate_profile_similarity(
-        self, current_48h: List[float], profile_first_48h: List[float]
+        self, current_data: List[float], profile_data: List[float]
     ) -> float:
         """
-        Spočítat similarity score mezi aktuálními 48h a prvními 48h profilu.
+        Spočítat similarity score mezi aktuálními daty a historickým profilem.
 
         Scoring:
         - 50% correlation coefficient (Pearsonův korelační koeficient)
@@ -555,25 +555,22 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         - 20% total consumption difference (inverted)
 
         Args:
-            current_48h: Aktuální 48h spotřeby
-            profile_first_48h: První 48h historického profilu
+            current_data: Aktuální spotřeba (plovoucí počet hodin)
+            profile_data: Historický profil (stejný počet hodin)
 
         Returns:
             Similarity score 0.0 - 1.0 (1.0 = perfektní match)
         """
-        if (
-            len(current_48h) != PROFILE_MATCH_HOURS
-            or len(profile_first_48h) != PROFILE_MATCH_HOURS
-        ):
+        if len(current_data) != len(profile_data):
             _LOGGER.warning(
-                f"Invalid data length for similarity: {len(current_48h)}, {len(profile_first_48h)}"
+                f"Invalid data length for similarity: {len(current_data)} != {len(profile_data)}"
             )
             return 0.0
 
         try:
             # Convert to numpy arrays
-            current = np.array(current_48h)
-            profile = np.array(profile_first_48h)
+            current = np.array(current_data)
+            profile = np.array(profile_data)
 
             # 1. Correlation coefficient (50%)
             correlation = np.corrcoef(current, profile)[0, 1]
@@ -616,51 +613,77 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         """
         Najít nejlepší matching 72h profil pro aktuální spotřebu.
 
+        Plovoucí okno:
+        - Před půlnocí (např. 20:00): matching 44h zpět, predikce 28h dopředu
+        - Po půlnoci (např. 01:00): matching 24h zpět, predikce 48h dopředu
+        - Vždy celkem 72h
+
         Args:
             current_consumption_sensor: Entity ID senzoru spotřeby
 
         Returns:
-            Best matching profil s predicted consumption pro příštích 24h, nebo None
+            Best matching profil s predicted consumption, nebo None
         """
         if not self._hass:
             return None
 
         try:
-            # 1. Načíst aktuální 72h spotřeby (použijeme posledních 48h)
+            # Spočítat plovoucí okno
+            now = dt_util.now()
+            current_hour = now.hour
+
+            # Kolik hodin uplynulo od půlnoci (0-23)
+            hours_since_midnight = current_hour
+
+            # Matching: od předchozí půlnoci do teď
+            # - Před půlnocí: může být až 48h (celý včerejšek + část dneška)
+            # - Po půlnoci: maximálně 24h (jen dnešek)
+            match_hours = hours_since_midnight + 24 if hours_since_midnight > 0 else 24
+
+            # Predikce: zbytek do 72h
+            predict_hours = PROFILE_HOURS - match_hours
+
+            _LOGGER.debug(
+                f"Plovoucí okno: čas={current_hour}:00, "
+                f"matching={match_hours}h zpět, predikce={predict_hours}h dopředu"
+            )
+
+            # 1. Načíst aktuální 72h spotřeby
             current_72h = await self._get_consumption_history_72h(
                 current_consumption_sensor
             )
 
-            if not current_72h or len(current_72h) < PROFILE_MATCH_HOURS:
-                _LOGGER.warning("Not enough current consumption data for matching")
+            if not current_72h or len(current_72h) < match_hours:
+                _LOGGER.warning(
+                    f"Not enough current consumption data for matching "
+                    f"(need {match_hours}h, got {len(current_72h) if current_72h else 0}h)"
+                )
                 return None
 
-            # Vezmi posledních 48h (nejnovější data)
-            current_48h = current_72h[-PROFILE_MATCH_HOURS:]
+            # Vezmi posledních N hodin pro matching
+            current_match = current_72h[-match_hours:]
 
-            # 2. Načíst historické profily ze statistics (několik týdnů dat, rozdělených na 72h bloky)
+            # 2. Načíst historické profily
             profiles = await self._load_historical_profiles(current_consumption_sensor)
 
             if not profiles:
                 _LOGGER.warning("No historical profiles available for matching")
                 return None
 
-            # 3. Najít best match
+            # 3. Najít best match (porovnáváme prvních match_hours každého profilu)
             best_match = None
             best_score = 0.0
 
             for profile in profiles:
-                # Vezmi první 48h z profilu
                 profile_data = profile.get("consumption_kwh", [])
                 if len(profile_data) != PROFILE_HOURS:
                     continue
 
-                profile_first_48h = profile_data[:PROFILE_MATCH_HOURS]
+                # Vezmi prvních match_hours z profilu
+                profile_match = profile_data[:match_hours]
 
                 # Spočítat similarity
-                score = self._calculate_profile_similarity(
-                    current_48h, profile_first_48h
-                )
+                score = self._calculate_profile_similarity(current_match, profile_match)
 
                 if score > best_score:
                     best_score = score
@@ -670,22 +693,25 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.warning("No matching profile found")
                 return None
 
-            # 4. Extrahovat predicted 24h (poslední 24h z matched profilu)
+            # 4. Extrahovat predikci (hodin match_hours až match_hours+predict_hours)
             matched_consumption = best_match.get("consumption_kwh", [])
-            predicted_24h = matched_consumption[-PROFILE_PREDICT_HOURS:]
+            predicted = matched_consumption[match_hours : match_hours + predict_hours]
 
             result = {
                 "matched_profile_created": best_match.get("created_at"),
                 "similarity_score": best_score,
-                "predicted_consumption_24h": predicted_24h,
-                "predicted_total_kwh": float(np.sum(predicted_24h)),
-                "predicted_avg_kwh": float(np.mean(predicted_24h)),
+                "predicted_consumption": predicted,
+                "predicted_total_kwh": float(np.sum(predicted)),
+                "predicted_avg_kwh": float(np.mean(predicted)),
                 "matched_profile_total": best_match.get("total_consumption"),
+                "matched_profile_full": matched_consumption,  # Celý 72h profil pro generování názvu
+                "match_hours": match_hours,
+                "predict_hours": predict_hours,
             }
 
             _LOGGER.info(
                 f"🎯 Best matching profile: score={best_score:.3f}, "
-                f"predicted_24h={result['predicted_total_kwh']:.2f} kWh"
+                f"predicted_{predict_hours}h={result['predicted_total_kwh']:.2f} kWh"
             )
 
             return result
@@ -726,45 +752,122 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             }
 
             # Add today_profile and tomorrow_profile for battery_forecast integration
-            predicted_24h = self._current_prediction.get(
-                "predicted_consumption_24h", []
-            )
-            if predicted_24h and len(predicted_24h) == 24:
+            predicted = self._current_prediction.get("predicted_consumption", [])
+            predict_hours = self._current_prediction.get("predict_hours", 0)
+
+            if predicted and predict_hours > 0:
                 similarity_score = self._current_prediction.get("similarity_score", 0)
-
-                # Vytvoř základní metadata profilu
                 now = dt_util.now()
-                season = _get_season(now)
-                is_weekend = now.weekday() >= 5  # 5=Sobota, 6=Neděle
+                current_hour = now.hour
 
-                # Vytvoř UI-friendly název profilu pomocí inteligentní logiky
-                profile_name = _generate_profile_name(
-                    hourly_consumption=predicted_24h,
-                    season=season,
-                    is_weekend=is_weekend,
+                # Kolik hodin zbývá do půlnoci (včetně aktuální hodiny)
+                hours_until_midnight = 24 - current_hour
+
+                # TODAY: Zbývající část dneška (od current_hour do půlnoci)
+                # - Vezmi prvních min(hours_until_midnight, predict_hours) hodin z predikce
+                today_count = min(hours_until_midnight, predict_hours)
+                today_hours = predicted[:today_count]
+
+                # TOMORROW: Zbytek predikce (od půlnoci)
+                tomorrow_hours = (
+                    predicted[today_count:] if today_count < predict_hours else []
                 )
 
-                profile_data = {
-                    "hourly_consumption": predicted_24h,
-                    "total_kwh": self._current_prediction.get(
-                        "predicted_total_kwh", 0.0
+                # Doplnění tomorrow na 24h pokud je kratší (padding s průměrem)
+                if len(tomorrow_hours) < 24:
+                    avg_hour = (
+                        float(np.mean(tomorrow_hours))
+                        if len(tomorrow_hours) > 0
+                        else 0.5
+                    )
+                    tomorrow_hours = list(tomorrow_hours) + [avg_hour] * (
+                        24 - len(tomorrow_hours)
+                    )
+
+                # Vytvoř metadata
+                season = _get_season(now)
+                is_weekend_today = now.weekday() >= 5
+                is_weekend_tomorrow = (now.weekday() + 1) % 7 >= 5
+
+                # Vygenerovat názvy z matched profilu (72h)
+                # Pro dnešek: použít zbytek dnešního dne z matched profilu
+                # Pro zítřek: použít celý zítřejší den z matched profilu
+                matched_profile_full = self._current_prediction.get(
+                    "matched_profile_full", []
+                )
+
+                if len(matched_profile_full) >= 72:
+                    # Matched profil: [včera 24h | dnes 24h | zítra 24h]
+                    # Index 48-71 = zítřek (poslední 24h)
+                    tomorrow_from_matched = matched_profile_full[48:72]
+
+                    # Pro dnešek: vezmi aktuální hodinu až konec dne z matched profilu
+                    # Matched profil končí "zítra 24:00", takže "dnes" je hodiny 24-47
+                    today_start_in_matched = (
+                        24 + current_hour
+                    )  # např. 24+14=38 pro 14:00
+                    today_from_matched = matched_profile_full[today_start_in_matched:48]
+                else:
+                    # Fallback pokud matched profil není dostupný
+                    tomorrow_from_matched = tomorrow_hours[:24]
+                    today_from_matched = today_hours
+
+                # Generovat názvy z odpovídajících částí matched profilu
+                today_profile_name = _generate_profile_name(
+                    hourly_consumption=(
+                        today_from_matched
+                        if len(today_from_matched) == 24
+                        else (
+                            today_from_matched + [0.0] * (24 - len(today_from_matched))
+                        )
                     ),
-                    "avg_kwh_h": self._current_prediction.get("predicted_avg_kwh", 0.0),
-                    # Přidej metadata pro _format_profile_description()
+                    season=season,
+                    is_weekend=is_weekend_today,
+                )
+
+                tomorrow_profile_name = _generate_profile_name(
+                    hourly_consumption=tomorrow_from_matched,
+                    season=season,
+                    is_weekend=is_weekend_tomorrow,
+                )
+
+                today_profile_data = {
+                    "hourly_consumption": today_hours,
+                    "start_hour": current_hour,  # Hodina od které začíná pole (14 = index 0 je 14:00)
+                    "total_kwh": float(np.sum(today_hours)),
+                    "avg_kwh_h": (
+                        float(np.mean(today_hours)) if len(today_hours) > 0 else 0.0
+                    ),
                     "ui": {
-                        "name": profile_name,
+                        "name": today_profile_name,
                         "similarity_score": similarity_score,
                     },
                     "characteristics": {
                         "season": season,
-                        "is_weekend": is_weekend,
+                        "is_weekend": is_weekend_today,
                     },
-                    "sample_count": 1,  # Reprezentuje 1 matched profil
+                    "sample_count": 1,
                 }
-                attrs["today_profile"] = profile_data
-                attrs["tomorrow_profile"] = (
-                    profile_data  # Same for now, can differentiate later
-                )
+
+                # TOMORROW profile (název už vygenerovaný nahoře)
+                tomorrow_profile_data = {
+                    "hourly_consumption": tomorrow_hours[:24],
+                    "start_hour": 0,  # Zítřek vždy začíná od půlnoci (0:00)
+                    "total_kwh": float(np.sum(tomorrow_hours[:24])),
+                    "avg_kwh_h": float(np.mean(tomorrow_hours[:24])),
+                    "ui": {
+                        "name": tomorrow_profile_name,
+                        "similarity_score": similarity_score,
+                    },
+                    "characteristics": {
+                        "season": season,
+                        "is_weekend": is_weekend_tomorrow,
+                    },
+                    "sample_count": 1,
+                }
+
+                attrs["today_profile"] = today_profile_data
+                attrs["tomorrow_profile"] = tomorrow_profile_data
 
         return attrs
 
