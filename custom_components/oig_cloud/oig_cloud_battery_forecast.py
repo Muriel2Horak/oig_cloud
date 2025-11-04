@@ -4891,6 +4891,67 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return groups
 
+    def _build_baseline_comparison(self, hybrid_cost: float) -> Dict[str, Any]:
+        """
+        Build baseline comparison data for cost tile.
+        
+        Compares HYBRID optimization cost against best fixed mode baseline.
+        
+        Args:
+            hybrid_cost: Total cost of HYBRID plan (Kč)
+            
+        Returns:
+            Dict with baseline comparison:
+            {
+                "hybrid_cost": 51.19,
+                "best_baseline": "HOME_III",
+                "best_baseline_cost": 59.64,
+                "savings": 8.45,
+                "savings_pct": 14.2,
+                "all_baselines": {...}
+            }
+        """
+        # Get baselines from mode_optimization_result
+        if not hasattr(self, "_mode_optimization_result") or not self._mode_optimization_result:
+            return {}
+            
+        baselines = self._mode_optimization_result.get("baselines", {})
+        if not baselines:
+            return {}
+        
+        # Find best baseline (lowest adjusted cost, excluding HOME_UPS)
+        best_baseline = None
+        best_cost = float('inf')
+        
+        for mode_name in ["HOME_I", "HOME_II", "HOME_III"]:
+            if mode_name in baselines:
+                cost = baselines[mode_name].get("adjusted_total_cost", float('inf'))
+                if cost < best_cost:
+                    best_cost = cost
+                    best_baseline = mode_name
+        
+        if not best_baseline:
+            return {}
+        
+        # Calculate savings
+        savings = best_cost - hybrid_cost
+        savings_pct = (savings / best_cost * 100) if best_cost > 0 else 0
+        
+        # Build all baselines summary (only HOME I/II/III for display)
+        all_baselines = {}
+        for mode_name in ["HOME_I", "HOME_II", "HOME_III"]:
+            if mode_name in baselines:
+                all_baselines[mode_name] = round(baselines[mode_name].get("adjusted_total_cost", 0), 2)
+        
+        return {
+            "hybrid_cost": round(hybrid_cost, 2),
+            "best_baseline": best_baseline,
+            "best_baseline_cost": round(best_cost, 2),
+            "savings": round(savings, 2),
+            "savings_pct": round(savings_pct, 1),
+            "all_baselines": all_baselines
+        }
+
     def _build_today_cost_data(self) -> Dict[str, Any]:
         """
         Build today's cost data with actual vs plan tracking.
@@ -5141,6 +5202,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if active_groups:
                 active_group = active_groups[0]
 
+        # PHASE 2.10: Baseline comparison for cost tile
+        baseline_comparison = self._build_baseline_comparison(plan_total)
+
         return {
             "plan_total_cost": round(plan_total, 2),
             "actual_total_cost": round(actual_total, 2),
@@ -5163,6 +5227,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "vs_plan_pct": round(vs_plan_pct, 1),
             "performance_class": performance_class,
             "performance_icon": performance_icon,
+            # PHASE 2.10 - Baseline comparison
+            "baseline_comparison": baseline_comparison,
             # FÁZE 1.2 - Seskupené intervaly
             "completed_groups": completed_groups,
             "active_group": active_group,

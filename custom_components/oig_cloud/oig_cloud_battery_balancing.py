@@ -156,6 +156,29 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 except (ValueError, TypeError):
                     pass
 
+            # Restore planned_window
+            if "planned" in last_state.attributes:
+                try:
+                    self._planned_window = last_state.attributes["planned"]
+                    _LOGGER.warning(
+                        f"🔄 Restored balancing plan: reason={self._planned_window.get('reason')}, "
+                        f"holding={self._planned_window.get('holding_start')} -> {self._planned_window.get('holding_end')}"
+                    )
+                    # Ihned propagovat do forecastu
+                    forecast_sensor = self._get_forecast_sensor()
+                    if forecast_sensor:
+                        _LOGGER.warning(
+                            "🔗 Propagating restored plan to forecast sensor"
+                        )
+                        await forecast_sensor.handle_balancing_plan(
+                            self._planned_window
+                        )
+                    else:
+                        _LOGGER.error("❌ Forecast sensor not found during restore!")
+                except (ValueError, TypeError, KeyError) as e:
+                    _LOGGER.error(f"Failed to restore planned_window: {e}")
+                    pass
+
         # Spustit počáteční detekci z historie
         await self._detect_last_balancing_from_history()
 
@@ -490,6 +513,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 await self._cancel_active_plan_in_forecast()
         else:
             _LOGGER.info("📋 No existing plan found")
+            # I když balancer nemá plán, forecast může mít orphaned plan (např. po restartu)
+            await self._cancel_active_plan_in_forecast()
 
         # 2. ZKONTROLOVAT OPPORTUNISTIC BALANCING
         # Opportunistic balancing se kontroluje VŽDY (nezávisle na dni)
@@ -583,20 +608,36 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
     async def _cancel_active_plan_in_forecast(self) -> None:
         """Zrušit aktivní plán v forecast sensoru."""
+        _LOGGER.info("🔍 _cancel_active_plan_in_forecast() called")
         forecast_sensor = self._get_forecast_sensor()
         if not forecast_sensor:
+            _LOGGER.warning(
+                "❌ Forecast sensor NOT FOUND in _cancel_active_plan_in_forecast()"
+            )
             return
+
+        _LOGGER.info(f"🔍 Forecast sensor found, checking _active_charging_plan...")
+        has_attr = hasattr(forecast_sensor, "_active_charging_plan")
+        _LOGGER.info(f"🔍 Has _active_charging_plan attribute: {has_attr}")
+        if has_attr:
+            plan = forecast_sensor._active_charging_plan
+            _LOGGER.info(f"🔍 _active_charging_plan value: {plan}")
 
         # Pokud forecast má aktivní plán → zrušit
         if (
             hasattr(forecast_sensor, "_active_charging_plan")
             and forecast_sensor._active_charging_plan
         ):
-            _LOGGER.info("Cancelling active plan in forecast sensor")
+            _LOGGER.warning("🧹 Cancelling active balancing plan in forecast sensor")
             forecast_sensor._active_charging_plan = None
             forecast_sensor._plan_status = "none"
-            if hasattr(forecast_sensor, "async_write_ha_state"):
-                forecast_sensor.async_write_ha_state()
+            # CRITICAL: Trigger recalculation without balancing
+            await forecast_sensor.async_update()
+            _LOGGER.warning("✅ Forecast recalculated without balancing plan")
+        else:
+            _LOGGER.info(
+                "ℹ️ No active charging plan in forecast sensor, nothing to cancel"
+            )
 
     async def _detect_last_balancing_from_history(self) -> None:
         """Detekce posledního balancování z historie SoC."""
@@ -948,7 +989,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             # Propagovat do forecastu
             forecast_sensor = self._get_forecast_sensor()
             if forecast_sensor:
+                _LOGGER.warning(
+                    f"🔗 Calling forecast_sensor.handle_balancing_plan() with plan: {self._planned_window}"
+                )
                 await forecast_sensor.handle_balancing_plan(self._planned_window)
+            else:
+                _LOGGER.error("❌ Forecast sensor NOT FOUND - cannot propagate plan!")
 
             self._planning_status = "opportunistic_planned"
 
