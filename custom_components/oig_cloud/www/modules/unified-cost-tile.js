@@ -72,13 +72,13 @@ class UnifiedCostTile {
         const performanceIcon = today.performance_icon || '⚪';
         const progressPct = Math.round(today.progress_pct || 0);
         const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
-        
+
         // Baseline comparison
         const bc = today.baseline_comparison;
-        const savings = bc ? -Math.round(bc.savings) : 0;
-        const savingsPct = bc ? -Math.round(bc.savings_pct) : 0;
+        const savings = bc ? Math.round(bc.savings) : 0;  // DON'T negate!
+        const savingsPct = bc ? Math.round(bc.savings_pct) : 0;  // DON'T negate!
         const baselineName = bc ? bc.best_baseline.replace('HOME_', 'H') : '';
-        const savingsClass = savings < 0 ? 'positive' : (savings > 0 ? 'negative' : 'neutral');
+        const savingsClass = savings > 0 ? 'positive' : (savings < 0 ? 'negative' : 'neutral');
 
         // Yesterday/tomorrow context
         const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
@@ -103,7 +103,7 @@ class UnifiedCostTile {
                 <!-- Savings + Plan vs Actual in ONE row -->
                 <div class="uct-info-row">
                     <div class="uct-savings ${savingsClass}">
-                        💚 ${savings < 0 ? '' : '+'}${savings} Kč vs ${baselineName}
+                        ${savings > 0 ? '💚' : '⚠️'} ${savings > 0 ? '+' : ''}${savings} Kč vs ${baselineName}
                     </div>
                     <div class="uct-delta ${performanceClass}">
                         ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})

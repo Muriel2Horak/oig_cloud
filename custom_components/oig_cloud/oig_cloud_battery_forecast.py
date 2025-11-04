@@ -4979,20 +4979,30 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Extract spot prices for today (for minigraph visualization)
         spot_prices_today = []
-        if hasattr(self, "_spot_prices") and self._spot_prices:
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        if self.coordinator and self.coordinator.data:
+            spot_data = self.coordinator.data.get("spot_prices", {})
+            timeline = spot_data.get("timeline", [])
             
-            for sp in self._spot_prices:
-                sp_time = datetime.fromisoformat(sp["time"])
-                if sp_time.tzinfo is None:
-                    sp_time = dt_util.as_local(sp_time)
+            if timeline:
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+                for sp in timeline:
+                    sp_time_str = sp.get("time", "")
+                    if not sp_time_str:
+                        continue
+                        
+                    sp_time = datetime.fromisoformat(sp_time_str)
+                    if sp_time.tzinfo is None:
+                        sp_time = dt_util.as_local(sp_time)
+
+                    if today_start <= sp_time <= today_end:
+                        spot_prices_today.append({
+                            "time": sp_time_str,
+                            "price": sp.get("spot_price_czk", 0.0)
+                        })
                 
-                if today_start <= sp_time <= today_end:
-                    spot_prices_today.append({
-                        "time": sp["time"],
-                        "price": sp.get("spot_price_czk", 0.0)
-                    })
+                _LOGGER.info(f"[UCT] Extracted {len(spot_prices_today)} spot prices for today")
 
         if not intervals:
             return {
