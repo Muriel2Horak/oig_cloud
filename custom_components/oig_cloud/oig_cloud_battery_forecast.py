@@ -831,6 +831,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_capacity: float,
         spot_price: float,
         export_price: float,
+        physical_min_capacity: float | None = None,
     ) -> Dict[str, Any]:
         """
         Simulovat jeden 15min interval s konkrétním CBB režimem.
@@ -843,9 +844,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_kwh: Spotřeba v intervalu (kWh/15min)
             battery_soc: Aktuální SoC baterie (kWh)
             max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh)
+            min_capacity: Min kapacita baterie (plánovací minimum, např. 25%)
             spot_price: Spotová cena nákupu (Kč/kWh)
             export_price: Prodejní cena exportu (Kč/kWh)
+            physical_min_capacity: Fyzické/HW minimum (např. 20%). If None, use min_capacity
 
         Returns:
             Dict s výsledky simulace:
@@ -861,6 +863,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 - curtailed_loss: Ztráta ze ztrátového exportu (Kč, >=0) - Phase 2.5
         """
         efficiency = self._get_battery_efficiency()
+
+        # Use physical minimum for discharge decisions, planning minimum for violations
+        effective_min = (
+            physical_min_capacity if physical_min_capacity is not None else min_capacity
+        )
 
         # Initialize result
         result = {
@@ -891,11 +898,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         ]:
             # Night mode (FVE=0): HOME I/II/III identical → discharge battery to load
             # Asymmetric model: discharge with efficiency losses
-            available_battery = battery_soc - min_capacity
+            # Use PHYSICAL minimum - battery can discharge below planning minimum
+            available_battery = battery_soc - effective_min
 
-            # VALIDATION: Never discharge below minimum
+            # VALIDATION: Never discharge below physical minimum
             if available_battery < 0:
                 available_battery = 0.0
+
+            # DEBUG: Log discharge decision
+            _LOGGER.debug(
+                f"🔋 Discharge decision: battery_soc={battery_soc:.3f}, "
+                f"effective_min={effective_min:.3f}, available={available_battery:.3f}, "
+                f"load={load_kwh:.3f}, physical_min={physical_min_capacity}, min_capacity={min_capacity:.3f}"
+            )
 
             # Discharge amount (from battery) - efficiency applies to usable energy
             discharge_amount = min(load_kwh / efficiency, available_battery)
@@ -913,10 +928,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Net cost
             result["net_cost"] = result["grid_cost"]
 
-            # Clamp SoC (SAFETY: Should never discharge below min_capacity)
-            result["new_soc"] = max(min_capacity, min(max_capacity, result["new_soc"]))
-
-            # DEBUG VALIDATION: Verify we respect minimum
+            # VALIDATION: Logic above ensures we never discharge below minimum
+            # If this assertion fails, there's a bug in available_battery calculation
             if result["new_soc"] < min_capacity - 0.01:  # 0.01 kWh tolerance
                 _LOGGER.warning(
                     f"⚠️  Battery SoC dropped below minimum! "
@@ -977,22 +990,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         result["curtailed_loss"] = abs(surplus * export_price)
             else:
                 # Not enough FVE - discharge battery (DC/AC)
+                # Use PHYSICAL minimum (effective_min) not planning minimum
                 deficit = load_kwh - remaining_solar
-                battery_available = result["new_soc"] - min_capacity
+                battery_available = result["new_soc"] - effective_min
+
                 discharge_amount = min(deficit / efficiency, battery_available)
 
                 result["battery_discharge"] = discharge_amount
                 result["new_soc"] -= discharge_amount
 
                 # CRITICAL FIX: Pokud baterie nestačí (je na minimu), zbytek deficitu ze sítě!
-                if discharge_amount < deficit / efficiency:
-                    remaining_deficit = deficit - (discharge_amount * efficiency)
-                    result["grid_import"] = remaining_deficit
-                    result["grid_cost"] = remaining_deficit * spot_price
-
-                # If still deficit, import from grid
-                remaining_deficit = deficit - discharge_amount * efficiency
-                if remaining_deficit > 0.001:  # tolerance
+                remaining_deficit = deficit - (discharge_amount * efficiency)
+                if remaining_deficit > 0.001:
                     result["grid_import"] = remaining_deficit
                     result["grid_cost"] = remaining_deficit * spot_price
 
@@ -1166,8 +1175,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Calculate net cost
         result["net_cost"] = result["grid_cost"] - result["export_revenue"]
 
-        # Clamp SoC to valid range
-        result["new_soc"] = max(min_capacity, min(max_capacity, result["new_soc"]))
+        # VALIDATION: Logic ensures battery stays within [min_capacity, max_capacity]
+        # Charge operations use min() to prevent overflow
+        # Discharge operations use available_battery = max(0, battery - min)
+        if (
+            result["new_soc"] < min_capacity - 0.01
+            or result["new_soc"] > max_capacity + 0.01
+        ):
+            _LOGGER.error(
+                f"BUG: new_soc={result['new_soc']:.3f} out of range [{min_capacity:.3f}, {max_capacity:.3f}] "
+                f"mode={mode}, solar={solar_kwh:.3f}, load={load_kwh:.3f}, battery_soc={battery_soc:.3f}"
+            )
 
         return result
 
@@ -2210,11 +2228,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
 
             battery += net_energy
-            # CRITICAL: Save UNCLAMPED value to trajectory for minimum violation detection
-            # This allows algorithm to detect when battery WOULD drop below minimum
+            # CRITICAL: Trajectory must contain UNCLAMPED values for accurate violation detection
+            # Battery can go negative - this shows severity of minimum violation
+            # NO CLAMP - we want to see the real trajectory, even if it violates constraints
             battery_trajectory.append(battery)
-            # THEN clamp for next iteration (prevents negative battery in simulation)
-            battery = max(min_capacity, min(battery, max_capacity))
 
         min_reached = min(battery_trajectory)
         final_capacity = battery_trajectory[-1]
@@ -2740,6 +2757,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_capacity,
             efficiency,
             baselines=baselines,  # Pass baselines to _build_result
+            physical_min_capacity=physical_min_capacity,  # Pass physical minimum
         )
 
     def _build_result(
@@ -2754,6 +2772,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_capacity: float,
         efficiency: float,
         baselines: Dict[str, Dict[str, Any]] | None = None,
+        physical_min_capacity: float | None = None,
     ) -> Dict[str, Any]:
         """
         Sestavit výsledek ve formátu kompatibilní s timeline.
@@ -2768,6 +2787,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0
+
+        # Default physical minimum to 20% if not provided
+        if physical_min_capacity is None:
+            physical_min_capacity = max_capacity * 0.20
 
         # Create export price lookup by timestamp
         export_price_lookup = {
@@ -2853,8 +2876,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         battery = min_capacity
                         total_cost += grid_import * price
 
-            # Enforce hard constraints
-            battery = max(min_capacity, min(battery, max_capacity))
+            # Battery constraints already enforced above (lines 2847-2848, 2854-2857)
+            # No need for redundant clamp here
             interval_cost = grid_import * price - grid_export * price
 
             # Calculate charge values for stacked graph
@@ -3243,6 +3266,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
         current_capacity: float,
+        physical_min_capacity: float | None = None,
     ) -> tuple[List[Dict[str, Any]], List[int]]:
         """
         PHASE 2.8: Post-processing - oprav timeline aby nikdy neklesl pod min_capacity.
@@ -3295,9 +3319,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     load_kwh=load_kwh,
                     battery_soc=battery_soc,
                     max_capacity=max_capacity,
-                    min_capacity=min_capacity,  # Pro info, ale nespolehlivé
+                    min_capacity=min_capacity,  # Plánovací minimum
                     spot_price=timeline_point.get("spot_price", 0.0),
                     export_price=timeline_point.get("export_price", 0.0),
+                    physical_min_capacity=physical_min_capacity,  # Fyzické minimum
                 )
 
                 battery_soc = sim_result["new_soc"]

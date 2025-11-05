@@ -294,7 +294,7 @@ class UnifiedCostTile {
      */
     attachTooltipListeners() {
         const elementsWithTooltip = this.container.querySelectorAll('[data-tooltip]');
-        
+
         elementsWithTooltip.forEach(element => {
             element.addEventListener('mouseenter', (e) => this.showTooltip(e));
             element.addEventListener('mouseleave', () => this.hideTooltip());
