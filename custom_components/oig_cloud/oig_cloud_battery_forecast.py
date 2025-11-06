@@ -7555,22 +7555,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             # Make timezone-aware if needed
                             if dt.tzinfo is None:
                                 dt = dt_util.as_local(dt)
-                            mode_changes.append({
-                                "time": dt,
-                                "mode": mode_entry.get("mode"),
-                                "mode_name": mode_entry.get("mode_name")
-                            })
+                            mode_changes.append(
+                                {
+                                    "time": dt,
+                                    "mode": mode_entry.get("mode"),
+                                    "mode_name": mode_entry.get("mode_name"),
+                                }
+                            )
                         except:
                             continue
-                
+
                 # Sort by time
                 mode_changes.sort(key=lambda x: x["time"])
-                
+
                 # Expand to all 15-min intervals in the day
                 # Fill forward: each interval gets the mode that was active at that time
                 interval_time = day_start
                 current_mode_idx = 0
-                
+
                 while interval_time <= fetch_end:
                     # Find the mode that was active at interval_time
                     # Use the last mode change that happened before or at interval_time
@@ -7581,15 +7583,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             current_mode_idx = i
                         else:
                             break
-                    
+
                     if active_mode:
                         interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
                         historical_modes_lookup[interval_time_str] = {
                             "time": interval_time_str,
                             "mode": active_mode["mode"],
-                            "mode_name": active_mode["mode_name"]
+                            "mode_name": active_mode["mode_name"],
                         }
-                    
+
                     interval_time += timedelta(minutes=15)
 
                 _LOGGER.debug(

@@ -992,6 +992,18 @@ class TimelineDialog {
     }
 
     /**
+     * Render intervals for VČERA tab (backward compatibility fallback)
+     * Shows all completed intervals grouped by mode
+     */
+    renderYesterdayIntervals(intervals) {
+        // Group all intervals by mode (they're all completed for yesterday)
+        const completedGroups = this.groupIntervalsByMode(intervals);
+        
+        // Render using the completed intervals renderer
+        return this.renderCompletedIntervalGroups(completedGroups);
+    }
+
+    /**
      * Render intervals for DNES tab (v2.1 compact format)
      * FÁZE 1-3: Now uses BE grouped data
      */
