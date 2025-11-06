@@ -293,10 +293,11 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
         if self._hass:
             self.async_write_ha_state()
-            
+
             # Notify dependent sensors (BatteryForecast) that profiles are ready
             if prediction:  # Only signal if we have valid data
                 from homeassistant.helpers.dispatcher import async_dispatcher_send
+
                 signal_name = f"oig_cloud_{self._box_id}_profiles_updated"
                 _LOGGER.debug(f"📡 Sending signal: {signal_name}")
                 async_dispatcher_send(self._hass, signal_name)

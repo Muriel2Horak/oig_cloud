@@ -701,18 +701,20 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                 _LOGGER.warning(
                     f"Failed to parse nominal capacity from {sensor_id}, using default"
                 )
-        
+
         # Schedule periodic updates (every 5 minutes)
         from homeassistant.helpers.event import async_track_time_change
-        
+
         async def _health_update_job(now):
             """Run health update every 5 minutes."""
-            _LOGGER.debug(f"⏰ Battery health update triggered at {now.strftime('%H:%M')}")
+            _LOGGER.debug(
+                f"⏰ Battery health update triggered at {now.strftime('%H:%M')}"
+            )
             try:
                 await self.async_update()
             except Exception as e:
                 _LOGGER.error(f"Battery health update failed: {e}", exc_info=True)
-        
+
         # Schedule every 5 minutes (at :00, :05, :10, ...)
         for minute in range(0, 60, 5):
             async_track_time_change(
@@ -725,7 +727,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update - NEDĚLÁ async tasky!
-        
+
         Health se updatuje každých 5 min přes scheduler, ne při coordinator update.
         """
         # Jen zavolat parent pro refresh HA state

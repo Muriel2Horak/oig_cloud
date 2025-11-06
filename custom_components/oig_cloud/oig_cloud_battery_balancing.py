@@ -429,29 +429,32 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             timeout: Max čekání v sekundách (default 5 min)
         """
         _LOGGER.info("⏳ Waiting for forecast sensor to be ready (using dispatcher)...")
-        
+
         # Check if forecast is already ready
         forecast_sensor = self._get_forecast_sensor()
         if forecast_sensor:
             timeline = forecast_sensor.get_timeline_data()
             if timeline and len(timeline) > 0:
-                _LOGGER.info(f"✅ Forecast already ready with {len(timeline)} timeline points")
+                _LOGGER.info(
+                    f"✅ Forecast already ready with {len(timeline)} timeline points"
+                )
                 return
-        
+
         # Wait for forecast_updated signal
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
-        
+
         forecast_ready = False
+
         async def _on_forecast_ready():
             nonlocal forecast_ready
             forecast_ready = True
             _LOGGER.debug("📡 Received forecast_updated signal")
-        
+
         # Subscribe to forecast updates
         signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
         _LOGGER.debug(f"📡 Subscribing to signal: {signal_name}")
         unsub = async_dispatcher_connect(self._hass, signal_name, _on_forecast_ready)
-        
+
         try:
             # Wait max timeout seconds for forecast
             for i in range(timeout):
@@ -460,10 +463,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     if forecast_sensor:
                         timeline = forecast_sensor.get_timeline_data()
                         if timeline and len(timeline) > 0:
-                            _LOGGER.info(f"✅ Forecast ready after {i}s with {len(timeline)} timeline points")
+                            _LOGGER.info(
+                                f"✅ Forecast ready after {i}s with {len(timeline)} timeline points"
+                            )
                             return
                 await asyncio.sleep(1)
-            
+
             _LOGGER.error(f"❌ Timeout waiting for forecast after {timeout}s")
         finally:
             # Cleanup listener

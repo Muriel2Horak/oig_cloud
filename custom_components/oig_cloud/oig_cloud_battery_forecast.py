@@ -327,15 +327,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # LISTEN for AdaptiveLoadProfiles updates (dispatcher pattern)
         # ========================================================================
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
-        
+
         async def _on_profiles_updated():
             """Called when AdaptiveLoadProfiles completes update."""
-            _LOGGER.info("📡 Received profiles_updated signal - triggering forecast refresh")
+            _LOGGER.info(
+                "📡 Received profiles_updated signal - triggering forecast refresh"
+            )
             try:
                 await self.async_update()
             except Exception as e:
-                _LOGGER.error(f"Forecast refresh after profiles update failed: {e}", exc_info=True)
-        
+                _LOGGER.error(
+                    f"Forecast refresh after profiles update failed: {e}", exc_info=True
+                )
+
         # Subscribe to profiles updates
         signal_name = f"oig_cloud_{self._box_id}_profiles_updated"
         _LOGGER.debug(f"📡 Subscribing to signal: {signal_name}")
@@ -348,19 +352,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             """Initial forecast calculation - wait for profiles (non-blocking)."""
             # Wait max 60s for first profiles update
             _LOGGER.info("⏳ Waiting for AdaptiveLoadProfiles to complete (max 60s)...")
-            
+
             profiles_ready = False
+
             async def _mark_ready():
                 nonlocal profiles_ready
                 profiles_ready = True
-            
+
             # Temporary listener for initial profiles
             temp_unsub = async_dispatcher_connect(
-                self.hass,
-                f"oig_cloud_{self._box_id}_profiles_updated",
-                _mark_ready
+                self.hass, f"oig_cloud_{self._box_id}_profiles_updated", _mark_ready
             )
-            
+
             try:
                 # Wait max 60s for profiles
                 for _ in range(60):
@@ -369,12 +372,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                     await asyncio.sleep(1)
                 else:
-                    _LOGGER.warning("⚠️ Profiles not ready after 60s - starting forecast anyway")
-                
+                    _LOGGER.warning(
+                        "⚠️ Profiles not ready after 60s - starting forecast anyway"
+                    )
+
                 # Now run forecast
                 await self.async_update()
                 _LOGGER.info("✅ Initial forecast completed")
-                
+
             except Exception as e:
                 _LOGGER.error(f"Initial forecast failed: {e}", exc_info=True)
             finally:
@@ -437,7 +442,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update.
-        
+
         NEDĚLÁ ŽÁDNÉ VÝPOČTY - forecast se přepočítá:
         - Každých 15 min (time scheduler)
         - Při startu (delayed 3s initial refresh)
@@ -1007,9 +1012,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
             )
             self.async_write_ha_state()
-            
+
             # Notify dependent sensors (BatteryBalancing) that forecast is ready
             from homeassistant.helpers.dispatcher import async_dispatcher_send
+
             signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
             _LOGGER.debug(f"📡 Sending signal: {signal_name}")
             async_dispatcher_send(self.hass, signal_name)
@@ -4520,8 +4526,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             Dict s actual hodnotami nebo None pokud data nejsou k dispozici
         """
         if not self._hass:
+            _LOGGER.debug(f"[fetch_interval_from_history] No _hass instance")
             return None
 
+        _LOGGER.debug(f"[fetch_interval_from_history] Fetching {start_time} - {end_time}")
+        
         try:
             from homeassistant.components.recorder.history import get_significant_states
 
@@ -4704,7 +4713,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             mode_name = CBB_MODE_NAMES.get(mode, "HOME I")
 
-            return {
+            result = {
                 "battery_kwh": round(battery_kwh, 2),
                 "mode": mode,
                 "mode_name": mode_name,
@@ -4716,6 +4725,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "export_price": round(export_price, 2),
                 "net_cost": round(net_cost, 2),
             }
+            
+            _LOGGER.debug(
+                f"[fetch_interval_from_history] Result: consumption={result['consumption_kwh']}, "
+                f"net_cost={result['net_cost']}, grid_import={result['grid_import']}"
+            )
+            
+            return result
 
         except Exception as e:
             _LOGGER.warning(f"Failed to fetch history for {start_time}: {e}")
@@ -7606,18 +7622,43 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Build interval data
                 actual_data = {}
                 if mode_from_recorder:
-                    actual_data = {
-                        "mode": mode_from_recorder.get("mode", 0),
-                        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                        # Ostatní metriky nemáme pro včera (netrackujeme zpětně)
-                        "consumption_kwh": 0,
-                        "solar_kwh": 0,
-                        "battery_soc": 0,
-                        "grid_import_kwh": 0,
-                        "grid_export_kwh": 0,
-                        "net_cost": 0,
-                        "savings": 0,
-                    }
+                    # Fetch actual consumption/costs from history
+                    interval_end = interval_time + timedelta(minutes=15)
+                    historical_metrics = await self._fetch_interval_from_history(
+                        interval_time, interval_end
+                    )
+
+                    if historical_metrics:
+                        actual_data = {
+                            "mode": mode_from_recorder.get("mode", 0),
+                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+                            "consumption_kwh": historical_metrics.get(
+                                "consumption_kwh", 0
+                            ),
+                            "solar_kwh": historical_metrics.get("solar_kwh", 0),
+                            "battery_soc": historical_metrics.get("battery_soc", 0),
+                            "grid_import_kwh": historical_metrics.get(
+                                "grid_import", 0  # Function returns "grid_import" not "grid_import_kwh"
+                            ),
+                            "grid_export_kwh": historical_metrics.get(
+                                "grid_export", 0  # Function returns "grid_export" not "grid_export_kwh"
+                            ),
+                            "net_cost": historical_metrics.get("net_cost", 0),
+                            "savings": 0,  # Savings requires baseline comparison
+                        }
+                    else:
+                        # Fallback if history unavailable
+                        actual_data = {
+                            "mode": mode_from_recorder.get("mode", 0),
+                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+                            "consumption_kwh": 0,
+                            "solar_kwh": 0,
+                            "battery_soc": 0,
+                            "grid_import_kwh": 0,
+                            "grid_export_kwh": 0,
+                            "net_cost": 0,
+                            "savings": 0,
+                        }
 
                 planned_data = {}
                 if planned_from_storage:
@@ -7712,20 +7753,51 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # Historical mode z Recorderu
                     mode_from_recorder = historical_modes_lookup.get(interval_time_str)
                     if mode_from_recorder:
-                        actual_data = {
-                            "mode": mode_from_recorder.get("mode", 0),
-                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                            # Ostatní metriky nemáme (netrackujeme)
-                            "consumption_kwh": 0,
-                            "solar_kwh": 0,
-                            "battery_soc": 0,
-                            "grid_import_kwh": 0,
-                            "grid_export_kwh": 0,
-                            "net_cost": (
-                                planned_data.get("net_cost", 0) if planned_data else 0
-                            ),
-                            "savings": 0,
-                        }
+                        # Fetch actual consumption/costs from history
+                        interval_end = interval_time + timedelta(minutes=15)
+                        historical_metrics = await self._fetch_interval_from_history(
+                            interval_time, interval_end
+                        )
+
+                        if historical_metrics:
+                            actual_data = {
+                                "mode": mode_from_recorder.get("mode", 0),
+                                "mode_name": mode_from_recorder.get(
+                                    "mode_name", "Unknown"
+                                ),
+                                "consumption_kwh": historical_metrics.get(
+                                    "consumption_kwh", 0
+                                ),
+                                "solar_kwh": historical_metrics.get("solar_kwh", 0),
+                                "battery_soc": historical_metrics.get("battery_soc", 0),
+                                "grid_import_kwh": historical_metrics.get(
+                                    "grid_import", 0  # Function returns "grid_import" not "grid_import_kwh"
+                                ),
+                                "grid_export_kwh": historical_metrics.get(
+                                    "grid_export", 0  # Function returns "grid_export" not "grid_export_kwh"
+                                ),
+                                "net_cost": historical_metrics.get("net_cost", 0),
+                                "savings": 0,  # Savings requires baseline comparison
+                            }
+                        else:
+                            # Fallback if history unavailable
+                            actual_data = {
+                                "mode": mode_from_recorder.get("mode", 0),
+                                "mode_name": mode_from_recorder.get(
+                                    "mode_name", "Unknown"
+                                ),
+                                "consumption_kwh": 0,
+                                "solar_kwh": 0,
+                                "battery_soc": 0,
+                                "grid_import_kwh": 0,
+                                "grid_export_kwh": 0,
+                                "net_cost": (
+                                    planned_data.get("net_cost", 0)
+                                    if planned_data
+                                    else 0
+                                ),
+                                "savings": 0,
+                            }
 
                 # Přidat interval pokud máme actual NEBO planned
                 if actual_data or planned_data:
