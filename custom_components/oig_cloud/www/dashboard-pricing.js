@@ -13,7 +13,8 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
 var timelineDataCache = {
     data: null,
     timestamp: null,
-    ttl: 60000  // 60 seconds TTL
+    ttl: 60000,  // 60 seconds TTL
+    chartsRendered: false  // Flag to skip re-rendering if charts already drawn
 };
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
@@ -601,6 +602,12 @@ async function loadPricingData() {
     if (cacheValid) {
         console.log(`[Pricing] Using cached timeline data (age: ${Math.round((now - timelineDataCache.timestamp) / 1000)}s)`);
         timelineData = timelineDataCache.data;
+        
+        // If charts are already rendered with this data, skip the entire function
+        if (timelineDataCache.chartsRendered) {
+            console.log('[Pricing] Charts already rendered, skipping re-render');
+            return;
+        }
     } else {
         console.log('[Pricing] Fetching fresh timeline data from API...');
         try {
@@ -612,6 +619,7 @@ async function loadPricingData() {
                 // Update cache
                 timelineDataCache.data = timelineData;
                 timelineDataCache.timestamp = now;
+                timelineDataCache.chartsRendered = false;  // Reset flag - new data needs rendering
 
                 console.log(`[Pricing] Loaded ${timelineData.length} timeline points from API (cached for ${timelineDataCache.ttl/1000}s)`);
             } else {
@@ -1431,6 +1439,10 @@ async function loadPricingData() {
     if (typeof updateBatteryHealthStats === 'function') {
         updateBatteryHealthStats();
     }
+    
+    // Mark charts as rendered to skip re-rendering on next tab switch
+    timelineDataCache.chartsRendered = true;
+    console.log('[Pricing] Charts rendered and cached');
 }
 
 /**
