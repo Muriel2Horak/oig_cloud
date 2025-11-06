@@ -998,7 +998,7 @@ class TimelineDialog {
     renderYesterdayIntervals(intervals) {
         // Group all intervals by mode (they're all completed for yesterday)
         const completedGroups = this.groupIntervalsByMode(intervals);
-        
+
         // Render using the completed intervals renderer
         return this.renderCompletedIntervalGroups(completedGroups);
     }

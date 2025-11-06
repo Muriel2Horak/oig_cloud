@@ -9,6 +9,13 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
     worstExport: null
 };
 
+// Cache for timeline data to prevent re-fetching on tab switch
+var timelineDataCache = {
+    data: null,
+    timestamp: null,
+    ttl: 60000  // 60 seconds TTL
+};
+
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
     if (loadPricingDataTimer) clearTimeout(loadPricingDataTimer);
@@ -585,24 +592,41 @@ async function loadPricingData() {
     const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
     let timelineData = [];
 
-    try {
-        const response = await fetch(timelineUrl);
-        if (response.ok) {
-            const data = await response.json();
-            timelineData = data.active || [];
-            console.log(`[Pricing] Loaded ${timelineData.length} timeline points from API`);
-        } else {
-            console.error('[Pricing] Failed to fetch timeline:', response.status);
+    // Check cache first
+    const now = Date.now();
+    const cacheValid = timelineDataCache.data &&
+                      timelineDataCache.timestamp &&
+                      (now - timelineDataCache.timestamp) < timelineDataCache.ttl;
+
+    if (cacheValid) {
+        console.log(`[Pricing] Using cached timeline data (age: ${Math.round((now - timelineDataCache.timestamp) / 1000)}s)`);
+        timelineData = timelineDataCache.data;
+    } else {
+        console.log('[Pricing] Fetching fresh timeline data from API...');
+        try {
+            const response = await fetch(timelineUrl);
+            if (response.ok) {
+                const data = await response.json();
+                timelineData = data.active || [];
+
+                // Update cache
+                timelineDataCache.data = timelineData;
+                timelineDataCache.timestamp = now;
+
+                console.log(`[Pricing] Loaded ${timelineData.length} timeline points from API (cached for ${timelineDataCache.ttl/1000}s)`);
+            } else {
+                console.error('[Pricing] Failed to fetch timeline:', response.status);
+            }
+        } catch (error) {
+            console.error('[Pricing] Error fetching timeline:', error);
         }
-    } catch (error) {
-        console.error('[Pricing] Error fetching timeline:', error);
     }
 
     // OPRAVA: Filtrovat pouze aktuální a budoucí intervaly
-    const now = new Date();
+    const nowDate = new Date();
     timelineData = timelineData.filter(point => {
         const pointTime = new Date(point.timestamp);
-        return pointTime >= now;
+        return pointTime >= nowDate;
     });
     console.log(`[Pricing] After filtering future intervals: ${timelineData.length} points`);
 
