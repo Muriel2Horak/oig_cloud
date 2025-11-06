@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
 
 from aiohttp import web
 from homeassistant.helpers.http import HomeAssistantView
@@ -39,6 +40,11 @@ _LOGGER = logging.getLogger(__name__)
 
 # API routes base
 API_BASE = "/api/oig_cloud"
+
+# Cache for timeline_extended data (60s TTL to prevent slow repeated calls)
+_timeline_extended_cache: Dict[str, Dict[str, Any]] = {}
+_timeline_extended_cache_timestamp: Dict[str, datetime] = {}
+TIMELINE_CACHE_TTL = timedelta(seconds=60)
 
 
 class OIGCloudBatteryTimelineView(HomeAssistantView):
@@ -107,10 +113,30 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             mode_recommendations = getattr(entity_obj, "_mode_recommendations", [])
 
             # Phase 2.9: Build timeline_extended (obsahuje actual_intervals z JSON)
+            # OPTIMALIZACE: Cache timeline_extended s 60s TTL (nejpomalejší část API)
             timeline_extended = None
-            if hasattr(entity_obj, "build_timeline_extended"):
+            cache_key = f"{box_id}_timeline_extended"
+            now_dt = datetime.now()
+            
+            # Check cache first
+            if cache_key in _timeline_extended_cache and cache_key in _timeline_extended_cache_timestamp:
+                cache_age = now_dt - _timeline_extended_cache_timestamp[cache_key]
+                if cache_age < TIMELINE_CACHE_TTL:
+                    timeline_extended = _timeline_extended_cache[cache_key]
+                    _LOGGER.debug(
+                        f"API: Using cached timeline_extended for {box_id} (age: {cache_age.total_seconds():.1f}s)"
+                    )
+            
+            # Cache miss or expired - rebuild
+            if timeline_extended is None and hasattr(entity_obj, "build_timeline_extended"):
                 try:
                     timeline_extended = await entity_obj.build_timeline_extended()
+                    # Update cache
+                    _timeline_extended_cache[cache_key] = timeline_extended
+                    _timeline_extended_cache_timestamp[cache_key] = now_dt
+                    _LOGGER.debug(
+                        f"API: Built and cached timeline_extended for {box_id}"
+                    )
                 except Exception as e:
                     _LOGGER.warning(
                         f"Failed to build timeline_extended for {box_id}: {e}"
