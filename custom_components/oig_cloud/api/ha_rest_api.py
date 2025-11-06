@@ -117,18 +117,23 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             timeline_extended = None
             cache_key = f"{box_id}_timeline_extended"
             now_dt = datetime.now()
-            
+
             # Check cache first
-            if cache_key in _timeline_extended_cache and cache_key in _timeline_extended_cache_timestamp:
+            if (
+                cache_key in _timeline_extended_cache
+                and cache_key in _timeline_extended_cache_timestamp
+            ):
                 cache_age = now_dt - _timeline_extended_cache_timestamp[cache_key]
                 if cache_age < TIMELINE_CACHE_TTL:
                     timeline_extended = _timeline_extended_cache[cache_key]
                     _LOGGER.debug(
                         f"API: Using cached timeline_extended for {box_id} (age: {cache_age.total_seconds():.1f}s)"
                     )
-            
+
             # Cache miss or expired - rebuild
-            if timeline_extended is None and hasattr(entity_obj, "build_timeline_extended"):
+            if timeline_extended is None and hasattr(
+                entity_obj, "build_timeline_extended"
+            ):
                 try:
                     timeline_extended = await entity_obj.build_timeline_extended()
                     # Update cache
