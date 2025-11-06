@@ -635,10 +635,12 @@ function switchTab(tabName) {
 
     // Load data when entering pricing tab
     if (tabName === 'pricing') {
+        const tabSwitchStart = performance.now();
         console.log('[Tab] ========== SWITCHING TO PRICING TAB ==========');
         // Počkat až se tab zobrazí a canvas bude viditelný
         setTimeout(() => {
-            console.log('[Pricing] Tab visible, loading pricing data...');
+            const afterTimeout = performance.now();
+            console.log(`[Pricing] Tab visible after ${(afterTimeout - tabSwitchStart).toFixed(0)}ms timeout, loading pricing data...`);
             loadPricingData();
 
             // Subscribe to Battery Health updates (once)

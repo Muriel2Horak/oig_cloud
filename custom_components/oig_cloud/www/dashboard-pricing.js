@@ -581,6 +581,9 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
 }
 
 async function loadPricingData() {
+    const perfStart = performance.now();
+    console.log('[Pricing] === loadPricingData START ===');
+    
     const hass = getHass();
     if (!hass || !hass.states) return;
     const boxId = getBoxId();
@@ -602,13 +605,15 @@ async function loadPricingData() {
     if (cacheValid) {
         console.log(`[Pricing] Using cached timeline data (age: ${Math.round((now - timelineDataCache.timestamp) / 1000)}s)`);
         timelineData = timelineDataCache.data;
-        
+
         // If charts are already rendered with this data, skip the entire function
         if (timelineDataCache.chartsRendered) {
-            console.log('[Pricing] Charts already rendered, skipping re-render');
+            const perfEnd = performance.now();
+            console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
             return;
         }
     } else {
+        const fetchStart = performance.now();
         console.log('[Pricing] Fetching fresh timeline data from API...');
         try {
             const response = await fetch(timelineUrl);
@@ -621,7 +626,8 @@ async function loadPricingData() {
                 timelineDataCache.timestamp = now;
                 timelineDataCache.chartsRendered = false;  // Reset flag - new data needs rendering
 
-                console.log(`[Pricing] Loaded ${timelineData.length} timeline points from API (cached for ${timelineDataCache.ttl/1000}s)`);
+                const fetchEnd = performance.now();
+                console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points`);
             } else {
                 console.error('[Pricing] Failed to fetch timeline:', response.status);
             }
@@ -1439,10 +1445,13 @@ async function loadPricingData() {
     if (typeof updateBatteryHealthStats === 'function') {
         updateBatteryHealthStats();
     }
-    
+
     // Mark charts as rendered to skip re-rendering on next tab switch
     timelineDataCache.chartsRendered = true;
-    console.log('[Pricing] Charts rendered and cached');
+    
+    const perfEnd = performance.now();
+    const totalTime = (perfEnd - perfStart).toFixed(0);
+    console.log(`[Pricing] === loadPricingData COMPLETE in ${totalTime}ms ===`);
 }
 
 /**
