@@ -17,6 +17,7 @@
     <!-- Styles -->
     <link rel="stylesheet" href="dashboard-styles.css">
     <link rel="stylesheet" href="css/today-plan-tile.css">
+    <link rel="stylesheet" href="css/detail-tabs.css">
     <link rel="stylesheet" href="dashboard-battery-health.css">
 </head>
 
@@ -863,6 +864,9 @@
                         <button class="timeline-tab timeline-tab-btn" data-tab="tomorrow">
                             📅 ZÍTRA
                         </button>
+                        <button class="timeline-tab timeline-tab-btn" data-tab="detail">
+                            💎 DETAIL
+                        </button>
                         <button class="timeline-tab timeline-tab-btn" data-tab="history">
                             📈 HISTORIE
                         </button>
@@ -886,6 +890,13 @@
                     <div id="timeline-tomorrow-content" class="timeline-tab-content">
                         <div id="tomorrow-timeline-container">
                             <!-- Filled by TimelineDialog.renderTomorrowTab() -->
+                        </div>
+                    </div>
+
+                    <!-- Tab Content - DETAIL (FÁZE 6) -->
+                    <div id="timeline-detail-content" class="timeline-tab-content">
+                        <div id="detail-timeline-container">
+                            <!-- Filled by TimelineDialog.renderDetailTab() -->
                         </div>
                     </div>
 

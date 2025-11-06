@@ -110,7 +110,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             timeline_extended = None
             if hasattr(entity_obj, "build_timeline_extended"):
                 try:
-                    timeline_extended = entity_obj.build_timeline_extended()
+                    timeline_extended = await entity_obj.build_timeline_extended()
                 except Exception as e:
                     _LOGGER.warning(
                         f"Failed to build timeline_extended for {box_id}: {e}"
@@ -599,7 +599,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             if hasattr(entity_obj, "build_unified_cost_tile"):
                 try:
                     _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
-                    tile_data = entity_obj.build_unified_cost_tile()
+                    tile_data = await entity_obj.build_unified_cost_tile()
                     _LOGGER.info(
                         f"API: Unified cost tile built successfully: {tile_data.keys()}"
                     )
@@ -629,6 +629,121 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class OIGCloudDetailTabsView(HomeAssistantView):
+    """
+    API endpoint for Detail Tabs - mode-aggregated battery forecast data.
+
+    Phase 3.0: Detail Tabs API
+    Provides aggregated data by CBB modes instead of 15min intervals.
+    """
+
+    url = f"{API_BASE}/battery_forecast/{{box_id}}/detail_tabs"
+    name = "api:oig_cloud:detail_tabs"
+    requires_auth = False  # TODO: Re-enable after auth method is implemented
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        """
+        Get Detail Tabs data - aggregated by CBB modes.
+
+        Args:
+            box_id: OIG box ID (e.g., "2206237016")
+
+        Query params:
+            ?tab=yesterday|today|tomorrow - Filter specific tab (optional)
+
+        Returns:
+            JSON with mode-aggregated data:
+            {
+                "yesterday": {
+                    "date": "2025-11-05",
+                    "mode_blocks": [
+                        {
+                            "mode_historical": "HOME I",
+                            "mode_planned": "HOME I",
+                            "mode_match": true,
+                            "status": "completed",
+                            "start_time": "00:00",
+                            "end_time": "02:30",
+                            "interval_count": 10,
+                            "duration_hours": 2.5,
+                            "cost_historical": 12.50,
+                            "cost_planned": 12.00,
+                            "cost_delta": 0.50,
+                            "battery_soc_start": 50.0,
+                            "battery_soc_end": 45.2,
+                            "solar_total_kwh": 0.0,
+                            "consumption_total_kwh": 1.8,
+                            "grid_import_total_kwh": 1.8,
+                            "grid_export_total_kwh": 0.0,
+                            "adherence_pct": 100
+                        }
+                    ],
+                    "summary": {
+                        "total_cost": 28.50,
+                        "overall_adherence": 65,
+                        "mode_switches": 8
+                    }
+                },
+                "today": {...},
+                "tomorrow": {...}
+            }
+        """
+        hass: HomeAssistant = request.app["hass"]
+        tab = request.query.get("tab", None)
+
+        try:
+            # Find sensor entity
+            sensor_id = f"sensor.oig_{box_id}_battery_forecast"
+            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+
+            if not component:
+                return web.json_response(
+                    {"error": "Sensor component not found"}, status=500
+                )
+
+            # Find entity by entity_id
+            entity_obj = None
+            for entity in component.entities:
+                if entity.entity_id == sensor_id:
+                    entity_obj = entity
+                    break
+
+            if not entity_obj:
+                return web.json_response(
+                    {"error": f"Sensor {sensor_id} not found"}, status=404
+                )
+
+            # Build detail tabs data
+            if hasattr(entity_obj, "build_detail_tabs"):
+                try:
+                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab)
+                except Exception as build_error:
+                    _LOGGER.error(
+                        f"API: Error in build_detail_tabs() for {box_id}: {build_error}",
+                        exc_info=True,
+                    )
+                    return web.json_response(
+                        {"error": f"Failed to build detail tabs: {build_error}"},
+                        status=500,
+                    )
+            else:
+                return web.json_response(
+                    {"error": "build_detail_tabs method not found"}, status=500
+                )
+
+            _LOGGER.debug(
+                f"API: Serving detail tabs for {box_id}, "
+                f"tab_filter={tab}, "
+                f"tabs_count={len(detail_tabs)}"
+            )
+
+            return web.json_response(detail_tabs)
+
+        except Exception as e:
+            _LOGGER.error(f"Error serving detail tabs API: {e}", exc_info=True)
+            return web.json_response({"error": str(e)}, status=500)
+
+
 @callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
@@ -642,6 +757,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     # Register views
     hass.http.register_view(OIGCloudBatteryTimelineView())
     hass.http.register_view(OIGCloudUnifiedCostTileView())
+    hass.http.register_view(OIGCloudDetailTabsView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
@@ -651,6 +767,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         "✅ OIG Cloud REST API endpoints registered:\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/timeline\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/unified_cost_tile\n"
+        f"  - {API_BASE}/battery_forecast/<box_id>/detail_tabs\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"

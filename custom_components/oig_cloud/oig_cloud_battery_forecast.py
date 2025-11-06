@@ -9,7 +9,7 @@ import json
 import os
 import hashlib
 from typing import Any, Dict, List, Optional, Union
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
 from homeassistant.components.sensor import (
@@ -19,6 +19,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.storage import Store
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -27,6 +28,33 @@ from homeassistant.util import dt as dt_util
 from .oig_cloud_data_sensor import OigCloudDataSensor
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# PHASE 3.0 FIX: Safe nested get helper to prevent AttributeError on None values
+def safe_nested_get(obj: Optional[Dict[str, Any]], *keys: str, default: Any = 0) -> Any:
+    """
+    Safely get nested dict values, handling None at any level.
+
+    Args:
+        obj: Dict or None
+        keys: Sequence of keys to traverse (e.g., "planned", "net_cost")
+        default: Default value if any key is missing or value is None
+
+    Returns:
+        Value if found, default otherwise
+
+    Example:
+        safe_nested_get(interval, "planned", "net_cost", default=0)
+        # Same as: interval.get("planned", {}).get("net_cost", 0)
+        # But handles: interval.get("planned") = None ✓
+    """
+    current = obj
+    for key in keys:
+        if current is None or not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return current if current is not None else default
+
 
 # CBB 3F Home Plus Premium - Mode Constants (Phase 2)
 # Mode definitions from sensor.oig_{box_id}_box_prms_mode
@@ -174,6 +202,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Phase 2.7: HOME I timeline cache for savings calculation
         self._home_i_timeline_cache: List[Dict[str, Any]] = []
 
+        # FÁZE 5: Detail Tabs cache with TTL
+        # Cache structure: {tab_name: {"data": {...}, "timestamp": datetime, "ttl": int}}
+        # TTL values: yesterday=None (infinite), today_historical=None, today_planned=60, tomorrow=60
+        self._detail_tabs_cache: Dict[str, Dict[str, Any]] = {}
+
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
         self._plan_status: str = "none"  # none | pending | active | completed
@@ -182,10 +215,41 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._last_history_update_hour: Optional[int] = None
         self._initial_history_update_done: bool = False
 
+        # Phase 3.0: Storage Helper for persistent battery plans
+        # Storage path: /var/lib/homeassistant/homeassistant/config/.storage/
+        # File: oig_cloud.battery_plans_{box_id}
+        # Version: 1 (structure compatible with future migrations)
+        self._plans_store: Optional[Store] = None
+        if self._hass:
+            self._plans_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.battery_plans_{self._box_id}",
+            )
+            _LOGGER.debug(
+                f"✅ Initialized Storage Helper: oig_cloud.battery_plans_{self._box_id}"
+            )
+        else:
+            _LOGGER.warning(
+                "⚠️ Cannot initialize Storage Helper - hass not available yet. "
+                "Will retry in async_added_to_hass()"
+            )
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
         self._hass = self.hass
+
+        # Phase 3.0: Retry Storage Helper initialization if failed in __init__
+        if not self._plans_store and self._hass:
+            self._plans_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.battery_plans_{self._box_id}",
+            )
+            _LOGGER.info(
+                f"✅ Retry: Initialized Storage Helper: oig_cloud.battery_plans_{self._box_id}"
+            )
 
         # Restore data z předchozí instance
         if last_state := await self.async_get_last_state():
@@ -208,64 +272,138 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     except (json.decoder.JSONDecodeError, TypeError) as e:
                         _LOGGER.warning(f"Failed to restore charging plan: {e}")
 
-        # Phase 2.9: Načíst dnešní daily plan z JSON storage (PREFEROVANÝ ZPŮSOB)
-        now = dt_util.now()
-        today_str = now.strftime("%Y-%m-%d")
-        stored_plan = await self._load_daily_plan_from_storage(today_str)
+        # PHASE 3.0: Storage Helper Integration
+        # Storage plán se načítá on-demand v build_timeline_extended() (když API endpoint volá)
+        # NEPOTŘEBUJEME načítat při startu - to jen zpomaluje startup
+        _LOGGER.debug("Sensor initialized - storage plans will load on-demand via API")
 
-        if stored_plan:
-            self._daily_plan_state = stored_plan
-            actual_count = len(stored_plan.get("actual_intervals", []))
-            _LOGGER.info(
-                f"✅ Loaded daily plan from JSON storage: "
-                f"date={today_str}, "
-                f"actual_intervals={actual_count}, "
-                f"status={stored_plan.get('status')}"
+        # FALLBACK: Restore z attributes (starý způsob - bude deprecated)
+        if last_state and last_state.attributes:
+            # Restore daily plan state with actual intervals (Phase 2.9)
+            if "daily_plan_state" in last_state.attributes:
+                try:
+                    daily_plan_json = last_state.attributes.get("daily_plan_state")
+                    if daily_plan_json:
+                        self._daily_plan_state = json.loads(daily_plan_json)
+                        actual_count = len(self._daily_plan_state.get("actual", []))
+                        _LOGGER.info(
+                            f"✅ Restored daily plan state: "
+                            f"date={self._daily_plan_state.get('date')}, "
+                            f"actual={actual_count}"
+                        )
+                except (json.decoder.JSONDecodeError, TypeError) as e:
+                    _LOGGER.warning(f"Failed to restore daily plan state: {e}")
+
+        # PHASE 3.0: DISABLED - Historical data loading moved to on-demand (API only)
+        # Old Phase 2.9 loaded history every 15 min - POMALÉ a ZBYTEČNÉ!
+        # Nově: build_timeline_extended() načítá z Recorderu on-demand při API volání
+        _LOGGER.debug("Historical data will load on-demand via API (not at startup)")
+
+        # PHASE 3.0: Schedule forecast refresh every 15 minutes (for spot price updates)
+        # This runs HYBRID optimization when spot prices change (not on every coordinator update!)
+        async def _forecast_refresh_job(now):
+            """Run forecast refresh every 15 minutes (aligned with spot price intervals)."""
+            _LOGGER.info(f"⏰ Forecast refresh triggered at {now.strftime('%H:%M')}")
+            try:
+                await self.async_update()
+            except Exception as e:
+                _LOGGER.error(f"Forecast refresh failed: {e}", exc_info=True)
+
+        # Schedule every 15 minutes (at :00, :15, :30, :45)
+        for minute in [0, 15, 30, 45]:
+            async_track_time_change(
+                self.hass,
+                _forecast_refresh_job,
+                minute=minute,
+                second=30,  # 30s offset to ensure spot prices are updated
             )
-        else:
-            _LOGGER.debug(f"No stored daily plan found for {today_str}")
+        _LOGGER.debug("✅ Scheduled forecast refresh every 15 minutes")
 
-            # FALLBACK: Restore z attributes (starý způsob - bude deprecated)
-            if last_state and last_state.attributes:
-                # Restore daily plan state with actual intervals (Phase 2.9)
-                if "daily_plan_state" in last_state.attributes:
-                    try:
-                        daily_plan_json = last_state.attributes.get("daily_plan_state")
-                        if daily_plan_json:
-                            self._daily_plan_state = json.loads(daily_plan_json)
-                            actual_count = len(
-                                self._daily_plan_state.get("actual_intervals", [])
-                            )
-                            _LOGGER.info(
-                                f"✅ Restored daily plan state: "
-                                f"date={self._daily_plan_state.get('plan_date')}, "
-                                f"actual_intervals={actual_count}, "
-                                f"status={self._daily_plan_state.get('status')}"
-                            )
-                    except (json.decoder.JSONDecodeError, TypeError) as e:
-                        _LOGGER.warning(f"Failed to restore daily plan state: {e}")
+        # PHASE 3.0: Initial forecast calculation IMMEDIATELY after startup
+        # Dashboard needs data right away - no delay!
+        async def _initial_forecast_calculation():
+            """Initial forecast calculation immediately after startup."""
+            _LOGGER.info("🚀 Initial forecast calculation triggered (startup)")
+            try:
+                await self.async_update()
+            except Exception as e:
+                _LOGGER.error(
+                    f"Initial forecast calculation failed: {e}", exc_info=True
+                )
 
-        # Phase 2.9: Naplánovat initial history update (60s po startu)
-        async def _initial_history_update():
-            """Initial update actual values 60s po startu/reloadu."""
-            await asyncio.sleep(60)  # Počkat minutu po startu
-            if not self._initial_history_update_done:
-                _LOGGER.info("🚀 Initial history update triggered (60s after startup)")
-                await self._update_actual_from_history()
-                self._initial_history_update_done = True
+        # Trigger immediately (no delay)
+        self.hass.async_create_task(_initial_forecast_calculation())
 
-        self.hass.async_create_task(_initial_history_update())
+        # Phase 3.0: Schedule daily and weekly aggregations
+        from homeassistant.helpers.event import async_track_time_change
+
+        # Daily aggregation at 00:05 (aggregate yesterday's data)
+        async def _daily_aggregation_job(now):
+            """Run daily aggregation at 00:05."""
+            yesterday = (now.date() - timedelta(days=1)).strftime("%Y-%m-%d")
+            _LOGGER.info(f"⏰ Daily aggregation job triggered for {yesterday}")
+            await self._aggregate_daily(yesterday)
+
+        async_track_time_change(
+            self.hass,
+            _daily_aggregation_job,
+            hour=0,
+            minute=5,
+            second=0,
+        )
+        _LOGGER.debug("✅ Scheduled daily aggregation at 00:05")
+
+        # Weekly aggregation every Sunday at 23:55
+        async def _weekly_aggregation_job(now):
+            """Run weekly aggregation on Sunday at 23:55."""
+            # Only run on Sunday (weekday() == 6)
+            if now.weekday() != 6:
+                return
+
+            # Calculate week info
+            year, week_num, _ = now.isocalendar()
+            week_str = f"{year}-W{week_num:02d}"
+
+            # Week end is today (Sunday)
+            end_date = now.date().strftime("%Y-%m-%d")
+            # Week start is 6 days ago (Monday)
+            start_date = (now.date() - timedelta(days=6)).strftime("%Y-%m-%d")
+
+            _LOGGER.info(f"⏰ Weekly aggregation job triggered for {week_str}")
+            await self._aggregate_weekly(week_str, start_date, end_date)
+
+        async_track_time_change(
+            self.hass,
+            _weekly_aggregation_job,
+            hour=23,
+            minute=55,
+            second=0,
+        )
+        _LOGGER.debug("✅ Scheduled weekly aggregation at Sunday 23:55")
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
         await super().async_will_remove_from_hass()
 
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator update - přepočítat forecast při každé aktualizaci dat."""
-        # Zavolat async_update v background tasku
-        if self.hass:
-            self.hass.async_create_task(self.async_update())
-        # Volat parent pro standardní zpracování
+        """Handle coordinator update - OPTIMALIZOVÁNO pro rychlost.
+
+        PHASE 3.0: Performance Optimization
+        - NEPŘEPOČÍTÁVÁME forecast při každé coordinator update!
+        - Forecast se přepočítá JEN když:
+          1. Spot prices se změnily (nový 15min interval)
+          2. Manuální trigger přes service call
+
+        Důvod: HYBRID optimalizace je TĚŽKÁ operace (200+ intervalů simulace)
+        a neměníme ji každých 5 minut když coordinator refreshuje base senzory.
+        """
+        # NEPŘEPOČÍTÁVAT forecast automaticky - jen když je potřeba
+        # Forecast se aktualizuje:
+        # - Při startu (async_added_to_hass)
+        # - Každých 15 min (spot price interval change)
+        # - Manuálně přes service call
+
+        # Volat parent pro standardní zpracování (update state attributes)
         super()._handle_coordinator_update()
 
     @property
@@ -442,17 +580,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "avoided_export_loss_czk": round(curtailed_total, 2),
                 }
 
-        # Phase V2: Unified Cost Tile (UCT-BE-001)
-        # PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1
-        try:
-            unified_cost_tile = self.build_unified_cost_tile()
-            attrs["unified_cost_tile"] = unified_cost_tile
-            _LOGGER.info(
-                f"💰 Unified Cost Tile built successfully: "
-                f"today={unified_cost_tile.get('today', {}).get('current_total', 0):.2f} Kč"
-            )
-        except Exception as e:
-            _LOGGER.warning(f"Failed to build unified cost tile: {e}", exc_info=True)
+        # Phase V2: Unified Cost Tile - MOVED TO API ENDPOINT
+        # unified_cost_tile now built on-demand in REST API (async context)
+        # Not in attributes to avoid blocking extra_state_attributes()
 
         # DEBUG MODE: Expose full timeline pouze pro development/testing
         # V produkci: False (timeline přes API)
@@ -811,10 +941,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Skip pokud ještě neproběhl initial update
                 pass
             elif should_update:
-                _LOGGER.info(
-                    f"⏰ 15-minute history update triggered: {now.strftime('%H:%M')}"
-                )
-                await self._update_actual_from_history()
+                # PHASE 3.0: DISABLED - Historical data loading moved to on-demand (API only)
+                # Načítání z Recorderu každých 15 min je POMALÉ!
+                # Nově: build_timeline_extended() načítá on-demand při API volání
+                # _LOGGER.info(f"⏰ 15-minute history update triggered: {now.strftime('%H:%M')}")
+                # await self._update_actual_from_history()
+                pass
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
@@ -4104,10 +4236,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Fixuje plán z HYBRID optimalizace pro celý dnešek
         - Ukládá do self._daily_plan_state pro pozdější tracking
 
+        Phase 3.0: Storage Helper Integration
+        - Po půlnoci (00:10-00:30): Vytvoř baseline plán do Storage Helper
+        - Baseline = 96 intervalů s plánovanými hodnotami
+        - Persists across HA restarts
+
         Logika:
         1. Je nový den? (plan_date != today)
         2. Máme fresh HYBRID výsledek? (optimal_timeline existuje)
         3. FIXUJ: Ulož celý dnešní plán do daily_plan_state
+        4. STORAGE: Ulož baseline do Storage Helper (persistent)
         """
         now = dt_util.now()
         today_str = now.strftime("%Y-%m-%d")
@@ -4116,27 +4254,54 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not hasattr(self, "_daily_plan_state"):
             self._daily_plan_state = None
 
-        # Pokud už máme aktivní plán pro dnešek, NEPŘEPISOVAT ho!
+        # PHASE 3.0: Pokus o vytvoření baseline plánu po půlnoci
+        # Spustí se pokud je nový den A čas je mezi 00:10 a 01:00
+        if now.hour == 0 and 10 <= now.minute < 60:
+            # Check if baseline already exists
+            plan_exists = await self._plan_exists_in_storage(today_str)
+            if not plan_exists:
+                _LOGGER.info(
+                    f"⏰ Post-midnight baseline creation window: {now.strftime('%H:%M')}"
+                )
+                # Attempt to create baseline (will be implemented properly later)
+                # For now, just log
+                baseline_created = await self._create_baseline_plan(today_str)
+                if baseline_created:
+                    _LOGGER.info(
+                        f"✅ Baseline plan created in Storage Helper for {today_str}"
+                    )
+                else:
+                    _LOGGER.warning(f"⚠️ Failed to create baseline plan for {today_str}")
+            else:
+                _LOGGER.debug(f"Baseline plan already exists for {today_str}")
+
+        # PHASE 3.0: Storage Helper Integration
+        # _maybe_fix_daily_plan() je zodpovědná POUZE za:
+        # 1. Vytvoření baseline plánu po půlnoci (00:10-01:00)
+        # 2. Fixování dnešního plánu do in-memory state
+        #
+        # NEPOTŘEBUJEME číst Storage tady - to se děje až v build_timeline_extended()
+        # když API endpoint potřebuje data (on-demand loading)
+
+        # Pokud už máme plán v paměti pro dnešek s intervaly, NEPŘEPISOVAT
         if (
             self._daily_plan_state
-            and self._daily_plan_state.get("plan_date") == today_str
-            and self._daily_plan_state.get("status") == "active"
+            and self._daily_plan_state.get("date") == today_str
+            and len(self._daily_plan_state.get("plan", [])) > 0
         ):
-            _LOGGER.debug(f"Daily plan for {today_str} already active, skipping fix")
+            _LOGGER.debug(
+                f"Daily plan for {today_str} already in memory with {len(self._daily_plan_state['plan'])} intervals, keeping it"
+            )
             return
 
         # Je nový den? NEBO ještě nemáme dnešní plán?
         if (
             self._daily_plan_state is None
-            or self._daily_plan_state.get("plan_date") != today_str
+            or self._daily_plan_state.get("date") != today_str
         ):
             # Archivovat včerejší plán pokud existuje
-            if (
-                self._daily_plan_state
-                and self._daily_plan_state.get("status") == "active"
-            ):
-                yesterday_date = self._daily_plan_state.get("plan_date")
-                self._daily_plan_state["status"] = "completed"
+            if self._daily_plan_state:
+                yesterday_date = self._daily_plan_state.get("date")
 
                 # NOVĚ: Uložit do archivu (max 7 dní)
                 self._daily_plans_archive[yesterday_date] = (
@@ -4209,8 +4374,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
 
                 # ========================================
-                # SIMPLE STORAGE: Vytvořit plan array (96 intervalů)
+                # MEMORY STORAGE: Store plan in memory (NOT in files!)
+                # Storage Helper je ONLY pro baseline plány po půlnoci
                 # ========================================
+
+                # Build plan intervals z today_timeline
                 plan_intervals = []
                 for interval in today_timeline:
                     plan_intervals.append(
@@ -4243,11 +4411,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         f"[Fix Plan] Preserving {len(existing_actual)} existing actual intervals"
                     )
 
-                # SIMPLE struktura
+                # SIMPLE struktura (memory only!)
                 self._daily_plan_state = {
                     "date": today_str,
                     "created_at": now.isoformat(),
-                    "plan": plan_intervals,  # 96 intervalů pro celý dnešní den
+                    "plan": plan_intervals,  # Plán intervalů pro celý dnešní den
                     "actual": existing_actual,  # Postupně se bude plnit každých 15 min
                 }
 
@@ -4258,10 +4426,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"expected_cost={expected_total_cost:.2f} Kč"
                 )
 
-                # ULOŽIT DO STORAGE
-                await self._save_daily_plan_to_storage(
-                    today_str, self._daily_plan_state
-                )
+                # NO FILE SAVE - keep in memory only!
+                # Storage Helper je ONLY pro baseline plány (po půlnoci)
             else:
                 _LOGGER.warning(
                     f"No HYBRID optimization result available to fix daily plan for {today_str}"
@@ -4382,8 +4548,41 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 except (ValueError, AttributeError):
                     return 0.0
 
+            def get_value_at_end(entity_id: str) -> Any:
+                """
+                Získat hodnotu NA KONCI intervalu (= end_time).
+
+                Pro battery_soc a mode je důležité mít hodnotu přesně NA KONCI intervalu,
+                aby byla sladěná s planned hodnotami (které reprezentují stav NA KONCI).
+
+                Hledáme state CO NEJBLÍŽE end_time, ne prostě poslední v seznamu!
+                """
+                entity_states = states.get(entity_id, [])
+                if not entity_states:
+                    return None
+
+                # Normalizovat end_time na UTC
+                end_utc = (
+                    end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
+                )
+
+                # Najít state s časem NEJBLÍŽE end_time (může být před i po)
+                closest_state = min(
+                    entity_states,
+                    key=lambda s: abs(
+                        (
+                            s.last_updated.astimezone(timezone.utc) - end_utc
+                        ).total_seconds()
+                    ),
+                )
+
+                try:
+                    return float(closest_state.state)
+                except (ValueError, AttributeError):
+                    return None
+
             def get_last_value(entity_id: str) -> Any:
-                """Získat poslední hodnotu pro snapshot senzor."""
+                """Získat poslední hodnotu pro snapshot senzor (ceny)."""
                 entity_states = states.get(entity_id, [])
                 if not entity_states:
                     return None
@@ -4398,8 +4597,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             grid_export_kwh = get_delta(f"sensor.oig_{self._box_id}_ac_in_ac_pd")
             solar_kwh = get_delta(f"sensor.oig_{self._box_id}_dc_in_fv_ad")
 
-            battery_soc = get_last_value(f"sensor.oig_{self._box_id}_battery_soc")
-            mode_raw = get_last_value(f"sensor.oig_{self._box_id}_box_prms_mode")
+            # OPRAVA: Použít hodnotu NA KONCI intervalu (end_time), ne prostě poslední
+            battery_soc = get_value_at_end(f"sensor.oig_{self._box_id}_battery_soc")
+            mode_raw = get_value_at_end(f"sensor.oig_{self._box_id}_box_prms_mode")
 
             # Vypočítat battery_kwh z SOC
             battery_kwh = 0.0
@@ -4459,16 +4659,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         Načíst actual values z HA history pro dnešní den.
 
-        SIMPLE verze:
-        - Načte všechny 15min intervaly od půlnoci do teď
-        - Uloží jako simple array do "actual" fieldu
+        OPTIMALIZOVANÁ verze:
+        - Načte jen CHYBĚJÍCÍ 15min intervaly (ne všechny od půlnoci!)
+        - Doplní je do existing "actual" array
         - Žádné nested struktury, žádné delta - jen čistá actual data
         """
         now = dt_util.now()
         today_str = now.strftime("%Y-%m-%d")
 
-        # Načíst existing plan
-        plan_data = await self._load_daily_plan_from_storage(today_str)
+        # Načíst existing plan z Storage Helper (FAST)
+        # PHASE 3.0: Use Storage Helper instead of file I/O
+        plan_storage = await self._load_plan_from_storage(today_str)
+        if not plan_storage:
+            _LOGGER.debug(
+                f"No plan in Storage for {today_str}, skipping history update"
+            )
+            return
+
+        # Convert to daily_plan_state format
+        plan_data = {
+            "date": today_str,
+            "plan": plan_storage.get("intervals", []),
+            "actual": [],  # Will be filled below
+        }
 
         if not plan_data:
             _LOGGER.debug(f"No plan for {today_str}, skipping actual update")
@@ -4476,21 +4689,36 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         _LOGGER.info(f"📊 Updating actual values from history for {today_str}...")
 
-        # Načíst všechna actual data od půlnoci do teď
-        actual_intervals = []
+        # Načíst existing actual intervaly
+        existing_actual = plan_data.get("actual", [])
+
+        # Vytvořit set existujících časů pro rychlé vyhledávání
+        existing_times = {interval.get("time") for interval in existing_actual}
+
+        _LOGGER.debug(f"Found {len(existing_actual)} existing actual intervals")
+
+        # Najít chybějící intervaly od půlnoci do teď
         start_time = dt_util.start_of_local_day(now)
         current_time = start_time
+        new_intervals = []
 
         while current_time <= now:
-            # Načíst z historie
+            interval_time_str = current_time.isoformat()
+
+            # Přeskočit pokud už existuje
+            if interval_time_str in existing_times:
+                current_time += timedelta(minutes=15)
+                continue
+
+            # Načíst z historie - JEN CHYBĚJÍCÍ INTERVAL
             actual_data = await self._fetch_interval_from_history(
                 current_time, current_time + timedelta(minutes=15)
             )
 
             if actual_data:
-                actual_intervals.append(
+                new_intervals.append(
                     {
-                        "time": current_time.isoformat(),
+                        "time": interval_time_str,
                         "solar_kwh": round(actual_data.get("solar_kwh", 0), 4),
                         "consumption_kwh": round(
                             actual_data.get("consumption_kwh", 0), 4
@@ -4508,18 +4736,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             current_time += timedelta(minutes=15)
 
-        # Update actual v plánu
-        plan_data["actual"] = actual_intervals
+        # DOPLNIT nové intervaly k existujícím (ne přepsat!)
+        if new_intervals:
+            plan_data["actual"] = existing_actual + new_intervals
+            _LOGGER.info(
+                f"✅ Added {len(new_intervals)} new actual intervals (total: {len(plan_data['actual'])})"
+            )
+        else:
+            _LOGGER.debug("No new actual intervals to add")
 
-        # Uložit zpět
-        await self._save_daily_plan_to_storage(today_str, plan_data)
-
-        # Update in-memory state
-        self._daily_plan_state = plan_data
-
-        _LOGGER.info(
-            f"✅ Updated actual values: {len(actual_intervals)} intervals stored"
-        )
+        # Uložit zpět pouze pokud byly přidány nové intervaly
+        if new_intervals:
+            await self._save_daily_plan_to_storage(today_str, plan_data)
+            # Update in-memory state
+            self._daily_plan_state = plan_data
+        else:
+            _LOGGER.debug("No changes, skipping storage update")
 
     async def _save_daily_plan_to_storage(
         self, date_str: str, plan_data: Dict[str, Any]
@@ -4586,7 +4818,831 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.error(f"Error loading daily plan from storage: {e}")
             return None
 
-    def build_timeline_extended(self) -> Dict[str, Any]:
+    # ========================================================================
+    # PHASE 3.0: STORAGE HELPER METHODS - Persistent Battery Plans
+    # ========================================================================
+    # Storage structure:
+    # {
+    #   "detailed": {
+    #     "2025-11-06": {
+    #       "created_at": "2025-11-06T00:15:00+01:00",
+    #       "baseline": true,
+    #       "filled_intervals": null,
+    #       "intervals": [...]  # 96 intervals
+    #     }
+    #   },
+    #   "daily": {
+    #     "2025-11-05": {"planned": {...}}  # Daily aggregates
+    #   },
+    #   "weekly": {
+    #     "2025-W45": {"planned": {...}}  # Weekly aggregates
+    #   }
+    # }
+
+    async def _load_plan_from_storage(self, date_str: str) -> Optional[Dict[str, Any]]:
+        """
+        Load plan from Storage Helper for given date.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            Plan data with 96 intervals or None if not found
+
+        Example:
+            plan = await self._load_plan_from_storage("2025-11-06")
+            if plan:
+                intervals = plan.get("intervals", [])  # 96 intervals
+        """
+        if not self._plans_store:
+            _LOGGER.error("Storage Helper not initialized")
+            # Fallback: Check in-memory cache
+            if hasattr(self, "_in_memory_plan_cache"):
+                cached = self._in_memory_plan_cache.get(date_str)
+                if cached:
+                    _LOGGER.warning(
+                        f"Using in-memory cached plan for {date_str} "
+                        f"(Storage Helper not initialized)"
+                    )
+                    return cached
+            return None
+
+        try:
+            # Load entire storage
+            data = await self._plans_store.async_load()
+            if not data:
+                _LOGGER.debug(f"No storage data found")
+                # Fallback: Check in-memory cache
+                if hasattr(self, "_in_memory_plan_cache"):
+                    cached = self._in_memory_plan_cache.get(date_str)
+                    if cached:
+                        _LOGGER.warning(
+                            f"Using in-memory cached plan for {date_str} "
+                            f"(Storage empty)"
+                        )
+                        return cached
+                return None
+
+            # Get detailed plan for date
+            detailed = data.get("detailed", {})
+            plan = detailed.get(date_str)
+
+            if plan:
+                interval_count = len(plan.get("intervals", []))
+                _LOGGER.debug(
+                    f"📂 Loaded plan from Storage: date={date_str}, "
+                    f"intervals={interval_count}, baseline={plan.get('baseline')}"
+                )
+            else:
+                _LOGGER.debug(f"No plan found in Storage for {date_str}")
+                # Fallback: Check in-memory cache
+                if hasattr(self, "_in_memory_plan_cache"):
+                    cached = self._in_memory_plan_cache.get(date_str)
+                    if cached:
+                        _LOGGER.warning(
+                            f"Using in-memory cached plan for {date_str} "
+                            f"(not in Storage)"
+                        )
+                        return cached
+
+            return plan
+
+        except Exception as e:
+            _LOGGER.error(f"Error loading plan from Storage: {e}", exc_info=True)
+            # Fallback: Check in-memory cache
+            if hasattr(self, "_in_memory_plan_cache"):
+                cached = self._in_memory_plan_cache.get(date_str)
+                if cached:
+                    _LOGGER.warning(
+                        f"Using in-memory cached plan for {date_str} "
+                        f"(Storage error)"
+                    )
+                    return cached
+            return None
+
+    async def _save_plan_to_storage(
+        self,
+        date_str: str,
+        intervals: List[Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Save plan to Storage Helper.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+            intervals: List of 96 intervals with planned values
+            metadata: Optional metadata (baseline, filled_intervals, etc.)
+
+        Returns:
+            True if saved successfully
+
+        Example:
+            success = await self._save_plan_to_storage(
+                "2025-11-06",
+                intervals,
+                {"baseline": True, "filled_intervals": "00:00-06:00"}
+            )
+        """
+        if not self._plans_store:
+            _LOGGER.error("Storage Helper not initialized")
+            return False
+
+        try:
+            # Load current data
+            data = await self._plans_store.async_load() or {}
+
+            # Ensure structure
+            if "detailed" not in data:
+                data["detailed"] = {}
+            if "daily" not in data:
+                data["daily"] = {}
+            if "weekly" not in data:
+                data["weekly"] = {}
+
+            # Build plan object
+            plan = {
+                "created_at": dt_util.now().isoformat(),
+                "baseline": metadata.get("baseline", False) if metadata else False,
+                "filled_intervals": (
+                    metadata.get("filled_intervals") if metadata else None
+                ),
+                "intervals": intervals,
+            }
+
+            # Save to detailed
+            data["detailed"][date_str] = plan
+
+            # Save to storage (atomic write)
+            await self._plans_store.async_save(data)
+
+            _LOGGER.info(
+                f"💾 Saved plan to Storage: date={date_str}, "
+                f"intervals={len(intervals)}, baseline={plan['baseline']}"
+            )
+            return True
+
+        except Exception as e:
+            _LOGGER.error(f"Error saving plan to Storage: {e}", exc_info=True)
+
+            # PHASE 3.0: Graceful degradation - fallback to in-memory cache
+            if not hasattr(self, "_in_memory_plan_cache"):
+                self._in_memory_plan_cache = {}
+
+            # Store in memory as fallback
+            self._in_memory_plan_cache[date_str] = {
+                "created_at": dt_util.now().isoformat(),
+                "baseline": metadata.get("baseline", False) if metadata else False,
+                "filled_intervals": (
+                    metadata.get("filled_intervals") if metadata else None
+                ),
+                "intervals": intervals,
+            }
+
+            _LOGGER.warning(
+                f"⚠️ Stored plan in memory cache (Storage failed): "
+                f"date={date_str}, intervals={len(intervals)}"
+            )
+
+            # Schedule retry in 5 minutes
+            if self._hass:
+                from homeassistant.helpers.event import async_call_later
+
+                async def retry_save(now):
+                    """Retry saving to Storage."""
+                    _LOGGER.info(f"Retrying Storage save for {date_str}...")
+                    cached_plan = self._in_memory_plan_cache.get(date_str)
+                    if cached_plan:
+                        success = await self._save_plan_to_storage(
+                            date_str,
+                            cached_plan["intervals"],
+                            {
+                                "baseline": cached_plan["baseline"],
+                                "filled_intervals": cached_plan["filled_intervals"],
+                            },
+                        )
+                        if success:
+                            _LOGGER.info(f"✅ Retry successful for {date_str}")
+                            # Remove from memory cache
+                            del self._in_memory_plan_cache[date_str]
+                        else:
+                            _LOGGER.warning(f"Retry failed for {date_str}")
+
+                async_call_later(self._hass, 300, retry_save)  # 5 minutes
+
+            # Send persistent notification to user
+            if self._hass:
+                self._hass.components.persistent_notification.create(
+                    f"Battery plan storage failed for {date_str}. "
+                    f"Data is cached in memory only (will be lost on restart). "
+                    f"Check disk space and permissions.",
+                    title="OIG Cloud Storage Warning",
+                    notification_id=f"oig_storage_fail_{date_str}",
+                )
+
+            # Return False to indicate storage failure (but data is cached)
+            return False
+
+    async def _plan_exists_in_storage(self, date_str: str) -> bool:
+        """
+        Check if plan exists in Storage for given date.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            True if plan exists
+        """
+        if not self._plans_store:
+            return False
+
+        try:
+            data = await self._plans_store.async_load()
+            if not data:
+                return False
+
+            detailed = data.get("detailed", {})
+            exists = date_str in detailed
+
+            _LOGGER.debug(f"Plan existence check: date={date_str}, exists={exists}")
+            return exists
+
+        except Exception as e:
+            _LOGGER.error(f"Error checking plan existence: {e}", exc_info=True)
+            return False
+
+    async def _create_baseline_plan(self, date_str: str) -> bool:
+        """
+        Create baseline plan for given date.
+
+        This is called after first HYBRID run after midnight (00:15+).
+
+        Process:
+        1. Get HYBRID plan (future intervals from NOW onwards)
+        2. Fill missing past intervals (00:00 → NOW):
+           - Option A (preferred): From Recorder (historical reality)
+           - Option B (fallback): Extrapolate from first HYBRID interval
+        3. Merge into 96 intervals
+        4. Save to Storage with baseline=True
+
+        Args:
+            date_str: Date in YYYY-MM-DD format (e.g., "2025-11-06")
+
+        Returns:
+            True if baseline created successfully
+        """
+        if not self._plans_store:
+            _LOGGER.error("Cannot create baseline - Storage Helper not initialized")
+            return False
+
+        _LOGGER.info(f"🔨 Creating baseline plan for {date_str}")
+
+        try:
+            # PHASE 3.0: Real implementation with HYBRID + Recorder
+
+            # 1. Get HYBRID timeline (future intervals from NOW onwards)
+            # Use existing _timeline_data if available (set by async_update)
+            hybrid_timeline = getattr(self, "_timeline_data", [])
+
+            if not hybrid_timeline:
+                _LOGGER.warning(
+                    "No HYBRID timeline available - cannot create baseline plan"
+                )
+                return False
+
+            _LOGGER.debug(
+                f"Using HYBRID timeline with {len(hybrid_timeline)} intervals"
+            )
+
+            # 2. Determine date range for baseline (00:00 - 23:45)
+            now = dt_util.now()
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            day_start = datetime.combine(date_obj, datetime.min.time())
+            day_start = dt_util.as_local(day_start)  # Make timezone-aware
+
+            # 3. Build 96 intervals
+            intervals = []
+            filled_count = 0
+            first_hybrid_time = None
+
+            for i in range(96):
+                interval_start = day_start + timedelta(minutes=i * 15)
+                interval_time_str = interval_start.strftime("%H:%M")
+
+                # Try to find matching interval in HYBRID timeline
+                hybrid_interval = None
+                for hi in hybrid_timeline:
+                    hi_time_str = hi.get("time") or hi.get("timestamp", "")
+                    if not hi_time_str:
+                        continue
+
+                    # Parse time (can be HH:MM or ISO format)
+                    try:
+                        if "T" in hi_time_str:
+                            # ISO format
+                            hi_dt = datetime.fromisoformat(hi_time_str)
+                            if hi_dt.tzinfo is None:
+                                hi_dt = dt_util.as_local(hi_dt)
+                            hi_time_only = hi_dt.strftime("%H:%M")
+                        else:
+                            # Just time HH:MM
+                            hi_time_only = hi_time_str
+
+                        if hi_time_only == interval_time_str:
+                            hybrid_interval = hi
+                            if first_hybrid_time is None:
+                                first_hybrid_time = interval_time_str
+                            break
+                    except:
+                        continue
+
+                # Build interval
+                if hybrid_interval:
+                    # Use HYBRID data (planned values)
+                    interval = {
+                        "time": interval_time_str,
+                        "solar_kwh": round(hybrid_interval.get("solar_kwh", 0), 4),
+                        "consumption_kwh": round(hybrid_interval.get("load_kwh", 0), 4),
+                        "battery_soc": round(
+                            hybrid_interval.get("battery_soc", 50.0), 2
+                        ),
+                        "battery_kwh": round(
+                            hybrid_interval.get("battery_capacity_kwh", 7.68), 2
+                        ),
+                        "grid_import_kwh": round(
+                            hybrid_interval.get("grid_import", 0), 4
+                        ),
+                        "grid_export_kwh": round(
+                            hybrid_interval.get("grid_export", 0), 4
+                        ),
+                        "mode": hybrid_interval.get("mode", 2),
+                        "mode_name": hybrid_interval.get("mode_name", "HOME III"),
+                        "spot_price": round(hybrid_interval.get("spot_price", 3.45), 2),
+                        "net_cost": round(hybrid_interval.get("net_cost", 0), 2),
+                    }
+                else:
+                    # Missing interval - try to fill from Recorder (historical reality)
+                    # This happens for intervals before HYBRID started (00:00 → NOW)
+                    interval_end = interval_start + timedelta(minutes=15)
+
+                    # Try to fetch from history
+                    historical_data = await self._fetch_interval_from_history(
+                        interval_start, interval_end
+                    )
+
+                    if historical_data:
+                        # Use reality as baseline for missing past intervals
+                        interval = {
+                            "time": interval_time_str,
+                            "solar_kwh": round(historical_data.get("solar_kwh", 0), 4),
+                            "consumption_kwh": round(
+                                historical_data.get("consumption_kwh", 0.065), 4
+                            ),
+                            "battery_soc": round(
+                                historical_data.get("battery_soc", 50.0), 2
+                            ),
+                            "battery_kwh": round(
+                                historical_data.get("battery_kwh", 7.68), 2
+                            ),
+                            "grid_import_kwh": round(
+                                historical_data.get("grid_import_kwh", 0), 4
+                            ),
+                            "grid_export_kwh": round(
+                                historical_data.get("grid_export_kwh", 0), 4
+                            ),
+                            "mode": historical_data.get("mode", 2),
+                            "mode_name": historical_data.get("mode_name", "HOME III"),
+                            "spot_price": round(
+                                historical_data.get("spot_price", 3.45), 2
+                            ),
+                            "net_cost": round(historical_data.get("net_cost", 0), 2),
+                        }
+                        filled_count += 1
+                    else:
+                        # Fallback: Extrapolate from first HYBRID interval
+                        # or use defaults if HYBRID not available yet
+                        first_soc = 50.0
+                        first_mode = 2
+                        first_mode_name = "HOME III"
+
+                        if hybrid_timeline:
+                            first_hi = hybrid_timeline[0]
+                            first_soc = first_hi.get("battery_soc", 50.0)
+                            first_mode = first_hi.get("mode", 2)
+                            first_mode_name = first_hi.get("mode_name", "HOME III")
+
+                        interval = {
+                            "time": interval_time_str,
+                            "solar_kwh": 0.0,
+                            "consumption_kwh": 0.065,
+                            "battery_soc": round(first_soc, 2),
+                            "battery_kwh": round((first_soc / 100.0) * 15.36, 2),
+                            "grid_import_kwh": 0.065,
+                            "grid_export_kwh": 0.0,
+                            "mode": first_mode,
+                            "mode_name": first_mode_name,
+                            "spot_price": 3.45,
+                            "net_cost": 0.22,
+                        }
+                        filled_count += 1
+
+                intervals.append(interval)
+
+            # Track which intervals were filled
+            filled_intervals_str = None
+            if filled_count > 0 and first_hybrid_time:
+                # Calculate filled range (00:00 → first_hybrid_time)
+                filled_intervals_str = f"00:00-{first_hybrid_time}"
+
+            _LOGGER.info(
+                f"Baseline plan built: {len(intervals)} intervals, "
+                f"{len(intervals) - filled_count} from HYBRID, "
+                f"{filled_count} filled from Recorder/extrapolation"
+            )
+
+            # Save to storage
+            success = await self._save_plan_to_storage(
+                date_str,
+                intervals,
+                {
+                    "baseline": True,
+                    "filled_intervals": filled_intervals_str,
+                },
+            )
+
+            if success:
+                _LOGGER.info(
+                    f"✅ Baseline plan created: date={date_str}, "
+                    f"intervals={len(intervals)}, filled={filled_intervals_str}"
+                )
+            else:
+                _LOGGER.error(f"Failed to save baseline plan for {date_str}")
+
+            return success
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Error creating baseline plan for {date_str}: {e}", exc_info=True
+            )
+            return False
+
+    async def ensure_plan_exists(self, date_str: str) -> bool:
+        """
+        Guarantee that a plan exists for given date.
+
+        Phase 3.0: Edge Case - Plan Availability Guarantee
+
+        This is the main entry point for ensuring plan data availability.
+        Called by API endpoints and other components that need plan data.
+
+        Strategy:
+        1. Check Storage Helper - if exists, done ✅
+        2. Check current time:
+           - If midnight window (00:10-01:00): Create baseline
+           - If retry windows (06:00, 12:00): Create baseline
+           - Otherwise: Create emergency baseline
+        3. If all fails: Return False (caller must handle gracefully)
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            True if plan exists or was created successfully
+
+        Example:
+            if not await self.ensure_plan_exists("2025-11-06"):
+                return {"error": "Plan unavailable"}
+        """
+        # 1. Check if plan already exists
+        exists = await self._plan_exists_in_storage(date_str)
+        if exists:
+            _LOGGER.debug(f"Plan exists for {date_str}")
+            return True
+
+        _LOGGER.warning(f"Plan missing for {date_str}, attempting to create...")
+
+        # 2. Determine creation strategy based on current time
+        now = dt_util.now()
+        today_str = now.strftime("%Y-%m-%d")
+
+        # Only create plan for today (not future/past dates)
+        if date_str != today_str:
+            _LOGGER.warning(
+                f"Cannot create plan for {date_str} (not today {today_str})"
+            )
+            return False
+
+        # 3. Scheduled baseline windows
+        current_hour = now.hour
+        current_minute = now.minute
+
+        # Midnight window (00:10-01:00)
+        if current_hour == 0 and 10 <= current_minute < 60:
+            _LOGGER.info(f"⏰ Midnight baseline window - creating plan for {date_str}")
+            return await self._create_baseline_plan(date_str)
+
+        # Retry windows (06:00-06:10, 12:00-12:10)
+        if (current_hour == 6 and current_minute < 10) or (
+            current_hour == 12 and current_minute < 10
+        ):
+            _LOGGER.info(
+                f"⏰ Retry window ({current_hour:02d}:{current_minute:02d}) - "
+                f"creating plan for {date_str}"
+            )
+            return await self._create_baseline_plan(date_str)
+
+        # 4. Emergency: Create baseline anytime during the day
+        _LOGGER.warning(
+            f"🚨 Emergency baseline creation at {now.strftime('%H:%M')} for {date_str}"
+        )
+        success = await self._create_baseline_plan(date_str)
+
+        if success:
+            _LOGGER.info(f"✅ Emergency baseline created for {date_str}")
+        else:
+            _LOGGER.error(f"❌ Failed to create emergency baseline for {date_str}")
+
+        return success
+
+    # ========================================================================
+    # PHASE 3.0: DAILY & WEEKLY AGGREGATION
+    # ========================================================================
+
+    async def _aggregate_daily(self, date_str: str) -> bool:
+        """
+        Aggregate daily plan into daily summary.
+
+        Called every day at 00:05 to summarize YESTERDAY's plan.
+
+        Process:
+        1. Load yesterday's detailed plan (96 intervals)
+        2. Calculate aggregates:
+           - Total: cost, solar, consumption, grid_import, grid_export
+           - Average: battery_soc
+           - Min/Max: battery_soc
+        3. Save to daily section
+        4. Delete detailed plan older than 7 days
+
+        Args:
+            date_str: Date to aggregate (YYYY-MM-DD), typically yesterday
+
+        Returns:
+            True if aggregation successful
+        """
+        if not self._plans_store:
+            _LOGGER.error("Cannot aggregate - Storage Helper not initialized")
+            return False
+
+        _LOGGER.info(f"📊 Aggregating daily plan for {date_str}")
+
+        try:
+            # 1. Load detailed plan
+            plan = await self._load_plan_from_storage(date_str)
+            if not plan:
+                _LOGGER.warning(
+                    f"No detailed plan found for {date_str}, skipping aggregation"
+                )
+                return False
+
+            intervals = plan.get("intervals", [])
+            if not intervals:
+                _LOGGER.warning(f"Empty intervals for {date_str}, skipping aggregation")
+                return False
+
+            # 2. Calculate aggregates
+            total_cost = sum(iv.get("net_cost", 0) for iv in intervals)
+            total_solar = sum(iv.get("solar_kwh", 0) for iv in intervals)
+            total_consumption = sum(iv.get("consumption_kwh", 0) for iv in intervals)
+            total_grid_import = sum(iv.get("grid_import_kwh", 0) for iv in intervals)
+            total_grid_export = sum(iv.get("grid_export_kwh", 0) for iv in intervals)
+
+            soc_values = [
+                iv.get("battery_soc", 0)
+                for iv in intervals
+                if iv.get("battery_soc") is not None
+            ]
+            avg_battery_soc = sum(soc_values) / len(soc_values) if soc_values else 0
+            min_battery_soc = min(soc_values) if soc_values else 0
+            max_battery_soc = max(soc_values) if soc_values else 0
+
+            daily_aggregate = {
+                "planned": {
+                    "total_cost": round(total_cost, 2),
+                    "total_solar": round(total_solar, 2),
+                    "total_consumption": round(total_consumption, 2),
+                    "total_grid_import": round(total_grid_import, 2),
+                    "total_grid_export": round(total_grid_export, 2),
+                    "avg_battery_soc": round(avg_battery_soc, 1),
+                    "min_battery_soc": round(min_battery_soc, 1),
+                    "max_battery_soc": round(max_battery_soc, 1),
+                }
+            }
+
+            # 3. Save to Storage
+            data = await self._plans_store.async_load() or {}
+            if "daily" not in data:
+                data["daily"] = {}
+
+            data["daily"][date_str] = daily_aggregate
+            await self._plans_store.async_save(data)
+
+            _LOGGER.info(
+                f"✅ Daily aggregate saved for {date_str}: "
+                f"cost={total_cost:.2f} Kč, solar={total_solar:.2f} kWh, "
+                f"consumption={total_consumption:.2f} kWh"
+            )
+
+            # 4. Cleanup: Delete detailed plans older than 7 days
+            cutoff_date = (
+                datetime.strptime(date_str, "%Y-%m-%d").date() - timedelta(days=7)
+            ).strftime("%Y-%m-%d")
+
+            detailed = data.get("detailed", {})
+            dates_to_delete = [d for d in detailed.keys() if d < cutoff_date]
+
+            if dates_to_delete:
+                for old_date in dates_to_delete:
+                    del data["detailed"][old_date]
+                    _LOGGER.debug(
+                        f"🗑️ Deleted detailed plan for {old_date} (>7 days old)"
+                    )
+
+                await self._plans_store.async_save(data)
+                _LOGGER.info(f"Cleaned up {len(dates_to_delete)} old detailed plans")
+
+            return True
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Error aggregating daily plan for {date_str}: {e}", exc_info=True
+            )
+            return False
+
+    async def _aggregate_weekly(
+        self, week_str: str, start_date: str, end_date: str
+    ) -> bool:
+        """
+        Aggregate weekly plan into weekly summary.
+
+        Called every Sunday at 23:55 to summarize last week's daily plans.
+
+        Process:
+        1. Load daily plans for Mon-Sun (7 days)
+        2. Calculate weekly totals (sum of daily totals)
+        3. Save to weekly section
+        4. Delete daily plans older than 30 days
+        5. Delete weekly plans older than 52 weeks
+
+        Args:
+            week_str: Week identifier (e.g., "2025-W45")
+            start_date: Week start date (YYYY-MM-DD), Monday
+            end_date: Week end date (YYYY-MM-DD), Sunday
+
+        Returns:
+            True if aggregation successful
+        """
+        if not self._plans_store:
+            _LOGGER.error("Cannot aggregate - Storage Helper not initialized")
+            return False
+
+        _LOGGER.info(
+            f"📊 Aggregating weekly plan for {week_str} ({start_date} to {end_date})"
+        )
+
+        try:
+            # 1. Load daily plans for the week
+            data = await self._plans_store.async_load() or {}
+            daily_plans = data.get("daily", {})
+
+            # Get all days in week range
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+            week_days = []
+            current = start
+            while current <= end:
+                day_str = current.strftime("%Y-%m-%d")
+                if day_str in daily_plans:
+                    week_days.append(daily_plans[day_str])
+                current += timedelta(days=1)
+
+            if not week_days:
+                _LOGGER.warning(
+                    f"No daily plans found for {week_str}, skipping aggregation"
+                )
+                return False
+
+            # 2. Calculate weekly totals - PHASE 3.0 FIX: Use safe_nested_get
+            total_cost = sum(
+                safe_nested_get(day, "planned", "total_cost", default=0)
+                for day in week_days
+            )
+            total_solar = sum(
+                safe_nested_get(day, "planned", "total_solar", default=0)
+                for day in week_days
+            )
+            total_consumption = sum(
+                safe_nested_get(day, "planned", "total_consumption", default=0)
+                for day in week_days
+            )
+            total_grid_import = sum(
+                safe_nested_get(day, "planned", "total_grid_import", default=0)
+                for day in week_days
+            )
+            total_grid_export = sum(
+                safe_nested_get(day, "planned", "total_grid_export", default=0)
+                for day in week_days
+            )
+
+            weekly_aggregate = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "days_count": len(week_days),
+                "planned": {
+                    "total_cost": round(total_cost, 2),
+                    "total_solar": round(total_solar, 2),
+                    "total_consumption": round(total_consumption, 2),
+                    "total_grid_import": round(total_grid_import, 2),
+                    "total_grid_export": round(total_grid_export, 2),
+                },
+            }
+
+            # 3. Save to Storage
+            if "weekly" not in data:
+                data["weekly"] = {}
+
+            data["weekly"][week_str] = weekly_aggregate
+            await self._plans_store.async_save(data)
+
+            _LOGGER.info(
+                f"✅ Weekly aggregate saved for {week_str}: "
+                f"cost={total_cost:.2f} Kč, solar={total_solar:.2f} kWh, "
+                f"{len(week_days)} days"
+            )
+
+            # 4. Cleanup: Delete daily plans older than 30 days
+            cutoff_daily = (
+                datetime.strptime(end_date, "%Y-%m-%d").date() - timedelta(days=30)
+            ).strftime("%Y-%m-%d")
+
+            daily_to_delete = [d for d in daily_plans.keys() if d < cutoff_daily]
+
+            if daily_to_delete:
+                for old_date in daily_to_delete:
+                    del data["daily"][old_date]
+                    _LOGGER.debug(f"🗑️ Deleted daily plan for {old_date} (>30 days old)")
+
+                _LOGGER.info(f"Cleaned up {len(daily_to_delete)} old daily plans")
+
+            # 5. Cleanup: Delete weekly plans older than 52 weeks
+            weekly_plans = data.get("weekly", {})
+
+            # Parse week numbers and delete old ones
+            current_year_week = datetime.now().isocalendar()[:2]  # (year, week)
+            cutoff_week_number = current_year_week[1] - 52
+            cutoff_year = (
+                current_year_week[0]
+                if cutoff_week_number > 0
+                else current_year_week[0] - 1
+            )
+
+            weekly_to_delete = []
+            for week_key in weekly_plans.keys():
+                try:
+                    # Parse "2025-W45" format
+                    year, week = week_key.split("-W")
+                    year, week = int(year), int(week)
+
+                    # Simple check: if year is older or (same year but week older)
+                    if year < cutoff_year or (
+                        year == cutoff_year and week < cutoff_week_number
+                    ):
+                        weekly_to_delete.append(week_key)
+                except:
+                    continue
+
+            if weekly_to_delete:
+                for old_week in weekly_to_delete:
+                    del data["weekly"][old_week]
+                    _LOGGER.debug(
+                        f"🗑️ Deleted weekly plan for {old_week} (>52 weeks old)"
+                    )
+
+                _LOGGER.info(f"Cleaned up {len(weekly_to_delete)} old weekly plans")
+
+            # Save cleanup changes
+            if daily_to_delete or weekly_to_delete:
+                await self._plans_store.async_save(data)
+
+            return True
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Error aggregating weekly plan for {week_str}: {e}", exc_info=True
+            )
+            return False
+
+    async def build_timeline_extended(self) -> Dict[str, Any]:
         """
         Postavit rozšířenou timeline strukturu pro API.
 
@@ -4594,6 +5650,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Kombinuje historická data (včera) + mixed (dnes) + plánovaná (zítra)
         - Používá daily_plan_state pro historical tracking
         - Používá DP optimalizaci pro planned data
+        - PHASE 3.0: Načítá Storage Helper data pro včerejší baseline plan
 
         Returns:
             Dict s yesterday/today/tomorrow sekcemi + today_tile_summary
@@ -4603,10 +5660,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=1)
 
-        # Build timelines
-        yesterday_data = self._build_day_timeline(yesterday)
-        today_data = self._build_day_timeline(today)
-        tomorrow_data = self._build_day_timeline(tomorrow)
+        # PHASE 3.0: Load Storage Helper data JEDNOU pro všechny dny
+        storage_plans = {}
+        if self._plans_store:
+            try:
+                storage_plans = await self._plans_store.async_load() or {}
+                _LOGGER.debug(
+                    f"📦 Loaded Storage Helper data for timeline building: "
+                    f"{len(storage_plans.get('detailed', {}))} days"
+                )
+            except Exception as e:
+                _LOGGER.error(f"Failed to load Storage Helper data: {e}")
+                storage_plans = {}
+
+        # Build timelines (pass storage_plans to _build_day_timeline)
+        yesterday_data = await self._build_day_timeline(yesterday, storage_plans)
+        today_data = await self._build_day_timeline(today, storage_plans)
+        tomorrow_data = await self._build_day_timeline(tomorrow, storage_plans)
 
         # NOVÉ: Build today tile summary pro dlaždici "Dnes - Plnění plánu"
         today_tile_summary = self._build_today_tile_summary(
@@ -4620,7 +5690,473 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "today_tile_summary": today_tile_summary,  # ← NOVÉ pro dlaždici
         }
 
-    def build_unified_cost_tile(self) -> Dict[str, Any]:
+    async def build_detail_tabs(self, tab: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Build Detail Tabs data - agregace po CBB mode blocích.
+
+        Phase 3.0: Detail Tabs API
+        - Reuse build_timeline_extended() pro raw data
+        - Agreguje intervaly podle CBB módů pomocí _group_intervals_by_mode()
+        - Přidává mode_match detection (historical vs planned mode)
+        - Počítá adherence % (jak moc se držíme plánu)
+
+        FÁZE 5: Cache s TTL
+        - yesterday: cache bez TTL (historická data se nemění)
+        - today completed blocks: cache bez TTL (minulé intervaly se nemění)
+        - today planned blocks: cache 60s TTL (plán se může měnit)
+        - tomorrow: cache 60s TTL (plán se může měnit)
+
+        Args:
+            tab: Optional filter - "yesterday" | "today" | "tomorrow"
+                 None = vrátí všechny 3 taby
+
+        Returns:
+            Dict s mode_blocks pro každý tab:
+            {
+                "yesterday": {
+                    "date": "2025-11-05",
+                    "mode_blocks": [
+                        {
+                            "mode_historical": "HOME I",
+                            "mode_planned": "HOME I",
+                            "mode_match": true,
+                            "status": "completed",
+                            "start_time": "00:00",
+                            "end_time": "02:30",
+                            "interval_count": 10,
+                            "duration_hours": 2.5,
+                            "cost_historical": 12.50,
+                            "cost_planned": 12.00,
+                            "cost_delta": 0.50,
+                            "battery_soc_start": 50.0,
+                            "battery_soc_end": 45.2,
+                            "solar_total_kwh": 0.0,
+                            "consumption_total_kwh": 1.8,
+                            "grid_import_total_kwh": 1.8,
+                            "grid_export_total_kwh": 0.0,
+                            "adherence_pct": 100
+                        }
+                    ],
+                    "summary": {
+                        "total_cost": 28.50,
+                        "overall_adherence": 65,
+                        "mode_switches": 8
+                    }
+                },
+                "today": {...},
+                "tomorrow": {...}
+            }
+        """
+        # FÁZE 5: Check cache first
+        now = dt_util.now()
+        tabs_to_process = []
+        if tab is None:
+            tabs_to_process = ["yesterday", "today", "tomorrow"]
+        elif tab in ["yesterday", "today", "tomorrow"]:
+            tabs_to_process = [tab]
+        else:
+            _LOGGER.warning(f"Invalid tab requested: {tab}, returning all tabs")
+            tabs_to_process = ["yesterday", "today", "tomorrow"]
+
+        result = {}
+        tabs_to_build = []  # Taby, které nejsou v cache nebo jsou expired
+
+        for tab_name in tabs_to_process:
+            cache_key = f"{tab_name}_{now.date().isoformat()}"
+            cached = self._detail_tabs_cache.get(cache_key)
+
+            if cached:
+                # Check TTL
+                cache_timestamp = cached.get("timestamp")
+                cache_ttl = cached.get("ttl")  # None = infinite, int = seconds
+
+                if cache_ttl is None:
+                    # Infinite TTL - use cache
+                    result[tab_name] = cached["data"]
+                    _LOGGER.debug(f"[Detail Tabs Cache] HIT (infinite) for {cache_key}")
+                    continue
+                elif (
+                    cache_timestamp
+                    and (now - cache_timestamp).total_seconds() < cache_ttl
+                ):
+                    # TTL not expired - use cache
+                    result[tab_name] = cached["data"]
+                    age = (now - cache_timestamp).total_seconds()
+                    _LOGGER.debug(
+                        f"[Detail Tabs Cache] HIT ({age:.1f}s old, TTL={cache_ttl}s) for {cache_key}"
+                    )
+                    continue
+                else:
+                    # TTL expired
+                    age = (
+                        (now - cache_timestamp).total_seconds()
+                        if cache_timestamp
+                        else 0
+                    )
+                    _LOGGER.debug(
+                        f"[Detail Tabs Cache] EXPIRED ({age:.1f}s old, TTL={cache_ttl}s) for {cache_key}"
+                    )
+
+            # Cache miss nebo expired - build it
+            tabs_to_build.append(tab_name)
+            _LOGGER.debug(f"[Detail Tabs Cache] MISS for {cache_key}")
+
+        # Pokud všechny taby v cache, vrátíme result
+        if not tabs_to_build:
+            return result
+
+        # 1. Získat raw timeline data (reuse!) - pouze když potřebujeme
+        # PHASE 3.0: Async call to load Storage Helper data
+        timeline_extended = await self.build_timeline_extended()
+
+        # 2. Pro každý tab co potřebujeme buildit - zpracovat intervaly na mode bloky
+        for tab_name in tabs_to_build:
+            tab_data = timeline_extended.get(tab_name, {})
+            intervals = tab_data.get("intervals", [])
+            date_str = tab_data.get("date", "")
+
+            if not intervals:
+                tab_result = {
+                    "date": date_str,
+                    "mode_blocks": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                    },
+                }
+            else:
+                # 3. Agregovat intervaly podle módů
+                mode_blocks = self._build_mode_blocks_for_tab(intervals, tab_name)
+
+                # 4. Spočítat summary
+                summary = self._calculate_tab_summary(mode_blocks, intervals)
+
+                tab_result = {
+                    "date": date_str,
+                    "mode_blocks": mode_blocks,
+                    "summary": summary,
+                }
+
+            # 5. FÁZE 5: Store in cache with appropriate TTL
+            cache_key = f"{tab_name}_{now.date().isoformat()}"
+            ttl = self._get_detail_tab_ttl(tab_name, now)
+
+            self._detail_tabs_cache[cache_key] = {
+                "data": tab_result,
+                "timestamp": now,
+                "ttl": ttl,
+            }
+
+            ttl_str = "infinite" if ttl is None else f"{ttl}s"
+            _LOGGER.debug(f"[Detail Tabs Cache] WRITE {cache_key} (TTL={ttl_str})")
+
+            result[tab_name] = tab_result
+
+        return result
+
+    def _get_detail_tab_ttl(self, tab_name: str, now: datetime) -> Optional[int]:
+        """
+        Určit TTL pro Detail Tab cache.
+
+        FÁZE 5: Cache TTL Strategy
+        - yesterday: None (infinite) - historická data se nemění
+        - today: Split strategy
+          - completed blocks (historical): None (infinite)
+          - planned blocks (future): 60s
+          - Poznámka: Pro today vracíme 60s protože mix obsahuje planned data
+        - tomorrow: 60s - plánovaná data se mohou měnit (nové OTE ceny po 13:00)
+
+        Args:
+            tab_name: "yesterday" | "today" | "tomorrow"
+            now: Current datetime
+
+        Returns:
+            None = infinite TTL, int = TTL v sekundách
+        """
+        if tab_name == "yesterday":
+            # Historical data never changes
+            return None
+        elif tab_name == "today":
+            # Today contains mix - use 60s TTL because of planned part
+            # Future optimization: Split cache per block status
+            return 60
+        elif tab_name == "tomorrow":
+            # Planned data can change (new prices after 13:00)
+            return 60
+        else:
+            # Unknown tab - safe default
+            _LOGGER.warning(f"Unknown tab_name for TTL: {tab_name}")
+            return 60
+
+    def _build_mode_blocks_for_tab(
+        self, intervals: List[Dict[str, Any]], tab_name: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Postavit mode bloky pro jeden tab.
+
+        Args:
+            intervals: Seznam intervalů z _build_day_timeline()
+            tab_name: "yesterday" | "today" | "tomorrow"
+
+        Returns:
+            Seznam mode bloků s detailními metrikami
+        """
+        if not intervals:
+            return []
+
+        # Určit data_type podle tabu
+        now = dt_util.now()
+
+        if tab_name == "yesterday":
+            # VČERA - pouze historical data
+            data_type = "completed"
+        elif tab_name == "today":
+            # DNES - historical (minulost) + planned (budoucnost)
+            # Potřebujeme rozdělít na completed vs future
+            data_type = "both"
+        else:  # tomorrow
+            # ZÍTRA - pouze planned
+            data_type = "planned"
+
+        # Použít existující _group_intervals_by_mode() pro agregaci
+        mode_groups = self._group_intervals_by_mode(intervals, data_type)
+
+        _LOGGER.info(
+            f"[build_mode_blocks_for_tab] tab={tab_name}, data_type={data_type}, intervals_count={len(intervals)}, mode_groups_count={len(mode_groups)}"
+        )
+
+        # Rozšířit o detailní metriky pro Detail Tabs
+        mode_blocks = []
+        for group in mode_groups:
+            group_intervals = group.get("intervals", [])
+            if not group_intervals:
+                continue
+
+            # Základní info z group
+            block = {
+                "mode_historical": group.get("mode", "Unknown"),
+                "mode_planned": group.get("mode", "Unknown"),  # Pro planned-only
+                "mode_match": True,  # Default pro planned-only
+                "status": self._determine_block_status(
+                    group_intervals[0], tab_name, now
+                ),
+                "start_time": group.get("start_time", ""),
+                "end_time": group.get("end_time", ""),
+                "interval_count": group.get("interval_count", 0),
+            }
+
+            # Duration v hodinách
+            duration_hours = block["interval_count"] * 0.25  # 15min = 0.25h
+            block["duration_hours"] = round(duration_hours, 2)
+
+            # Náklady
+            if data_type in ["completed", "both"]:
+                block["cost_historical"] = group.get("actual_cost", 0.0)
+                block["cost_planned"] = group.get("planned_cost", 0.0)
+                block["cost_delta"] = group.get("delta", 0.0)
+
+                # Mode match detection (porovnat historical vs planned mode)
+                historical_mode = self._get_mode_from_intervals(
+                    group_intervals, "actual"
+                )
+                planned_mode = self._get_mode_from_intervals(group_intervals, "planned")
+                block["mode_historical"] = historical_mode or "Unknown"
+                block["mode_planned"] = planned_mode or "Unknown"
+                block["mode_match"] = historical_mode == planned_mode
+            else:  # planned-only
+                block["cost_planned"] = group.get("planned_cost", 0.0)
+                block["cost_historical"] = None
+                block["cost_delta"] = None
+
+            # Battery SOC (začátek a konec bloku)
+            first_interval = group_intervals[0]
+            last_interval = group_intervals[-1]
+
+            if data_type in ["completed", "both"]:
+                block["battery_soc_start"] = safe_nested_get(
+                    first_interval, "actual", "battery_kwh", default=0.0
+                )
+                block["battery_soc_end"] = safe_nested_get(
+                    last_interval, "actual", "battery_kwh", default=0.0
+                )
+            else:
+                block["battery_soc_start"] = safe_nested_get(
+                    first_interval, "planned", "battery_kwh", default=0.0
+                )
+                block["battery_soc_end"] = safe_nested_get(
+                    last_interval, "planned", "battery_kwh", default=0.0
+                )
+
+            # Energie totals
+            solar_total = 0.0
+            consumption_total = 0.0
+            grid_import_total = 0.0
+            grid_export_total = 0.0
+
+            for iv in group_intervals:
+                if data_type in ["completed", "both"]:
+                    solar_total += safe_nested_get(iv, "actual", "solar_kwh", default=0)
+                    consumption_total += safe_nested_get(
+                        iv, "actual", "consumption_kwh", default=0
+                    )
+                    grid_import_total += safe_nested_get(
+                        iv, "actual", "grid_import", default=0
+                    )
+                    grid_export_total += safe_nested_get(
+                        iv, "actual", "grid_export", default=0
+                    )
+                else:
+                    solar_total += safe_nested_get(
+                        iv, "planned", "solar_kwh", default=0
+                    )
+                    consumption_total += safe_nested_get(
+                        iv, "planned", "consumption_kwh", default=0
+                    )
+                    grid_import_total += safe_nested_get(
+                        iv, "planned", "grid_import", default=0
+                    )
+                    grid_export_total += safe_nested_get(
+                        iv, "planned", "grid_export", default=0
+                    )
+
+            block["solar_total_kwh"] = round(solar_total, 2)
+            block["consumption_total_kwh"] = round(consumption_total, 2)
+            block["grid_import_total_kwh"] = round(grid_import_total, 2)
+            block["grid_export_total_kwh"] = round(grid_export_total, 2)
+
+            # Adherence % (pro completed bloky)
+            if data_type in ["completed", "both"] and block["mode_match"]:
+                block["adherence_pct"] = 100
+            elif data_type in ["completed", "both"]:
+                # Mode nesouhlasí - částečná adherence
+                block["adherence_pct"] = 0
+            else:
+                # Planned-only - N/A
+                block["adherence_pct"] = None
+
+            mode_blocks.append(block)
+
+        return mode_blocks
+
+    def _determine_block_status(
+        self, interval: Dict[str, Any], tab_name: str, now: datetime
+    ) -> str:
+        """
+        Určit status bloku: completed | current | planned.
+
+        Args:
+            interval: První interval v bloku
+            tab_name: "yesterday" | "today" | "tomorrow"
+            now: Aktuální čas
+
+        Returns:
+            "completed" | "current" | "planned"
+        """
+        if tab_name == "yesterday":
+            return "completed"
+        elif tab_name == "tomorrow":
+            return "planned"
+        else:  # today
+            interval_time_str = interval.get("time", "")
+            if not interval_time_str:
+                return "planned"
+
+            try:
+                interval_time = datetime.fromisoformat(interval_time_str)
+                if interval_time.tzinfo is None:
+                    interval_time = dt_util.as_local(interval_time)
+
+                current_minute = (now.minute // 15) * 15
+                current_interval_time = now.replace(
+                    minute=current_minute, second=0, microsecond=0
+                )
+
+                if interval_time < current_interval_time:
+                    return "completed"
+                elif interval_time == current_interval_time:
+                    return "current"
+                else:
+                    return "planned"
+            except:
+                return "planned"
+
+    def _get_mode_from_intervals(
+        self, intervals: List[Dict[str, Any]], key: str
+    ) -> Optional[str]:
+        """
+        Získat mode z intervalů (actual nebo planned).
+
+        Args:
+            intervals: Seznam intervalů
+            key: "actual" nebo "planned"
+
+        Returns:
+            Mode name nebo None
+        """
+        for interval in intervals:
+            data = interval.get(key)
+            if data and isinstance(data, dict):
+                mode = data.get("mode")
+                if isinstance(mode, int):
+                    return CBB_MODE_NAMES.get(mode, f"Mode {mode}")
+                elif mode:
+                    return str(mode)
+        return None
+
+    def _calculate_tab_summary(
+        self, mode_blocks: List[Dict[str, Any]], intervals: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Spočítat summary pro tab.
+
+        Args:
+            mode_blocks: Seznam mode bloků
+            intervals: Raw intervaly
+
+        Returns:
+            Summary dict s total_cost, adherence, mode_switches
+        """
+        if not mode_blocks:
+            return {
+                "total_cost": 0.0,
+                "overall_adherence": 100,
+                "mode_switches": 0,
+            }
+
+        # Total cost (historical pokud máme, jinak planned)
+        total_cost = 0.0
+        adherent_blocks = 0
+        total_blocks = len(mode_blocks)
+
+        for block in mode_blocks:
+            cost = block.get("cost_historical")
+            if cost is not None:
+                total_cost += cost
+            else:
+                total_cost += block.get("cost_planned", 0.0)
+
+            # Adherence counting
+            if block.get("adherence_pct") == 100:
+                adherent_blocks += 1
+
+        # Overall adherence %
+        overall_adherence = (
+            round((adherent_blocks / total_blocks) * 100, 1)
+            if total_blocks > 0
+            else 100
+        )
+
+        # Mode switches = počet bloků - 1
+        mode_switches = max(0, total_blocks - 1)
+
+        return {
+            "total_cost": round(total_cost, 2),
+            "overall_adherence": overall_adherence,
+            "mode_switches": mode_switches,
+        }
+
+    async def build_unified_cost_tile(self) -> Dict[str, Any]:
         """
         Build Unified Cost Tile data.
 
@@ -4662,7 +6198,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Build data for each day
         try:
-            today_data = self._build_today_cost_data()
+            today_data = await self._build_today_cost_data()
         except Exception as e:
             _LOGGER.error(f"Failed to build today cost data: {e}", exc_info=True)
             today_data = {
@@ -4694,7 +6230,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
         try:
-            tomorrow_data = self._build_tomorrow_cost_data()
+            tomorrow_data = await self._build_tomorrow_cost_data()
         except Exception as e:
             _LOGGER.error(f"Failed to build tomorrow cost data: {e}", exc_info=True)
             tomorrow_data = {
@@ -4860,8 +6396,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 except:
                     pass
 
-            # Odstranit raw intervals z výstupu
-            del group["intervals"]
+            # PHASE 3.0: KEEP intervals for Detail Tabs API
+            # Původně se mazaly pro úsporu paměti, ale Detail Tabs je potřebuje
+            # del group["intervals"]
 
         return groups
 
@@ -5002,7 +6539,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return text
 
-    def _analyze_yesterday_performance(self) -> str:
+    async def _analyze_yesterday_performance(self) -> str:
         """
         Analyze yesterday's performance - post-mortem of plan vs actual.
 
@@ -5012,7 +6549,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         now = dt_util.now()
         yesterday = (now - timedelta(days=1)).date()
 
-        yesterday_timeline = self._build_day_timeline(yesterday)
+        yesterday_timeline = await self._build_day_timeline(yesterday)
         if not yesterday_timeline:
             return "Včera: Žádná data k dispozici."
 
@@ -5078,7 +6615,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return text
 
-    def _analyze_tomorrow_plan(self) -> str:
+    async def _analyze_tomorrow_plan(self) -> str:
         """
         Analyze tomorrow's plan - expected production, consumption, charging, battery state.
 
@@ -5088,7 +6625,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         now = dt_util.now()
         tomorrow = (now + timedelta(days=1)).date()
 
-        tomorrow_timeline = self._build_day_timeline(tomorrow)
+        tomorrow_timeline = await self._build_day_timeline(tomorrow)
         if not tomorrow_timeline:
             return "Zítra: Žádný plán k dispozici."
 
@@ -5096,23 +6633,30 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not intervals:
             return "Zítra: Žádné intervaly naplánované."
 
-        # Aggregate planned metrics
-        total_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in intervals)
-        total_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in intervals)
-        total_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
+        # Aggregate planned metrics - PHASE 3.0 FIX: Use safe_nested_get
+        total_solar = sum(
+            safe_nested_get(i, "planned", "solar_kwh", default=0) for i in intervals
+        )
+        total_load = sum(
+            safe_nested_get(i, "planned", "load_kwh", default=0) for i in intervals
+        )
+        total_cost = sum(
+            safe_nested_get(i, "planned", "net_cost", default=0) for i in intervals
+        )
 
         # Find charging intervals (HOME_UPS mode)
         charging_intervals = [
-            i for i in intervals if i.get("planned", {}).get("mode") == "HOME_UPS"
+            i for i in intervals if safe_nested_get(i, "planned", "mode") == "HOME_UPS"
         ]
         total_charging = sum(
-            i.get("planned", {}).get("grid_charge_kwh", 0) for i in charging_intervals
+            safe_nested_get(i, "planned", "grid_charge_kwh", default=0)
+            for i in charging_intervals
         )
 
         # Get last interval battery state
         last_interval = intervals[-1] if intervals else None
         final_battery = (
-            last_interval.get("planned", {}).get("battery_kwh", 0)
+            safe_nested_get(last_interval, "planned", "battery_kwh", default=0)
             if last_interval
             else 0
         )
@@ -5122,7 +6666,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Average spot price
         avg_price = (
-            sum(i.get("planned", {}).get("spot_price", 0) for i in intervals)
+            sum(
+                safe_nested_get(i, "planned", "spot_price", default=0)
+                for i in intervals
+            )
             / len(intervals)
             if intervals
             else 0
@@ -5156,7 +6703,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return text
 
-    def _build_today_cost_data(self) -> Dict[str, Any]:
+    async def _build_today_cost_data(self) -> Dict[str, Any]:
         """
         Build today's cost data with actual vs plan tracking.
 
@@ -5166,7 +6713,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         today = now.date()
 
         # Get today's timeline
-        today_timeline = self._build_day_timeline(today)
+        today_timeline = await self._build_day_timeline(today)
         _LOGGER.info(
             f"[UCT] _build_day_timeline returned: type={type(today_timeline)}, value={today_timeline is not None}"
         )
@@ -5240,6 +6787,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         for interval in intervals:
+            # PHASE 3.0 FIX: Skip None intervals
+            if interval is None:
+                continue
+
+            # PHASE 3.0 FIX: Type check
+            if not isinstance(interval, dict):
+                continue
+
             interval_time_str = interval.get("time", "")
             if not interval_time_str:
                 continue
@@ -5260,11 +6815,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 future.append(interval)
 
-        # Calculate totals
-        plan_completed = sum(c.get("planned", {}).get("net_cost", 0) for c in completed)
-        actual_completed = sum(
-            c.get("actual", {}).get("net_cost", 0) for c in completed
-        )
+        # Calculate totals - PHASE 3.0 FIX: Use safe_get_cost helper
+        completed = [c for c in completed if c is not None]
+        future = [f for f in future if f is not None]
+
+        # PHASE 3.0 FIX: Safe sum with None handling
+        def safe_get_cost(interval: Dict[str, Any], key: str) -> float:
+            """Safely get cost from interval, handling None values."""
+            data = interval.get(key)
+            if data is None:
+                return 0.0
+            if isinstance(data, dict):
+                return float(data.get("net_cost", 0))
+            return 0.0
+
+        plan_completed = sum(safe_get_cost(c, "planned") for c in completed)
+        actual_completed = sum(safe_get_cost(c, "actual") for c in completed)
 
         _LOGGER.debug(
             f"💰 Cost calculation: plan_completed={plan_completed:.2f}, "
@@ -5274,13 +6840,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if completed:
             first = completed[0]
             _LOGGER.debug(
-                f"   First completed: plan={first.get('planned', {}).get('net_cost', 0):.2f}, "
-                f"actual={first.get('actual', {}).get('net_cost', 0):.2f}"
+                f"   First completed: plan={safe_nested_get(first, 'planned', 'net_cost', default=0):.2f}, "
+                f"actual={safe_nested_get(first, 'actual', 'net_cost', default=0):.2f}"
             )
 
-        plan_future = sum(f.get("planned", {}).get("net_cost", 0) for f in future)
+        plan_future = sum(
+            safe_nested_get(f, "planned", "net_cost", default=0) for f in future
+        )
         if active:
-            plan_future += active.get("planned", {}).get("net_cost", 0)
+            plan_future += safe_nested_get(active, "planned", "net_cost", default=0)
 
         plan_total = plan_completed + plan_future
         actual_total = actual_completed  # Skutečnost jen za completed
@@ -5447,8 +7015,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         today_tooltip = self._analyze_today_variance(
             intervals, plan_total, eod_predicted
         )
-        yesterday_tooltip = self._analyze_yesterday_performance()
-        tomorrow_tooltip = self._analyze_tomorrow_plan()
+        yesterday_tooltip = await self._analyze_yesterday_performance()
+        tomorrow_tooltip = await self._analyze_tomorrow_plan()
 
         return {
             "plan_total_cost": round(plan_total, 2),
@@ -5517,16 +7085,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Get from archive
         if yesterday in self._daily_plans_archive:
             archive_data = self._daily_plans_archive[yesterday]
-            actual_intervals = archive_data.get("actual_intervals", [])
+            actual_intervals = archive_data.get("actual", [])
 
             # Calculate from archived data
             plan_total = sum(
-                interval.get("planned", {}).get("net_cost", 0)
-                for interval in actual_intervals
+                interval.get("net_cost", 0) for interval in archive_data.get("plan", [])
             )
             actual_total = sum(
-                interval.get("actual", {}).get("net_cost", 0)
-                for interval in actual_intervals
+                interval.get("net_cost", 0) for interval in actual_intervals
             )
             delta = actual_total - plan_total
 
@@ -5654,7 +7220,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "note": "No archive data available",
             }
 
-    def _build_tomorrow_cost_data(self) -> Dict[str, Any]:
+    async def _build_tomorrow_cost_data(self) -> Dict[str, Any]:
         """
         Build tomorrow's cost data (plan only).
 
@@ -5663,7 +7229,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         tomorrow = dt_util.now().date() + timedelta(days=1)
 
         # Get tomorrow's timeline
-        tomorrow_timeline = self._build_day_timeline(tomorrow)
+        tomorrow_timeline = await self._build_day_timeline(tomorrow)
         intervals = tomorrow_timeline.get("intervals", [])
 
         if not intervals:
@@ -5721,15 +7287,137 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "planned_groups": planned_groups,
         }
 
-    def _build_day_timeline(self, date: datetime.date) -> Dict[str, Any]:
+    async def _fetch_mode_history_from_recorder(
+        self, start_time: datetime, end_time: datetime
+    ) -> List[Dict[str, Any]]:
+        """
+        Načíst historical režimy ze senzoru box_prms_mode z HA Recorderu.
+
+        Phase 3.0: Historical Mode Tracking
+        - Implementuje Recorder-based historical fetching podle dokumentace
+        - "Historical se NEUKLÁDÁ (z Recorderu on-demand)"
+        - Načítá změny režimu ze sensor.oig_{box_id}_box_prms_mode
+
+        Args:
+            start_time: Začátek periody (timezone-aware)
+            end_time: Konec periody (timezone-aware)
+
+        Returns:
+            List intervalů s actual modes:
+            [
+                {
+                    "time": "2025-11-06T00:51:44+00:00",
+                    "mode_name": "Home UPS",
+                    "mode": 5
+                },
+                ...
+            ]
+        """
+        if not self._hass:
+            _LOGGER.warning("HASS not available, cannot fetch mode history")
+            return []
+
+        sensor_id = f"sensor.oig_{self._box_id}_box_prms_mode"
+
+        try:
+            from homeassistant.components.recorder import history
+
+            # Načíst změny stavu ze sensoru
+            history_data = await self._hass.async_add_executor_job(
+                history.state_changes_during_period,
+                self._hass,
+                start_time,
+                end_time,
+                sensor_id,
+            )
+
+            if not history_data or sensor_id not in history_data:
+                _LOGGER.debug(
+                    f"No mode history found for {sensor_id} between {start_time} - {end_time}"
+                )
+                return []
+
+            states = history_data[sensor_id]
+            if not states:
+                return []
+
+            # Konvertovat stavy na intervaly
+            mode_intervals = []
+            for state in states:
+                mode_name = state.state
+                if mode_name in ["unavailable", "unknown", None]:
+                    continue
+
+                # Mapovat mode name na mode ID
+                mode_id = self._map_mode_name_to_id(mode_name)
+
+                mode_intervals.append(
+                    {
+                        "time": state.last_changed.isoformat(),
+                        "mode_name": mode_name,
+                        "mode": mode_id,
+                    }
+                )
+
+            _LOGGER.debug(
+                f"📊 Fetched {len(mode_intervals)} mode changes from Recorder "
+                f"for {sensor_id} ({start_time.strftime('%Y-%m-%d %H:%M')} - {end_time.strftime('%Y-%m-%d %H:%M')})"
+            )
+
+            return mode_intervals
+
+        except ImportError:
+            _LOGGER.error("Recorder component not available")
+            return []
+        except Exception as e:
+            _LOGGER.error(f"Error fetching mode history from Recorder: {e}")
+            return []
+
+    def _map_mode_name_to_id(self, mode_name: str) -> int:
+        """
+        Mapovat mode name (z sensoru) na mode ID.
+
+        Args:
+            mode_name: Např. "Home 1", "Home UPS", "Home 3"
+
+        Returns:
+            Mode ID (0-5)
+        """
+        # Mapping podle CBB_MODE_NAMES
+        mode_mapping = {
+            "Home 1": 0,  # HOME I
+            "Home 2": 1,  # HOME II
+            "Home 3": 2,  # HOME III
+            "Home UPS": 5,  # HOME UPS
+            "Backup": 4,  # BACKUP
+            "Grid": 3,  # GRID
+        }
+
+        # Normalizovat string (remove extra spaces, case-insensitive)
+        normalized = mode_name.strip()
+
+        mode_id = mode_mapping.get(normalized)
+        if mode_id is None:
+            _LOGGER.warning(
+                f"Unknown mode name '{mode_name}', using fallback mode ID 0 (HOME I)"
+            )
+            return 0
+
+        return mode_id
+
+    async def _build_day_timeline(
+        self, date: date, storage_plans: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
 
         Postavit timeline pro jeden den.
 
+        Phase 3.0: Načítá historical MODES z HA Recorderu (on-demand)
         Phase 2.9: Načítá actual_intervals z JSON storage místo z paměti.
 
         Args:
             date: Datum dne
+            storage_plans: Optional Storage Helper data (pro planned intervaly včera)
 
         Returns:
             Dict s intervals a summary pro daný den
@@ -5755,126 +7443,157 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # ZÍTRA - pouze planned
             source = "planned_only"
 
+        # PHASE 3.0: Načíst historical modes z Recorderu (pro včera a dnes)
+        historical_modes_lookup = {}
+        if source in ["historical_only", "mixed"] and self._hass:
+            try:
+                # Determine fetch end time
+                if source == "historical_only":
+                    # Celý včerejšek
+                    fetch_end = day_end
+                else:  # mixed (today)
+                    # Pouze do TEĎKA (ne budoucnost)
+                    fetch_end = now
+
+                # Await async method directly (we're in async context now!)
+                mode_history = await self._fetch_mode_history_from_recorder(
+                    day_start, fetch_end
+                )
+
+                # Build lookup table: time -> mode_data
+                for mode_entry in mode_history:
+                    time_key = mode_entry.get("time", "")
+                    if time_key:
+                        # Normalize to HH:MM:SS format for matching with intervals
+                        try:
+                            dt = datetime.fromisoformat(time_key)
+                            # Round to 15min interval
+                            minute = (dt.minute // 15) * 15
+                            rounded_dt = dt.replace(
+                                minute=minute, second=0, microsecond=0
+                            )
+                            time_str = rounded_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            historical_modes_lookup[time_str] = mode_entry
+                        except:
+                            continue
+
+                _LOGGER.debug(
+                    f"📊 Loaded {len(historical_modes_lookup)} historical mode intervals "
+                    f"from Recorder for {date_str} ({source})"
+                )
+
+            except Exception as e:
+                _LOGGER.error(
+                    f"Failed to fetch historical modes from Recorder for {date_str}: {e}"
+                )
+                historical_modes_lookup = {}
+
         # Build intervals podle source
         if source == "historical_only":
-            # VČERA - načíst z JSON storage (SYNCHRONNÍ READ - může blokovat, ale pro včera OK)
-            import asyncio
+            # ========================================
+            # VČERA - historical modes z Recorderu + planned z Storage
+            # Historical modes: Z Recorderu (actual)
+            # Planned data: Z Storage Helper (baseline plan)
+            # ========================================
 
-            loop = asyncio.get_event_loop()
+            # Pro včera NEMÁME planned data v paměti (optimal_timeline je pro dnes+zítra)
+            # ALE máme baseline plan v Storage Helper!
 
-            try:
-                # Pokusit se načíst synchronně (non-blocking fallback)
-                storage_dir = (
-                    self._hass.config.path(".storage", "oig_cloud_daily_plans")
-                    if self._hass
-                    else None
+            # Získat planned intervaly z Storage
+            planned_intervals_map = {}
+            if storage_plans:
+                yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
+                planned_intervals_list = yesterday_plan.get("intervals", [])
+
+                # Build lookup table: time -> planned_data
+                for planned_entry in planned_intervals_list:
+                    time_key = planned_entry.get("time", "")
+                    if time_key:
+                        # Normalize to full datetime format
+                        try:
+                            # time is "HH:MM" format
+                            planned_dt = datetime.combine(
+                                date, datetime.strptime(time_key, "%H:%M").time()
+                            )
+                            planned_dt = dt_util.as_local(planned_dt)
+                            time_str = planned_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            planned_intervals_map[time_str] = planned_entry
+                        except:
+                            continue
+
+                _LOGGER.debug(
+                    f"📊 Loaded {len(planned_intervals_map)} planned intervals "
+                    f"from Storage for {date_str}"
                 )
-                if storage_dir:
-                    import os
 
-                    file_path = os.path.join(storage_dir, f"{date_str}.json")
-                    if os.path.exists(file_path):
-                        with open(file_path, "r") as f:
-                            import json
+            # Build 96 intervalů s historical + planned data
+            interval_time = day_start
+            while interval_time.date() == date:
+                interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
-                            archived_plan = json.load(f)
-                    else:
-                        archived_plan = None
-                else:
-                    archived_plan = None
-            except Exception as e:
-                _LOGGER.warning(f"Failed to load archived plan for {date_str}: {e}")
-                archived_plan = None
+                # Historical mode z Recorderu
+                mode_from_recorder = historical_modes_lookup.get(interval_time_str)
 
-            if archived_plan:
-                # Máme archivovaný plán - použít actual_intervals jako historii
-                actual_intervals = archived_plan.get("actual_intervals", [])
-                planned_timeline = archived_plan.get("planned_timeline", [])
+                # Planned data z Storage
+                planned_from_storage = planned_intervals_map.get(interval_time_str, {})
 
-                for planned in planned_timeline:
-                    interval_time_str = planned.get("time", "")
-                    if not interval_time_str:
-                        continue
+                # Build interval data
+                actual_data = {}
+                if mode_from_recorder:
+                    actual_data = {
+                        "mode": mode_from_recorder.get("mode", 0),
+                        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+                        # Ostatní metriky nemáme pro včera (netrackujeme zpětně)
+                        "consumption_kwh": 0,
+                        "solar_kwh": 0,
+                        "battery_soc": 0,
+                        "grid_import_kwh": 0,
+                        "grid_export_kwh": 0,
+                        "net_cost": 0,
+                        "savings": 0,
+                    }
 
-                    # Najít actual data pro tento interval
-                    actual_entry = next(
-                        (
-                            a
-                            for a in actual_intervals
-                            if a.get("time") == interval_time_str
+                planned_data = {}
+                if planned_from_storage:
+                    planned_data = {
+                        "mode": planned_from_storage.get("mode", 0),
+                        "mode_name": planned_from_storage.get("mode_name", "Unknown"),
+                        "consumption_kwh": planned_from_storage.get(
+                            "consumption_kwh", 0
                         ),
-                        None,
-                    )
+                        "solar_kwh": planned_from_storage.get("solar_kwh", 0),
+                        "battery_soc": planned_from_storage.get("battery_soc", 0),
+                        "net_cost": planned_from_storage.get("net_cost", 0),
+                    }
 
-                    planned_data = self._format_planned_data(planned)
+                # Mode match detection
+                mode_match = None
+                if actual_data and planned_data:
+                    actual_mode = actual_data.get("mode")
+                    planned_mode = planned_data.get("mode")
+                    mode_match = actual_mode == planned_mode
 
-                    intervals.append(
-                        {
-                            "time": interval_time_str,
-                            "status": "historical",
-                            "planned": planned_data,
-                            "actual": (
-                                self._format_actual_data(
-                                    actual_entry.get("actual"), planned_data
-                                )
-                                if actual_entry
-                                else None
-                            ),
-                            "delta": (
-                                actual_entry.get("delta") if actual_entry else None
-                            ),
-                        }
-                    )
-            # Else: prázdné intervaly (plán již archivován nebo neexistuje)
+                intervals.append(
+                    {
+                        "time": interval_time_str,
+                        "status": "historical",
+                        "planned": planned_data,
+                        "actual": actual_data,
+                        "delta": None,
+                        "mode_match": mode_match,
+                    }
+                )
+
+                interval_time += timedelta(minutes=15)
 
         elif source == "mixed":
-            # DNES: Combine historical + planned
-            # NOVĚ: Načíst actual_intervals z JSON storage (stejný synchronní způsob jako včera)
-            try:
-                storage_dir = (
-                    self._hass.config.path(".storage", "oig_cloud_daily_plans")
-                    if self._hass
-                    else None
-                )
-                _LOGGER.debug(
-                    f"🔍 _build_day_timeline MIXED: hass={self._hass is not None}, "
-                    f"storage_dir={storage_dir}, date={date_str}"
-                )
-                if storage_dir:
-                    import os
+            # ========================================
+            # DNES: Historical (Recorder) + Planned (memory)
+            # Planned data: Z self._mode_optimization_result (v paměti!)
+            # Historical modes: Z Recorderu
+            # ========================================
 
-                    file_path = os.path.join(storage_dir, f"{date_str}.json")
-                    _LOGGER.debug(
-                        f"🔍 Checking file: {file_path}, exists={os.path.exists(file_path)}"
-                    )
-                    if os.path.exists(file_path):
-                        with open(file_path, "r") as f:
-                            import json
-
-                            stored_plan = json.load(f)
-                        actual_intervals = stored_plan.get("actual_intervals", [])
-                        _LOGGER.debug(
-                            f"📂 Loaded {len(actual_intervals)} actual intervals from JSON for {date_str}"
-                        )
-                    else:
-                        actual_intervals = []
-                        _LOGGER.debug(
-                            f"No JSON storage found for {date_str}, using empty actual_intervals"
-                        )
-                else:
-                    actual_intervals = []
-            except Exception as e:
-                _LOGGER.warning(
-                    f"Failed to load today's actual intervals from JSON: {e}"
-                )
-                # FALLBACK: Zkusit z paměti
-                actual_intervals = (
-                    self._daily_plan_state.get("actual_intervals", [])
-                    if hasattr(self, "_daily_plan_state")
-                    else []
-                )
-
-            # Planned timeline vzít z aktuálního DP výsledku (v paměti - fresh data)
+            # Get planned timeline z paměti (NENÍ file I/O!)
             planned_timeline = []
             if (
                 hasattr(self, "_mode_optimization_result")
@@ -5883,106 +7602,78 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 planned_timeline = self._mode_optimization_result.get(
                     "optimal_timeline", []
                 )
-
-                # Build lookup table pro planned values
-                planned_lookup = {
-                    p.get("time"): p for p in planned_timeline if p.get("time")
-                }
-
-                # Round current time na 15min
-                current_minute = (now.minute // 15) * 15
-                current_interval = now.replace(
-                    minute=current_minute, second=0, microsecond=0
-                )
-
-                # Iterovat přes actual_intervals (obsahuje všechny intervaly od půlnoci)
                 _LOGGER.debug(
-                    f"[Timeline Builder] Processing {len(actual_intervals)} actual intervals"
+                    f"📋 Using optimal_timeline from memory: {len(planned_timeline)} intervals"
                 )
-                for actual_entry in actual_intervals:
-                    interval_time_str = actual_entry.get("time", "")
-                    if not interval_time_str:
-                        continue
 
-                    try:
-                        interval_time = datetime.fromisoformat(interval_time_str)
-                        # Make timezone-aware if naive
-                        if interval_time.tzinfo is None:
-                            interval_time = dt_util.as_local(interval_time)
-                    except:
-                        continue
+            # Build lookup pro planned data
+            planned_lookup = {
+                p.get("time"): p for p in planned_timeline if p.get("time")
+            }
 
-                    # Získat planned data (buď z actual_entry nebo z planned_lookup)
-                    planned_from_actual = actual_entry.get("planned")
-                    planned_from_lookup = planned_lookup.get(interval_time_str)
+            # Determine current interval
+            current_minute = (now.minute // 15) * 15
+            current_interval = now.replace(
+                minute=current_minute, second=0, microsecond=0
+            )
 
-                    # Preferovat planned_from_lookup (aktuální DP), fallback na planned z actual_entry
-                    planned_data_raw = planned_from_lookup or planned_from_actual or {}
-                    planned_data = self._format_planned_data(planned_data_raw)
+            # Build 96 intervals for whole day
+            interval_time = day_start
+            while interval_time.date() == date:
+                interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
-                    if interval_time < current_interval:
-                        # Historical - použít actual data z actual_entry
-                        actual_data = actual_entry.get("actual")
-                        _LOGGER.debug(
-                            f"[Timeline] {interval_time_str}: actual={actual_data is not None}, planned={planned_data is not None}"
-                        )
+                # Determine status
+                if interval_time < current_interval:
+                    status = "historical"
+                elif interval_time == current_interval:
+                    status = "current"
+                else:
+                    status = "planned"
 
-                        interval_entry = {
-                            "time": interval_time_str,
-                            "status": "historical",
-                            "planned": planned_data,
-                            "actual": (
-                                self._format_actual_data(actual_data, planned_data)
-                                if actual_data
-                                else None
+                # Get planned data (pokud existuje)
+                planned_entry = planned_lookup.get(interval_time_str)
+                planned_data = None
+                if planned_entry:
+                    planned_data = self._format_planned_data(planned_entry)
+
+                # Ensure planned_data is never None
+                if planned_data is None:
+                    planned_data = {}
+
+                # Get actual data (jen pro historical a current)
+                actual_data = None
+                if status in ("historical", "current"):
+                    # Historical mode z Recorderu
+                    mode_from_recorder = historical_modes_lookup.get(interval_time_str)
+                    if mode_from_recorder:
+                        actual_data = {
+                            "mode": mode_from_recorder.get("mode", 0),
+                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+                            # Ostatní metriky nemáme (netrackujeme)
+                            "consumption_kwh": 0,
+                            "solar_kwh": 0,
+                            "battery_soc": 0,
+                            "grid_import_kwh": 0,
+                            "grid_export_kwh": 0,
+                            "net_cost": (
+                                planned_data.get("net_cost", 0) if planned_data else 0
                             ),
-                            "delta": actual_entry.get("delta"),
+                            "savings": 0,
                         }
 
-                    elif interval_time == current_interval:
-                        # Current interval
-                        interval_entry = {
+                # Přidat interval pokud máme actual NEBO planned
+                if actual_data or planned_data:
+                    intervals.append(
+                        {
                             "time": interval_time_str,
-                            "status": "current",
+                            "status": status,
                             "planned": planned_data,
-                            "actual": None,
+                            "actual": actual_data,
                             "delta": None,
                         }
+                    )
 
-                    else:
-                        # Future (tento interval je v budoucnosti, neměl by být v actual_intervals)
-                        # Skip it (budoucí intervaly přidáme z planned_lookup níže)
-                        continue
-
-                    intervals.append(interval_entry)
-
-                # Přidat budoucí intervaly z planned_timeline (které nejsou v actual_intervals)
-                for planned in planned_timeline:
-                    interval_time_str = planned.get("time", "")
-                    if not interval_time_str:
-                        continue
-
-                    try:
-                        interval_time = datetime.fromisoformat(interval_time_str)
-                        if interval_time.tzinfo is None:
-                            interval_time = dt_util.as_local(interval_time)
-                    except:
-                        continue
-
-                    # Přidat jen budoucí intervaly (>=current)
-                    if interval_time >= current_interval:
-                        interval_entry = {
-                            "time": interval_time_str,
-                            "status": (
-                                "current"
-                                if interval_time == current_interval
-                                else "planned"
-                            ),
-                            "planned": self._format_planned_data(planned),
-                            "actual": None,
-                            "delta": None,
-                        }
-                        intervals.append(interval_entry)
+                interval_time += timedelta(minutes=15)
 
         elif source == "planned_only":
             # ZÍTRA - pouze planned z DP výsledku
@@ -6162,16 +7853,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except:
                 continue
 
+        # PHASE 3.0 FIX: Safe cost getter (reuse from _build_today_cost_data)
+        def safe_get_cost(interval: Dict[str, Any], key: str) -> float:
+            """Safely get cost from interval, handling None values."""
+            data = interval.get(key)
+            if data is None:
+                return 0.0
+            if isinstance(data, dict):
+                return float(data.get("net_cost", 0))
+            return 0.0
+
         # Spočítat plán vs skutečnost dosud
-        planned_so_far = sum(
-            h.get("planned", {}).get("net_cost", 0) for h in historical
-        )
-        actual_so_far = sum(h.get("actual", {}).get("net_cost", 0) for h in historical)
+        planned_so_far = sum(safe_get_cost(h, "planned") for h in historical)
+        actual_so_far = sum(safe_get_cost(h, "actual") for h in historical)
         delta = actual_so_far - planned_so_far
         delta_pct = (delta / planned_so_far * 100) if planned_so_far > 0 else 0.0
 
         # EOD = skutečnost uplynulých + plán budoucích (včetně aktivního)
-        planned_future = sum(f.get("planned", {}).get("net_cost", 0) for f in future)
+        planned_future = sum(safe_get_cost(f, "planned") for f in future)
         eod_plan = planned_so_far + planned_future  # Původní celý denní plán
 
         # NOVÁ LOGIKA: EOD je skutečnost + budoucí plán (BEZ drift ratio)

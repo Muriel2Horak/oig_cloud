@@ -1,0 +1,371 @@
+/**
+ * Detail Tabs Styles
+ * FÁZE 6: Timeline Storage & Detail Tabs Frontend
+ * Styling for mode blocks and summary tiles in Yesterday/Today/Tomorrow tabs
+ */
+
+/* Tab Content Container */
+.detail-tab-content {
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Summary Tiles at Top */
+.detail-summary-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-tile {
+    background: var(--card-background, #fff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.summary-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.summary-tile-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary, #666);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.summary-tile-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary, #000);
+    margin-bottom: 4px;
+}
+
+/* Adherence Color Coding */
+.summary-tile.adherence-good .summary-tile-value {
+    color: #4CAF50; /* Green for ≥80% */
+}
+
+.summary-tile.adherence-warning .summary-tile-value {
+    color: #FF9800; /* Orange for 50-79% */
+}
+
+.summary-tile.adherence-poor .summary-tile-value {
+    color: #F44336; /* Red for <50% */
+}
+
+.summary-tile-icon {
+    font-size: 1.2rem;
+    margin-right: 8px;
+}
+
+/* Mode Blocks Container */
+.mode-blocks-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Individual Mode Block */
+.mode-block {
+    background: var(--card-background, #fff);
+    border: 2px solid var(--border-color, #e0e0e0);
+    border-radius: 12px;
+    padding: 16px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.mode-block:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Match Indicators */
+.mode-block.match-yes {
+    border-color: #4CAF50; /* Green border for matches */
+    background: linear-gradient(to right, rgba(76, 175, 80, 0.05), transparent);
+}
+
+.mode-block.match-no {
+    border-color: #F44336; /* Red border for mismatches */
+    background: linear-gradient(to right, rgba(244, 67, 54, 0.05), transparent);
+}
+
+/* Mode Block Header */
+.mode-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mode-block-time {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #000);
+}
+
+.mode-block-status {
+    font-size: 0.875rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.mode-block-status.status-completed {
+    background: #E8F5E9;
+    color: #2E7D32;
+}
+
+.mode-block-status.status-current {
+    background: #FFF3E0;
+    color: #E65100;
+}
+
+.mode-block-status.status-planned {
+    background: #E3F2FD;
+    color: #1565C0;
+}
+
+.mode-block-match {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.mode-block-match.match-yes {
+    color: #4CAF50;
+}
+
+.mode-block-match.match-no {
+    color: #F44336;
+}
+
+/* Mode Comparison */
+.mode-comparison {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.mode-badge {
+    padding: 6px 14px;
+    border-radius: 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mode-badge.mode-historical {
+    background: var(--mode-color, #E0E0E0);
+    color: var(--mode-text, #000);
+}
+
+.mode-badge.mode-planned {
+    background: var(--mode-color, #E0E0E0);
+    color: var(--mode-text, #000);
+    opacity: 0.7;
+}
+
+.mode-separator {
+    font-size: 1.2rem;
+    color: var(--text-secondary, #666);
+}
+
+/* Cost Info */
+.mode-cost-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+    background: var(--background-secondary, #f9f9f9);
+    border-radius: 8px;
+    flex-wrap: wrap;
+}
+
+.cost-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cost-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #666);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.cost-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary, #000);
+}
+
+.cost-delta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.cost-delta.cost-higher {
+    color: #F44336; /* Red for higher cost */
+}
+
+.cost-delta.cost-lower {
+    color: #4CAF50; /* Green for lower cost */
+}
+
+.cost-delta.cost-equal {
+    color: var(--text-secondary, #666); /* Gray for equal */
+}
+
+/* Energy Stats Toggle */
+.energy-stats-toggle {
+    margin-top: 12px;
+    cursor: pointer;
+    padding: 8px;
+    background: var(--background-secondary, #f9f9f9);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.2s;
+}
+
+.energy-stats-toggle:hover {
+    background: var(--background-hover, #e9e9e9);
+}
+
+.energy-stats-toggle-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary, #000);
+}
+
+.energy-stats-toggle-icon {
+    font-size: 0.875rem;
+    color: var(--text-secondary, #666);
+    transition: transform 0.3s;
+}
+
+.energy-stats-toggle.expanded .energy-stats-toggle-icon {
+    transform: rotate(90deg);
+}
+
+/* Energy Stats Content */
+.energy-stats-content {
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--card-background, #fff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.energy-stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.energy-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #666);
+}
+
+.energy-stat-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #000);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .detail-summary-tiles {
+        grid-template-columns: 1fr;
+    }
+
+    .mode-comparison {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .mode-cost-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .energy-stats-content {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .detail-tab-content {
+        padding: 12px;
+    }
+
+    .summary-tile-value {
+        font-size: 1.5rem;
+    }
+
+    .mode-block {
+        padding: 12px;
+    }
+
+    .energy-stats-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .summary-tile,
+    .mode-block {
+        background: var(--card-background-dark, #1e1e1e);
+        border-color: var(--border-color-dark, #333);
+    }
+
+    .mode-cost-info,
+    .energy-stats-toggle {
+        background: var(--background-secondary-dark, #2a2a2a);
+    }
+
+    .energy-stats-toggle:hover {
+        background: var(--background-hover-dark, #333);
+    }
+
+    .energy-stats-content {
+        background: var(--card-background-dark, #1e1e1e);
+        border-color: var(--border-color-dark, #333);
+    }
+
+    .summary-tile-value,
+    .mode-block-time,
+    .cost-value,
+    .energy-stat-value,
+    .energy-stats-toggle-label {
+        color: var(--text-primary-dark, #fff);
+    }
+
+    .summary-tile-label,
+    .cost-label,
+    .energy-stat-label,
+    .mode-separator,
+    .energy-stats-toggle-icon {
+        color: var(--text-secondary-dark, #aaa);
+    }
+}

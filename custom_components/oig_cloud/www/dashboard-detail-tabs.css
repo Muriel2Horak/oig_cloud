@@ -1,0 +1,446 @@
+/**
+ * OIG Cloud - Detail Tabs Styles
+ *
+ * FÁZE 6: Styling pro Detail Tabs Dialog
+ *
+ * @author OIG Cloud Team
+ * @version 1.0.0
+ * @date 2025-11-06
+ */
+
+/* ===================================================================
+   DETAIL TABS DIALOG
+   =================================================================== */
+
+#detail-tabs-dialog {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 10000;
+    overflow-y: auto;
+}
+
+.detail-tabs-content {
+    background: var(--card-background-color, #1c1c1c);
+    margin: 40px auto;
+    padding: 0;
+    max-width: 900px;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.detail-tabs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--divider-color, #333);
+}
+
+.detail-tabs-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--primary-text-color, #fff);
+}
+
+.close-dialog {
+    background: none;
+    border: none;
+    font-size: 32px;
+    color: var(--text-secondary, #aaa);
+    cursor: pointer;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.close-dialog:hover {
+    color: var(--primary-color, #03a9f4);
+}
+
+/* ===================================================================
+   TAB NAVIGATION
+   =================================================================== */
+
+.detail-tabs-nav {
+    display: flex;
+    border-bottom: 1px solid var(--divider-color, #333);
+    background: var(--secondary-background-color, #222);
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 16px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: var(--text-secondary, #aaa);
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--primary-text-color, #fff);
+}
+
+.tab-btn.active {
+    border-bottom-color: var(--primary-color, #03a9f4);
+    color: var(--primary-color, #03a9f4);
+    background: rgba(3, 169, 244, 0.1);
+}
+
+.tab-btn .tab-icon {
+    margin-right: 8px;
+}
+
+/* ===================================================================
+   TAB CONTENT
+   =================================================================== */
+
+.detail-tab-container {
+    padding: 24px;
+    min-height: 400px;
+}
+
+.detail-tab-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* ===================================================================
+   SUMMARY TILES
+   =================================================================== */
+
+.summary-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.summary-tile {
+    background: var(--secondary-background-color, #222);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    border-left: 4px solid var(--primary-color, #03a9f4);
+    transition: transform 0.2s;
+}
+
+.summary-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.tile-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+.tile-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--primary-text-color, #fff);
+    margin-bottom: 4px;
+}
+
+.tile-label {
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ===================================================================
+   MODE BLOCKS
+   =================================================================== */
+
+.mode-blocks-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.mode-block {
+    background: var(--secondary-background-color, #222);
+    border-radius: 8px;
+    padding: 20px;
+    border-left: 4px solid transparent;
+    transition: all 0.2s;
+}
+
+.mode-block:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: translateX(4px);
+}
+
+/* Mode match color coding */
+.mode-block.match-yes {
+    border-left-color: #4CAF50; /* Green */
+}
+
+.mode-block.match-no {
+    border-left-color: #F44336; /* Red */
+}
+
+/* ===================================================================
+   BLOCK HEADER
+   =================================================================== */
+
+.block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--divider-color, #333);
+}
+
+.block-time {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--primary-text-color, #fff);
+}
+
+.block-duration {
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+    font-weight: normal;
+    margin-left: 8px;
+}
+
+.block-match {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.block-match.match-yes {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4CAF50;
+}
+
+.block-match.match-no {
+    background: rgba(244, 67, 54, 0.2);
+    color: #F44336;
+}
+
+/* ===================================================================
+   MODE COMPARISON
+   =================================================================== */
+
+.block-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.mode-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mode-label {
+    min-width: 100px;
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+}
+
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    backdrop-filter: brightness(1.2);
+}
+
+/* ===================================================================
+   COST INFO
+   =================================================================== */
+
+.block-cost {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 14px;
+}
+
+.cost-value {
+    font-weight: 600;
+    color: var(--primary-text-color, #fff);
+}
+
+.cost-delta {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.cost-delta.cost-higher {
+    background: rgba(244, 67, 54, 0.2);
+    color: #F44336;
+}
+
+.cost-delta.cost-lower {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4CAF50;
+}
+
+.cost-delta.cost-equal {
+    background: rgba(158, 158, 158, 0.2);
+    color: #9E9E9E;
+}
+
+/* ===================================================================
+   ENERGY STATS (collapsible)
+   =================================================================== */
+
+.block-details {
+    margin-top: 12px;
+}
+
+.block-details summary {
+    cursor: pointer;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.block-details summary:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.block-details[open] summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid var(--divider-color, #333);
+}
+
+.energy-stats {
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+}
+
+.stat-row span:last-child {
+    color: var(--primary-text-color, #fff);
+    font-weight: 500;
+}
+
+/* ===================================================================
+   TAB FOOTER
+   =================================================================== */
+
+.tab-footer {
+    text-align: center;
+    padding: 16px;
+    border-top: 1px solid var(--divider-color, #333);
+    margin-top: 8px;
+}
+
+.tab-date {
+    font-size: 14px;
+    color: var(--text-secondary, #aaa);
+}
+
+/* ===================================================================
+   NO DATA STATE
+   =================================================================== */
+
+.no-data {
+    padding: 80px 20px;
+    text-align: center;
+}
+
+.no-data-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.no-data h3 {
+    color: var(--text-secondary, #aaa);
+    font-weight: normal;
+    margin: 0;
+}
+
+/* ===================================================================
+   RESPONSIVE MOBILE
+   =================================================================== */
+
+@media (max-width: 768px) {
+    .detail-tabs-content {
+        margin: 20px 10px;
+        max-width: 100%;
+    }
+
+    .summary-tiles {
+        grid-template-columns: 1fr;
+    }
+
+    .block-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .mode-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .mode-label {
+        min-width: auto;
+    }
+
+    .tab-btn {
+        padding: 12px 10px;
+        font-size: 14px;
+    }
+}
