@@ -38,6 +38,12 @@ class BatteryMeasurement:
     total_charge_wh: float  # Celková nabíjecí energie
     total_discharge_wh: float  # Celková vybíjecí energie
     duration_hours: float  # Délka cyklu v hodinách
+
+    # NOVĚ: Purity metrics
+    purity: float  # 0.0 - 1.0 (% čisté energie dovnitř)
+    interruption_count: int  # Počet přerušení vybíjením
+    quality_score: float  # 0-100 (celkové quality score)
+
     # Coulomb counting data (pokud je validace)
     coulomb_capacity_kwh: Optional[float] = None
     coulomb_discrepancy_percent: Optional[float] = None
@@ -57,6 +63,11 @@ class CycleTracker:
     total_discharge_wh: float = 0.0
     sample_count: int = 0
 
+    # Purity tracking - detekce přerušení nabíjení
+    interrupted: bool = False  # True pokud bylo přerušeno vybíjením
+    interruption_count: int = 0  # Počet přerušení
+    max_discharge_power_w: float = 0.0  # Max vybíjecí výkon během cyklu
+
     # Coulomb counting (5min updates)
     total_ah: float = 0.0
     voltage_samples: List[float] = field(default_factory=list)
@@ -71,6 +82,9 @@ class CycleTracker:
         self.total_charge_wh = 0.0
         self.total_discharge_wh = 0.0
         self.sample_count = 0
+        self.interrupted = False
+        self.interruption_count = 0
+        self.max_discharge_power_w = 0.0
         self.total_ah = 0.0
         self.voltage_samples = []
         self.coulomb_sample_count = 0
@@ -103,10 +117,16 @@ class BatteryCapacityTracker:
         # Measurements history (max 100 posledních měření)
         self._measurements: deque[BatteryMeasurement] = deque(maxlen=100)
 
-        # Thresholds pro detekci full cycle
-        self._min_start_soc = 30.0  # % - start cyklu max 30%
-        self._min_end_soc = 95.0  # % - konec cyklu min 95%
-        self._min_delta_soc = 50.0  # % - minimální rozsah pro validní měření
+        # PASIVNÍ MONITORING: Flexibilní kritéria
+        self._min_delta_soc = 40.0  # % - minimum swing (40% stačí!)
+        self._min_end_soc = 95.0  # % - konec cyklu MUSÍ být nahoře
+        self._min_purity = 0.90  # 90% - min % čisté energie dovnitř
+        self._max_discharge_interrupt_w = (
+            300.0  # W - max vybíjecí výkon (přes = přerušení)
+        )
+
+        # Quality scoring
+        self._min_quality_score = 60.0  # Minimum pro zařazení do průměru
 
         # Validace
         self._max_discrepancy_percent = (
@@ -142,7 +162,8 @@ class BatteryCapacityTracker:
 
         # Detekce startu cyklu
         if not self._cycle.in_progress:
-            if current_soc <= self._min_start_soc:
+            # PASIVNÍ: Start kdykoli začne nabíjení s SoC < 90%
+            if charge_power_w > 100 and current_soc < 90:
                 self._start_cycle(current_soc, timestamp)
                 _LOGGER.info(
                     f"🔋 Battery cycle started: SoC={current_soc:.1f}% at {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -160,6 +181,19 @@ class BatteryCapacityTracker:
             self._cycle.total_discharge_wh += discharge_wh
             self._cycle.sample_count += 1
             self._cycle.current_soc = current_soc
+
+            # PURITY TRACKING: Detekce přerušení vybíjením
+            if discharge_power_w > self._max_discharge_interrupt_w:
+                if not self._cycle.interrupted:
+                    self._cycle.interrupted = True
+                    _LOGGER.warning(
+                        f"⚠️ Cycle interrupted by discharge: {discharge_power_w:.0f}W at {timestamp.strftime('%H:%M:%S')}"
+                    )
+                self._cycle.interruption_count += 1
+
+            # Track max discharge power
+            if discharge_power_w > self._cycle.max_discharge_power_w:
+                self._cycle.max_discharge_power_w = discharge_power_w
 
             # Detekce konce cyklu
             if current_soc >= self._min_end_soc:
@@ -205,7 +239,7 @@ class BatteryCapacityTracker:
         self, end_soc: float, timestamp: datetime
     ) -> Optional[BatteryMeasurement]:
         """
-        Ukončit cycle a vypočítat kapacitu.
+        Ukončit cycle a vypočítat kapacitu s purity a quality scoring.
 
         Args:
             end_soc: Koncový SoC (%)
@@ -224,10 +258,23 @@ class BatteryCapacityTracker:
         duration = timestamp - self._cycle.start_time
         duration_hours = duration.total_seconds() / 3600
 
+        # === PURITY VÝPOČET ===
+        total_energy = self._cycle.total_charge_wh + self._cycle.total_discharge_wh
+        purity = self._cycle.total_charge_wh / total_energy if total_energy > 0 else 0.0
+
         # Validace: dostatečný rozsah?
         if delta_soc < self._min_delta_soc:
             _LOGGER.debug(
-                f"Cycle too short: delta_soc={delta_soc:.1f}% < {self._min_delta_soc}%, skipping"
+                f"Cycle rejected: delta_soc={delta_soc:.1f}% < {self._min_delta_soc}%"
+            )
+            self._cycle.reset()
+            return None
+
+        # Validace: dostatečná purity?
+        if purity < self._min_purity:
+            _LOGGER.debug(
+                f"Cycle rejected: purity={purity:.1%} < {self._min_purity:.0%} "
+                f"(interrupted {self._cycle.interruption_count} times)"
             )
             self._cycle.reset()
             return None
@@ -267,22 +314,26 @@ class BatteryCapacityTracker:
             # Validace: rozdíl < 5%?
             if coulomb_discrepancy_percent <= self._max_discrepancy_percent:
                 validated = True
-                _LOGGER.info(
-                    f"✅ Coulomb validation OK: discrepancy={coulomb_discrepancy_percent:.1f}%"
-                )
-            else:
-                _LOGGER.warning(
-                    f"⚠️ Coulomb validation FAILED: discrepancy={coulomb_discrepancy_percent:.1f}% "
-                    f"(power={measured_capacity_kwh:.2f} kWh, coulomb={coulomb_capacity_kwh:.2f} kWh)"
-                )
 
-        # Confidence score (0.0 - 1.0)
-        confidence = self._calculate_confidence(
+        # === QUALITY SCORING ===
+        quality_score = self._calculate_quality_score(
             delta_soc=delta_soc,
-            sample_count=self._cycle.sample_count,
+            purity=purity,
+            end_soc=end_soc,
+            duration_hours=duration_hours,
             validated=validated,
-            discrepancy=coulomb_discrepancy_percent,
         )
+
+        # Validace: dostatečný quality score?
+        if quality_score < self._min_quality_score:
+            _LOGGER.debug(
+                f"Cycle rejected: quality_score={quality_score:.0f} < {self._min_quality_score:.0f}"
+            )
+            self._cycle.reset()
+            return None
+
+        # Confidence score (0.0 - 1.0) - původní metrika
+        confidence = quality_score / 100.0
 
         # Create measurement
         measurement = BatteryMeasurement(
@@ -298,6 +349,11 @@ class BatteryCapacityTracker:
             total_charge_wh=self._cycle.total_charge_wh,
             total_discharge_wh=self._cycle.total_discharge_wh,
             duration_hours=duration_hours,
+            # NOVĚ: Purity metrics
+            purity=purity,
+            interruption_count=self._cycle.interruption_count,
+            quality_score=quality_score,
+            # Coulomb
             coulomb_capacity_kwh=coulomb_capacity_kwh,
             coulomb_discrepancy_percent=coulomb_discrepancy_percent,
         )
@@ -310,7 +366,8 @@ class BatteryCapacityTracker:
             f"SoC {self._cycle.start_soc:.1f}% → {end_soc:.1f}% ({delta_soc:.1f}%), "
             f"capacity={measured_capacity_kwh:.2f} kWh, "
             f"SoH={soh_percent:.1f}%, "
-            f"confidence={confidence:.0%}, "
+            f"purity={purity:.1%}, "
+            f"quality={quality_score:.0f}, "
             f"samples={self._cycle.sample_count}, "
             f"duration={duration_hours:.1f}h, "
             f"validated={'✅' if validated else '❌'}"
@@ -324,50 +381,67 @@ class BatteryCapacityTracker:
 
         return measurement
 
-    def _calculate_confidence(
+    def _calculate_quality_score(
         self,
         delta_soc: float,
-        sample_count: int,
+        purity: float,
+        end_soc: float,
+        duration_hours: float,
         validated: bool,
-        discrepancy: Optional[float],
     ) -> float:
         """
-        Vypočítat confidence score pro měření.
+        Vypočítat quality score 0-100 pro měření.
 
         Args:
             delta_soc: Rozsah SoC změny (%)
-            sample_count: Počet power samples
+            purity: Čistota nabíjení (0.0-1.0)
+            end_soc: Koncový SoC (%)
+            duration_hours: Délka cyklu (h)
             validated: Zda bylo validováno coulomb counting
-            discrepancy: Coulomb discrepancy (%) nebo None
 
         Returns:
-            Confidence score 0.0 - 1.0
+            Quality score 0-100
         """
-        confidence = 0.0
+        score = 100.0
 
-        # 1. Rozsah SoC (max 40 bodů)
-        # 50% = 0.4, 65% = 0.6, 80%+ = 1.0
-        soc_score = min((delta_soc - 50) / 30, 1.0) * 0.4
-
-        # 2. Počet samples (max 30 bodů)
-        # min 50 samples pro 0.5, 100+ pro 1.0
-        min_samples = 50  # 25min @ 30s
-        optimal_samples = 100  # 50min
-        sample_score = min(sample_count / optimal_samples, 1.0) * 0.3
-
-        # 3. Validace (30 bodů)
-        if validated and discrepancy is not None:
-            # Čím menší discrepancy, tím lepší
-            # 0% = 1.0, 2.5% = 0.5, 5%+ = 0
-            validation_score = (
-                max(1.0 - (discrepancy / self._max_discrepancy_percent), 0) * 0.3
-            )
+        # 1. Delta SoC bonus
+        if delta_soc >= 70:
+            score += 20  # Excelentní rozsah
+        elif delta_soc >= 50:
+            score += 10  # Velmi dobrý rozsah
+        elif delta_soc >= 40:
+            score += 0  # Akceptovatelný
         else:
-            validation_score = 0.0
+            return 0  # Zahodit
 
-        confidence = soc_score + sample_score + validation_score
+        # 2. Purity penalty
+        if purity < 0.90:
+            return 0  # Příliš přerušované
+        elif purity < 0.95:
+            score -= 20  # Středně přerušované
+        elif purity < 0.98:
+            score -= 10  # Mírně přerušované
+        # Jinak žádný penalty
 
-        return max(0.0, min(1.0, confidence))
+        # 3. End SoC bonus
+        if end_soc >= 100:
+            score += 10  # Perfektní konec
+        elif end_soc >= 98:
+            score += 5  # Velmi dobrý konec
+        elif end_soc < 95:
+            return 0  # Zahodit
+
+        # 4. Duration penalty (rychlé = lepší)
+        if duration_hours < 6:
+            score += 10  # Rychlé nabíjení
+        elif duration_hours > 12:
+            score -= 10  # Dlouhé nabíjení
+
+        # 5. Validation bonus
+        if validated:
+            score += 15  # Cross-validated
+
+        return max(0, min(100, score))
 
     def _fire_measurement_event(self, measurement: BatteryMeasurement) -> None:
         """Fire HA event pro nové měření (pro persistence)."""
@@ -389,21 +463,25 @@ class BatteryCapacityTracker:
         )
 
     def get_measurements(
-        self, min_confidence: float = 0.0, limit: Optional[int] = None
+        self, min_quality_score: float = 0.0, limit: Optional[int] = None
     ) -> List[BatteryMeasurement]:
         """
         Získat historii měření.
 
         Args:
-            min_confidence: Minimální confidence pro filtrování
+            min_quality_score: Minimální quality score pro filtrování (0-100)
             limit: Max počet výsledků (nebo None = všechny)
 
         Returns:
-            Seznam měření seřazený od nejnovějších
+            Seznam měření seřazený od nejnovějších (podle quality_score a času)
         """
-        filtered = [m for m in self._measurements if m.confidence >= min_confidence]
-        # Sort by timestamp descending
-        filtered.sort(key=lambda m: m.timestamp, reverse=True)
+        # Filtrovat podle kvality
+        filtered = [
+            m for m in self._measurements if m.quality_score >= min_quality_score
+        ]
+
+        # Seřadit podle quality_score (primary) a timestamp (secondary)
+        filtered.sort(key=lambda m: (m.quality_score, m.timestamp), reverse=True)
 
         if limit:
             return filtered[:limit]
@@ -411,17 +489,50 @@ class BatteryCapacityTracker:
 
     def get_current_capacity(self) -> Tuple[Optional[float], Optional[float]]:
         """
-        Získat aktuální (naměřenou) kapacitu a SoH.
+        Získat aktuální (naměřenou) kapacitu a SoH pomocí váženého průměru.
 
         Returns:
             Tuple (capacity_kwh, soh_percent) nebo (None, None) pokud nemáme měření
         """
-        # Použít poslední validované měření s vysokou confidence
-        measurements = self.get_measurements(min_confidence=0.7, limit=1)
-        if measurements:
-            m = measurements[0]
-            return m.capacity_kwh, m.soh_percent
-        return None, None
+        # Filtrovat jen kvalitní měření (quality_score >= 60)
+        valid_measurements = [m for m in self._measurements if m.quality_score >= 60]
+
+        if not valid_measurements:
+            return None, None
+
+        # Seřadit od nejnovějších
+        valid_measurements.sort(key=lambda x: x.timestamp, reverse=True)
+
+        # Vzít max 10 nejnovějších
+        recent = valid_measurements[:10]
+
+        # VÁŽENÝ PRŮMĚR
+        total_weight = 0.0
+        weighted_capacity_sum = 0.0
+
+        for i, m in enumerate(recent):
+            # Novější měření = vyšší váha (age_weight)
+            age_weight = 1.0 / (i + 1)  # 1.0, 0.5, 0.33, 0.25...
+
+            # Quality weight (quality_score / 100)
+            quality_weight = m.quality_score / 100.0
+
+            # Kombinovaná váha
+            weight = age_weight * quality_weight
+
+            weighted_capacity_sum += m.capacity_kwh * weight
+            total_weight += weight
+
+        if total_weight == 0:
+            return None, None
+
+        # Vážená kapacita
+        weighted_capacity = weighted_capacity_sum / total_weight
+
+        # SoH
+        soh = (weighted_capacity / self._nominal_capacity) * 100.0
+
+        return weighted_capacity, soh
 
     def analyze_degradation_trend(
         self, min_measurements: int = 10
@@ -435,11 +546,12 @@ class BatteryCapacityTracker:
         Returns:
             Dict s trend daty nebo None pokud nemáme dost dat
         """
-        measurements = self.get_measurements(min_confidence=0.7)
+        # Použít jen kvalitní měření (quality_score >= 70 pro trend analýzu)
+        measurements = self.get_measurements(min_quality_score=70)
 
         if len(measurements) < min_measurements:
             _LOGGER.debug(
-                f"Not enough measurements for trend analysis: {len(measurements)} < {min_measurements}"
+                f"Not enough quality measurements for trend analysis: {len(measurements)} < {min_measurements}"
             )
             return None
 
@@ -651,19 +763,40 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         else:
             attrs["cycle_in_progress"] = False
 
-        # Recent measurements
-        recent = self._tracker.get_measurements(min_confidence=0.5, limit=5)
+        # Recent measurements - zobrazit top 5 podle kvality
+        recent = self._tracker.get_measurements(min_quality_score=60, limit=5)
         if recent:
             attrs["recent_measurements"] = [
                 {
                     "timestamp": m.timestamp.isoformat(),
                     "capacity_kwh": round(m.capacity_kwh, 2),
                     "soh_percent": round(m.soh_percent, 1),
-                    "confidence": round(m.confidence, 2),
+                    "quality_score": round(m.quality_score, 1),
+                    "purity": round(m.purity * 100, 1),  # % clean charging
+                    "delta_soc": round(m.end_soc - m.start_soc, 1),
+                    "interruptions": m.interruption_count,
                     "validated": m.validated,
                 }
                 for m in recent
             ]
+
+        # Celková statistika měření
+        all_measurements = self._tracker._measurements
+        if all_measurements:
+            attrs["total_measurements"] = len(all_measurements)
+            quality_measurements = [
+                m for m in all_measurements if m.quality_score >= 60
+            ]
+            attrs["quality_measurements"] = len(quality_measurements)
+            if quality_measurements:
+                avg_quality = sum(m.quality_score for m in quality_measurements) / len(
+                    quality_measurements
+                )
+                avg_purity = sum(m.purity for m in quality_measurements) / len(
+                    quality_measurements
+                )
+                attrs["avg_quality_score"] = round(avg_quality, 1)
+                attrs["avg_purity_percent"] = round(avg_purity * 100, 1)
 
         return attrs
 

@@ -640,6 +640,11 @@ function switchTab(tabName) {
         setTimeout(() => {
             console.log('[Pricing] Tab visible, loading pricing data...');
             loadPricingData();
+
+            // Subscribe to Battery Health updates (once)
+            if (typeof subscribeBatteryHealthUpdates === 'function') {
+                subscribeBatteryHealthUpdates();
+            }
         }, 150); // Stejný timeout jako u Toky pro konzistenci
     }
 

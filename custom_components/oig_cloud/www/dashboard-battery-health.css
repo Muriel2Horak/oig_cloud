@@ -1,0 +1,364 @@
+/**
+ * Battery Health Tile Styles
+ * Styly pro dlaždici zobrazující kvalitu baterie (SoH%, quality metrics)
+ */
+
+/* Container */
+.battery-health-tile {
+    background: var(--card-background-color, #1c1c1e);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.battery-health-tile:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    transform: translateY(-2px);
+}
+
+/* Header */
+.battery-health-tile .tile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.1));
+    padding-bottom: 12px;
+}
+
+.battery-health-tile .tile-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--primary-text-color, #ffffff);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.battery-health-tile .tile-icon {
+    font-size: 24px;
+}
+
+/* Status Badge */
+.battery-health-status {
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-excellent {
+    background: rgba(76, 217, 100, 0.2);
+    color: #4cd964;
+}
+
+.status-good {
+    background: rgba(52, 199, 89, 0.2);
+    color: #34c759;
+}
+
+.status-fair {
+    background: rgba(255, 204, 0, 0.2);
+    color: #ffcc00;
+}
+
+.status-poor {
+    background: rgba(255, 69, 58, 0.2);
+    color: #ff453a;
+}
+
+.status-unknown {
+    background: rgba(142, 142, 147, 0.2);
+    color: #8e8e93;
+}
+
+/* Main Section - SoH Display */
+.battery-health-main {
+    margin: 20px 0;
+}
+
+.battery-health-soh {
+    text-align: center;
+    padding: 24px 0;
+    background: linear-gradient(135deg, rgba(76, 217, 100, 0.05), rgba(52, 199, 89, 0.05));
+    border-radius: 12px;
+    margin-bottom: 16px;
+}
+
+.soh-value-large {
+    font-size: 64px;
+    font-weight: 700;
+    color: #4cd964;
+    line-height: 1;
+    text-shadow: 0 0 20px rgba(76, 217, 100, 0.3);
+}
+
+.soh-unit {
+    font-size: 32px;
+    font-weight: 400;
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+.soh-label {
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Waiting State */
+.battery-health-waiting {
+    text-align: center;
+    padding: 32px 20px;
+    background: rgba(142, 142, 147, 0.1);
+    border-radius: 12px;
+    margin-bottom: 16px;
+}
+
+.waiting-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.waiting-text {
+    font-size: 16px;
+    color: var(--primary-text-color, #ffffff);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.waiting-hint {
+    font-size: 13px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.6));
+    font-style: italic;
+}
+
+/* Capacity Section */
+.battery-health-capacity {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.capacity-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.capacity-row:last-child {
+    border-bottom: none;
+}
+
+.capacity-label {
+    font-size: 14px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+}
+
+.capacity-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--primary-text-color, #ffffff);
+}
+
+.capacity-loss {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 69, 58, 0.2);
+}
+
+.capacity-loss .capacity-label {
+    color: #ff453a;
+}
+
+.capacity-loss .capacity-value {
+    color: #ff453a;
+}
+
+/* Cycle Progress */
+.battery-health-cycle-progress {
+    background: linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(10, 132, 255, 0.05));
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border-left: 3px solid #007aff;
+}
+
+.cycle-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.cycle-icon {
+    font-size: 20px;
+    animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.cycle-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: #007aff;
+}
+
+.cycle-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.8));
+}
+
+.cycle-duration {
+    font-weight: 500;
+    color: #007aff;
+}
+
+/* Quality Metrics */
+.battery-health-quality {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.quality-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.quality-row:last-child {
+    border-bottom: none;
+}
+
+.quality-label {
+    font-size: 14px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.quality-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-text-color, #ffffff);
+}
+
+/* Trend Section */
+.battery-health-trend {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.trend-icon {
+    font-size: 24px;
+}
+
+.trend-label {
+    font-size: 14px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+}
+
+.trend-value {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.trend-confidence {
+    font-size: 12px;
+    color: var(--secondary-text-color, rgba(255, 255, 255, 0.5));
+    margin-left: auto;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .battery-health-tile {
+        padding: 16px;
+    }
+
+    .soh-value-large {
+        font-size: 48px;
+    }
+
+    .soh-unit {
+        font-size: 24px;
+    }
+
+    .tile-title {
+        font-size: 16px;
+    }
+
+    .battery-health-status {
+        font-size: 12px;
+        padding: 4px 10px;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .battery-health-tile {
+        background: var(--card-background-color, #1c1c1e);
+    }
+}
+
+/* Light Mode Support */
+@media (prefers-color-scheme: light) {
+    .battery-health-tile {
+        background: var(--card-background-color, #ffffff);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .battery-health-tile:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .capacity-row,
+    .quality-row {
+        border-bottom-color: rgba(0, 0, 0, 0.08);
+    }
+
+    .battery-health-capacity,
+    .battery-health-quality,
+    .battery-health-trend {
+        background: rgba(0, 0, 0, 0.02);
+    }
+
+    .battery-health-soh {
+        background: linear-gradient(135deg, rgba(76, 217, 100, 0.08), rgba(52, 199, 89, 0.08));
+    }
+
+    .battery-health-waiting {
+        background: rgba(142, 142, 147, 0.08);
+    }
+}

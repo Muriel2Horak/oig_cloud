@@ -2814,106 +2814,137 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
-            # Fyzika podle módu
+            # Initialize variables for this interval
             grid_import = 0.0
             grid_export = 0.0
-            grid_charge = 0.0
+            solar_charge_kwh = 0.0  # For stacked graph - calculated in physics
+            grid_charge_kwh = 0.0  # For stacked graph - calculated in physics
+            available_space = max_capacity - battery
 
+            # Fyzika podle módu - OPRAVENO: Dopředný výpočet místo zpětného
+            # Charge hodnoty se počítají PŘED změnou battery, ne po ní
             if mode == CBB_MODE_HOME_UPS:
                 # UPS: spotřeba ze sítě, baterie nabíjí ze solaru + gridu
-                battery_space = max_capacity - battery
-                grid_charge = min(max_charge_per_interval, battery_space / efficiency)
-                grid_import = load_kwh + grid_charge  # Import na spotřebu + nabíjení
-                battery += solar_kwh + grid_charge
+                # KROK 1: Vypočítat kolik REÁLNĚ půjde do baterie (respektovat available_space)
+                actual_grid_charge = min(
+                    max_charge_per_interval, available_space / efficiency
+                )
+                space_after_grid = max(0, available_space - actual_grid_charge)
+                actual_solar_charge = min(solar_kwh, space_after_grid)
+
+                # KROK 2: Fyzika - aktualizovat battery s okamžitým clampingem
+                grid_import = load_kwh + actual_grid_charge
+                battery += actual_solar_charge + actual_grid_charge
+                battery = min(battery, max_capacity)  # Clamp okamžitě
+
+                # KROK 3: Export přebytku solaru (pokud se nevešel do baterie)
+                solar_surplus = solar_kwh - actual_solar_charge
+                if solar_surplus > 0.001:  # Tolerance pro zaokrouhlovací chyby
+                    grid_export = solar_surplus
+                    total_cost -= grid_export * export_price
+
                 total_cost += grid_import * price
 
+                # KROK 4: Uložit charge hodnoty pro graf
+                solar_charge_kwh = actual_solar_charge
+                grid_charge_kwh = actual_grid_charge
+
             elif mode == CBB_MODE_HOME_II:
-                # HOME II: FVE → spotřeba, grid doplňuje, baterie netouched (když FVE < load)
+                # HOME II: FVE → spotřeba, grid doplňuje, baterie jen přebytek
                 if solar_kwh >= load_kwh:
-                    # Přebytek → baterie
+                    # Přebytek po spotřebě
                     surplus = solar_kwh - load_kwh
-                    battery += surplus
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        total_cost -= grid_export * price
+
+                    # KROK 1: Kolik reálně půjde do baterie
+                    actual_solar_charge = min(surplus, available_space)
+
+                    # KROK 2: Fyzika
+                    battery += actual_solar_charge
+                    battery = min(battery, max_capacity)  # Clamp
+
+                    # KROK 3: Export přebytku
+                    solar_surplus = surplus - actual_solar_charge
+                    if solar_surplus > 0.001:
+                        grid_export = solar_surplus
+                        total_cost -= grid_export * export_price
+
+                    # KROK 4: Uložit pro graf
+                    solar_charge_kwh = actual_solar_charge
                 else:
-                    # Deficit → GRID (ne baterie!)
+                    # Deficit → GRID doplňuje (baterie se nemění)
                     deficit = load_kwh - solar_kwh
                     grid_import = deficit
                     total_cost += grid_import * price
-                    # Baterie se nemění
+                    # solar_charge_kwh a grid_charge_kwh zůstávají 0
 
             elif mode == CBB_MODE_HOME_III:
                 # HOME III: CELÁ FVE → baterie, spotřeba → grid
-                battery += solar_kwh  # Vše do baterie (bez limitu!)
-                if battery > max_capacity:
-                    grid_export = battery - max_capacity
-                    battery = max_capacity
-                    total_cost -= grid_export * price
+                # KROK 1: Kolik reálně půjde do baterie
+                actual_solar_charge = min(solar_kwh, available_space)
+
+                # KROK 2: Fyzika
+                battery += actual_solar_charge
+                battery = min(battery, max_capacity)  # Clamp
+
+                # KROK 3: Export přebytku
+                solar_surplus = solar_kwh - actual_solar_charge
+                if solar_surplus > 0.001:
+                    grid_export = solar_surplus
+                    total_cost -= grid_export * export_price
+
                 # Spotřeba vždy ze sítě
                 grid_import = load_kwh
                 total_cost += grid_import * price
 
+                # KROK 4: Uložit pro graf
+                solar_charge_kwh = actual_solar_charge
+
             else:  # HOME I (default)
                 # HOME I: solar → baterie nebo baterie → load
                 if solar_kwh >= load_kwh:
+                    # Přebytek
                     surplus = solar_kwh - load_kwh
-                    battery += surplus
-                    # Pokud je baterie plná, přebytek jde do sítě
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        total_cost -= grid_export * price  # Export kredit
+
+                    # KROK 1: Kolik reálně půjde do baterie
+                    actual_solar_charge = min(surplus, available_space)
+
+                    # KROK 2: Fyzika
+                    battery += actual_solar_charge
+                    battery = min(battery, max_capacity)  # Clamp
+
+                    # KROK 3: Export přebytku
+                    solar_surplus = surplus - actual_solar_charge
+                    if solar_surplus > 0.001:
+                        grid_export = solar_surplus
+                        total_cost -= grid_export * export_price
+
+                    # KROK 4: Uložit pro graf
+                    solar_charge_kwh = actual_solar_charge
                 else:
+                    # Deficit → baterie vybíjí
                     deficit = load_kwh - solar_kwh
                     battery -= deficit / efficiency
+
                     # CRITICAL: Pokud baterie klesne pod minimum, dobrání ze sítě
                     if battery < min_capacity:
                         grid_import = (min_capacity - battery) * efficiency
                         battery = min_capacity
                         total_cost += grid_import * price
+                    # solar_charge_kwh a grid_charge_kwh zůstávají 0 (vybíjení)
 
-            # Battery constraints already enforced above (lines 2847-2848, 2854-2857)
-            # No need for redundant clamp here
-            interval_cost = grid_import * price - grid_export * price
-
-            # Calculate charge values for stacked graph
-            # solar_charge_kwh = how much solar went into battery
-            # grid_charge_kwh = how much grid went into battery (not consumption!)
-            if mode == CBB_MODE_HOME_UPS:
-                # UPS: grid_charge went to battery, solar also went to battery
-                solar_charge_kwh = min(
-                    solar_kwh, max_capacity - (battery - solar_kwh - grid_charge)
+            # Validace (pro debugging)
+            if battery > max_capacity + 0.001:  # Tolerance
+                _LOGGER.warning(
+                    f"Battery exceeds max capacity: {battery:.3f} > {max_capacity:.3f} "
+                    f"at {timestamp_str}, mode={mode}"
                 )
-                grid_charge_kwh = grid_charge
-            elif mode == CBB_MODE_HOME_I:
-                # HOME I: surplus solar went to battery OR battery discharged
-                if solar_kwh >= load_kwh:
-                    solar_charge_kwh = min(
-                        solar_kwh - load_kwh,
-                        max_capacity - (battery - (solar_kwh - load_kwh)),
-                    )
-                else:
-                    solar_charge_kwh = 0.0
-                grid_charge_kwh = 0.0
-            elif mode == CBB_MODE_HOME_II:
-                # HOME II: surplus solar to battery
-                if solar_kwh >= load_kwh:
-                    solar_charge_kwh = min(
-                        solar_kwh - load_kwh,
-                        max_capacity - (battery - (solar_kwh - load_kwh)),
-                    )
-                else:
-                    solar_charge_kwh = 0.0
-                grid_charge_kwh = 0.0
-            elif mode == CBB_MODE_HOME_III:
-                # HOME III: ALL solar to battery
-                solar_charge_kwh = min(solar_kwh, max_capacity - (battery - solar_kwh))
-                grid_charge_kwh = 0.0
-            else:
-                solar_charge_kwh = 0.0
-                grid_charge_kwh = 0.0
+            if solar_charge_kwh < -0.001 or grid_charge_kwh < -0.001:
+                _LOGGER.warning(
+                    f"Negative charge values: solar={solar_charge_kwh:.3f}, grid={grid_charge_kwh:.3f} "
+                    f"at {timestamp_str}, mode={mode}"
+                )
+
+            interval_cost = grid_import * price - grid_export * price
 
             timeline.append(
                 {

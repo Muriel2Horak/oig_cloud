@@ -1402,6 +1402,11 @@ async function loadPricingData() {
 
     // Attach card handlers only once
     setupPriceCardHandlers();
+
+    // Update Battery Health stats (if module is loaded)
+    if (typeof updateBatteryHealthStats === 'function') {
+        updateBatteryHealthStats();
+    }
 }
 
 /**
