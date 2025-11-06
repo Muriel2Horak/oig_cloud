@@ -423,47 +423,51 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
     async def _wait_for_forecast_ready(self, timeout: int = 300) -> None:
         """
-        Počkat až forecast sensor má data.
+        Počkat až forecast sensor má data (using dispatcher pattern).
 
         Args:
             timeout: Max čekání v sekundách (default 5 min)
         """
-        _LOGGER.info("⏳ Waiting for forecast sensor to be ready...")
-        start = dt_util.now()
-        attempt = 0
-
-        while True:
-            attempt += 1
-            # Zkontrolovat timeout
-            elapsed = (dt_util.now() - start).total_seconds()
-            if elapsed > timeout:
-                _LOGGER.error(
-                    f"❌ Timeout waiting for forecast after {attempt} attempts ({timeout}s)"
-                )
+        _LOGGER.info("⏳ Waiting for forecast sensor to be ready (using dispatcher)...")
+        
+        # Check if forecast is already ready
+        forecast_sensor = self._get_forecast_sensor()
+        if forecast_sensor:
+            timeline = forecast_sensor.get_timeline_data()
+            if timeline and len(timeline) > 0:
+                _LOGGER.info(f"✅ Forecast already ready with {len(timeline)} timeline points")
                 return
-
-            # Zkusit získat forecast
-            forecast_sensor = self._get_forecast_sensor()
-            if not forecast_sensor:
-                _LOGGER.debug(
-                    f"Attempt {attempt}: Forecast sensor not found, waiting..."
-                )
-            else:
-                timeline = forecast_sensor.get_timeline_data()
-                if not timeline:
-                    _LOGGER.debug(
-                        f"Attempt {attempt}: Forecast sensor found but no timeline data, waiting..."
-                    )
-                elif len(timeline) == 0:
-                    _LOGGER.debug(f"Attempt {attempt}: Timeline empty, waiting...")
-                else:
-                    _LOGGER.info(
-                        f"✅ Forecast ready after {attempt} attempts with {len(timeline)} timeline points"
-                    )
-                    return
-
-            # Čekat 10s a zkusit znovu
-            await asyncio.sleep(10)
+        
+        # Wait for forecast_updated signal
+        from homeassistant.helpers.dispatcher import async_dispatcher_connect
+        
+        forecast_ready = False
+        async def _on_forecast_ready():
+            nonlocal forecast_ready
+            forecast_ready = True
+            _LOGGER.debug("📡 Received forecast_updated signal")
+        
+        # Subscribe to forecast updates
+        signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
+        _LOGGER.debug(f"📡 Subscribing to signal: {signal_name}")
+        unsub = async_dispatcher_connect(self._hass, signal_name, _on_forecast_ready)
+        
+        try:
+            # Wait max timeout seconds for forecast
+            for i in range(timeout):
+                if forecast_ready:
+                    forecast_sensor = self._get_forecast_sensor()
+                    if forecast_sensor:
+                        timeline = forecast_sensor.get_timeline_data()
+                        if timeline and len(timeline) > 0:
+                            _LOGGER.info(f"✅ Forecast ready after {i}s with {len(timeline)} timeline points")
+                            return
+                await asyncio.sleep(1)
+            
+            _LOGGER.error(f"❌ Timeout waiting for forecast after {timeout}s")
+        finally:
+            # Cleanup listener
+            unsub()
 
     async def _validate_and_plan(self) -> None:
         """

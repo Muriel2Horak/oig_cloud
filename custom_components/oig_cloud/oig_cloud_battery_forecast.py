@@ -299,8 +299,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Nově: build_timeline_extended() načítá z Recorderu on-demand při API volání
         _LOGGER.debug("Historical data will load on-demand via API (not at startup)")
 
-        # PHASE 3.0: Schedule forecast refresh every 15 minutes (for spot price updates)
-        # This runs HYBRID optimization when spot prices change (not on every coordinator update!)
+        # Import helper pro time tracking
+        from homeassistant.helpers.event import async_track_time_change
+
+        # ========================================================================
+        # SCHEDULER: Forecast refresh každých 15 minut (asynchronní, neblokuje)
+        # ========================================================================
         async def _forecast_refresh_job(now):
             """Run forecast refresh every 15 minutes (aligned with spot price intervals)."""
             _LOGGER.info(f"⏰ Forecast refresh triggered at {now.strftime('%H:%M')}")
@@ -317,26 +321,72 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 minute=minute,
                 second=30,  # 30s offset to ensure spot prices are updated
             )
-        _LOGGER.debug("✅ Scheduled forecast refresh every 15 minutes")
+        _LOGGER.info("✅ Scheduled forecast refresh every 15 minutes")
 
-        # PHASE 3.0: Initial forecast calculation IMMEDIATELY after startup
-        # Dashboard needs data right away - no delay!
-        async def _initial_forecast_calculation():
-            """Initial forecast calculation immediately after startup."""
-            _LOGGER.info("🚀 Initial forecast calculation triggered (startup)")
+        # ========================================================================
+        # LISTEN for AdaptiveLoadProfiles updates (dispatcher pattern)
+        # ========================================================================
+        from homeassistant.helpers.dispatcher import async_dispatcher_connect
+        
+        async def _on_profiles_updated():
+            """Called when AdaptiveLoadProfiles completes update."""
+            _LOGGER.info("📡 Received profiles_updated signal - triggering forecast refresh")
             try:
                 await self.async_update()
             except Exception as e:
-                _LOGGER.error(
-                    f"Initial forecast calculation failed: {e}", exc_info=True
-                )
+                _LOGGER.error(f"Forecast refresh after profiles update failed: {e}", exc_info=True)
+        
+        # Subscribe to profiles updates
+        signal_name = f"oig_cloud_{self._box_id}_profiles_updated"
+        _LOGGER.debug(f"📡 Subscribing to signal: {signal_name}")
+        async_dispatcher_connect(self.hass, signal_name, _on_profiles_updated)
 
-        # Trigger immediately (no delay)
-        self.hass.async_create_task(_initial_forecast_calculation())
+        # ========================================================================
+        # INITIAL REFRESH: Wait for profiles, then calculate (non-blocking)
+        # ========================================================================
+        async def _delayed_initial_refresh():
+            """Initial forecast calculation - wait for profiles (non-blocking)."""
+            # Wait max 60s for first profiles update
+            _LOGGER.info("⏳ Waiting for AdaptiveLoadProfiles to complete (max 60s)...")
+            
+            profiles_ready = False
+            async def _mark_ready():
+                nonlocal profiles_ready
+                profiles_ready = True
+            
+            # Temporary listener for initial profiles
+            temp_unsub = async_dispatcher_connect(
+                self.hass,
+                f"oig_cloud_{self._box_id}_profiles_updated",
+                _mark_ready
+            )
+            
+            try:
+                # Wait max 60s for profiles
+                for _ in range(60):
+                    if profiles_ready:
+                        _LOGGER.info("✅ Profiles ready - starting initial forecast")
+                        break
+                    await asyncio.sleep(1)
+                else:
+                    _LOGGER.warning("⚠️ Profiles not ready after 60s - starting forecast anyway")
+                
+                # Now run forecast
+                await self.async_update()
+                _LOGGER.info("✅ Initial forecast completed")
+                
+            except Exception as e:
+                _LOGGER.error(f"Initial forecast failed: {e}", exc_info=True)
+            finally:
+                # Cleanup temporary listener
+                temp_unsub()
 
-        # Phase 3.0: Schedule daily and weekly aggregations
-        from homeassistant.helpers.event import async_track_time_change
+        # Spustit jako background task (neblokuje async_added_to_hass)
+        self.hass.async_create_task(_delayed_initial_refresh())
 
+        # ========================================================================
+        # SCHEDULER: Daily and weekly aggregations
+        # ========================================================================
         # Daily aggregation at 00:05 (aggregate yesterday's data)
         async def _daily_aggregation_job(now):
             """Run daily aggregation at 00:05."""
@@ -386,24 +436,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         await super().async_will_remove_from_hass()
 
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator update - OPTIMALIZOVÁNO pro rychlost.
-
-        PHASE 3.0: Performance Optimization
-        - NEPŘEPOČÍTÁVÁME forecast při každé coordinator update!
-        - Forecast se přepočítá JEN když:
-          1. Spot prices se změnily (nový 15min interval)
-          2. Manuální trigger přes service call
-
-        Důvod: HYBRID optimalizace je TĚŽKÁ operace (200+ intervalů simulace)
-        a neměníme ji každých 5 minut když coordinator refreshuje base senzory.
+        """Handle coordinator update.
+        
+        NEDĚLÁ ŽÁDNÉ VÝPOČTY - forecast se přepočítá:
+        - Každých 15 min (time scheduler)
+        - Při startu (delayed 3s initial refresh)
+        - Manuálně přes service call
         """
-        # NEPŘEPOČÍTÁVAT forecast automaticky - jen když je potřeba
-        # Forecast se aktualizuje:
-        # - Při startu (async_added_to_hass)
-        # - Každých 15 min (spot price interval change)
-        # - Manuálně přes service call
-
-        # Volat parent pro standardní zpracování (update state attributes)
+        # Jen zavolat parent pro refresh HA state (rychlé)
         super()._handle_coordinator_update()
 
     @property
@@ -429,6 +469,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 capacity = self._timeline_data[0].get("battery_capacity_kwh", 0)
             return round(capacity, 2)
         return 0
+
+    @property
+    def available(self) -> bool:
+        """Return if sensor is available.
+
+        CRITICAL FIX: Override CoordinatorEntity.available to prevent 'unavailable' state.
+        Sensor should always be available if it has run at least once (has timeline data).
+        """
+        # If we have timeline data from successful calculation, sensor is available
+        if hasattr(self, "_timeline_data") and self._timeline_data:
+            return True
+
+        # Otherwise use coordinator availability
+        return super().available
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -947,6 +1001,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # _LOGGER.info(f"⏰ 15-minute history update triggered: {now.strftime('%H:%M')}")
                 # await self._update_actual_from_history()
                 pass
+
+            # CRITICAL FIX: Write state after every update to publish consumption_summary
+            _LOGGER.info(
+                f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
+            )
+            self.async_write_ha_state()
+            
+            # Notify dependent sensors (BatteryBalancing) that forecast is ready
+            from homeassistant.helpers.dispatcher import async_dispatcher_send
+            signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
+            _LOGGER.debug(f"📡 Sending signal: {signal_name}")
+            async_dispatcher_send(self.hass, signal_name)
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
