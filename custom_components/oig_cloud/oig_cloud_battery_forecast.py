@@ -4529,8 +4529,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(f"[fetch_interval_from_history] No _hass instance")
             return None
 
-        _LOGGER.debug(f"[fetch_interval_from_history] Fetching {start_time} - {end_time}")
-        
+        _LOGGER.debug(
+            f"[fetch_interval_from_history] Fetching {start_time} - {end_time}"
+        )
+
         try:
             from homeassistant.components.recorder.history import get_significant_states
 
@@ -4725,12 +4727,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "export_price": round(export_price, 2),
                 "net_cost": round(net_cost, 2),
             }
-            
+
             _LOGGER.debug(
                 f"[fetch_interval_from_history] Result: consumption={result['consumption_kwh']}, "
                 f"net_cost={result['net_cost']}, grid_import={result['grid_import']}"
             )
-            
+
             return result
 
         except Exception as e:
@@ -7543,25 +7545,56 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
 
                 # Build lookup table: time -> mode_data
+                # First, build map of mode changes
+                mode_changes = []
                 for mode_entry in mode_history:
                     time_key = mode_entry.get("time", "")
                     if time_key:
-                        # Normalize to HH:MM:SS format for matching with intervals
                         try:
                             dt = datetime.fromisoformat(time_key)
-                            # Round to 15min interval
-                            minute = (dt.minute // 15) * 15
-                            rounded_dt = dt.replace(
-                                minute=minute, second=0, microsecond=0
-                            )
-                            time_str = rounded_dt.strftime("%Y-%m-%dT%H:%M:%S")
-                            historical_modes_lookup[time_str] = mode_entry
+                            # Make timezone-aware if needed
+                            if dt.tzinfo is None:
+                                dt = dt_util.as_local(dt)
+                            mode_changes.append({
+                                "time": dt,
+                                "mode": mode_entry.get("mode"),
+                                "mode_name": mode_entry.get("mode_name")
+                            })
                         except:
                             continue
+                
+                # Sort by time
+                mode_changes.sort(key=lambda x: x["time"])
+                
+                # Expand to all 15-min intervals in the day
+                # Fill forward: each interval gets the mode that was active at that time
+                interval_time = day_start
+                current_mode_idx = 0
+                
+                while interval_time <= fetch_end:
+                    # Find the mode that was active at interval_time
+                    # Use the last mode change that happened before or at interval_time
+                    active_mode = None
+                    for i, change in enumerate(mode_changes):
+                        if change["time"] <= interval_time:
+                            active_mode = change
+                            current_mode_idx = i
+                        else:
+                            break
+                    
+                    if active_mode:
+                        interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
+                        historical_modes_lookup[interval_time_str] = {
+                            "time": interval_time_str,
+                            "mode": active_mode["mode"],
+                            "mode_name": active_mode["mode_name"]
+                        }
+                    
+                    interval_time += timedelta(minutes=15)
 
                 _LOGGER.debug(
                     f"📊 Loaded {len(historical_modes_lookup)} historical mode intervals "
-                    f"from Recorder for {date_str} ({source})"
+                    f"from Recorder for {date_str} ({source}) (expanded from {len(mode_changes)} changes)"
                 )
 
             except Exception as e:
@@ -7638,10 +7671,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             "solar_kwh": historical_metrics.get("solar_kwh", 0),
                             "battery_soc": historical_metrics.get("battery_soc", 0),
                             "grid_import_kwh": historical_metrics.get(
-                                "grid_import", 0  # Function returns "grid_import" not "grid_import_kwh"
+                                "grid_import",
+                                0,  # Function returns "grid_import" not "grid_import_kwh"
                             ),
                             "grid_export_kwh": historical_metrics.get(
-                                "grid_export", 0  # Function returns "grid_export" not "grid_export_kwh"
+                                "grid_export",
+                                0,  # Function returns "grid_export" not "grid_export_kwh"
                             ),
                             "net_cost": historical_metrics.get("net_cost", 0),
                             "savings": 0,  # Savings requires baseline comparison
@@ -7771,10 +7806,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                 "solar_kwh": historical_metrics.get("solar_kwh", 0),
                                 "battery_soc": historical_metrics.get("battery_soc", 0),
                                 "grid_import_kwh": historical_metrics.get(
-                                    "grid_import", 0  # Function returns "grid_import" not "grid_import_kwh"
+                                    "grid_import",
+                                    0,  # Function returns "grid_import" not "grid_import_kwh"
                                 ),
                                 "grid_export_kwh": historical_metrics.get(
-                                    "grid_export", 0  # Function returns "grid_export" not "grid_export_kwh"
+                                    "grid_export",
+                                    0,  # Function returns "grid_export" not "grid_export_kwh"
                                 ),
                                 "net_cost": historical_metrics.get("net_cost", 0),
                                 "savings": 0,  # Savings requires baseline comparison
