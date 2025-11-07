@@ -7732,37 +7732,70 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         elif source == "mixed":
             # ========================================
-            # DNES: Historical (Recorder) + Planned (storage)
-            # Planned data: Z HA storage (celý denní plán, 96 intervalů)
+            # DNES: Historical (Recorder) + Planned (storage + memory kombinace)
+            # Planned data: KOMBINACE dvou zdrojů:
+            #   1. HA storage - pro MINULÉ intervaly (od půlnoci do now)
+            #   2. Memory optimal_timeline - pro BUDOUCÍ intervaly (od now dál)
             # Historical modes: Z Recorderu
             # ========================================
 
-            # Load planned timeline from storage (celý denní plán)
-            planned_timeline = []
+            # Phase 1: Load base plan from storage (pokud existuje)
+            planned_timeline_storage = []
             date_str = date.strftime("%Y-%m-%d")
             daily_plan = await self._load_daily_plan_from_storage(date_str)
-            
+
             if daily_plan and "detailed" in daily_plan:
-                # Detailed obsahuje intervals pro celý den
+                # Detailed obsahuje intervals pro celý den (vytvořený ráno)
                 detailed = daily_plan["detailed"].get(date_str, {})
-                planned_timeline = detailed.get("intervals", [])
+                planned_timeline_storage = detailed.get("intervals", [])
                 _LOGGER.debug(
-                    f"📂 Loaded planned timeline from storage: {len(planned_timeline)} intervals for {date_str}"
-                )
-            else:
-                _LOGGER.warning(
-                    f"⚠️  No stored daily plan found for {date_str}, using empty plan"
+                    f"📂 Loaded base plan from storage: {len(planned_timeline_storage)} intervals for {date_str}"
                 )
 
-            # Build lookup pro planned data
-            planned_lookup = {
-                p.get("time"): p for p in planned_timeline if p.get("time")
-            }
+            # Phase 2: Get fresh optimized timeline from memory (budoucí intervaly)
+            planned_timeline_memory = []
+            if (
+                hasattr(self, "_mode_optimization_result")
+                and self._mode_optimization_result
+            ):
+                planned_timeline_memory = self._mode_optimization_result.get(
+                    "optimal_timeline", []
+                )
+                _LOGGER.debug(
+                    f"🧠 Got optimized timeline from memory: {len(planned_timeline_memory)} future intervals"
+                )
 
+            # Phase 3: MERGE - storage pro minulost, memory pro budoucnost
             # Determine current interval
             current_minute = (now.minute // 15) * 15
             current_interval = now.replace(
                 minute=current_minute, second=0, microsecond=0
+            )
+
+            # Build combined lookup: storage first, then override with memory for future
+            planned_lookup = {}
+            
+            # Add storage data (whole day)
+            for p in planned_timeline_storage:
+                if p.get("time"):
+                    planned_lookup[p["time"]] = p
+            
+            # Override with memory data for current and future intervals
+            for p in planned_timeline_memory:
+                time_str = p.get("time")
+                if time_str:
+                    # Parse time to compare
+                    try:
+                        interval_dt = datetime.fromisoformat(time_str)
+                        # Only use memory data for current and future intervals
+                        if interval_dt >= current_interval:
+                            planned_lookup[time_str] = p
+                    except (ValueError, TypeError):
+                        continue
+
+            _LOGGER.debug(
+                f"📋 Combined planned lookup: {len(planned_lookup)} total intervals "
+                f"(storage: {len(planned_timeline_storage)}, memory: {len(planned_timeline_memory)})"
             )
 
             # Build 96 intervals for whole day
