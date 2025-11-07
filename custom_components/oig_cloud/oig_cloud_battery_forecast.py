@@ -7732,33 +7732,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         elif source == "mixed":
             # ========================================
-            # DNES: Historical (Recorder) + Planned (memory)
-            # Planned data: Z self._mode_optimization_result (v paměti!)
+            # DNES: Historical (Recorder) + Planned (storage)
+            # Planned data: Z HA storage (celý denní plán, 96 intervalů)
             # Historical modes: Z Recorderu
             # ========================================
 
-            # Get planned timeline z paměti (NENÍ file I/O!)
+            # Load planned timeline from storage (celý denní plán)
             planned_timeline = []
-            if (
-                hasattr(self, "_mode_optimization_result")
-                and self._mode_optimization_result
-            ):
-                planned_timeline = self._mode_optimization_result.get(
-                    "optimal_timeline", []
-                )
+            date_str = date.strftime("%Y-%m-%d")
+            daily_plan = await self._load_daily_plan_from_storage(date_str)
+            
+            if daily_plan and "detailed" in daily_plan:
+                # Detailed obsahuje intervals pro celý den
+                detailed = daily_plan["detailed"].get(date_str, {})
+                planned_timeline = detailed.get("intervals", [])
                 _LOGGER.debug(
-                    f"📋 Using optimal_timeline from memory: {len(planned_timeline)} intervals"
+                    f"📂 Loaded planned timeline from storage: {len(planned_timeline)} intervals for {date_str}"
+                )
+            else:
+                _LOGGER.warning(
+                    f"⚠️  No stored daily plan found for {date_str}, using empty plan"
                 )
 
             # Build lookup pro planned data
             planned_lookup = {
                 p.get("time"): p for p in planned_timeline if p.get("time")
             }
-
-            # DEBUG: Log první pár klíčů z planned_lookup
-            if planned_lookup:
-                sample_keys = list(planned_lookup.keys())[:3]
-                _LOGGER.debug(f"📋 Planned lookup sample keys: {sample_keys}")
 
             # Determine current interval
             current_minute = (now.minute // 15) * 15
@@ -7768,7 +7767,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Build 96 intervals for whole day
             interval_time = day_start
-            first_interval_logged = False
             while interval_time.date() == date:
                 interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -7785,16 +7783,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 planned_data = None
                 if planned_entry:
                     planned_data = self._format_planned_data(planned_entry)
-
-                # DEBUG: Log první historical i planned interval
-                if not first_interval_logged and status in ("historical", "planned"):
-                    _LOGGER.debug(
-                        f"📋 First {status} interval lookup: time_str={interval_time_str}, "
-                        f"found={planned_entry is not None}, "
-                        f"planned_entry keys={list(planned_entry.keys()) if planned_entry else None}, "
-                        f"formatted_data keys={list(planned_data.keys()) if planned_data else None}"
-                    )
-                    first_interval_logged = True
 
                 # Ensure planned_data is never None
                 if planned_data is None:
