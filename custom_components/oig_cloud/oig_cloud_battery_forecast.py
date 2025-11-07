@@ -7786,13 +7786,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if planned_entry:
                     planned_data = self._format_planned_data(planned_entry)
 
-                # DEBUG: Log první interval
-                if not first_interval_logged and status == "planned":
+                # DEBUG: Log první historical i planned interval
+                if not first_interval_logged and status in ("historical", "planned"):
                     _LOGGER.debug(
-                        f"📋 First planned interval lookup: time_str={interval_time_str}, "
-                        f"found={planned_entry is not None}, status={status}, "
-                        f"planned_entry={planned_entry}, "
-                        f"formatted_data={planned_data}"
+                        f"📋 First {status} interval lookup: time_str={interval_time_str}, "
+                        f"found={planned_entry is not None}, "
+                        f"planned_entry keys={list(planned_entry.keys()) if planned_entry else None}, "
+                        f"formatted_data keys={list(planned_data.keys()) if planned_data else None}"
                     )
                     first_interval_logged = True
 
