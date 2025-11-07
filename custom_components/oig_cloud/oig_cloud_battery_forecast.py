@@ -6155,10 +6155,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 current_interval_time = now.replace(
                     minute=current_minute, second=0, microsecond=0
                 )
+                
+                # Remove timezone for comparison (both must be naive or both aware)
+                # interval_time might be naive from timeline data
+                interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+                current_interval_naive = current_interval_time.replace(tzinfo=None)
 
-                if interval_time < current_interval_time:
+                if interval_time_naive < current_interval_naive:
                     return "completed"
-                elif interval_time == current_interval_time:
+                elif interval_time_naive == current_interval_naive:
                     return "current"
                 else:
                     return "planned"
