@@ -7751,6 +7751,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Phase 2: Get future planned intervals from active timeline
             future_planned = []
             all_timeline = getattr(self, "_timeline_data", [])
+            parse_errors = 0
+            wrong_date = 0
             for interval in all_timeline:
                 time_str = interval.get("time")
                 if time_str:
@@ -7759,8 +7761,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Keep only intervals from today
                         if interval_dt.date() == date:
                             future_planned.append(interval)
+                        else:
+                            wrong_date += 1
                     except (ValueError, TypeError):
+                        parse_errors += 1
                         continue
+            
+            _LOGGER.debug(
+                f"📋 Future filter: {len(future_planned)} kept, {wrong_date} wrong_date, "
+                f"{parse_errors} parse_errors (from {len(all_timeline)} total)"
+            )
 
             _LOGGER.debug(
                 f"📋 Planned data sources for {date}: "
