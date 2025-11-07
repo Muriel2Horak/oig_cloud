@@ -342,7 +342,7 @@ class TimelineDialog {
                     </div>
                 </div>
                 <div class="section-content">
-                    ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
+                    ${this.renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
                 </div>
             </div>
             
@@ -891,7 +891,7 @@ class TimelineDialog {
                         </div>
                     </div>
                     <div class="section-content">
-                        ${renderModeBlocks(completedBlocks, { showCosts: true, showAdherence: true })}
+                        ${this.renderModeBlocks(completedBlocks, { showCosts: true, showAdherence: true })}
                     </div>
                 </div>
             ` : ''}
@@ -904,7 +904,7 @@ class TimelineDialog {
                         <span class="section-name">Aktuální režim</span>
                     </div>
                     <div class="section-content visible">
-                        ${renderModeBlocks([currentBlock], { showCosts: true, showAdherence: false })}
+                        ${this.renderModeBlocks([currentBlock], { showCosts: true, showAdherence: false })}
                     </div>
                 </div>
             ` : ''}
@@ -924,7 +924,7 @@ class TimelineDialog {
                         </div>
                     </div>
                     <div class="section-content">
-                        ${renderModeBlocks(plannedBlocks, { showCosts: true, showAdherence: false })}
+                        ${this.renderModeBlocks(plannedBlocks, { showCosts: true, showAdherence: false })}
                     </div>
                 </div>
             ` : ''}
@@ -1495,7 +1495,7 @@ class TimelineDialog {
                     </div>
                 </div>
                 <div class="section-content">
-                    ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
+                    ${this.renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
                 </div>
             </div>
         `;
@@ -2397,6 +2397,93 @@ function closeModeTimelineDialog() {
     if (timelineDialogInstance) {
         timelineDialogInstance.close();
     }
+    /**
+     * Helper: Render mode blocks (from detail_tabs API)
+     * Converts mode_blocks array into HTML timeline visualization
+     */
+    renderModeBlocks(blocks, options = {}) {
+        if (!blocks || blocks.length === 0) {
+            return '<div class="no-data">Žádné bloky k zobrazení</div>';
+        }
+
+        const showCosts = options.showCosts !== false;
+        const showAdherence = options.showAdherence !== false;
+        
+        return blocks.map(block => {
+            const {
+                mode_historical,
+                mode_planned,
+                mode_match,
+                status,
+                start_time,
+                end_time,
+                interval_count,
+                duration_hours,
+                cost_historical,
+                cost_planned,
+                cost_delta,
+                adherence_pct
+            } = block;
+
+            // Determine block styling
+            const isCompleted = status === 'completed';
+            const isCurrent = status === 'current';
+            const isPlanned = status === 'planned';
+            
+            let statusClass = '';
+            let statusIcon = '';
+            if (isCompleted) {
+                statusClass = mode_match ? 'mode-match' : 'mode-mismatch';
+                statusIcon = mode_match ? '✅' : '❌';
+            } else if (isCurrent) {
+                statusClass = 'mode-current';
+                statusIcon = '⏱️';
+            } else {
+                statusClass = 'mode-planned';
+                statusIcon = '📅';
+            }
+
+            // Cost delta formatting
+            let deltaText = '';
+            let deltaClass = '';
+            if (showCosts && isCompleted && cost_delta !== undefined) {
+                if (cost_delta > 0) {
+                    deltaText = `+${cost_delta.toFixed(2)} Kč`;
+                    deltaClass = 'cost-higher';
+                } else if (cost_delta < 0) {
+                    deltaText = `${cost_delta.toFixed(2)} Kč`;
+                    deltaClass = 'cost-lower';
+                } else {
+                    deltaText = '±0.00 Kč';
+                    deltaClass = 'cost-equal';
+                }
+            }
+
+            return `
+                <div class="mode-block ${statusClass}">
+                    <div class="mode-block-header">
+                        <span class="mode-block-time">${start_time} - ${end_time}</span>
+                        <span class="mode-block-status">${statusIcon}</span>
+                    </div>
+                    <div class="mode-block-modes">
+                        ${isCompleted || isCurrent ? `<div class="mode-actual">Skutečnost: <strong>${mode_historical}</strong></div>` : ''}
+                        <div class="mode-plan">Plán: <strong>${mode_planned}</strong></div>
+                    </div>
+                    ${showCosts ? `
+                        <div class="mode-block-costs">
+                            ${isCompleted ? `<div class="cost-row">Skutečnost: ${cost_historical?.toFixed(2) || '0.00'} Kč</div>` : ''}
+                            <div class="cost-row">Plán: ${cost_planned?.toFixed(2) || '0.00'} Kč</div>
+                            ${deltaText ? `<div class="cost-row ${deltaClass}">Rozdíl: ${deltaText}</div>` : ''}
+                        </div>
+                    ` : ''}
+                    <div class="mode-block-meta">
+                        <span>${interval_count} interval${interval_count > 1 ? 'ů' : ''}</span>
+                        <span>${duration_hours.toFixed(2)}h</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
 }
 
 // =============================================================================
@@ -2839,95 +2926,6 @@ async function buildExtendedTimeline() {
         console.error('[Extended Timeline] Error fetching data:', error);
     }
 }
-
-/**
- * Helper: Render mode blocks (from detail_tabs API)
- * Converts mode_blocks array into HTML timeline visualization
- */
-function renderModeBlocks(blocks, options = {}) {
-    if (!blocks || blocks.length === 0) {
-        return '<div class="no-data">Žádné bloky k zobrazení</div>';
-    }
-
-    const showCosts = options.showCosts !== false;
-    const showAdherence = options.showAdherence !== false;
-    
-    return blocks.map(block => {
-        const {
-            mode_historical,
-            mode_planned,
-            mode_match,
-            status,
-            start_time,
-            end_time,
-            interval_count,
-            duration_hours,
-            cost_historical,
-            cost_planned,
-            cost_delta,
-            adherence_pct
-        } = block;
-
-        // Determine block styling
-        const isCompleted = status === 'completed';
-        const isCurrent = status === 'current';
-        const isPlanned = status === 'planned';
-        
-        let statusClass = '';
-        let statusIcon = '';
-        if (isCompleted) {
-            statusClass = mode_match ? 'mode-match' : 'mode-mismatch';
-            statusIcon = mode_match ? '✅' : '❌';
-        } else if (isCurrent) {
-            statusClass = 'mode-current';
-            statusIcon = '⏱️';
-        } else {
-            statusClass = 'mode-planned';
-            statusIcon = '📅';
-        }
-
-        // Cost delta formatting
-        let deltaText = '';
-        let deltaClass = '';
-        if (showCosts && isCompleted && cost_delta !== undefined) {
-            if (cost_delta > 0) {
-                deltaText = `+${cost_delta.toFixed(2)} Kč`;
-                deltaClass = 'cost-higher';
-            } else if (cost_delta < 0) {
-                deltaText = `${cost_delta.toFixed(2)} Kč`;
-                deltaClass = 'cost-lower';
-            } else {
-                deltaText = '±0.00 Kč';
-                deltaClass = 'cost-equal';
-            }
-        }
-
-        return `
-            <div class="mode-block ${statusClass}">
-                <div class="mode-block-header">
-                    <span class="mode-block-time">${start_time} - ${end_time}</span>
-                    <span class="mode-block-status">${statusIcon}</span>
-                </div>
-                <div class="mode-block-modes">
-                    ${isCompleted || isCurrent ? `<div class="mode-actual">Skutečnost: <strong>${mode_historical}</strong></div>` : ''}
-                    <div class="mode-plan">Plán: <strong>${mode_planned}</strong></div>
-                </div>
-                ${showCosts ? `
-                    <div class="mode-block-costs">
-                        ${isCompleted ? `<div class="cost-row">Skutečnost: ${cost_historical?.toFixed(2) || '0.00'} Kč</div>` : ''}
-                        <div class="cost-row">Plán: ${cost_planned?.toFixed(2) || '0.00'} Kč</div>
-                        ${deltaText ? `<div class="cost-row ${deltaClass}">Rozdíl: ${deltaText}</div>` : ''}
-                    </div>
-                ` : ''}
-                <div class="mode-block-meta">
-                    <span>${interval_count} interval${interval_count > 1 ? 'ů' : ''}</span>
-                    <span>${duration_hours.toFixed(2)}h</span>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
 
 /**
  * Render Today Plan Tile - live tracking of today's plan vs actual with EOD prediction
