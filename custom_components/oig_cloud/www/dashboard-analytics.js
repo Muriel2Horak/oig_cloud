@@ -317,21 +317,11 @@ function initUnifiedCostTile(container, unifiedCostData) {
                 // Click handler - open timeline dialog and show DNES tab
                 console.log('[Unified Cost Tile] Opening timeline dialog with DNES view...');
 
-                // Initialize dialog if needed
-                if (!window.timelineDialogInstance) {
-                    if (window.DashboardTimeline && window.DashboardTimeline.initTimelineDialog) {
-                        window.DashboardTimeline.initTimelineDialog();
-                    } else {
-                        console.error('[Unified Cost Tile] DashboardTimeline not loaded');
-                        return;
-                    }
-                }
-
-                // Open dialog (will automatically show 'today' tab)
-                if (window.timelineDialogInstance) {
-                    window.timelineDialogInstance.open();
+                // Use DashboardTimeline.openTimelineDialog which handles initialization
+                if (window.DashboardTimeline && typeof window.DashboardTimeline.openTimelineDialog === 'function') {
+                    window.DashboardTimeline.openTimelineDialog('today');
                 } else {
-                    console.error('[Unified Cost Tile] Timeline dialog instance not available');
+                    console.error('[Unified Cost Tile] DashboardTimeline.openTimelineDialog not available');
                 }
             }
         );
