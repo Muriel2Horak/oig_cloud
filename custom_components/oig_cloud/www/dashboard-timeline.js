@@ -182,7 +182,7 @@ class TimelineDialog {
         console.log(`[TimelineDialog] Loading ${dayType} data...`);
 
         try {
-            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/timeline?type=active`;
+            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=${dayType}`;
             const response = await fetch(apiUrl);
 
             if (!response.ok) {
@@ -190,14 +190,13 @@ class TimelineDialog {
             }
 
             const data = await response.json();
-            const timelineData = data.timeline_extended;
 
-            if (!timelineData) {
-                throw new Error('No timeline_extended data');
+            if (!data) {
+                throw new Error('No data returned from detail_tabs');
             }
 
-            // Cache the data
-            this.cache[dayType] = timelineData[dayType];
+            // Cache the data (detail_tabs returns the tab data directly)
+            this.cache[dayType] = data;
             console.log(`[TimelineDialog] ${dayType} data loaded:`, this.cache[dayType]);
 
             // Extra debug for today
