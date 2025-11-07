@@ -727,7 +727,6 @@ class TimelineDialog {
                 start_time,
                 end_time,
                 duration_hours,
-                interval_count,
                 cost_historical,
                 cost_planned,
                 cost_delta,
@@ -738,82 +737,116 @@ class TimelineDialog {
                 grid_export_total_kwh
             } = block;
 
-            // Determine card color and status
-            const isCompleted = status === 'completed';
-            const isCurrent = status === 'current';
-            const isPlanned = status === 'planned';
-
-            let cardClass = '';
-            let statusIcon = '';
-            let statusText = '';
-
-            if (isCompleted) {
-                // Completed: judge by match AND cost delta
-                if (mode_match && cost_delta <= 0) {
-                    cardClass = 'card-success'; // ✅ Splněno + levněji
-                    statusIcon = '✅';
-                    statusText = 'Plán splněn';
-                } else if (mode_match && cost_delta > 0) {
-                    cardClass = 'card-warning'; // ✅ Splněno ale dráž
-                    statusIcon = '⚠️';
-                    statusText = 'Splněno, ale dráž';
-                } else if (!mode_match && cost_delta <= 0) {
-                    cardClass = 'card-info'; // ❌ Nesplněno, ale levněji
-                    statusIcon = '💡';
-                    statusText = 'Odchylka, ale levněji';
-                } else {
-                    cardClass = 'card-danger'; // ❌ Nesplněno + dráž
-                    statusIcon = '❌';
-                    statusText = 'Odchylka a dráž';
-                }
-            } else if (isCurrent) {
-                cardClass = 'card-current';
-                statusIcon = '⏱️';
-                statusText = 'Probíhá';
-            } else {
-                cardClass = 'card-planned';
-                statusIcon = '📅';
-                statusText = 'Plánováno';
-            }
-
             // Get mode config
             const historicalMode = MODE_CONFIG[mode_historical] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_historical };
             const plannedMode = MODE_CONFIG[mode_planned] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_planned };
 
-            // Cost delta formatting
-            let deltaHtml = '';
-            if (isCompleted && cost_delta !== null && cost_delta !== undefined) {
-                const deltaClass = cost_delta > 0 ? 'delta-negative' : cost_delta < 0 ? 'delta-positive' : 'delta-neutral';
-                const deltaSign = cost_delta > 0 ? '+' : '';
-                deltaHtml = `
-                    <div class="cost-delta-large ${deltaClass}">
-                        <div class="delta-label">Rozdíl oproti plánu</div>
-                        <div class="delta-value">${deltaSign}${cost_delta.toFixed(2)} Kč</div>
-                    </div>
+            // Status icon
+            const statusIcons = {
+                completed: '✅',
+                current: '▶️',
+                planned: '📅'
+            };
+            const statusIcon = statusIcons[status] || '❓';
+
+            // Match indicator
+            const matchClass = mode_match ? 'match-yes' : 'match-no';
+            const matchIcon = mode_match ? '✅' : '❌';
+            const matchLabel = mode_match ? 'Shoda' : 'Odchylka';
+
+            // Cost delta indicator
+            let costDeltaHtml = '';
+            if (cost_delta !== null && cost_delta !== undefined) {
+                const deltaClass = cost_delta > 0 ? 'cost-higher' : cost_delta < 0 ? 'cost-lower' : 'cost-equal';
+                const deltaIcon = cost_delta > 0 ? '⬆️' : cost_delta < 0 ? '⬇️' : '➡️';
+                costDeltaHtml = `
+                    <span class="cost-delta ${deltaClass}">
+                        ${deltaIcon} ${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(2)} Kč
+                    </span>
                 `;
             }
 
             return `
-                <div class="mode-block-card-compact ${cardClass}" data-index="${index}">
-                    <div class="card-single-line">
-                        <span class="icon-sm">${statusIcon}</span>
-                        <span class="time-sm">${start_time}-${end_time}</span>
-                        <span class="mode-pill" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
-                        ${mode_planned && mode_planned !== 'Unknown' ? `<span class="vs">→</span><span class="mode-pill-dim" style="background: ${plannedMode.color};">📋 ${plannedMode.label}</span>` : ''}
-                        ${isCompleted ? `<span class="price-sm">${cost_historical?.toFixed(2)} Kč</span>` : cost_planned !== null && cost_planned !== undefined ? `<span class="price-sm">${cost_planned.toFixed(2)} Kč</span>` : ''}
-                        ${deltaHtml ? `<span class="delta-sm ${cost_delta > 0 ? 'neg' : 'pos'}">${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(1)}</span>` : ''}
-                        <details class="info-icon">
-                            <summary>ℹ️</summary>
-                            <div class="info-popup">
-                                ☀️${solar_total_kwh?.toFixed(1)||'0'} 🏠${consumption_total_kwh?.toFixed(1)||'0'} ⬇️${grid_import_total_kwh?.toFixed(1)||'0'} ⬆️${grid_export_total_kwh?.toFixed(1)||'0'}
-                            </div>
-                        </details>
+                <div class="mode-block ${matchClass}" data-index="${index}">
+                    <!-- Header -->
+                    <div class="block-header">
+                        <div class="block-time">
+                            ${statusIcon} ${start_time} - ${end_time}
+                            <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
+                        </div>
+                        <div class="block-match ${matchClass}">
+                            ${matchIcon} ${matchLabel}
+                        </div>
                     </div>
+
+                    <!-- Mode Comparison -->
+                    <div class="block-modes">
+                        <div class="mode-row">
+                            <div class="mode-label">Skutečnost:</div>
+                            <div class="mode-badge" style="background: ${historicalMode.color};">
+                                ${historicalMode.icon} ${historicalMode.label}
+                            </div>
+                        </div>
+                        ${mode_planned && mode_planned !== 'Unknown' ? `
+                        <div class="mode-row">
+                            <div class="mode-label">Plán:</div>
+                            <div class="mode-badge" style="background: ${plannedMode.color};">
+                                ${plannedMode.icon} ${plannedMode.label}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Cost Info -->
+                    <div class="block-cost">
+                        <div class="cost-row">
+                            <span>Cena (skutečná):</span>
+                            <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                        </div>
+                        ${cost_planned !== null && cost_planned !== undefined ? `
+                        <div class="cost-row">
+                            <span>Cena (plánovaná):</span>
+                            <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
+                        </div>
+                        ${costDeltaHtml}
+                        ` : ''}
+                    </div>
+
+                    <!-- Energy Stats (collapsible) -->
+                    <details class="block-details">
+                        <summary>📊 Detaily energie</summary>
+                        <div class="energy-stats">
+                            ${solar_total_kwh !== null && solar_total_kwh !== undefined ? `
+                            <div class="energy-row">
+                                <span>☀️ Solární výroba:</span>
+                                <span class="energy-value">${solar_total_kwh.toFixed(2)} kWh</span>
+                            </div>
+                            ` : ''}
+                            ${consumption_total_kwh !== null && consumption_total_kwh !== undefined ? `
+                            <div class="energy-row">
+                                <span>🔌 Spotřeba:</span>
+                                <span class="energy-value">${consumption_total_kwh.toFixed(2)} kWh</span>
+                            </div>
+                            ` : ''}
+                            ${grid_import_total_kwh !== null && grid_import_total_kwh !== undefined ? `
+                            <div class="energy-row">
+                                <span>⬇️ Odběr ze sítě:</span>
+                                <span class="energy-value">${grid_import_total_kwh.toFixed(2)} kWh</span>
+                            </div>
+                            ` : ''}
+                            ${grid_export_total_kwh !== null && grid_export_total_kwh !== undefined ? `
+                            <div class="energy-row">
+                                <span>⬆️ Export do sítě:</span>
+                                <span class="energy-value">${grid_export_total_kwh.toFixed(2)} kWh</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </details>
                 </div>
             `;
         }).join('');
 
-        return `<div class="mode-blocks-container">${blocksHtml}</div>`;
+        return blocksHtml;
     }
 
     /**

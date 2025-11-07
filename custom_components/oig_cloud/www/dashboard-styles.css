@@ -8849,154 +8849,228 @@
 }
 
 /* ============================================================================
-   COMPACT MODE BLOCKS - Ultra-compact single-line design
+   MODE BLOCKS - Original design with complete data
    ============================================================================ */
 
-.mode-block-card-compact {
+.mode-block {
     background: var(--bg-secondary);
-    border-radius: 6px;
-    margin-bottom: 0.4rem;
-    overflow: visible;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    transition: all 0.15s ease;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
 }
 
-.mode-block-card-compact:hover {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+.mode-block:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-secondary);
+    transform: translateX(2px);
 }
 
-.mode-block-card-compact.card-success {
-    border-left: 3px solid #4CAF50;
+.mode-block.match-yes {
+    border-left: 4px solid #4CAF50;
 }
 
-.mode-block-card-compact.card-danger {
-    border-left: 3px solid #F44336;
+.mode-block.match-no {
+    border-left: 4px solid #F44336;
 }
 
-.mode-block-card-compact.card-warning {
-    border-left: 3px solid #FF9800;
+.mode-block.mode-current {
+    border-left: 4px solid #2196F3;
+    background: rgba(33, 150, 243, 0.1);
 }
 
-.mode-block-card-compact.card-info {
-    border-left: 3px solid #2196F3;
+.mode-block.mode-planned {
+    border-left: 4px solid rgba(255, 255, 255, 0.3);
 }
 
-.mode-block-card-compact.card-current {
-    border-left: 3px solid #00BCD4;
-    background: rgba(0, 188, 212, 0.05);
-}
-
-.mode-block-card-compact.card-planned {
-    border-left: 3px solid rgba(255, 255, 255, 0.3);
-}
-
-/* Single line layout */
-.card-single-line {
+/* Block Header */
+.block-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.8rem;
-    position: relative;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-primary);
 }
 
-.icon-sm {
-    font-size: 1rem;
-    flex-shrink: 0;
-}
-
-.time-sm {
-    color: var(--text-secondary);
-    font-weight: 500;
-    white-space: nowrap;
-    min-width: 90px;
-}
-
-.mode-pill {
-    padding: 0.2rem 0.6rem;
-    border-radius: 10px;
-    font-size: 0.75rem;
+.block-time {
+    font-size: 0.95rem;
     font-weight: 600;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-.vs {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-}
-
-.mode-pill-dim {
-    padding: 0.2rem 0.6rem;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    opacity: 0.5;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-.price-sm {
-    margin-left: auto;
-    font-weight: 700;
     color: var(--text-primary);
-    white-space: nowrap;
 }
 
-.delta-sm {
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-weight: 700;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    flex-shrink: 0;
+.block-duration {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: normal;
+    margin-left: 0.5rem;
 }
 
-.delta-sm.pos {
-    background: rgba(76, 175, 80, 0.25);
+.block-match {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+}
+
+.block-match.match-yes {
+    background: rgba(76, 175, 80, 0.2);
     color: #66BB6A;
 }
 
-.delta-sm.neg {
-    background: rgba(244, 67, 54, 0.25);
+.block-match.match-no {
+    background: rgba(244, 67, 54, 0.2);
     color: #EF5350;
 }
 
-/* Info icon with popup */
-.info-icon {
-    position: relative;
-    flex-shrink: 0;
+/* Block Modes */
+.block-modes {
+    margin-bottom: 0.75rem;
 }
 
-.info-icon summary {
+.mode-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.mode-row:last-child {
+    margin-bottom: 0;
+}
+
+.mode-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    min-width: 90px;
+}
+
+.mode-badge {
+    padding: 0.35rem 0.85rem;
+    border-radius: 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Block Cost */
+.block-cost {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 0.6rem;
+    margin-bottom: 0.75rem;
+}
+
+.cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+.cost-row:last-child {
+    margin-bottom: 0;
+}
+
+.cost-value {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cost-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.cost-delta.cost-higher {
+    background: rgba(244, 67, 54, 0.2);
+    color: #EF5350;
+}
+
+.cost-delta.cost-lower {
+    background: rgba(76, 175, 80, 0.2);
+    color: #66BB6A;
+}
+
+.cost-delta.cost-equal {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+}
+
+/* Block Details - Collapsible Energy Stats */
+.block-details {
+    margin-top: 0.5rem;
+}
+
+.block-details summary {
     cursor: pointer;
     user-select: none;
-    list-style: none;
-    font-size: 0.9rem;
-    opacity: 0.6;
-    transition: opacity 0.15s;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 0.4rem 0;
+    transition: color 0.15s;
 }
 
-.info-icon summary::-webkit-details-marker {
+.block-details summary:hover {
+    color: var(--text-primary);
+}
+
+.block-details summary::-webkit-details-marker {
     display: none;
 }
 
-.info-icon summary:hover {
-    opacity: 1;
+.block-details summary::before {
+    content: '▶';
+    display: inline-block;
+    margin-right: 0.4rem;
+    transition: transform 0.2s;
 }
 
-.info-popup {
-    position: absolute;
-    right: 0;
-    top: 100%;
-    margin-top: 0.25rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-primary);
+.block-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.energy-stats {
+    background: rgba(0, 0, 0, 0.15);
     border-radius: 6px;
-    padding: 0.5rem;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    padding: 0.6rem;
+    margin-top: 0.5rem;
+}
+
+.energy-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+.energy-row:last-child {
+    margin-bottom: 0;
+}
+
+.energy-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.no-mode-blocks {
+    padding: 2rem;
+    text-align: center;
+}
+
+.no-mode-blocks p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
