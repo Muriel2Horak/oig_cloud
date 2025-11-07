@@ -105,10 +105,10 @@ class TimelineDialog {
 
         // Attach event listeners
         this.attachEventListeners();
-        
+
         // Prefetch data for all tabs (proactive caching)
         this.prefetchAllTabs();
-        
+
         console.log('[TimelineDialog] Initialized');
     }
 
@@ -117,7 +117,7 @@ class TimelineDialog {
      */
     async prefetchAllTabs() {
         console.log('[TimelineDialog] Prefetching all tab data...');
-        
+
         try {
             await Promise.all([
                 this.loadTabData('yesterday'),
@@ -177,7 +177,7 @@ class TimelineDialog {
                 pendingLoads.push(this.loadTabData(day));
             }
         });
-        
+
         if (pendingLoads.length > 0) {
             console.log(`[TimelineDialog] Loading ${pendingLoads.length} missing tabs...`);
             await Promise.all(pendingLoads);
@@ -211,7 +211,7 @@ class TimelineDialog {
             console.log(`[TimelineDialog] Using cached ${dayType} data`);
             return;
         }
-        
+
         console.log(`[TimelineDialog] Loading ${dayType} data...`);
 
         try {
@@ -747,7 +747,7 @@ class TimelineDialog {
     /**
      * FÁZE 6: Render Mode Blocks from Detail Tabs API
      */
-    renderModeBlocks(blocks) {
+    renderModeBlocks(blocks, options = {}) {
         if (!blocks || blocks.length === 0) {
             return '<div class="no-mode-blocks"><p>Žádné mode bloky k dispozici</p></div>';
         }

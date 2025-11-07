@@ -945,16 +945,16 @@
                 document.write(script.outerHTML);
             });
         </script>
-        
+
         <!-- Prefetch timeline data on load -->
         <script>
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('[Dashboard] Prefetching timeline data...');
-                
+
                 // Prefetch detail_tabs for all days
                 const days = ['yesterday', 'today', 'tomorrow'];
                 const sn = INVERTER_SN;
-                
+
                 days.forEach(day => {
                     fetch(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
                         .then(r => r.ok ? r.json() : null)
