@@ -583,13 +583,13 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
 async function loadPricingData() {
     const perfStart = performance.now();
     console.log('[Pricing] === loadPricingData START ===');
-    
+
     // Show loading overlay
     const loadingOverlay = document.getElementById('pricing-loading-overlay');
     if (loadingOverlay) {
         loadingOverlay.style.display = 'block';
     }
-    
+
     const hass = getHass();
     if (!hass || !hass.states) {
         if (loadingOverlay) loadingOverlay.style.display = 'none';
@@ -620,7 +620,7 @@ async function loadPricingData() {
         if (timelineDataCache.chartsRendered) {
             const perfEnd = performance.now();
             console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
-            
+
             // Hide loading overlay
             if (loadingOverlay) loadingOverlay.style.display = 'none';
             return;
@@ -1461,12 +1461,12 @@ async function loadPricingData() {
 
     // Mark charts as rendered to skip re-rendering on next tab switch
     timelineDataCache.chartsRendered = true;
-    
+
     // Hide loading overlay
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
     }
-    
+
     const perfEnd = performance.now();
     const totalTime = (perfEnd - perfStart).toFixed(0);
     console.log(`[Pricing] === loadPricingData COMPLETE in ${totalTime}ms ===`);

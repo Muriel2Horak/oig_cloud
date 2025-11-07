@@ -333,10 +333,13 @@ class TimelineDialog {
         console.log('[TimelineDialog VČERA] Using FE calculations (BE data not available)');
         const stats = this.calculateStats(intervals);
 
+        // Check if we have any planned data - if not, skip variance rendering
+        const hasPlannedData = intervals.some(i => i.planned && Object.keys(i.planned).length > 0);
+
         return `
             ${this.renderHeader(summary, 'yesterday')}
             ${this.renderYesterdayIntervals(intervals)}
-            ${this.renderTopVariances(intervals)}
+            ${hasPlannedData ? this.renderTopVariances(intervals) : '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>'}
         `;
     }
 
@@ -1652,7 +1655,7 @@ class TimelineDialog {
                     <div class="footer-stat">
                         ✅ Shoda režimů: ${modeAdherence.toFixed(0)}% (${modeMatches}/${totalIntervals} intervalů)
                     </div>
-                    ${biggestVariance ? `
+                    ${biggestVariance && biggestVariance.delta != null ? `
                         <div class="footer-stat">
                             ⚠️ Největší odchylka: ${biggestVariance.time} (${biggestVariance.delta > 0 ? '+' : ''}${biggestVariance.delta.toFixed(2)} Kč)
                         </div>
@@ -1673,20 +1676,24 @@ class TimelineDialog {
         const medals = ['🥇', '🥈', '🥉'];
 
         const html = variances.map((v, idx) => {
-            const deltaClass = v.delta > 0 ? 'negative' : 'positive';
-            const arrow = v.delta > 0 ? '⬆️' : '⬇️';
-            const percent = v.planned > 0 ? Math.abs((v.delta / v.planned) * 100) : 0;
+            // Safety check for null values
+            const delta = v.delta ?? 0;
+            const planned = v.planned ?? 0;
+
+            const deltaClass = delta > 0 ? 'negative' : 'positive';
+            const arrow = delta > 0 ? '⬆️' : '⬇️';
+            const percent = planned > 0 ? Math.abs((delta / planned) * 100) : 0;
 
             return `
                 <div class="variance-item ${deltaClass}">
                     <div class="variance-rank">${medals[idx] || `#${idx + 1}`}</div>
                     <div class="variance-details">
-                        <div class="variance-time">${v.time}</div>
-                        <div class="variance-modes">${v.plannedMode} → ${v.actualMode}</div>
+                        <div class="variance-time">${v.time || '--'}</div>
+                        <div class="variance-modes">${v.plannedMode || '?'} → ${v.actualMode || '?'}</div>
                         <div class="variance-impact">
-                            ${v.delta > 0 ? '+' : ''}${v.delta.toFixed(2)} Kč ${arrow} ${percent.toFixed(0)}% ${v.delta > 0 ? 'horší' : 'lepší'}
+                            ${delta > 0 ? '+' : ''}${delta.toFixed(2)} Kč ${arrow} ${percent.toFixed(0)}% ${delta > 0 ? 'horší' : 'lepší'}
                         </div>
-                        <div class="variance-reason">${v.reason}</div>
+                        <div class="variance-reason">${v.reason || 'Žádný důvod'}</div>
                     </div>
                 </div>
             `;
