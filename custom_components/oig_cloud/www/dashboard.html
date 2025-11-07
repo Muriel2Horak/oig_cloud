@@ -919,25 +919,32 @@
 
         <!-- Extrahovaný JavaScript -->
         <!-- Dashboard moduly (musí být před core) -->
-        <script src="dashboard-utils.js?v=1762550654"></script>
-        <script src="dashboard-api.js?v=1762550654"></script>
-        <script src="dashboard-layout.js?v=1762550654"></script>
-        <script src="dashboard-flow.js?v=1762550654"></script>
-        <script src="dashboard-shield.js?v=1762550654"></script>
-        <script src="dashboard-pricing.js?v=1762550654"></script>
-        <script src="dashboard-timeline.js?v=1762550654"></script>
-        <script src="dashboard-grid-charging.js?v=1762550654"></script>
-        <script src="dashboard-chmu.js?v=1762550654"></script>
-        <script src="dashboard-analytics.js?v=1762550654"></script>
-        <script src="dashboard-battery-health.js?v=1762550654"></script>
-
-        <!-- Existující moduly (enhanced) -->
-        <script src="dashboard-tiles.js?v=1762550654"></script>
-        <script src="dashboard-dialog.js?v=1762550654"></script>
-        <script src="dashboard-boiler.js?v=1762550654"></script>
-
-        <!-- Core (používá všechny moduly výše) -->
-        <script src="dashboard-core.js?v=1762550654"></script>
+        <script>
+            // Dynamic cache busting
+            const v = Date.now();
+            const scripts = [
+                'dashboard-utils.js',
+                'dashboard-api.js',
+                'dashboard-layout.js',
+                'dashboard-flow.js',
+                'dashboard-shield.js',
+                'dashboard-pricing.js',
+                'dashboard-timeline.js',
+                'dashboard-grid-charging.js',
+                'dashboard-chmu.js',
+                'dashboard-analytics.js',
+                'dashboard-battery-health.js',
+                'dashboard-tiles.js',
+                'dashboard-dialog.js',
+                'dashboard-boiler.js',
+                'dashboard-core.js'
+            ];
+            scripts.forEach(src => {
+                const script = document.createElement('script');
+                script.src = `${src}?v=${v}`;
+                document.write(script.outerHTML);
+            });
+        </script>
         
         <!-- Prefetch timeline data on load -->
         <script>
