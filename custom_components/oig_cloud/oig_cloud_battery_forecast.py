@@ -7732,70 +7732,42 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         elif source == "mixed":
             # ========================================
-            # DNES: Historical (Recorder) + Planned (storage + memory kombinace)
-            # Planned data: KOMBINACE dvou zdrojů:
-            #   1. HA storage - pro MINULÉ intervaly (od půlnoci do now)
-            #   2. Memory optimal_timeline - pro BUDOUCÍ intervaly (od now dál)
+            # DNES: Historical (Recorder) + Planned (active timeline)
+            # Planned data: Z self._timeline_data (active timeline - 192 bodů 48h dopředu)
+            # Filtrujeme jen dnešní intervaly
             # Historical modes: Z Recorderu
             # ========================================
 
-            # Phase 1: Load base plan from storage (pokud existuje)
-            planned_timeline_storage = []
-            date_str = date.strftime("%Y-%m-%d")
-            daily_plan = await self._load_daily_plan_from_storage(date_str)
+            # Get full active timeline (192 points, 48h ahead from last update)
+            all_planned = getattr(self, "_timeline_data", [])
+            
+            # Filter only TODAY's intervals from active timeline
+            planned_timeline = []
+            for interval in all_planned:
+                time_str = interval.get("time")
+                if time_str:
+                    try:
+                        interval_dt = datetime.fromisoformat(time_str)
+                        # Keep only intervals from today
+                        if interval_dt.date() == date:
+                            planned_timeline.append(interval)
+                    except (ValueError, TypeError):
+                        continue
+            
+            _LOGGER.debug(
+                f"📋 Filtered planned timeline for {date}: {len(planned_timeline)} intervals "
+                f"(from {len(all_planned)} total in active timeline)"
+            )
 
-            if daily_plan and "detailed" in daily_plan:
-                # Detailed obsahuje intervals pro celý den (vytvořený ráno)
-                detailed = daily_plan["detailed"].get(date_str, {})
-                planned_timeline_storage = detailed.get("intervals", [])
-                _LOGGER.debug(
-                    f"📂 Loaded base plan from storage: {len(planned_timeline_storage)} intervals for {date_str}"
-                )
+            # Build lookup pro planned data
+            planned_lookup = {
+                p.get("time"): p for p in planned_timeline if p.get("time")
+            }
 
-            # Phase 2: Get fresh optimized timeline from memory (budoucí intervaly)
-            planned_timeline_memory = []
-            if (
-                hasattr(self, "_mode_optimization_result")
-                and self._mode_optimization_result
-            ):
-                planned_timeline_memory = self._mode_optimization_result.get(
-                    "optimal_timeline", []
-                )
-                _LOGGER.debug(
-                    f"🧠 Got optimized timeline from memory: {len(planned_timeline_memory)} future intervals"
-                )
-
-            # Phase 3: MERGE - storage pro minulost, memory pro budoucnost
             # Determine current interval
             current_minute = (now.minute // 15) * 15
             current_interval = now.replace(
                 minute=current_minute, second=0, microsecond=0
-            )
-
-            # Build combined lookup: storage first, then override with memory for future
-            planned_lookup = {}
-            
-            # Add storage data (whole day)
-            for p in planned_timeline_storage:
-                if p.get("time"):
-                    planned_lookup[p["time"]] = p
-            
-            # Override with memory data for current and future intervals
-            for p in planned_timeline_memory:
-                time_str = p.get("time")
-                if time_str:
-                    # Parse time to compare
-                    try:
-                        interval_dt = datetime.fromisoformat(time_str)
-                        # Only use memory data for current and future intervals
-                        if interval_dt >= current_interval:
-                            planned_lookup[time_str] = p
-                    except (ValueError, TypeError):
-                        continue
-
-            _LOGGER.debug(
-                f"📋 Combined planned lookup: {len(planned_lookup)} total intervals "
-                f"(storage: {len(planned_timeline_storage)}, memory: {len(planned_timeline_memory)})"
             )
 
             # Build 96 intervals for whole day
