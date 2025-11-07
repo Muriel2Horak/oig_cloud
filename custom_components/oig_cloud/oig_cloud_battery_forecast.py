@@ -7747,7 +7747,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 for interval in actual_intervals:
                     if interval.get("time"):
                         past_planned.append(interval)
-            
+
             # Phase 2: Get future planned intervals from active timeline
             future_planned = []
             all_timeline = getattr(self, "_timeline_data", [])
@@ -7761,7 +7761,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             future_planned.append(interval)
                     except (ValueError, TypeError):
                         continue
-            
+
             _LOGGER.debug(
                 f"📋 Planned data sources for {date}: "
                 f"past={len(past_planned)} intervals from daily_plan, "
@@ -7776,30 +7776,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Phase 3: MERGE - use past_planned for history, future_planned for future
             planned_lookup = {}
-            
-            # Add all past planned data
+
+            # Add all past planned data (před current_interval)
             for p in past_planned:
-                if p.get("time"):
-                    planned_lookup[p["time"]] = p
-            
-            # Override with future data for current and future intervals
+                time_str = p.get("time")
+                if time_str:
+                    try:
+                        interval_dt = datetime.fromisoformat(time_str)
+                        # Only use past data for intervals BEFORE current
+                        if interval_dt < current_interval:
+                            planned_lookup[time_str] = p
+                    except (ValueError, TypeError):
+                        # Fallback: if can't parse, add it anyway
+                        planned_lookup[time_str] = p
+
+            # Add future data (od current_interval dál)
             for p in future_planned:
                 time_str = p.get("time")
                 if time_str:
                     try:
                         interval_dt = datetime.fromisoformat(time_str)
-                        # Only override for current and future intervals
+                        # Only use future data for current and future intervals
                         if interval_dt >= current_interval:
                             planned_lookup[time_str] = p
                     except (ValueError, TypeError):
                         continue
-            
+
             _LOGGER.debug(
                 f"📋 Combined planned lookup: {len(planned_lookup)} total intervals for {date}"
             )
-
-            # Build 96 intervals for whole day
-            interval_time = day_start
 
             # Build 96 intervals for whole day
             interval_time = day_start
