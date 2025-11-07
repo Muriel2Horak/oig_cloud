@@ -6805,8 +6805,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         now = dt_util.now()
         today = now.date()
 
+        # Load storage plans for timeline building
+        storage_plans = {}
+        if self._plans_store:
+            try:
+                storage_plans = await self._plans_store.async_load() or {}
+            except Exception as e:
+                _LOGGER.warning(f"Failed to load storage plans: {e}")
+                storage_plans = {}
+
         # Get today's timeline
-        today_timeline = await self._build_day_timeline(today)
+        today_timeline = await self._build_day_timeline(today, storage_plans)
         _LOGGER.info(
             f"[UCT] _build_day_timeline returned: type={type(today_timeline)}, value={today_timeline is not None}"
         )
@@ -6901,9 +6910,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
 
             # Compare naive datetimes to avoid timezone issues
-            interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
-            current_interval_naive = current_interval_time.replace(tzinfo=None) if current_interval_time.tzinfo else current_interval_time
-            
+            interval_time_naive = (
+                interval_time.replace(tzinfo=None)
+                if interval_time.tzinfo
+                else interval_time
+            )
+            current_interval_naive = (
+                current_interval_time.replace(tzinfo=None)
+                if current_interval_time.tzinfo
+                else current_interval_time
+            )
+
             if interval_time_naive < current_interval_naive:
                 if interval.get("actual"):
                     completed.append(interval)
@@ -7757,7 +7774,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             #   1. Storage Helper (ranní plán uložený v 00:10)
             #   2. Fallback: _daily_plan_state["actual"] (pokud storage není dostupný)
             past_planned = []
-            
+
             # Try Storage Helper first
             date_str = date.strftime("%Y-%m-%d")
             storage_day = storage_plans.get("detailed", {}).get(date_str)
@@ -7829,10 +7846,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         if "T" not in time_str:
                             # HH:MM format from storage - prepend date
                             time_str = f"{date_str}T{time_str}:00"
-                        
+
                         interval_dt = datetime.fromisoformat(time_str)
-                        interval_dt_naive = interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
-                        
+                        interval_dt_naive = (
+                            interval_dt.replace(tzinfo=None)
+                            if interval_dt.tzinfo
+                            else interval_dt
+                        )
+
                         # Only use past data for intervals BEFORE current
                         if interval_dt_naive < current_interval_naive:
                             # Store with HH:MM:SS format for consistency
@@ -7876,7 +7897,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
                 # Determine status (use naive for comparison)
-                interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+                interval_time_naive = (
+                    interval_time.replace(tzinfo=None)
+                    if interval_time.tzinfo
+                    else interval_time
+                )
                 if interval_time_naive < current_interval_naive:
                     status = "historical"
                 elif interval_time_naive == current_interval_naive:
@@ -8303,9 +8328,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue  # Nad pojistkou
 
             # Compare naive datetimes to avoid timezone issues
-            interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
-            current_time_naive = current_time.replace(tzinfo=None) if current_time.tzinfo else current_time
-            
+            interval_time_naive = (
+                interval_time.replace(tzinfo=None)
+                if interval_time.tzinfo
+                else interval_time
+            )
+            current_time_naive = (
+                current_time.replace(tzinfo=None)
+                if current_time.tzinfo
+                else current_time
+            )
+
             if interval_time_naive <= current_time_naive:
                 continue  # Minulost
 

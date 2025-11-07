@@ -194,15 +194,22 @@ class TimelineDialog {
                 throw new Error('No data returned from detail_tabs');
             }
 
-            // Cache the data (detail_tabs returns the tab data directly)
-            this.cache[dayType] = data;
+            // Extract the specific day data from response
+            // API returns: { "today": { "date": "...", "mode_blocks": [...], "summary": {...} } }
+            const dayData = data[dayType];
+            if (!dayData) {
+                throw new Error(`No data for ${dayType} in response`);
+            }
+
+            // Cache the day-specific data
+            this.cache[dayType] = dayData;
             console.log(`[TimelineDialog] ${dayType} data loaded:`, this.cache[dayType]);
 
-            // Extra debug for today
-            if (dayType === 'today' && this.cache[dayType]?.intervals) {
-                console.log(`[TimelineDialog] Today intervals count: ${this.cache[dayType].intervals.length}`);
-                if (this.cache[dayType].intervals.length > 0) {
-                    console.log('[TimelineDialog] First interval structure:', JSON.stringify(this.cache[dayType].intervals[0], null, 2));
+            // Extra debug
+            if (this.cache[dayType]?.mode_blocks) {
+                console.log(`[TimelineDialog] ${dayType} mode_blocks count: ${this.cache[dayType].mode_blocks.length}`);
+                if (this.cache[dayType].mode_blocks.length > 0) {
+                    console.log(`[TimelineDialog] First block:`, JSON.stringify(this.cache[dayType].mode_blocks[0], null, 2));
                 }
             }
         } catch (error) {
@@ -264,7 +271,7 @@ class TimelineDialog {
             return;
         }
 
-        if (!data || !data.intervals || data.intervals.length === 0) {
+        if (!data || !data.mode_blocks || data.mode_blocks.length === 0) {
             container.innerHTML = this.renderNoData(dayType);
             return;
         }
@@ -273,11 +280,11 @@ class TimelineDialog {
         if (dayType === 'yesterday') {
             container.innerHTML = this.renderYesterdayTab(data);
             // Initialize charts after DOM is ready
-            setTimeout(() => this.initializeYesterdayCharts(data.intervals, dayType), 0);
+            setTimeout(() => this.initializeYesterdayCharts(data.mode_blocks, dayType), 0);
         } else if (dayType === 'today') {
             container.innerHTML = this.renderTodayTab(data);
             // Initialize charts after DOM is ready
-            setTimeout(() => this.initializeTodayCharts(data.intervals, dayType), 0);
+            setTimeout(() => this.initializeTodayCharts(data.mode_blocks, dayType), 0);
         } else if (dayType === 'tomorrow') {
             container.innerHTML = this.renderTomorrowTab(data);
         } else if (dayType === 'history') {
@@ -310,7 +317,7 @@ class TimelineDialog {
      * FÁZE 6: Now using Detail Tabs API data (mode_blocks)
      */
     renderYesterdayTab(data) {
-        const { intervals, summary } = data;
+        const { mode_blocks, summary } = data;
 
         // FÁZE 2: Use BE data if available
         if (summary && summary.mode_groups && summary.mode_adherence_pct !== undefined) {
@@ -327,17 +334,17 @@ class TimelineDialog {
             `;
         }
 
-        // Fallback: FE calculation (backward compatibility)
-        console.log('[TimelineDialog VČERA] Using FE calculations (BE data not available)');
-        const stats = this.calculateStats(intervals);
+        // Fallback: FE calculation using mode_blocks
+        console.log('[TimelineDialog VČERA] Using FE calculations from mode_blocks');
+        const stats = this.calculateStats(mode_blocks);
 
-        // Check if we have any planned data - if not, skip variance rendering
-        const hasPlannedData = intervals.some(i => i.planned && Object.keys(i.planned).length > 0);
+        // Check if we have any planned data
+        const hasPlannedData = mode_blocks.some(b => b.mode_planned && b.mode_planned !== 'Unknown');
 
         return `
             ${this.renderHeader(summary, 'yesterday')}
-            ${this.renderYesterdayIntervals(intervals)}
-            ${hasPlannedData ? this.renderTopVariances(intervals) : '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>'}
+            ${this.renderYesterdayModeBlocks(mode_blocks)}
+            ${hasPlannedData ? this.renderTopVariances(mode_blocks) : '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>'}
         `;
     }
 
