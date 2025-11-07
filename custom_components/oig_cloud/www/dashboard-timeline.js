@@ -279,12 +279,10 @@ class TimelineDialog {
         // Render based on tab type
         if (dayType === 'yesterday') {
             container.innerHTML = this.renderYesterdayTab(data);
-            // Initialize charts after DOM is ready
-            setTimeout(() => this.initializeYesterdayCharts(data.mode_blocks, dayType), 0);
+            // Charts will be added later if needed
         } else if (dayType === 'today') {
             container.innerHTML = this.renderTodayTab(data);
-            // Initialize charts after DOM is ready
-            setTimeout(() => this.initializeTodayCharts(data.mode_blocks, dayType), 0);
+            // Charts will be added later if needed
         } else if (dayType === 'tomorrow') {
             container.innerHTML = this.renderTomorrowTab(data);
         } else if (dayType === 'history') {
@@ -319,32 +317,20 @@ class TimelineDialog {
     renderYesterdayTab(data) {
         const { mode_blocks, summary } = data;
 
-        // FÁZE 2: Use BE data if available
-        if (summary && summary.mode_groups && summary.mode_adherence_pct !== undefined) {
-            console.log('[TimelineDialog VČERA] Using BE mode statistics:', {
-                mode_groups: summary.mode_groups.length,
-                adherence: summary.mode_adherence_pct,
-                top_variances: summary.top_variances?.length || 0
-            });
-
-            return `
-                ${this.renderYesterdayHeaderBE(summary)}
-                ${this.renderYesterdayModeGroupsBE(summary.mode_groups)}
-                ${this.renderTopVariancesBE(summary.top_variances || [])}
-            `;
+        if (!mode_blocks || mode_blocks.length === 0) {
+            return this.renderNoData('yesterday');
         }
-
-        // Fallback: FE calculation using mode_blocks
-        console.log('[TimelineDialog VČERA] Using FE calculations from mode_blocks');
-        const stats = this.calculateStats(mode_blocks);
 
         // Check if we have any planned data
         const hasPlannedData = mode_blocks.some(b => b.mode_planned && b.mode_planned !== 'Unknown');
 
         return `
-            ${this.renderHeader(summary, 'yesterday')}
-            ${this.renderYesterdayModeBlocks(mode_blocks)}
-            ${hasPlannedData ? this.renderTopVariances(mode_blocks) : '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>'}
+            ${this.renderDetailTabHeader(summary, 'Včera')}
+            <div class="mode-blocks-container">
+                <h3>📊 Režimy a náklady</h3>
+                ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
+            </div>
+            ${!hasPlannedData ? '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>' : ''}
         `;
     }
 
@@ -847,39 +833,34 @@ class TimelineDialog {
      * Render DNES tab - Live tracking + EOD prediction
      */
     renderTodayTab(data) {
-        const { intervals, summary } = data;
+        const { mode_blocks, summary } = data;
 
-        // Split into historical and planned
-        const now = new Date();
-        const historical = intervals.filter(i => i.status === 'historical' || i.status === 'current');
-        const planned = intervals.filter(i => i.status === 'planned');
-
-        // Calculate current progress
-        const progress = this.calculateProgress(intervals);
-
-        // Calculate EOD prediction
-        const eodPrediction = this.calculateEODPrediction(intervals);
-
-        // Load unified_cost_tile data (v2.1)
-        let unifiedCostData = null;
-        try {
-            const hass = getHass();
-            const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
-            if (hass && hass.states && hass.states[forecastSensorId]) {
-                const forecastState = hass.states[forecastSensorId];
-                if (forecastState.attributes && forecastState.attributes.unified_cost_tile) {
-                    unifiedCostData = forecastState.attributes.unified_cost_tile.today;
-                    console.log('[TimelineDialog DNES] Loaded unified_cost_tile data', unifiedCostData);
-                }
-            }
-        } catch (error) {
-            console.warn('[TimelineDialog DNES] Could not load unified_cost_tile:', error);
+        if (!mode_blocks || mode_blocks.length === 0) {
+            return this.renderNoData('today');
         }
 
+        // Split into completed, current, and planned blocks
+        const completedBlocks = mode_blocks.filter(b => b.status === 'completed');
+        const currentBlock = mode_blocks.find(b => b.status === 'current');
+        const plannedBlocks = mode_blocks.filter(b => b.status === 'planned');
+
         return `
-            <div class="today-content">
-                ${unifiedCostData ? this.renderTodayHeaderBE(unifiedCostData) : ''}
-                ${this.renderTodayIntervals(intervals, unifiedCostData)}
+            ${this.renderDetailTabHeader(summary, 'Dnes')}
+            <div class="mode-blocks-container">
+                ${completedBlocks.length > 0 ? `
+                    <h3>✅ Dokončené režimy (${completedBlocks.length})</h3>
+                    ${renderModeBlocks(completedBlocks, { showCosts: true, showAdherence: true })}
+                ` : ''}
+                
+                ${currentBlock ? `
+                    <h3>⏱️ Aktuální režim</h3>
+                    ${renderModeBlocks([currentBlock], { showCosts: true, showAdherence: false })}
+                ` : ''}
+                
+                ${plannedBlocks.length > 0 ? `
+                    <h3>📅 Plánované režimy (${plannedBlocks.length})</h3>
+                    ${renderModeBlocks(plannedBlocks, { showCosts: true, showAdherence: false })}
+                ` : ''}
             </div>
         `;
     }
@@ -1424,46 +1405,20 @@ class TimelineDialog {
      * Render ZÍTRA tab - Tomorrow's plan with card design
      */
     renderTomorrowTab(data) {
-        const { intervals, summary } = data;
+        const { mode_blocks, summary } = data;
 
-        // Load unified_cost_tile.tomorrow data
-        let tomorrowCostData = null;
-        try {
-            const hass = getHass();
-            const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
-            if (hass && hass.states && hass.states[forecastSensorId]) {
-                const forecastState = hass.states[forecastSensorId];
-                if (forecastState.attributes && forecastState.attributes.unified_cost_tile) {
-                    tomorrowCostData = forecastState.attributes.unified_cost_tile.tomorrow;
-                    console.log('[TimelineDialog ZÍTRA] Loaded unified_cost_tile.tomorrow data', tomorrowCostData);
-                }
-            }
-        } catch (error) {
-            console.warn('[TimelineDialog ZÍTRA] Could not load unified_cost_tile:', error);
+        if (!mode_blocks || mode_blocks.length === 0) {
+            return this.renderNoData('tomorrow');
         }
 
-        // FÁZE 3: Use BE data if available
-        if (tomorrowCostData && tomorrowCostData.mode_distribution && tomorrowCostData.dominant_mode_name) {
-            console.log('[TimelineDialog ZÍTRA] Using BE mode distribution:', {
-                total_modes: Object.keys(tomorrowCostData.mode_distribution).length,
-                dominant: tomorrowCostData.dominant_mode_name,
-                planned_groups: tomorrowCostData.planned_groups?.length || 0
-            });
-
-            return this.renderTomorrowTabBE(tomorrowCostData);
-        }
-
-        // Fallback: FE calculation (backward compatibility)
-        console.log('[TimelineDialog ZÍTRA] Using FE calculations (BE data not available)');
-        const plannedCost = summary?.planned_total_cost || 0;
-        const intervalCount = intervals?.length || 0;
-
-        // Calculate mode distribution
-        const modeDistribution = {};
-        intervals?.forEach(interval => {
-            const mode = interval.planned?.mode || 'Unknown';
-            modeDistribution[mode] = (modeDistribution[mode] || 0) + 1;
-        });
+        // All blocks should be planned for tomorrow
+        return `
+            ${this.renderDetailTabHeader(summary, 'Zítra')}
+            <div class="mode-blocks-container">
+                <h3>📅 Plánované režimy</h3>
+                ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
+            </div>
+        `;
 
         const topMode = Object.entries(modeDistribution)
             .sort((a, b) => b[1] - a[1])[0];
@@ -2803,6 +2758,94 @@ async function buildExtendedTimeline() {
     } catch (error) {
         console.error('[Extended Timeline] Error fetching data:', error);
     }
+}
+
+/**
+ * Helper: Render mode blocks (from detail_tabs API)
+ * Converts mode_blocks array into HTML timeline visualization
+ */
+function renderModeBlocks(blocks, options = {}) {
+    if (!blocks || blocks.length === 0) {
+        return '<div class="no-data">Žádné bloky k zobrazení</div>';
+    }
+
+    const showCosts = options.showCosts !== false;
+    const showAdherence = options.showAdherence !== false;
+    
+    return blocks.map(block => {
+        const {
+            mode_historical,
+            mode_planned,
+            mode_match,
+            status,
+            start_time,
+            end_time,
+            interval_count,
+            duration_hours,
+            cost_historical,
+            cost_planned,
+            cost_delta,
+            adherence_pct
+        } = block;
+
+        // Determine block styling
+        const isCompleted = status === 'completed';
+        const isCurrent = status === 'current';
+        const isPlanned = status === 'planned';
+        
+        let statusClass = '';
+        let statusIcon = '';
+        if (isCompleted) {
+            statusClass = mode_match ? 'mode-match' : 'mode-mismatch';
+            statusIcon = mode_match ? '✅' : '❌';
+        } else if (isCurrent) {
+            statusClass = 'mode-current';
+            statusIcon = '⏱️';
+        } else {
+            statusClass = 'mode-planned';
+            statusIcon = '📅';
+        }
+
+        // Cost delta formatting
+        let deltaText = '';
+        let deltaClass = '';
+        if (showCosts && isCompleted && cost_delta !== undefined) {
+            if (cost_delta > 0) {
+                deltaText = `+${cost_delta.toFixed(2)} Kč`;
+                deltaClass = 'cost-higher';
+            } else if (cost_delta < 0) {
+                deltaText = `${cost_delta.toFixed(2)} Kč`;
+                deltaClass = 'cost-lower';
+            } else {
+                deltaText = '±0.00 Kč';
+                deltaClass = 'cost-equal';
+            }
+        }
+
+        return `
+            <div class="mode-block ${statusClass}">
+                <div class="mode-block-header">
+                    <span class="mode-block-time">${start_time} - ${end_time}</span>
+                    <span class="mode-block-status">${statusIcon}</span>
+                </div>
+                <div class="mode-block-modes">
+                    ${isCompleted || isCurrent ? `<div class="mode-actual">Skutečnost: <strong>${mode_historical}</strong></div>` : ''}
+                    <div class="mode-plan">Plán: <strong>${mode_planned}</strong></div>
+                </div>
+                ${showCosts ? `
+                    <div class="mode-block-costs">
+                        ${isCompleted ? `<div class="cost-row">Skutečnost: ${cost_historical?.toFixed(2) || '0.00'} Kč</div>` : ''}
+                        <div class="cost-row">Plán: ${cost_planned?.toFixed(2) || '0.00'} Kč</div>
+                        ${deltaText ? `<div class="cost-row ${deltaClass}">Rozdíl: ${deltaText}</div>` : ''}
+                    </div>
+                ` : ''}
+                <div class="mode-block-meta">
+                    <span>${interval_count} interval${interval_count > 1 ? 'ů' : ''}</span>
+                    <span>${duration_hours.toFixed(2)}h</span>
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 

@@ -8391,3 +8391,140 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* === MODE BLOCKS STYLING === */
+.mode-blocks-container {
+    padding: 1rem;
+}
+
+.mode-blocks-container h3 {
+    font-size: 1.1rem;
+    margin: 1.5rem 0 1rem 0;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.mode-block {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.mode-block:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-secondary);
+    transform: translateX(2px);
+}
+
+.mode-block.mode-match {
+    border-left: 4px solid #4CAF50;
+}
+
+.mode-block.mode-mismatch {
+    border-left: 4px solid #F44336;
+}
+
+.mode-block.mode-current {
+    border-left: 4px solid #2196F3;
+    background: rgba(33, 150, 243, 0.1);
+}
+
+.mode-block.mode-planned {
+    border-left: 4px solid rgba(255, 255, 255, 0.3);
+}
+
+.mode-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.mode-block-time {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.mode-block-status {
+    font-size: 1.2rem;
+}
+
+.mode-block-modes {
+    margin-bottom: 0.75rem;
+}
+
+.mode-actual,
+.mode-plan {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.mode-actual strong,
+.mode-plan strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.mode-block-costs {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.cost-row {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.cost-row:last-child {
+    margin-bottom: 0;
+}
+
+.cost-row.cost-higher {
+    color: #EF5350;
+    font-weight: 600;
+}
+
+.cost-row.cost-lower {
+    color: #66BB6A;
+    font-weight: 600;
+}
+
+.cost-row.cost-equal {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.mode-block-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+}
+
+.mode-block-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.no-plan-notice {
+    background: rgba(33, 150, 243, 0.1);
+    border: 1px solid rgba(33, 150, 243, 0.3);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem;
+    text-align: center;
+}
+
+.no-plan-notice p {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
