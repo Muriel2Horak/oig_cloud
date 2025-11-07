@@ -6209,6 +6209,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         Returns:
             Summary dict s total_cost, adherence, mode_switches
+            + pro TODAY: completed_summary a planned_summary
         """
         if not mode_blocks:
             return {
@@ -6222,6 +6223,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         adherent_blocks = 0
         total_blocks = len(mode_blocks)
 
+        # Sub-summaries pro TODAY
+        completed_blocks = []
+        planned_blocks = []
+
         for block in mode_blocks:
             cost = block.get("cost_historical")
             if cost is not None:
@@ -6233,6 +6238,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if block.get("adherence_pct") == 100:
                 adherent_blocks += 1
 
+            # Separate completed vs planned for TODAY
+            if block.get("status") == "completed":
+                completed_blocks.append(block)
+            elif block.get("status") in ("current", "planned"):
+                planned_blocks.append(block)
+
         # Overall adherence %
         overall_adherence = (
             round((adherent_blocks / total_blocks) * 100, 1)
@@ -6243,11 +6254,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Mode switches = počet bloků - 1
         mode_switches = max(0, total_blocks - 1)
 
-        return {
+        summary = {
             "total_cost": round(total_cost, 2),
             "overall_adherence": overall_adherence,
             "mode_switches": mode_switches,
         }
+
+        # Add sub-summaries if we have both completed and planned (TODAY case)
+        if completed_blocks and planned_blocks:
+            # Completed summary
+            completed_cost = sum(b.get("cost_historical", 0) for b in completed_blocks)
+            completed_adherent = sum(
+                1 for b in completed_blocks if b.get("adherence_pct") == 100
+            )
+
+            summary["completed_summary"] = {
+                "count": len(completed_blocks),
+                "total_cost": round(completed_cost, 2),
+                "adherence_pct": round(
+                    (completed_adherent / len(completed_blocks)) * 100, 1
+                )
+                if completed_blocks
+                else 100,
+            }
+
+            # Planned summary
+            planned_cost = sum(b.get("cost_planned", 0) for b in planned_blocks)
+
+            summary["planned_summary"] = {
+                "count": len(planned_blocks),
+                "total_cost": round(planned_cost, 2),
+            }
+
+        return summary
 
     async def build_unified_cost_tile(self) -> Dict[str, Any]:
         """

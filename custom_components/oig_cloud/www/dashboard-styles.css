@@ -8404,6 +8404,106 @@
     font-weight: 600;
 }
 
+/* Collapsible Sections */
+.collapsible-section {
+    margin: 1rem;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.collapsible-section.current-section {
+    border-left: 4px solid #2196F3;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+}
+
+.section-header:hover {
+    background: var(--bg-hover);
+}
+
+.section-header-simple {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.section-icon {
+    font-size: 1.2rem;
+}
+
+.section-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.section-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.section-summary {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.summary-item {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.expand-icon {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    transition: transform 0.3s ease;
+    margin-left: 0.5rem;
+}
+
+.collapsible-section.expanded .expand-icon {
+    transform: rotate(180deg);
+}
+
+.section-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding: 0 1rem;
+}
+
+.section-content.visible,
+.collapsible-section.expanded .section-content {
+    max-height: 10000px;
+    padding: 0.5rem 1rem 1rem 1rem;
+}
+
+/* Mode Blocks */
 .mode-block {
     background: var(--bg-secondary);
     border: 1px solid var(--border-primary);

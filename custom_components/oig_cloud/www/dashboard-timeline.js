@@ -326,10 +326,26 @@ class TimelineDialog {
 
         return `
             ${this.renderDetailTabHeader(summary, 'Včera')}
-            <div class="mode-blocks-container">
-                <h3>📊 Režimy a náklady</h3>
-                ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
+            
+            <!-- Collapsible section for all blocks -->
+            <div class="collapsible-section">
+                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <div class="section-title">
+                        <span class="section-icon">📊</span>
+                        <span class="section-name">Režimy a náklady</span>
+                        <span class="section-badge">${mode_blocks.length} bloků</span>
+                    </div>
+                    <div class="section-summary">
+                        <span class="summary-item">💰 ${summary.total_cost?.toFixed(2) || '0.00'} Kč</span>
+                        <span class="summary-item">📊 ${summary.overall_adherence?.toFixed(1) || '0'}% shoda</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
+                </div>
             </div>
+            
             ${!hasPlannedData ? '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>' : ''}
         `;
     }
@@ -844,24 +860,74 @@ class TimelineDialog {
         const currentBlock = mode_blocks.find(b => b.status === 'current');
         const plannedBlocks = mode_blocks.filter(b => b.status === 'planned');
 
+        // Get sub-summaries from API
+        const completedSummary = summary.completed_summary || {
+            count: completedBlocks.length,
+            total_cost: completedBlocks.reduce((sum, b) => sum + (b.cost_historical || 0), 0),
+            adherence_pct: 0
+        };
+        
+        const plannedSummary = summary.planned_summary || {
+            count: plannedBlocks.length,
+            total_cost: plannedBlocks.reduce((sum, b) => sum + (b.cost_planned || 0), 0)
+        };
+
         return `
             ${this.renderDetailTabHeader(summary, 'Dnes')}
-            <div class="mode-blocks-container">
-                ${completedBlocks.length > 0 ? `
-                    <h3>✅ Dokončené režimy (${completedBlocks.length})</h3>
-                    ${renderModeBlocks(completedBlocks, { showCosts: true, showAdherence: true })}
-                ` : ''}
-                
-                ${currentBlock ? `
-                    <h3>⏱️ Aktuální režim</h3>
-                    ${renderModeBlocks([currentBlock], { showCosts: true, showAdherence: false })}
-                ` : ''}
-                
-                ${plannedBlocks.length > 0 ? `
-                    <h3>📅 Plánované režimy (${plannedBlocks.length})</h3>
-                    ${renderModeBlocks(plannedBlocks, { showCosts: true, showAdherence: false })}
-                ` : ''}
-            </div>
+            
+            <!-- Uplynulé (Collapsed) -->
+            ${completedBlocks.length > 0 ? `
+                <div class="collapsible-section">
+                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <div class="section-title">
+                            <span class="section-icon">✅</span>
+                            <span class="section-name">Uplynulé</span>
+                            <span class="section-badge">${completedSummary.count} bloků</span>
+                        </div>
+                        <div class="section-summary">
+                            <span class="summary-item">💰 ${completedSummary.total_cost.toFixed(2)} Kč</span>
+                            <span class="summary-item">📊 ${completedSummary.adherence_pct.toFixed(1)}% shoda</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="section-content">
+                        ${renderModeBlocks(completedBlocks, { showCosts: true, showAdherence: true })}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- Aktuální (Always visible) -->
+            ${currentBlock ? `
+                <div class="collapsible-section current-section">
+                    <div class="section-header-simple">
+                        <span class="section-icon">⏱️</span>
+                        <span class="section-name">Aktuální režim</span>
+                    </div>
+                    <div class="section-content visible">
+                        ${renderModeBlocks([currentBlock], { showCosts: true, showAdherence: false })}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- Plánované (Collapsed) -->
+            ${plannedBlocks.length > 0 ? `
+                <div class="collapsible-section">
+                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <div class="section-title">
+                            <span class="section-icon">📅</span>
+                            <span class="section-name">Plánované</span>
+                            <span class="section-badge">${plannedSummary.count} bloků</span>
+                        </div>
+                        <div class="section-summary">
+                            <span class="summary-item">💰 ${plannedSummary.total_cost.toFixed(2)} Kč</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="section-content">
+                        ${renderModeBlocks(plannedBlocks, { showCosts: true, showAdherence: false })}
+                    </div>
+                </div>
+            ` : ''}
         `;
     }
 
@@ -1414,9 +1480,23 @@ class TimelineDialog {
         // All blocks should be planned for tomorrow
         return `
             ${this.renderDetailTabHeader(summary, 'Zítra')}
-            <div class="mode-blocks-container">
-                <h3>📅 Plánované režimy</h3>
-                ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
+            
+            <!-- Collapsible section for planned blocks -->
+            <div class="collapsible-section">
+                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <div class="section-title">
+                        <span class="section-icon">📅</span>
+                        <span class="section-name">Plánované režimy</span>
+                        <span class="section-badge">${mode_blocks.length} bloků</span>
+                    </div>
+                    <div class="section-summary">
+                        <span class="summary-item">💰 ${summary.total_cost?.toFixed(2) || '0.00'} Kč</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    ${renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
+                </div>
             </div>
         `;
 
