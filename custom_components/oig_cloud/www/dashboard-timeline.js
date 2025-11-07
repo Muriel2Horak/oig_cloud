@@ -727,6 +727,7 @@ class TimelineDialog {
                 start_time,
                 end_time,
                 duration_hours,
+                interval_count,
                 cost_historical,
                 cost_planned,
                 cost_delta,
@@ -737,84 +738,115 @@ class TimelineDialog {
                 grid_export_total_kwh
             } = block;
 
+            // Determine card color and status
+            const isCompleted = status === 'completed';
+            const isCurrent = status === 'current';
+            const isPlanned = status === 'planned';
+            
+            let cardClass = '';
+            let statusIcon = '';
+            let statusText = '';
+            
+            if (isCompleted) {
+                // Completed: judge by match AND cost delta
+                if (mode_match && cost_delta <= 0) {
+                    cardClass = 'card-success'; // ✅ Splněno + levněji
+                    statusIcon = '✅';
+                    statusText = 'Plán splněn';
+                } else if (mode_match && cost_delta > 0) {
+                    cardClass = 'card-warning'; // ✅ Splněno ale dráž
+                    statusIcon = '⚠️';
+                    statusText = 'Splněno, ale dráž';
+                } else if (!mode_match && cost_delta <= 0) {
+                    cardClass = 'card-info'; // ❌ Nesplněno, ale levněji
+                    statusIcon = '💡';
+                    statusText = 'Odchylka, ale levněji';
+                } else {
+                    cardClass = 'card-danger'; // ❌ Nesplněno + dráž
+                    statusIcon = '❌';
+                    statusText = 'Odchylka a dráž';
+                }
+            } else if (isCurrent) {
+                cardClass = 'card-current';
+                statusIcon = '⏱️';
+                statusText = 'Probíhá';
+            } else {
+                cardClass = 'card-planned';
+                statusIcon = '📅';
+                statusText = 'Plánováno';
+            }
+
             // Get mode config
             const historicalMode = MODE_CONFIG[mode_historical] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_historical };
             const plannedMode = MODE_CONFIG[mode_planned] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_planned };
 
-            // Status icon
-            const statusIcons = {
-                completed: '✅',
-                current: '▶️',
-                planned: '📅'
-            };
-            const statusIcon = statusIcons[status] || '❓';
-
-            // Match indicator
-            const matchClass = mode_match ? 'match-yes' : 'match-no';
-            const matchIcon = mode_match ? '✅' : '❌';
-            const matchLabel = mode_match ? 'Shoda' : 'Odchylka';
-
-            // Cost delta indicator
-            let costDeltaHtml = '';
-            if (cost_delta !== null && cost_delta !== undefined) {
-                const deltaClass = cost_delta > 0 ? 'cost-higher' : cost_delta < 0 ? 'cost-lower' : 'cost-equal';
-                const deltaIcon = cost_delta > 0 ? '⬆️' : cost_delta < 0 ? '⬇️' : '➡️';
-                costDeltaHtml = `
-                    <span class="cost-delta ${deltaClass}">
-                        ${deltaIcon} ${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(2)} Kč
-                    </span>
+            // Cost delta formatting
+            let deltaHtml = '';
+            if (isCompleted && cost_delta !== null && cost_delta !== undefined) {
+                const deltaClass = cost_delta > 0 ? 'delta-negative' : cost_delta < 0 ? 'delta-positive' : 'delta-neutral';
+                const deltaSign = cost_delta > 0 ? '+' : '';
+                deltaHtml = `
+                    <div class="cost-delta-large ${deltaClass}">
+                        <div class="delta-label">Rozdíl oproti plánu</div>
+                        <div class="delta-value">${deltaSign}${cost_delta.toFixed(2)} Kč</div>
+                    </div>
                 `;
             }
 
             return `
-                <div class="mode-block ${matchClass}" data-index="${index}">
-                    <!-- Header -->
-                    <div class="block-header">
-                        <div class="block-time">
-                            ${statusIcon} ${start_time} - ${end_time}
-                            <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
-                        </div>
-                        <div class="block-match ${matchClass}">
-                            ${matchIcon} ${matchLabel}
-                        </div>
+                <div class="mode-block-card ${cardClass}" data-index="${index}">
+                    <!-- Status Bar -->
+                    <div class="card-status-bar">
+                        <span class="status-icon">${statusIcon}</span>
+                        <span class="status-text">${statusText}</span>
+                        <span class="status-time">${start_time} - ${end_time} (${duration_hours?.toFixed(1)}h)</span>
                     </div>
 
-                    <!-- Mode Comparison -->
-                    <div class="block-modes">
-                        <div class="mode-row">
-                            <div class="mode-label">Skutečnost:</div>
-                            <div class="mode-badge" style="background: ${historicalMode.color};">
-                                ${historicalMode.icon} ${historicalMode.label}
-                            </div>
-                        </div>
-                        ${mode_planned && mode_planned !== 'Unknown' ? `
-                        <div class="mode-row">
-                            <div class="mode-label">Plán:</div>
-                            <div class="mode-badge" style="background: ${plannedMode.color};">
-                                ${plannedMode.icon} ${plannedMode.label}
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
+                    <!-- Main Content -->
+                    <div class="card-content">
+                        ${deltaHtml}
 
-                    <!-- Cost Info -->
-                    <div class="block-cost">
-                        <div class="cost-row">
-                            <span>Cena (skutečná):</span>
-                            <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                        <!-- Mode Comparison -->
+                        <div class="mode-comparison">
+                            ${(isCompleted || isCurrent) ? `
+                            <div class="mode-item mode-actual">
+                                <div class="mode-label">Skutečnost</div>
+                                <div class="mode-badge" style="background: ${historicalMode.color};">
+                                    ${historicalMode.icon} ${historicalMode.label}
+                                </div>
+                            </div>
+                            ` : ''}
+                            
+                            ${mode_planned && mode_planned !== 'Unknown' ? `
+                            <div class="mode-item mode-plan">
+                                <div class="mode-label">Plán</div>
+                                <div class="mode-badge" style="background: ${plannedMode.color};">
+                                    ${plannedMode.icon} ${plannedMode.label}
+                                </div>
+                            </div>
+                            ` : ''}
                         </div>
-                        ${cost_planned !== null && cost_planned !== undefined ? `
-                        <div class="cost-row">
-                            <span>Cena (plánovaná):</span>
-                            <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
+
+                        <!-- Cost Summary -->
+                        <div class="cost-summary">
+                            ${isCompleted ? `
+                            <div class="cost-item">
+                                <span class="cost-label">Skutečná cena:</span>
+                                <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                            </div>
+                            ` : ''}
+                            ${cost_planned !== null && cost_planned !== undefined ? `
+                            <div class="cost-item">
+                                <span class="cost-label">Plánovaná cena:</span>
+                                <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
+                            </div>
+                            ` : ''}
                         </div>
-                        ${costDeltaHtml}
-                        ` : ''}
                     </div>
 
                     <!-- Energy Stats (collapsible) -->
-                    <details class="block-details">
-                        <summary>📊 Energetická bilance</summary>
+                    <details class="card-details">
+                        <summary>📊 Energetická bilance (${interval_count || 0} intervalů)</summary>
                         <div class="energy-stats">
                             <div class="stat-row">
                                 <span>☀️ Solár:</span>
@@ -838,11 +870,7 @@ class TimelineDialog {
             `;
         }).join('');
 
-        return `
-            <div class="mode-blocks-container">
-                ${blocksHtml}
-            </div>
-        `;
+        return `<div class="mode-blocks-container">${blocksHtml}</div>`;
     }
 
     /**

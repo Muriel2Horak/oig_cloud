@@ -8628,3 +8628,223 @@
     margin: 0;
 }
 
+/* ============================================================================
+   NEW MODE BLOCK CARDS - Improved UX Design
+   ============================================================================ */
+
+.mode-block-card {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+}
+
+.mode-block-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    transform: translateY(-2px);
+}
+
+/* Card Types - Color coding by outcome */
+.mode-block-card.card-success {
+    border-left: 5px solid #4CAF50; /* Green: Plan matched + saved money */
+}
+
+.mode-block-card.card-danger {
+    border-left: 5px solid #F44336; /* Red: Plan not matched + cost more */
+}
+
+.mode-block-card.card-warning {
+    border-left: 5px solid #FF9800; /* Orange: Plan matched but cost more */
+}
+
+.mode-block-card.card-info {
+    border-left: 5px solid #2196F3; /* Blue: Plan not matched but saved money */
+}
+
+.mode-block-card.card-current {
+    border-left: 5px solid #00BCD4; /* Cyan: Currently running */
+    background: rgba(0, 188, 212, 0.05);
+}
+
+.mode-block-card.card-planned {
+    border-left: 5px solid rgba(255, 255, 255, 0.3); /* Gray: Future planned */
+}
+
+/* Status Bar */
+.card-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.85rem;
+}
+
+.status-icon {
+    font-size: 1.3rem;
+}
+
+.status-text {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.status-time {
+    margin-left: auto;
+    color: var(--text-secondary);
+}
+
+/* Card Content */
+.card-content {
+    padding: 1rem;
+}
+
+/* Cost Delta - Large prominent display */
+.cost-delta-large {
+    text-align: center;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+}
+
+.cost-delta-large .delta-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.cost-delta-large .delta-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+.delta-positive {
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.delta-positive .delta-value {
+    color: #66BB6A;
+}
+
+.delta-negative {
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.delta-negative .delta-value {
+    color: #EF5350;
+}
+
+.delta-neutral {
+    background: rgba(158, 158, 158, 0.15);
+}
+
+.delta-neutral .delta-value {
+    color: var(--text-secondary);
+}
+
+/* Mode Comparison */
+.mode-comparison {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.mode-item {
+    flex: 1;
+}
+
+.mode-item .mode-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mode-item .mode-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+/* Cost Summary */
+.cost-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}
+
+.cost-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cost-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.cost-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Card Details (collapsible) */
+.card-details {
+    margin-top: 1rem;
+    border-top: 1px solid var(--border-primary);
+}
+
+.card-details summary {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.card-details summary:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.card-details[open] summary {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.energy-stats {
+    padding: 0.75rem 1rem 1rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.energy-stats .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.energy-stats .stat-row span:first-child {
+    color: var(--text-secondary);
+}
+
+.energy-stats .stat-row span:last-child {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
