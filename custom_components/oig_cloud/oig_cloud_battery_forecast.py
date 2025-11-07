@@ -7791,6 +7791,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         planned_lookup[time_str] = p
 
             # Add future data (od current_interval dál)
+            added_future = 0
+            skipped_future = 0
             for p in future_planned:
                 time_str = p.get("time")
                 if time_str:
@@ -7799,8 +7801,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Only use future data for current and future intervals
                         if interval_dt >= current_interval:
                             planned_lookup[time_str] = p
-                    except (ValueError, TypeError):
+                            added_future += 1
+                        else:
+                            skipped_future += 1
+                    except (ValueError, TypeError) as e:
+                        _LOGGER.debug(f"Failed to parse time: {time_str}, error: {e}")
                         continue
+
+            _LOGGER.debug(
+                f"📋 Merge stats: added_future={added_future}, skipped_future={skipped_future}, "
+                f"current_interval={current_interval}"
+            )
 
             _LOGGER.debug(
                 f"📋 Combined planned lookup: {len(planned_lookup)} total intervals for {date}"
