@@ -7754,6 +7754,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             planned_lookup = {
                 p.get("time"): p for p in planned_timeline if p.get("time")
             }
+            
+            # DEBUG: Log první pár klíčů z planned_lookup
+            if planned_lookup:
+                sample_keys = list(planned_lookup.keys())[:3]
+                _LOGGER.debug(
+                    f"📋 Planned lookup sample keys: {sample_keys}"
+                )
 
             # Determine current interval
             current_minute = (now.minute // 15) * 15
@@ -7763,6 +7770,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Build 96 intervals for whole day
             interval_time = day_start
+            first_interval_logged = False
             while interval_time.date() == date:
                 interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -7779,6 +7787,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 planned_data = None
                 if planned_entry:
                     planned_data = self._format_planned_data(planned_entry)
+                
+                # DEBUG: Log první interval
+                if not first_interval_logged and status == "planned":
+                    _LOGGER.debug(
+                        f"📋 First planned interval lookup: time_str={interval_time_str}, "
+                        f"found={planned_entry is not None}, status={status}"
+                    )
+                    first_interval_logged = True
 
                 # Ensure planned_data is never None
                 if planned_data is None:
