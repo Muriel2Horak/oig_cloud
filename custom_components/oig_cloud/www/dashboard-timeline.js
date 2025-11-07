@@ -326,7 +326,7 @@ class TimelineDialog {
 
         return `
             ${this.renderDetailTabHeader(summary, 'Včera')}
-            
+
             <!-- Collapsible section for all blocks -->
             <div class="collapsible-section">
                 <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -345,7 +345,7 @@ class TimelineDialog {
                     ${this.renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: true })}
                 </div>
             </div>
-            
+
             ${!hasPlannedData ? '<div class="no-plan-notice"><p>ℹ️ Pro tento den nebyl dostupný plán, zobrazena pouze skutečnost.</p></div>' : ''}
         `;
     }
@@ -866,7 +866,7 @@ class TimelineDialog {
             total_cost: completedBlocks.reduce((sum, b) => sum + (b.cost_historical || 0), 0),
             adherence_pct: 0
         };
-        
+
         const plannedSummary = summary.planned_summary || {
             count: plannedBlocks.length,
             total_cost: plannedBlocks.reduce((sum, b) => sum + (b.cost_planned || 0), 0)
@@ -874,7 +874,7 @@ class TimelineDialog {
 
         return `
             ${this.renderDetailTabHeader(summary, 'Dnes')}
-            
+
             <!-- Uplynulé (Collapsed) -->
             ${completedBlocks.length > 0 ? `
                 <div class="collapsible-section">
@@ -895,7 +895,7 @@ class TimelineDialog {
                     </div>
                 </div>
             ` : ''}
-            
+
             <!-- Aktuální (Always visible) -->
             ${currentBlock ? `
                 <div class="collapsible-section current-section">
@@ -908,7 +908,7 @@ class TimelineDialog {
                     </div>
                 </div>
             ` : ''}
-            
+
             <!-- Plánované (Collapsed) -->
             ${plannedBlocks.length > 0 ? `
                 <div class="collapsible-section">
@@ -1480,7 +1480,7 @@ class TimelineDialog {
         // All blocks should be planned for tomorrow
         return `
             ${this.renderDetailTabHeader(summary, 'Zítra')}
-            
+
             <!-- Collapsible section for planned blocks -->
             <div class="collapsible-section">
                 <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -2408,7 +2408,7 @@ function closeModeTimelineDialog() {
 
         const showCosts = options.showCosts !== false;
         const showAdherence = options.showAdherence !== false;
-        
+
         return blocks.map(block => {
             const {
                 mode_historical,
@@ -2429,7 +2429,7 @@ function closeModeTimelineDialog() {
             const isCompleted = status === 'completed';
             const isCurrent = status === 'current';
             const isPlanned = status === 'planned';
-            
+
             let statusClass = '';
             let statusIcon = '';
             if (isCompleted) {
@@ -2946,5 +2946,11 @@ window.DashboardTimeline = {
         initTimelineDialog();
     }
 };
+
+// Export timelineDialogInstance to window for access from other modules
+Object.defineProperty(window, 'timelineDialogInstance', {
+    get: function() { return timelineDialogInstance; },
+    set: function(value) { timelineDialogInstance = value; }
+});
 
 console.log('[DashboardTimeline] Module loaded');
