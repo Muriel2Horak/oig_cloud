@@ -6271,11 +6271,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             summary["completed_summary"] = {
                 "count": len(completed_blocks),
                 "total_cost": round(completed_cost, 2),
-                "adherence_pct": round(
-                    (completed_adherent / len(completed_blocks)) * 100, 1
-                )
-                if completed_blocks
-                else 100,
+                "adherence_pct": (
+                    round((completed_adherent / len(completed_blocks)) * 100, 1)
+                    if completed_blocks
+                    else 100
+                ),
             }
 
             # Planned summary
