@@ -7732,43 +7732,74 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         elif source == "mixed":
             # ========================================
-            # DNES: Historical (Recorder) + Planned (active timeline)
-            # Planned data: Z self._timeline_data (active timeline - 192 bodů 48h dopředu)
-            # Filtrujeme jen dnešní intervaly
+            # DNES: Historical (Recorder) + Planned (kombinace actual + future)
+            # Planned data KOMBINACE:
+            #   1. MINULOST: Z _daily_plan_state["actual"] (plánovaná data z rána)
+            #   2. BUDOUCNOST: Z _timeline_data (aktivní optimalizace)
             # Historical modes: Z Recorderu
             # ========================================
 
-            # Get full active timeline (192 points, 48h ahead from last update)
-            all_planned = getattr(self, "_timeline_data", [])
+            # Phase 1: Get past planned intervals from daily_plan_state
+            past_planned = []
+            if hasattr(self, "_daily_plan_state") and self._daily_plan_state:
+                actual_intervals = self._daily_plan_state.get("actual", [])
+                # "actual" obsahuje jak actual tak i planned data z rána
+                for interval in actual_intervals:
+                    if interval.get("time"):
+                        past_planned.append(interval)
             
-            # Filter only TODAY's intervals from active timeline
-            planned_timeline = []
-            for interval in all_planned:
+            # Phase 2: Get future planned intervals from active timeline
+            future_planned = []
+            all_timeline = getattr(self, "_timeline_data", [])
+            for interval in all_timeline:
                 time_str = interval.get("time")
                 if time_str:
                     try:
                         interval_dt = datetime.fromisoformat(time_str)
                         # Keep only intervals from today
                         if interval_dt.date() == date:
-                            planned_timeline.append(interval)
+                            future_planned.append(interval)
                     except (ValueError, TypeError):
                         continue
             
             _LOGGER.debug(
-                f"📋 Filtered planned timeline for {date}: {len(planned_timeline)} intervals "
-                f"(from {len(all_planned)} total in active timeline)"
+                f"📋 Planned data sources for {date}: "
+                f"past={len(past_planned)} intervals from daily_plan, "
+                f"future={len(future_planned)} intervals from active timeline"
             )
-
-            # Build lookup pro planned data
-            planned_lookup = {
-                p.get("time"): p for p in planned_timeline if p.get("time")
-            }
 
             # Determine current interval
             current_minute = (now.minute // 15) * 15
             current_interval = now.replace(
                 minute=current_minute, second=0, microsecond=0
             )
+
+            # Phase 3: MERGE - use past_planned for history, future_planned for future
+            planned_lookup = {}
+            
+            # Add all past planned data
+            for p in past_planned:
+                if p.get("time"):
+                    planned_lookup[p["time"]] = p
+            
+            # Override with future data for current and future intervals
+            for p in future_planned:
+                time_str = p.get("time")
+                if time_str:
+                    try:
+                        interval_dt = datetime.fromisoformat(time_str)
+                        # Only override for current and future intervals
+                        if interval_dt >= current_interval:
+                            planned_lookup[time_str] = p
+                    except (ValueError, TypeError):
+                        continue
+            
+            _LOGGER.debug(
+                f"📋 Combined planned lookup: {len(planned_lookup)} total intervals for {date}"
+            )
+
+            # Build 96 intervals for whole day
+            interval_time = day_start
 
             # Build 96 intervals for whole day
             interval_time = day_start
