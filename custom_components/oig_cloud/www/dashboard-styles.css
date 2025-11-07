@@ -8848,3 +8848,152 @@
     font-weight: 600;
 }
 
+/* ============================================================================
+   COMPACT MODE BLOCKS - Ultra-compact design
+   ============================================================================ */
+
+.mode-block-card-compact {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    transition: all 0.15s ease;
+}
+
+.mode-block-card-compact:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    transform: translateY(-1px);
+}
+
+.mode-block-card-compact.card-success {
+    border-left: 4px solid #4CAF50;
+}
+
+.mode-block-card-compact.card-danger {
+    border-left: 4px solid #F44336;
+}
+
+.mode-block-card-compact.card-warning {
+    border-left: 4px solid #FF9800;
+}
+
+.mode-block-card-compact.card-info {
+    border-left: 4px solid #2196F3;
+}
+
+.mode-block-card-compact.card-current {
+    border-left: 4px solid #00BCD4;
+    background: rgba(0, 188, 212, 0.05);
+}
+
+.mode-block-card-compact.card-planned {
+    border-left: 4px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Compact header - single line */
+.card-header-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.15);
+    font-size: 0.85rem;
+}
+
+.status-icon-sm {
+    font-size: 1.1rem;
+}
+
+.time-range {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.delta-inline {
+    margin-left: auto;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.delta-inline.pos {
+    background: rgba(76, 175, 80, 0.2);
+    color: #66BB6A;
+}
+
+.delta-inline.neg {
+    background: rgba(244, 67, 54, 0.2);
+    color: #EF5350;
+}
+
+/* Modes inline - single line */
+.modes-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    flex-wrap: wrap;
+}
+
+.mode-pill {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mode-pill-plan {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0.6;
+    white-space: nowrap;
+}
+
+.cost-val {
+    margin-left: auto;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Compact details */
+.details-compact {
+    border-top: 1px solid var(--border-primary);
+}
+
+.details-compact summary {
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+    list-style: none;
+}
+
+.details-compact summary::-webkit-details-marker {
+    display: none;
+}
+
+.details-compact summary:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.energy-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+}
+
+.energy-grid-compact span {
+    color: var(--text-secondary);
+}
+

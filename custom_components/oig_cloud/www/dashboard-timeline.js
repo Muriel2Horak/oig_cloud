@@ -742,11 +742,11 @@ class TimelineDialog {
             const isCompleted = status === 'completed';
             const isCurrent = status === 'current';
             const isPlanned = status === 'planned';
-            
+
             let cardClass = '';
             let statusIcon = '';
             let statusText = '';
-            
+
             if (isCompleted) {
                 // Completed: judge by match AND cost delta
                 if (mode_match && cost_delta <= 0) {
@@ -794,76 +794,30 @@ class TimelineDialog {
             }
 
             return `
-                <div class="mode-block-card ${cardClass}" data-index="${index}">
-                    <!-- Status Bar -->
-                    <div class="card-status-bar">
-                        <span class="status-icon">${statusIcon}</span>
-                        <span class="status-text">${statusText}</span>
-                        <span class="status-time">${start_time} - ${end_time} (${duration_hours?.toFixed(1)}h)</span>
+                <div class="mode-block-card-compact ${cardClass}" data-index="${index}">
+                    <!-- Single line header -->
+                    <div class="card-header-compact">
+                        <span class="status-icon-sm">${statusIcon}</span>
+                        <span class="time-range">${start_time} - ${end_time}</span>
+                        ${deltaHtml ? `<span class="delta-inline ${cost_delta > 0 ? 'neg' : 'pos'}">${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(1)} Kč</span>` : ''}
                     </div>
 
-                    <!-- Main Content -->
-                    <div class="card-content">
-                        ${deltaHtml}
-
-                        <!-- Mode Comparison -->
-                        <div class="mode-comparison">
-                            ${(isCompleted || isCurrent) ? `
-                            <div class="mode-item mode-actual">
-                                <div class="mode-label">Skutečnost</div>
-                                <div class="mode-badge" style="background: ${historicalMode.color};">
-                                    ${historicalMode.icon} ${historicalMode.label}
-                                </div>
-                            </div>
-                            ` : ''}
-                            
-                            ${mode_planned && mode_planned !== 'Unknown' ? `
-                            <div class="mode-item mode-plan">
-                                <div class="mode-label">Plán</div>
-                                <div class="mode-badge" style="background: ${plannedMode.color};">
-                                    ${plannedMode.icon} ${plannedMode.label}
-                                </div>
-                            </div>
-                            ` : ''}
-                        </div>
-
-                        <!-- Cost Summary -->
-                        <div class="cost-summary">
-                            ${isCompleted ? `
-                            <div class="cost-item">
-                                <span class="cost-label">Skutečná cena:</span>
-                                <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
-                            </div>
-                            ` : ''}
-                            ${cost_planned !== null && cost_planned !== undefined ? `
-                            <div class="cost-item">
-                                <span class="cost-label">Plánovaná cena:</span>
-                                <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
-                            </div>
-                            ` : ''}
-                        </div>
+                    <!-- Single line modes -->
+                    <div class="modes-inline">
+                        ${(isCompleted || isCurrent) ? `<span class="mode-pill" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>` : ''}
+                        ${mode_planned && mode_planned !== 'Unknown' ? `<span class="mode-pill-plan" style="background: ${plannedMode.color};">📋 ${plannedMode.label}</span>` : ''}
+                        ${isCompleted ? `<span class="cost-val">${cost_historical?.toFixed(2)} Kč</span>` : ''}
+                        ${cost_planned !== null && cost_planned !== undefined && !isCompleted ? `<span class="cost-val">${cost_planned.toFixed(2)} Kč</span>` : ''}
                     </div>
 
-                    <!-- Energy Stats (collapsible) -->
-                    <details class="card-details">
-                        <summary>📊 Energetická bilance (${interval_count || 0} intervalů)</summary>
-                        <div class="energy-stats">
-                            <div class="stat-row">
-                                <span>☀️ Solár:</span>
-                                <span>${solar_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                            </div>
-                            <div class="stat-row">
-                                <span>🏠 Spotřeba:</span>
-                                <span>${consumption_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                            </div>
-                            <div class="stat-row">
-                                <span>⬇️ Import:</span>
-                                <span>${grid_import_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                            </div>
-                            <div class="stat-row">
-                                <span>⬆️ Export:</span>
-                                <span>${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                            </div>
+                    <!-- Compact details -->
+                    <details class="details-compact">
+                        <summary>ℹ️</summary>
+                        <div class="energy-grid-compact">
+                            <span>☀️ ${solar_total_kwh?.toFixed(1) || '0'}</span>
+                            <span>🏠 ${consumption_total_kwh?.toFixed(1) || '0'}</span>
+                            <span>⬇️ ${grid_import_total_kwh?.toFixed(1) || '0'}</span>
+                            <span>⬆️ ${grid_export_total_kwh?.toFixed(1) || '0'}</span>
                         </div>
                     </details>
                 </div>
