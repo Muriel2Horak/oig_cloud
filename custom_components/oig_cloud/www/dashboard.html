@@ -919,25 +919,47 @@
 
         <!-- Extrahovaný JavaScript -->
         <!-- Dashboard moduly (musí být před core) -->
-        <script src="dashboard-utils.js?v=1762189819"></script>
-        <script src="dashboard-api.js?v=1762189819"></script>
-        <script src="dashboard-layout.js?v=1762189819"></script>
-        <script src="dashboard-flow.js?v=1762189819"></script>
-        <script src="dashboard-shield.js?v=1762189819"></script>
-        <script src="dashboard-pricing.js?v=1762189819"></script>
-        <script src="dashboard-timeline.js?v=1762189819"></script>
-        <script src="dashboard-grid-charging.js?v=1762189819"></script>
-        <script src="dashboard-chmu.js?v=1762189819"></script>
-        <script src="dashboard-analytics.js?v=1762189819"></script>
-        <script src="dashboard-battery-health.js?v=1762189819"></script>
+        <script src="dashboard-utils.js?v=1762550654"></script>
+        <script src="dashboard-api.js?v=1762550654"></script>
+        <script src="dashboard-layout.js?v=1762550654"></script>
+        <script src="dashboard-flow.js?v=1762550654"></script>
+        <script src="dashboard-shield.js?v=1762550654"></script>
+        <script src="dashboard-pricing.js?v=1762550654"></script>
+        <script src="dashboard-timeline.js?v=1762550654"></script>
+        <script src="dashboard-grid-charging.js?v=1762550654"></script>
+        <script src="dashboard-chmu.js?v=1762550654"></script>
+        <script src="dashboard-analytics.js?v=1762550654"></script>
+        <script src="dashboard-battery-health.js?v=1762550654"></script>
 
         <!-- Existující moduly (enhanced) -->
-        <script src="dashboard-tiles.js?v=1762189819"></script>
-        <script src="dashboard-dialog.js?v=1762189819"></script>
-        <script src="dashboard-boiler.js?v=1762189819"></script>
+        <script src="dashboard-tiles.js?v=1762550654"></script>
+        <script src="dashboard-dialog.js?v=1762550654"></script>
+        <script src="dashboard-boiler.js?v=1762550654"></script>
 
         <!-- Core (používá všechny moduly výše) -->
-        <script src="dashboard-core.js?v=1762189819"></script>
+        <script src="dashboard-core.js?v=1762550654"></script>
+        
+        <!-- Prefetch timeline data on load -->
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log('[Dashboard] Prefetching timeline data...');
+                
+                // Prefetch detail_tabs for all days
+                const days = ['yesterday', 'today', 'tomorrow'];
+                const sn = INVERTER_SN;
+                
+                days.forEach(day => {
+                    fetch(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => {
+                            if (data) {
+                                console.log(`[Dashboard] Prefetched ${day} data:`, data.mode_blocks?.length, 'blocks');
+                            }
+                        })
+                        .catch(err => console.warn(`[Dashboard] Prefetch ${day} failed:`, err));
+                });
+            });
+        </script>
 </body>
 
 </html>

@@ -105,7 +105,29 @@ class TimelineDialog {
 
         // Attach event listeners
         this.attachEventListeners();
+        
+        // Prefetch data for all tabs (proactive caching)
+        this.prefetchAllTabs();
+        
         console.log('[TimelineDialog] Initialized');
+    }
+
+    /**
+     * Prefetch data for all tabs (called on init, not on open)
+     */
+    async prefetchAllTabs() {
+        console.log('[TimelineDialog] Prefetching all tab data...');
+        
+        try {
+            await Promise.all([
+                this.loadTabData('yesterday'),
+                this.loadTabData('today'),
+                this.loadTabData('tomorrow')
+            ]);
+            console.log('[TimelineDialog] Prefetch complete');
+        } catch (error) {
+            console.warn('[TimelineDialog] Prefetch failed:', error);
+        }
     }
 
     /**
@@ -148,12 +170,18 @@ class TimelineDialog {
         this.isOpen = true;
         this.dialogElement.style.display = 'flex';
 
-        // Load data for all tabs (parallel)
-        await Promise.all([
-            this.loadTabData('yesterday'),
-            this.loadTabData('today'),
-            this.loadTabData('tomorrow')
-        ]);
+        // Data should already be prefetched, but load if needed
+        const pendingLoads = [];
+        ['yesterday', 'today', 'tomorrow'].forEach(day => {
+            if (!this.cache[day]) {
+                pendingLoads.push(this.loadTabData(day));
+            }
+        });
+        
+        if (pendingLoads.length > 0) {
+            console.log(`[TimelineDialog] Loading ${pendingLoads.length} missing tabs...`);
+            await Promise.all(pendingLoads);
+        }
 
         // Switch to active tab (this will render + set CSS classes)
         this.switchTab(this.activeTab);
@@ -177,7 +205,13 @@ class TimelineDialog {
     /**
      * Load data for specific tab from API
      */
-    async loadTabData(dayType) {
+    async loadTabData(dayType, forceRefresh = false) {
+        // Check cache first (unless forced refresh)
+        if (!forceRefresh && this.cache[dayType]) {
+            console.log(`[TimelineDialog] Using cached ${dayType} data`);
+            return;
+        }
+        
         console.log(`[TimelineDialog] Loading ${dayType} data...`);
 
         try {
@@ -2045,8 +2079,8 @@ class TimelineDialog {
         this.updateInterval = setInterval(() => {
             console.log('[TimelineDialog] Auto-refresh...');
 
-            // Reload today data
-            this.loadTabData('today').then(() => {
+            // Reload today data (force refresh)
+            this.loadTabData('today', true).then(() => {
                 if (this.activeTab === 'today') {
                     this.renderTab('today');
                 }
