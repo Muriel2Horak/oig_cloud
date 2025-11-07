@@ -795,31 +795,20 @@ class TimelineDialog {
 
             return `
                 <div class="mode-block-card-compact ${cardClass}" data-index="${index}">
-                    <!-- Single line header -->
-                    <div class="card-header-compact">
-                        <span class="status-icon-sm">${statusIcon}</span>
-                        <span class="time-range">${start_time} - ${end_time}</span>
-                        ${deltaHtml ? `<span class="delta-inline ${cost_delta > 0 ? 'neg' : 'pos'}">${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(1)} Kč</span>` : ''}
+                    <div class="card-single-line">
+                        <span class="icon-sm">${statusIcon}</span>
+                        <span class="time-sm">${start_time}-${end_time}</span>
+                        <span class="mode-pill" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
+                        ${mode_planned && mode_planned !== 'Unknown' ? `<span class="vs">→</span><span class="mode-pill-dim" style="background: ${plannedMode.color};">📋 ${plannedMode.label}</span>` : ''}
+                        ${isCompleted ? `<span class="price-sm">${cost_historical?.toFixed(2)} Kč</span>` : cost_planned !== null && cost_planned !== undefined ? `<span class="price-sm">${cost_planned.toFixed(2)} Kč</span>` : ''}
+                        ${deltaHtml ? `<span class="delta-sm ${cost_delta > 0 ? 'neg' : 'pos'}">${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(1)}</span>` : ''}
+                        <details class="info-icon">
+                            <summary>ℹ️</summary>
+                            <div class="info-popup">
+                                ☀️${solar_total_kwh?.toFixed(1)||'0'} 🏠${consumption_total_kwh?.toFixed(1)||'0'} ⬇️${grid_import_total_kwh?.toFixed(1)||'0'} ⬆️${grid_export_total_kwh?.toFixed(1)||'0'}
+                            </div>
+                        </details>
                     </div>
-
-                    <!-- Single line modes -->
-                    <div class="modes-inline">
-                        ${(isCompleted || isCurrent) ? `<span class="mode-pill" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>` : ''}
-                        ${mode_planned && mode_planned !== 'Unknown' ? `<span class="mode-pill-plan" style="background: ${plannedMode.color};">📋 ${plannedMode.label}</span>` : ''}
-                        ${isCompleted ? `<span class="cost-val">${cost_historical?.toFixed(2)} Kč</span>` : ''}
-                        ${cost_planned !== null && cost_planned !== undefined && !isCompleted ? `<span class="cost-val">${cost_planned.toFixed(2)} Kč</span>` : ''}
-                    </div>
-
-                    <!-- Compact details -->
-                    <details class="details-compact">
-                        <summary>ℹ️</summary>
-                        <div class="energy-grid-compact">
-                            <span>☀️ ${solar_total_kwh?.toFixed(1) || '0'}</span>
-                            <span>🏠 ${consumption_total_kwh?.toFixed(1) || '0'}</span>
-                            <span>⬇️ ${grid_import_total_kwh?.toFixed(1) || '0'}</span>
-                            <span>⬆️ ${grid_export_total_kwh?.toFixed(1) || '0'}</span>
-                        </div>
-                    </details>
                 </div>
             `;
         }).join('');
