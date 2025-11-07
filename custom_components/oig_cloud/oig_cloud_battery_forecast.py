@@ -7752,14 +7752,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Historical modes: Z Recorderu
             # ========================================
 
-            # Phase 1: Get past planned intervals from daily_plan_state
+            # Phase 1: Get past planned intervals
+            # Priority:
+            #   1. Storage Helper (ranní plán uložený v 00:10)
+            #   2. Fallback: _daily_plan_state["actual"] (pokud storage není dostupný)
             past_planned = []
-            if hasattr(self, "_daily_plan_state") and self._daily_plan_state:
+            
+            # Try Storage Helper first
+            date_str = date.strftime("%Y-%m-%d")
+            storage_day = storage_plans.get("detailed", {}).get(date_str)
+            if storage_day and storage_day.get("intervals"):
+                past_planned = storage_day["intervals"]
+                _LOGGER.debug(
+                    f"📦 Loaded {len(past_planned)} planned intervals from Storage Helper for {date}"
+                )
+            # Fallback: _daily_plan_state
+            elif hasattr(self, "_daily_plan_state") and self._daily_plan_state:
                 actual_intervals = self._daily_plan_state.get("actual", [])
                 # "actual" obsahuje jak actual tak i planned data z rána
                 for interval in actual_intervals:
                     if interval.get("time"):
                         past_planned.append(interval)
+                _LOGGER.debug(
+                    f"📋 Loaded {len(past_planned)} intervals from _daily_plan_state for {date}"
+                )
+            else:
+                _LOGGER.debug(f"⚠️  No past planned data available for {date}")
 
             # Phase 2: Get future planned intervals from active timeline
             future_planned = []
@@ -7807,13 +7825,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 time_str = p.get("time")
                 if time_str:
                     try:
+                        # Storage uses "HH:MM" format, convert to full datetime
+                        if "T" not in time_str:
+                            # HH:MM format from storage - prepend date
+                            time_str = f"{date_str}T{time_str}:00"
+                        
                         interval_dt = datetime.fromisoformat(time_str)
+                        interval_dt_naive = interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
+                        
                         # Only use past data for intervals BEFORE current
-                        if interval_dt < current_interval_naive:
-                            planned_lookup[time_str] = p
+                        if interval_dt_naive < current_interval_naive:
+                            # Store with HH:MM:SS format for consistency
+                            lookup_key = interval_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            planned_lookup[lookup_key] = p
                     except (ValueError, TypeError):
-                        # Fallback: if can't parse, add it anyway
-                        planned_lookup[time_str] = p
+                        # Fallback: if can't parse, skip it
+                        _LOGGER.warning(f"Failed to parse time_str: {time_str}")
+                        continue
 
             # Add future data (od current_interval dál)
             added_future = 0
