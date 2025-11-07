@@ -7848,9 +7848,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
                 # Determine status (use naive for comparison)
-                if interval_time < current_interval_naive:
+                interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+                if interval_time_naive < current_interval_naive:
                     status = "historical"
-                elif interval_time == current_interval_naive:
+                elif interval_time_naive == current_interval_naive:
                     status = "current"
                 else:
                     status = "planned"
