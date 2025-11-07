@@ -1462,6 +1462,15 @@ async function loadPricingData() {
     // Mark charts as rendered to skip re-rendering on next tab switch
     timelineDataCache.chartsRendered = true;
 
+    // Load unified cost tile (72h costs summary)
+    if (typeof loadUnifiedCostTile === 'function') {
+        try {
+            await loadUnifiedCostTile();
+        } catch (error) {
+            console.error('[Pricing] Failed to load unified cost tile:', error);
+        }
+    }
+
     // Hide loading overlay
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
