@@ -152,8 +152,7 @@ class TimelineDialog {
         await Promise.all([
             this.loadTabData('yesterday'),
             this.loadTabData('today'),
-            this.loadTabData('tomorrow'),
-            this.loadTabData('history')
+            this.loadTabData('tomorrow')
         ]);
 
         // Switch to active tab (this will render + set CSS classes)

@@ -6155,10 +6155,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 current_interval_time = now.replace(
                     minute=current_minute, second=0, microsecond=0
                 )
-                
+
                 # Remove timezone for comparison (both must be naive or both aware)
                 # interval_time might be naive from timeline data
-                interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+                interval_time_naive = (
+                    interval_time.replace(tzinfo=None)
+                    if interval_time.tzinfo
+                    else interval_time
+                )
                 current_interval_naive = current_interval_time.replace(tzinfo=None)
 
                 if interval_time_naive < current_interval_naive:
@@ -6896,10 +6900,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if interval_time > end_of_today:
                 continue
 
-            if interval_time < current_interval_time:
+            # Compare naive datetimes to avoid timezone issues
+            interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+            current_interval_naive = current_interval_time.replace(tzinfo=None) if current_interval_time.tzinfo else current_interval_time
+            
+            if interval_time_naive < current_interval_naive:
                 if interval.get("actual"):
                     completed.append(interval)
-            elif interval_time == current_interval_time:
+            elif interval_time_naive == current_interval_naive:
                 active = interval
             else:
                 future.append(interval)
@@ -8265,7 +8273,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if price >= max_charging_price:
                 continue  # Nad pojistkou
 
-            if interval_time <= current_time:
+            # Compare naive datetimes to avoid timezone issues
+            interval_time_naive = interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+            current_time_naive = current_time.replace(tzinfo=None) if current_time.tzinfo else current_time
+            
+            if interval_time_naive <= current_time_naive:
                 continue  # Minulost
 
             candidates.append(
