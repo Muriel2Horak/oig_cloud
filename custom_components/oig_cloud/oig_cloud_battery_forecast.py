@@ -7766,7 +7766,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     except (ValueError, TypeError):
                         parse_errors += 1
                         continue
-            
+
             _LOGGER.debug(
                 f"📋 Future filter: {len(future_planned)} kept, {wrong_date} wrong_date, "
                 f"{parse_errors} parse_errors (from {len(all_timeline)} total)"
@@ -7783,6 +7783,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             current_interval = now.replace(
                 minute=current_minute, second=0, microsecond=0
             )
+            # Remove timezone for comparison with naive datetimes from timeline
+            current_interval_naive = current_interval.replace(tzinfo=None)
 
             # Phase 3: MERGE - use past_planned for history, future_planned for future
             planned_lookup = {}
@@ -7794,7 +7796,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     try:
                         interval_dt = datetime.fromisoformat(time_str)
                         # Only use past data for intervals BEFORE current
-                        if interval_dt < current_interval:
+                        if interval_dt < current_interval_naive:
                             planned_lookup[time_str] = p
                     except (ValueError, TypeError):
                         # Fallback: if can't parse, add it anyway
@@ -7809,7 +7811,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     try:
                         interval_dt = datetime.fromisoformat(time_str)
                         # Only use future data for current and future intervals
-                        if interval_dt >= current_interval:
+                        if interval_dt >= current_interval_naive:
                             planned_lookup[time_str] = p
                             added_future += 1
                         else:
@@ -7820,7 +7822,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             _LOGGER.debug(
                 f"📋 Merge stats: added_future={added_future}, skipped_future={skipped_future}, "
-                f"current_interval={current_interval}"
+                f"current_interval={current_interval_naive}"
             )
 
             _LOGGER.debug(
@@ -7832,10 +7834,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             while interval_time.date() == date:
                 interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
 
-                # Determine status
-                if interval_time < current_interval:
+                # Determine status (use naive for comparison)
+                if interval_time < current_interval_naive:
                     status = "historical"
-                elif interval_time == current_interval:
+                elif interval_time == current_interval_naive:
                     status = "current"
                 else:
                     status = "planned"
