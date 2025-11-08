@@ -923,21 +923,31 @@
             // Dynamic cache busting
             const v = Date.now();
             const scripts = [
-                'dashboard-utils.js',
-                'dashboard-api.js',
-                'dashboard-layout.js',
-                'dashboard-flow.js',
-                'dashboard-shield.js',
-                'dashboard-pricing.js',
-                'dashboard-timeline.js',
-                'dashboard-grid-charging.js',
-                'dashboard-chmu.js',
-                'dashboard-analytics.js',
-                'dashboard-battery-health.js',
-                'dashboard-tiles.js',
-                'dashboard-dialog.js',
-                'dashboard-boiler.js',
-                'dashboard-core.js'
+                // Core
+                'js/core/utils.js',
+                'js/core/api.js',
+
+                // Components
+                'js/components/shield.js',
+                'js/components/tiles.js',
+                'js/components/dialog.js',
+                'js/components/grid-charging.js',
+
+                // Features
+                'js/features/timeline.js',
+                'js/features/pricing.js',
+                'js/features/boiler.js',
+                'js/features/flow.js',
+                'js/features/battery-health.js',
+                'js/features/analytics.js',
+                'js/features/chmu.js',
+                'js/features/detail-tabs.js',
+
+                // Layout
+                'js/layout/layout-manager.js',
+
+                // Core (must be last)
+                'js/core/core.js'
             ];
             scripts.forEach(src => {
                 const script = document.createElement('script');
