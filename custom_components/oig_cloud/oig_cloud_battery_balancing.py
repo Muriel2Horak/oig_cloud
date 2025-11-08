@@ -118,13 +118,16 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             if "planned" in last_state.attributes:
                 try:
                     self._planned_window = last_state.attributes["planned"]
-                    _LOGGER.info(
-                        f"Restored balancing plan: {self._planned_window.get('mode')} "
-                        f"{self._planned_window.get('holding_start')} → {self._planned_window.get('holding_end')}"
-                    )
-                    # Propagovat do forecast
-                    await self._propagate_plan_to_forecast(self._planned_window)
-                except (ValueError, TypeError, KeyError) as e:
+                    # Propagovat do forecast jen pokud máme platný plán
+                    if self._planned_window:
+                        _LOGGER.info(
+                            f"Restored balancing plan: {self._planned_window.get('mode')} "
+                            f"{self._planned_window.get('holding_start')} → {self._planned_window.get('holding_end')}"
+                        )
+                        await self._propagate_plan_to_forecast(self._planned_window)
+                    else:
+                        _LOGGER.debug("No valid balancing plan to restore")
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
                     _LOGGER.error(f"Failed to restore planned_window: {e}")
 
         # Spustit planning loop (1× za hodinu)
@@ -363,23 +366,45 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         window_end = window_start + timedelta(hours=BALANCING_HOLDING_HOURS)
 
         _LOGGER.error(
-            f"🔴 FORCED balancing IMMEDIATE! "
+            f"🔴 FORCED balancing REQUEST! "
             f"Last: {self._days_since_last} days ago (MAX: {BALANCING_INTERVAL_DAYS}). "
-            f"Planning: {window_start.strftime('%Y-%m-%d %H:%M')} → "
+            f"Requesting: {window_start.strftime('%Y-%m-%d %H:%M')} → "
             f"{window_end.strftime('%H:%M')} (cannot delay!)"
         )
 
-        # Vytvořit plán
+        # POŽÁDAT forecast aby vypočítal fyziku
+        response = await self._request_balancing_from_forecast(
+            forecast_sensor=forecast_sensor,
+            requested_start=window_start,
+            requested_end=window_end,
+            target_soc=100.0,
+            mode="forced",
+        )
+
+        if not response or not response.get("can_do"):
+            _LOGGER.error(
+                f"❌ FORCED balancing FAILED! Forecast cannot achieve 100% in requested window"
+            )
+            return None
+
+        # Forecast vrátil plán - použij ho
         plan = {
             "mode": "forced",
-            "holding_start": window_start.isoformat(),
-            "holding_end": window_end.isoformat(),
+            "holding_start": response["actual_holding_start"],
+            "holding_end": response["actual_holding_end"],
+            "charging_intervals": response["charging_intervals"],
+            "target_soc_percent": 100.0,
             "reason": f"FORCED balancing - {self._days_since_last} days overdue (max {BALANCING_INTERVAL_DAYS})",
             "requester": "balancing",
-            "status": "locked",  # LOCKED - nelze rušit!
+            "status": "locked",
             "priority": "critical",
-            "target_mode": HOME_UPS,  # Nabíjení ze sítě pokud nutné
         }
+
+        _LOGGER.warning(
+            f"✅ FORCED balancing PLANNED! "
+            f"Holding: {response['actual_holding_start']} → {response['actual_holding_end']}, "
+            f"Charging intervals: {len(response['charging_intervals'])}"
+        )
 
         return plan
 
@@ -497,6 +522,57 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         }
 
         return plan
+
+    # =========================================================================
+    # REQUEST/RESPONSE S FORECASTEM
+    # =========================================================================
+
+    async def _request_balancing_from_forecast(
+        self,
+        forecast_sensor: Any,
+        requested_start: datetime,
+        requested_end: datetime,
+        target_soc: float,
+        mode: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Požádat forecast aby vypočítal balancing plán.
+
+        Args:
+            forecast_sensor: Battery forecast sensor
+            requested_start: Požadovaný start okna
+            requested_end: Požadovaný konec okna
+            target_soc: Cílový SoC (100% pro balancing)
+            mode: "forced" | "opportunistic"
+
+        Returns:
+            {
+                "can_do": bool,  # True pokud je to možné
+                "charging_intervals": [...],  # ISO timestampy intervalů pro nabíjení
+                "actual_holding_start": str,  # ISO timestamp skutečného startu držení
+                "actual_holding_end": str,  # ISO timestamp skutečného konce držení
+                "reason": str,  # Proč ano/ne
+            }
+        """
+        if not hasattr(forecast_sensor, "plan_balancing"):
+            _LOGGER.error(
+                "❌ Forecast sensor doesn't have plan_balancing method - using old version?"
+            )
+            return None
+
+        try:
+            response = await forecast_sensor.plan_balancing(
+                requested_start=requested_start,
+                requested_end=requested_end,
+                target_soc=target_soc,
+                mode=mode,
+            )
+            return response
+        except Exception as e:
+            _LOGGER.error(
+                f"❌ Failed to request balancing from forecast: {e}", exc_info=True
+            )
+            return None
 
     # =========================================================================
     # HELPER METHODS

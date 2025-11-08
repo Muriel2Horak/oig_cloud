@@ -886,6 +886,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._timeline_data = self._mode_optimization_result.get(
                     "optimal_timeline", []
                 )
+                # Uložit HYBRID timeline i jako _hybrid_timeline pro balancing modul
+                self._hybrid_timeline = self._timeline_data
                 _LOGGER.debug(
                     f"Using HYBRID timeline: {len(self._timeline_data)} intervals"
                 )
@@ -9578,6 +9580,74 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         return planned
+
+    async def plan_balancing(
+        self,
+        requested_start: datetime,
+        requested_end: datetime,
+        target_soc: float,
+        mode: str,
+    ) -> Dict[str, Any]:
+        """
+        Vypočítat balancing plán pro požadované okno.
+
+        KRITICKÉ - HLAVNÍ METODA PRO BALANCING:
+        - Balancing řekne: "Chci nabít na 100% od 00:00 do 03:00"
+        - Forecast vypočítá: "Ano/ne můžu" + vrátí skutečné intervaly
+
+        Args:
+            requested_start: Požadovaný start okna
+            requested_end: Požadovaný konec okna
+            target_soc: Cílový SoC (100% pro balancing)
+            mode: "forced" | "opportunistic"
+
+        Returns:
+            {
+                "can_do": bool,
+                "charging_intervals": [...],  # ISO timestampy
+                "actual_holding_start": str,
+                "actual_holding_end": str,
+                "reason": str,
+            }
+        """
+        try:
+            _LOGGER.info(
+                f"📋 Balancing REQUEST: {mode}, "
+                f"window={requested_start.strftime('%H:%M')}-{requested_end.strftime('%H:%M')}, "
+                f"target={target_soc}%"
+            )
+
+            # TODO: IMPLEMENTOVAT FYZIKU
+            # 1. Zjistit aktuální SoC
+            # 2. Vypočítat kolik energie potřebuju (target_soc - current_soc)
+            # 3. Zjistit spotřebu během okna z profilu
+            # 4. Vypočítat charging_intervals aby dosáhl target_soc
+            # 5. Vypočítat actual_holding_start/end (kdy začne držet 100%)
+
+            # DOČASNĚ: Vždycky vrať "můžu" s celým oknem
+            charging_intervals = []
+            current = requested_start
+            while current < requested_end:
+                charging_intervals.append(current.isoformat())
+                current += timedelta(minutes=15)
+
+            return {
+                "can_do": True,
+                "charging_intervals": charging_intervals,
+                "actual_holding_start": requested_start.isoformat(),
+                "actual_holding_end": requested_end.isoformat(),
+                "reason": "Temporary implementation - always accepts",
+            }
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to plan balancing: {e}", exc_info=True)
+            return {
+                "can_do": False,
+                "charging_intervals": [],
+                "actual_holding_start": None,
+                "actual_holding_end": None,
+                "reason": f"Error: {e}",
+            }
 
     async def handle_balancing_plan(self, plan: Dict[str, Any]) -> None:
         """
