@@ -637,7 +637,6 @@ class TileConfigDialog {
      */
     searchIcons(searchText) {
         const suggestionsDiv = document.getElementById('icon-suggestions');
-        const iconInput = document.getElementById('entity-icon');
 
         if (!searchText.trim() || searchText.startsWith('mdi:')) {
             suggestionsDiv.style.display = 'none';
@@ -1172,11 +1171,10 @@ class TileConfigDialog {
 
         console.log('✅ Icon picker populated with', Object.keys(categories).reduce((sum, cat) => sum + categories[cat].length, 0), 'emoji icons');
     }    /**
-     * Filtrovat ikony v pickeru
+     * Filtrování icon pickeru
      */
     filterIconPicker(searchText) {
         const search = searchText.toLowerCase();
-        const items = this.iconPickerBody.querySelectorAll('.icon-picker-item');
         const categories = this.iconPickerBody.querySelectorAll('.icon-category');
 
         categories.forEach(category => {

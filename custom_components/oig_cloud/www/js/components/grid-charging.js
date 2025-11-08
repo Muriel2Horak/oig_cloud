@@ -38,12 +38,11 @@ async function updateTargetWarningIndicator() {
     const targetPercentage = ((targetCapacityKwh / maxCapacityKwh) * 100).toFixed(0);
 
     // Rozhodnout barvu a text podle závažnosti
-    let color, icon, text, tooltipText;
+    let color, text, tooltipText;
 
     if (!minAchieved) {
         // KRITICKÉ: Nedosáhne ani minimum
         color = '#f44336'; // červená
-        icon = '🔴';
         text = `⚠️ Dosáhne ${finalPercentage}%`;
         tooltipText = `
             <div style="padding: 8px; text-align: left;">
@@ -65,7 +64,6 @@ async function updateTargetWarningIndicator() {
     } else {
         // VAROVÁNÍ: Nedosáhne target, ale dosáhne minimum
         color = '#ff9800'; // oranžová
-        icon = '🟠';
         text = `⚠️ Dosáhne ${finalPercentage}%`;
         tooltipText = `
             <div style="padding: 8px; text-align: left;">
@@ -262,7 +260,7 @@ async function updateGridChargingPlan() {
                         <tbody>
             `;
 
-            intervals.forEach((interval, index) => {
+            intervals.forEach((interval) => {
                 if (!interval.is_charging_battery) return; // Skip non-charging intervals
 
                 const time = new Date(interval.timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });

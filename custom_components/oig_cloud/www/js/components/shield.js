@@ -280,7 +280,6 @@ async function updateButtonStates() {
         // Parse shield activity
         const pending = parseShieldActivity(shieldActivity.value);
         const isRunning = (shieldStatus.value === 'Running' || shieldStatus.value === 'running');
-        const queueCount = parseInt(shieldQueue.value) || 0;
 
         // console.log('[Shield] Parsed state:', {
         //     pending,
