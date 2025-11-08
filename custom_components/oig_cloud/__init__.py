@@ -73,7 +73,7 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     static_path = "/oig_cloud_static"
     directory = hass.config.path("custom_components/oig_cloud/www")
 
-    _LOGGER.info(f"Registering static path: {static_path} -> {directory}")
+    _LOGGER.info("Registering static path: %s -> {directory}", static_path)
 
     # OPRAVA: Pouze moderní metoda
     from homeassistant.components.http import StaticPathConfig
@@ -94,7 +94,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         coordinator_data = hass.data[DOMAIN][entry.entry_id].get("coordinator")
         if coordinator_data and coordinator_data.data:
             inverter_sn = next(iter(coordinator_data.data.keys()), "unknown")
-            _LOGGER.info(f"Dashboard setup: Found inverter_sn = {inverter_sn}")
+            _LOGGER.info("Dashboard setup: Found inverter_sn = %s", inverter_sn)
         else:
             _LOGGER.warning("Dashboard setup: No coordinator data available")
 
@@ -119,7 +119,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             manifest = json.loads(manifest_data)
             version = manifest.get("version", "unknown")
         except Exception as e:
-            _LOGGER.warning(f"Could not load version from manifest: {e}")
+            _LOGGER.warning("Could not load version from manifest: %s", e)
 
         # Přidat timestamp pro cache-busting při každém restartu
         cache_bust = int(time.time())
@@ -127,7 +127,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         # OPRAVA: Přidat parametry včetně v= a t= pro cache-busting
         dashboard_url = f"/oig_cloud_static/dashboard.html?entry_id={entry.entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
 
-        _LOGGER.info(f"Dashboard URL: {dashboard_url}")
+        _LOGGER.info("Dashboard URL: %s", dashboard_url)
 
         from homeassistant.components import frontend
 
@@ -150,9 +150,9 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
                     if hasattr(result, "__await__"):
                         await result
 
-                    _LOGGER.info(f"✅ Panel '{panel_title}' registered successfully")
+                    _LOGGER.info("✅ Panel '%s' registered successfully", panel_title)
                 except Exception as reg_error:
-                    _LOGGER.error(f"Error during panel registration: {reg_error}")
+                    _LOGGER.error("Error during panel registration: %s", reg_error)
                     raise
             else:
                 _LOGGER.warning("async_register_built_in_panel is not callable")
@@ -194,12 +194,12 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
                     )
                 else:
                     # DEBUG místo WARNING - entity může chybět při startu (timing issue)
-                    _LOGGER.debug(f"Dashboard entity not yet available: {entity_id}")
+                    _LOGGER.debug("Dashboard entity not yet available: %s", entity_id)
         else:
             _LOGGER.warning("Dashboard: No coordinator data for entity checking")
 
     except Exception as e:
-        _LOGGER.error(f"Failed to setup frontend panel: {e}")
+        _LOGGER.error("Failed to setup frontend panel: %s", e)
 
 
 async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -240,7 +240,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
                 panel_exists = panel_id in existing_panels
 
             if not panel_exists:
-                _LOGGER.debug(f"Panel {panel_id} doesn't exist, nothing to remove")
+                _LOGGER.debug("Panel %s doesn't exist, nothing to remove", panel_id)
                 return
         except Exception as check_error:
             _LOGGER.debug(
@@ -253,22 +253,22 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         ):
             try:
                 await frontend.async_remove_panel(hass, panel_id)
-                _LOGGER.info(f"✅ Panel removed: {panel_id}")
+                _LOGGER.info("✅ Panel removed: %s", panel_id)
             except ValueError as ve:
                 if "unknown panel" in str(ve).lower():
                     _LOGGER.debug(
                         f"Panel {panel_id} was already removed or never existed"
                     )
                 else:
-                    _LOGGER.warning(f"Error removing panel {panel_id}: {ve}")
+                    _LOGGER.warning("Error removing panel %s: {ve}", panel_id)
             except Exception as re:
-                _LOGGER.debug(f"Panel removal handled (panel may not exist): {re}")
+                _LOGGER.debug("Panel removal handled (panel may not exist): %s", re)
         else:
             _LOGGER.debug("async_remove_panel not available")
 
     except Exception as e:
         # OPRAVA: Všechny chyby logujeme jako debug, protože jsou očekávané
-        _LOGGER.debug(f"Panel removal handled gracefully: {e}")
+        _LOGGER.debug("Panel removal handled gracefully: %s", e)
 
 
 async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -299,7 +299,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         # Formát: {entry_id}_boiler_{sensor_type}
         if "_boiler_" in old_unique_id:
             skipped_count += 1
-            _LOGGER.debug(f"Skipping boiler sensor (correct format): {entity_id}")
+            _LOGGER.debug("Skipping boiler sensor (correct format): %s", entity_id)
             continue
 
         # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
@@ -323,16 +323,16 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                         )
                         entity_id = base_entity_id  # Aktualizujeme pro další kontroly
                     except Exception as e:
-                        _LOGGER.warning(f"⚠️ Failed to rename {entity_id}: {e}")
+                        _LOGGER.warning("⚠️ Failed to rename %s: {e}", entity_id)
 
             # Pokud je disabled, enable ji
             if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
                 try:
                     entity_registry.async_update_entity(entity_id, disabled_by=None)
                     enabled_count += 1
-                    _LOGGER.info(f"✅ Re-enabled correct entity: {entity_id}")
+                    _LOGGER.info("✅ Re-enabled correct entity: %s", entity_id)
                 except Exception as e:
-                    _LOGGER.warning(f"⚠️ Failed to enable {entity_id}: {e}")
+                    _LOGGER.warning("⚠️ Failed to enable %s: {e}", entity_id)
 
             skipped_count += 1
             continue
@@ -356,7 +356,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                     )
                     continue
                 except Exception as e:
-                    _LOGGER.warning(f"⚠️ Failed to remove {entity_id}: {e}")
+                    _LOGGER.warning("⚠️ Failed to remove %s: {e}", entity_id)
                     continue
 
         # 3. Migrace unique_id na nový formát
@@ -376,7 +376,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                 f"✅ Migrated entity {entity_id}: {old_unique_id} -> {new_unique_id}"
             )
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to migrate {entity_id}: {e}")
+            _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
 
         # Přeskočíme entity, které už mají správný formát
         if old_unique_id.startswith("oig_cloud_"):
@@ -402,7 +402,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                 f"✅ Migrated entity {entity.entity_id}: {old_unique_id} -> {new_unique_id}"
             )
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to migrate {entity_id}: {e}")
+            _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
 
     # Summary
     _LOGGER.info(
@@ -458,15 +458,15 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         )
 
     if renamed_count > 0:
-        _LOGGER.info(f"🔄 Renamed {renamed_count} entities to correct entity_id")
+        _LOGGER.info("🔄 Renamed %s entities to correct entity_id", renamed_count)
     if migrated_count > 0:
-        _LOGGER.info(f"🔄 Migrated {migrated_count} entities to new unique_id format")
+        _LOGGER.info("🔄 Migrated %s entities to new unique_id format", migrated_count)
     if removed_count > 0:
-        _LOGGER.warning(f"🗑️ Removed {removed_count} duplicate entities")
+        _LOGGER.warning("🗑️ Removed %s duplicate entities", removed_count)
     if enabled_count > 0:
-        _LOGGER.info(f"✅ Re-enabled {enabled_count} correct entities")
+        _LOGGER.info("✅ Re-enabled %s correct entities", enabled_count)
     if skipped_count > 0:
-        _LOGGER.debug(f"⏭️ Skipped {skipped_count} entities (already in correct format)")
+        _LOGGER.debug("⏭️ Skipped %s entities (already in correct format)", skipped_count)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -519,7 +519,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.info("ServiceShield inicializován a spuštěn")
     except Exception as e:
-        _LOGGER.error(f"ServiceShield není dostupný - obecná chyba: {e}")
+        _LOGGER.error("ServiceShield není dostupný - obecná chyba: %s", e)
         # Pokračujeme bez ServiceShield
         hass.data[DOMAIN][entry.entry_id]["service_shield"] = None
         # OPRAVA: Ujistíme se, že service_shield je None
@@ -606,7 +606,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except ConfigEntryNotReady:
             raise
         except Exception as e:
-            _LOGGER.warning(f"Nelze ověřit stav živých dat: {e}")
+            _LOGGER.warning("Nelze ověřit stav živých dat: %s", e)
             # Pokračujeme i tak - může jít o dočasný problém s API
 
         # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
@@ -646,7 +646,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if coordinator.data:
                 device_id = next(iter(coordinator.data.keys()))
                 notification_manager.set_device_id(device_id)
-                _LOGGER.debug(f"Set notification manager device_id to: {device_id}")
+                _LOGGER.debug("Set notification manager device_id to: %s", device_id)
 
                 # Inicializace Mode Transition Tracker
                 if service_shield:
@@ -708,7 +708,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # **OPRAVA: Správné nastavení statistics pro reload**
         statistics_enabled = entry.options.get("enable_statistics", True)
-        _LOGGER.debug(f"Statistics enabled: {statistics_enabled}")
+        _LOGGER.debug("Statistics enabled: %s", statistics_enabled)
 
         # **OPRAVA: Přidání analytics_device_info pro statistické senzory**
         analytics_device_info = {
@@ -730,7 +730,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # OPRAVA: Odstraněno volání fetch_spot_prices - data už jsou v coordinatoru
                 _LOGGER.info("OTE API successfully initialized")
             except Exception as e:
-                _LOGGER.error(f"Failed to initialize OTE API: {e}")
+                _LOGGER.error("Failed to initialize OTE API: %s", e)
                 if ote_api:
                     await ote_api.close()
                 ote_api = None
@@ -754,7 +754,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                 _LOGGER.info("Boiler coordinator successfully initialized")
             except Exception as e:
-                _LOGGER.error(f"Failed to initialize Boiler coordinator: {e}")
+                _LOGGER.error("Failed to initialize Boiler coordinator: %s", e)
                 boiler_coordinator = None
         else:
             _LOGGER.debug("Boiler module disabled")
@@ -885,8 +885,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.debug(
                     f"[OIG Shield] Test monitoring tick - pending: {len(service_shield.pending)}, queue: {len(service_shield.queue)}, running: {service_shield.running}"
                 )
-                _LOGGER.debug(f"[OIG Shield] Status: {status}")
-                _LOGGER.debug(f"[OIG Shield] Queue info: {queue_info}")
+                _LOGGER.debug("[OIG Shield] Status: %s", status)
+                _LOGGER.debug("[OIG Shield] Queue info: %s", queue_info)
 
                 # OPRAVA: Debug telemetrie - ukážeme co by se odesílalo
                 if service_shield.telemetry_handler:
@@ -1113,11 +1113,11 @@ async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> No
                 _LOGGER.info(f"Removing unused device: {device.name} (ID: {device.id})")
                 device_registry.async_remove_device(device.id)
             except Exception as e:
-                _LOGGER.warning(f"Error removing device {device.id}: {e}")
+                _LOGGER.warning("Error removing device {device.id}: %s", e)
 
         if devices_to_remove:
             _LOGGER.info(f"Removed {len(devices_to_remove)} unused devices")
         else:
             _LOGGER.debug("No unused devices found to remove")
     except Exception as e:
-        _LOGGER.warning(f"Error cleaning up devices: {e}")
+        _LOGGER.warning("Error cleaning up devices: %s", e)

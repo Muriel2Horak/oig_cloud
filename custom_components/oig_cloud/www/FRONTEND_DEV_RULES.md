@@ -206,16 +206,16 @@ const scripts = [
   // 1. Core (vždy první)
   'js/core/utils.js',
   'js/core/api.js',
-  
+
   // 2. Components
   'js/components/my-component.js',
-  
+
   // 3. Features
   'js/features/my-feature.js',
-  
+
   // 4. Layout
   'js/layout/layout-manager.js',
-  
+
   // 5. Core init (vždy poslední)
   'js/core/core.js'
 ];
@@ -230,17 +230,17 @@ const scripts = [
 // js/features/my-feature.js
 (function(window) {
   'use strict';
-  
+
   const MyFeature = {
     init() {
       console.log('MyFeature initialized');
     },
-    
+
     doSomething() {
       // Feature logika
     }
   };
-  
+
   window.MyFeature = MyFeature;
 })(window);
 ```

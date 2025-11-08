@@ -678,8 +678,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Convert to deterministic JSON string
         data_str = json.dumps(timeline_data, sort_keys=True)
 
-        # Calculate MD5 hash
-        return hashlib.md5(data_str.encode()).hexdigest()
+        # Calculate SHA-256 hash (secure for integrity checking)
+        return hashlib.sha256(data_str.encode()).hexdigest()
 
     async def async_update(self) -> None:
         """Update sensor data."""

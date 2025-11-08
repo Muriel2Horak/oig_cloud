@@ -5,54 +5,52 @@
         }
 
         /* === THEME VARIABLES === */
+
         /* Tmavý režim (výchozí) */
         body {
             /* Pozadí */
             --bg-primary: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-            --bg-secondary: rgba(255, 255, 255, 0.05);
-            --bg-tertiary: rgba(255, 255, 255, 0.03);
-            --bg-hover: rgba(255, 255, 255, 0.1);
-            --bg-active: rgba(76, 175, 80, 0.3);
-            --bg-disabled: rgba(255, 255, 255, 0.02);
+            --bg-secondary: rgb(255, 255, 255, 0.05);
+            --bg-tertiary: rgb(255, 255, 255, 0.03);
+            --bg-hover: rgb(255, 255, 255, 0.1);
+            --bg-active: rgb(76, 175, 80, 0.3);
+            --bg-disabled: rgb(255, 255, 255, 0.02);
 
             /* Text */
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.7);
-            --text-tertiary: rgba(255, 255, 255, 0.5);
-            --text-disabled: rgba(255, 255, 255, 0.3);
+            --text-primary: #fff;
+            --text-secondary: rgb(255, 255, 255, 0.7);
+            --text-tertiary: rgb(255, 255, 255, 0.5);
+            --text-disabled: rgb(255, 255, 255, 0.3);
 
             /* Borders */
-            --border-primary: rgba(255, 255, 255, 0.15);
-            --border-secondary: rgba(255, 255, 255, 0.1);
-            --border-tertiary: rgba(255, 255, 255, 0.05);
+            --border-primary: rgb(255, 255, 255, 0.15);
+            --border-secondary: rgb(255, 255, 255, 0.1);
+            --border-tertiary: rgb(255, 255, 255, 0.05);
 
             /* Shadows */
-            --shadow-color: rgba(0, 0, 0, 0.4);
-            --shadow-strong: rgba(0, 0, 0, 0.7);
-            --shadow-light: rgba(0, 0, 0, 0.2);
+            --shadow-color: rgb(0, 0, 0, 0.4);
+            --shadow-strong: rgb(0, 0, 0, 0.7);
+            --shadow-light: rgb(0, 0, 0, 0.2);
 
             /* Dialog */
             --dialog-bg: #1a1f3a;
-            --dialog-border: rgba(156, 39, 176, 0.5);
+            --dialog-border: rgb(156, 39, 176, 0.5);
 
             /* Komponenty specifické barvy */
-            --solar-bg: linear-gradient(135deg, rgba(255, 213, 79, 0.15) 0%, rgba(255, 179, 0, 0.08) 100%);
-            --solar-border: rgba(255, 213, 79, 0.4);
-            --solar-accent: rgba(255, 193, 7, 0.95);
-
-            --grid-bg: linear-gradient(135deg, rgba(66, 165, 245, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
-            --grid-border: rgba(66, 165, 245, 0.4);
-
-            --battery-bg: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(56, 142, 60, 0.08) 100%);
-            --battery-border: rgba(76, 175, 80, 0.4);
-
-            --house-bg: linear-gradient(135deg, rgba(240, 98, 146, 0.15) 0%, rgba(233, 30, 99, 0.08) 100%);
-            --house-border: rgba(240, 98, 146, 0.4);
-
-            --inverter-bg: linear-gradient(135deg, rgba(149, 117, 205, 0.15) 0%, rgba(126, 87, 194, 0.08) 100%);
-            --inverter-border: rgba(149, 117, 205, 0.4);
+            --solar-bg: linear-gradient(135deg, rgb(255, 213, 79, 0.15) 0%, rgb(255, 179, 0, 0.08) 100%);
+            --solar-border: rgb(255, 213, 79, 0.4);
+            --solar-accent: rgb(255, 193, 7, 0.95);
+            --grid-bg: linear-gradient(135deg, rgb(66, 165, 245, 0.15) 0%, rgb(33, 150, 243, 0.08) 100%);
+            --grid-border: rgb(66, 165, 245, 0.4);
+            --battery-bg: linear-gradient(135deg, rgb(76, 175, 80, 0.15) 0%, rgb(56, 142, 60, 0.08) 100%);
+            --battery-border: rgb(76, 175, 80, 0.4);
+            --house-bg: linear-gradient(135deg, rgb(240, 98, 146, 0.15) 0%, rgb(233, 30, 99, 0.08) 100%);
+            --house-border: rgb(240, 98, 146, 0.4);
+            --inverter-bg: linear-gradient(135deg, rgb(149, 117, 205, 0.15) 0%, rgb(126, 87, 194, 0.08) 100%);
+            --inverter-border: rgb(149, 117, 205, 0.4);
 
             /* === LAYOUT POSITIONS - Default for Desktop === */
+
             /* Solar - Top Center */
             --solar-top: 40px;
             --solar-left: 50%;
@@ -80,162 +78,162 @@
             --inverter-transform: translate(-50%, -50%);
 
             /* Status colors */
-            --status-charging-bg: rgba(33, 150, 243, 0.3);
+            --status-charging-bg: rgb(33, 150, 243, 0.3);
             --status-charging-text: #42a5f5;
-            --status-discharging-bg: rgba(255, 152, 0, 0.3);
+            --status-discharging-bg: rgb(255, 152, 0, 0.3);
             --status-discharging-text: #ffb74d;
-            --status-idle-bg: rgba(76, 175, 80, 0.3);
+            --status-idle-bg: rgb(76, 175, 80, 0.3);
             --status-idle-text: #81c784;
-            --status-importing-bg: rgba(244, 67, 54, 0.3);
+            --status-importing-bg: rgb(244, 67, 54, 0.3);
             --status-importing-text: #e57373;
-            --status-exporting-bg: rgba(76, 175, 80, 0.3);
+            --status-exporting-bg: rgb(76, 175, 80, 0.3);
             --status-exporting-text: #81c784;
 
             /* UI elements */
-            --dialog-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
-            --dialog-border: rgba(66, 165, 245, 0.4);
-            --button-bg: rgba(255, 255, 255, 0.1);
-            --button-border: rgba(255, 255, 255, 0.2);
-            --button-hover: rgba(255, 255, 255, 0.2);
-            --button-active-border: rgba(76, 175, 80, 0.6);
-            --input-bg: rgba(255, 255, 255, 0.05);
-            --input-border: rgba(255, 255, 255, 0.2);
+            --dialog-bg: linear-gradient(135deg, rgb(30, 41, 59, 0.98) 0%, rgb(15, 23, 42, 0.98) 100%);
+            --dialog-border: rgb(66, 165, 245, 0.4);
+            --button-bg: rgb(255, 255, 255, 0.1);
+            --button-border: rgb(255, 255, 255, 0.2);
+            --button-hover: rgb(255, 255, 255, 0.2);
+            --button-active-border: rgb(76, 175, 80, 0.6);
+            --input-bg: rgb(255, 255, 255, 0.05);
+            --input-border: rgb(255, 255, 255, 0.2);
             --input-focus-border: #42a5f5;
 
             /* Warnings and alerts */
-            --warning-bg: rgba(255, 193, 7, 0.2);
+            --warning-bg: rgb(255, 193, 7, 0.2);
             --warning-text: #ffc107;
-            --warning-bg-transparent: rgba(255, 193, 7, 0.6);
-            --warning-text-transparent: rgba(255, 193, 7, 0.9);
-            --error-bg: rgba(244, 67, 54, 0.2);
+            --warning-bg-transparent: rgb(255, 193, 7, 0.6);
+            --warning-text-transparent: rgb(255, 193, 7, 0.9);
+            --error-bg: rgb(244, 67, 54, 0.2);
             --error-text: #e57373;
-            --error-bg-transparent: rgba(244, 67, 54, 0.8);
-            --error-text-transparent: rgba(244, 67, 54, 1);
-            --info-bg: rgba(33, 150, 243, 0.2);
+            --error-bg-transparent: rgb(244, 67, 54, 0.8);
+            --error-text-transparent: rgb(244, 67, 54, 1);
+            --info-bg: rgb(33, 150, 243, 0.2);
             --info-text: #42a5f5;
 
             /* Animace - transparentní varianty */
-            --status-idle-bg-transparent: rgba(59, 130, 246, 0.7);
-            --status-idle-bg-semi: rgba(59, 130, 246, 0.4);
+            --status-idle-bg-transparent: rgb(59, 130, 246, 0.7);
+            --status-idle-bg-semi: rgb(59, 130, 246, 0.4);
 
             /* Indicator badges */
-            --indicator-warning-bg: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
-            --indicator-warning-border: rgba(255, 193, 7, 0.8);
-            --indicator-warning-shadow: rgba(255, 193, 7, 0.4);
-            --indicator-info-bg: linear-gradient(135deg, rgba(33, 150, 243, 0.95), rgba(25, 118, 210, 0.95));
-            --indicator-info-border: rgba(33, 150, 243, 0.8);
-            --indicator-info-shadow: rgba(33, 150, 243, 0.4);
+            --indicator-warning-bg: linear-gradient(135deg, rgb(255, 193, 7, 0.95), rgb(255, 152, 0, 0.95));
+            --indicator-warning-border: rgb(255, 193, 7, 0.8);
+            --indicator-warning-shadow: rgb(255, 193, 7, 0.4);
+            --indicator-info-bg: linear-gradient(135deg, rgb(33, 150, 243, 0.95), rgb(25, 118, 210, 0.95));
+            --indicator-info-border: rgb(33, 150, 243, 0.8);
+            --indicator-info-shadow: rgb(33, 150, 243, 0.4);
             --indicator-text: #1a1a2e;
-            --spinner-border: rgba(26, 26, 46, 0.3);
+            --spinner-border: rgb(26, 26, 46, 0.3);
             --spinner-border-top: #1a1a2e;
 
             /* Tooltips */
-            --tooltip-bg: rgba(0, 0, 0, 0.95);
-            --tooltip-bg-secondary: rgba(50, 50, 50, 0.95);
-            --tooltip-border: rgba(0, 0, 0, 0.95);
-            --tooltip-border-secondary: rgba(50, 50, 50, 0.95);
+            --tooltip-bg: rgb(0, 0, 0, 0.95);
+            --tooltip-bg-secondary: rgb(50, 50, 50, 0.95);
+            --tooltip-border: rgb(0, 0, 0, 0.95);
+            --tooltip-border-secondary: rgb(50, 50, 50, 0.95);
 
             /* Control panel */
-            --control-panel-bg: rgba(10, 14, 39, 0.98);
-            --control-panel-border: rgba(66, 165, 245, 0.3);
+            --control-panel-bg: rgb(10, 14, 39, 0.98);
+            --control-panel-border: rgb(66, 165, 245, 0.3);
 
             /* Success/Error text colors */
             --success-text: #4caf50;
-            --error-text-alt: #ff3333;
+            --error-text-alt: #f33;
 
             /* Header */
             --header-gradient: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
 
             /* Toast notifications */
-            --toast-body-text: rgba(255, 255, 255, 0.85);
-            --toast-success-border: rgba(76, 175, 80, 0.6);
-            --toast-success-border-light: rgba(76, 175, 80, 0.2);
-            --toast-success-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(76, 175, 80, 0.2);
-            --toast-error-border: rgba(244, 67, 54, 0.6);
-            --toast-error-border-light: rgba(244, 67, 54, 0.2);
-            --toast-error-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(244, 67, 54, 0.2);
-            --toast-warning-border: rgba(255, 152, 0, 0.6);
-            --toast-warning-border-light: rgba(255, 152, 0, 0.2);
-            --toast-warning-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 152, 0, 0.2);
+            --toast-body-text: rgb(255, 255, 255, 0.85);
+            --toast-success-border: rgb(76, 175, 80, 0.6);
+            --toast-success-border-light: rgb(76, 175, 80, 0.2);
+            --toast-success-shadow: 0 20px 60px rgb(0, 0, 0, 0.7), 0 0 0 1px rgb(76, 175, 80, 0.2);
+            --toast-error-border: rgb(244, 67, 54, 0.6);
+            --toast-error-border-light: rgb(244, 67, 54, 0.2);
+            --toast-error-shadow: 0 20px 60px rgb(0, 0, 0, 0.7), 0 0 0 1px rgb(244, 67, 54, 0.2);
+            --toast-warning-border: rgb(255, 152, 0, 0.6);
+            --toast-warning-border-light: rgb(255, 152, 0, 0.2);
+            --toast-warning-shadow: 0 20px 60px rgb(0, 0, 0, 0.7), 0 0 0 1px rgb(255, 152, 0, 0.2);
 
             /* Modal */
-            --modal-backdrop: rgba(0, 0, 0, 0.7);
-            --modal-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
-            --modal-border: rgba(100, 116, 139, 0.3);
-            --modal-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            --modal-header-text: rgba(255, 255, 255, 0.95);
-            --modal-body-text: rgba(255, 255, 255, 0.8);
-            --modal-warning-bg: rgba(255, 152, 0, 0.1);
-            --modal-warning-border: rgba(255, 152, 0, 0.3);
-            --modal-warning-text: rgba(255, 193, 7, 0.95);
-            --modal-checkbox-bg: rgba(100, 116, 139, 0.1);
-            --modal-checkbox-label: rgba(255, 255, 255, 0.9);
-            --modal-button-cancel-bg: rgba(100, 116, 139, 0.2);
-            --modal-button-cancel-hover: rgba(100, 116, 139, 0.3);
-            --modal-button-cancel-text: rgba(255, 255, 255, 0.8);
-            --modal-button-confirm-bg: linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(29, 78, 216, 0.8) 100%);
-            --modal-button-confirm-hover: linear-gradient(135deg, rgba(59, 130, 246, 1) 0%, rgba(29, 78, 216, 1) 100%);
-            --modal-button-confirm-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            --modal-backdrop: rgb(0, 0, 0, 0.7);
+            --modal-bg: linear-gradient(135deg, rgb(30, 41, 59, 0.98) 0%, rgb(15, 23, 42, 0.98) 100%);
+            --modal-border: rgb(100, 116, 139, 0.3);
+            --modal-shadow: 0 20px 60px rgb(0, 0, 0, 0.5);
+            --modal-header-text: rgb(255, 255, 255, 0.95);
+            --modal-body-text: rgb(255, 255, 255, 0.8);
+            --modal-warning-bg: rgb(255, 152, 0, 0.1);
+            --modal-warning-border: rgb(255, 152, 0, 0.3);
+            --modal-warning-text: rgb(255, 193, 7, 0.95);
+            --modal-checkbox-bg: rgb(100, 116, 139, 0.1);
+            --modal-checkbox-label: rgb(255, 255, 255, 0.9);
+            --modal-button-cancel-bg: rgb(100, 116, 139, 0.2);
+            --modal-button-cancel-hover: rgb(100, 116, 139, 0.3);
+            --modal-button-cancel-text: rgb(255, 255, 255, 0.8);
+            --modal-button-confirm-bg: linear-gradient(135deg, rgb(59, 130, 246, 0.8) 0%, rgb(29, 78, 216, 0.8) 100%);
+            --modal-button-confirm-hover: linear-gradient(135deg, rgb(59, 130, 246, 1) 0%, rgb(29, 78, 216, 1) 100%);
+            --modal-button-confirm-shadow: 0 4px 12px rgb(59, 130, 246, 0.4);
 
             /* Shield states */
-            --shield-idle-bg: rgba(76, 175, 80, 0.2);
-            --shield-idle-border: rgba(76, 175, 80, 0.4);
+            --shield-idle-bg: rgb(76, 175, 80, 0.2);
+            --shield-idle-border: rgb(76, 175, 80, 0.4);
             --shield-idle-text: #4caf50;
-            --shield-idle-shadow: 0 0 10px rgba(76, 175, 80, 0.3), 0 0 20px rgba(76, 175, 80, 0.5);
-            --shield-pending-bg: rgba(255, 193, 7, 0.4);
-            --shield-pending-border: rgba(255, 193, 7, 0.7);
+            --shield-idle-shadow: 0 0 10px rgb(76, 175, 80, 0.3), 0 0 20px rgb(76, 175, 80, 0.5);
+            --shield-pending-bg: rgb(255, 193, 7, 0.4);
+            --shield-pending-border: rgb(255, 193, 7, 0.7);
             --shield-pending-text: #ffc107;
-            --shield-pending-shadow: 0 0 10px rgba(255, 193, 7, 0.3), 0 0 20px rgba(255, 193, 7, 0.5);
-            --shield-processing-bg: rgba(66, 165, 245, 0.5);
-            --shield-processing-border: rgba(66, 165, 245, 0.8);
+            --shield-pending-shadow: 0 0 10px rgb(255, 193, 7, 0.3), 0 0 20px rgb(255, 193, 7, 0.5);
+            --shield-processing-bg: rgb(66, 165, 245, 0.5);
+            --shield-processing-border: rgb(66, 165, 245, 0.8);
             --shield-processing-text: #42a5f5;
-            --shield-processing-shadow: 0 0 15px rgba(66, 165, 245, 0.4);
-            --shield-button-active-bg: rgba(76, 175, 80, 0.5);
-            --shield-button-active-border: rgba(76, 175, 80, 0.8);
-            --shield-button-active-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+            --shield-processing-shadow: 0 0 15px rgb(66, 165, 245, 0.4);
+            --shield-button-active-bg: rgb(76, 175, 80, 0.5);
+            --shield-button-active-border: rgb(76, 175, 80, 0.8);
+            --shield-button-active-shadow: 0 0 15px rgb(76, 175, 80, 0.4);
             --shield-button-active-check: #81c784;
-            --shield-queue-bg: rgba(255, 193, 7, 0.3);
+            --shield-queue-bg: rgb(255, 193, 7, 0.3);
 
             /* Light text variants */
-            --text-label: rgba(255, 255, 255, 0.7);
-            --table-header-bg: rgba(255, 255, 255, 0.05);
-            --table-border: rgba(255, 255, 255, 0.1);
-            --table-border-light: rgba(255, 255, 255, 0.05);
+            --text-label: rgb(255, 255, 255, 0.7);
+            --table-header-bg: rgb(255, 255, 255, 0.05);
+            --table-border: rgb(255, 255, 255, 0.1);
+            --table-border-light: rgb(255, 255, 255, 0.05);
 
             /* Drop shadows */
-            --shadow-success: rgba(76, 175, 80, 0.8);
-            --shadow-error: rgba(244, 67, 54, 1);
-            --shadow-error-weak: rgba(244, 67, 54, 0.8);
-            --shadow-error-light: rgba(244, 67, 54, 0.4);
-            --shadow-warning: rgba(255, 193, 7, 0.8);
-            --shadow-info: rgba(33, 150, 243, 0.8);
-            --shadow-white: rgba(255, 255, 255, 0.8);
+            --shadow-success: rgb(76, 175, 80, 0.8);
+            --shadow-error: rgb(244, 67, 54, 1);
+            --shadow-error-weak: rgb(244, 67, 54, 0.8);
+            --shadow-error-light: rgb(244, 67, 54, 0.4);
+            --shadow-warning: rgb(255, 193, 7, 0.8);
+            --shadow-info: rgb(33, 150, 243, 0.8);
+            --shadow-white: rgb(255, 255, 255, 0.8);
 
             /* Status borders and shadows */
-            --status-discharging-border: rgba(255, 152, 0, 0.6);
-            --status-discharging-shadow: rgba(255, 152, 0, 0.4);
-            --status-charging-border: rgba(33, 150, 243, 0.6);
-            --status-charging-shadow: rgba(33, 150, 243, 0.4);
+            --status-discharging-border: rgb(255, 152, 0, 0.6);
+            --status-discharging-shadow: rgb(255, 152, 0, 0.4);
+            --status-charging-border: rgb(33, 150, 243, 0.6);
+            --status-charging-shadow: rgb(33, 150, 243, 0.4);
 
             /* Battery gauge gradient */
             --battery-gauge-gradient: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
 
             /* Button states */
-            --button-active-bg: rgba(76, 175, 80, 0.4);
-            --button-disabled-bg: rgba(128, 128, 128, 0.2);
-            --button-disabled-border: rgba(128, 128, 128, 0.3);
-            --button-disabled-text: rgba(255, 255, 255, 0.4);
+            --button-active-bg: rgb(76, 175, 80, 0.4);
+            --button-disabled-bg: rgb(128, 128, 128, 0.2);
+            --button-disabled-border: rgb(128, 128, 128, 0.3);
+            --button-disabled-text: rgb(255, 255, 255, 0.4);
         }
 
         /* Světlý režim */
         body.light-theme {
             /* Pozadí */
             --bg-primary: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
-            --bg-secondary: rgba(255, 255, 255, 0.85);
-            --bg-tertiary: rgba(255, 255, 255, 0.6);
-            --bg-hover: rgba(0, 0, 0, 0.1);
-            --bg-active: rgba(76, 175, 80, 0.2);
-            --bg-disabled: rgba(0, 0, 0, 0.02);
+            --bg-secondary: rgb(255, 255, 255, 0.85);
+            --bg-tertiary: rgb(255, 255, 255, 0.6);
+            --bg-hover: rgb(0, 0, 0, 0.1);
+            --bg-active: rgb(76, 175, 80, 0.2);
+            --bg-disabled: rgb(0, 0, 0, 0.02);
 
             /* Text */
             --text-primary: #1a202c;
@@ -244,91 +242,87 @@
             --text-disabled: #cbd5e0;
 
             /* Borders */
-            --border-primary: rgba(0, 0, 0, 0.15);
-            --border-secondary: rgba(0, 0, 0, 0.1);
-            --border-tertiary: rgba(0, 0, 0, 0.05);
+            --border-primary: rgb(0, 0, 0, 0.15);
+            --border-secondary: rgb(0, 0, 0, 0.1);
+            --border-tertiary: rgb(0, 0, 0, 0.05);
 
             /* Shadows */
-            --shadow-color: rgba(0, 0, 0, 0.1);
-            --shadow-strong: rgba(0, 0, 0, 0.2);
-            --shadow-light: rgba(0, 0, 0, 0.05);
+            --shadow-color: rgb(0, 0, 0, 0.1);
+            --shadow-strong: rgb(0, 0, 0, 0.2);
+            --shadow-light: rgb(0, 0, 0, 0.05);
 
             /* Komponenty specifické barvy */
-            --solar-bg: linear-gradient(135deg, rgba(255, 245, 220, 0.95) 0%, rgba(255, 235, 180, 0.9) 100%);
-            --solar-border: rgba(255, 193, 7, 0.5);
-            --solar-accent: rgba(255, 160, 0, 0.95);
-
-            --grid-bg: linear-gradient(135deg, rgba(227, 242, 253, 0.95) 0%, rgba(187, 222, 251, 0.9) 100%);
-            --grid-border: rgba(66, 165, 245, 0.5);
-
-            --battery-bg: linear-gradient(135deg, rgba(232, 245, 233, 0.95) 0%, rgba(200, 230, 201, 0.9) 100%);
-            --battery-border: rgba(76, 175, 80, 0.5);
-
-            --house-bg: linear-gradient(135deg, rgba(252, 228, 236, 0.95) 0%, rgba(248, 187, 208, 0.9) 100%);
-            --house-border: rgba(240, 98, 146, 0.5);
-
-            --inverter-bg: linear-gradient(135deg, rgba(237, 231, 246, 0.95) 0%, rgba(209, 196, 233, 0.9) 100%);
-            --inverter-border: rgba(149, 117, 205, 0.5);
+            --solar-bg: linear-gradient(135deg, rgb(255, 245, 220, 0.95) 0%, rgb(255, 235, 180, 0.9) 100%);
+            --solar-border: rgb(255, 193, 7, 0.5);
+            --solar-accent: rgb(255, 160, 0, 0.95);
+            --grid-bg: linear-gradient(135deg, rgb(227, 242, 253, 0.95) 0%, rgb(187, 222, 251, 0.9) 100%);
+            --grid-border: rgb(66, 165, 245, 0.5);
+            --battery-bg: linear-gradient(135deg, rgb(232, 245, 233, 0.95) 0%, rgb(200, 230, 201, 0.9) 100%);
+            --battery-border: rgb(76, 175, 80, 0.5);
+            --house-bg: linear-gradient(135deg, rgb(252, 228, 236, 0.95) 0%, rgb(248, 187, 208, 0.9) 100%);
+            --house-border: rgb(240, 98, 146, 0.5);
+            --inverter-bg: linear-gradient(135deg, rgb(237, 231, 246, 0.95) 0%, rgb(209, 196, 233, 0.9) 100%);
+            --inverter-border: rgb(149, 117, 205, 0.5);
 
             /* Status colors */
-            --status-charging-bg: rgba(33, 150, 243, 0.2);
+            --status-charging-bg: rgb(33, 150, 243, 0.2);
             --status-charging-text: #1565c0;
-            --status-discharging-bg: rgba(255, 152, 0, 0.2);
+            --status-discharging-bg: rgb(255, 152, 0, 0.2);
             --status-discharging-text: #e65100;
-            --status-idle-bg: rgba(76, 175, 80, 0.2);
+            --status-idle-bg: rgb(76, 175, 80, 0.2);
             --status-idle-text: #2e7d32;
-            --status-importing-bg: rgba(244, 67, 54, 0.2);
+            --status-importing-bg: rgb(244, 67, 54, 0.2);
             --status-importing-text: #c62828;
-            --status-exporting-bg: rgba(76, 175, 80, 0.2);
+            --status-exporting-bg: rgb(76, 175, 80, 0.2);
             --status-exporting-text: #2e7d32;
 
             /* UI elements */
-            --dialog-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 248, 0.98) 100%);
-            --dialog-border: rgba(66, 165, 245, 0.3);
-            --button-bg: rgba(0, 0, 0, 0.05);
-            --button-border: rgba(0, 0, 0, 0.15);
-            --button-hover: rgba(0, 0, 0, 0.1);
-            --button-active-border: rgba(76, 175, 80, 0.6);
-            --input-bg: rgba(0, 0, 0, 0.05);
-            --input-border: rgba(0, 0, 0, 0.15);
+            --dialog-bg: linear-gradient(135deg, rgb(255, 255, 255, 0.98) 0%, rgb(240, 244, 248, 0.98) 100%);
+            --dialog-border: rgb(66, 165, 245, 0.3);
+            --button-bg: rgb(0, 0, 0, 0.05);
+            --button-border: rgb(0, 0, 0, 0.15);
+            --button-hover: rgb(0, 0, 0, 0.1);
+            --button-active-border: rgb(76, 175, 80, 0.6);
+            --input-bg: rgb(0, 0, 0, 0.05);
+            --input-border: rgb(0, 0, 0, 0.15);
             --input-focus-border: #1976d2;
 
             /* Warnings and alerts */
-            --warning-bg: rgba(255, 193, 7, 0.15);
+            --warning-bg: rgb(255, 193, 7, 0.15);
             --warning-text: #f57c00;
-            --warning-bg-transparent: rgba(255, 193, 7, 0.6);
-            --warning-text-transparent: rgba(255, 193, 7, 0.9);
-            --error-bg: rgba(244, 67, 54, 0.15);
+            --warning-bg-transparent: rgb(255, 193, 7, 0.6);
+            --warning-text-transparent: rgb(255, 193, 7, 0.9);
+            --error-bg: rgb(244, 67, 54, 0.15);
             --error-text: #c62828;
-            --error-bg-transparent: rgba(244, 67, 54, 0.8);
-            --error-text-transparent: rgba(244, 67, 54, 1);
-            --info-bg: rgba(33, 150, 243, 0.15);
+            --error-bg-transparent: rgb(244, 67, 54, 0.8);
+            --error-text-transparent: rgb(244, 67, 54, 1);
+            --info-bg: rgb(33, 150, 243, 0.15);
             --info-text: #1976d2;
 
             /* Animace - transparentní varianty */
-            --status-idle-bg-transparent: rgba(59, 130, 246, 0.7);
-            --status-idle-bg-semi: rgba(59, 130, 246, 0.4);
+            --status-idle-bg-transparent: rgb(59, 130, 246, 0.7);
+            --status-idle-bg-semi: rgb(59, 130, 246, 0.4);
 
             /* Indicator badges */
-            --indicator-warning-bg: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
-            --indicator-warning-border: rgba(255, 193, 7, 0.8);
-            --indicator-warning-shadow: rgba(255, 193, 7, 0.4);
-            --indicator-info-bg: linear-gradient(135deg, rgba(33, 150, 243, 0.95), rgba(25, 118, 210, 0.95));
-            --indicator-info-border: rgba(33, 150, 243, 0.8);
-            --indicator-info-shadow: rgba(33, 150, 243, 0.4);
-            --indicator-text: #ffffff;
-            --spinner-border: rgba(255, 255, 255, 0.3);
-            --spinner-border-top: #ffffff;
+            --indicator-warning-bg: linear-gradient(135deg, rgb(255, 193, 7, 0.95), rgb(255, 152, 0, 0.95));
+            --indicator-warning-border: rgb(255, 193, 7, 0.8);
+            --indicator-warning-shadow: rgb(255, 193, 7, 0.4);
+            --indicator-info-bg: linear-gradient(135deg, rgb(33, 150, 243, 0.95), rgb(25, 118, 210, 0.95));
+            --indicator-info-border: rgb(33, 150, 243, 0.8);
+            --indicator-info-shadow: rgb(33, 150, 243, 0.4);
+            --indicator-text: #fff;
+            --spinner-border: rgb(255, 255, 255, 0.3);
+            --spinner-border-top: #fff;
 
             /* Tooltips */
-            --tooltip-bg: rgba(255, 255, 255, 0.98);
-            --tooltip-bg-secondary: rgba(240, 240, 240, 0.98);
-            --tooltip-border: rgba(0, 0, 0, 0.1);
-            --tooltip-border-secondary: rgba(0, 0, 0, 0.05);
+            --tooltip-bg: rgb(255, 255, 255, 0.98);
+            --tooltip-bg-secondary: rgb(240, 240, 240, 0.98);
+            --tooltip-border: rgb(0, 0, 0, 0.1);
+            --tooltip-border-secondary: rgb(0, 0, 0, 0.05);
 
             /* Control panel */
-            --control-panel-bg: rgba(255, 255, 255, 0.98);
-            --control-panel-border: rgba(66, 165, 245, 0.3);
+            --control-panel-bg: rgb(255, 255, 255, 0.98);
+            --control-panel-border: rgb(66, 165, 245, 0.3);
 
             /* Success/Error text colors */
             --success-text: #2e7d32;
@@ -338,92 +332,91 @@
             --header-gradient: linear-gradient(135deg, #ff8f00 0%, #f57c00 100%);
 
             /* Toast notifications */
-            --toast-body-text: rgba(0, 0, 0, 0.75);
-            --toast-success-border: rgba(46, 125, 50, 0.5);
-            --toast-success-border-light: rgba(46, 125, 50, 0.15);
-            --toast-success-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(46, 125, 50, 0.2);
-            --toast-error-border: rgba(198, 40, 40, 0.5);
-            --toast-error-border-light: rgba(198, 40, 40, 0.15);
-            --toast-error-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(198, 40, 40, 0.2);
-            --toast-warning-border: rgba(245, 124, 0, 0.5);
-            --toast-warning-border-light: rgba(245, 124, 0, 0.15);
-            --toast-warning-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(245, 124, 0, 0.2);
+            --toast-body-text: rgb(0, 0, 0, 0.75);
+            --toast-success-border: rgb(46, 125, 50, 0.5);
+            --toast-success-border-light: rgb(46, 125, 50, 0.15);
+            --toast-success-shadow: 0 8px 32px rgb(0, 0, 0, 0.15), 0 0 0 1px rgb(46, 125, 50, 0.2);
+            --toast-error-border: rgb(198, 40, 40, 0.5);
+            --toast-error-border-light: rgb(198, 40, 40, 0.15);
+            --toast-error-shadow: 0 8px 32px rgb(0, 0, 0, 0.15), 0 0 0 1px rgb(198, 40, 40, 0.2);
+            --toast-warning-border: rgb(245, 124, 0, 0.5);
+            --toast-warning-border-light: rgb(245, 124, 0, 0.15);
+            --toast-warning-shadow: 0 8px 32px rgb(0, 0, 0, 0.15), 0 0 0 1px rgb(245, 124, 0, 0.2);
 
             /* Modal */
-            --modal-backdrop: rgba(0, 0, 0, 0.5);
-            --modal-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
-            --modal-border: rgba(66, 165, 245, 0.3);
-            --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            --modal-header-text: rgba(0, 0, 0, 0.87);
-            --modal-body-text: rgba(0, 0, 0, 0.7);
-            --modal-warning-bg: rgba(255, 152, 0, 0.08);
-            --modal-warning-border: rgba(245, 124, 0, 0.25);
-            --modal-warning-text: rgba(245, 124, 0, 0.95);
-            --modal-checkbox-bg: rgba(0, 0, 0, 0.03);
-            --modal-checkbox-label: rgba(0, 0, 0, 0.8);
-            --modal-button-cancel-bg: rgba(0, 0, 0, 0.05);
-            --modal-button-cancel-hover: rgba(0, 0, 0, 0.1);
-            --modal-button-cancel-text: rgba(0, 0, 0, 0.7);
-            --modal-button-confirm-bg: linear-gradient(135deg, rgba(25, 118, 210, 0.9) 0%, rgba(13, 71, 161, 0.9) 100%);
-            --modal-button-confirm-hover: linear-gradient(135deg, rgba(25, 118, 210, 1) 0%, rgba(13, 71, 161, 1) 100%);
-            --modal-button-confirm-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+            --modal-backdrop: rgb(0, 0, 0, 0.5);
+            --modal-bg: linear-gradient(135deg, rgb(255, 255, 255, 0.98) 0%, rgb(245, 245, 245, 0.98) 100%);
+            --modal-border: rgb(66, 165, 245, 0.3);
+            --modal-shadow: 0 8px 32px rgb(0, 0, 0, 0.2);
+            --modal-header-text: rgb(0, 0, 0, 0.87);
+            --modal-body-text: rgb(0, 0, 0, 0.7);
+            --modal-warning-bg: rgb(255, 152, 0, 0.08);
+            --modal-warning-border: rgb(245, 124, 0, 0.25);
+            --modal-warning-text: rgb(245, 124, 0, 0.95);
+            --modal-checkbox-bg: rgb(0, 0, 0, 0.03);
+            --modal-checkbox-label: rgb(0, 0, 0, 0.8);
+            --modal-button-cancel-bg: rgb(0, 0, 0, 0.05);
+            --modal-button-cancel-hover: rgb(0, 0, 0, 0.1);
+            --modal-button-cancel-text: rgb(0, 0, 0, 0.7);
+            --modal-button-confirm-bg: linear-gradient(135deg, rgb(25, 118, 210, 0.9) 0%, rgb(13, 71, 161, 0.9) 100%);
+            --modal-button-confirm-hover: linear-gradient(135deg, rgb(25, 118, 210, 1) 0%, rgb(13, 71, 161, 1) 100%);
+            --modal-button-confirm-shadow: 0 4px 12px rgb(25, 118, 210, 0.3);
 
             /* Shield states */
-            --shield-idle-bg: rgba(46, 125, 50, 0.15);
-            --shield-idle-border: rgba(46, 125, 50, 0.4);
+            --shield-idle-bg: rgb(46, 125, 50, 0.15);
+            --shield-idle-border: rgb(46, 125, 50, 0.4);
             --shield-idle-text: #2e7d32;
-            --shield-idle-shadow: 0 0 10px rgba(46, 125, 50, 0.2), 0 0 20px rgba(46, 125, 50, 0.3);
-            --shield-pending-bg: rgba(245, 124, 0, 0.2);
-            --shield-pending-border: rgba(245, 124, 0, 0.5);
+            --shield-idle-shadow: 0 0 10px rgb(46, 125, 50, 0.2), 0 0 20px rgb(46, 125, 50, 0.3);
+            --shield-pending-bg: rgb(245, 124, 0, 0.2);
+            --shield-pending-border: rgb(245, 124, 0, 0.5);
             --shield-pending-text: #f57c00;
-            --shield-pending-shadow: 0 0 10px rgba(245, 124, 0, 0.2), 0 0 20px rgba(245, 124, 0, 0.3);
-            --shield-processing-bg: rgba(25, 118, 210, 0.2);
-            --shield-processing-border: rgba(25, 118, 210, 0.5);
+            --shield-pending-shadow: 0 0 10px rgb(245, 124, 0, 0.2), 0 0 20px rgb(245, 124, 0, 0.3);
+            --shield-processing-bg: rgb(25, 118, 210, 0.2);
+            --shield-processing-border: rgb(25, 118, 210, 0.5);
             --shield-processing-text: #1976d2;
-            --shield-processing-shadow: 0 0 15px rgba(25, 118, 210, 0.3);
-            --shield-button-active-bg: rgba(46, 125, 50, 0.3);
-            --shield-button-active-border: rgba(46, 125, 50, 0.6);
-            --shield-button-active-shadow: 0 0 15px rgba(46, 125, 50, 0.3);
+            --shield-processing-shadow: 0 0 15px rgb(25, 118, 210, 0.3);
+            --shield-button-active-bg: rgb(46, 125, 50, 0.3);
+            --shield-button-active-border: rgb(46, 125, 50, 0.6);
+            --shield-button-active-shadow: 0 0 15px rgb(46, 125, 50, 0.3);
             --shield-button-active-check: #2e7d32;
-            --shield-queue-bg: rgba(245, 124, 0, 0.15);
+            --shield-queue-bg: rgb(245, 124, 0, 0.15);
 
             /* Light text variants */
-            --text-label: rgba(0, 0, 0, 0.6);
-            --table-header-bg: rgba(0, 0, 0, 0.03);
-            --table-border: rgba(0, 0, 0, 0.08);
-            --table-border-light: rgba(0, 0, 0, 0.04);
+            --text-label: rgb(0, 0, 0, 0.6);
+            --table-header-bg: rgb(0, 0, 0, 0.03);
+            --table-border: rgb(0, 0, 0, 0.08);
+            --table-border-light: rgb(0, 0, 0, 0.04);
 
             /* Drop shadows */
-            --shadow-success: rgba(76, 175, 80, 0.8);
-            --shadow-error: rgba(244, 67, 54, 1);
-            --shadow-error-weak: rgba(244, 67, 54, 0.8);
-            --shadow-error-light: rgba(244, 67, 54, 0.4);
-            --shadow-warning: rgba(255, 193, 7, 0.8);
-            --shadow-info: rgba(33, 150, 243, 0.8);
-            --shadow-white: rgba(0, 0, 0, 0.2);
+            --shadow-success: rgb(76, 175, 80, 0.8);
+            --shadow-error: rgb(244, 67, 54, 1);
+            --shadow-error-weak: rgb(244, 67, 54, 0.8);
+            --shadow-error-light: rgb(244, 67, 54, 0.4);
+            --shadow-warning: rgb(255, 193, 7, 0.8);
+            --shadow-info: rgb(33, 150, 243, 0.8);
+            --shadow-white: rgb(0, 0, 0, 0.2);
 
             /* Status borders and shadows */
-            --status-discharging-border: rgba(255, 152, 0, 0.6);
-            --status-discharging-shadow: rgba(255, 152, 0, 0.4);
-            --status-charging-border: rgba(33, 150, 243, 0.6);
-            --status-charging-shadow: rgba(33, 150, 243, 0.4);
+            --status-discharging-border: rgb(255, 152, 0, 0.6);
+            --status-discharging-shadow: rgb(255, 152, 0, 0.4);
+            --status-charging-border: rgb(33, 150, 243, 0.6);
+            --status-charging-shadow: rgb(33, 150, 243, 0.4);
 
             /* Battery gauge gradient */
             --battery-gauge-gradient: linear-gradient(90deg, #f44336, #ff9800, #ffeb3b, #8bc34a, #4caf50);
 
             /* Button states */
-            --button-active-bg: rgba(76, 175, 80, 0.4);
-            --button-disabled-bg: rgba(200, 200, 200, 0.2);
-            --button-disabled-border: rgba(180, 180, 180, 0.3);
-            --button-disabled-text: rgba(0, 0, 0, 0.4);
+            --button-active-bg: rgb(76, 175, 80, 0.4);
+            --button-disabled-bg: rgb(200, 200, 200, 0.2);
+            --button-disabled-border: rgb(180, 180, 180, 0.3);
+            --button-disabled-text: rgb(0, 0, 0, 0.4);
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: hidden auto;
             min-height: 100vh;
             transition: background 0.3s ease, color 0.3s ease;
         }
@@ -448,7 +441,7 @@
             font-size: 24px;
             font-weight: 700;
             background: var(--header-gradient);
-            -webkit-background-clip: text;
+            background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -477,12 +470,12 @@
             cursor: pointer;
             transition: all 0.3s ease;
             user-select: none;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgb(0, 0, 0, 0.1);
         }
 
         .chmu-warning-badge:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 12px rgb(0, 0, 0, 0.15);
         }
 
         .chmu-warning-badge.severity-0 {
@@ -513,14 +506,13 @@
         }
 
         @keyframes pulse-warning {
-
             0%,
             100% {
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                box-shadow: 0 2px 8px rgb(0, 0, 0, 0.1);
             }
 
             50% {
-                box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+                box-shadow: 0 4px 20px rgb(239, 68, 68, 0.4);
             }
         }
 
@@ -542,7 +534,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgb(0, 0, 0, 0.7);
             backdrop-filter: blur(4px);
             z-index: 10000;
             align-items: center;
@@ -571,7 +563,7 @@
             width: 90%;
             max-height: 80vh;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
             animation: slideUp 0.3s ease;
         }
 
@@ -620,7 +612,7 @@
         }
 
         .chmu-modal-close:hover {
-            background: rgba(0, 0, 0, 0.1);
+            background: rgb(0, 0, 0, 0.1);
             transform: rotate(90deg);
         }
 
@@ -636,7 +628,7 @@
             padding: 16px;
             margin-bottom: 16px;
             border-left: 4px solid var(--accent-color);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 8px rgb(0, 0, 0, 0.15);
             position: relative;
             overflow: hidden;
         }
@@ -648,7 +640,7 @@
         .chmu-warning-item.severity-1 {
             border-left-color: #fbbf24;
             background: linear-gradient(135deg,
-                rgba(251, 191, 36, 0.1) 0%,
+                rgb(251, 191, 36, 0.1) 0%,
                 var(--node-background) 40%
             );
         }
@@ -656,7 +648,7 @@
         .chmu-warning-item.severity-2 {
             border-left-color: #fb923c;
             background: linear-gradient(135deg,
-                rgba(251, 146, 60, 0.15) 0%,
+                rgb(251, 146, 60, 0.15) 0%,
                 var(--node-background) 40%
             );
         }
@@ -664,7 +656,7 @@
         .chmu-warning-item.severity-3 {
             border-left-color: #ef4444;
             background: linear-gradient(135deg,
-                rgba(239, 68, 68, 0.2) 0%,
+                rgb(239, 68, 68, 0.2) 0%,
                 var(--node-background) 40%
             );
         }
@@ -672,41 +664,41 @@
         .chmu-warning-item.severity-4 {
             border-left-color: #a855f7;
             background: linear-gradient(135deg,
-                rgba(168, 85, 247, 0.2) 0%,
+                rgb(168, 85, 247, 0.2) 0%,
                 var(--node-background) 40%
             );
         }
 
         /* TOP warning - zvýrazněné pozadí */
         .chmu-warning-item.chmu-warning-top {
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 4px 16px rgb(0, 0, 0, 0.25);
             border-width: 6px;
         }
 
         .chmu-warning-item.chmu-warning-top.severity-1 {
             background: linear-gradient(135deg,
-                rgba(251, 191, 36, 0.18) 0%,
+                rgb(251, 191, 36, 0.18) 0%,
                 var(--node-background) 50%
             );
         }
 
         .chmu-warning-item.chmu-warning-top.severity-2 {
             background: linear-gradient(135deg,
-                rgba(251, 146, 60, 0.25) 0%,
+                rgb(251, 146, 60, 0.25) 0%,
                 var(--node-background) 50%
             );
         }
 
         .chmu-warning-item.chmu-warning-top.severity-3 {
             background: linear-gradient(135deg,
-                rgba(239, 68, 68, 0.3) 0%,
+                rgb(239, 68, 68, 0.3) 0%,
                 var(--node-background) 50%
             );
         }
 
         .chmu-warning-item.chmu-warning-top.severity-4 {
             background: linear-gradient(135deg,
-                rgba(168, 85, 247, 0.3) 0%,
+                rgb(168, 85, 247, 0.3) 0%,
                 var(--node-background) 50%
             );
         }
@@ -734,7 +726,7 @@
         }
 
         .chmu-warning-title h4 {
-            margin: 0 0 4px 0;
+            margin: 0 0 4px;
             font-size: 18px;
             font-weight: 700;
             color: var(--text-color);
@@ -808,14 +800,14 @@
         }
 
         .chmu-warning-description {
-            background: rgba(0, 0, 0, 0.1);
+            background: rgb(0, 0, 0, 0.1);
             border-radius: 8px;
             padding: 12px;
             margin-bottom: 12px;
         }
 
         .chmu-warning-description p {
-            margin: 0 0 8px 0;
+            margin: 0 0 8px;
             font-size: 13px;
             line-height: 1.5;
             color: var(--text-color);
@@ -836,10 +828,10 @@
 
         /* Header sekce s dalšími výstrahami */
         .chmu-all-warnings-header {
-            margin: 24px 0 16px 0;
+            margin: 24px 0 16px;
             padding: 12px 0;
-            border-top: 2px solid rgba(255, 255, 255, 0.1);
-            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid rgb(255, 255, 255, 0.1);
+            border-bottom: 2px solid rgb(255, 255, 255, 0.1);
         }
 
         .chmu-all-warnings-header h5 {
@@ -888,7 +880,7 @@
         }
 
         .chmu-no-warnings h4 {
-            margin: 0 0 8px 0;
+            margin: 0 0 8px;
             font-size: 20px;
             font-weight: 700;
             color: var(--text-color);
@@ -905,6 +897,7 @@
             position: relative;
             width: 100%;
             max-width: 100%;
+
             /* Celá šířka - bylo 900px */
             margin: 0 auto;
             height: 1000px;
@@ -1014,6 +1007,7 @@
             border-color: var(--inverter-border);
             background: var(--inverter-bg);
             min-width: 200px;
+
             /* Rozšířeno pro lepší zobrazení notifikací a přetoků */
             max-width: 200px;
         }

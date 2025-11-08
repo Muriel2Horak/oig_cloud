@@ -4,7 +4,7 @@
  */
 
 // Global tile manager instance
-var tileManager = null;
+let tileManager = null;
 
 class DashboardTileManager {
     constructor(hass) {

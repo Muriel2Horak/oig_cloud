@@ -8,7 +8,7 @@ Filtruje varování podle GPS souřadnic (point-in-polygon/circle).
 import logging
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Any, Tuple
