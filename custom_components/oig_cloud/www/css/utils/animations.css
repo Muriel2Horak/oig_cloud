@@ -1,0 +1,173 @@
+/* ===================================
+   ANIMATIONS & KEYFRAMES
+   
+   Všechny animace používané v dashboardu
+   =================================== */
+
+/* === FADE IN === */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* === SLIDE UP === */
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* === POP IN === */
+@keyframes popIn {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* === SPIN === */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* === PULSE ANIMATIONS === */
+
+@keyframes pulse-warning {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(255, 152, 0, 0);
+    }
+}
+
+@keyframes pulse-balancing {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(33, 150, 243, 0);
+    }
+}
+
+@keyframes pulse-charging {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+    }
+}
+
+@keyframes pulse-hot {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+        border-color: rgba(244, 67, 54, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(244, 67, 54, 0);
+        border-color: rgba(244, 67, 54, 0.8);
+    }
+}
+
+@keyframes pulse-cold {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7);
+        border-color: rgba(33, 150, 243, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(33, 150, 243, 0);
+        border-color: rgba(33, 150, 243, 0.8);
+    }
+}
+
+@keyframes pulse-pending {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.6);
+        border-color: rgba(255, 152, 0, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(255, 152, 0, 0);
+        border-color: rgba(255, 152, 0, 0.7);
+    }
+}
+
+@keyframes pulse-mode-changing {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(156, 39, 176, 0.6);
+        border-color: rgba(156, 39, 176, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(156, 39, 176, 0);
+        border-color: rgba(156, 39, 176, 0.7);
+    }
+}
+
+@keyframes warning-border {
+    0%, 100% {
+        border-color: rgba(255, 152, 0, 0.3);
+    }
+    50% {
+        border-color: rgba(255, 152, 0, 0.8);
+    }
+}
+
+/* === SHIMMER === */
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+/* === UTILITY CLASSES === */
+.animate-fade-in {
+    animation: fadeIn 0.3s ease;
+}
+
+.animate-slide-up {
+    animation: slideUp 0.3s ease;
+}
+
+.animate-pop-in {
+    animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.animate-spin {
+    animation: spin 0.8s linear infinite;
+}
+
+.animate-pulse-warning {
+    animation: pulse-warning 2s ease-in-out infinite;
+}
+
+.animate-pulse-balancing {
+    animation: pulse-balancing 2s ease-in-out infinite;
+}
+
+.animate-pulse-charging {
+    animation: pulse-charging 2s ease-in-out infinite;
+}

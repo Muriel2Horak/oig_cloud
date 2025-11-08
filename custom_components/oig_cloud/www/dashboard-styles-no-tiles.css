@@ -1,15 +1,6 @@
 /* Import CSS variables */
 @import url('css/variables.css');
 
-/* Import layout */
-@import url('css/02-layout.css');
-
-/* Import typography */
-@import url('css/03-typography.css');
-
-/* Import animations */
-@import url('css/utils/animations.css');
-
 /* Import button components */
 @import url('css/components/buttons.css');
 
@@ -22,7 +13,23 @@
 /* Import modals & dialogs */
 @import url('css/components/modals.css');
 
-/* === DASHBOARD SPECIFIC STYLES === */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow-y: auto;
+            overflow-x: hidden;
+            min-height: 100vh;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-bottom: 40px;
+            position: relative;
+        }
 
         /* Header */
         .header {
@@ -100,6 +107,18 @@
             animation: pulse-warning 1.5s ease-in-out infinite;
         }
 
+        @keyframes pulse-warning {
+
+            0%,
+            100% {
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+
+            50% {
+                box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+            }
+        }
+
         .chmu-icon {
             font-size: 18px;
             display: flex;
@@ -130,6 +149,16 @@
             display: flex;
         }
 
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
         .chmu-modal-content {
             background: var(--card-background);
             border-radius: 16px;
@@ -139,6 +168,18 @@
             overflow: hidden;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
         }
 
         .chmu-modal-header {
@@ -842,6 +883,17 @@
             color: var(--success-text);
         }
 
+        @keyframes pulse-balancing {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.85;
+                transform: scale(1.02);
+            }
+        }
+
         .battery-temp-indicator {
             position: absolute !important;
             top: 8px !important;
@@ -894,6 +946,18 @@
             transform: scale(1.1);
         }
 
+        @keyframes pulse-charging {
+
+            0%,
+            100% {
+                opacity: 0.7;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
         .battery-voltage-indicator:hover {
             transform: scale(1.1);
         }
@@ -905,10 +969,59 @@
         }
 
         /* Temperature animations */
+        @keyframes pulse-hot {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        @keyframes pulse-cold {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
 
         /* Pending mode change animation */
+        @keyframes pulse-pending {
+
+            0%,
+            100% {
+                opacity: 0.6;
+                box-shadow: 0 0 0 0 var(--status-idle-bg-transparent);
+            }
+
+            50% {
+                opacity: 0.8;
+                box-shadow: 0 0 12px 4px var(--status-idle-bg-semi);
+            }
+        }
 
         /* Mode change in flow diagram */
+        @keyframes pulse-mode-changing {
+
+            0%,
+            100% {
+                opacity: 0.7;
+                text-shadow: 0 0 8px var(--warning-bg-transparent);
+            }
+
+            50% {
+                opacity: 1;
+                text-shadow: 0 0 16px var(--warning-text-transparent);
+            }
+        }
 
         .mode-changing {
             animation: pulse-mode-changing 2s ease-in-out infinite;
@@ -943,6 +1056,12 @@
             border-top-color: var(--spinner-border-top);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Grid delivery change indicators - dva badges vedle sebe */
@@ -1097,10 +1216,37 @@
         }
 
         /* Warning border animation for inverter */
+        @keyframes warning-border {
+
+            0%,
+            100% {
+                border-color: var(--shadow-error-weak);
+                box-shadow: 0 0 10px var(--shadow-error-light);
+            }
+
+            50% {
+                border-color: var(--shadow-error);
+                box-shadow: 0 0 20px var(--shadow-error-weak);
+            }
+        }
 
         .inverter.warning-active {
             border: 3px solid var(--shadow-error-weak);
             animation: warning-border 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+
+            0%,
+            100% {
+                transform: scale(1);
+                filter: drop-shadow(0 0 3px var(--shadow-error-weak));
+            }
+
+            50% {
+                transform: scale(1.15);
+                filter: drop-shadow(0 0 8px var(--shadow-error));
+            }
         }
 
         /* Notification styles */
@@ -1123,6 +1269,30 @@
         .solar-icon-moon {
             font-size: 36px !important;
             filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+        }
+
+        @keyframes solar-pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+        }
+
+        @keyframes solar-glow {
+
+            0%,
+            100% {
+                filter: drop-shadow(0 0 5px rgba(255, 213, 79, 0.6));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 15px rgba(255, 213, 79, 1));
+            }
         }
 
         .solar-active {
@@ -1735,14 +1905,105 @@
         }
 
         /* Animations */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: scale(1.2);
+            }
+        }
 
         .pulse {
             animation: pulse 2s ease-in-out infinite;
         }
 
         /* Price indicator animations - jemné pulzování */
+        @keyframes price-cheap-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 15px var(--shadow-success);
+                border-color: var(--battery-border);
+            }
+
+            50% {
+                box-shadow: 0 0 25px var(--shadow-success);
+                border-color: var(--button-active-border);
+            }
+        }
+
+        @keyframes price-expensive-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 15px var(--status-discharging-shadow);
+                border-color: var(--status-discharging-border);
+            }
+
+            50% {
+                box-shadow: 0 0 25px var(--status-discharging-border);
+                border-color: var(--status-discharging-text);
+            }
+        }
 
         /* Export animation - silnější zelené pulzování (prodáváme!) */
+        @keyframes export-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 20px var(--shadow-success);
+                border-color: var(--battery-border);
+            }
+
+            50% {
+                box-shadow: 0 0 35px rgba(76, 175, 80, 0.9);
+                border-color: var(--button-active-border);
+            }
+        }
+
+        @keyframes icon-savings {
+
+            0%,
+            100% {
+                transform: scale(1) rotate(0deg);
+            }
+
+            25% {
+                transform: scale(1.1) rotate(-5deg);
+            }
+
+            75% {
+                transform: scale(1.1) rotate(5deg);
+            }
+        }
+
+        @keyframes icon-expensive {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% center;
+            }
+
+            100% {
+                background-position: 200% center;
+            }
+        }
 
         .solar.active .node-icon {
             animation: pulse 3s ease-in-out infinite;
@@ -1821,6 +2082,18 @@
             animation: battery-pulse 2s ease-in-out infinite;
         }
 
+        @keyframes battery-pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
         /* Grid charging blesk */
         .battery-lightning {
             fill: #ffd700;
@@ -1832,6 +2105,18 @@
         .battery-lightning.active {
             opacity: 1;
             animation: lightning-blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes lightning-blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
         }
 
         /* Warning-capable values (Bypass, Distribution) */
@@ -1853,6 +2138,20 @@
             font-size: 11px !important;
             text-shadow: 0 0 8px var(--shadow-error-weak);
             animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+
+            0%,
+            100% {
+                opacity: 1;
+                text-shadow: 0 0 8px var(--shadow-error-weak);
+            }
+
+            50% {
+                opacity: 0.85;
+                text-shadow: 0 0 12px var(--shadow-error);
+            }
         }
 
         /* Info Panel */
@@ -2634,6 +2933,18 @@
             animation: popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
         }
 
+        @keyframes popIn {
+            0% {
+                transform: translate(-50%, -50%) scale(0.7);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
         .ack-checkbox-wrapper {
             display: flex;
             align-items: flex-start;
@@ -2678,12 +2989,64 @@
             color: var(--shield-processing-text);
         }
 
+        @keyframes pulse-status {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: var(--shield-pending-shadow);
+            }
+
+            50% {
+                opacity: 0.8;
+                box-shadow: var(--shield-pending-shadow);
+            }
+        }
+
         /* Button states for shield */
+
+        @keyframes pulse-pending {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+                box-shadow: var(--shield-pending-shadow);
+            }
+
+            50% {
+                opacity: 0.75;
+                transform: scale(1.02);
+                box-shadow: var(--shield-pending-shadow);
+            }
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
 
         /* Status text transitions */
         .status .transitioning {
             color: var(--shield-pending-text);
             animation: pulse-text 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-text {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
         }
 
         /* Queue indicator */
@@ -4208,6 +4571,11 @@
 
         /* Dialog overlay */
 
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
         /* Dialog content */
         .timeline-dialog {
             background: var(--dialog-bg);
@@ -4219,6 +4587,17 @@
             overflow-y: auto;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
             animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Timeline summary */
