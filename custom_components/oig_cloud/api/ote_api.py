@@ -4,7 +4,7 @@
 
 import logging
 import aiohttp
-import defusedxml.ElementTree as ET
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, date, time, timezone
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Any, TypedDict, cast, Literal

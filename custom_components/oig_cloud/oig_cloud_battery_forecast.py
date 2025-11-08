@@ -3127,24 +3127,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 else:
                     # Deficit → baterie vybíjí (HOME I fyzika)
                     deficit = load_kwh - solar_kwh  # Kolik chybí po solaru
-                    
+
                     # Kolik máme k dispozici v baterii (nad HW minimem)
                     available_battery = max(0, battery - min_capacity)
-                    
+
                     # Kolik reálně vybereme (s účinností)
                     actual_discharge = min(deficit / efficiency, available_battery)
                     battery -= actual_discharge
-                    
+
                     # Pokrytí ze sítě = zbytek deficitu (co baterie nepokryje)
                     covered_by_battery = actual_discharge * efficiency
                     grid_import = deficit - covered_by_battery
-                    
+
                     if grid_import > 0.001:  # Potřebujeme grid
                         total_cost += grid_import * price
-                    
+
                     # Clamp na minimum (ochrana před zaokrouhlovacími chybami)
                     battery = max(battery, min_capacity)
-                    
+
                     # solar_charge_kwh a grid_charge_kwh zůstávají 0 (vybíjení)
 
             # Validace (pro debugging)
