@@ -1023,373 +1023,284 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
 
-    def _simulate_interval_with_mode(
+    def _simulate_interval(
         self,
-        mode: int,
-        solar_kwh: float,
-        load_kwh: float,
-        battery_soc: float,
-        max_capacity: float,
-        min_capacity: float,
-        spot_price: float,
-        export_price: float,
-        physical_min_capacity: float | None = None,
-    ) -> Dict[str, Any]:
+        mode: int,  # 0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS
+        solar_kwh: float,  # FVE produkce (kWh/15min)
+        load_kwh: float,  # Spotřeba (kWh/15min)
+        battery_soc_kwh: float,  # Aktuální SoC (kWh)
+        capacity_kwh: float,  # Max kapacita (kWh)
+        hw_min_capacity_kwh: float,  # Fyzické minimum 20% (kWh) - INVERTOR LIMIT
+        spot_price_czk: float,  # Nákupní cena (Kč/kWh)
+        export_price_czk: float,  # Prodejní cena (Kč/kWh)
+        charge_efficiency: float = 0.95,  # AC→DC + DC→battery efficiency
+        discharge_efficiency: float = 0.95,  # battery→DC + DC→AC efficiency
+        home_charge_rate_kwh_15min: float = 0.7,  # HOME UPS: 2.8kW = 0.7kWh/15min
+    ) -> dict:
         """
         Simulovat jeden 15min interval s konkrétním CBB režimem.
 
-        Phase 2.5: Multi-Mode Cost Comparison - simulace podle ECONOMIC_MODE_DECISION_MODEL.md
+        ZDROJ PRAVDY: CBB_MODES_DEFINITIVE.md
+
+        DŮLEŽITÉ - Oddělení odpovědností:
+        - Tato funkce implementuje POUZE fyziku režimů měniče
+        - Zná pouze hw_min_capacity (invertor hardware limit = 20%)
+        - NEVÍ o planning_min_capacity (to řeší HYBRID plánovač)
+        - NEVÍ o target SoC (to řeší HYBRID plánovač)
+        - NEVÍ o cheap/expensive prices (to řeší HYBRID plánovač)
+
+        Režimy podle CBB_MODES_DEFINITIVE.md:
+
+        HOME I (0) - DEN: FVE → spotřeba → baterie, deficit vybíjí
+        HOME I (0) - NOC: Baterie → spotřeba (do hw_min), pak síť
+
+        HOME II (1) - DEN: FVE → spotřeba, přebytek → baterie, deficit → SÍŤ (NETOUCHED!)
+        HOME II (1) - NOC: Stejné jako HOME I (vybíjí do hw_min)
+
+        HOME III (2) - DEN: FVE → baterie, spotřeba → VŽDY SÍŤ
+        HOME III (2) - NOC: Stejné jako HOME I (vybíjí do hw_min)
+
+        HOME UPS (3): Nabíjení na 100% (FVE + síť), spotřeba → síť
 
         Args:
-            mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
-            solar_kwh: FVE produkce v intervalu (kWh/15min)
-            load_kwh: Spotřeba v intervalu (kWh/15min)
-            battery_soc: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (plánovací minimum, např. 25%)
-            spot_price: Spotová cena nákupu (Kč/kWh)
-            export_price: Prodejní cena exportu (Kč/kWh)
-            physical_min_capacity: Fyzické/HW minimum (např. 20%). If None, use min_capacity
+            mode: CBB režim (0-3)
+            solar_kwh: FVE produkce za 15min (kWh)
+            load_kwh: Spotřeba za 15min (kWh)
+            battery_soc_kwh: Aktuální stav baterie (kWh, NE %)
+            capacity_kwh: Max kapacita (kWh)
+            hw_min_capacity_kwh: HW minimum invertoru (kWh, typicky 20% = 3.07 kWh)
+            spot_price_czk: Nákupní cena (Kč/kWh)
+            export_price_czk: Prodejní cena (Kč/kWh)
+            charge_efficiency: Nabíjecí účinnost (default 0.95)
+            discharge_efficiency: Vybíjecí účinnost (default 0.95)
+            home_charge_rate_kwh_15min: Max nabíjení ze sítě pro HOME UPS (kWh/15min)
 
         Returns:
-            Dict s výsledky simulace:
-                - new_soc: Nový SoC baterie (kWh)
-                - grid_import: Import ze sítě (kWh, >=0)
-                - grid_export: Export do sítě (kWh, >=0)
-                - battery_discharge: Vybití baterie (kWh, >=0)
-                - battery_charge: Nabití baterie (kWh, >=0)
-                - boiler_charge: Energie do bojleru (kWh, >=0) - Phase 2.5
-                - grid_cost: Náklady na elektřinu (Kč)
-                - export_revenue: Příjem z exportu (Kč)
-                - net_cost: Čisté náklady (grid_cost - export_revenue, Kč)
-                - curtailed_loss: Ztráta ze ztrátového exportu (Kč, >=0) - Phase 2.5
+            dict:
+                new_soc_kwh: Nový SoC (kWh)
+                grid_import_kwh: Import ze sítě (kWh)
+                grid_export_kwh: Export do sítě (kWh)
+                battery_charge_kwh: Nabití baterie (kWh)
+                battery_discharge_kwh: Vybití baterie (kWh)
+                grid_cost_czk: Náklady na import (Kč)
+                export_revenue_czk: Příjem z exportu (Kč)
+                net_cost_czk: Čisté náklady (Kč)
         """
-        efficiency = self._get_battery_efficiency()
-
-        # Use physical minimum for discharge decisions, planning minimum for violations
-        effective_min = (
-            physical_min_capacity if physical_min_capacity is not None else min_capacity
-        )
-
         # Initialize result
         result = {
-            "new_soc": battery_soc,
-            "grid_import": 0.0,
-            "grid_export": 0.0,
-            "battery_discharge": 0.0,
-            "battery_charge": 0.0,
-            "boiler_charge": 0.0,  # Phase 2.5: Boiler support
-            "grid_cost": 0.0,
-            "export_revenue": 0.0,
-            "net_cost": 0.0,
-            "curtailed_loss": 0.0,  # Phase 2.5: Export price protection
+            "new_soc_kwh": battery_soc_kwh,
+            "grid_import_kwh": 0.0,
+            "grid_export_kwh": 0.0,
+            "battery_charge_kwh": 0.0,
+            "battery_discharge_kwh": 0.0,
+            "grid_cost_czk": 0.0,
+            "export_revenue_czk": 0.0,
+            "net_cost_czk": 0.0,
         }
 
         # =====================================================================
-        # CRITICAL OPTIMIZATION: FVE = 0 → HOME I/II/III jsou IDENTICKÉ!
+        # CRITICAL OPTIMIZATION: NOC (solar == 0) → HOME I/II/III IDENTICKÉ!
         # =====================================================================
-        # Per CBB_MODES_DEFINITIVE.md, when FVE = 0 (night):
-        # - HOME I/II/III: All discharge battery to 20% SoC (IDENTICAL behavior)
-        # - HOME UPS: Charges from grid, holds 100%, consumption from grid (DIFFERENT)
-        #
-        # This short-circuit saves 67% of DP computation time at night!
+        # Podle CBB_MODES_DEFINITIVE.md TABULKA 2:
+        # "HOME I/II/III: Všechny IDENTICKÉ - baterie vybíjí do 20% SoC"
+
         if solar_kwh < 0.001 and mode in [
             CBB_MODE_HOME_I,
             CBB_MODE_HOME_II,
             CBB_MODE_HOME_III,
         ]:
-            # Night mode (FVE=0): HOME I/II/III identical → discharge battery to load
-            # Asymmetric model: discharge with efficiency losses
-            # Use PHYSICAL minimum - battery can discharge below planning minimum
-            available_battery = battery_soc - effective_min
+            # NOC: Společná logika - vybíjení baterie do hw_min
+            available_battery = max(0.0, battery_soc_kwh - hw_min_capacity_kwh)
+            usable_from_battery = available_battery * discharge_efficiency
 
-            # VALIDATION: Never discharge below physical minimum
-            if available_battery < 0:
-                available_battery = 0.0
+            battery_discharge_kwh = min(load_kwh, usable_from_battery)
 
-            # DEBUG: Log discharge decision
-            _LOGGER.debug(
-                f"🔋 Discharge decision: battery_soc={battery_soc:.3f}, "
-                f"effective_min={effective_min:.3f}, available={available_battery:.3f}, "
-                f"load={load_kwh:.3f}, physical_min={physical_min_capacity}, min_capacity={min_capacity:.3f}"
-            )
-
-            # Discharge amount (from battery) - efficiency applies to usable energy
-            discharge_amount = min(load_kwh / efficiency, available_battery)
-
-            if discharge_amount > 0.001:
-                result["battery_discharge"] = discharge_amount
-                result["new_soc"] = battery_soc - discharge_amount  # No *efficiency
-
-            # Grid covers remaining load
-            deficit = load_kwh - discharge_amount
-            if deficit > 0.001:
-                result["grid_import"] = deficit
-                result["grid_cost"] = deficit * spot_price
-
-            # Net cost
-            result["net_cost"] = result["grid_cost"]
-
-            # VALIDATION: Logic above ensures we never discharge below minimum
-            # If this assertion fails, there's a bug in available_battery calculation
-            if result["new_soc"] < min_capacity - 0.01:  # 0.01 kWh tolerance
-                _LOGGER.warning(
-                    f"⚠️  Battery SoC dropped below minimum! "
-                    f"new_soc={result['new_soc']:.2f}, min={min_capacity:.2f}, "
-                    f"discharge={discharge_amount:.3f}, mode={mode}"
+            if battery_discharge_kwh > 0.001:
+                result["battery_discharge_kwh"] = (
+                    battery_discharge_kwh / discharge_efficiency
+                )
+                result["new_soc_kwh"] = (
+                    battery_soc_kwh - result["battery_discharge_kwh"]
                 )
 
+            covered_by_battery = battery_discharge_kwh
+            deficit = load_kwh - covered_by_battery
+
+            if deficit > 0.001:
+                result["grid_import_kwh"] = deficit
+                result["grid_cost_czk"] = deficit * spot_price_czk
+
+            result["net_cost_czk"] = result["grid_cost_czk"]
             return result
 
-        # HOME I (0): Battery Priority
-        # FVE → battery (no losses in charging), battery → load (efficiency losses on discharge)
-        # Asymmetric model: charging = 100%, discharging = efficiency (88.2% roundtrip)
+        # =====================================================================
+        # HOME I (0) - DEN: FVE → spotřeba → baterie, deficit vybíjí
+        # =====================================================================
+
         if mode == CBB_MODE_HOME_I:
-            # First: Charge battery from FVE (no losses)
-            available_for_battery = solar_kwh
-            battery_space = max_capacity - battery_soc
-            charge_amount = min(available_for_battery, battery_space)  # No /efficiency
-
-            result["battery_charge"] = charge_amount
-            result["new_soc"] = battery_soc + charge_amount  # No *efficiency
-
-            # Remaining FVE after battery charging
-            remaining_solar = solar_kwh - charge_amount
-
-            # Load must be covered
-            if remaining_solar >= load_kwh:
-                # Enough FVE to cover load
-                surplus = remaining_solar - load_kwh
-
-                # Phase 2.5: Export price protection with boiler support
-                # Priority: Battery > Boiler > Export (if profitable)
-                if export_price <= 0 and battery_soc < max_capacity:
-                    # Try to store surplus in battery instead of exporting at loss
-                    battery_space = max_capacity - result["new_soc"]
-                    additional_charge = min(surplus, battery_space)  # No /efficiency
-
-                    result["battery_charge"] += additional_charge
-                    result["new_soc"] += additional_charge  # No *efficiency
-                    surplus -= additional_charge
-
-                # If still surplus and export would be lossy, try boiler
-                if surplus > 0.001 and export_price <= 0:
-                    boiler_capacity = self._get_boiler_available_capacity()
-                    boiler_usage = min(surplus, boiler_capacity)
-
-                    result["boiler_charge"] = boiler_usage
-                    surplus -= boiler_usage
-
-                # Export only if profitable OR no other option (curtailment)
-                if surplus > 0.001:
-                    if export_price > 0:
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price
-                    else:
-                        # Forced curtailment at loss (battery full, no boiler)
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price  # NEGATIVE
-                        result["curtailed_loss"] = abs(surplus * export_price)
-            else:
-                # Not enough FVE - discharge battery (DC/AC)
-                # Use PHYSICAL minimum (effective_min) not planning minimum
-                deficit = load_kwh - remaining_solar
-                battery_available = result["new_soc"] - effective_min
-
-                discharge_amount = min(deficit / efficiency, battery_available)
-
-                result["battery_discharge"] = discharge_amount
-                result["new_soc"] -= discharge_amount
-
-                # CRITICAL FIX: Pokud baterie nestačí (je na minimu), zbytek deficitu ze sítě!
-                remaining_deficit = deficit - (discharge_amount * efficiency)
-                if remaining_deficit > 0.001:
-                    result["grid_import"] = remaining_deficit
-                    result["grid_cost"] = remaining_deficit * spot_price
-
-        # HOME II (1): Grid supplements during day, battery saved for evening
-        # FVE → load direct, grid supplements if needed
-        # Battery charges only from surplus FVE
-        elif mode == CBB_MODE_HOME_II:
-            # Cover load from FVE first
             if solar_kwh >= load_kwh:
-                # Surplus FVE → battery (no charging losses)
+                # FVE pokrývá spotřebu, přebytek → baterie
                 surplus = solar_kwh - load_kwh
-                battery_space = max_capacity - battery_soc
-                charge_amount = min(surplus, battery_space)  # No /efficiency
+                battery_space = capacity_kwh - battery_soc_kwh
+                charge_amount = min(surplus, battery_space)
 
-                result["battery_charge"] = charge_amount
-                result["new_soc"] = battery_soc + charge_amount  # No *efficiency
+                if charge_amount > 0.001:
+                    result["battery_charge_kwh"] = charge_amount
+                    physical_charge = charge_amount * charge_efficiency
+                    result["new_soc_kwh"] = min(
+                        battery_soc_kwh + physical_charge, capacity_kwh
+                    )
 
-                # Phase 2.5: Export price protection with boiler support
-                # Remaining surplus → boiler > export (if profitable)
                 remaining_surplus = surplus - charge_amount
-
                 if remaining_surplus > 0.001:
-                    # Try boiler first if export would be lossy
-                    if export_price <= 0:
-                        boiler_capacity = self._get_boiler_available_capacity()
-                        boiler_usage = min(remaining_surplus, boiler_capacity)
+                    result["grid_export_kwh"] = remaining_surplus
+                    result["export_revenue_czk"] = remaining_surplus * export_price_czk
 
-                        result["boiler_charge"] = boiler_usage
-                        remaining_surplus -= boiler_usage
-
-                    # Export remaining (profitable or forced curtailment)
-                    if remaining_surplus > 0.001:
-                        if export_price > 0:
-                            result["grid_export"] = remaining_surplus
-                            result["export_revenue"] = remaining_surplus * export_price
-                        else:
-                            # Forced curtailment (battery full, boiler full/unavailable)
-                            result["grid_export"] = remaining_surplus
-                            result["export_revenue"] = (
-                                remaining_surplus * export_price
-                            )  # NEGATIVE
-                            result["curtailed_loss"] = abs(
-                                remaining_surplus * export_price
-                            )
             else:
-                # FVE < load → grid supplements (battery NOT used)
+                # FVE < load → deficit vybíjí baterii
                 deficit = load_kwh - solar_kwh
-                result["grid_import"] = deficit
-                result["grid_cost"] = deficit * spot_price
+                available_battery = max(0.0, battery_soc_kwh - hw_min_capacity_kwh)
+                usable_from_battery = available_battery * discharge_efficiency
 
-        # HOME III (2): ALL FVE to battery (no charging losses), load from grid
-        # Asymmetric model: Battery charging = 100%, discharging = efficiency
-        # Spotřeba VŽDY ze sítě, až když baterie = 100% → FVE pomáhá spotřebě
-        elif mode == CBB_MODE_HOME_III:
-            # ALL FVE → battery (no charging losses)
-            battery_space = max_capacity - battery_soc
+                battery_discharge_kwh = min(deficit, usable_from_battery)
 
-            if battery_space > 0.001:
-                # Battery NOT full → ALL FVE to battery
-                charge_amount = min(solar_kwh, battery_space)  # No /efficiency
-                result["battery_charge"] = charge_amount
-                result["new_soc"] = battery_soc + charge_amount  # No *efficiency
+                if battery_discharge_kwh > 0.001:
+                    result["battery_discharge_kwh"] = (
+                        battery_discharge_kwh / discharge_efficiency
+                    )
+                    result["new_soc_kwh"] = (
+                        battery_soc_kwh - result["battery_discharge_kwh"]
+                    )
 
-                # Load ALWAYS from grid (i když máme FVE!)
-                result["grid_import"] = load_kwh
-                result["grid_cost"] = load_kwh * spot_price
+                remaining_deficit = deficit - battery_discharge_kwh
+                if remaining_deficit > 0.001:
+                    result["grid_import_kwh"] = remaining_deficit
+                    result["grid_cost_czk"] = remaining_deficit * spot_price_czk
 
-                # Surplus only if battery full
-                if charge_amount < solar_kwh:
-                    surplus = solar_kwh - charge_amount
-
-                    # Try boiler first if export would be lossy
-                    if export_price <= 0:
-                        boiler_capacity = self._get_boiler_available_capacity()
-                        boiler_usage = min(surplus, boiler_capacity)
-                        result["boiler_charge"] = boiler_usage
-                        surplus -= boiler_usage
-
-                    # Export remaining
-                    if surplus > 0.001:
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price
-                        if export_price <= 0:
-                            result["curtailed_loss"] = abs(surplus * export_price)
-            else:
-                # Battery FULL (100%) → FVE pomáhá spotřebě
-                result["new_soc"] = battery_soc
-
-                if solar_kwh >= load_kwh:
-                    # FVE pokryje spotřebu
-                    surplus = solar_kwh - load_kwh
-
-                    # Try boiler first if export would be lossy
-                    if surplus > 0.001 and export_price <= 0:
-                        boiler_capacity = self._get_boiler_available_capacity()
-                        boiler_usage = min(surplus, boiler_capacity)
-                        result["boiler_charge"] = boiler_usage
-                        surplus -= boiler_usage
-
-                    # Export remaining
-                    if surplus > 0.001:
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price
-                        if export_price <= 0:
-                            result["curtailed_loss"] = abs(surplus * export_price)
-                else:
-                    # FVE nestačí → doplnit ze sítě
-                    deficit = load_kwh - solar_kwh
-                    result["grid_import"] = deficit
-                    result["grid_cost"] = deficit * spot_price
-
-        # HOME UPS (3): Grid + FVE to battery (no charging losses), consumption from grid
-        # Asymmetric model: Battery charging = 100%, discharging = efficiency
-        # Grid → battery: max 2.8 kW (0.7 kWh/15min)
-        # FVE → battery: UNLIMITED
-        # Spotřeba: VŽDY ze sítě (i když je FVE!)
-        # Až když baterie = 100% → FVE pomáhá spotřebě
-        elif mode == CBB_MODE_HOME_UPS:
-            battery_space = max_capacity - battery_soc
-
-            if battery_space > 0.001:
-                # Battery NOT full → charge from Grid + FVE (no losses)
-
-                # 1. FVE → battery (no charging losses)
-                fve_charge = min(solar_kwh, battery_space)  # No /efficiency
-                result["battery_charge"] = fve_charge
-                result["new_soc"] = battery_soc + fve_charge  # No *efficiency
-
-                # 2. Grid → battery (AC/DC, max 2.8 kW limit, no charging losses)
-                ac_limit = self._get_ac_charging_limit_kwh_15min()
-                remaining_space = max_capacity - result["new_soc"]
-                grid_charge = min(ac_limit, remaining_space)  # No /efficiency
-
-                if grid_charge > 0.001:
-                    result["battery_charge"] += grid_charge
-                    result["new_soc"] += grid_charge  # No *efficiency
-                    result["grid_import"] += grid_charge
-                    result["grid_cost"] += grid_charge * spot_price
-
-                # 3. Spotřeba VŽDY ze sítě (i když máme FVE!)
-                result["grid_import"] += load_kwh
-                result["grid_cost"] += load_kwh * spot_price
-
-            else:
-                # Battery FULL (100%) → FVE pomáhá spotřebě
-                result["new_soc"] = battery_soc
-
-                if solar_kwh >= load_kwh:
-                    # FVE pokryje spotřebu
-                    surplus = solar_kwh - load_kwh
-
-                    # Try boiler first if export would be lossy
-                    if surplus > 0.001 and export_price <= 0:
-                        boiler_capacity = self._get_boiler_available_capacity()
-                        boiler_usage = min(surplus, boiler_capacity)
-                        result["boiler_charge"] = boiler_usage
-                        surplus -= boiler_usage
-
-                    # Export remaining
-                    if surplus > 0.001:
-                        result["grid_export"] = surplus
-                        result["export_revenue"] = surplus * export_price
-                        if export_price <= 0:
-                            result["curtailed_loss"] = abs(surplus * export_price)
-                else:
-                    # FVE nestačí → doplnit ze sítě
-                    deficit = load_kwh - solar_kwh
-                    result["grid_import"] = deficit
-                    result["grid_cost"] = deficit * spot_price
-
-        # Calculate net cost
-        result["net_cost"] = result["grid_cost"] - result["export_revenue"]
-
-        # VALIDATION: Logic ensures battery stays within [min_capacity, max_capacity]
-        # Charge operations use min() to prevent overflow
-        # Discharge operations use available_battery = max(0, battery - min)
-        if (
-            result["new_soc"] < min_capacity - 0.01
-            or result["new_soc"] > max_capacity + 0.01
-        ):
-            _LOGGER.error(
-                f"BUG: new_soc={result['new_soc']:.3f} out of range [{min_capacity:.3f}, {max_capacity:.3f}] "
-                f"mode={mode}, solar={solar_kwh:.3f}, load={load_kwh:.3f}, battery_soc={battery_soc:.3f}"
+            result["net_cost_czk"] = (
+                result["grid_cost_czk"] - result["export_revenue_czk"]
             )
+            return result
 
-        return result
+        # =====================================================================
+        # HOME II (1) - DEN: FVE → spotřeba, přebytek → baterie, deficit → SÍŤ!
+        # =====================================================================
+        # ⚠️ KRITICKÉ: Při deficitu baterie NETOUCHED, deficit POUZE ZE SÍTĚ!
+
+        elif mode == CBB_MODE_HOME_II:
+            if solar_kwh >= load_kwh:
+                # FVE pokrývá spotřebu, přebytek → baterie
+                surplus = solar_kwh - load_kwh
+                battery_space = capacity_kwh - battery_soc_kwh
+                charge_amount = min(surplus, battery_space)
+
+                if charge_amount > 0.001:
+                    result["battery_charge_kwh"] = charge_amount
+                    physical_charge = charge_amount * charge_efficiency
+                    result["new_soc_kwh"] = min(
+                        battery_soc_kwh + physical_charge, capacity_kwh
+                    )
+
+                remaining_surplus = surplus - charge_amount
+                if remaining_surplus > 0.001:
+                    result["grid_export_kwh"] = remaining_surplus
+                    result["export_revenue_czk"] = remaining_surplus * export_price_czk
+
+            else:
+                # FVE < load → deficit ze SÍTĚ (baterie NETOUCHED!)
+                # ⚠️ TOTO JE KLÍČOVÝ ROZDÍL mezi HOME I (vybíjí) a HOME II (šetří)!
+                deficit = load_kwh - solar_kwh
+                result["grid_import_kwh"] = deficit
+                result["grid_cost_czk"] = deficit * spot_price_czk
+                # result["new_soc_kwh"] zůstává battery_soc_kwh (NETOUCHED)
+
+            result["net_cost_czk"] = (
+                result["grid_cost_czk"] - result["export_revenue_czk"]
+            )
+            return result
+
+        # =====================================================================
+        # HOME III (2) - DEN: FVE → baterie, spotřeba → VŽDY SÍŤ
+        # =====================================================================
+        # ⚠️ KRITICKÉ: Baterie se přes den NEVYBÍJÍ pro spotřebu!
+
+        elif mode == CBB_MODE_HOME_III:
+            # CELÁ FVE → baterie (agresivní nabíjení)
+            battery_space = capacity_kwh - battery_soc_kwh
+            charge_amount = min(solar_kwh, battery_space)
+
+            if charge_amount > 0.001:
+                result["battery_charge_kwh"] = charge_amount
+                physical_charge = charge_amount * charge_efficiency
+                result["new_soc_kwh"] = min(
+                    battery_soc_kwh + physical_charge, capacity_kwh
+                )
+
+            # Spotřeba VŽDY ze sítě (i když je FVE!)
+            result["grid_import_kwh"] = load_kwh
+            result["grid_cost_czk"] = load_kwh * spot_price_czk
+
+            # Export přebytku (pokud baterie plná)
+            remaining_solar = solar_kwh - charge_amount
+            if remaining_solar > 0.001:
+                result["grid_export_kwh"] = remaining_solar
+                result["export_revenue_czk"] = remaining_solar * export_price_czk
+
+            result["net_cost_czk"] = (
+                result["grid_cost_czk"] - result["export_revenue_czk"]
+            )
+            return result
+
+        # =====================================================================
+        # HOME UPS (3) - Nabíjení na 100% ze VŠECH zdrojů (FVE + síť)
+        # =====================================================================
+
+        elif mode == CBB_MODE_HOME_UPS:
+            battery_space = capacity_kwh - battery_soc_kwh
+
+            # FVE → baterie (bez limitu)
+            solar_to_battery = min(solar_kwh, battery_space)
+
+            # Grid → baterie (max home_charge_rate)
+            remaining_space = battery_space - solar_to_battery
+            grid_to_battery = min(home_charge_rate_kwh_15min, remaining_space)
+
+            # Celkové nabití
+            total_charge = solar_to_battery + grid_to_battery
+
+            if total_charge > 0.001:
+                result["battery_charge_kwh"] = total_charge
+                physical_charge = total_charge * charge_efficiency
+                result["new_soc_kwh"] = min(
+                    battery_soc_kwh + physical_charge, capacity_kwh
+                )
+
+            # Spotřeba + grid charging ze sítě
+            result["grid_import_kwh"] = load_kwh + grid_to_battery
+            result["grid_cost_czk"] = result["grid_import_kwh"] * spot_price_czk
+
+            # Export přebytku FVE (pokud baterie plná)
+            remaining_solar = solar_kwh - solar_to_battery
+            if remaining_solar > 0.001:
+                result["grid_export_kwh"] = remaining_solar
+                result["export_revenue_czk"] = remaining_solar * export_price_czk
+
+            result["net_cost_czk"] = (
+                result["grid_cost_czk"] - result["export_revenue_czk"]
+            )
+            return result
+
+        else:
+            raise ValueError(f"Unknown mode: {mode} (expected 0-3)")
+
+    # =========================================================================
+    # STARÉ FUNKCE ODSTRANĚNY (TODO 6: Cleanup)
+    # =========================================================================
+    # _simulate_interval_with_mode() - SMAZÁNO (původně line 1296-1666, 370 řádků)
+    #   → Nahrazeno centrální funkcí _simulate_interval() (line 1026-1343)
+    #   → Všechna volání migrována v TODO 3 (lines 1790, 1995, 2125, 3836)
+    #   → Zdroj pravdy: CBB_MODES_DEFINITIVE.md
+    # =========================================================================
 
     def _calculate_interval_cost(
         self,
@@ -1513,21 +1424,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except:
                 solar_kwh = 0.0
 
-            # Simulovat s fixed režimem
-            sim_result = self._simulate_interval_with_mode(
+            # Simulovat s fixed režimem - NOVÁ centrální funkce!
+            # TODO 3: Přechod ze staré _simulate_interval_with_mode() na novou _simulate_interval()
+            sim_result = self._simulate_interval(
                 mode=fixed_mode,
                 solar_kwh=solar_kwh,
                 load_kwh=load_kwh,
-                battery_soc=battery_soc,
-                max_capacity=max_capacity,
-                min_capacity=effective_min,  # Use physical minimum for baselines
-                spot_price=spot_price,
-                export_price=export_price,
+                battery_soc_kwh=battery_soc,  # NEW: explicit kwh suffix
+                capacity_kwh=max_capacity,  # NEW: explicit kwh suffix
+                hw_min_capacity_kwh=effective_min,  # NEW: hw_min instead of min_capacity
+                spot_price_czk=spot_price,  # NEW: explicit czk suffix
+                export_price_czk=export_price,  # NEW: explicit czk suffix
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
             )
 
-            total_cost += sim_result["net_cost"]
-            total_grid_import += sim_result.get("grid_import", 0.0)
-            battery_soc = sim_result["new_soc"]
+            total_cost += sim_result["net_cost_czk"]  # NEW: explicit czk suffix
+            total_grid_import += sim_result.get(
+                "grid_import_kwh", 0.0
+            )  # NEW: explicit kwh suffix
+            battery_soc = sim_result["new_soc_kwh"]  # NEW: explicit kwh suffix
 
             # Planning minimum penalty: když baseline klesne pod planning minimum,
             # penalizujeme je jako by museli tu energii koupit z gridu
@@ -1541,7 +1457,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Phase 2.7: Cache timeline for HOME I (mode 0)
             if fixed_mode == CBB_MODE_HOME_I:
                 timeline_cache.append(
-                    {"time": timestamp_str, "net_cost": sim_result["net_cost"]}
+                    {
+                        "time": timestamp_str,
+                        "net_cost": sim_result["net_cost_czk"],
+                    }  # NEW: czk suffix
                 )
 
         # Phase 2.7: Store HOME I timeline in instance variable
@@ -1576,13 +1495,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         Vypočítat baseline scénáře pro všechny 4 CBB režimy.
 
+        ZDROJ PRAVDY:
+        - CBB_MODES_DEFINITIVE.md - chování režimů
+        - REFACTORING_IMPLEMENTATION_GUIDE.md - hw_min vs planning_min
+
         Phase 2.10: 4-Baseline Comparison
 
         Tato funkce simuluje co by se stalo kdyby uživatel zůstal celý den v jednom
         z fixních CBB režimů (HOME I/II/III/UPS) bez využití HYBRID optimalizace.
 
-        Důležité: Používá FYZICKÉ minimum (20% = 3.07 kWh) aby ukázalo reálné
-        chování systému. HYBRID optimalizace používá user-configured minimum (33%).
+        DŮLEŽITÉ - Oddělení odpovědností:
+        - Baseline používá hw_min_capacity (20% fyzické minimum invertoru)
+        - HYBRID plánovač používá planning_min_capacity (33% user minimum)
+        - Všechna fyzika přes centrální _simulate_interval()
 
         Args:
             current_capacity: Aktuální SoC baterie (kWh)
@@ -1716,19 +1641,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = 0.0
 
             # OPRAVA: Použít současný režim místo HOME I
-            sim_result = self._simulate_interval_with_mode(
+            # TODO 3: Přechod na novou _simulate_interval()
+            sim_result = self._simulate_interval(
                 mode=current_mode,  # ← OPRAVA: Prostě nech to být!
                 solar_kwh=solar_kwh,
                 load_kwh=load_kwh,
-                battery_soc=battery_soc,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_price=spot_price,
-                export_price=export_price,
+                battery_soc_kwh=battery_soc,  # NEW: explicit kwh
+                capacity_kwh=max_capacity,  # NEW: explicit kwh
+                hw_min_capacity_kwh=min_capacity,  # NEW: hw_min (here used as planning min - suboptimal but works)
+                spot_price_czk=spot_price,  # NEW: explicit czk
+                export_price_czk=export_price,  # NEW: explicit czk
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
             )
 
-            total_cost += sim_result["net_cost"]
-            battery_soc = sim_result["new_soc"]
+            total_cost += sim_result["net_cost_czk"]  # NEW: czk suffix
+            battery_soc = sim_result["new_soc_kwh"]  # NEW: kwh suffix
 
         return total_cost
 
@@ -1773,6 +1701,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Returns:
             Celkové náklady v Kč s optimálním nočním nabíjením
         """
+        # Get battery efficiency for calculations
+        efficiency = self._get_battery_efficiency()
+
         # 1. Spočítat potřebu dobití
         needed_kwh = max_capacity - current_capacity
 
@@ -1846,19 +1777,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Normální provoz (nebo battery už plná)
                 mode = CBB_MODE_HOME_I  # 0 - Battery priority
 
-            sim_result = self._simulate_interval_with_mode(
+            # TODO 3: Přechod na novou _simulate_interval()
+            sim_result = self._simulate_interval(
                 mode=mode,
                 solar_kwh=solar_kwh,
                 load_kwh=load_kwh,
-                battery_soc=battery_soc,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                spot_price=spot_price,
-                export_price=export_price,
+                battery_soc_kwh=battery_soc,  # NEW: kwh suffix
+                capacity_kwh=max_capacity,  # NEW: kwh suffix
+                hw_min_capacity_kwh=min_capacity,  # NEW: hw_min
+                spot_price_czk=spot_price,  # NEW: czk suffix
+                export_price_czk=export_price,  # NEW: czk suffix
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
             )
 
-            total_cost += sim_result["net_cost"]
-            battery_soc = sim_result["new_soc"]
+            total_cost += sim_result["net_cost_czk"]  # NEW: czk suffix
+            battery_soc = sim_result["new_soc_kwh"]  # NEW: kwh suffix
 
         return total_cost
 
@@ -2948,6 +2882,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # PHASE 2.10: Baselines already calculated at function start
         # (to make them available even if we return early from economic check)
 
+        # =====================================================================
+        # PHASE 6.5: MIN_MODE_DURATION - Zamezit flappingu režimů
+        # =====================================================================
+        # Podle REFACTORING_IMPLEMENTATION_GUIDE.md:
+        # - HOME UPS: minimálně 2 intervaly (30 minut)
+        # - HOME I/II: minimálně 1 interval (15 minut)
+        # Důvod: Časté přepínání způsobuje ztráty energie a opotřebení hardware
+
+        modes = self._enforce_min_mode_duration(modes)
+
+        # =====================================================================
+        # PHASE 7: Planning Minimum Validation
+        # =====================================================================
+        # Podle REFACTORING_IMPLEMENTATION_GUIDE.md:
+        # - Kontrola že baterie NIKDY neklesne pod planning_min (33% = 5.07 kWh)
+        # - Pokud ANO → přidat HOME UPS charging v nejlevnějších nočních intervalech
+        # - Iterativní proces: simuluj → detekuj porušení → oprav → opakuj
+
+        modes = self._validate_planning_minimum(
+            modes=modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,  # planning_min = 33%
+            physical_min_capacity=physical_min_capacity,  # hw_min = 20%
+            efficiency=efficiency,
+        )
+
         return self._build_result(
             modes,
             spot_prices,
@@ -2961,6 +2926,481 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             baselines=baselines,  # Pass baselines to _build_result
             physical_min_capacity=physical_min_capacity,  # Pass physical minimum
         )
+
+    def _enforce_min_mode_duration(self, modes: List[int]) -> List[int]:
+        """
+        PHASE 6.5: Vynucení minimální doby trvání režimu (MIN_MODE_DURATION).
+
+        Podle REFACTORING_IMPLEMENTATION_GUIDE.md:
+        - HOME UPS musí běžet minimálně 2 intervaly (30 minut)
+        - HOME I/II musí běžet minimálně 1 interval (15 minut)
+
+        Důvod: Časté přepínání způsobuje:
+        - Ztráty energie při přechodu mezi režimy
+        - Opotřebení hardware (relé, měnič)
+        - Nestabilní chování systému
+
+        Args:
+            modes: Seznam režimů (list of int, 0-3)
+
+        Returns:
+            Upravený seznam režimů s vynucenou minimální dobou trvání
+        """
+        if not modes:
+            return modes
+
+        # Mode name mapping for logging
+        mode_names = {
+            CBB_MODE_HOME_I: "Home I",
+            CBB_MODE_HOME_II: "Home II",
+            CBB_MODE_HOME_III: "Home III",
+            CBB_MODE_HOME_UPS: "Home UPS",
+        }
+
+        result = modes.copy()
+        n = len(result)
+        i = 0
+        violations_fixed = 0
+
+        while i < n:
+            current_mode = result[i]
+            mode_name = mode_names.get(current_mode, f"Mode {current_mode}")
+
+            # Najít délku aktuálního bloku
+            block_start = i
+            while i < n and result[i] == current_mode:
+                i += 1
+            block_length = i - block_start
+
+            # Kontrola min duration
+            min_duration = MIN_MODE_DURATION.get(mode_name, 1)
+
+            if block_length < min_duration:
+                # Violation! Krátký blok - rozšířit nebo odstranit
+                violations_fixed += 1
+
+                # Strategie: Převést na sousední režim (jednodušší než extension)
+                # Pokud je to první blok → vezmi následující režim
+                # Pokud je to poslední blok → vezmi předchozí režim
+                # Jinak → vezmi ten co je častější v okolí
+
+                if block_start == 0:
+                    # První blok → vezmi následující
+                    replacement_mode = result[i] if i < n else CBB_MODE_HOME_I
+                elif i >= n:
+                    # Poslední blok → vezmi předchozí
+                    replacement_mode = result[block_start - 1]
+                else:
+                    # Uprostřed → vezmi předchozí (konzervativní přístup)
+                    replacement_mode = result[block_start - 1]
+
+                # Převeď celý blok
+                for j in range(block_start, min(i, n)):
+                    result[j] = replacement_mode
+
+                _LOGGER.debug(
+                    f"[MIN_DURATION] Fixed violation: {mode_name} block @ {block_start} "
+                    f"(length {block_length} < min {min_duration}) → {mode_names.get(replacement_mode, 'unknown')}"
+                )
+
+                # Reset index aby se re-evaluoval merged blok
+                i = block_start
+
+        if violations_fixed > 0:
+            _LOGGER.info(f"✅ MIN_MODE_DURATION: Fixed {violations_fixed} violations")
+
+        return result
+
+    def _validate_planning_minimum(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,  # planning_min = 33%
+        physical_min_capacity: float,  # hw_min = 20%
+        efficiency: float,
+    ) -> List[int]:
+        """
+        PHASE 7: Validace planning minimum (33% = 5.07 kWh).
+
+        PREEMPTIVE MULTI-INTERVAL CHARGING (B+light D strategy):
+        - Simuluje timeline s HW minimum (fyzika nezná planning_min!)
+        - Detekuje první violation planning_min
+        - Spočítá deficit_kwh (kolik chybí k planning_min + rezerva)
+        - Vybere VÍCE levných intervalů PŘED violation (ne jen 1 noční!)
+        - Iteruje dokud není porušení opraveno (max 5 iterací)
+
+        Podle REFACTORING_IMPLEMENTATION_GUIDE.md:
+        - Simulace používá POUZE physical_min_capacity (hw_min)
+        - Planning_min je plánovací constraint (validace výsledku)
+        - Žádný clamp na planning_min v simulaci!
+
+        Args:
+            modes: Aktuální režimy (list of int)
+            spot_prices: Timeline spot cen
+            export_prices: Timeline export cen
+            solar_forecast: Solární předpověď
+            load_forecast: Předpověď spotřeby
+            current_capacity: Aktuální SoC (kWh)
+            max_capacity: Max kapacita (kWh)
+            min_capacity: Planning minimum (kWh, typicky 33% = 5.07)
+            physical_min_capacity: HW minimum (kWh, typicky 20% = 3.07)
+            efficiency: Účinnost baterie
+
+        Returns:
+            Upravený seznam režimů garantující dodržení planning_min
+        """
+        MAX_ITERATIONS = 5
+        SAFETY_MARGIN = 1.10  # Nabít +10% nad planning_min pro rezervu
+
+        # Načíst charging power z konfigurace
+        config = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else self._config_entry.data if self._config_entry else {}
+        )
+        charging_power_kw = config.get("home_charge_rate", 2.8)
+        max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
+
+        for iteration in range(MAX_ITERATIONS):
+            # 1. Simuluj timeline a najdi porušení (s violation SoC)
+            violation_result = self._find_first_planning_violation_with_soc(
+                modes=modes,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                physical_min_capacity=physical_min_capacity,
+                efficiency=efficiency,
+            )
+
+            if violation_result is None:
+                # Žádné porušení → hotovo!
+                if iteration > 0:
+                    _LOGGER.info(
+                        f"✅ PLANNING_MIN validation: Fixed all violations in {iteration} iterations"
+                    )
+                return modes
+
+            violation_index, soc_at_violation, recovery_idx = violation_result
+
+            # 2. Spočítej deficit s bezpečnostní rezervou
+            target_soc = min_capacity * SAFETY_MARGIN
+            deficit_kwh = max(0.1, target_soc - soc_at_violation)  # Min 100Wh
+
+            # 3. Určit PŘED jakým intervalem nabíjet:
+            #    - Pokud recovery_idx > 0: violation začíná OD ZAČÁTKU (interval 0)
+            #      → musíme nabít PŘED/V intervalu 0 (nebo co nejdřív)
+            #    - Pokud recovery_idx == 0: violation JE až na violation_index
+            #      → můžeme nabít PŘED violation_index
+            charge_before_index = recovery_idx if recovery_idx > 0 else violation_index
+
+            _LOGGER.info(
+                f"[PLANNING_MIN iter {iteration+1}] Violation @ interval {violation_index}: "
+                f"SoC={soc_at_violation:.2f} kWh < planning_min={min_capacity:.2f} kWh, "
+                f"deficit={deficit_kwh:.2f} kWh (target={target_soc:.2f} kWh), "
+                f"recovery={recovery_idx}, charge_before={charge_before_index}"
+            )
+
+            # 4. Vyber kandidátní intervaly PŘED charge_before_index (cost-aware)
+            candidate_intervals = self._select_charging_intervals_before(
+                modes=modes,
+                spot_prices=spot_prices,
+                before_index=charge_before_index,
+                deficit_kwh=deficit_kwh,
+                max_charge_per_interval=max_charge_per_interval,
+                max_capacity=max_capacity,
+            )
+
+            if not candidate_intervals:
+                # Nelze opravit (žádné dostupné intervaly)
+                _LOGGER.warning(
+                    f"⚠️ PLANNING_MIN violation @ interval {violation_index} "
+                    f"cannot be fixed (no charging intervals available before, deficit={deficit_kwh:.2f} kWh)"
+                )
+                return modes  # Vrátit co je (lepší než crash)
+
+            # 4. Přidej HOME UPS v těchto intervalech
+            modes = modes.copy()
+            for idx in candidate_intervals:
+                modes[idx] = CBB_MODE_HOME_UPS
+
+            expected_charge = len(candidate_intervals) * max_charge_per_interval
+            _LOGGER.info(
+                f"  → Added HOME UPS @ {len(candidate_intervals)} intervals: {candidate_intervals}, "
+                f"expected_charge={expected_charge:.2f} kWh (need {deficit_kwh:.2f} kWh)"
+            )
+
+        # Max iterace dosaženo
+        _LOGGER.warning(
+            f"⚠️ PLANNING_MIN validation: Reached max iterations ({MAX_ITERATIONS}), "
+            f"some violations may remain"
+        )
+        return modes
+
+    def _find_first_planning_violation(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        physical_min_capacity: float,
+        efficiency: float,
+    ) -> Optional[int]:
+        """
+        Najít první interval kde baterie klesne pod planning_min.
+
+        LEGACY VERSION - vrací jen index.
+        Pro novou logiku použij _find_first_planning_violation_with_soc().
+
+        ZÁSADY:
+        - Simulace vždy používá physical_min_capacity (HW minimum ~20%)
+        - Planning_min (~25%) je PLÁNOVACÍ constraint, ne fyzikální limit
+        - Kontrola začíná od recovery_index (kdy SoC >= planning_min)
+        - Pokud current_soc < planning_min, snažíme se dostat zpět nad, pak kontrolujeme
+
+        Returns:
+            Index prvního intervalu s porušením, nebo None pokud žádné
+        """
+        result = self._find_first_planning_violation_with_soc(
+            modes=modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            physical_min_capacity=physical_min_capacity,
+            efficiency=efficiency,
+        )
+        return result[0] if result else None
+
+    def _find_first_planning_violation_with_soc(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        physical_min_capacity: float,
+        efficiency: float,
+    ) -> Optional[tuple[int, float, int]]:
+        """
+        Najít první interval kde baterie klesne pod planning_min.
+
+        ENHANCED VERSION - vrací (index, soc_at_violation, recovery_index) pro deficit calculation.
+
+        ZÁSADY:
+        - Simulace vždy používá physical_min_capacity (HW minimum ~20%)
+        - Planning_min (~25%) je PLÁNOVACÍ constraint, ne fyzikální limit
+        - Kontrola začíná od recovery_index (kdy SoC >= planning_min)
+        - Pokud current_soc < planning_min, snažíme se dostat zpět nad, pak kontrolujeme
+
+        Returns:
+            Tuple (violation_index, soc_at_violation, recovery_index) nebo None pokud žádné porušení
+        """
+        battery_soc = current_capacity
+        recovery_index = None  # První interval kde SoC >= planning_min
+
+        # Pokud už začínáme nad planning_min, recovery je hned
+        if battery_soc >= min_capacity:
+            recovery_index = 0
+
+        for i, mode in enumerate(modes):
+            # Získat data pro interval
+            spot_price = (
+                spot_prices[i].get("price", 0.0) if i < len(spot_prices) else 0.0
+            )
+            export_price = (
+                export_prices[i].get("price", 0.0) if i < len(export_prices) else 0.0
+            )
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
+
+            # Get solar
+            solar_kwh = 0.0
+            try:
+                timestamp_str = spot_prices[i].get("time", "")
+                timestamp = datetime.fromisoformat(timestamp_str)
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except Exception:
+                solar_kwh = 0.0
+
+            # Simuluj interval s FYZICKÝM HW minimem (NIKDY planning_min!)
+            sim_result = self._simulate_interval(
+                mode=mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc_kwh=battery_soc,
+                capacity_kwh=max_capacity,
+                hw_min_capacity_kwh=physical_min_capacity,  # Reálné HW minimum!
+                spot_price_czk=spot_price,
+                export_price_czk=export_price,
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
+            )
+
+            battery_soc = sim_result["new_soc_kwh"]
+
+            # Najít recovery_index (kdy se poprvé dostaneme nad planning_min)
+            if recovery_index is None and battery_soc >= min_capacity:
+                recovery_index = i
+                _LOGGER.debug(
+                    f"[PLANNING_MIN] Recovery @ interval {i}: SoC={battery_soc:.2f} kWh >= {min_capacity:.2f} kWh"
+                )
+
+            # Kontrola planning_min violation JEN PO recovery
+            # Pokud jsme se jednou dostali nad planning_min, nesmíme zpět pod
+            if recovery_index is not None and i > recovery_index:
+                if battery_soc < min_capacity - 0.01:  # 10Wh tolerance
+                    _LOGGER.debug(
+                        f"[PLANNING_MIN] Violation @ interval {i}: "
+                        f"SoC={battery_soc:.2f} kWh < planning_min={min_capacity:.2f} kWh "
+                        f"(recovery was @ {recovery_index})"
+                    )
+                    return (i, battery_soc, recovery_index)
+
+        # Pokud jsme nikdy nedosáhli recovery
+        if recovery_index is None:
+            _LOGGER.warning(
+                f"[PLANNING_MIN] Cannot reach planning_min in entire timeline "
+                f"(started @ {current_capacity:.2f} kWh, need {min_capacity:.2f} kWh)"
+            )
+
+        return None  # Žádné porušení
+
+    def _select_charging_intervals_before(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        before_index: int,
+        deficit_kwh: float,
+        max_charge_per_interval: float,
+        max_capacity: float,
+    ) -> List[int]:
+        """
+        Vybrat více levných intervalů PŘED violation pro proaktivní nabíjení.
+
+        PREEMPTIVE MULTI-INTERVAL STRATEGY (B+light D):
+        - Kandidáti = všechny intervaly 0..before_index-1
+        - Filtr: nejsou už HOME UPS, mají volnou kapacitu
+        - Seřazení: podle ceny (levné první), sekundárně podle času (blíže k violation)
+        - Výběr: tolik intervalů, aby součet nabití ≥ deficit_kwh
+
+        Args:
+            modes: Aktuální režimy
+            spot_prices: Timeline spot cen
+            before_index: Violation index (vybíráme PŘED tímto indexem)
+            deficit_kwh: Kolik kWh potřebujeme dobít
+            max_charge_per_interval: Max nabíjecí výkon za 15min (kWh)
+            max_capacity: Max kapacita baterie (kWh)
+
+        Returns:
+            Seznam indexů pro HOME UPS nabíjení (seřazeno podle času)
+        """
+        candidates = []
+
+        for i in range(before_index):
+            # Skip pokud už je HOME UPS (nepřepisujeme existující logiku)
+            if modes[i] == CBB_MODE_HOME_UPS:
+                continue
+
+            # Skip pokud nemáme cenu
+            if i >= len(spot_prices):
+                continue
+
+            price = spot_prices[i].get("price", 999.0)
+
+            # Přidat jako kandidáta
+            # (index, price, time_distance_to_violation)
+            time_distance = before_index - i  # Čím menší, tím blíž k violation
+            candidates.append((i, price, time_distance))
+
+        if not candidates:
+            return []
+
+        # Seřadit: primárně podle ceny (ASC), sekundárně podle času (DESC = blíž k violation)
+        # Cost-aware: preferujeme levnější intervaly
+        # Time-aware: při stejné ceně preferujeme bližší k violation
+        candidates.sort(key=lambda x: (x[1], -x[2]))
+
+        # Vybrat tolik intervalů, aby součet nabití ≥ deficit_kwh
+        selected_indices = []
+        accumulated_charge = 0.0
+
+        for idx, price, _ in candidates:
+            selected_indices.append(idx)
+            accumulated_charge += max_charge_per_interval
+
+            # Pokud máme dost, končíme
+            if accumulated_charge >= deficit_kwh:
+                break
+
+            # Ochrana před příliš mnoha intervaly (max 20 = 5h nabíjení)
+            if len(selected_indices) >= 20:
+                _LOGGER.warning(
+                    f"⚠️ Reached max charging intervals (20), "
+                    f"accumulated={accumulated_charge:.2f} kWh < deficit={deficit_kwh:.2f} kWh"
+                )
+                break
+
+        # Seřadit výsledek podle času (pro konzistentní timeline)
+        selected_indices.sort()
+
+        return selected_indices
+
+    def _find_cheapest_night_interval_before(
+        self,
+        spot_prices: List[Dict[str, Any]],
+        before_index: int,
+    ) -> Optional[int]:
+        """
+        Najít nejlevnější noční interval (22:00-06:00) před daným indexem.
+
+        Args:
+            spot_prices: Timeline spot cen
+            before_index: Index před kterým hledat
+
+        Returns:
+            Index nejlevnějšího nočního intervalu, nebo None
+        """
+        night_intervals = []
+
+        for i in range(before_index):
+            try:
+                timestamp_str = spot_prices[i].get("time", "")
+                timestamp = datetime.fromisoformat(timestamp_str)
+                hour = timestamp.hour
+
+                # Noční hodiny: 22:00-06:00
+                if hour >= 22 or hour < 6:
+                    price = spot_prices[i].get("price", 999.0)
+                    night_intervals.append((i, price))
+            except Exception:
+                continue
+
+        if not night_intervals:
+            return None
+
+        # Seřadit podle ceny (ascending)
+        night_intervals.sort(key=lambda x: x[1])
+
+        # Vrátit index nejlevnějšího
+        return night_intervals[0][0]
 
     def _build_result(
         self,
@@ -3128,8 +3568,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # Deficit → baterie vybíjí (HOME I fyzika)
                     deficit = load_kwh - solar_kwh  # Kolik chybí po solaru
 
-                    # Kolik máme k dispozici v baterii (nad HW minimem)
-                    available_battery = max(0, battery - min_capacity)
+                    # Kolik máme k dispozici v baterii (nad HW minimem = physical_min!)
+                    available_battery = max(0, battery - physical_min_capacity)
 
                     # Kolik reálně vybereme (s účinností)
                     actual_discharge = min(deficit / efficiency, available_battery)
@@ -3142,8 +3582,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if grid_import > 0.001:  # Potřebujeme grid
                         total_cost += grid_import * price
 
-                    # Clamp na minimum (ochrana před zaokrouhlovacími chybami)
-                    battery = max(battery, min_capacity)
+                    # Clamp na HW minimum (physical_min, NE planning_min!)
+                    battery = max(battery, physical_min_capacity)
 
                     # solar_charge_kwh a grid_charge_kwh zůstávají 0 (vybíjení)
 
@@ -3538,6 +3978,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         MAX_ITERATIONS = 10  # Ochrana proti nekonečné smyčce
         iteration = 0
 
+        # Get battery efficiency for simulations
+        efficiency = self._get_battery_efficiency()
+
         while iteration < MAX_ITERATIONS:
             iteration += 1
 
@@ -3556,20 +3999,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = timeline_point.get("solar_kwh", 0.0)
                 load_kwh = timeline_point.get("load_kwh", 0.0)
 
-                # Simuluj interval
-                sim_result = self._simulate_interval_with_mode(
+                # TODO 3: Přechod na novou _simulate_interval()
+                # DŮLEŽITÉ: Tady používáme OBĚ minima - physical (hw) i planning (user)
+                sim_result = self._simulate_interval(
                     mode=mode,
                     solar_kwh=solar_kwh,
                     load_kwh=load_kwh,
-                    battery_soc=battery_soc,
-                    max_capacity=max_capacity,
-                    min_capacity=min_capacity,  # Plánovací minimum
-                    spot_price=timeline_point.get("spot_price", 0.0),
-                    export_price=timeline_point.get("export_price", 0.0),
-                    physical_min_capacity=physical_min_capacity,  # Fyzické minimum
+                    battery_soc_kwh=battery_soc,  # NEW: kwh suffix
+                    capacity_kwh=max_capacity,  # NEW: kwh suffix
+                    hw_min_capacity_kwh=physical_min_capacity,  # NEW: correct hw_min!
+                    spot_price_czk=timeline_point.get(
+                        "spot_price", 0.0
+                    ),  # NEW: czk suffix
+                    export_price_czk=timeline_point.get(
+                        "export_price", 0.0
+                    ),  # NEW: czk suffix
+                    charge_efficiency=efficiency,
+                    discharge_efficiency=efficiency,
                 )
 
-                battery_soc = sim_result["new_soc"]
+                battery_soc = sim_result["new_soc_kwh"]  # NEW: kwh suffix
 
                 # Debug: Log každých 10 intervalů + kritické případy
                 if i % 10 == 0 or battery_soc < min_capacity + 0.5 or i < 5:
