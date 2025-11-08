@@ -7534,16 +7534,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             mode_name: Např. "Home 1", "Home UPS", "Home 3"
 
         Returns:
-            Mode ID (0-5)
+            Mode ID (0-3)
         """
-        # Mapping podle CBB_MODE_NAMES
+        # Mapping podle CBB_MODE_NAMES constants
         mode_mapping = {
-            "Home 1": 0,  # HOME I
-            "Home 2": 1,  # HOME II
-            "Home 3": 2,  # HOME III
-            "Home UPS": 5,  # HOME UPS
-            "Backup": 4,  # BACKUP
-            "Grid": 3,  # GRID
+            "Home 1": CBB_MODE_HOME_I,      # 0
+            "Home 2": CBB_MODE_HOME_II,     # 1
+            "Home 3": CBB_MODE_HOME_III,    # 2
+            "Home UPS": CBB_MODE_HOME_UPS,  # 3
         }
 
         # Normalizovat string (remove extra spaces, case-insensitive)
