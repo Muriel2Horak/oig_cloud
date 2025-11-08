@@ -1,6 +1,9 @@
 /* Import CSS variables */
 @import url('css/variables.css');
 
+/* Import button components */
+@import url('css/components/buttons.css');
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
@@ -1983,29 +1986,6 @@
             }
         }
 
-        .control-button {
-            padding: 6px 12px;
-            background: var(--status-charging-bg);
-            border: 1px solid var(--status-charging-border);
-            border-radius: 4px;
-            color: var(--text-primary);
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .control-button:hover {
-            background: var(--status-charging-shadow);
-            transform: scale(1.05);
-        }
-
-        .control-buttons-row {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-            flex-wrap: wrap;
-        }
-
         @keyframes shimmer {
             0% {
                 background-position: -200% center;
@@ -2448,16 +2428,6 @@
                 margin-bottom: 5px;
             }
 
-            .button-group {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 5px;
-            }
-
-            .button-group button {
-                font-size: 9px;
-                padding: 5px 6px;
-            }
-
             /* Menší battery gauge */
             .battery-gauge {
                 height: 4px;
@@ -2783,27 +2753,6 @@
             font-weight: 600;
         }
 
-        .btn-minimize {
-            background: var(--button-bg);
-            border: none;
-            color: var(--text-primary);
-            width: 20px;
-            /* Velmi malé */
-            height: 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            /* Menší */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .btn-minimize:hover {
-            background: var(--button-hover);
-        }
-
         .panel-content {
             max-height: none;
             /* Není omezení - přizpůsobí se obsahu */
@@ -2907,61 +2856,6 @@
             white-space: nowrap;
         }
 
-        .button-group {
-            display: flex;
-            flex-wrap: nowrap;
-            gap: 6px;
-            margin-bottom: 0;
-        }
-
-        .button-group button {
-            padding: 6px 12px;
-            background: var(--info-bg);
-            border: 1px solid var(--indicator-info-border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 11px;
-            font-weight: 500;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-
-        .button-group button:hover {
-            background: var(--status-charging-bg);
-            border-color: var(--status-charging-border);
-            transform: translateY(-2px);
-        }
-
-        .button-group button:active {
-            transform: translateY(0);
-        }
-
-        .button-group button.active {
-            background: var(--button-active-bg);
-            border-color: var(--battery-border);
-        }
-
-        .button-group button:disabled,
-        .button-group button.disabled {
-            background: var(--button-disabled-bg);
-            border-color: var(--button-disabled-border);
-            color: var(--button-disabled-text);
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        .button-group button:disabled:hover,
-        .button-group button.disabled:hover {
-            transform: none;
-            background: var(--button-disabled-bg);
-        }
-
-        .button-group button:disabled {
-            opacity: 0.3;
-            cursor: not-allowed;
-        }
-
         .input-group {
             display: flex;
             gap: 6px;
@@ -2990,24 +2884,6 @@
             outline: none;
             border-color: var(--input-focus-border);
             background: var(--bg-hover);
-        }
-
-        .input-group button {
-            padding: 6px 12px;
-            background: var(--status-idle-bg);
-            border: 1px solid var(--battery-border);
-            border-radius: 4px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 10px;
-            font-weight: 500;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-
-        .input-group button:hover {
-            background: var(--button-active-bg);
-            border-color: var(--button-active-border);
         }
 
         .input-group {
@@ -3042,54 +2918,9 @@
             display: none;
         }
 
-        .input-group button,
-        .btn-action {
-            padding: 8px 16px;
-            background: var(--status-idle-bg);
-            border: 1px solid var(--battery-border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-
-        .input-group button:hover,
-        .btn-action:hover {
-            background: var(--button-active-bg);
-        }
-
-        .status {
-            font-size: 12px;
-            opacity: 0.7;
-            margin-top: 8px;
-            padding: 6px 10px;
-            background: var(--bg-tertiary);
-            border-radius: 6px;
-        }
-
         .status span {
             color: var(--success-text);
             font-weight: 600;
-        }
-
-        .btn-secondary {
-            width: 100%;
-            padding: 12px;
-            background: var(--inverter-bg);
-            border: 1px solid var(--inverter-border);
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .btn-secondary:hover {
-            background: var(--bg-active);
         }
 
         .notification-toast {
@@ -3132,25 +2963,6 @@
             font-size: 18px;
             font-weight: 600;
             color: var(--text-primary);
-        }
-
-        .toast-header button {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 28px;
-            cursor: pointer;
-            opacity: 0.5;
-            line-height: 1;
-            padding: 0;
-            width: 28px;
-            height: 28px;
-            transition: all 0.2s;
-        }
-
-        .toast-header button:hover {
-            opacity: 1;
-            transform: rotate(90deg);
         }
 
         .toast-body {
@@ -3264,60 +3076,6 @@
             cursor: pointer;
         }
 
-        .ack-dialog-buttons {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-        }
-
-        .ack-dialog-buttons button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .ack-dialog-buttons .btn-cancel {
-            background: var(--modal-button-cancel-bg);
-            color: var(--modal-button-cancel-text);
-        }
-
-        .ack-dialog-buttons .btn-cancel:hover {
-            background: var(--modal-button-cancel-hover);
-        }
-
-        .ack-dialog-buttons .btn-confirm {
-            background: var(--modal-button-confirm-bg);
-            color: white;
-        }
-
-        .ack-dialog-buttons .btn-confirm:hover:not(:disabled) {
-            background: var(--modal-button-confirm-hover);
-            transform: translateY(-1px);
-            box-shadow: var(--modal-button-confirm-shadow);
-        }
-
-        .ack-dialog-buttons .btn-confirm:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        /* === SHIELD INTEGRATION STYLES === */
-
-        /* Global shield status bar */
-        .shield-status {
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 16px;
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-
         .shield-status.idle {
             background: var(--shield-idle-bg);
             border: 1px solid var(--shield-idle-border);
@@ -3352,30 +3110,6 @@
         }
 
         /* Button states for shield */
-        .button-group button.active {
-            background: var(--shield-button-active-bg);
-            border-color: var(--shield-button-active-border);
-            box-shadow: var(--shield-button-active-shadow);
-            font-weight: 600;
-        }
-
-        .button-group button.active::before {
-            content: '✓ ';
-            color: var(--shield-button-active-check);
-            font-weight: bold;
-            margin-right: 2px;
-        }
-
-        .button-group button.pending {
-            background: var(--shield-pending-bg);
-            border-color: var(--shield-pending-border);
-            animation: pulse-pending 1.5s ease-in-out infinite;
-        }
-
-        .button-group button.pending::before {
-            content: '⏳ ';
-            margin-right: 2px;
-        }
 
         @keyframes pulse-pending {
 
@@ -3391,19 +3125,6 @@
                 transform: scale(1.02);
                 box-shadow: var(--shield-pending-shadow);
             }
-        }
-
-        .button-group button.processing {
-            background: var(--shield-processing-bg);
-            border-color: var(--shield-processing-border);
-            box-shadow: var(--shield-processing-shadow);
-        }
-
-        .button-group button.processing::before {
-            content: '🔄 ';
-            display: inline-block;
-            margin-right: 2px;
-            animation: spin 1.2s linear infinite;
         }
 
         @keyframes spin {
@@ -3562,37 +3283,18 @@
             color: var(--text-primary);
         }
 
-        body.light-theme .btn-minimize {
-            background: rgba(0, 0, 0, 0.1);
-            color: var(--text-primary);
-        }
+        body.light-theme 
 
-        body.light-theme .btn-minimize:hover {
-            background: rgba(0, 0, 0, 0.2);
-        }
+        body.light-theme 
 
         /* Buttons */
-        body.light-theme .button-group button {
-            background: rgba(0, 0, 0, 0.05);
-            border: 1px solid rgba(0, 0, 0, 0.15);
-            color: var(--text-primary);
-        }
+        body.light-theme 
 
-        body.light-theme .button-group button:hover:not(:disabled) {
-            background: rgba(0, 0, 0, 0.1);
-        }
+        body.light-theme 
 
-        body.light-theme .button-group button.active {
-            background: rgba(76, 175, 80, 0.3);
-            border-color: rgba(76, 175, 80, 0.6);
-            color: #2e7d32;
-        }
+        body.light-theme 
 
-        body.light-theme .button-group button:disabled {
-            background: rgba(0, 0, 0, 0.03);
-            border-color: rgba(0, 0, 0, 0.08);
-            color: var(--text-tertiary);
-        }
+        body.light-theme 
 
         /* Info bubbles */
         body.light-theme .info-bubble {
@@ -3647,15 +3349,9 @@
             color: var(--text-primary);
         }
 
-        body.light-theme .btn-close {
-            background: rgba(0, 0, 0, 0.05);
-            color: var(--text-secondary);
-        }
+        body.light-theme 
 
-        body.light-theme .btn-close:hover {
-            background: rgba(244, 67, 54, 0.2);
-            color: #d32f2f;
-        }
+        body.light-theme 
 
         /* Form inputs */
         body.light-theme input[type="number"],
@@ -3797,40 +3493,6 @@
             display: flex;
             gap: 8px;
             margin-left: auto;
-        }
-
-        .btn-layout-edit,
-        .btn-layout-reset {
-            padding: 10px 14px;
-            background: var(--button-bg);
-            border: 1px solid var(--border-primary);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-size: 16px;
-            color: var(--text-secondary);
-        }
-
-        .btn-layout-edit:hover,
-        .btn-layout-reset:hover {
-            background: var(--button-hover);
-            color: var(--text-primary);
-            transform: scale(1.05);
-        }
-
-        .btn-layout-edit.active {
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.5), rgba(255, 152, 0, 0.5));
-            border-color: rgba(255, 193, 7, 0.8);
-            box-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
-            color: var(--text-primary);
-        }
-
-        .btn-layout-reset {
-            background: linear-gradient(135deg, rgba(244, 67, 54, 0.3), rgba(211, 47, 47, 0.3));
-        }
-
-        .btn-layout-reset:hover {
-            background: linear-gradient(135deg, rgba(244, 67, 54, 0.5), rgba(211, 47, 47, 0.5));
         }
 
         .tab-content {
@@ -4656,38 +4318,6 @@
             display: flex;
             justify-content: flex-end;
             gap: 10px;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border-radius: 6px;
-            border: none;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, rgba(66, 165, 245, 0.8), rgba(33, 150, 243, 0.8));
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: linear-gradient(135deg, rgba(66, 165, 245, 1), rgba(33, 150, 243, 1));
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(66, 165, 245, 0.4);
-        }
-
-        .btn-secondary {
-            background: var(--bg-secondary);
-            color: var(--text-secondary);
-            border: 1px solid var(--border-primary);
-        }
-
-        .btn-secondary:hover {
-            background: var(--button-hover);
-            color: var(--text-primary);
         }
 
         /* Icon Input Wrapper */
@@ -7521,10 +7151,6 @@
     }
 }
 
-
-
-
-
 /* ===============================================
    DNES DIALOG - SIMPLE CARD HEADER v2.2
    =============================================== */
@@ -7653,8 +7279,6 @@
         font-size: 1.5rem;
     }
 }
-
-
 
 /* ============================================
    DNES DIALOG - CARD-BASED HEADER v2.2 DARK
