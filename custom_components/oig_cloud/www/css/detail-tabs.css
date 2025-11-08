@@ -76,13 +76,13 @@
 .mode-block {
     background: var(--card-background, #fff);
     border: 2px solid var(--border-color, #e0e0e0);
-    border-radius: 12px;
-    padding: 16px;
+    border-radius: 8px;
+    padding: 10px;
     transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .mode-block:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* Match Indicators */
@@ -101,21 +101,21 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
 }
 
 .mode-block-time {
-    font-size: 1rem;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary, #000);
 }
 
 .mode-block-status {
-    font-size: 0.875rem;
-    padding: 4px 10px;
-    border-radius: 12px;
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 10px;
     font-weight: 500;
 }
 
@@ -151,15 +151,15 @@
 .mode-comparison {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: 8px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
 }
 
 .mode-badge {
-    padding: 6px 14px;
-    border-radius: 16px;
-    font-size: 0.875rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -176,7 +176,7 @@
 }
 
 .mode-separator {
-    font-size: 1.2rem;
+    font-size: 1rem;
     color: var(--text-secondary, #666);
 }
 
@@ -184,28 +184,28 @@
 .mode-cost-info {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 12px;
+    gap: 10px;
+    padding: 8px 10px;
     background: var(--background-secondary, #f9f9f9);
-    border-radius: 8px;
+    border-radius: 6px;
     flex-wrap: wrap;
 }
 
 .cost-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
 }
 
 .cost-label {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     color: var(--text-secondary, #666);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .cost-value {
-    font-size: 1.125rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: var(--text-primary, #000);
 }
@@ -213,8 +213,8 @@
 .cost-delta {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 0.875rem;
+    gap: 3px;
+    font-size: 0.75rem;
     font-weight: 600;
 }
 
