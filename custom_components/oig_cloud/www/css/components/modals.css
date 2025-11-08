@@ -1,0 +1,192 @@
+/* ===================================
+   MODALS & DIALOGS COMPONENT STYLES
+   
+   Všechny modal, dialog a toast styly
+   - Dialog overlays
+   - Dialog windows
+   - Toast notifications
+   - Input dialogs
+   =================================== */
+
+.dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.2s ease-out;
+        }
+.dialog-header {
+            border-bottom: 1px solid var(--border-secondary);
+        }
+.dialog-header strong {
+            color: var(--text-primary);
+        }
+.dialog-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid var(--border-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+.dialog-header h3 {
+            margin: 0;
+            color: var(--text-primary);
+            font-size: 1.4em;
+        }
+.dialog-close {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-primary);
+            font-size: 28px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+.dialog-close:hover {
+            background: rgba(244, 67, 54, 0.3);
+            border-color: #F44336;
+            transform: rotate(90deg);
+        }
+.dialog-body {
+            padding: 25px;
+        }
+.dialog-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+.dialog-input:focus {
+            border-color: var(--input-focus-border);
+            outline: none;
+        }
+.toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px 16px 24px;
+            border-bottom: 1px solid var(--border-secondary);
+        }
+.toast-header strong {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+.toast-header {
+            border-bottom-color: var(--toast-success-border-light);
+        }
+.toast-header {
+            border-bottom-color: var(--toast-error-border-light);
+        }
+.toast-header {
+            border-bottom-color: var(--toast-warning-border-light);
+        }
+.toast-header,
+        body.light-theme 
+
+        body.light-theme .toast-header strong,
+        body.light-theme 
+
+        body.light-theme 
+
+        body.light-theme 
+
+        /* Form inputs */
+        body.light-theme input[type="number"],
+        body.light-theme select {
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-primary);
+            color: var(--text-primary);
+        }
+.toast-body {
+            padding: 16px 24px 20px 24px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--toast-body-text);
+        }
+.toast-success {
+            border-color: var(--toast-success-border);
+            box-shadow: var(--toast-success-shadow);
+        }
+.toast-success 
+
+        .toast-error {
+            border-color: var(--toast-error-border);
+            box-shadow: var(--toast-error-shadow);
+        }
+.toast-error 
+
+        .toast-warning {
+            border-color: var(--toast-warning-border);
+            box-shadow: var(--toast-warning-shadow);
+        }
+.toast-warning 
+
+        /* Custom Acknowledgement Dialog */
+        .ack-dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--modal-backdrop);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+.ack-dialog {
+            background: var(--modal-bg);
+            border: 1px solid var(--modal-border);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: var(--modal-shadow);
+        }
+.ack-dialog-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--modal-header-text);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+.ack-dialog-body {
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: var(--modal-body-text);
+        }
+.ack-dialog-warning {
+            background: var(--modal-warning-bg);
+            border: 1px solid var(--modal-warning-border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: var(--modal-warning-text);
+        }
+.ack-dialog {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 248, 0.98) 100%);
+            border: 2px solid rgba(66, 165, 245, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            color: var(--text-primary);
+        }
