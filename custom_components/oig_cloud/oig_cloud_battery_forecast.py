@@ -7538,9 +7538,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         # Mapping podle CBB_MODE_NAMES constants
         mode_mapping = {
-            "Home 1": CBB_MODE_HOME_I,      # 0
-            "Home 2": CBB_MODE_HOME_II,     # 1
-            "Home 3": CBB_MODE_HOME_III,    # 2
+            "Home 1": CBB_MODE_HOME_I,  # 0
+            "Home 2": CBB_MODE_HOME_II,  # 1
+            "Home 3": CBB_MODE_HOME_III,  # 2
             "Home UPS": CBB_MODE_HOME_UPS,  # 3
         }
 
