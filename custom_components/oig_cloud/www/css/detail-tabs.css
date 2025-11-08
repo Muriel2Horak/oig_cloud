@@ -77,7 +77,7 @@
     background: var(--card-background, #fff);
     border: 2px solid var(--border-color, #e0e0e0);
     border-radius: 8px;
-    padding: 10px;
+    padding: 8px;
     transition: border-color 0.3s, box-shadow 0.3s;
 }
 
@@ -157,11 +157,14 @@
 }
 
 .mode-badge {
-    padding: 4px 10px;
+    padding: 3px 10px;
     border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 500;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .mode-badge.mode-historical {
@@ -185,7 +188,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 6px 8px;
     background: var(--background-secondary, #f9f9f9);
     border-radius: 6px;
     flex-wrap: wrap;
@@ -205,16 +208,17 @@
 }
 
 .cost-value {
-    font-size: 0.9rem;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-primary, #000);
 }
 
 .cost-delta {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 0.75rem;
+    display: inline-block;
+    margin-top: 3px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 10px;
     font-weight: 600;
 }
 
@@ -369,3 +373,139 @@
         color: var(--text-secondary-dark, #aaa);
     }
 }
+
+/* ================================================================
+   COMPACT BLOCK STYLES - Used by dashboard-timeline.js
+   ================================================================ */
+
+/* Block header */
+.block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--divider-color, #333);
+}
+
+.block-time {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-text-color, #fff);
+}
+
+.block-duration {
+    font-size: 11px;
+    color: var(--text-secondary, #aaa);
+    font-weight: normal;
+    margin-left: 4px;
+}
+
+.block-match {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.block-match.match-yes {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81C784;
+}
+
+.block-match.match-no {
+    background: rgba(244, 67, 54, 0.2);
+    color: #E57373;
+}
+
+/* Block modes */
+.block-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.mode-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mode-label {
+    min-width: 70px;
+    font-size: 11px;
+    color: var(--text-secondary, #aaa);
+}
+
+/* Block cost */
+.block-cost {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+}
+
+.cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    font-size: 11px;
+}
+
+/* Block details */
+.block-details {
+    margin-top: 6px;
+}
+
+.block-details summary {
+    cursor: pointer;
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-secondary, #aaa);
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.block-details summary:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.block-details[open] summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid var(--divider-color, #333);
+}
+
+/* Energy stats - 2 column grid */
+.energy-stats {
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+}
+
+.energy-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    font-size: 11px;
+    color: var(--text-secondary, #aaa);
+}
+
+.energy-value {
+    color: var(--primary-text-color, #fff);
+    font-weight: 500;
+    font-size: 11px;
+    margin-left: 6px;
+}
+

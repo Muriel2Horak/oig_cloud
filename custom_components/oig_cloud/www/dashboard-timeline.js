@@ -852,25 +852,25 @@ class TimelineDialog {
                         <div class="energy-stats">
                             ${solar_total_kwh !== null && solar_total_kwh !== undefined ? `
                             <div class="energy-row">
-                                <span>☀️ Solární výroba:</span>
+                                <span>☀️ Solární</span>
                                 <span class="energy-value">${solar_total_kwh.toFixed(2)} kWh</span>
                             </div>
                             ` : ''}
                             ${consumption_total_kwh !== null && consumption_total_kwh !== undefined ? `
                             <div class="energy-row">
-                                <span>🔌 Spotřeba:</span>
+                                <span>🔌 Spotřeba</span>
                                 <span class="energy-value">${consumption_total_kwh.toFixed(2)} kWh</span>
                             </div>
                             ` : ''}
                             ${grid_import_total_kwh !== null && grid_import_total_kwh !== undefined ? `
                             <div class="energy-row">
-                                <span>⬇️ Odběr ze sítě:</span>
+                                <span>⬇️ Odběr ze sítě</span>
                                 <span class="energy-value">${grid_import_total_kwh.toFixed(2)} kWh</span>
                             </div>
                             ` : ''}
                             ${grid_export_total_kwh !== null && grid_export_total_kwh !== undefined ? `
                             <div class="energy-row">
-                                <span>⬆️ Export do sítě:</span>
+                                <span>⬆️ Export do sítě</span>
                                 <span class="energy-value">${grid_export_total_kwh.toFixed(2)} kWh</span>
                             </div>
                             ` : ''}
