@@ -910,9 +910,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             await self._maybe_fix_daily_plan()
 
             # Generate BASELINE timeline (without balancing plan) for planning purposes
-            # This is needed by balancing sensor to plan new balancing cycles
+            # NOTE: New balancing module uses HYBRID timeline, baseline kept for legacy/debug
             if self._active_charging_plan:
-                # Only generate baseline if there's an active charging plan
+                # Generate baseline without charging plan
                 _LOGGER.debug("Generating baseline timeline (without charging plan)")
 
                 # CRITICAL: Temporarily disable charging plan for baseline calculation
@@ -939,7 +939,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"Baseline timeline generated: {len(self._baseline_timeline)} points"
                 )
             else:
-                # No charging plan, so active timeline is already baseline
+                # No charging plan - baseline not needed by new balancing module
                 self._baseline_timeline = []
 
             # Phase 1.5: Calculate hash for change detection
