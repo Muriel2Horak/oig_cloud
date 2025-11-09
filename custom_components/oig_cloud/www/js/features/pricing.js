@@ -1785,85 +1785,12 @@ async function updateWhatIfAnalysis() {
 }
 
 
-/**
- * Update mode recommendations timeline on Pricing tab
- * Reads mode_recommendations from battery_forecast attributes
- */
-async function updateModeRecommendations() {
-    const hass = getHass();
-    if (!hass) return;
-
-    const forecastSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast`;
-    const forecastSensor = hass.states[forecastSensorId];
-
-    const container = document.getElementById('mode-recommendations-timeline');
-    if (!container) return;
-
-    // Check if sensor is available
-    if (!forecastSensor || forecastSensor.state === 'unavailable' || forecastSensor.state === 'unknown') {
-        console.log('[Mode Recommendations] Battery forecast sensor not available');
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">Čekám na data...</div>';
-        return;
-    }
-
-    // Get mode_recommendations data
-    const attrs = forecastSensor.attributes || {};
-    const recommendations = attrs.mode_recommendations || [];
-
-    if (!recommendations || recommendations.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">Žádná doporučení k dispozici</div>';
-        return;
-    }
-
-    // Build timeline HTML
-    const modeIcons = {
-        'HOME I': '🏠',
-        'HOME II': '🏡',
-        'HOME III': '🏘️',
-        'HOME UPS': '⚡'
-    };
-
-    const modeColors = {
-        'HOME I': '#4CAF50',
-        'HOME II': '#2196F3',
-        'HOME III': '#FF9800',
-        'HOME UPS': '#9C27B0'
-    };
-
-    let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
-
-    recommendations.forEach((rec, index) => {
-        const icon = modeIcons[rec.mode_name] || '📍';
-        const color = modeColors[rec.mode_name] || '#757575';
-        const fromTime = rec.from_time ? new Date(rec.from_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
-        const toTime = rec.to_time ? new Date(rec.to_time).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'}) : '--';
-        const duration = rec.duration_hours || 0;
-
-        html += `
-            <div style="display: flex; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.02); border-left: 3px solid ${color}; border-radius: 4px;">
-                <div style="font-size: 1.5em; margin-right: 10px;">${icon}</div>
-                <div style="flex: 1;">
-                    <div style="font-weight: 600; color: ${color};">${rec.mode_name}</div>
-                    <div style="font-size: 0.85em; color: var(--text-secondary);">${fromTime} - ${toTime} (${duration.toFixed(1)}h)</div>
-                </div>
-                <div style="text-align: right; font-size: 0.85em; color: var(--text-secondary);">
-                    ${rec.intervals_count || 0} intervalů
-                </div>
-            </div>
-        `;
-    });
-
-    html += '</div>';
-
-    container.innerHTML = html;
-}
 window.DashboardPricing = {
     debouncedLoadPricingData,
     debouncedUpdatePlannedConsumption,
     loadPricingData,
     updatePlannedConsumptionStats,
     updateWhatIfAnalysis,
-    updateModeRecommendations,
     init: function() {
         console.log('[DashboardPricing] Initialized');
     }

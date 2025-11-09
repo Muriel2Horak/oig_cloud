@@ -111,7 +111,7 @@ class UnifiedCostTile {
                         ${savings > 0 ? '💚' : '⚠️'} ${savings > 0 ? '+' : ''}${savings} Kč vs ${baselineName}
                     </div>
                     <div class="uct-delta ${performanceClass}">
-                        ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})
+                        ${this.formatCostCompact(today.plan_total_cost)} → ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})
                     </div>
                 </div>
 

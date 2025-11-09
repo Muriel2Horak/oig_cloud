@@ -287,7 +287,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         f"✅ Restored daily plans archive from storage: {len(self._daily_plans_archive)} days"
                     )
                 else:
-                    _LOGGER.info("No daily archive in storage - will backfill from history")
+                    _LOGGER.info(
+                        "No daily archive in storage - will backfill from history"
+                    )
             except Exception as e:
                 _LOGGER.warning(f"Failed to load daily plans archive from storage: {e}")
 
@@ -7683,7 +7685,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     async def _backfill_daily_archive_from_storage(self) -> None:
         """
         Backfill daily plans archive from storage detailed plans.
-        
+
         PHASE 3.1: Zpětné doplnění archivu z již uložených daily plans.
         Použije se při startu, pokud archiv chybí (např. po restartu před implementací persistence).
         """
@@ -7694,28 +7696,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             storage_data = await self._plans_store.async_load() or {}
             detailed_plans = storage_data.get("detailed", {})
-            
+
             if not detailed_plans:
                 _LOGGER.info("No detailed plans in storage - nothing to backfill")
                 return
 
             now = dt_util.now()
             today_str = now.date().strftime("%Y-%m-%d")
-            
+
             # Backfill posledních 7 dní (kromě dneška)
             backfilled_count = 0
             for days_ago in range(1, 8):  # 1-7 dní zpátky
                 date = (now.date() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-                
+
                 # Skip if already in archive
                 if date in self._daily_plans_archive:
                     continue
-                
+
                 # Check if we have this date in detailed plans
                 if date in detailed_plans:
                     plan_data = detailed_plans[date]
                     intervals = plan_data.get("intervals", [])
-                    
+
                     # Build daily_plan_state structure from detailed plan
                     self._daily_plans_archive[date] = {
                         "date": date,
@@ -7724,18 +7726,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "created_at": plan_data.get("created_at"),
                     }
                     backfilled_count += 1
-                    _LOGGER.debug(f"Backfilled archive for {date} from storage ({len(intervals)} intervals)")
-            
+                    _LOGGER.debug(
+                        f"Backfilled archive for {date} from storage ({len(intervals)} intervals)"
+                    )
+
             if backfilled_count > 0:
                 _LOGGER.info(f"✅ Backfilled {backfilled_count} days into archive")
-                
+
                 # Save updated archive back to storage
                 storage_data["daily_archive"] = self._daily_plans_archive
                 await self._plans_store.async_save(storage_data)
                 _LOGGER.info("💾 Saved backfilled archive to storage")
             else:
                 _LOGGER.debug("No days needed backfilling")
-                
+
         except Exception as e:
             _LOGGER.error(f"Failed to backfill daily archive: {e}", exc_info=True)
 
@@ -9605,6 +9609,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning(f"🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
 
         return {"today": today, "tomorrow": tomorrow}
+
+    def _get_solar_forecast_strings(self) -> Dict[str, Any]:
+        """
+        Získat solární předpověď pro String1 a String2 samostatně.
+
+        Returns:
+            Dict ve formátu:
+            {
+                "today_string1_kw": {"2025-11-09T07:00:00": 0.5, ...},
+                "today_string2_kw": {"2025-11-09T07:00:00": 0.3, ...},
+                "tomorrow_string1_kw": {...},
+                "tomorrow_string2_kw": {...}
+            }
+        """
+        if not self._hass:
+            return {}
+
+        sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or not state.attributes:
+            return {}
+
+        return {
+            "today_string1_kw": state.attributes.get("today_hourly_string1_kw", {}),
+            "today_string2_kw": state.attributes.get("today_hourly_string2_kw", {}),
+            "tomorrow_string1_kw": state.attributes.get(
+                "tomorrow_hourly_string1_kw", {}
+            ),
+            "tomorrow_string2_kw": state.attributes.get(
+                "tomorrow_hourly_string2_kw", {}
+            ),
+        }
 
     def _get_balancing_plan(self) -> Optional[Dict[str, Any]]:
         """Získat plán balancování z battery_balancing senzoru."""
