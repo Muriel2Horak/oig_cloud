@@ -1,10 +1,12 @@
 """Battery Health Monitoring - měření skutečné kapacity a degradace baterie."""
 
 import logging
+import json
+import os
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import deque
 
 from homeassistant.components.sensor import (
@@ -32,66 +34,25 @@ class BatteryMeasurement:
     start_soc: float
     end_soc: float
     delta_soc: float
-    method: str  # "power_integration" nebo "coulomb_counting"
-    validated: bool  # Zda bylo validováno druhou metodou
+    method: str  # "power_integration_retrospective"
+    validated: bool  # Vždy False pro retrospektivní
     confidence: float  # 0.0 - 1.0
     total_charge_wh: float  # Celková nabíjecí energie
     total_discharge_wh: float  # Celková vybíjecí energie
     duration_hours: float  # Délka cyklu v hodinách
 
-    # NOVĚ: Purity metrics
+    # Purity metrics
     purity: float  # 0.0 - 1.0 (% čisté energie dovnitř)
     interruption_count: int  # Počet přerušení vybíjením
     quality_score: float  # 0-100 (celkové quality score)
 
-    # Coulomb counting data (pokud je validace)
+    # Coulomb counting nepoužíváme v retrospektivě
     coulomb_capacity_kwh: Optional[float] = None
     coulomb_discrepancy_percent: Optional[float] = None
 
 
-@dataclass
-class CycleTracker:
-    """Sledování probíhajícího nabíjecího/vybíjecího cyklu."""
-
-    in_progress: bool = False
-    start_time: Optional[datetime] = None
-    start_soc: Optional[float] = None
-    current_soc: Optional[float] = None
-
-    # Power integration (30s updates)
-    total_charge_wh: float = 0.0
-    total_discharge_wh: float = 0.0
-    sample_count: int = 0
-
-    # Purity tracking - detekce přerušení nabíjení
-    interrupted: bool = False  # True pokud bylo přerušeno vybíjením
-    interruption_count: int = 0  # Počet přerušení
-    max_discharge_power_w: float = 0.0  # Max vybíjecí výkon během cyklu
-
-    # Coulomb counting (5min updates)
-    total_ah: float = 0.0
-    voltage_samples: List[float] = field(default_factory=list)
-    coulomb_sample_count: int = 0
-
-    def reset(self) -> None:
-        """Reset cycle tracking."""
-        self.in_progress = False
-        self.start_time = None
-        self.start_soc = None
-        self.current_soc = None
-        self.total_charge_wh = 0.0
-        self.total_discharge_wh = 0.0
-        self.sample_count = 0
-        self.interrupted = False
-        self.interruption_count = 0
-        self.max_discharge_power_w = 0.0
-        self.total_ah = 0.0
-        self.voltage_samples = []
-        self.coulomb_sample_count = 0
-
-
 class BatteryCapacityTracker:
-    """Sledování a měření skutečné kapacity baterie."""
+    """RETROSPEKTIVNÍ sledování a měření skutečné kapacity baterie z DB."""
 
     def __init__(
         self,
@@ -105,281 +66,26 @@ class BatteryCapacityTracker:
         Args:
             hass: Home Assistant instance
             box_id: ID OIG zařízení
-            nominal_capacity_kwh: Nominální kapacita baterie (default 12.29 kWh = 80% z 15.36 kWh)
+            nominal_capacity_kwh: Nominální kapacita baterie (default 12.29 kWh)
         """
         self._hass = hass
         self._box_id = box_id
         self._nominal_capacity = nominal_capacity_kwh
 
-        # Cycle tracking
-        self._cycle = CycleTracker()
-
         # Measurements history (max 100 posledních měření)
         self._measurements: deque[BatteryMeasurement] = deque(maxlen=100)
 
-        # PASIVNÍ MONITORING: Flexibilní kritéria
-        self._min_delta_soc = 40.0  # % - minimum swing (40% stačí!)
-        self._min_end_soc = 95.0  # % - konec cyklu MUSÍ být nahoře
-        self._min_purity = 0.90  # 90% - min % čisté energie dovnitř
-        self._max_discharge_interrupt_w = (
-            300.0  # W - max vybíjecí výkon (přes = přerušení)
-        )
-
-        # Quality scoring
-        self._min_quality_score = 60.0  # Minimum pro zařazení do průměru
-
-        # Validace
-        self._max_discrepancy_percent = (
-            5.0  # Max rozdíl mezi power integration a coulomb counting
-        )
+        # RETROSPEKTIVNÍ KRITÉRIA
+        self._min_delta_soc = 40.0  # % - minimum swing
+        self._min_end_soc = 95.0  # % - konec cyklu musí být ≥95%
+        self._min_purity = 0.90  # 90% - min % čisté nabíjecí energie
+        self._max_discharge_interrupt_w = 300.0  # W - max vybíjecí výkon
+        self._min_quality_score = 60.0  # Minimum pro zařazení
 
         _LOGGER.info(
-            f"BatteryCapacityTracker initialized for box {box_id}, "
+            f"BatteryCapacityTracker initialized (RETROSPECTIVE mode), "
             f"nominal capacity: {nominal_capacity_kwh:.2f} kWh"
         )
-
-    def process_power_update(
-        self,
-        charge_power_w: float,
-        discharge_power_w: float,
-        current_soc: float,
-        timestamp: Optional[datetime] = None,
-    ) -> Optional[BatteryMeasurement]:
-        """
-        Zpracovat update power sensorů (30s interval).
-
-        Args:
-            charge_power_w: Nabíjecí výkon (W) z sensor.oig_{box_id}_batt_batt_comp_p_charge
-            discharge_power_w: Vybíjecí výkon (W) z sensor.oig_{box_id}_batt_batt_comp_p_discharge
-            current_soc: Aktuální SoC (%) z sensor.oig_{box_id}_batt_bat_c
-            timestamp: Timestamp update (nebo None = now)
-
-        Returns:
-            BatteryMeasurement pokud byl dokončen cycle, jinak None
-        """
-        if timestamp is None:
-            timestamp = dt_util.now()
-
-        # Detekce startu cyklu
-        if not self._cycle.in_progress:
-            # PASIVNÍ: Start kdykoli začne nabíjení s SoC < 90%
-            if charge_power_w > 100 and current_soc < 90:
-                self._start_cycle(current_soc, timestamp)
-                _LOGGER.info(
-                    f"🔋 Battery cycle started: SoC={current_soc:.1f}% at {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-
-        # Pokud máme probíhající cycle
-        if self._cycle.in_progress:
-            # Update energy integration (30s interval)
-            # E = P * t / 3600 (W * s / 3600 = Wh)
-            delta_seconds = 30  # Předpokládáme 30s interval
-            charge_wh = (charge_power_w * delta_seconds) / 3600
-            discharge_wh = (discharge_power_w * delta_seconds) / 3600
-
-            self._cycle.total_charge_wh += charge_wh
-            self._cycle.total_discharge_wh += discharge_wh
-            self._cycle.sample_count += 1
-            self._cycle.current_soc = current_soc
-
-            # PURITY TRACKING: Detekce přerušení vybíjením
-            if discharge_power_w > self._max_discharge_interrupt_w:
-                if not self._cycle.interrupted:
-                    self._cycle.interrupted = True
-                    _LOGGER.warning(
-                        f"⚠️ Cycle interrupted by discharge: {discharge_power_w:.0f}W at {timestamp.strftime('%H:%M:%S')}"
-                    )
-                self._cycle.interruption_count += 1
-
-            # Track max discharge power
-            if discharge_power_w > self._cycle.max_discharge_power_w:
-                self._cycle.max_discharge_power_w = discharge_power_w
-
-            # Detekce konce cyklu
-            if current_soc >= self._min_end_soc:
-                return self._end_cycle(current_soc, timestamp)
-
-        return None
-
-    def process_coulomb_update(
-        self,
-        current_a: float,
-        voltage_v: float,
-        timestamp: Optional[datetime] = None,
-    ) -> None:
-        """
-        Zpracovat update coulomb counting sensorů (5min interval).
-
-        Args:
-            current_a: Proud (A) z sensor.oig_{box_id}_extended_battery_current
-            voltage_v: Napětí (V) z sensor.oig_{box_id}_extended_battery_voltage
-            timestamp: Timestamp update (nebo None = now)
-        """
-        if not self._cycle.in_progress:
-            return
-
-        # Coulomb counting: Q = I * t (Ah)
-        # 5min interval = 5/60 h
-        delta_hours = 5.0 / 60.0
-        ah_delta = current_a * delta_hours
-
-        self._cycle.total_ah += ah_delta
-        self._cycle.voltage_samples.append(voltage_v)
-        self._cycle.coulomb_sample_count += 1
-
-    def _start_cycle(self, soc: float, timestamp: datetime) -> None:
-        """Začít sledování nového cyklu."""
-        self._cycle.reset()
-        self._cycle.in_progress = True
-        self._cycle.start_time = timestamp
-        self._cycle.start_soc = soc
-        self._cycle.current_soc = soc
-
-    def _end_cycle(
-        self, end_soc: float, timestamp: datetime
-    ) -> Optional[BatteryMeasurement]:
-        """
-        Ukončit cycle a vypočítat kapacitu s purity a quality scoring.
-
-        Args:
-            end_soc: Koncový SoC (%)
-            timestamp: Čas ukončení
-
-        Returns:
-            BatteryMeasurement nebo None pokud cyklus není validní
-        """
-        if not self._cycle.start_time or self._cycle.start_soc is None:
-            _LOGGER.warning("Cannot end cycle - missing start data")
-            self._cycle.reset()
-            return None
-
-        # Výpočet základních metrik
-        delta_soc = end_soc - self._cycle.start_soc
-        duration = timestamp - self._cycle.start_time
-        duration_hours = duration.total_seconds() / 3600
-
-        # === PURITY VÝPOČET ===
-        total_energy = self._cycle.total_charge_wh + self._cycle.total_discharge_wh
-        purity = self._cycle.total_charge_wh / total_energy if total_energy > 0 else 0.0
-
-        # Validace: dostatečný rozsah?
-        if delta_soc < self._min_delta_soc:
-            _LOGGER.debug(
-                f"Cycle rejected: delta_soc={delta_soc:.1f}% < {self._min_delta_soc}%"
-            )
-            self._cycle.reset()
-            return None
-
-        # Validace: dostatečná purity?
-        if purity < self._min_purity:
-            _LOGGER.debug(
-                f"Cycle rejected: purity={purity:.1%} < {self._min_purity:.0%} "
-                f"(interrupted {self._cycle.interruption_count} times)"
-            )
-            self._cycle.reset()
-            return None
-
-        # === POWER INTEGRATION ===
-        net_energy_wh = self._cycle.total_charge_wh - self._cycle.total_discharge_wh
-        net_energy_kwh = net_energy_wh / 1000.0
-
-        # Measured capacity = net_energy / (delta_soc / 100)
-        measured_capacity_kwh = net_energy_kwh / (delta_soc / 100.0)
-
-        # State of Health
-        soh_percent = (measured_capacity_kwh / self._nominal_capacity) * 100.0
-
-        # === COULOMB COUNTING VALIDATION ===
-        coulomb_capacity_kwh: Optional[float] = None
-        coulomb_discrepancy_percent: Optional[float] = None
-        validated = False
-
-        if (
-            self._cycle.coulomb_sample_count > 0
-            and len(self._cycle.voltage_samples) > 0
-        ):
-            # Energy = Q * V_avg (Ah * V = Wh)
-            avg_voltage = float(np.mean(self._cycle.voltage_samples))
-            coulomb_energy_wh = abs(self._cycle.total_ah) * avg_voltage
-            coulomb_energy_kwh = coulomb_energy_wh / 1000.0
-
-            coulomb_capacity_kwh = float(coulomb_energy_kwh / (delta_soc / 100.0))
-
-            # Discrepancy
-            discrepancy_kwh = abs(measured_capacity_kwh - coulomb_capacity_kwh)
-            coulomb_discrepancy_percent = float(
-                (discrepancy_kwh / measured_capacity_kwh) * 100.0
-            )
-
-            # Validace: rozdíl < 5%?
-            if coulomb_discrepancy_percent <= self._max_discrepancy_percent:
-                validated = True
-
-        # === QUALITY SCORING ===
-        quality_score = self._calculate_quality_score(
-            delta_soc=delta_soc,
-            purity=purity,
-            end_soc=end_soc,
-            duration_hours=duration_hours,
-            validated=validated,
-        )
-
-        # Validace: dostatečný quality score?
-        if quality_score < self._min_quality_score:
-            _LOGGER.debug(
-                f"Cycle rejected: quality_score={quality_score:.0f} < {self._min_quality_score:.0f}"
-            )
-            self._cycle.reset()
-            return None
-
-        # Confidence score (0.0 - 1.0) - původní metrika
-        confidence = quality_score / 100.0
-
-        # Create measurement
-        measurement = BatteryMeasurement(
-            timestamp=timestamp,
-            capacity_kwh=measured_capacity_kwh,
-            soh_percent=soh_percent,
-            start_soc=self._cycle.start_soc,
-            end_soc=end_soc,
-            delta_soc=delta_soc,
-            method="power_integration",
-            validated=validated,
-            confidence=confidence,
-            total_charge_wh=self._cycle.total_charge_wh,
-            total_discharge_wh=self._cycle.total_discharge_wh,
-            duration_hours=duration_hours,
-            # NOVĚ: Purity metrics
-            purity=purity,
-            interruption_count=self._cycle.interruption_count,
-            quality_score=quality_score,
-            # Coulomb
-            coulomb_capacity_kwh=coulomb_capacity_kwh,
-            coulomb_discrepancy_percent=coulomb_discrepancy_percent,
-        )
-
-        # Store measurement
-        self._measurements.append(measurement)
-
-        _LOGGER.info(
-            f"🔋 Battery cycle completed: "
-            f"SoC {self._cycle.start_soc:.1f}% → {end_soc:.1f}% ({delta_soc:.1f}%), "
-            f"capacity={measured_capacity_kwh:.2f} kWh, "
-            f"SoH={soh_percent:.1f}%, "
-            f"purity={purity:.1%}, "
-            f"quality={quality_score:.0f}, "
-            f"samples={self._cycle.sample_count}, "
-            f"duration={duration_hours:.1f}h, "
-            f"validated={'✅' if validated else '❌'}"
-        )
-
-        # Fire HA event
-        self._fire_measurement_event(measurement)
-
-        # Reset cycle
-        self._cycle.reset()
-
-        return measurement
 
     def _calculate_quality_score(
         self,
@@ -442,6 +148,406 @@ class BatteryCapacityTracker:
             score += 15  # Cross-validated
 
         return max(0, min(100, score))
+
+    async def analyze_history_for_cycles(
+        self,
+        lookback_days: Optional[int] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> List[BatteryMeasurement]:
+        """
+        RETROSPEKTIVNÍ ANALÝZA: Najít nabíjecí cykly v historických datech.
+
+        Args:
+            lookback_days: Kolik dní zpět analyzovat (nebo None pokud používáme start/end_time)
+            start_time: Custom start time (priorita před lookback_days)
+            end_time: Custom end time (default = now)
+
+        Returns:
+            Seznam nově nalezených měření
+        """
+        from homeassistant.helpers import recorder
+        from homeassistant.components.recorder.history import (
+            state_changes_during_period,
+        )
+
+        # Určit časový rozsah
+        if start_time is None:
+            if lookback_days:
+                start_time = dt_util.now() - timedelta(days=lookback_days)
+            else:
+                _LOGGER.error("Must provide either lookback_days or start_time")
+                return []
+
+        if end_time is None:
+            end_time = dt_util.now()
+
+        _LOGGER.info(
+            f"🔍 Starting retrospective cycle analysis: {start_time} to {end_time} "
+            f"({(end_time - start_time).days} days)"
+        )
+
+        # Načíst historii SoC sensoru a energy sensorů
+        soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
+        charge_energy_sensor = (
+            f"sensor.oig_{self._box_id}_computed_batt_charge_energy_today"
+        )
+        discharge_energy_sensor = (
+            f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_today"
+        )
+
+        try:
+            # Get history from recorder
+            history = await recorder.get_instance(self._hass).async_add_executor_job(
+                state_changes_during_period,
+                self._hass,
+                start_time,
+                end_time,
+                soc_sensor,
+            )
+
+            if not history or soc_sensor not in history:
+                _LOGGER.warning(f"No history found for {soc_sensor}")
+                return []
+
+            soc_states = history[soc_sensor]
+            _LOGGER.info(f"Found {len(soc_states)} SoC data points")
+
+            # Najít nabíjecí cykly: low → high
+            cycles = self._detect_charging_cycles_in_history(soc_states)
+            _LOGGER.info(f"Detected {len(cycles)} potential charging cycles")
+
+            # Pro každý cyklus spočítat kapacitu
+            new_measurements = []
+            for cycle_start, cycle_end, start_soc, end_soc in cycles:
+                # Načíst energy data pro tento interval
+                measurement = await self._calculate_capacity_from_energy(
+                    cycle_start,
+                    cycle_end,
+                    start_soc,
+                    end_soc,
+                    charge_energy_sensor,
+                    discharge_energy_sensor,
+                )
+
+                if measurement:
+                    self._measurements.append(measurement)
+                    new_measurements.append(measurement)
+                    self._fire_measurement_event(measurement)
+
+            _LOGGER.info(
+                f"✅ Retrospective analysis complete: {len(new_measurements)} valid measurements found"
+            )
+            return new_measurements
+
+        except Exception as e:
+            _LOGGER.error(f"Error during retrospective analysis: {e}", exc_info=True)
+            return []
+
+    def _detect_charging_cycles_in_history(
+        self, soc_states: List
+    ) -> List[Tuple[datetime, datetime, float, float]]:
+        """
+        Detekovat nabíjecí cykly v historii SoC.
+
+        Returns:
+            List of (start_time, end_time, start_soc, end_soc)
+        """
+        cycles = []
+        in_cycle = False
+        cycle_start_time: Optional[datetime] = None
+        cycle_start_soc: Optional[float] = None
+        last_soc: Optional[float] = None
+
+        for state in soc_states:
+            if state.state in ["unknown", "unavailable"]:
+                continue
+
+            try:
+                soc = float(state.state)
+                timestamp = state.last_changed
+
+                # Start cycle: SoC < 90% a rostoucí
+                if not in_cycle and soc < 90 and (last_soc is None or soc > last_soc):
+                    in_cycle = True
+                    cycle_start_time = timestamp
+                    cycle_start_soc = soc
+                    _LOGGER.debug("Cycle started: %.1f%% at %s", soc, timestamp)
+
+                # End cycle: SoC >= 95%
+                elif (
+                    in_cycle
+                    and soc >= self._min_end_soc
+                    and cycle_start_soc is not None
+                ):
+                    delta_soc = soc - cycle_start_soc
+                    if (
+                        delta_soc >= self._min_delta_soc
+                        and cycle_start_time is not None
+                    ):
+                        cycles.append(
+                            (cycle_start_time, timestamp, cycle_start_soc, soc)
+                        )
+                        _LOGGER.debug(
+                            f"Cycle completed: {cycle_start_soc:.1f}% → {soc:.1f}% ({delta_soc:.1f}%)"
+                        )
+                    in_cycle = False
+
+                last_soc = soc
+
+            except (ValueError, TypeError):
+                continue
+
+        return cycles
+
+    async def _calculate_capacity_from_energy(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        start_soc: float,
+        end_soc: float,
+        charge_energy_sensor: str,
+        discharge_energy_sensor: str,
+    ) -> Optional[BatteryMeasurement]:
+        """
+        Spočítat kapacitu z energy sensorů (podporuje midnight crossing).
+
+        Args:
+            start_time: Začátek cyklu
+            end_time: Konec cyklu
+            start_soc: Počáteční SoC
+            end_soc: Koncový SoC
+            charge_energy_sensor: ID nabíjecího energy sensoru (_today)
+            discharge_energy_sensor: ID vybíjecího energy sensoru (_today)
+
+        Returns:
+            BatteryMeasurement nebo None pokud není validní
+        """
+        from homeassistant.helpers import recorder
+        from homeassistant.components.recorder.history import (
+            state_changes_during_period,
+        )
+
+        try:
+            # Zjistit zda cyklus přechází přes půlnoc (UTC 00:00)
+            start_date = start_time.date()
+            end_date = end_time.date()
+            spans_midnight = start_date != end_date
+
+            _LOGGER.debug(
+                f"Analyzing cycle {start_time} → {end_time}, spans_midnight={spans_midnight}"
+            )
+
+            # Načíst energy history
+            history = await recorder.get_instance(self._hass).async_add_executor_job(
+                state_changes_during_period,
+                self._hass,
+                start_time,
+                end_time,
+                charge_energy_sensor,
+                discharge_energy_sensor,
+            )
+
+            if not history:
+                return None
+
+            charge_states = history.get(charge_energy_sensor, [])
+            discharge_states = history.get(discharge_energy_sensor, [])
+
+            if not charge_states or not discharge_states:
+                _LOGGER.debug("No energy data found for cycle")
+                return None
+
+            # IMPLEMENTACE MIDNIGHT CROSSING
+            if spans_midnight:
+                # Najít hodnoty před půlnocí (konec prvního dne)
+                midnight = datetime.combine(end_date, datetime.min.time()).replace(
+                    tzinfo=start_time.tzinfo
+                )
+
+                # Hodnoty před půlnocí (poslední stav před 00:00)
+                charge_before = self._get_closest_state_before(charge_states, midnight)
+                discharge_before = self._get_closest_state_before(
+                    discharge_states, midnight
+                )
+
+                # Hodnoty po půlnoci (první stav po 00:00, po resetu na 0)
+                charge_after = self._get_state_at_time(charge_states, end_time)
+                discharge_after = self._get_state_at_time(discharge_states, end_time)
+
+                if (
+                    charge_before is None
+                    or discharge_before is None
+                    or charge_after is None
+                    or discharge_after is None
+                ):
+                    _LOGGER.debug("Missing energy values for midnight crossing cycle")
+                    return None
+
+                # Sečíst energie z obou dní
+                total_charge_wh = charge_before + charge_after
+                total_discharge_wh = discharge_before + discharge_after
+
+                _LOGGER.debug(
+                    f"Midnight crossing: charge={charge_before:.1f}+{charge_after:.1f}={total_charge_wh:.1f} Wh, "
+                    f"discharge={discharge_before:.1f}+{discharge_after:.1f}={total_discharge_wh:.1f} Wh"
+                )
+
+            else:
+                # Cyklus v rámci jednoho dne - prostý delta
+                charge_start = self._get_state_at_time(charge_states, start_time)
+                charge_end = self._get_state_at_time(charge_states, end_time)
+                discharge_start = self._get_state_at_time(discharge_states, start_time)
+                discharge_end = self._get_state_at_time(discharge_states, end_time)
+
+                if (
+                    charge_start is None
+                    or charge_end is None
+                    or discharge_start is None
+                    or discharge_end is None
+                ):
+                    _LOGGER.debug("Missing energy values for same-day cycle")
+                    return None
+
+                total_charge_wh = charge_end - charge_start
+                total_discharge_wh = discharge_end - discharge_start
+
+                _LOGGER.debug(
+                    f"Same-day cycle: charge={total_charge_wh:.1f} Wh, discharge={total_discharge_wh:.1f} Wh"
+                )
+
+            # Výpočet purity
+            total_energy = total_charge_wh + total_discharge_wh
+            if total_energy == 0:
+                _LOGGER.debug("Zero total energy")
+                return None
+
+            purity = total_charge_wh / total_energy
+
+            # Validace purity
+            if purity < self._min_purity:
+                _LOGGER.debug(
+                    f"Cycle rejected: purity={purity:.1%} < {self._min_purity:.0%}"
+                )
+                return None
+
+            # Kapacita
+            delta_soc = end_soc - start_soc
+            net_energy_wh = total_charge_wh - total_discharge_wh
+            net_energy_kwh = net_energy_wh / 1000.0
+            measured_capacity_kwh = net_energy_kwh / (delta_soc / 100.0)
+            soh_percent = (measured_capacity_kwh / self._nominal_capacity) * 100.0
+
+            # Duration
+            duration = end_time - start_time
+            duration_hours = duration.total_seconds() / 3600
+
+            # Počet interrupcí - aproximace: (1 - purity) * 100
+            # Pokud purity = 0.95, pak bylo ~5% vybíjení = ~5 interrupcí
+            interruption_count = int((1.0 - purity) * 100)
+
+            # Quality score
+            quality_score = self._calculate_quality_score(
+                delta_soc=delta_soc,
+                purity=purity,
+                end_soc=end_soc,
+                duration_hours=duration_hours,
+                validated=False,  # Retrospective nemá coulomb validation
+            )
+
+            if quality_score < self._min_quality_score:
+                _LOGGER.debug(
+                    f"Cycle rejected: quality={quality_score:.0f} < {self._min_quality_score:.0f}"
+                )
+                return None
+
+            # Confidence
+            confidence = quality_score / 100.0
+
+            measurement = BatteryMeasurement(
+                timestamp=end_time,
+                capacity_kwh=measured_capacity_kwh,
+                soh_percent=soh_percent,
+                start_soc=start_soc,
+                end_soc=end_soc,
+                delta_soc=delta_soc,
+                method="energy_sensor_retrospective",
+                validated=False,
+                confidence=confidence,
+                total_charge_wh=total_charge_wh,
+                total_discharge_wh=total_discharge_wh,
+                duration_hours=duration_hours,
+                purity=purity,
+                interruption_count=interruption_count,
+                quality_score=quality_score,
+            )
+
+            _LOGGER.info(
+                f"✅ Valid cycle: {start_soc:.1f}%→{end_soc:.1f}% ({delta_soc:.1f}%), "
+                f"capacity={measured_capacity_kwh:.2f} kWh, SoH={soh_percent:.1f}%, quality={quality_score:.0f}"
+            )
+
+            return measurement
+
+        except Exception as e:
+            _LOGGER.error(f"Error calculating capacity from energy: {e}", exc_info=True)
+            return None
+
+    def _get_state_at_time(
+        self, states: List, target_time: datetime
+    ) -> Optional[float]:
+        """
+        Získat hodnotu sensoru nejblíže k target_time.
+
+        Args:
+            states: Seznam states
+            target_time: Cílový čas
+
+        Returns:
+            Float hodnota nebo None
+        """
+        if not states:
+            return None
+
+        # Najít stav nejblíže k target_time
+        closest_state = min(
+            states,
+            key=lambda s: abs((s.last_changed - target_time).total_seconds()),
+        )
+
+        try:
+            return float(closest_state.state)
+        except (ValueError, TypeError):
+            return None
+
+    def _get_closest_state_before(
+        self, states: List, target_time: datetime
+    ) -> Optional[float]:
+        """
+        Získat hodnotu sensoru těsně před target_time.
+
+        Args:
+            states: Seznam states
+            target_time: Cílový čas
+
+        Returns:
+            Float hodnota nebo None
+        """
+        if not states:
+            return None
+
+        # Filtrovat states před target_time
+        before_states = [s for s in states if s.last_changed < target_time]
+        if not before_states:
+            return None
+
+        # Vzít poslední před půlnocí
+        last_before = max(before_states, key=lambda s: s.last_changed)
+
+        try:
+            return float(last_before.state)
+        except (ValueError, TypeError):
+            return None
 
     def _fire_measurement_event(self, measurement: BatteryMeasurement) -> None:
         """Fire HA event pro nové měření (pro persistence)."""
@@ -570,7 +676,6 @@ class BatteryCapacityTracker:
         # Numpy polyfit
         coeffs = np.polyfit(days, capacities, 1)
         slope = coeffs[0]  # kWh/day
-        intercept = coeffs[1]  # kWh
 
         # R-squared (correlation coefficient)
         predicted = np.polyval(coeffs, days)
@@ -615,6 +720,351 @@ class BatteryCapacityTracker:
             "r_squared": round(r_squared, 3),
             "slope_kwh_per_day": round(slope, 6),
         }
+
+    def get_statistics_30d(self) -> Optional[Dict[str, Any]]:
+        """
+        Vypočítat statistiky za posledních 30 dní.
+
+        Returns:
+            Dict se statistikami nebo None
+        """
+        cutoff_date = dt_util.now() - timedelta(days=30)
+        measurements = [
+            m
+            for m in self._measurements
+            if m.timestamp >= cutoff_date and m.quality_score >= 60
+        ]
+
+        if not measurements:
+            return None
+
+        capacities = [m.capacity_kwh for m in measurements]
+        soh_values = [m.soh_percent for m in measurements]
+        quality_scores = [m.quality_score for m in measurements]
+
+        return {
+            "measurement_count": len(measurements),
+            "last_measured": measurements[0].timestamp.isoformat(),
+            "avg_capacity_kwh": round(np.mean(capacities), 2),
+            "avg_soh_percent": round(np.mean(soh_values), 1),
+            "avg_quality_score": round(np.mean(quality_scores), 0),
+            "min_capacity_kwh": round(min(capacities), 2),
+            "max_capacity_kwh": round(max(capacities), 2),
+            "capacity_std_dev": round(np.std(capacities), 2),
+        }
+
+    def calculate_degradation_trends(
+        self,
+    ) -> Dict[str, Optional[Dict[str, Any]]]:
+        """
+        Vypočítat degradační trendy pro 3, 6 a 12 měsíců.
+
+        Returns:
+            Dict s trendy pro každé období
+        """
+        trends = {}
+
+        for months, label in [(3, "3_months"), (6, "6_months"), (12, "12_months")]:
+            cutoff_date = dt_util.now() - timedelta(days=months * 30)
+            measurements = [
+                m
+                for m in self._measurements
+                if m.timestamp >= cutoff_date and m.quality_score >= 60
+            ]
+
+            if len(measurements) < 2:
+                trends[label] = None
+                continue
+
+            # Seřadit podle času
+            measurements_sorted = sorted(measurements, key=lambda x: x.timestamp)
+
+            # První a poslední měření
+            first = measurements_sorted[0]
+            last = measurements_sorted[-1]
+
+            capacity_change = last.capacity_kwh - first.capacity_kwh
+            capacity_change_percent = (capacity_change / self._nominal_capacity) * 100
+
+            trends[label] = {
+                "capacity_change_kwh": round(capacity_change, 2),
+                "capacity_change_percent": round(capacity_change_percent, 2),
+                "measurement_count": len(measurements),
+                "period_start": first.timestamp.isoformat(),
+                "period_end": last.timestamp.isoformat(),
+            }
+
+        return trends
+
+    def _get_storage_path(self) -> str:
+        """Získat cestu k storage souboru."""
+        storage_dir = self._hass.config.path(".storage")
+        return os.path.join(
+            storage_dir, f"oig_cloud_battery_cycles_{self._box_id}.json"
+        )
+
+    async def _load_cycles_from_storage(self) -> Optional[datetime]:
+        """
+        Načíst uložené cykly ze storage.
+
+        Returns:
+            Timestamp poslední analýzy nebo None pokud storage neexistuje
+        """
+        storage_path = self._get_storage_path()
+
+        if not os.path.exists(storage_path):
+            _LOGGER.info(f"No existing storage found at {storage_path}")
+            return None
+
+        try:
+
+            def _load():
+                with open(storage_path, "r") as f:
+                    return json.load(f)
+
+            data = await self._hass.async_add_executor_job(_load)
+
+            # Načíst cycles
+            cycles = data.get("cycles", [])
+            _LOGGER.info(f"Loading {len(cycles)} cycles from storage")
+
+            for cycle_data in cycles:
+                # Rekonstruovat BatteryMeasurement z JSON
+                measurement = BatteryMeasurement(
+                    timestamp=datetime.fromisoformat(cycle_data["timestamp_end"]),
+                    capacity_kwh=cycle_data["output_data"]["measured_capacity_kwh"],
+                    soh_percent=cycle_data["output_data"]["soh_percent"],
+                    start_soc=cycle_data["input_params"]["soc_start"],
+                    end_soc=cycle_data["input_params"]["soc_end"],
+                    delta_soc=cycle_data["input_params"]["delta_soc"],
+                    method=cycle_data["output_data"]["method"],
+                    validated=cycle_data["output_data"]["validated"],
+                    confidence=cycle_data["output_data"]["quality_score"] / 100.0,
+                    total_charge_wh=cycle_data["input_params"]["charge_energy_wh"],
+                    total_discharge_wh=cycle_data["input_params"][
+                        "discharge_energy_wh"
+                    ],
+                    duration_hours=cycle_data["input_params"]["duration_hours"],
+                    purity=cycle_data["input_params"]["purity_percent"] / 100.0,
+                    interruption_count=cycle_data["input_params"]["interruption_count"],
+                    quality_score=cycle_data["output_data"]["quality_score"],
+                )
+                self._measurements.append(measurement)
+
+            # Vrátit timestamp poslední analýzy
+            last_analysis_str = data.get("last_analysis")
+            if last_analysis_str:
+                last_analysis = datetime.fromisoformat(last_analysis_str)
+                _LOGGER.info(f"Last analysis was at {last_analysis}")
+                return last_analysis
+
+            return None
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to load storage: {e}", exc_info=True)
+            return None
+
+    async def _save_cycle_to_storage(self, measurement: BatteryMeasurement) -> None:
+        """
+        Uložit nový cyklus do storage (inkrementálně).
+
+        Args:
+            measurement: Nové měření k uložení
+        """
+        storage_path = self._get_storage_path()
+
+        try:
+            # Načíst existující data
+            if os.path.exists(storage_path):
+
+                def _load():
+                    with open(storage_path, "r") as f:
+                        return json.load(f)
+
+                data = await self._hass.async_add_executor_job(_load)
+            else:
+                # Vytvořit nový storage
+                data = {
+                    "version": 1,
+                    "box_id": self._box_id,
+                    "nominal_capacity_kwh": self._nominal_capacity,
+                    "cycles": [],
+                }
+
+            # Přidat nový cyklus
+            cycle_id = f"cycle_{measurement.timestamp.strftime('%Y-%m-%d_%H%M%S')}"
+
+            # Zkontrolovat duplikáty (stejný timestamp)
+            existing_ids = {c.get("id") for c in data["cycles"]}
+            if cycle_id in existing_ids:
+                _LOGGER.debug(f"Cycle {cycle_id} already exists, skipping")
+                return
+
+            cycle_data = {
+                "id": cycle_id,
+                "timestamp_start": (
+                    measurement.timestamp - timedelta(hours=measurement.duration_hours)
+                ).isoformat(),
+                "timestamp_end": measurement.timestamp.isoformat(),
+                "input_params": {
+                    "soc_start": round(measurement.start_soc, 1),
+                    "soc_end": round(measurement.end_soc, 1),
+                    "delta_soc": round(measurement.delta_soc, 1),
+                    "charge_energy_wh": round(measurement.total_charge_wh, 1),
+                    "discharge_energy_wh": round(measurement.total_discharge_wh, 1),
+                    "net_energy_wh": round(
+                        measurement.total_charge_wh - measurement.total_discharge_wh, 1
+                    ),
+                    "duration_hours": round(measurement.duration_hours, 2),
+                    "purity_percent": round(measurement.purity * 100, 1),
+                    "interruption_count": measurement.interruption_count,
+                    "spans_midnight": False,  # TODO: Track this in measurement
+                },
+                "output_data": {
+                    "measured_capacity_kwh": round(measurement.capacity_kwh, 2),
+                    "soh_percent": round(measurement.soh_percent, 1),
+                    "quality_score": round(measurement.quality_score, 0),
+                    "method": measurement.method,
+                    "validated": measurement.validated,
+                },
+                "metadata": {
+                    "created_at": dt_util.now().isoformat(),
+                },
+            }
+
+            data["cycles"].append(cycle_data)
+            data["last_analysis"] = dt_util.now().isoformat()
+
+            # Automatické prořezávání starých záznamů
+            # Limit: 3000 kvalitních měření = ~30 let při realistickém scénáři (1x týdně)
+            # Poznámka: Toto NEJSOU nabíjecí cykly (těch je ~365/rok), ale kvalitní měření
+            # kapacity (start <90%, end >95%, purity >90%) - typicky ~50/rok
+            MAX_CYCLES = 3000  # Dostatečná rezerva pro celou životnost baterie
+            if len(data["cycles"]) > MAX_CYCLES:
+                # Seřadit podle timestamp_end (nejstarší první)
+                data["cycles"].sort(key=lambda c: c["timestamp_end"])
+                # Ponechat pouze nejnovější
+                removed_count = len(data["cycles"]) - MAX_CYCLES
+                data["cycles"] = data["cycles"][-MAX_CYCLES:]
+                _LOGGER.warning(
+                    f"Storage cleanup: removed {removed_count} oldest measurements, "
+                    f"kept {MAX_CYCLES} most recent (expect ~50-100 new measurements/year)"
+                )
+
+            # Varování když se blížíme limitu (90%)
+            if len(data["cycles"]) > MAX_CYCLES * 0.9:
+                _LOGGER.info(
+                    f"Storage usage: {len(data['cycles'])}/{MAX_CYCLES} measurements "
+                    f"({len(data['cycles'])*100/MAX_CYCLES:.0f}%) - "
+                    f"~{len(data['cycles']) / 50:.0f} years of data at typical rate"
+                )
+
+            # Uložit zpět
+            def _save():
+                os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+                with open(storage_path, "w") as f:
+                    json.dump(data, f, indent=2)
+
+            await self._hass.async_add_executor_job(_save)
+            _LOGGER.debug(
+                f"Saved cycle {cycle_id} to storage (total: {len(data['cycles'])} cycles)"
+            )
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to save cycle to storage: {e}", exc_info=True)
+
+    async def _find_data_availability_window(
+        self,
+    ) -> Optional[Tuple[datetime, datetime]]:
+        """
+        Najít časové okno kde máme konzistentní data ze všech sensorů.
+
+        Returns:
+            (start_time, end_time) nebo None pokud nejsou data
+        """
+        from homeassistant.helpers import recorder
+
+        # Senzory které potřebujeme
+        soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
+        charge_sensor = f"sensor.oig_{self._box_id}_computed_batt_charge_energy_today"
+        discharge_sensor = (
+            f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_today"
+        )
+
+        sensors = [soc_sensor, charge_sensor, discharge_sensor]
+
+        try:
+            # Direct DB query pro najití nejstaršího a nejnovějšího záznamu
+            instance = recorder.get_instance(self._hass)
+
+            def _query_availability():
+                """Query DB pro availability window."""
+                from sqlalchemy import select, func, and_
+                from homeassistant.components.recorder.db_schema import States
+
+                with instance.get_session() as session:
+                    # Pro každý sensor najít první a poslední platný záznam
+                    sensor_windows = {}
+
+                    for sensor_id in sensors:
+                        # Najít MIN a MAX last_changed pro daný sensor
+                        query = select(
+                            func.min(States.last_changed_ts).label("min_ts"),
+                            func.max(States.last_changed_ts).label("max_ts"),
+                        ).where(
+                            and_(
+                                States.entity_id == sensor_id,
+                                States.state.notin_(["unknown", "unavailable"]),
+                            )
+                        )
+
+                        result = session.execute(query).first()
+
+                        if result and result.min_ts and result.max_ts:
+                            sensor_windows[sensor_id] = {
+                                "min": datetime.fromtimestamp(
+                                    result.min_ts, tz=dt_util.UTC
+                                ),
+                                "max": datetime.fromtimestamp(
+                                    result.max_ts, tz=dt_util.UTC
+                                ),
+                            }
+                        else:
+                            _LOGGER.warning(f"No data found for sensor {sensor_id}")
+                            return None
+
+                    return sensor_windows
+
+            sensor_windows = await self._hass.async_add_executor_job(
+                _query_availability
+            )
+
+            if not sensor_windows or len(sensor_windows) != len(sensors):
+                _LOGGER.warning("Not all sensors have data available")
+                return None
+
+            # Najít průsečík - nejpozdější start, nejdřívější end
+            start_time = max(w["min"] for w in sensor_windows.values())
+            end_time = min(w["max"] for w in sensor_windows.values())
+
+            if start_time >= end_time:
+                _LOGGER.warning(
+                    f"No overlapping data window: start={start_time}, end={end_time}"
+                )
+                return None
+
+            _LOGGER.info(
+                f"Data availability window: {start_time} to {end_time} "
+                f"({(end_time - start_time).days} days)"
+            )
+
+            return (start_time, end_time)
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Failed to query data availability window: {e}", exc_info=True
+            )
+            return None
 
 
 class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
@@ -662,7 +1112,10 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         self._tracker: Optional[BatteryCapacityTracker] = None
 
         # Nominální kapacita (načteme ze sensoru)
-        self._nominal_capacity_kwh: float = 12.29  # Default
+        self._nominal_capacity_kwh: float = 15.36  # Default INSTALLED capacity
+
+        # Last analysis timestamp
+        self._last_analysis: Optional[datetime] = None
 
         _LOGGER.info(f"Battery Health sensor initialized for box {self._box_id}")
 
@@ -672,7 +1125,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         self._hass = self.hass
 
         # Načíst nominální kapacitu
-        await self._load_nominal_capacity()
+        self._load_nominal_capacity()
 
         # Inicializovat tracker
         self._tracker = BatteryCapacityTracker(
@@ -681,49 +1134,158 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             nominal_capacity_kwh=self._nominal_capacity_kwh,
         )
 
-        _LOGGER.info(f"Battery Health sensor added to HA, tracker initialized")
+        _LOGGER.info("Battery Health sensor added to HA, tracker initialized")
 
-    async def _load_nominal_capacity(self) -> None:
-        """Načíst nominální kapacitu baterie ze sensoru."""
+        # Naplánovat denní úlohu v 01:00
+        from homeassistant.helpers.event import async_track_time_change
+
+        async_track_time_change(
+            self.hass, self._daily_analysis_task, hour=1, minute=0, second=0
+        )
+        _LOGGER.info("Scheduled daily analysis task at 01:00")
+
+        # ASYNCHRONNÍ STARTUP - neblokuje HA startup
+        # Spustit analýzu na pozadí (non-blocking)
+        self.hass.async_create_task(self._async_startup_analysis())
+
+    async def _async_startup_analysis(self) -> None:
+        """
+        Asynchronní startup analýza - běží na pozadí, neblokuje HA.
+        
+        Strategie:
+        1. Pokud existuje storage → inkrementální analýza od last_analysis
+        2. Pokud neexistuje → full history analýza (může trvat déle)
+        """
+        _LOGGER.info("🔍 Starting background battery health analysis...")
+
+        try:
+            # 1. Zkusit načíst existující storage
+            last_analysis = await self._tracker._load_cycles_from_storage()
+
+            if last_analysis:
+                # Máme storage - inkrementální analýza od last_analysis do now
+                _LOGGER.info(
+                    f"Found existing storage, analyzing from {last_analysis} to now"
+                )
+                measurements = await self._tracker.analyze_history_for_cycles(
+                    start_time=last_analysis, end_time=dt_util.now()
+                )
+
+                # Uložit nové cykly
+                for m in measurements:
+                    await self._tracker._save_cycle_to_storage(m)
+
+                self._last_analysis = dt_util.now()
+                _LOGGER.info(
+                    f"✅ Incremental analysis complete: {len(measurements)} new cycles"
+                )
+            else:
+                # Žádná storage - najít data availability window a analyzovat celou historii
+                _LOGGER.info(
+                    "No existing storage found, performing full history analysis..."
+                )
+                _LOGGER.info(
+                    "⚠️ This may take a few seconds on first run, but won't block HA startup"
+                )
+                
+                window = await self._tracker._find_data_availability_window()
+
+                if window:
+                    start_time, end_time = window
+                    days_count = (end_time - start_time).days
+                    _LOGGER.info(
+                        f"Analyzing full history: {start_time.date()} to {end_time.date()} "
+                        f"({days_count} days)"
+                    )
+
+                    measurements = await self._tracker.analyze_history_for_cycles(
+                        start_time=start_time, end_time=end_time
+                    )
+
+                    # Uložit všechny cycles
+                    for m in measurements:
+                        await self._tracker._save_cycle_to_storage(m)
+
+                    self._last_analysis = dt_util.now()
+                    _LOGGER.info(
+                        f"✅ Full history analysis complete: {len(measurements)} cycles found "
+                        f"over {days_count} days"
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Could not determine data availability window, using 7-day fallback"
+                    )
+                    measurements = await self._tracker.analyze_history_for_cycles(
+                        lookback_days=7
+                    )
+                    self._last_analysis = dt_util.now()
+                    _LOGGER.info(
+                        f"✅ Fallback analysis complete: {len(measurements)} cycles"
+                    )
+
+            # Trigger update pro UI
+            self.async_write_ha_state()
+
+        except Exception as e:
+            _LOGGER.error(
+                f"Background battery health analysis failed: {e}", exc_info=True
+            )
+            _LOGGER.info("Battery Health sensor will retry analysis in daily task")
+
+    async def _daily_analysis_task(self, *args: Any) -> None:
+        """Denní úloha pro analýzu nových cyklů."""
+        if not self._tracker:
+            return
+
+        _LOGGER.info("🔄 Running daily battery health analysis...")
+
+        try:
+            # Najít poslední analýzu ze storage
+            last_analysis = await self._tracker._load_cycles_from_storage()
+
+            if not last_analysis:
+                # Fallback: použít self._last_analysis nebo analyzovat 24h
+                last_analysis = self._last_analysis or (
+                    dt_util.now() - timedelta(days=1)
+                )
+
+            # Inkrementální analýza od last_analysis do now
+            measurements = await self._tracker.analyze_history_for_cycles(
+                start_time=last_analysis, end_time=dt_util.now()
+            )
+
+            # Uložit nové cykly
+            for m in measurements:
+                await self._tracker._save_cycle_to_storage(m)
+
+            self._last_analysis = dt_util.now()
+            self.async_write_ha_state()  # Update sensor state
+
+            _LOGGER.info(f"✅ Daily analysis complete: {len(measurements)} new cycles")
+
+        except Exception as e:
+            _LOGGER.error(f"Daily analysis task failed: {e}", exc_info=True)
+
+    def _load_nominal_capacity(self) -> None:
+        """Načíst nominální kapacitu baterie ze sensoru (INSTALLED capacity 15.36 kWh)."""
         if not self._hass:
             return
 
-        sensor_id = f"sensor.oig_{self._box_id}_usable_battery_capacity"
+        sensor_id = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
         state = self._hass.states.get(sensor_id)
 
         if state and state.state not in ["unknown", "unavailable"]:
             try:
-                self._nominal_capacity_kwh = float(state.state)
+                # Sensor je v Wh, převést na kWh
+                capacity_wh = float(state.state)
+                self._nominal_capacity_kwh = capacity_wh / 1000.0
                 _LOGGER.info(
-                    f"Loaded nominal capacity: {self._nominal_capacity_kwh:.2f} kWh from {sensor_id}"
+                    f"Loaded installed capacity: {self._nominal_capacity_kwh:.2f} kWh from {sensor_id}"
                 )
             except (ValueError, TypeError):
                 _LOGGER.warning(
-                    f"Failed to parse nominal capacity from {sensor_id}, using default"
+                    f"Failed to parse installed capacity from {sensor_id}, using default 15.36 kWh"
                 )
-
-        # Schedule periodic updates (every 5 minutes)
-        from homeassistant.helpers.event import async_track_time_change
-
-        async def _health_update_job(now):
-            """Run health update every 5 minutes."""
-            _LOGGER.debug(
-                f"⏰ Battery health update triggered at {now.strftime('%H:%M')}"
-            )
-            try:
-                await self.async_update()
-            except Exception as e:
-                _LOGGER.error(f"Battery health update failed: {e}", exc_info=True)
-
-        # Schedule every 5 minutes (at :00, :05, :10, ...)
-        for minute in range(0, 60, 5):
-            async_track_time_change(
-                self.hass,
-                _health_update_job,
-                minute=minute,
-                second=0,
-            )
-        _LOGGER.info("✅ Scheduled battery health update every 5 minutes")
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update - NEDĚLÁ async tasky!
@@ -741,16 +1303,26 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     @property
     def native_value(self) -> Optional[float]:
         """
-        State = SoH v procentech.
+        State = průměrný SoH za 30 dní v procentech.
 
         Returns:
-            SoH% nebo None pokud nemáme měření
+            Průměrný SoH% za 30 dní nebo None pokud nemáme měření
+            (None se zobrazí jako "unknown" během background analýzy)
         """
         if not self._tracker:
             return None
 
-        _, soh = self._tracker.get_current_capacity()
-        return round(soh, 1) if soh is not None else None
+        try:
+            stats_30d = self._tracker.get_statistics_30d()
+            if stats_30d:
+                return round(stats_30d["avg_soh_percent"], 1)
+
+            # Fallback na current capacity pokud nemáme 30-day stats
+            _, soh = self._tracker.get_current_capacity()
+            return round(soh, 1) if soh is not None else None
+        except Exception as e:
+            _LOGGER.debug(f"Could not get SoH value (background analysis may still be running): {e}")
+            return None
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -762,31 +1334,55 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             "nominal_capacity_kwh": self._nominal_capacity_kwh,
         }
 
-        # Current capacity
-        capacity, soh = self._tracker.get_current_capacity()
+        # 30-DAY STATISTICS (hlavní zobrazení)
+        stats_30d = self._tracker.get_statistics_30d()
+        if stats_30d:
+            attrs["measurement_count"] = stats_30d["measurement_count"]
+            attrs["last_measured"] = stats_30d["last_measured"]
+            attrs["capacity_kwh"] = stats_30d["avg_capacity_kwh"]
+            attrs["soh_percent"] = stats_30d["avg_soh_percent"]
+            attrs["quality_score"] = stats_30d["avg_quality_score"]
+            attrs["min_capacity_kwh"] = stats_30d["min_capacity_kwh"]
+            attrs["max_capacity_kwh"] = stats_30d["max_capacity_kwh"]
+            attrs["capacity_std_dev"] = stats_30d["capacity_std_dev"]
+
+        # DEGRADATION TRENDS (3, 6, 12 měsíců)
+        trends = self._tracker.calculate_degradation_trends()
+        for period, trend_data in trends.items():
+            if trend_data:
+                attrs[f"degradation_{period}_kwh"] = trend_data["capacity_change_kwh"]
+                attrs[f"degradation_{period}_percent"] = trend_data[
+                    "capacity_change_percent"
+                ]
+
+        # Current capacity (pro kompatibilitu)
+        capacity, _ = self._tracker.get_current_capacity()
         if capacity is not None:
             attrs["current_capacity_kwh"] = round(capacity, 2)
             attrs["capacity_loss_kwh"] = round(self._nominal_capacity_kwh - capacity, 2)
 
-        # Degradation trend
+        # Long-term degradation trend (regression analysis)
         trend = self._tracker.analyze_degradation_trend(min_measurements=5)
         if trend:
-            attrs.update(trend)
+            attrs["degradation_per_year_kwh"] = trend["degradation_kwh_per_year"]
+            attrs["degradation_per_year_percent"] = trend[
+                "degradation_percent_per_year"
+            ]
+            attrs["estimated_eol_date"] = trend["estimated_eol_date"]
+            attrs["years_to_80pct"] = trend["years_to_80pct"]
+            attrs["trend_confidence"] = trend["trend_confidence"]
 
-        # Cycle status
-        if self._tracker._cycle.in_progress:
-            attrs["cycle_in_progress"] = True
-            if self._tracker._cycle.start_soc is not None:
-                attrs["cycle_start_soc"] = round(self._tracker._cycle.start_soc, 1)
-            if self._tracker._cycle.current_soc is not None:
-                attrs["cycle_current_soc"] = round(self._tracker._cycle.current_soc, 1)
-            attrs["cycle_duration_min"] = (
-                (dt_util.now() - self._tracker._cycle.start_time).total_seconds() / 60
-                if self._tracker._cycle.start_time
-                else 0
-            )
-        else:
-            attrs["cycle_in_progress"] = False
+        # Cycle status - RETROSPEKTIVNÍ MOD, žádný online tracking
+        attrs["cycle_in_progress"] = False
+        attrs["last_analysis"] = (
+            self._last_analysis.isoformat() if self._last_analysis else None
+        )
+
+        # Storage info (diagnostické)
+        total_measurements = len(self._tracker._measurements)
+        attrs["storage_cycles_count"] = total_measurements
+        attrs["storage_cycles_limit"] = 3000
+        attrs["storage_usage_percent"] = round((total_measurements / 3000) * 100, 1)
 
         # Recent measurements - zobrazit top 5 podle kvality
         recent = self._tracker.get_measurements(min_quality_score=60, limit=5)
@@ -824,70 +1420,3 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                 attrs["avg_purity_percent"] = round(avg_purity * 100, 1)
 
         return attrs
-
-    async def async_update(self) -> None:
-        """Update sensor data - zpracovat power a coulomb updates."""
-        if not self._hass or not self._tracker:
-            return
-
-        try:
-            # Načíst power sensory (30s updates)
-            charge_power = self._get_sensor_value(
-                f"sensor.oig_{self._box_id}_batt_batt_comp_p_charge", 0.0
-            )
-            discharge_power = self._get_sensor_value(
-                f"sensor.oig_{self._box_id}_batt_batt_comp_p_discharge", 0.0
-            )
-            current_soc = self._get_sensor_value(
-                f"sensor.oig_{self._box_id}_batt_bat_c", 0.0
-            )
-
-            # Process power update
-            if current_soc > 0:
-                measurement = self._tracker.process_power_update(
-                    charge_power_w=charge_power,
-                    discharge_power_w=discharge_power,
-                    current_soc=current_soc,
-                )
-
-                if measurement:
-                    _LOGGER.info(
-                        f"New battery measurement: {measurement.capacity_kwh:.2f} kWh"
-                    )
-
-            # Načíst coulomb sensory (5min updates)
-            battery_current = self._get_sensor_value(
-                f"sensor.oig_{self._box_id}_extended_battery_current", None
-            )
-            battery_voltage = self._get_sensor_value(
-                f"sensor.oig_{self._box_id}_extended_battery_voltage", None
-            )
-
-            # Process coulomb update (pokud jsou dostupné)
-            if battery_current is not None and battery_voltage is not None:
-                self._tracker.process_coulomb_update(
-                    current_a=battery_current,
-                    voltage_v=battery_voltage,
-                )
-
-        except Exception as e:
-            _LOGGER.error(f"Error updating battery health sensor: {e}", exc_info=True)
-
-        # Trigger update
-        self.async_write_ha_state()
-
-    def _get_sensor_value(
-        self, entity_id: str, default: Optional[float]
-    ) -> Optional[float]:
-        """Získat hodnotu ze sensoru."""
-        if not self._hass:
-            return default
-
-        state = self._hass.states.get(entity_id)
-        if not state or state.state in ["unknown", "unavailable"]:
-            return default
-
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            return default

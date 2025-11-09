@@ -10,10 +10,11 @@
 var batteryHealthCache = {
     soh: null,
     capacity: null,
-    cycleInProgress: null,
-    qualityScore: null,
     measurementCount: null,
-    avgPurity: null
+    lastMeasured: null,
+    degradation3m: null,
+    degradation6m: null,
+    degradation12m: null
 };
 
 /**
@@ -39,36 +40,41 @@ async function updateBatteryHealthStats() {
     }
 
     const attrs = sensor.attributes || {};
-    const state = sensor.state; // SoH% nebo "unknown"
+    const state = sensor.state; // Průměrný SoH% za 30 dní
 
     console.log('[Battery Health] Sensor state:', state, 'attributes:', attrs);
 
-    // Získat data ze senzoru
+    // Získat data ze senzoru (NOVÁ STRUKTURA PO REFACTORINGU)
     const soh = (state !== 'unknown' && state !== 'unavailable') ? parseFloat(state) : null;
-    const capacity = attrs.current_capacity_kwh || null;
-    const nominalCapacity = attrs.nominal_capacity_kwh || 12.29;
-    const cycleInProgress = attrs.cycle_in_progress || false;
-    const cycleStartSoc = attrs.cycle_start_soc || null;
-    const cycleCurrentSoc = attrs.cycle_current_soc || null;
-    const cycleDuration = attrs.cycle_duration_min || null;
-    const totalMeasurements = attrs.total_measurements || 0;
-    const qualityMeasurements = attrs.quality_measurements || 0;
-    const avgQualityScore = attrs.avg_quality_score || null;
-    const avgPurity = attrs.avg_purity_percent || null;
-    const capacityLoss = attrs.capacity_loss_kwh || null;
 
-    // Trend data (pokud jsou dostupná)
-    const trend30d = attrs.degradation_rate_30d_pct_per_year || null;
+    // 30-day průměry
+    const capacity = attrs.capacity_kwh || null; // Průměrná kapacita za 30 dní
+    const measurementCount = attrs.measurement_count || 0;
+    const lastMeasured = attrs.last_measured || null;
+    const minCapacity = attrs.min_capacity_kwh || null;
+    const maxCapacity = attrs.max_capacity_kwh || null;
+    const qualityScore = attrs.quality_score || null;
+
+    // Degradation trends (3, 6, 12 měsíců)
+    const degradation3mPercent = attrs.degradation_3_months_percent || null;
+    const degradation6mPercent = attrs.degradation_6_months_percent || null;
+    const degradation12mPercent = attrs.degradation_12_months_percent || null;
+
+    // Long-term trend (regression analysis)
+    const degradationPerYearPercent = attrs.degradation_per_year_percent || null;
+    const estimatedEolDate = attrs.estimated_eol_date || null;
+    const yearsTo80Pct = attrs.years_to_80pct || null;
     const trendConfidence = attrs.trend_confidence || null;
 
     // Change detection
     const hasChanged =
         batteryHealthCache.soh !== soh ||
         batteryHealthCache.capacity !== capacity ||
-        batteryHealthCache.cycleInProgress !== cycleInProgress ||
-        batteryHealthCache.qualityScore !== avgQualityScore ||
-        batteryHealthCache.measurementCount !== totalMeasurements ||
-        batteryHealthCache.avgPurity !== avgPurity;
+        batteryHealthCache.measurementCount !== measurementCount ||
+        batteryHealthCache.lastMeasured !== lastMeasured ||
+        batteryHealthCache.degradation3m !== degradation3mPercent ||
+        batteryHealthCache.degradation6m !== degradation6mPercent ||
+        batteryHealthCache.degradation12m !== degradation12mPercent;
 
     if (!hasChanged) {
         // Žádné změny, přeskočit update
@@ -78,18 +84,20 @@ async function updateBatteryHealthStats() {
     // Update cache
     batteryHealthCache.soh = soh;
     batteryHealthCache.capacity = capacity;
-    batteryHealthCache.cycleInProgress = cycleInProgress;
-    batteryHealthCache.qualityScore = avgQualityScore;
-    batteryHealthCache.measurementCount = totalMeasurements;
-    batteryHealthCache.avgPurity = avgPurity;
+    batteryHealthCache.measurementCount = measurementCount;
+    batteryHealthCache.lastMeasured = lastMeasured;
+    batteryHealthCache.degradation3m = degradation3mPercent;
+    batteryHealthCache.degradation6m = degradation6mPercent;
+    batteryHealthCache.degradation12m = degradation12mPercent;
 
     console.log('[Battery Health] Values changed, updating UI:', {
         soh,
         capacity,
-        cycleInProgress,
-        avgQualityScore,
-        totalMeasurements,
-        avgPurity
+        measurementCount,
+        lastMeasured,
+        degradation3mPercent,
+        degradation6mPercent,
+        degradation12mPercent
     });
 
     // Najít nebo vytvořit battery health tile
@@ -103,17 +111,17 @@ async function updateBatteryHealthStats() {
     updateBatteryHealthUI(container, {
         soh,
         capacity,
-        nominalCapacity,
-        capacityLoss,
-        cycleInProgress,
-        cycleStartSoc,
-        cycleCurrentSoc,
-        cycleDuration,
-        totalMeasurements,
-        qualityMeasurements,
-        avgQualityScore,
-        avgPurity,
-        trend30d,
+        measurementCount,
+        lastMeasured,
+        minCapacity,
+        maxCapacity,
+        qualityScore,
+        degradation3mPercent,
+        degradation6mPercent,
+        degradation12mPercent,
+        degradationPerYearPercent,
+        estimatedEolDate,
+        yearsTo80Pct,
         trendConfidence
     });
 }
@@ -180,17 +188,17 @@ function updateBatteryHealthUI(container, data) {
     const {
         soh,
         capacity,
-        nominalCapacity,
-        capacityLoss,
-        cycleInProgress,
-        cycleStartSoc,
-        cycleCurrentSoc,
-        cycleDuration,
-        totalMeasurements,
-        qualityMeasurements,
-        avgQualityScore,
-        avgPurity,
-        trend30d,
+        measurementCount,
+        lastMeasured,
+        minCapacity,
+        maxCapacity,
+        qualityScore,
+        degradation3mPercent,
+        degradation6mPercent,
+        degradation12mPercent,
+        degradationPerYearPercent,
+        estimatedEolDate,
+        yearsTo80Pct,
         trendConfidence
     } = data;
 
@@ -219,36 +227,70 @@ function updateBatteryHealthUI(container, data) {
         }
     }
 
-    // Cycle progress indicator (kompaktní pro stat-card)
-    let cycleHTML = '';
-    if (cycleInProgress && cycleStartSoc !== null && cycleCurrentSoc !== null) {
-        const deltaPercent = cycleCurrentSoc - cycleStartSoc;
-        const durationMin = cycleDuration || 0;
-        const durationHrs = (durationMin / 60).toFixed(1);
+    // Funkce pro barvu degradace
+    const getDegradationColor = (value) => {
+        if (value === null || value === undefined) return 'var(--text-secondary)';
+        if (value <= 2) return '#44ff44'; // zelená - výborné
+        if (value <= 5) return '#ffaa00'; // oranžová - střední
+        return '#ff4444'; // červená - vysoká
+    };
 
-        cycleHTML = `
-            <div style="font-size: 0.85em; color: #007aff; margin: 8px 0; padding: 8px; background: rgba(0, 122, 255, 0.1); border-radius: 4px; border-left: 3px solid #007aff;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: 600;">� Nabíjení probíhá</span>
-                    <span style="font-size: 0.9em; opacity: 0.8;">${durationHrs}h</span>
+    // Degradace trendy (3/6/12 měsíců)
+    let degradationHTML = '';
+    if (degradation3mPercent !== null || degradation6mPercent !== null || degradation12mPercent !== null) {
+        degradationHTML = `
+            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-weight: 600; margin-bottom: 4px;">📉 Degradace kapacity:</div>
+                ${degradation3mPercent !== null ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>3 měsíce:</span>
+                    <span style="color: ${getDegradationColor(degradation3mPercent)}; font-weight: 600;">${degradation3mPercent.toFixed(2)}%</span>
                 </div>
-                <div style="margin-top: 4px; font-size: 0.9em;">
-                    ${cycleStartSoc.toFixed(0)}% → ${cycleCurrentSoc.toFixed(0)}% (+${deltaPercent.toFixed(0)}%)
+                ` : ''}
+                ${degradation6mPercent !== null ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>6 měsíců:</span>
+                    <span style="color: ${getDegradationColor(degradation6mPercent)}; font-weight: 600;">${degradation6mPercent.toFixed(2)}%</span>
                 </div>
+                ` : ''}
+                ${degradation12mPercent !== null ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>12 měsíců:</span>
+                    <span style="color: ${getDegradationColor(degradation12mPercent)}; font-weight: 600;">${degradation12mPercent.toFixed(2)}%</span>
+                </div>
+                ` : ''}
             </div>
         `;
     }
 
-    // Trend (kompaktní, inline)
-    let trendHTML = '';
-    if (trend30d !== null && trendConfidence !== null && trendConfidence >= 70) {
-        const trendIcon = trend30d < -2 ? '📉' : trend30d < -0.5 ? '➡️' : '✅';
-        const trendColor = trend30d < -2 ? '#ff4444' : trend30d < -0.5 ? '#ffaa00' : '#44ff44';
+    // Dlouhodobá predikce (pokud je dostatečná spolehlivost)
+    let predictionHTML = '';
+    if (trendConfidence !== null && trendConfidence >= 70 && yearsTo80Pct !== null) {
+        const yearsText = yearsTo80Pct >= 10 ? '10+' : yearsTo80Pct.toFixed(1);
+        const eolText = estimatedEolDate || 'N/A';
 
-        trendHTML = `
-            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between;">
-                <span>${trendIcon} Degradace:</span>
-                <span style="color: ${trendColor}; font-weight: 600;">${Math.abs(trend30d).toFixed(2)}%/rok</span>
+        predictionHTML = `
+            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-weight: 600; margin-bottom: 4px;">🔮 Dlouhodobá predikce:</div>
+                ${degradationPerYearPercent !== null ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>Degradace/rok:</span>
+                    <span style="color: ${getDegradationColor(degradationPerYearPercent)}; font-weight: 600;">${degradationPerYearPercent.toFixed(2)}%</span>
+                </div>
+                ` : ''}
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>Do 80% SoH:</span>
+                    <span style="color: var(--text-primary); font-weight: 600;">${yearsText} let</span>
+                </div>
+                ${eolText !== 'N/A' ? `
+                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                    <span>Očekávaný konec:</span>
+                    <span style="color: var(--text-primary); font-weight: 600;">${eolText}</span>
+                </div>
+                ` : ''}
+                <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px; font-style: italic;">
+                    Spolehlivost: ${trendConfidence.toFixed(0)}%
+                </div>
             </div>
         `;
     }
@@ -266,51 +308,61 @@ function updateBatteryHealthUI(container, data) {
         <div class="stat-value" style="font-size: 1.8em; margin: 10px 0; color: #4cd964;">
             ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
         </div>
+        <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: -5px;">
+            (průměr 30 dní)
+        </div>
         ` : `
         <div style="text-align: center; padding: 20px 0; font-size: 0.9em; color: var(--text-secondary);">
             <div style="font-size: 2em; margin-bottom: 8px; opacity: 0.5;">⏳</div>
             <div>Čekám na první měření...</div>
-            <div style="font-size: 0.8em; margin-top: 4px; font-style: italic;">Nabít 40%+ → 95%+</div>
+            <div style="font-size: 0.8em; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <div style="font-weight: 600; margin-bottom: 4px;">Jak to funguje:</div>
+                <div style="text-align: left;">
+                    1. Baterii vybijte pod 90% SoC<br>
+                    2. Nabijte na 95%+ SoC<br>
+                    3. Snažte se nabíjet čistě ze slunce<br>
+                    4. Měření se uloží každý den v 01:00
+                </div>
+            </div>
         </div>
         `}
-
-        ${cycleHTML}
 
         <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px;">
             ${capacity !== null ? `
             <div style="display: flex; justify-content: space-between;">
-                <span>📊 Kapacita:</span>
+                <span>📊 Kapacita (30d):</span>
                 <span style="color: var(--text-primary); font-weight: 600;">${capacity.toFixed(2)} kWh</span>
             </div>
-            ${capacityLoss !== null && capacityLoss > 0 ? `
-            <div style="display: flex; justify-content: space-between;">
-                <span>📉 Ztráta:</span>
-                <span style="color: #ff453a; font-weight: 600;">${capacityLoss.toFixed(2)} kWh</span>
+            ${minCapacity !== null && maxCapacity !== null ? `
+            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
+                <span>Rozsah:</span>
+                <span>${minCapacity.toFixed(2)} - ${maxCapacity.toFixed(2)} kWh</span>
             </div>
             ` : ''}
             ` : ''}
 
-            ${totalMeasurements > 0 ? `
+            ${measurementCount > 0 ? `
             <div style="display: flex; justify-content: space-between; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <span>📈 Měření:</span>
-                <span style="color: var(--text-primary);">${totalMeasurements} (${qualityMeasurements} ⭐)</span>
+                <span>📈 Počet měření:</span>
+                <span style="color: var(--text-primary); font-weight: 600;">${measurementCount}</span>
             </div>
-            ${avgQualityScore !== null ? `
-            <div style="display: flex; justify-content: space-between;">
-                <span>⭐ Kvalita:</span>
-                <span style="color: var(--text-primary);">${avgQualityScore.toFixed(1)}/100</span>
+            ${lastMeasured ? `
+            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
+                <span>Poslední měření:</span>
+                <span>${new Date(lastMeasured).toLocaleDateString('cs-CZ')}</span>
             </div>
             ` : ''}
-            ${avgPurity !== null ? `
+            ${qualityScore !== null ? `
             <div style="display: flex; justify-content: space-between;">
-                <span>🔬 Čistota:</span>
-                <span style="color: var(--text-primary);">${avgPurity.toFixed(1)}%</span>
+                <span>⭐ Kvalita:</span>
+                <span style="color: var(--text-primary); font-weight: 600;">${qualityScore.toFixed(1)}/100</span>
             </div>
             ` : ''}
             ` : ''}
         </div>
 
-        ${trendHTML}
+        ${degradationHTML}
+        ${predictionHTML}
     `;
 
     console.log('[Battery Health] UI updated successfully');
