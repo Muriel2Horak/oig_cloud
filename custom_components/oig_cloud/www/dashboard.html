@@ -660,11 +660,10 @@
 
         <!-- Tab: Pricing & Forecast -->
         <div id="pricing-tab" class="tab-content">
-            <!-- Loading overlay -->
-            <div id="pricing-loading-overlay" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 1000;">
-                <div style="font-size: 3em; margin-bottom: 15px;">⏳</div>
-                <div style="font-size: 1.2em; color: var(--text-primary); font-weight: 500;">Načítání cenových dat...</div>
-                <div style="font-size: 0.9em; color: var(--text-secondary); margin-top: 8px;">Prosím čekejte</div>
+            <!-- Compact loading indicator (top-right corner) -->
+            <div id="pricing-loading-overlay" style="display: none; position: fixed; top: 75px; right: 20px; z-index: 1000; background: rgba(33, 150, 243, 0.15); backdrop-filter: blur(10px); border: 1px solid rgba(33, 150, 243, 0.3); border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: 1.1em; animation: spin 1s linear infinite;">⏳</div>
+                <div style="font-size: 0.85em; color: var(--text-primary); font-weight: 500;">Načítání...</div>
             </div>
 
             <!-- Top cards row: Pozitivní metriky + Today Plan -->
