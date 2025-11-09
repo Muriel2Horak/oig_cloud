@@ -199,6 +199,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             None  # MD5 hash of timeline_data for efficient change detection
         )
 
+        # Unified Cost Tile cache (60s TTL)
+        self._unified_cost_tile_cache: Optional[Dict[str, Any]] = None
+        self._unified_cost_tile_cache_timestamp: Optional[datetime] = None
+        self._unified_cost_tile_cache_ttl = timedelta(seconds=60)
+
         # Phase 2.7: HOME I timeline cache for savings calculation
         self._home_i_timeline_cache: List[Dict[str, Any]] = []
 
@@ -6751,6 +6756,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Phase V2: PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1 (UCT-BE-001 až UCT-BE-004)
         Consolidates 2 cost tiles into one with today/yesterday/tomorrow context.
 
+        Cache: 60s TTL - prevents repeated slow API calls on page refresh.
+
         Returns:
             Dict with today/yesterday/tomorrow cost data:
             {
@@ -6780,6 +6787,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
         """
         now = dt_util.now()
+
+        # Check cache first (60s TTL)
+        if (
+            self._unified_cost_tile_cache is not None
+            and self._unified_cost_tile_cache_timestamp is not None
+        ):
+            cache_age = now - self._unified_cost_tile_cache_timestamp
+            if cache_age < self._unified_cost_tile_cache_ttl:
+                _LOGGER.debug(
+                    f"Unified Cost Tile: Using cached data (age: {cache_age.total_seconds():.1f}s)"
+                )
+                return self._unified_cost_tile_cache
+
+        # Cache miss or expired - rebuild
+        _LOGGER.info("Unified Cost Tile: Building fresh data...")
+        build_start = dt_util.now()
+
         today = now.date()
         yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=1)
@@ -6826,7 +6850,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "error": str(e),
             }
 
-        return {
+        result = {
             "today": today_data,
             "yesterday": yesterday_data,
             "tomorrow": tomorrow_data,
@@ -6835,6 +6859,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "timezone": str(now.tzinfo),
             },
         }
+
+        # Update cache
+        self._unified_cost_tile_cache = result
+        self._unified_cost_tile_cache_timestamp = now
+
+        build_duration = (dt_util.now() - build_start).total_seconds()
+        _LOGGER.info(f"Unified Cost Tile: Built in {build_duration:.2f}s, cached for 60s")
+
+        return result
 
     def _group_intervals_by_mode(
         self, intervals: List[Dict[str, Any]], data_type: str = "both"
@@ -13029,7 +13062,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         )
 
         now = datetime.now()
-        
+
         # PHASE 1: Najít všechny HOME UPS intervaly (15min granularita)
         raw_intervals = []
         for point in timeline_data:
@@ -13043,17 +13076,21 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     interval_end = timestamp + timedelta(minutes=15)
                     energy_kwh = point.get("grid_charge_kwh", 0)
                     spot_price = point.get("spot_price_czk", 0)
-                    
+
                     # Filtrovat intervaly kde se SKUTEČNĚ nabíjí (energy_kwh > 0)
                     if energy_kwh > 0:
-                        raw_intervals.append({
-                            "timestamp": timestamp,
-                            "end": interval_end,
-                            "energy_kwh": energy_kwh,
-                            "spot_price_czk": spot_price,
-                            "cost_czk": energy_kwh * spot_price,
-                            "battery_capacity_kwh": point.get("battery_capacity_kwh", 0),
-                        })
+                        raw_intervals.append(
+                            {
+                                "timestamp": timestamp,
+                                "end": interval_end,
+                                "energy_kwh": energy_kwh,
+                                "spot_price_czk": spot_price,
+                                "cost_czk": energy_kwh * spot_price,
+                                "battery_capacity_kwh": point.get(
+                                    "battery_capacity_kwh", 0
+                                ),
+                            }
+                        )
             except (ValueError, TypeError):
                 continue
 
@@ -13069,10 +13106,10 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         # PHASE 2: Sloučit souvislé intervaly do bloků
         raw_intervals.sort(key=lambda x: x["timestamp"])
-        
+
         charging_blocks = []
         current_block = None
-        
+
         for interval in raw_intervals:
             if current_block is None:
                 # Začít nový blok
@@ -13084,15 +13121,18 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     "grid_charge_kwh": interval["energy_kwh"],
                     "total_cost_czk": interval["cost_czk"],
                     "avg_spot_price_czk": interval["spot_price_czk"],
-                    "battery_start_kwh": interval["battery_capacity_kwh"] - interval["energy_kwh"],
+                    "battery_start_kwh": interval["battery_capacity_kwh"]
+                    - interval["energy_kwh"],
                     "battery_end_kwh": interval["battery_capacity_kwh"],
                     "interval_count": 1,
                     "is_charging_battery": True,
                 }
             else:
                 # Zkontrolovat, zda interval navazuje na předchozí (rozdíl max 15min)
-                time_gap = (interval["timestamp"] - current_block["end_timestamp"]).total_seconds()
-                
+                time_gap = (
+                    interval["timestamp"] - current_block["end_timestamp"]
+                ).total_seconds()
+
                 if time_gap <= 15 * 60:  # Souvislý nebo navazující interval
                     # Sloučit do aktuálního bloku
                     current_block["time_to"] = interval["end"].strftime("%H:%M")
@@ -13103,8 +13143,10 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     current_block["interval_count"] += 1
                     # Přepočítat průměrnou cenu
                     current_block["avg_spot_price_czk"] = (
-                        current_block["total_cost_czk"] / current_block["grid_charge_kwh"]
-                        if current_block["grid_charge_kwh"] > 0 else 0
+                        current_block["total_cost_czk"]
+                        / current_block["grid_charge_kwh"]
+                        if current_block["grid_charge_kwh"] > 0
+                        else 0
                     )
                 else:
                     # Mezera > 15min - uzavřít aktuální blok a začít nový
@@ -13117,12 +13159,13 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         "grid_charge_kwh": interval["energy_kwh"],
                         "total_cost_czk": interval["cost_czk"],
                         "avg_spot_price_czk": interval["spot_price_czk"],
-                        "battery_start_kwh": interval["battery_capacity_kwh"] - interval["energy_kwh"],
+                        "battery_start_kwh": interval["battery_capacity_kwh"]
+                        - interval["energy_kwh"],
                         "battery_end_kwh": interval["battery_capacity_kwh"],
                         "interval_count": 1,
                         "is_charging_battery": True,
                     }
-        
+
         # Přidat poslední blok
         if current_block:
             charging_blocks.append(current_block)
@@ -13130,20 +13173,23 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         # PHASE 3: Vypočítat agregované metriky
         total_energy_kwh = sum(block["grid_charge_kwh"] for block in charging_blocks)
         total_cost_czk = sum(block["total_cost_czk"] for block in charging_blocks)
-        
+
         # Najít další budoucí nabíjecí blok
         next_charging_block = None
         for block in charging_blocks:
             if block["start_timestamp"] > now:
                 next_charging_block = block
                 break
-        
+
         next_charging_time_range = None
         next_charging_duration = None
         if next_charging_block:
-            next_charging_time_range = f"{next_charging_block['time_from']} - {next_charging_block['time_to']}"
+            next_charging_time_range = (
+                f"{next_charging_block['time_from']} - {next_charging_block['time_to']}"
+            )
             duration_minutes = (
-                next_charging_block["end_timestamp"] - next_charging_block["start_timestamp"]
+                next_charging_block["end_timestamp"]
+                - next_charging_block["start_timestamp"]
             ).seconds // 60
             next_charging_duration = f"{duration_minutes} min"
 
