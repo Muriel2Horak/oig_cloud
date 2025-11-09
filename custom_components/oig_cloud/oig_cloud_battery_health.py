@@ -979,6 +979,9 @@ class BatteryCapacityTracker:
     ) -> Optional[Tuple[datetime, datetime]]:
         """
         Najít časové okno kde máme konzistentní data ze všech sensorů.
+        
+        Strategie: Použít SoC sensor historii (ten má nejdelší historii),
+        energy senzory jsou nové ale aktuální data mají.
 
         Returns:
             (start_time, end_time) nebo None pokud nejsou data
@@ -987,75 +990,48 @@ class BatteryCapacityTracker:
 
         # Senzory které potřebujeme
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
-        charge_sensor = f"sensor.oig_{self._box_id}_computed_batt_charge_energy_today"
-        discharge_sensor = (
-            f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_today"
-        )
-
-        sensors = [soc_sensor, charge_sensor, discharge_sensor]
 
         try:
-            # Direct DB query pro najití nejstaršího a nejnovějšího záznamu
+            # Direct DB query pro najití nejstaršího SoC záznamu
             instance = recorder.get_instance(self._hass)
 
-            def _query_availability():
-                """Query DB pro availability window."""
+            def _query_soc_history():
+                """Query DB pro SoC sensor availability."""
                 from sqlalchemy import select, func, and_
                 from homeassistant.components.recorder.db_schema import States
 
                 with instance.get_session() as session:
-                    # Pro každý sensor najít první a poslední platný záznam
-                    sensor_windows = {}
-
-                    for sensor_id in sensors:
-                        # Najít MIN a MAX last_changed pro daný sensor
-                        query = select(
-                            func.min(States.last_changed_ts).label("min_ts"),
-                            func.max(States.last_changed_ts).label("max_ts"),
-                        ).where(
-                            and_(
-                                States.entity_id == sensor_id,
-                                States.state.notin_(["unknown", "unavailable"]),
-                            )
+                    # Najít MIN a MAX last_changed pro SoC sensor
+                    query = select(
+                        func.min(States.last_changed_ts).label("min_ts"),
+                        func.max(States.last_changed_ts).label("max_ts"),
+                    ).where(
+                        and_(
+                            States.entity_id == soc_sensor,
+                            States.state.notin_(["unknown", "unavailable"]),
                         )
+                    )
 
-                        result = session.execute(query).first()
+                    result = session.execute(query).first()
 
-                        if result and result.min_ts and result.max_ts:
-                            sensor_windows[sensor_id] = {
-                                "min": datetime.fromtimestamp(
-                                    result.min_ts, tz=dt_util.UTC
-                                ),
-                                "max": datetime.fromtimestamp(
-                                    result.max_ts, tz=dt_util.UTC
-                                ),
-                            }
-                        else:
-                            _LOGGER.warning(f"No data found for sensor {sensor_id}")
-                            return None
+                    if result and result.min_ts and result.max_ts:
+                        return {
+                            "min": datetime.fromtimestamp(result.min_ts, tz=dt_util.UTC),
+                            "max": datetime.fromtimestamp(result.max_ts, tz=dt_util.UTC),
+                        }
+                    return None
 
-                    return sensor_windows
+            soc_window = await self._hass.async_add_executor_job(_query_soc_history)
 
-            sensor_windows = await self._hass.async_add_executor_job(
-                _query_availability
-            )
-
-            if not sensor_windows or len(sensor_windows) != len(sensors):
-                _LOGGER.warning("Not all sensors have data available")
+            if not soc_window:
+                _LOGGER.warning(f"No SoC data found for sensor {soc_sensor}")
                 return None
 
-            # Najít průsečík - nejpozdější start, nejdřívější end
-            start_time = max(w["min"] for w in sensor_windows.values())
-            end_time = min(w["max"] for w in sensor_windows.values())
-
-            if start_time >= end_time:
-                _LOGGER.warning(
-                    f"No overlapping data window: start={start_time}, end={end_time}"
-                )
-                return None
+            start_time = soc_window["min"]
+            end_time = soc_window["max"]
 
             _LOGGER.info(
-                f"Data availability window: {start_time} to {end_time} "
+                f"Data availability window (based on SoC): {start_time.date()} to {end_time.date()} "
                 f"({(end_time - start_time).days} days)"
             )
 
@@ -1152,7 +1128,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     async def _async_startup_analysis(self) -> None:
         """
         Asynchronní startup analýza - běží na pozadí, neblokuje HA.
-        
+
         Strategie:
         1. Pokud existuje storage → inkrementální analýza od last_analysis
         2. Pokud neexistuje → full history analýza (může trvat déle)
@@ -1188,7 +1164,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                 _LOGGER.info(
                     "⚠️ This may take a few seconds on first run, but won't block HA startup"
                 )
-                
+
                 window = await self._tracker._find_data_availability_window()
 
                 if window:
@@ -1322,7 +1298,9 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             _, soh = self._tracker.get_current_capacity()
             return round(soh, 1) if soh is not None else None
         except Exception as e:
-            _LOGGER.debug(f"Could not get SoH value (background analysis may still be running): {e}")
+            _LOGGER.debug(
+                f"Could not get SoH value (background analysis may still be running): {e}"
+            )
             return None
 
     @property
