@@ -324,9 +324,7 @@ class BatteryCapacityTracker:
             BatteryMeasurement nebo None pokud není validní
         """
         from homeassistant.helpers import recorder
-        from homeassistant.components.recorder.history import (
-            state_changes_during_period,
-        )
+        from homeassistant.components.recorder.history import get_significant_states
 
         try:
             # Zjistit zda cyklus přechází přes půlnoc (UTC 00:00)
@@ -338,17 +336,20 @@ class BatteryCapacityTracker:
                 f"Analyzing cycle {start_time} → {end_time}, spans_midnight={spans_midnight}"
             )
 
-            # Načíst energy history
+            # Načíst energy history - použít get_significant_states místo state_changes
+            # protože potřebujeme VŠECHNY stavy, ne jen změny
             history = await recorder.get_instance(self._hass).async_add_executor_job(
-                state_changes_during_period,
+                get_significant_states,
                 self._hass,
                 start_time,
                 end_time,
-                charge_energy_sensor,
-                discharge_energy_sensor,
+                [charge_energy_sensor, discharge_energy_sensor],
+                None,  # filters
+                True,  # include_start_time_state
             )
 
             if not history:
+                _LOGGER.debug("No history data returned from recorder")
                 return None
 
             charge_states = history.get(charge_energy_sensor, [])
