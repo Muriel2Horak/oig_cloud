@@ -537,13 +537,24 @@
         }
 
         .temp-hot {
-            animation: pulse-hot 1s ease-in-out infinite;
+            /* Container má jen červený stín */
             filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
         }
 
+        /* Ikona uvnitř temp-hot bliká */
+        .temp-hot .battery-temp-icon,
+        .temp-hot .inverter-temp-icon {
+            animation: pulse-hot 1s ease-in-out infinite;
+        }
+
         .temp-cold {
-            animation: pulse-cold 1s ease-in-out infinite;
+            /* Container má jen modrý stín */
             filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+        }
+
+        /* Ikona uvnitř temp-cold bliká */
+        .temp-cold .battery-temp-icon {
+            animation: pulse-cold 1s ease-in-out infinite;
         }
 
         /* Inverter corner indicators */
@@ -568,8 +579,14 @@
         }
 
         .bypass-warning {
-            animation: pulse-warning 1s ease-in-out infinite;
+            /* Container má jen červený stín */
             filter: drop-shadow(0 0 5px var(--shadow-error));
+        }
+
+        /* Ikona (emoji) uvnitř bypass-warning bliká */
+        .bypass-warning #inverter-bypass-icon {
+            animation: pulse-warning 1s ease-in-out infinite;
+            display: inline-block;
         }
 
         .inverter-temp-indicator {
@@ -2258,8 +2275,8 @@
         }
 
         .control-section {
-            margin-bottom: 0;
-            padding-bottom: 0;
+            margin-bottom: 6px;
+            padding-bottom: 6px;
             border-bottom: none;
         }
 

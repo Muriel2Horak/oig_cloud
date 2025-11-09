@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="css/features/today-plan-tile.css">
     <link rel="stylesheet" href="css/features/detail-tabs.css">
     <link rel="stylesheet" href="css/features/battery-health.css">
+    <link rel="stylesheet" href="css/features/custom-tiles.css">
 </head>
 
 <body>
@@ -415,7 +416,9 @@
                 <div class="node inverter" id="inverter-box">
                     <div class="inverter-bypass-indicator entity-value" id="inverter-bypass-indicator"
                         data-entity="bypass_status" data-tooltip="Bypass"
-                        onclick="openEntityDialog(getSensorId('bypass_status'))">🌉</div>
+                        onclick="openEntityDialog(getSensorId('bypass_status'))">
+                        <span id="inverter-bypass-icon">🌉</span>
+                    </div>
                     <div class="inverter-bypass-label" id="inverter-bypass-label" style="display: none;">Bypass</div>
                     <div class="inverter-temp-indicator entity-value" id="inverter-temp-indicator"
                         data-entity="box_temp" data-tooltip="Teplota střídače"

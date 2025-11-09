@@ -27,6 +27,7 @@ function toggleControlPanel() {
 
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
+var subscribeToShield = window.DashboardShield?.subscribeToShield;
 var startShieldQueueLiveUpdate = window.DashboardShield?.startShieldQueueLiveUpdate;
 var stopShieldQueueLiveUpdate = window.DashboardShield?.stopShieldQueueLiveUpdate;
 var loadShieldData = window.DashboardShield?.loadShieldData;
@@ -46,6 +47,8 @@ var getNodeCenters = window.DashboardFlow?.getNodeCenters;
 var updateNode = window.DashboardFlow?.updateNode;
 var updateNodeDetails = window.DashboardFlow?.updateNodeDetails;
 var loadData = window.DashboardFlow?.loadData;
+var loadNodeDetails = window.DashboardFlow?.loadNodeDetails;
+var forceFullRefresh = window.DashboardFlow?.forceFullRefresh;
 var debouncedLoadData = window.DashboardFlow?.debouncedLoadData;
 var debouncedLoadNodeDetails = window.DashboardFlow?.debouncedLoadNodeDetails;
 
@@ -1028,3 +1031,9 @@ var initPerformanceChart = window.DashboardAnalytics?.initPerformanceChart;
 var updatePerformanceChart = window.DashboardAnalytics.updatePerformanceChart;
 var buildYesterdayAnalysis = window.DashboardAnalytics.buildYesterdayAnalysis;
 var renderYesterdayAnalysis = window.DashboardAnalytics.renderYesterdayAnalysis;
+
+// === EXPORT TILE RENDERING FUNCTIONS FOR TILES.JS ===
+window.renderEntityTile = renderEntityTile;
+window.renderButtonTile = renderButtonTile;
+window.executeTileButtonAction = executeTileButtonAction;
+window.renderAllTiles = renderAllTiles;

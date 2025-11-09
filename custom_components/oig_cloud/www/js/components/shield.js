@@ -1,26 +1,8 @@
 // === SHIELD INTEGRATION FUNCTIONS ===
 
-// Debouncing timers
-let loadDataTimer = null;
-let loadDetailsTimer = null;
+// Debouncing timers (only for shield-specific functions)
 let shieldMonitorTimer = null;
 let timelineRefreshTimer = null;
-
-// Debounced loadData() - prevents excessive calls
-function debouncedLoadData() {
-    if (loadDataTimer) clearTimeout(loadDataTimer);
-    loadDataTimer = setTimeout(() => {
-        loadData();
-    }, 200); // Wait 200ms before executing
-}
-
-// Debounced loadNodeDetails() - prevents excessive calls
-function debouncedLoadNodeDetails() {
-    if (loadDetailsTimer) clearTimeout(loadDetailsTimer);
-    loadDetailsTimer = setTimeout(() => {
-        loadNodeDetails();
-    }, 500); // Wait 500ms before executing
-}
 
 // Debounced shield monitor - prevents excessive calls when shield sensors change rapidly
 function debouncedShieldMonitor() {
@@ -37,7 +19,7 @@ function debouncedShieldMonitor() {
 function debouncedTimelineRefresh() {
     if (timelineRefreshTimer) clearTimeout(timelineRefreshTimer);
     timelineRefreshTimer = setTimeout(() => {
-        buildExtendedTimeline();
+        window.DashboardTimeline?.buildExtendedTimeline?.();
     }, 300); // Wait 300ms before executing
 }
 
@@ -521,16 +503,6 @@ async function updateBatteryFormatingButtons(pending, isRunning) {
     }
 }
 
-// Get HA connection
-function getHass() {
-    try {
-        return parent.document.querySelector('home-assistant').hass;
-    } catch (e) {
-        console.error('Cannot get HA instance:', e);
-        return null;
-    }
-}
-
 // Open entity more-info dialog
 function openEntityDialog(entityId) {
     const hass = getHass();
@@ -558,7 +530,7 @@ async function callService(domain, service, data) {
     const hass = getHass();
     if (!hass) {
         console.error('[Service] Failed to get hass object');
-        showNotification('Chyba', 'Nelze získat připojení k Home Assistant', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Nelze získat připojení k Home Assistant', 'error');
         return false;
     }
 
@@ -574,13 +546,10 @@ async function callService(domain, service, data) {
     } catch (e) {
         console.error(`[Service] ❌ Error calling ${domain}.${service}:`, e);
         console.error('[Service] Error details:', e.message, e.stack);
-        showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
+        window.DashboardUtils?.window.DashboardUtils?.showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
         return false;
     }
 }
-
-// Use notification from DashboardUtils module (let for proper scoping)
-let showNotification = window.DashboardUtils?.showNotification;
 
 // Track mode change state
 let modeChangeInProgress = false;
@@ -1526,11 +1495,11 @@ async function removeFromQueue(position) {
             await updateShieldQueue();
             await updateShieldUI();
         } else {
-            showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
+            window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
         }
     } catch (e) {
         console.error('[Queue] Error removing from queue:', e);
-        showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
     }
 }
 
@@ -1590,7 +1559,7 @@ async function executeServiceWithPendingUI(config) {
         }
     } catch (e) {
         console.error(`[Shield] Error in ${serviceName}:`, e);
-        showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
+        window.DashboardUtils?.showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
 
         // Re-enable button on error
         const btn = buttonId ? document.getElementById(buttonId) : null;
@@ -1643,7 +1612,7 @@ async function setBoxMode(mode) {
 
     } catch (e) {
         console.error('[Shield] Error in setBoxMode:', e);
-        showNotification('Chyba', 'Nepodařilo se změnit režim boxu', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim boxu', 'error');
     }
 }
 
@@ -1760,19 +1729,19 @@ async function setGridDelivery(mode) {
 
     } catch (e) {
         console.error('[Grid] Error in setGridDelivery:', e);
-        showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
     }
 }
 
 // OLD FUNCTIONS - KEPT FOR COMPATIBILITY BUT NOT USED
 async function setGridDeliveryOld(mode, limit) {
     if (mode === null && limit === null) {
-        showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
         return;
     }
 
     if (mode !== null && limit !== null) {
-        showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
         return;
     }
 
@@ -1789,7 +1758,7 @@ async function setGridDeliveryOld(mode, limit) {
     } else {
         data.limit = parseInt(limit);
         if (isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
-            showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
+            window.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
             return;
         }
     }
@@ -1798,7 +1767,7 @@ async function setGridDeliveryOld(mode, limit) {
 
     if (success) {
         const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
-        showNotification('Dodávka do sítě', msg, 'success');
+        window.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
         setTimeout(forceFullRefresh, 2000);
     }
 }
@@ -1809,7 +1778,7 @@ function setGridDeliveryLimit() {
     const limit = parseInt(input.value);
 
     if (!limit || limit < 1 || limit > 9999) {
-        showNotification('Chyba', 'Zadejte limit 1-9999 W', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Zadejte limit 1-9999 W', 'error');
         return;
     }
 
@@ -1865,7 +1834,7 @@ async function setBoilerMode(mode) {
 
     } catch (e) {
         console.error('[Shield] Error in setBoilerMode:', e);
-        showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
+        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
     }
 }
 
@@ -1877,7 +1846,7 @@ async function updateSolarForecast() {
     const success = await callService('oig_cloud', 'update_solar_forecast', {});
 
     if (success) {
-        showNotification('Solární předpověď', 'Předpověď se aktualizuje...', 'success');
+        window.DashboardUtils?.showNotification('Solární předpověď', 'Předpověď se aktualizuje...', 'success');
         // Delší čas pro forecast update
         setTimeout(forceFullRefresh, 5000);
     }
@@ -1897,6 +1866,7 @@ async function loadControlStatus() {
 
 // Export shield functions
 window.DashboardShield = {
+    subscribeToShield,
     startShieldQueueLiveUpdate,
     stopShieldQueueLiveUpdate,
     debouncedShieldMonitor,

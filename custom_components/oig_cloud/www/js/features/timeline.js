@@ -2899,9 +2899,12 @@ window.DashboardTimeline = {
 };
 
 // Export timelineDialogInstance to window for access from other modules
-Object.defineProperty(window, 'timelineDialogInstance', {
-    get: function() { return timelineDialogInstance; },
-    set: function(value) { timelineDialogInstance = value; }
-});
+if (!window.hasOwnProperty('timelineDialogInstance')) {
+    Object.defineProperty(window, 'timelineDialogInstance', {
+        get: function() { return timelineDialogInstance; },
+        set: function(value) { timelineDialogInstance = value; },
+        configurable: true
+    });
+}
 
 console.log('[DashboardTimeline] Module loaded');

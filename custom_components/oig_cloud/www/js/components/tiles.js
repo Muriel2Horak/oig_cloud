@@ -373,6 +373,10 @@ class DashboardTileManager {
 
 // Export pro použití v ostatních souborech
 window.DashboardTileManager = DashboardTileManager;
+
+// Track subscribed entities to avoid duplicate subscriptions
+let subscribedEntities = new Set();
+
 async function initCustomTiles() {
     console.log('[Tiles] Initializing custom tiles system...');
 
@@ -389,11 +393,12 @@ async function initCustomTiles() {
         tileManager = new DashboardTileManager(hass);
         window.tileManager = tileManager; // Export for dialog access
 
-        // Listen for config changes
+        // Listen for config changes - render ONLY tiles, not whole dashboard
         tileManager.addChangeListener(() => {
-            console.log('[Tiles] Config changed, re-rendering...');
-            renderAllTiles();
+            console.log('[Tiles] Config changed, re-rendering tiles only...');
+            renderAllTiles(); // Local function - renders only tiles
             updateTileControlsUI();
+            subscribeToTileEntities(); // Re-subscribe to new entities
         });
 
         // ASYNCHRONNĚ načíst konfiguraci z HA storage
@@ -412,7 +417,69 @@ async function initCustomTiles() {
     renderAllTiles();
     updateTileControlsUI();
 
+    // Subscribe to entity state changes for real-time updates
+    subscribeToTileEntities();
+
     console.log('[Tiles] Initialization complete');
+}
+
+/**
+ * Subscribe to state changes for all entities used in tiles
+ * This enables real-time updates without full page refresh
+ */
+function subscribeToTileEntities() {
+    if (!tileManager) return;
+
+    const hass = getHass();
+    if (!hass || !hass.connection) {
+        console.warn('[Tiles] Cannot subscribe - no HA connection');
+        return;
+    }
+
+    // Collect all entity IDs from tiles (both sides)
+    const allEntityIds = new Set();
+
+    ['left', 'right'].forEach(side => {
+        const tiles = tileManager.getTiles(side);
+        const count = tileManager.getTileCount(side);
+
+        for (let i = 0; i < count; i++) {
+            const tile = tiles[i];
+            if (tile && tile.type === 'entity' && tile.entity_id) {
+                allEntityIds.add(tile.entity_id);
+
+                // Add support entities if present
+                if (tile.support_entities) {
+                    Object.values(tile.support_entities).forEach(entityId => {
+                        if (entityId) allEntityIds.add(entityId);
+                    });
+                }
+            }
+        }
+    });
+
+    // Only subscribe to new entities (avoid duplicates)
+    const newEntities = [...allEntityIds].filter(id => !subscribedEntities.has(id));
+
+    if (newEntities.length > 0) {
+        console.log(`[Tiles] Subscribing to ${newEntities.length} entity updates:`, newEntities);
+
+        // Subscribe to state changes via WebSocket
+        hass.connection.subscribeEvents((event) => {
+            const entityId = event.data.entity_id;
+            const newState = event.data.new_state;
+
+            // Only update if entity is used in tiles
+            if (allEntityIds.has(entityId)) {
+                console.log(`[Tiles] Entity ${entityId} changed, updating tiles...`);
+                // Re-render only tiles, not whole dashboard
+                renderAllTiles();
+            }
+        }, 'state_changed');
+
+        // Mark as subscribed
+        newEntities.forEach(id => subscribedEntities.add(id));
+    }
 }
 
 /**

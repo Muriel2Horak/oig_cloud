@@ -1148,6 +1148,18 @@ async function loadData() {
         batteryLightning.classList.remove('active');
     }
 
+    // Update grid charging indicator (⚡🔌 icon next to temperature)
+    const gridChargingIndicator = document.getElementById('battery-grid-charging-indicator');
+    if (gridChargingIndicator) {
+        if (isGridCharging) {
+            gridChargingIndicator.classList.add('active');
+            gridChargingIndicator.classList.add('pulse');
+        } else {
+            gridChargingIndicator.classList.remove('active');
+            gridChargingIndicator.classList.remove('pulse');
+        }
+    }
+
     // Get time to empty/full from sensors
     const timeToEmptyData = await getSensorString(getSensorId('time_to_empty'));
     const timeToFullData = await getSensorString(getSensorId('time_to_full'));
@@ -1931,6 +1943,7 @@ window.DashboardFlow = {
     getNodeCenters,
     loadData,
     loadNodeDetails,
+    forceFullRefresh,
     debouncedLoadData,
     debouncedLoadNodeDetails,
     init: function() {

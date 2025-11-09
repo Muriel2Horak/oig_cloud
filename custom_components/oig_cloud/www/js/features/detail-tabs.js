@@ -32,7 +32,7 @@ const DETAIL_TABS_MODE_CONFIG = {
  * Shows mode-aggregated data with adherence tracking
  */
 class DetailTabsDialog {
-    constructor(boxId: string) {
+    constructor(boxId) {
         this.boxId = boxId;
         this.dialogElement = null;
         this.isOpen = false;
@@ -49,7 +49,7 @@ class DetailTabsDialog {
     /**
      * Initialize dialog - called once on page load
      */
-    init(): void {
+    init() {
         this.dialogElement = document.getElementById('detail-tabs-dialog');
         if (!this.dialogElement) {
             console.error('[DetailTabs] Dialog element not found');
@@ -64,9 +64,9 @@ class DetailTabsDialog {
 
         // Setup tab buttons
         const tabBtns = this.dialogElement.querySelectorAll('.tab-btn');
-        tabBtns.forEach((btn: HTMLElement) => {
-            btn.addEventListener('click', (e: Event) => {
-                const target = e.target as HTMLElement;
+        tabBtns.forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                const target = e.target;
                 const tab = target.dataset.tab;
                 if (tab) {
                     this.switchTab(tab);
@@ -80,7 +80,7 @@ class DetailTabsDialog {
     /**
      * Open dialog with specific tab
      */
-    async open(tab: string = 'today'): Promise<void> {
+    async open(tab = 'today') {
         if (!this.dialogElement) {
             console.error('[DetailTabs] Dialog not initialized');
             return;
@@ -107,7 +107,7 @@ class DetailTabsDialog {
     /**
      * Close dialog
      */
-    close(): void {
+    close() {
         if (this.dialogElement) {
             this.dialogElement.style.display = 'none';
         }
@@ -119,12 +119,12 @@ class DetailTabsDialog {
     /**
      * Switch to specific tab
      */
-    switchTab(tab: string): void {
+    switchTab(tab) {
         this.activeTab = tab;
 
         // Update tab buttons
         const tabBtns = this.dialogElement?.querySelectorAll('.tab-btn');
-        tabBtns?.forEach((btn: HTMLElement) => {
+        tabBtns?.forEach((btn) => {
             if (btn.dataset.tab === tab) {
                 btn.classList.add('active');
             } else {
@@ -147,7 +147,7 @@ class DetailTabsDialog {
     /**
      * Fetch data from Detail Tabs API
      */
-    async fetchData(): Promise<void> {
+    async fetchData() {
         try {
             const apiUrl = `/api/oig_cloud/battery_forecast/${this.boxId}/detail_tabs`;
             console.log(`[DetailTabs] Fetching data from ${apiUrl}`);
@@ -178,7 +178,7 @@ class DetailTabsDialog {
     /**
      * Render specific tab
      */
-    renderTab(tab: string): void {
+    renderTab(tab) {
         const container = document.getElementById(`${tab}-detail-container`);
         if (!container) {
             console.error(`[DetailTabs] Container for ${tab} not found`);
@@ -200,11 +200,11 @@ class DetailTabsDialog {
     /**
      * Render tab content: summary + mode blocks
      */
-    renderTabContent(tabData: any, tabName: string): string {
+    renderTabContent(tabData, tabName) {
         const { date, mode_blocks, summary } = tabData;
 
         const summaryHtml = this.renderSummary(summary, tabName);
-        const blocksHtml = mode_blocks.map((block: any, index: number) =>
+        const blocksHtml = mode_blocks.map((block, index) =>
             this.renderModeBlock(block, index)
         ).join('');
 
@@ -229,7 +229,7 @@ class DetailTabsDialog {
     /**
      * Render summary tiles at top of tab
      */
-    renderSummary(summary: any, tabName: string): string {
+    renderSummary(summary, tabName) {
         const { total_cost, overall_adherence, mode_switches } = summary;
 
         // Adherence color coding
@@ -279,7 +279,7 @@ class DetailTabsDialog {
     /**
      * Render single mode block
      */
-    renderModeBlock(block: any, index: number): string {
+    renderModeBlock(block, index) {
         const {
             mode_historical,
             mode_planned,
@@ -402,7 +402,7 @@ class DetailTabsDialog {
     /**
      * Render "No Data" message
      */
-    renderNoData(tab: string): string {
+    renderNoData(tab) {
         const messages = {
             yesterday: 'Včerejší data nejsou k dispozici',
             today: 'Dnešní data nejsou k dispozici',
@@ -420,7 +420,7 @@ class DetailTabsDialog {
     /**
      * Format date for display
      */
-    formatDate(dateStr: string): string {
+    formatDate(dateStr) {
         if (!dateStr) return '';
         const date = new Date(dateStr);
         return date.toLocaleDateString('cs-CZ', {
@@ -434,7 +434,7 @@ class DetailTabsDialog {
     /**
      * Start auto-refresh timer
      */
-    startAutoRefresh(): void {
+    startAutoRefresh() {
         this.stopAutoRefresh();
         // Refresh every 60s to match cache TTL
         this.updateInterval = setInterval(async () => {
@@ -449,7 +449,7 @@ class DetailTabsDialog {
     /**
      * Stop auto-refresh timer
      */
-    stopAutoRefresh(): void {
+    stopAutoRefresh() {
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
@@ -459,7 +459,7 @@ class DetailTabsDialog {
     /**
      * Destroy dialog and cleanup
      */
-    destroy(): void {
+    destroy() {
         this.close();
         this.cache = {
             yesterday: null,
@@ -477,7 +477,7 @@ window.DetailTabsDialog = null;
 /**
  * Initialize Detail Tabs Dialog
  */
-function initDetailTabsDialog(boxId: string): void {
+function initDetailTabsDialog(boxId) {
     if (!window.DetailTabsDialog) {
         window.DetailTabsDialog = new DetailTabsDialog(boxId);
         window.DetailTabsDialog.init();
@@ -488,7 +488,7 @@ function initDetailTabsDialog(boxId: string): void {
 /**
  * Open Detail Tabs Dialog
  */
-function openDetailTabsDialog(tab: string = 'today'): void {
+function openDetailTabsDialog(tab = 'today') {
     if (window.DetailTabsDialog) {
         window.DetailTabsDialog.open(tab);
     } else {

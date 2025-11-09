@@ -82,12 +82,12 @@
 /* === CONTROL BUTTONS === */
 
 .control-button {
-    padding: 6px 12px;
+    padding: 4px 10px;
     background: var(--status-charging-bg);
     border: 1px solid var(--status-charging-border);
     border-radius: 4px;
     color: var(--text-primary);
-    font-size: 11px;
+    font-size: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -168,21 +168,21 @@
 
 .button-group {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: wrap;
-    margin: 12px 0;
+    margin: 8px 0;
 }
 
 .button-group button {
     flex: 1;
-    min-width: 80px;
-    padding: 10px 16px;
+    min-width: 70px;
+    padding: 6px 10px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-primary);
-    border-radius: 6px;
+    border-radius: 4px;
     color: var(--text-primary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 500;
     transition: all 0.2s ease;
     position: relative;
