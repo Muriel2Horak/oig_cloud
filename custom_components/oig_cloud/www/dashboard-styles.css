@@ -752,6 +752,9 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
@@ -768,6 +771,9 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
@@ -852,6 +858,9 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -860,6 +869,7 @@
 
         .battery-temp-icon {
             font-size: 14px;
+            display: inline-block; /* Nutné pro animaci transform */
         }
 
         .battery-temp-indicator:hover {
@@ -1037,13 +1047,29 @@
         }
 
         .temp-hot {
-            animation: pulse-hot 1s ease-in-out infinite;
+            /* Container má jen červený stín */
             filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
         }
 
+        /* Ikona uvnitř temp-hot bliká - použij ID pro vyšší specificitu */
+        .temp-hot #battery-temp-icon,
+        .temp-hot .battery-temp-icon,
+        .temp-hot #inverter-temp-icon,
+        .temp-hot .inverter-temp-icon {
+            animation: pulse-hot 1.5s ease-in-out infinite !important;
+            display: inline-block;
+        }
+
         .temp-cold {
-            animation: pulse-cold 1s ease-in-out infinite;
+            /* Container má jen modrý stín */
             filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+        }
+
+        /* Ikona uvnitř temp-cold bliká */
+        .temp-cold #battery-temp-icon,
+        .temp-cold .battery-temp-icon {
+            animation: pulse-cold 1.5s ease-in-out infinite !important;
+            display: inline-block;
         }
 
         /* Inverter corner indicators */
@@ -1068,8 +1094,14 @@
         }
 
         .bypass-warning {
-            animation: pulse-warning 1s ease-in-out infinite;
+            /* Container má jen červený stín */
             filter: drop-shadow(0 0 5px var(--shadow-error));
+        }
+
+        /* Ikona uvnitř bypass-warning bliká */
+        .bypass-warning #inverter-bypass-icon {
+            animation: pulse-warning 1.5s ease-in-out infinite !important;
+            display: inline-block;
         }
 
         .inverter-temp-indicator {
@@ -1245,13 +1277,27 @@
 
         /* Inverter temperature hot threshold at 35°C */
         .inverter-temp-hot {
-            animation: pulse-hot 1s ease-in-out infinite;
+            /* Container má jen červený stín */
             filter: drop-shadow(0 0 3px var(--shadow-error-weak));
         }
 
+        /* Ikona uvnitř inverter-temp-hot bliká */
+        .inverter-temp-hot #inverter-temp-icon,
+        .inverter-temp-hot .inverter-temp-icon {
+            animation: pulse-hot 1.5s ease-in-out infinite !important;
+            display: inline-block;
+        }
+
         .inverter-temp-cold {
-            animation: pulse-cold 1s ease-in-out infinite;
+            /* Container má jen modrý stín */
             filter: drop-shadow(0 0 3px var(--shadow-info));
+        }
+
+        /* Ikona uvnitř inverter-temp-cold bliká */
+        .inverter-temp-cold #inverter-temp-icon,
+        .inverter-temp-cold .inverter-temp-icon {
+            animation: pulse-cold 1.5s ease-in-out infinite !important;
+            display: inline-block;
         }
 
         /* Distribution crisis indicator */
@@ -1750,8 +1796,8 @@
 
         /* Battery - Kompaktnější layout - ŠIROKÝ */
         .battery {
-            min-width: 220px !important;
-            max-width: 280px !important;
+            min-width: 260px !important;
+            max-width: 340px !important;
         }
 
         .battery .node-details {
@@ -1759,6 +1805,8 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             /* 2 sloupce */
+            gap: 4px 10px;
+        }            /* 2 sloupce */
             gap: 4px 8px;
         }
 

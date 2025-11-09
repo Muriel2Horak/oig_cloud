@@ -55,10 +55,10 @@
 
 @keyframes pulse-warning {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7);
+        opacity: 1;
     }
     50% {
-        box-shadow: 0 0 0 10px rgba(255, 152, 0, 0);
+        opacity: 0.5;
     }
 }
 
@@ -82,27 +82,23 @@
 
 @keyframes pulse-hot {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
-        border-color: rgba(244, 67, 54, 0.5);
+        opacity: 1;
     }
     50% {
-        box-shadow: 0 0 0 8px rgba(244, 67, 54, 0);
-        border-color: rgba(244, 67, 54, 0.8);
+        opacity: 0.5;
     }
 }
 
 @keyframes pulse-cold {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7);
-        border-color: rgba(33, 150, 243, 0.5);
+        opacity: 1;
     }
     50% {
-        box-shadow: 0 0 0 8px rgba(33, 150, 243, 0);
-        border-color: rgba(33, 150, 243, 0.8);
+        opacity: 0.5;
     }
 }
 
-@keyframes pulse-pending {
+@keyframes pulse-warning {@keyframes pulse-pending {
     0%, 100% {
         box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.6);
         border-color: rgba(255, 152, 0, 0.4);
