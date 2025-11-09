@@ -277,6 +277,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # NEPOTŘEBUJEME načítat při startu - to jen zpomaluje startup
         _LOGGER.debug("Sensor initialized - storage plans will load on-demand via API")
 
+        # PHASE 3.1: Load daily plans archive from storage (včera data pro Unified Cost Tile)
+        if self._plans_store:
+            try:
+                storage_data = await self._plans_store.async_load() or {}
+                if "daily_archive" in storage_data:
+                    self._daily_plans_archive = storage_data["daily_archive"]
+                    _LOGGER.info(
+                        f"✅ Restored daily plans archive from storage: {len(self._daily_plans_archive)} days"
+                    )
+                else:
+                    _LOGGER.info("No daily archive in storage - will backfill from history")
+            except Exception as e:
+                _LOGGER.warning(f"Failed to load daily plans archive from storage: {e}")
+
+        # PHASE 3.1: Backfill missing days from storage detailed plans
+        if self._plans_store and len(self._daily_plans_archive) < 3:
+            try:
+                _LOGGER.info("🔄 Backfilling daily plans archive from storage...")
+                await self._backfill_daily_archive_from_storage()
+            except Exception as e:
+                _LOGGER.warning(f"Failed to backfill daily archive: {e}")
+
         # FALLBACK: Restore z attributes (starý způsob - bude deprecated)
         if last_state and last_state.attributes:
             # Restore daily plan state with actual intervals (Phase 2.9)
@@ -4878,6 +4900,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"(archive size: {len(self._daily_plans_archive)} days)"
                 )
 
+                # PHASE 3.1: Persist archive to storage (pro Unified Cost Tile)
+                if self._plans_store:
+                    try:
+                        storage_data = await self._plans_store.async_load() or {}
+                        storage_data["daily_archive"] = self._daily_plans_archive
+                        await self._plans_store.async_save(storage_data)
+                        _LOGGER.info(
+                            f"💾 Saved daily plans archive to storage ({len(self._daily_plans_archive)} days)"
+                        )
+                    except Exception as e:
+                        _LOGGER.error(
+                            f"Failed to save daily plans archive: {e}", exc_info=True
+                        )
+
             # Máme DP výsledek?
             if (
                 hasattr(self, "_mode_optimization_result")
@@ -7643,6 +7679,65 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "future_intervals": len(future),
             },
         }
+
+    async def _backfill_daily_archive_from_storage(self) -> None:
+        """
+        Backfill daily plans archive from storage detailed plans.
+        
+        PHASE 3.1: Zpětné doplnění archivu z již uložených daily plans.
+        Použije se při startu, pokud archiv chybí (např. po restartu před implementací persistence).
+        """
+        if not self._plans_store:
+            _LOGGER.warning("Cannot backfill - no storage helper")
+            return
+
+        try:
+            storage_data = await self._plans_store.async_load() or {}
+            detailed_plans = storage_data.get("detailed", {})
+            
+            if not detailed_plans:
+                _LOGGER.info("No detailed plans in storage - nothing to backfill")
+                return
+
+            now = dt_util.now()
+            today_str = now.date().strftime("%Y-%m-%d")
+            
+            # Backfill posledních 7 dní (kromě dneška)
+            backfilled_count = 0
+            for days_ago in range(1, 8):  # 1-7 dní zpátky
+                date = (now.date() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+                
+                # Skip if already in archive
+                if date in self._daily_plans_archive:
+                    continue
+                
+                # Check if we have this date in detailed plans
+                if date in detailed_plans:
+                    plan_data = detailed_plans[date]
+                    intervals = plan_data.get("intervals", [])
+                    
+                    # Build daily_plan_state structure from detailed plan
+                    self._daily_plans_archive[date] = {
+                        "date": date,
+                        "plan": intervals,
+                        "actual": intervals,  # Pro starší dny nemáme rozlišení plan vs actual
+                        "created_at": plan_data.get("created_at"),
+                    }
+                    backfilled_count += 1
+                    _LOGGER.debug(f"Backfilled archive for {date} from storage ({len(intervals)} intervals)")
+            
+            if backfilled_count > 0:
+                _LOGGER.info(f"✅ Backfilled {backfilled_count} days into archive")
+                
+                # Save updated archive back to storage
+                storage_data["daily_archive"] = self._daily_plans_archive
+                await self._plans_store.async_save(storage_data)
+                _LOGGER.info("💾 Saved backfilled archive to storage")
+            else:
+                _LOGGER.debug("No days needed backfilling")
+                
+        except Exception as e:
+            _LOGGER.error(f"Failed to backfill daily archive: {e}", exc_info=True)
 
     def _get_yesterday_cost_from_archive(self) -> Dict[str, Any]:
         """
