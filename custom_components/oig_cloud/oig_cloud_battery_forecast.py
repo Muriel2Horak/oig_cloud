@@ -13008,7 +13008,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Vrátí atributy senzoru - všechny HOME UPS intervaly."""
+        """Vrátí atributy senzoru - všechny HOME UPS intervaly sloučené do bloků."""
         # Data jsou v coordinator.battery_forecast_data
         battery_forecast = getattr(self.coordinator, "battery_forecast_data", None)
         if not battery_forecast or not isinstance(battery_forecast, dict):
@@ -13029,11 +13029,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         )
 
         now = datetime.now()
-        charging_intervals = []  # Dashboard očekává "charging_intervals"
-        next_charging_start = None
-        next_charging_end = None
-
-        # Najít všechny HOME UPS intervaly
+        
+        # PHASE 1: Najít všechny HOME UPS intervaly (15min granularita)
+        raw_intervals = []
         for point in timeline_data:
             try:
                 timestamp_str = point.get("timestamp", "")
@@ -13045,55 +13043,122 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     interval_end = timestamp + timedelta(minutes=15)
                     energy_kwh = point.get("grid_charge_kwh", 0)
                     spot_price = point.get("spot_price_czk", 0)
-                    cost_czk = energy_kwh * spot_price
-
-                    charging_intervals.append(
-                        {
-                            "timestamp": timestamp_str,  # ISO format pro backend
-                            "start": timestamp.strftime("%H:%M"),  # Jen čas
-                            "end": interval_end.strftime("%H:%M"),
-                            "energy_kwh": round(energy_kwh, 3),
-                            "spot_price_czk": round(spot_price, 2),
-                            "cost_czk": round(cost_czk, 2),
-                            "battery_capacity_kwh": round(
-                                point.get("battery_capacity_kwh", 0), 2
-                            ),
-                            "is_charging_battery": True,  # HOME UPS znamená nabíjení
-                        }
-                    )
-
-                    # Najít další nabíjecí interval v budoucnu
-                    if next_charging_start is None and timestamp > now:
-                        next_charging_start = timestamp
-                        next_charging_end = interval_end
+                    
+                    # Filtrovat intervaly kde se SKUTEČNĚ nabíjí (energy_kwh > 0)
+                    if energy_kwh > 0:
+                        raw_intervals.append({
+                            "timestamp": timestamp,
+                            "end": interval_end,
+                            "energy_kwh": energy_kwh,
+                            "spot_price_czk": spot_price,
+                            "cost_czk": energy_kwh * spot_price,
+                            "battery_capacity_kwh": point.get("battery_capacity_kwh", 0),
+                        })
             except (ValueError, TypeError):
                 continue
 
-        # Vypočítat celkovou energii a cenu
-        total_energy_kwh = sum(i.get("energy_kwh", 0) for i in charging_intervals)
-        total_cost_czk = sum(
-            i.get("energy_kwh", 0) * i.get("spot_price_czk", 0)
-            for i in charging_intervals
-        )
+        if not raw_intervals:
+            return {
+                "charging_blocks": [],
+                "total_energy_kwh": 0.0,
+                "total_cost_czk": 0.0,
+                "next_charging_time_range": None,
+                "next_charging_duration": None,
+                "is_charging_planned": False,
+            }
 
-        # Formátovat next_charging_time_range a duration
+        # PHASE 2: Sloučit souvislé intervaly do bloků
+        raw_intervals.sort(key=lambda x: x["timestamp"])
+        
+        charging_blocks = []
+        current_block = None
+        
+        for interval in raw_intervals:
+            if current_block is None:
+                # Začít nový blok
+                current_block = {
+                    "time_from": interval["timestamp"].strftime("%H:%M"),
+                    "time_to": interval["end"].strftime("%H:%M"),
+                    "start_timestamp": interval["timestamp"],
+                    "end_timestamp": interval["end"],
+                    "grid_charge_kwh": interval["energy_kwh"],
+                    "total_cost_czk": interval["cost_czk"],
+                    "avg_spot_price_czk": interval["spot_price_czk"],
+                    "battery_start_kwh": interval["battery_capacity_kwh"] - interval["energy_kwh"],
+                    "battery_end_kwh": interval["battery_capacity_kwh"],
+                    "interval_count": 1,
+                    "is_charging_battery": True,
+                }
+            else:
+                # Zkontrolovat, zda interval navazuje na předchozí (rozdíl max 15min)
+                time_gap = (interval["timestamp"] - current_block["end_timestamp"]).total_seconds()
+                
+                if time_gap <= 15 * 60:  # Souvislý nebo navazující interval
+                    # Sloučit do aktuálního bloku
+                    current_block["time_to"] = interval["end"].strftime("%H:%M")
+                    current_block["end_timestamp"] = interval["end"]
+                    current_block["grid_charge_kwh"] += interval["energy_kwh"]
+                    current_block["total_cost_czk"] += interval["cost_czk"]
+                    current_block["battery_end_kwh"] = interval["battery_capacity_kwh"]
+                    current_block["interval_count"] += 1
+                    # Přepočítat průměrnou cenu
+                    current_block["avg_spot_price_czk"] = (
+                        current_block["total_cost_czk"] / current_block["grid_charge_kwh"]
+                        if current_block["grid_charge_kwh"] > 0 else 0
+                    )
+                else:
+                    # Mezera > 15min - uzavřít aktuální blok a začít nový
+                    charging_blocks.append(current_block)
+                    current_block = {
+                        "time_from": interval["timestamp"].strftime("%H:%M"),
+                        "time_to": interval["end"].strftime("%H:%M"),
+                        "start_timestamp": interval["timestamp"],
+                        "end_timestamp": interval["end"],
+                        "grid_charge_kwh": interval["energy_kwh"],
+                        "total_cost_czk": interval["cost_czk"],
+                        "avg_spot_price_czk": interval["spot_price_czk"],
+                        "battery_start_kwh": interval["battery_capacity_kwh"] - interval["energy_kwh"],
+                        "battery_end_kwh": interval["battery_capacity_kwh"],
+                        "interval_count": 1,
+                        "is_charging_battery": True,
+                    }
+        
+        # Přidat poslední blok
+        if current_block:
+            charging_blocks.append(current_block)
+
+        # PHASE 3: Vypočítat agregované metriky
+        total_energy_kwh = sum(block["grid_charge_kwh"] for block in charging_blocks)
+        total_cost_czk = sum(block["total_cost_czk"] for block in charging_blocks)
+        
+        # Najít další budoucí nabíjecí blok
+        next_charging_block = None
+        for block in charging_blocks:
+            if block["start_timestamp"] > now:
+                next_charging_block = block
+                break
+        
         next_charging_time_range = None
         next_charging_duration = None
-        if next_charging_start:
-            next_charging_time_range = (
-                f"{next_charging_start.strftime('%H:%M')} - "
-                f"{next_charging_end.strftime('%H:%M')}"
-            )
-            duration_minutes = (next_charging_end - next_charging_start).seconds // 60
+        if next_charging_block:
+            next_charging_time_range = f"{next_charging_block['time_from']} - {next_charging_block['time_to']}"
+            duration_minutes = (
+                next_charging_block["end_timestamp"] - next_charging_block["start_timestamp"]
+            ).seconds // 60
             next_charging_duration = f"{duration_minutes} min"
 
+        # Cleanup: odstranit timestamp objekty před vrácením (nelze serializovat)
+        for block in charging_blocks:
+            del block["start_timestamp"]
+            del block["end_timestamp"]
+
         return {
-            "charging_intervals": charging_intervals,  # Dashboard očekává tento klíč
+            "charging_blocks": charging_blocks,  # Sloučené bloky místo jednotlivých intervalů
             "total_energy_kwh": round(total_energy_kwh, 2),
             "total_cost_czk": round(total_cost_czk, 2),
             "next_charging_time_range": next_charging_time_range,
             "next_charging_duration": next_charging_duration,
-            "is_charging_planned": len(charging_intervals) > 0,
+            "is_charging_planned": len(charging_blocks) > 0,
         }
 
 

@@ -644,12 +644,12 @@ function updateBatteryBalancingIndicator(state, timeRemaining, costSelected) {
 
 function showGridChargingPopup() {
     getSensorString(getSensorId('grid_charging_planned')).then(gridChargingData => {
-        if (!gridChargingData.attributes || !gridChargingData.attributes.charging_intervals) {
-            showDialog('Plánované nabíjení ze sítě', 'Žádné intervaly nejsou naplánovány.');
+        if (!gridChargingData.attributes || !gridChargingData.attributes.charging_blocks) {
+            showDialog('Plánované nabíjení ze sítě', 'Žádné bloky nejsou naplánovány.');
             return;
         }
 
-        const intervals = gridChargingData.attributes.charging_intervals;
+        const blocks = gridChargingData.attributes.charging_blocks;
         const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
         const totalCost = gridChargingData.attributes.total_cost_czk || 0;
 
@@ -664,27 +664,34 @@ function showGridChargingPopup() {
                     <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-primary);">
                         <th style="padding: 8px; text-align: left;">Čas</th>
                         <th style="padding: 8px; text-align: right;">Energie</th>
-                        <th style="padding: 8px; text-align: right;">Cena</th>
-                        <th style="padding: 8px; text-align: center;">Stav</th>
+                        <th style="padding: 8px; text-align: right;">∅ Cena</th>
+                        <th style="padding: 8px; text-align: right;">Náklady</th>
+                        <th style="padding: 8px; text-align: center;">Baterie</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
-        intervals.forEach((interval, index) => {
+        blocks.forEach((block, index) => {
             const rowBg = index % 2 === 0 ? 'var(--bg-tertiary)' : 'transparent';
-            const isCharging = interval.is_charging_battery;
-            const statusIcon = isCharging ? '⚡' : '🔋';
-            const statusText = isCharging ? 'Nabíjí' : interval.note || 'Baterie plná';
-            const energyText = interval.grid_charge_kwh ? interval.grid_charge_kwh.toFixed(2) + ' kWh' : '-';
-            const costText = interval.grid_charge_cost ? '~' + interval.grid_charge_cost.toFixed(2) + ' Kč' : '-';
+            const batteryChange = `${block.battery_start_kwh.toFixed(1)} → ${block.battery_end_kwh.toFixed(1)} kWh`;
+            const energyText = block.grid_charge_kwh.toFixed(2) + ' kWh';
+            const avgPriceText = block.avg_spot_price_czk.toFixed(2) + ' Kč/kWh';
+            const costText = block.total_cost_czk.toFixed(2) + ' Kč';
+            const intervalInfo = `${block.interval_count}× 15min`;
 
             tableHtml += `
                 <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-tertiary);">
-                    <td style="padding: 8px;">${interval.time_from} - ${interval.time_to}</td>
+                    <td style="padding: 8px;">
+                        <strong>${block.time_from} - ${block.time_to}</strong><br>
+                        <small style="opacity: 0.7;">${intervalInfo}</small>
+                    </td>
                     <td style="padding: 8px; text-align: right;">${energyText}</td>
-                    <td style="padding: 8px; text-align: right;">${costText}</td>
-                    <td style="padding: 8px; text-align: center;" title="${statusText}">${statusIcon}</td>
+                    <td style="padding: 8px; text-align: right;">${avgPriceText}</td>
+                    <td style="padding: 8px; text-align: right;"><strong>${costText}</strong></td>
+                    <td style="padding: 8px; text-align: center; font-size: 0.85em;">
+                        ${batteryChange}
+                    </td>
                 </tr>
             `;
         });
