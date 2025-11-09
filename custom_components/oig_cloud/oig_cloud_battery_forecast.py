@@ -6,7 +6,6 @@ import math
 import numpy as np
 import copy
 import json
-import os
 import hashlib
 from typing import Any, Dict, List, Optional, Union
 from datetime import date, datetime, timedelta, timezone
@@ -26,6 +25,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 
 from .oig_cloud_data_sensor import OigCloudDataSensor
+from .const import DOMAIN  # TODO 3: Import DOMAIN for BalancingManager access
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -831,19 +831,56 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Run HYBRID optimization (simplified, reliable)
             try:
-                # Extract balancing_plan from active_charging_plan if exists
+                # TODO 3: Load balancing plan from new BalancingManager
                 balancing_plan_for_hybrid = None
+
+                # TODO 3: Try new BalancingManager first
+                try:
+                    entry_id = (
+                        self._config_entry.entry_id if self._config_entry else None
+                    )
+                    if (
+                        entry_id
+                        and DOMAIN in self._hass.data
+                        and entry_id in self._hass.data[DOMAIN]
+                    ):
+                        balancing_manager = self._hass.data[DOMAIN][entry_id].get(
+                            "balancing_manager"
+                        )
+                        if balancing_manager:
+                            active_plan = balancing_manager.get_active_plan()
+                            if active_plan and active_plan.active:
+                                # Convert BalancingPlan to HYBRID format
+                                balancing_plan_for_hybrid = {
+                                    "holding_start": active_plan.holding_start,
+                                    "holding_end": active_plan.holding_end,
+                                    "charging_intervals": [
+                                        interval.ts
+                                        for interval in active_plan.intervals
+                                    ],
+                                    "reason": active_plan.reason,
+                                }
+                                _LOGGER.info(
+                                    f"🔋 Loaded balancing plan from BalancingManager: "
+                                    f"mode={active_plan.mode.value}, "
+                                    f"holding={active_plan.holding_start} - {active_plan.holding_end}, "
+                                    f"intervals={len(active_plan.intervals)}"
+                                )
+                except Exception as e:
+                    _LOGGER.debug(f"Could not load from BalancingManager: {e}")
+
+                # Fallback to legacy active_charging_plan
                 if (
-                    hasattr(self, "_active_charging_plan")
+                    not balancing_plan_for_hybrid
+                    and hasattr(self, "_active_charging_plan")
                     and self._active_charging_plan
                 ):
-                    # Pass charging_plan portion to HYBRID
                     balancing_plan_for_hybrid = self._active_charging_plan.get(
                         "charging_plan"
                     )
                     if balancing_plan_for_hybrid:
                         _LOGGER.info(
-                            f"🔋 Passing balancing plan to HYBRID: "
+                            f"🔋 Using legacy charging plan: "
                             f"requester={self._active_charging_plan.get('requester')}, "
                             f"mode={self._active_charging_plan.get('mode')}"
                         )
@@ -2305,9 +2342,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 target_capacity = max_capacity  # Balancing VŽDY 100%
                 balancing_reason = balancing_plan.get("reason", "unknown")
 
-                # Preferované charging intervaly
-                for iv in balancing_plan.get("charging_intervals", []):
-                    ts = datetime.fromisoformat(iv["timestamp"])
+                # Preferované charging intervaly (ISO strings)
+                for iv_str in balancing_plan.get("charging_intervals", []):
+                    ts = datetime.fromisoformat(iv_str)
                     if ts.tzinfo is None:
                         ts = dt_util.as_local(ts)
                     preferred_charging_intervals.add(ts)
@@ -5291,78 +5328,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         else:
             _LOGGER.debug("No new actual intervals to add")
 
-        # Uložit zpět pouze pokud byly přidány nové intervaly
+        # Update in-memory state pouze pokud byly přidány nové intervaly
         if new_intervals:
-            await self._save_daily_plan_to_storage(today_str, plan_data)
-            # Update in-memory state
             self._daily_plan_state = plan_data
         else:
             _LOGGER.debug("No changes, skipping storage update")
-
-    async def _save_daily_plan_to_storage(
-        self, date_str: str, plan_data: Dict[str, Any]
-    ) -> None:
-        """
-        Uložit daily plan do JSON souboru.
-
-        Args:
-            date_str: Datum ve formátu YYYY-MM-DD
-            plan_data: Daily plan state data
-        """
-        if not self._hass:
-            return
-
-        try:
-            storage_dir = self._hass.config.path(".storage", "oig_cloud_daily_plans")
-            await self._hass.async_add_executor_job(
-                os.makedirs, storage_dir, 0o755, True
-            )
-
-            file_path = os.path.join(storage_dir, f"{date_str}.json")
-
-            def write_file():
-                with open(file_path, "w") as f:
-                    json.dump(plan_data, f, indent=2, default=str)
-
-            await self._hass.async_add_executor_job(write_file)
-            _LOGGER.debug(f"💾 Saved daily plan to {file_path}")
-
-        except Exception as e:
-            _LOGGER.error(f"Error saving daily plan to storage: {e}")
-
-    async def _load_daily_plan_from_storage(
-        self, date_str: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Načíst daily plan z JSON souboru.
-
-        Args:
-            date_str: Datum ve formátu YYYY-MM-DD
-
-        Returns:
-            Daily plan state data nebo None
-        """
-        if not self._hass:
-            return None
-
-        try:
-            storage_dir = self._hass.config.path(".storage", "oig_cloud_daily_plans")
-            file_path = os.path.join(storage_dir, f"{date_str}.json")
-
-            def read_file():
-                if not os.path.exists(file_path):
-                    return None
-                with open(file_path, "r") as f:
-                    return json.load(f)
-
-            data = await self._hass.async_add_executor_job(read_file)
-            if data:
-                _LOGGER.debug(f"📂 Loaded daily plan from {file_path}")
-            return data
-
-        except Exception as e:
-            _LOGGER.error(f"Error loading daily plan from storage: {e}")
-            return None
 
     # ========================================================================
     # PHASE 3.0: STORAGE HELPER METHODS - Persistent Battery Plans
@@ -12947,9 +12917,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             Offset v sekundách (fallback 300s = 5 minut pokud tracker není dostupný)
         """
         try:
-            # Import DOMAIN
-            from .const import DOMAIN
-
             # OPRAVA: Použít self.hass z CoordinatorEntity
             if not self.hass:
                 _LOGGER.warning(

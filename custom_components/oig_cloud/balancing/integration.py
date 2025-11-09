@@ -1,4 +1,4 @@
-"""Planning System Integration for Coordinator."""
+"""Balancing System Integration for Coordinator."""
 
 from __future__ import annotations
 
@@ -10,22 +10,22 @@ from typing import Any, Dict, Optional
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
-from .planning import (
+from . import (
     BatterySimulation,
     PlanManager,
     BalancingManager,
     WeatherMonitor,
 )
-from .planning.simulation import SimulationContext
-from .planning.balancing_manager import BalancingConfig
-from .planning.weather_monitor import WeatherConfig
-from .const import HOME_III
+from .simulation import SimulationContext
+from .balancing_manager import BalancingConfig
+from .weather_monitor import WeatherConfig
+from ..const import HOME_III
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class PlanningSystem:
-    """Planning system integration wrapper.
+class BalancingSystem:
+    """Balancing system integration wrapper.
 
     Coordinates all planning modules and provides simple interface for coordinator.
     """
@@ -37,7 +37,7 @@ class PlanningSystem:
         box_id: str,
         storage_path: str,
     ):
-        """Initialize planning system.
+        """Initialize balancing system.
 
         Args:
             hass: Home Assistant instance
@@ -60,7 +60,7 @@ class PlanningSystem:
         self._initialized = False
 
     async def async_setup(self) -> None:
-        """Set up planning system asynchronously."""
+        """Set up balancing system asynchronously."""
         if self._initialized:
             return
 
@@ -98,19 +98,19 @@ class PlanningSystem:
             await self.weather_monitor.start()
 
             self._initialized = True
-            self._logger.info("Planning system initialized successfully")
+            self._logger.info("Balancing system initialized successfully")
 
         except Exception as e:
-            self._logger.error(f"Error setting up planning system: {e}", exc_info=True)
+            self._logger.error(f"Error setting up balancing system: {e}", exc_info=True)
             raise
 
     async def async_shutdown(self) -> None:
-        """Shut down planning system."""
+        """Shut down balancing system."""
         if self.weather_monitor:
             await self.weather_monitor.stop()
 
         self._initialized = False
-        self._logger.info("Planning system shut down")
+        self._logger.info("Balancing system shut down")
 
     async def update_automatic_plan(self) -> Optional[Dict[str, Any]]:
         """Update automatic plan (called periodically by coordinator).
@@ -119,7 +119,7 @@ class PlanningSystem:
             Plan data dict or None
         """
         if not self._initialized:
-            self._logger.warning("Planning system not initialized")
+            self._logger.warning("Balancing system not initialized")
             return None
 
         try:

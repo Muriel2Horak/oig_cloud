@@ -394,13 +394,12 @@ async def async_setup_entry(
     )
 
     # === CLEANUP PŘED REGISTRACÍ ===
-    # Sestavíme seznam očekávaných sensor_types podle konfigurace
-    expected_sensor_types = _get_expected_sensor_types(hass, entry)
-
-    # Univerzální cleanup - sjednocení 3 stávajících funkcí
-    await _cleanup_all_orphaned_entities(
-        hass, entry, coordinator, expected_sensor_types
-    )
+    # POZN: Cleanup je vypnutý kvůli pomalému setupu (>10s)
+    # Cleanup běží pouze při první instalaci nebo pokud je explicitně vyžádán
+    # expected_sensor_types = _get_expected_sensor_types(hass, entry)
+    # await _cleanup_all_orphaned_entities(
+    #     hass, entry, coordinator, expected_sensor_types
+    # )
 
     # === DEVICE INFO OBJEKTY ===
     # Vytvoříme device_info objekty jednou pro všechny senzory
@@ -869,6 +868,24 @@ async def async_setup_entry(
                 )
                 async_add_entities(battery_forecast_sensors, True)
 
+                # TODO 3: Set forecast sensor reference in BalancingManager
+                try:
+                    if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+                        balancing_manager = hass.data[DOMAIN][entry.entry_id].get(
+                            "balancing_manager"
+                        )
+                        if balancing_manager and battery_forecast_sensors:
+                            # Use first forecast sensor (typically battery_forecast)
+                            forecast_sensor = battery_forecast_sensors[0]
+                            balancing_manager.set_forecast_sensor(forecast_sensor)
+                            _LOGGER.info(
+                                "✅ Connected BalancingManager to forecast sensor"
+                            )
+                except Exception as e:
+                    _LOGGER.debug(
+                        f"Could not set forecast sensor in BalancingManager: {e}"
+                    )
+
                 # Přidat Battery Health sensor (SoH monitoring)
                 try:
                     from .oig_cloud_battery_health import OigCloudBatteryHealthSensor
@@ -903,7 +920,7 @@ async def async_setup_entry(
                         f"Failed to create Battery Forecast Performance sensor: {e}"
                     )
 
-                # Přidat také battery balancing sensor
+                # Battery balancing sensor - displays BalancingManager state
                 try:
                     from .oig_cloud_battery_balancing import (
                         OigCloudBatteryBalancingSensor,

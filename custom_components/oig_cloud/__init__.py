@@ -26,6 +26,19 @@ from .const import (
 )
 from .oig_cloud_coordinator import OigCloudCoordinator
 
+# OPRAVA: Bezpečný import BalancingManager s try/except
+try:
+    from .balancing import BalancingManager
+
+    _LOGGER_TEMP = logging.getLogger(__name__)
+    _LOGGER_TEMP.debug("oig_cloud: BalancingManager import OK")
+except Exception as err:
+    BalancingManager = None
+    _LOGGER_TEMP = logging.getLogger(__name__)
+    _LOGGER_TEMP.error(
+        "oig_cloud: Failed to import BalancingManager: %s", err, exc_info=True
+    )
+
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
@@ -466,12 +479,14 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     if enabled_count > 0:
         _LOGGER.info("✅ Re-enabled %s correct entities", enabled_count)
     if skipped_count > 0:
-        _LOGGER.debug("⏭️ Skipped %s entities (already in correct format)", skipped_count)
+        _LOGGER.debug(
+            "⏭️ Skipped %s entities (already in correct format)", skipped_count
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OIG Cloud from a config entry."""
-    _LOGGER.info("[OIG SETUP] Starting OIG Cloud setup")
+    _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
     _LOGGER.info(f"Setting up OIG Cloud entry: {entry.title}")
     _LOGGER.debug(f"Config data keys: {list(entry.data.keys())}")
     _LOGGER.debug(f"Config options keys: {list(entry.options.keys())}")
@@ -765,6 +780,87 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )  # OPRAVA: default False místo True
         # OPRAVA: Dashboard registrujeme AŽ PO vytvoření senzorů
 
+        # TODO 3: Inicializace Balancing Manager (refactored - no physics)
+        balancing_enabled = entry.options.get("balancing_enabled", True)
+        _LOGGER.info("oig_cloud: balancing_enabled=%s", balancing_enabled)
+
+        balancing_manager = None
+        if balancing_enabled and BalancingManager is not None:
+            try:
+                _LOGGER.info("oig_cloud: Initializing BalancingManager")
+                # Get box_id from coordinator data (not from entry.data)
+                if coordinator.data:
+                    box_id = next(iter(coordinator.data.keys()))
+                else:
+                    box_id = None
+                    _LOGGER.warning(
+                        "oig_cloud: No coordinator data available for box_id"
+                    )
+
+                storage_path = hass.config.path(".storage")
+
+                balancing_manager = BalancingManager(hass, box_id, storage_path)
+                await balancing_manager.async_setup()
+
+                _LOGGER.info("oig_cloud: BalancingManager successfully initialized")
+
+                # Periodické volání balancingu (check every 30min)
+                from homeassistant.helpers.event import (
+                    async_track_time_interval,
+                    async_call_later,
+                )
+                from datetime import timedelta
+
+                async def update_balancing(_now: Any) -> None:
+                    """Periodická kontrola balancingu."""
+                    _LOGGER.debug("BalancingManager: periodic check_balancing()")
+                    try:
+                        await balancing_manager.check_balancing()
+                    except Exception as e:
+                        _LOGGER.error(f"Error checking balancing: {e}", exc_info=True)
+
+                # Aktualizace každých 30 minut
+                entry.async_on_unload(
+                    async_track_time_interval(
+                        hass, update_balancing, timedelta(minutes=30)
+                    )
+                )
+
+                # První volání hned při startu (po delay aby forecast měl čas se inicializovat)
+                async def initial_balancing_check(_now: Any) -> None:
+                    """Počáteční kontrola balancingu po startu."""
+                    _LOGGER.debug("BalancingManager: initial check_balancing()")
+                    try:
+                        result = await balancing_manager.check_balancing()
+                        if result:
+                            _LOGGER.info(
+                                f"✅ Initial check created plan: {result.mode.name}"
+                            )
+                        else:
+                            _LOGGER.debug("Initial check: no plan needed yet")
+                    except Exception as e:
+                        _LOGGER.error(
+                            f"Error in initial balancing check: {e}", exc_info=True
+                        )
+
+                # První kontrola za 2 minuty (aby forecast měl čas se inicializovat)
+                async_call_later(hass, 120, initial_balancing_check)
+
+            except Exception as err:
+                _LOGGER.error(
+                    "oig_cloud: Failed to initialize BalancingManager: %s",
+                    err,
+                    exc_info=True,
+                )
+                balancing_manager = None
+        else:
+            if not balancing_enabled:
+                _LOGGER.info("oig_cloud: BalancingManager disabled via config options")
+            if BalancingManager is None:
+                _LOGGER.warning(
+                    "oig_cloud: BalancingManager not available (import failed)"
+                )
+
         # Uložení dat do hass.data
         hass.data[DOMAIN][entry.entry_id] = {
             "coordinator": coordinator,
@@ -776,6 +872,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "service_shield": service_shield,
             "ote_api": ote_api,
             "boiler_coordinator": boiler_coordinator,  # NOVÉ: Boiler coordinator
+            "balancing_manager": balancing_manager,  # TODO 3: Refactored Balancing Manager
             "dashboard_enabled": dashboard_enabled,  # NOVÉ: stav dashboard
             "config": {
                 "enable_statistics": statistics_enabled,
@@ -977,6 +1074,8 @@ async def async_unload_entry(
     """Unload a config entry."""
     # Odebrání dashboard panelu při unload
     await _remove_frontend_panel(hass, entry)
+
+    # TODO 3: Cleanup Balancing Manager (no async_shutdown needed - just storage)
 
     # NOVÉ: Cleanup session manageru
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:

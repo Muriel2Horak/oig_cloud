@@ -373,6 +373,19 @@ class BatterySimulation:
         Returns:
             Optimal CBB mode (HOME_I/II/III/UPS)
         """
+        # Special handling for balancing context
+        if context_type == "balancing":
+            # During balancing, always charge aggressively
+            solar_kw = self.context.solar_forecast.get(timestamp, 0.0)
+            has_fve = solar_kw > (FVE_SWITCH_THRESHOLD_W / 1000)
+
+            if has_fve:
+                # Use solar for charging
+                return HOME_III
+            else:
+                # No solar, charge from grid
+                return HOME_UPS
+
         solar_kw = self.context.solar_forecast.get(timestamp, 0.0)
         consumption_kw = self.context.consumption_forecast.get(timestamp, 0.0)
         spot_price = self.context.spot_prices.get(timestamp, 0.0)

@@ -265,42 +265,38 @@ class BalancingManager:
         return plan.plan_id
 
     async def _detect_holding_window(self) -> Optional[Tuple[datetime, int]]:
-        """Detect holding window from history per BR-4.2.
+        """Detect holding window for opportunistic balancing per BR-4.2.
 
-        Looks for continuous period of SoC >= 98% lasting >= min_hold_hours.
+        Calculates when battery will reach 100% and schedules holding to start then.
 
         Returns:
-            (target_time, holding_hours) or None
+            (target_time, holding_hours) where target_time is when to START holding
         """
-        # Get battery SoC history
-        history = await self._get_soc_history(hours=24)
-        if not history:
-            return None
+        now = datetime.now()
 
-        # Find continuous window of high SoC
-        threshold = self.config.opportunistic_threshold_soc
-        window_start = None
-        window_duration = 0
+        # Get current SoC
+        current_soc = await self._get_current_soc_percent()
+        if current_soc is None or current_soc >= 99.5:
+            # Already at 100%, start holding now
+            return now, self.config.opportunistic_min_hold_hours
 
-        for timestamp, soc in history:
-            if soc >= threshold:
-                if window_start is None:
-                    window_start = timestamp
-                window_duration = int((timestamp - window_start).total_seconds() / 3600)
-            else:
-                # Window broken
-                if window_duration >= self.config.opportunistic_min_hold_hours:
-                    # Found valid window
-                    return window_start, window_duration
-                # Reset
-                window_start = None
-                window_duration = 0
+        # Estimate charging time to 100%
+        # Assuming ~5% per 15min interval at typical charge rate
+        # TODO: Use actual battery capacity and charge power from context
+        soc_needed = 100.0 - current_soc
+        intervals_needed = int(soc_needed / 5.0) + 1  # Conservative estimate
+        charge_time_hours = intervals_needed * 0.25  # 15min intervals
 
-        # Check final window
-        if window_start and window_duration >= self.config.opportunistic_min_hold_hours:
-            return window_start, window_duration
+        # Target time = now + charge time (when we reach 100%)
+        target_time = now + timedelta(hours=charge_time_hours)
 
-        return None
+        self._logger.info(
+            f"Opportunistic balancing: current_soc={current_soc:.1f}%, "
+            f"will reach 100% at {target_time.strftime('%H:%M')}, "
+            f"holding for {self.config.opportunistic_min_hold_hours}h"
+        )
+
+        return target_time, self.config.opportunistic_min_hold_hours
 
     async def _get_export_window(
         self,
