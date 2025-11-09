@@ -299,22 +299,30 @@ async function updateBatteryBalancingCard() {
         }
 
         const attrs = balancingData.attributes;
-        const status = balancingData.value; // ok, due_soon, critical, overdue, disabled
+        const status = balancingData.state || attrs.status || 'ok'; // ok, natural, opportunistic, forced, overdue
         const daysSince = attrs.days_since_last ?? null;
-        const intervalDays = attrs.config?.interval_days ?? 7;
+        const intervalDays = attrs.cycle_days ?? 7;
+        const holdingHours = attrs.holding_hours ?? 3;
+        const socThreshold = attrs.soc_threshold ?? 80;
         const lastBalancing = attrs.last_balancing ? new Date(attrs.last_balancing) : null;
         const planned = attrs.planned;
         const currentState = attrs.current_state ?? 'standby'; // charging/balancing/planned/standby
         const timeRemaining = attrs.time_remaining; // HH:MM
 
-        // Získat přesnou cenu z forecast sensoru
-        const balancingCost = forecastData?.attributes?.balancing_cost;
+        // Získat cost tracking data
+        const costImmediate = attrs.cost_immediate_czk;
+        const costSelected = attrs.cost_selected_czk;
+        const costSavings = attrs.cost_savings_czk;
 
-        console.log('[Balancing] Forecast data:', {
-            hasForecast: !!forecastData,
-            hasAttributes: !!forecastData?.attributes,
-            balancingCost: balancingCost,
-            allAttributes: forecastData?.attributes ? Object.keys(forecastData.attributes) : []
+        console.log('[Balancing] Sensor data:', {
+            state: status,
+            daysSince,
+            intervalDays,
+            lastBalancing: attrs.last_balancing,
+            costImmediate,
+            costSelected,
+            costSavings,
+            planned: !!planned
         });
 
         // Vypočítat dny do dalšího balancingu
@@ -394,13 +402,28 @@ async function updateBatteryBalancingCard() {
 
         // Update velké číslo - dny
         const daysNumber = document.getElementById('balancing-days-number');
+        const daysUnit = document.getElementById('balancing-days-unit');
         if (daysNumber) {
             if (daysRemaining !== null) {
                 daysNumber.textContent = daysRemaining;
                 daysNumber.style.color = statusColor;
+
+                // Správný český tvar
+                if (daysUnit) {
+                    if (daysRemaining === 1) {
+                        daysUnit.textContent = 'den';
+                    } else if (daysRemaining >= 2 && daysRemaining <= 4) {
+                        daysUnit.textContent = 'dny';
+                    } else {
+                        daysUnit.textContent = 'dní';
+                    }
+                }
             } else {
                 daysNumber.textContent = '?';
                 daysNumber.style.color = '#757575';
+                if (daysUnit) {
+                    daysUnit.textContent = 'dní';
+                }
             }
         }
 
@@ -475,26 +498,24 @@ async function updateBatteryBalancingCard() {
             tooltipHTML += '</div>';
 
             // Sekce: Náklady (pokud jsou k dispozici)
-            if (balancingCost) {
-                const chargingCostVal = balancingCost.charging_cost_czk ?? 0;
-                const holdingCostVal = balancingCost.holding_cost_czk ?? 0;
-                const totalCostVal = balancingCost.total_cost_czk ?? 0;
-
+            if (costSelected !== null && costSelected !== undefined) {
                 tooltipHTML += '<table style="width: 100%; border-collapse: collapse; margin-top: 8px;">';
                 tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
                 tooltipHTML += '<th style="padding: 4px; text-align: left; color: rgba(255,255,255,0.9);">💰 Náklady</th>';
                 tooltipHTML += '<th style="padding: 4px; text-align: right;"></th>';
                 tooltipHTML += '</tr></thead>';
                 tooltipHTML += '<tbody>';
-                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Nabíjení:</td>';
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${chargingCostVal.toFixed(2)} Kč</td></tr>`;
-                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Držení:</td>';
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${holdingCostVal.toFixed(2)} Kč</td></tr>`;
+                tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Vybraný plán:</td>';
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costSelected.toFixed(2)} Kč</td></tr>`;
+                if (costImmediate !== null && costImmediate !== undefined) {
+                    tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Okamžitě:</td>';
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costImmediate.toFixed(2)} Kč</td></tr>`;
+                }
+                if (costSavings && costSavings > 0) {
+                    tooltipHTML += '<tr style="color: #4CAF50;"><td style="padding: 2px 4px;">Úspora:</td>';
+                    tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costSavings.toFixed(2)} Kč</td></tr>`;
+                }
                 tooltipHTML += '</tbody>';
-                tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
-                tooltipHTML += '<td style="padding: 4px;">Celkem:</td>';
-                tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCostVal.toFixed(2)} Kč</td>`;
-                tooltipHTML += '</tr></tfoot>';
                 tooltipHTML += '</table>';
             }
 
@@ -503,24 +524,27 @@ async function updateBatteryBalancingCard() {
             plannedTimeShort.textContent = `dnes ${startStr}`;
             plannedTimeShort.setAttribute('data-tooltip-html', tooltipHTML);
 
-            // Přesné náklady pokud jsou k dispozici
-            if (balancingCost) {
-                const totalCost = balancingCost.total_cost_czk ?? 0;
-                const chargingCost = balancingCost.charging_cost_czk ?? 0;
-                const holdingCost = balancingCost.holding_cost_czk ?? 0;
-
-                console.log('[Balancing] Cost data:', { totalCost, chargingCost, holdingCost, balancingCost });
-
-                costValueShort.textContent = `${totalCost.toFixed(1)} Kč`;
-                costValueShort.title = `Nabíjení: ${chargingCost.toFixed(2)} Kč\nDržení: ${holdingCost.toFixed(2)} Kč\nCelkem: ${totalCost.toFixed(2)} Kč`;
+            // Zobrazení nákladů
+            if (costSelected !== null && costSelected !== undefined) {
+                // Použít cost tracking data z balancing senzoru
+                costValueShort.textContent = `${costSelected.toFixed(1)} Kč`;
+                if (costSavings && costSavings > 0) {
+                    costValueShort.textContent += ` (-${costSavings.toFixed(1)} Kč)`;
+                    costValueShort.title = `Vybraná cena: ${costSelected.toFixed(2)} Kč\nÚspora oproti okamžitému: ${costSavings.toFixed(2)} Kč`;
+                    costValueShort.style.color = '#4CAF50'; // Zelená = úspora
+                } else {
+                    costValueShort.title = `Odhadované náklady: ${costSelected.toFixed(2)} Kč`;
+                    costValueShort.style.color = 'var(--text-primary)';
+                }
             } else {
                 // Fallback odhad
                 console.warn('[Balancing] No balancing_cost in forecast, using estimate');
                 const avgPrice = planned.avg_price_czk ?? 0;
-                const holdHours = attrs.config?.hold_hours ?? 3;
+                const holdHours = holdingHours;
                 const estimatedCost = avgPrice * holdHours * 0.7;
                 costValueShort.textContent = `~${estimatedCost.toFixed(1)} Kč`;
-                costValueShort.title = `Odhad (přesné náklady nejsou k dispozici)`;
+                costValueShort.title = 'Odhad (přesné náklady nejsou k dispozici)';
+                costValueShort.style.color = 'var(--text-primary)';
             }
         } else if (plannedShort) {
             // Skrýt plánovanou řádku
@@ -542,10 +566,12 @@ async function updateBatteryBalancingCard() {
         }
 
         // Re-inicializovat tooltips aby fungovaly na dynamicky přidaných elementech
-        initTooltips();
+        if (typeof initTooltips === 'function') {
+            initTooltips();
+        }
 
         // NOVÉ: Aktualizovat baterie balancing indikátor
-        updateBatteryBalancingIndicator(currentState, timeRemaining, balancingCost);
+        updateBatteryBalancingIndicator(currentState, timeRemaining, costSelected);
 
     } catch (error) {
         console.error('[Balancing] Error updating battery balancing card:', error);
@@ -556,9 +582,9 @@ async function updateBatteryBalancingCard() {
  * Aktualizuje indikátor balancování baterie v boxu baterie
  * @param {string} state - Aktuální stav: 'charging', 'balancing', 'planned', 'standby'
  * @param {string} timeRemaining - Zbývající čas ve formátu HH:MM
- * @param {object} balancingCost - Objekt s náklady na balancování
+ * @param {number|null} costSelected - Celkové náklady balancování
  */
-function updateBatteryBalancingIndicator(state, timeRemaining, balancingCost) {
+function updateBatteryBalancingIndicator(state, timeRemaining, costSelected) {
     const indicator = document.getElementById('battery-balancing-indicator');
     const icon = document.getElementById('balancing-icon');
     const text = document.getElementById('balancing-text');
@@ -582,33 +608,26 @@ function updateBatteryBalancingIndicator(state, timeRemaining, balancingCost) {
 
         // Sestavit tooltip s detaily
         let tooltipHtml = '<div style="text-align: left; min-width: 200px;">';
-        tooltipHtml += `<strong>🔋 Balancování baterie</strong><br><br>`;
+        tooltipHtml += '<strong>🔋 Balancování baterie</strong><br><br>';
 
         if (state === 'charging') {
-            tooltipHtml += `<strong>Fáze:</strong> Nabíjení baterie<br>`;
-            tooltipHtml += `<em>Baterie se nabíjí před vyvažováním článků</em><br><br>`;
+            tooltipHtml += '<strong>Fáze:</strong> Nabíjení baterie<br>';
+            tooltipHtml += '<em>Baterie se nabíjí před vyvažováním článků</em><br><br>';
         } else {
-            tooltipHtml += `<strong>Fáze:</strong> Držení (balancování)<br>`;
-            tooltipHtml += `<em>Články baterie se vyvažují na stejnou úroveň</em><br><br>`;
+            tooltipHtml += '<strong>Fáze:</strong> Držení (balancování)<br>';
+            tooltipHtml += '<em>Články baterie se vyvažují na stejnou úroveň</em><br><br>';
         }
 
         if (timeRemaining) {
             tooltipHtml += `⏱️ <strong>Zbývá:</strong> ${timeRemaining}<br>`;
         }
 
-        if (balancingCost) {
-            const totalCost = balancingCost.total_cost_czk ?? 0;
-            const chargingCost = balancingCost.charging_cost_czk ?? 0;
-            const holdingCost = balancingCost.holding_cost_czk ?? 0;
-
-            tooltipHtml += `<br><strong>💰 Náklady:</strong><br>`;
-            tooltipHtml += `• Nabíjení: ${chargingCost.toFixed(2)} Kč<br>`;
-            tooltipHtml += `• Držení: ${holdingCost.toFixed(2)} Kč<br>`;
-            tooltipHtml += `• <strong>Celkem: ${totalCost.toFixed(2)} Kč</strong><br>`;
+        if (costSelected !== null && costSelected !== undefined) {
+            tooltipHtml += `<br><strong>💰 Náklady:</strong> ${costSelected.toFixed(2)} Kč<br>`;
         }
 
-        tooltipHtml += `<br><small style="opacity: 0.7;">ℹ️ Balancování prodlužuje životnost baterie tím, že vyrovná napětí všech článků</small>`;
-        tooltipHtml += `</div>`;
+        tooltipHtml += '<br><small style="opacity: 0.7;">ℹ️ Balancování prodlužuje životnost baterie tím, že vyrovná napětí všech článků</small>';
+        tooltipHtml += '</div>';
 
         indicator.setAttribute('data-tooltip-html', tooltipHtml);
 
@@ -618,7 +637,9 @@ function updateBatteryBalancingIndicator(state, timeRemaining, balancingCost) {
     }
 
     // Reinicializovat tooltips
-    initTooltips();
+    if (typeof initTooltips === 'function') {
+        initTooltips();
+    }
 }
 
 function showGridChargingPopup() {

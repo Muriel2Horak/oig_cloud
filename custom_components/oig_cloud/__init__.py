@@ -799,7 +799,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                 storage_path = hass.config.path(".storage")
 
-                balancing_manager = BalancingManager(hass, box_id, storage_path)
+                balancing_manager = BalancingManager(hass, box_id, storage_path, entry)
                 await balancing_manager.async_setup()
 
                 _LOGGER.info("oig_cloud: BalancingManager successfully initialized")

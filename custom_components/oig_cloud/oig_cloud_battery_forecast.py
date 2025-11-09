@@ -686,9 +686,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         await super().async_update()
 
         try:
-            # Update plan lifecycle status FIRST
-            self.update_plan_lifecycle()
-
             # Získat všechna potřebná data
             _LOGGER.info("Battery forecast async_update() called")
             current_capacity = self._get_current_battery_capacity()
@@ -869,22 +866,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 except Exception as e:
                     _LOGGER.debug(f"Could not load from BalancingManager: {e}")
 
-                # Fallback to legacy active_charging_plan
-                if (
-                    not balancing_plan_for_hybrid
-                    and hasattr(self, "_active_charging_plan")
-                    and self._active_charging_plan
-                ):
-                    balancing_plan_for_hybrid = self._active_charging_plan.get(
-                        "charging_plan"
-                    )
-                    if balancing_plan_for_hybrid:
-                        _LOGGER.info(
-                            f"🔋 Using legacy charging plan: "
-                            f"requester={self._active_charging_plan.get('requester')}, "
-                            f"mode={self._active_charging_plan.get('mode')}"
-                        )
-
                 self._mode_optimization_result = self._calculate_optimal_modes_hybrid(
                     current_capacity=current_capacity,
                     max_capacity=max_capacity,
@@ -1047,6 +1028,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 pass
 
             # CRITICAL FIX: Write state after every update to publish consumption_summary
+            # Check if sensor is already added to HA (self.hass is set by framework)
+            if not self.hass:
+                _LOGGER.debug("Sensor not yet added to HA, skipping state write")
+                return
+
             _LOGGER.info(
                 f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
             )
@@ -9619,59 +9605,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "reason": f"Error: {e}",
             }
 
-    async def handle_balancing_plan(self, plan: Dict[str, Any]) -> None:
-        """
-        Accept balancing plan from balancing sensor and set as active charging plan.
-
-        This method is called by battery_balancing sensor when it creates a new plan.
-        It converts the balancing plan format to unified charging plan format and
-        triggers timeline recalculation.
-
-        Args:
-            plan: Balancing plan dict with:
-                - reason: "opportunistic" | "interval" | "emergency"
-                - holding_start: ISO timestamp
-                - holding_end: ISO timestamp
-                - charging_intervals: List of preferred charging intervals
-                - target_soc_percent: Target SoC (always 100 for balancing)
-                - deadline: ISO timestamp (same as holding_start)
-        """
-        try:
-            _LOGGER.warning(
-                f"📥 Received balancing plan: reason={plan.get('reason')}, "
-                f"holding_start={plan.get('holding_start')}, "
-                f"holding_end={plan.get('holding_end')}, "
-                f"charging_intervals={len(plan.get('charging_intervals', []))}"
-            )
-
-            # Convert to unified charging plan format
-            self._active_charging_plan = {
-                "requester": "balancing",
-                "mode": plan.get(
-                    "reason", "unknown"
-                ),  # opportunistic, interval, emergency
-                "deadline": plan.get("deadline", plan.get("holding_start")),
-                "charging_plan": {
-                    "holding_start": plan.get("holding_start"),
-                    "holding_end": plan.get("holding_end"),
-                    "charging_intervals": plan.get("charging_intervals", []),
-                    "target_soc_percent": plan.get("target_soc_percent", 100.0),
-                },
-            }
-
-            _LOGGER.warning(
-                f"✅ Active charging plan set: requester=balancing, "
-                f"mode={plan.get('reason')}, "
-                f"will trigger HYBRID with balancing constraints"
-            )
-
-            # Trigger timeline recalculation immediately
-            await self.async_update()
-
-        except Exception as e:
-            _LOGGER.error(f"Failed to handle balancing plan: {e}", exc_info=True)
-            self._active_charging_plan = None
-
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """
         Získat všechny load_avg senzory pro box.
@@ -11983,68 +11916,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             self._hass.async_create_task(self.async_update())
 
         return True
-
-    def update_plan_lifecycle(self) -> None:
-        """
-        Aktualizuje lifecycle status aktivního plánu podle času.
-
-        Lifecycle transitions:
-        - PLANNED → LOCKED: 1h před plan_start
-        - LOCKED → RUNNING: plan_start reached
-        - RUNNING → COMPLETED: plan_end reached
-
-        Volat každou hodinu (nebo při každém update).
-        """
-        if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
-            return
-
-        now = dt_util.now()
-        plan = self._active_charging_plan
-        current_status = plan.get("status", "planned")
-
-        # Parse timestamps
-        try:
-            plan_start = datetime.fromisoformat(plan["plan_start"])
-            if plan_start.tzinfo is None:
-                plan_start = dt_util.as_local(plan_start)
-
-            plan_end = datetime.fromisoformat(plan["plan_end"])
-            if plan_end.tzinfo is None:
-                plan_end = dt_util.as_local(plan_end)
-        except (KeyError, ValueError, TypeError) as e:
-            _LOGGER.error(f"[Planner] Invalid plan timestamps: {e}")
-            return
-
-        # Determine new status
-        new_status = current_status
-
-        if now >= plan_end:
-            new_status = "completed"
-        elif now >= plan_start:
-            new_status = "running"
-        elif (plan_start - now).total_seconds() < 3600:  # <1h to start
-            new_status = "locked"
-        else:
-            new_status = "planned"
-
-        # Update if changed
-        if new_status != current_status:
-            plan["status"] = new_status
-            self._plan_status = new_status
-            _LOGGER.info(
-                f"[Planner] Lifecycle transition: {current_status} → {new_status} "
-                f"(requester={plan['requester']})"
-            )
-
-            # If completed, archive and clear
-            if new_status == "completed":
-                _LOGGER.info(
-                    f"[Planner] Plan COMPLETED, clearing "
-                    f"(requester={plan['requester']}, "
-                    f"duration={(plan_end - plan_start).total_seconds() / 3600:.1f}h)"
-                )
-                self._active_charging_plan = None
-                self._plan_status = "none"
 
     def cancel_charging_plan(self, requester: str) -> bool:
         """

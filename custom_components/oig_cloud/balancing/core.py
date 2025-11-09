@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from ..const import HOME_UPS
 from .plan import (
@@ -33,9 +34,12 @@ from .plan import (
 _LOGGER = logging.getLogger(__name__)
 
 # Constants per refactoring requirements
-BALANCING_INTERVAL_HOURS = 3  # 100% SoC must be held for 3 hours
-BALANCING_CYCLE_DAYS = 7  # Balancing every 7 days
-OPPORTUNISTIC_THRESHOLD_DAYS = 5  # Start looking for cheap hours after 5 days
+# These are now loaded from config_entry.options, keeping defaults here for reference:
+# - balancing_holding_time: 3 hours (how long to hold at 100%)
+# - balancing_cycle_days: 7 days (max days between forced balancing)
+# - balancing_cooldown_hours: 24 hours (min time between opportunistic attempts)
+# - balancing_soc_threshold: 80% (min SoC for opportunistic balancing)
+
 MIN_MODE_DURATION = 4  # Minimum 4 intervals (1 hour) per mode
 
 
@@ -53,6 +57,7 @@ class BalancingManager:
         hass: HomeAssistant,
         box_id: str,
         storage_path: str,
+        config_entry: Any,
     ):
         """Initialize balancing manager.
 
@@ -60,9 +65,11 @@ class BalancingManager:
             hass: Home Assistant instance
             box_id: Box ID for sensor access
             storage_path: Path for storing balancing state
+            config_entry: Config entry for accessing balancing options
         """
         self.hass = hass
         self.box_id = box_id
+        self._config_entry = config_entry
         self._logger = _LOGGER
 
         # Storage for balancing state
@@ -77,6 +84,28 @@ class BalancingManager:
         self._last_balancing_ts: Optional[datetime] = None
         self._active_plan: Optional[BalancingPlan] = None
         self._forecast_sensor = None  # Reference to forecast sensor for timeline access
+
+        # Cost tracking for frontend display
+        self._last_immediate_cost: Optional[float] = None
+        self._last_selected_cost: Optional[float] = None
+        self._last_cost_savings: Optional[float] = None
+
+    # Configuration parameter helpers
+    def _get_holding_time_hours(self) -> int:
+        """Get balancing holding time from config (default 3 hours)."""
+        return self._config_entry.options.get("balancing_holding_time", 3)
+
+    def _get_cycle_days(self) -> int:
+        """Get balancing cycle days from config (default 7 days)."""
+        return self._config_entry.options.get("balancing_cycle_days", 7)
+
+    def _get_cooldown_hours(self) -> int:
+        """Get balancing cooldown hours from config (default 24 hours)."""
+        return self._config_entry.options.get("balancing_cooldown_hours", 24)
+
+    def _get_soc_threshold(self) -> int:
+        """Get SoC threshold for opportunistic balancing from config (default 80%)."""
+        return self._config_entry.options.get("balancing_soc_threshold", 80)
 
     async def async_setup(self) -> None:
         """Load balancing state from storage - MUST be fast and safe."""
@@ -107,7 +136,7 @@ class BalancingManager:
                 if data.get("active_plan"):
                     self._active_plan = BalancingPlan.from_dict(data["active_plan"])
 
-            _LOGGER.debug(
+            _LOGGER.info(
                 f"BalancingManager: State loaded. Last balancing: {self._last_balancing_ts}"
             )
         except Exception as err:
@@ -150,8 +179,23 @@ class BalancingManager:
             _LOGGER.warning("Forecast sensor not set, cannot check balancing")
             return None
 
+        # 0. Check if balancing just completed
+        completion_result = await self._check_if_balancing_occurred()
+        if completion_result[0]:  # balancing_occurred = True
+            completion_time = completion_result[1]
+            _LOGGER.info(
+                f"✅ Balancing completed at {completion_time.strftime('%Y-%m-%d %H:%M')}! "
+                f"Battery held at ≥99% for {self._get_holding_time_hours()}h"
+            )
+            self._last_balancing_ts = completion_time
+            self._active_plan = None  # Clear active plan
+            await self._save_state()
+            return None
+
         # Calculate days since last balancing
         days_since_last = self._get_days_since_last_balancing()
+        cycle_days = self._get_cycle_days()
+        cooldown_hours = self._get_cooldown_hours()
 
         _LOGGER.info(f"📊 Balancing check: {days_since_last:.1f} days since last")
 
@@ -167,22 +211,8 @@ class BalancingManager:
             await self._save_state()
             return natural_plan
 
-        # 2. Opportunistic: 5-6 days, find cheap charging window
-        if days_since_last >= OPPORTUNISTIC_THRESHOLD_DAYS:
-            _LOGGER.debug(
-                f"Checking Opportunistic balancing (days={days_since_last:.1f})..."
-            )
-            opportunistic_plan = await self._create_opportunistic_plan(days_since_last)
-            if opportunistic_plan:
-                _LOGGER.info(
-                    f"⚡ Opportunistic balancing planned after {days_since_last:.1f} days"
-                )
-                self._active_plan = opportunistic_plan
-                await self._save_state()
-                return opportunistic_plan
-
-        # 3. Forced: 7+ days, charge ASAP regardless of cost
-        if days_since_last >= BALANCING_CYCLE_DAYS:
+        # 2. Forced: cycle_days passed, charge ASAP regardless of cost
+        if days_since_last >= cycle_days:
             forced_plan = await self._create_forced_plan()
             if forced_plan:
                 _LOGGER.warning(
@@ -193,21 +223,171 @@ class BalancingManager:
                 await self._save_state()
                 return forced_plan
 
+        # 3. Opportunistic: SoC ≥ threshold AND cooldown passed
+        hours_since_last = self._get_hours_since_last_balancing()
+        if hours_since_last >= cooldown_hours:
+            _LOGGER.debug(
+                f"Checking Opportunistic balancing (hours={hours_since_last:.1f})..."
+            )
+            opportunistic_plan = await self._create_opportunistic_plan()
+            if opportunistic_plan:
+                _LOGGER.info(
+                    f"⚡ Opportunistic balancing planned after {hours_since_last:.1f} hours"
+                )
+                self._active_plan = opportunistic_plan
+                await self._save_state()
+                return opportunistic_plan
+
         _LOGGER.info(f"No balancing needed yet ({days_since_last:.1f} days)")
         return None
 
-    def _get_days_since_last_balancing(self) -> float:
-        """Calculate days since last successful balancing.
+    def _get_days_since_last_balancing(self) -> int:
+        """Calculate days since last balancing."""
+        if self._last_balancing_ts is None:
+            return 99  # Unknown
+
+        delta = dt_util.now() - self._last_balancing_ts
+        return delta.days
+
+    def _get_hours_since_last_balancing(self) -> float:
+        """Calculate hours since last successful balancing.
 
         Returns:
-            Days as float (e.g., 5.3 days)
+            Hours as float (e.g., 25.5 hours)
         """
         if not self._last_balancing_ts:
-            # Never balanced - assume 7 days (trigger forced)
-            return 7.0
+            # Never balanced - assume cooldown passed
+            return float(self._get_cooldown_hours())
 
         delta = datetime.now() - self._last_balancing_ts
-        return delta.total_seconds() / 86400.0
+        return delta.total_seconds() / 3600.0
+
+    async def _check_if_balancing_occurred(self) -> Tuple[bool, Optional[datetime]]:
+        """Check if battery balancing just completed.
+
+        Scans battery SoC sensor history to detect continuous period at ≥99%
+        lasting for holding_time hours.
+
+        Returns:
+            (balancing_occurred, completion_time)
+            - balancing_occurred: True if balancing detected
+            - completion_time: End of holding period (when to update last_balancing)
+        """
+        holding_time_hours = self._get_holding_time_hours()
+
+        # Get battery SoC sensor
+        battery_sensor_id = f"sensor.oig_{self.box_id}_batt_bat_c"
+
+        # Determine how far back to scan
+        from homeassistant.util import dt as dt_util
+
+        end_time = dt_util.now()
+
+        if self._last_balancing_ts is None:
+            # No previous balancing recorded - scan last 30 days to find it
+            history_hours = 30 * 24
+            _LOGGER.info(
+                "No last balancing timestamp - scanning last 30 days for completion"
+            )
+        else:
+            # Have previous balancing - only check recent history for new completion
+            history_hours = holding_time_hours + 1
+
+        start_time = end_time - timedelta(hours=history_hours)
+
+        # Query HA statistics (longer retention than state history)
+        try:
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+
+            # Use hourly statistics for battery SoC
+            stats = await self.hass.async_add_executor_job(
+                statistics_during_period,
+                self.hass,
+                start_time,
+                end_time,
+                {battery_sensor_id},
+                "hour",
+                None,
+                {"mean", "max"},
+            )
+
+            if not stats or battery_sensor_id not in stats:
+                _LOGGER.debug(
+                    "No battery SoC statistics available for balancing detection"
+                )
+                return (False, None)
+
+            hourly_stats = stats[battery_sensor_id]
+
+            # Scan for ALL continuous periods with SoC ≥99% and find the latest one
+            holding_start = None
+            latest_completion = None
+            latest_completion_time = None
+
+            for stat in hourly_stats:
+                # Use 'max' if available, otherwise 'mean'
+                soc = stat.get("max") or stat.get("mean")
+                # stat["start"] is already a datetime object from statistics API
+                stat_time = (
+                    stat["start"]
+                    if isinstance(stat["start"], datetime)
+                    else dt_util.parse_datetime(stat["start"])
+                )
+
+                if soc and soc >= 99.0:
+                    # Battery at high SoC during this hour
+                    if holding_start is None:
+                        holding_start = stat_time
+                else:
+                    # Battery dropped below threshold
+                    if holding_start is not None:
+                        # Check if previous high-SoC period was long enough
+                        holding_duration = stat_time - holding_start
+                        if holding_duration >= timedelta(hours=holding_time_hours):
+                            # Found a balancing completion - keep track of latest
+                            if (
+                                latest_completion_time is None
+                                or stat_time > latest_completion_time
+                            ):
+                                latest_completion = (
+                                    holding_start,
+                                    stat_time,
+                                    holding_duration,
+                                )
+                                latest_completion_time = stat_time
+                    holding_start = None
+
+            # Check if still holding (last stat was ≥99%)
+            if holding_start is not None and hourly_stats:
+                now = dt_util.now()
+                holding_duration = now - holding_start
+                if holding_duration >= timedelta(hours=holding_time_hours):
+                    # Balancing completed and still holding!
+                    # This is the most recent, use it
+                    _LOGGER.info(
+                        f"Detected ongoing balancing completion: "
+                        f"SoC ≥99% since {holding_start.strftime('%Y-%m-%d %H:%M')} "
+                        f"({holding_duration.total_seconds() / 3600:.1f}h)"
+                    )
+                    return (True, now)
+
+            # Return the latest completed balancing found
+            if latest_completion is not None:
+                holding_start, completion_time, holding_duration = latest_completion
+                _LOGGER.info(
+                    f"Detected last balancing completion: "
+                    f"SoC ≥99% from {holding_start.strftime('%Y-%m-%d %H:%M')} "
+                    f"to {completion_time.strftime('%Y-%m-%d %H:%M')} "
+                    f"({holding_duration.total_seconds() / 3600:.1f}h)"
+                )
+                return (True, completion_time)
+
+        except Exception as e:
+            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
+
+        return (False, None)
 
     async def _check_natural_balancing(self) -> Optional[BalancingPlan]:
         """Check if HYBRID forecast naturally reaches 100% for 3h.
@@ -263,34 +443,109 @@ class BalancingManager:
 
         return None
 
-    async def _create_opportunistic_plan(
-        self, days_since_last: float
-    ) -> Optional[BalancingPlan]:
+    async def _create_opportunistic_plan(self) -> Optional[BalancingPlan]:
         """Create opportunistic balancing plan.
 
         TODO 5.2: Opportunistic balancing.
 
-        Finds cheap 3-hour window in next days and plans UPS charging before it
-        to reach 100% and hold for 3 hours.
+        Checks if current SoC ≥ threshold, then calculates total cost for:
+        1. Immediate balancing (charge NOW to 100%)
+        2. Delayed balancing (wait for cheap window + charge then)
 
-        Args:
-            days_since_last: Days since last balancing (5-6)
+        Selects option with minimum total cost.
 
         Returns:
-            Opportunistic BalancingPlan or None if no suitable window
+            Opportunistic BalancingPlan or None if SoC below threshold
         """
-        # Find cheap 3-hour window in next 48 hours
-        cheap_window = await self._find_cheap_holding_window()
-        if not cheap_window:
-            _LOGGER.warning("No cheap 3h window found for opportunistic balancing")
-            return None
-
-        holding_start, holding_end = cheap_window
-
-        # Calculate how much charging needed to reach 100%
+        # Check if SoC meets threshold
         current_soc_percent = await self._get_current_soc_percent()
         if current_soc_percent is None:
+            _LOGGER.warning("Cannot get current SoC for opportunistic balancing")
             return None
+
+        soc_threshold = self._get_soc_threshold()
+        if current_soc_percent < soc_threshold:
+            _LOGGER.debug(
+                f"SoC {current_soc_percent:.1f}% below threshold {soc_threshold}%, "
+                "no opportunistic balancing"
+            )
+            return None
+
+        # Cost optimization: evaluate immediate vs. all delayed windows
+        _LOGGER.info(
+            f"Evaluating balancing costs (SoC={current_soc_percent:.1f}%, "
+            f"threshold={soc_threshold}%)"
+        )
+
+        # 1. Calculate immediate balancing cost
+        immediate_cost = await self._calculate_immediate_balancing_cost(
+            current_soc_percent
+        )
+        _LOGGER.info(f"Immediate balancing cost: {immediate_cost:.2f} CZK")
+
+        # 2. Find all possible holding windows in next 48h
+        prices = await self._get_spot_prices_48h()
+        if not prices:
+            _LOGGER.warning("No spot prices available for cost optimization")
+            # Fall back to immediate
+            holding_start = datetime.now() + timedelta(hours=1)
+            holding_end = holding_start + timedelta(
+                hours=self._get_holding_time_hours()
+            )
+        else:
+            # Evaluate each possible window
+            timestamps = sorted(prices.keys())
+            holding_time_hours = self._get_holding_time_hours()
+            intervals_needed = holding_time_hours * 4  # 15min intervals
+
+            min_cost = immediate_cost
+            best_window_start = None  # None means immediate is best
+
+            for i in range(len(timestamps) - intervals_needed + 1):
+                window_start = timestamps[i]
+
+                # Skip if window starts in past
+                if window_start <= datetime.now():
+                    continue
+
+                # Calculate total cost for this window
+                delayed_cost = await self._calculate_total_balancing_cost(
+                    window_start, current_soc_percent
+                )
+
+                if delayed_cost < min_cost:
+                    min_cost = delayed_cost
+                    best_window_start = window_start
+
+            # Log decision
+            if best_window_start is None:
+                # Immediate is cheapest
+                _LOGGER.info(
+                    f"✅ Immediate balancing selected: {immediate_cost:.2f} CZK "
+                    f"(cheapest option)"
+                )
+                holding_start = datetime.now() + timedelta(hours=1)
+                holding_end = holding_start + timedelta(hours=holding_time_hours)
+
+                # Store costs for sensor
+                self._last_immediate_cost = immediate_cost
+                self._last_selected_cost = immediate_cost
+                self._last_cost_savings = 0.0
+            else:
+                # Delayed window is cheaper
+                holding_start = best_window_start
+                holding_end = holding_start + timedelta(hours=holding_time_hours)
+                savings = immediate_cost - min_cost
+                _LOGGER.info(
+                    f"⏰ Delayed balancing selected: {min_cost:.2f} CZK at "
+                    f"{holding_start.strftime('%H:%M')} "
+                    f"(vs immediate {immediate_cost:.2f} CZK, saving {savings:.2f} CZK)"
+                )
+
+                # Store costs for sensor
+                self._last_immediate_cost = immediate_cost
+                self._last_selected_cost = min_cost
+                self._last_cost_savings = savings
 
         # Plan UPS intervals before holding window
         charging_intervals = self._plan_ups_charging(
@@ -299,7 +554,7 @@ class BalancingManager:
             target_soc_percent=100.0,
         )
 
-        # Add holding intervals (HOME_UPS during 3h window to maintain 100%)
+        # Add holding intervals (HOME_UPS during holding window to maintain 100%)
         holding_intervals = self._create_holding_intervals(
             holding_start, holding_end, mode=HOME_UPS
         )
@@ -310,7 +565,7 @@ class BalancingManager:
             holding_start=holding_start,
             holding_end=holding_end,
             charging_intervals=all_intervals,
-            days_since_last=int(days_since_last),
+            days_since_last=int(self._get_days_since_last_balancing()),
         )
 
     async def _create_forced_plan(self) -> Optional[BalancingPlan]:
@@ -318,23 +573,39 @@ class BalancingManager:
 
         TODO 5.3: Forced balancing.
 
-        Emergency balancing after 7+ days. Finds nearest 3-hour window
-        and charges ASAP, regardless of electricity cost.
+        Emergency balancing after cycle_days. Charges ASAP regardless of cost.
+        Still calculates and logs costs for monitoring purposes.
 
         Returns:
             Forced BalancingPlan (locked, critical priority)
         """
-        # Find next available 3-hour window (ASAP, ignore cost)
-        now = datetime.now()
-
-        # Start holding in 2 hours (time to charge + safety margin)
-        holding_start = now + timedelta(hours=2)
-        holding_end = holding_start + timedelta(hours=BALANCING_INTERVAL_HOURS)
-
         # Get current SoC
         current_soc_percent = await self._get_current_soc_percent()
         if current_soc_percent is None:
             current_soc_percent = 50.0  # Assume worst case
+
+        # Calculate costs for monitoring (even though we ignore them)
+        immediate_cost = await self._calculate_immediate_balancing_cost(
+            current_soc_percent
+        )
+
+        _LOGGER.warning(
+            f"🔴 FORCED balancing: Health priority! "
+            f"Cost={immediate_cost:.2f} CZK (not optimized)"
+        )
+
+        # Store costs for sensor
+        self._last_immediate_cost = immediate_cost
+        self._last_selected_cost = immediate_cost
+        self._last_cost_savings = 0.0  # No optimization in forced mode
+
+        # Find next available holding window (ASAP)
+        now = datetime.now()
+        holding_time_hours = self._get_holding_time_hours()
+
+        # Start holding in 2 hours (time to charge + safety margin)
+        holding_start = now + timedelta(hours=2)
+        holding_end = holding_start + timedelta(hours=holding_time_hours)
 
         # Plan aggressive UPS charging NOW
         charging_intervals = self._plan_ups_charging(
@@ -434,6 +705,145 @@ class BalancingManager:
 
         return intervals
 
+    async def _calculate_immediate_balancing_cost(
+        self, current_soc_percent: float
+    ) -> float:
+        """Calculate cost to balance immediately.
+
+        Args:
+            current_soc_percent: Current battery SoC %
+
+        Returns:
+            Cost in CZK to charge from current SoC to 100%
+        """
+        # Get current spot price
+        prices = await self._get_spot_prices_48h()
+        if not prices:
+            _LOGGER.warning("No spot prices available for immediate cost calculation")
+            return 999.0  # High cost to prevent selection
+
+        now = datetime.now()
+        # Find closest timestamp
+        current_price = None
+        min_delta = timedelta(hours=1)
+        for ts, price in prices.items():
+            delta = abs(ts - now)
+            if delta < min_delta:
+                min_delta = delta
+                current_price = price
+
+        if current_price is None:
+            _LOGGER.warning("Could not find current spot price")
+            return 999.0
+
+        # Calculate charge needed
+        battery_capacity_kwh = self._get_battery_capacity_kwh()
+        if not battery_capacity_kwh:
+            return 999.0
+
+        charge_needed_kwh = (100 - current_soc_percent) / 100 * battery_capacity_kwh
+
+        immediate_cost = charge_needed_kwh * current_price
+
+        _LOGGER.debug(
+            f"Immediate cost: {charge_needed_kwh:.2f} kWh * {current_price:.2f} CZK/kWh "
+            f"= {immediate_cost:.2f} CZK"
+        )
+
+        return immediate_cost
+
+    async def _calculate_total_balancing_cost(
+        self, window_start: datetime, current_soc_percent: float
+    ) -> float:
+        """Calculate total cost for delayed balancing.
+
+        Total cost = waiting_cost + charging_cost
+
+        Waiting cost includes:
+        - Battery discharge during wait (self-discharge rate ~0.05 kWh/h)
+        - Grid consumption during wait (from forecast timeline)
+
+        Charging cost:
+        - Energy needed to reach 100% at window start
+        - Multiplied by average spot price during charging window
+
+        Args:
+            window_start: When to start holding window
+            current_soc_percent: Current battery SoC %
+
+        Returns:
+            Total cost in CZK (waiting + charging)
+        """
+        now = datetime.now()
+        wait_duration = (window_start - now).total_seconds() / 3600.0  # hours
+
+        if wait_duration <= 0:
+            # Window is now or in past, no waiting cost
+            return await self._calculate_immediate_balancing_cost(current_soc_percent)
+
+        battery_capacity_kwh = self._get_battery_capacity_kwh()
+        if not battery_capacity_kwh:
+            return 999.0
+
+        # 1. Calculate battery discharge during wait
+        # Self-discharge rate ~0.05 kWh/hour (from battery specs)
+        DISCHARGE_RATE_KWH_PER_HOUR = 0.05
+        battery_loss_kwh = wait_duration * DISCHARGE_RATE_KWH_PER_HOUR
+
+        # 2. Get grid consumption during wait from forecast timeline
+        grid_consumption_kwh = 0.0
+        if self._forecast_sensor and hasattr(self._forecast_sensor, "_timeline_data"):
+            timeline = self._forecast_sensor._timeline_data
+            if timeline:
+                for interval in timeline:
+                    interval_time = datetime.fromisoformat(interval.ts)
+                    if now <= interval_time < window_start:
+                        # Grid consumption in this 15-min interval
+                        grid_kwh = getattr(interval, "grid_consumption_kwh", 0.0)
+                        grid_consumption_kwh += grid_kwh
+
+        # 3. Calculate average spot price during wait
+        prices = await self._get_spot_prices_48h()
+        wait_prices = [
+            price for ts, price in prices.items() if now <= ts < window_start
+        ]
+        avg_wait_price = sum(wait_prices) / len(wait_prices) if wait_prices else 5.0
+
+        # 4. Calculate waiting cost
+        total_wait_energy = battery_loss_kwh + grid_consumption_kwh
+        waiting_cost = total_wait_energy * avg_wait_price
+
+        # 5. Calculate SoC at window start
+        soc_loss_percent = (battery_loss_kwh / battery_capacity_kwh) * 100
+        soc_at_window = max(0, current_soc_percent - soc_loss_percent)
+
+        # 6. Calculate charging cost
+        charge_needed_kwh = (100 - soc_at_window) / 100 * battery_capacity_kwh
+
+        # Average spot price during charging/holding window
+        holding_time_hours = self._get_holding_time_hours()
+        window_end = window_start + timedelta(hours=holding_time_hours)
+        charging_prices = [
+            price for ts, price in prices.items() if window_start <= ts < window_end
+        ]
+        avg_charging_price = (
+            sum(charging_prices) / len(charging_prices) if charging_prices else 5.0
+        )
+
+        charging_cost = charge_needed_kwh * avg_charging_price
+
+        # 7. Total cost
+        total_cost = waiting_cost + charging_cost
+
+        _LOGGER.debug(
+            f"Delayed cost for window {window_start.strftime('%H:%M')}: "
+            f"waiting={waiting_cost:.2f} CZK ({battery_loss_kwh:.2f} + {grid_consumption_kwh:.2f} kWh @ {avg_wait_price:.2f}), "
+            f"charging={charging_cost:.2f} CZK ({charge_needed_kwh:.2f} kWh @ {avg_charging_price:.2f}), "
+            f"total={total_cost:.2f} CZK"
+        )
+
+        return total_cost
+
     async def _find_cheap_holding_window(
         self,
     ) -> Optional[Tuple[datetime, datetime]]:
@@ -453,8 +863,13 @@ class BalancingManager:
         best_start = None
 
         timestamps = sorted(prices.keys())
-        for i in range(len(timestamps) - 11):  # Need 12 consecutive
-            window_prices = [prices[timestamps[j]] for j in range(i, i + 12)]
+        holding_time_hours = self._get_holding_time_hours()
+        intervals_needed = holding_time_hours * 4  # 4 intervals per hour (15min each)
+
+        for i in range(len(timestamps) - intervals_needed + 1):
+            window_prices = [
+                prices[timestamps[j]] for j in range(i, i + intervals_needed)
+            ]
             avg_price = sum(window_prices) / len(window_prices)
 
             if avg_price < min_avg_price:
@@ -462,7 +877,7 @@ class BalancingManager:
                 best_start = timestamps[i]
 
         if best_start:
-            best_end = best_start + timedelta(hours=BALANCING_INTERVAL_HOURS)
+            best_end = best_start + timedelta(hours=holding_time_hours)
             _LOGGER.debug(
                 f"Found cheap window: {best_start.strftime('%H:%M')} - "
                 f"{best_end.strftime('%H:%M')}, avg price {min_avg_price:.2f} CZK/kWh"
@@ -525,24 +940,39 @@ class BalancingManager:
             return None
 
     async def _get_spot_prices_48h(self) -> Dict[datetime, float]:
-        """Get spot prices for next 48 hours.
+        """Get spot prices for next 48 hours from forecast sensor.
 
         Returns:
             Dict mapping datetime to price (CZK/kWh)
         """
-        # TODO: Get from spot price sensor
-        # For now, return dummy data
-        now = datetime.now()
+        if not self._forecast_sensor:
+            _LOGGER.warning("Forecast sensor not set, cannot get spot prices")
+            return {}
+
+        # Get active timeline from forecast sensor (_timeline_data attribute)
+        timeline = getattr(self._forecast_sensor, "_timeline_data", None)
+        if not timeline:
+            _LOGGER.warning("No active timeline available for spot prices")
+            return {}
+
         prices = {}
+        for interval in timeline:
+            timestamp_str = interval.get("timestamp") or interval.get("time")
+            if not timestamp_str:
+                continue
 
-        for hour in range(48):
-            ts = now + timedelta(hours=hour)
-            # Dummy: cheaper at night
-            if 22 <= ts.hour or ts.hour < 6:
-                prices[ts] = 1.5  # Cheap
-            else:
-                prices[ts] = 3.0  # Expensive
+            try:
+                ts = datetime.fromisoformat(timestamp_str)
+                spot_price = interval.get("spot_price_czk") or interval.get(
+                    "spot_price"
+                )
+                if spot_price is not None:
+                    prices[ts] = float(spot_price)
+            except (ValueError, TypeError) as e:
+                _LOGGER.debug(f"Failed to parse interval timestamp/price: {e}")
+                continue
 
+        _LOGGER.debug(f"Loaded {len(prices)} spot price intervals from forecast")
         return prices
 
     def get_active_plan(self) -> Optional[BalancingPlan]:
@@ -561,7 +991,8 @@ class BalancingManager:
         """
         if not self._active_plan:
             days_since = self._get_days_since_last_balancing()
-            if days_since >= BALANCING_CYCLE_DAYS:
+            cycle_days = self._get_cycle_days()
+            if days_since >= cycle_days:
                 return "overdue"
             return "idle"
 
@@ -586,6 +1017,10 @@ class BalancingManager:
             "reason": None,
             "priority": None,
             "locked": False,
+            # Cost information
+            "immediate_cost_czk": self._last_immediate_cost,
+            "selected_cost_czk": self._last_selected_cost,
+            "cost_savings_czk": self._last_cost_savings,
         }
 
         if self._active_plan:

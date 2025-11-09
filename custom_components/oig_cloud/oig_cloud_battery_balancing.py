@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -70,6 +71,16 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         self._planned_window: Optional[Dict[str, Any]] = None
         self._last_planning_check: Optional[datetime] = None
 
+        # Cost tracking
+        self._cost_immediate: Optional[float] = None
+        self._cost_selected: Optional[float] = None
+        self._cost_savings: Optional[float] = None
+
+        # Configuration parameters
+        self._cycle_days: int = 7
+        self._holding_hours: int = 3
+        self._soc_threshold: int = 80
+
     def _get_balancing_manager(self) -> Optional[Any]:
         """Get BalancingManager from hass.data."""
         if not self._hass:
@@ -96,10 +107,20 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         # Calculate days since last balancing
         if self._last_balancing:
-            delta = datetime.now() - self._last_balancing
+            delta = dt_util.now() - self._last_balancing
             self._days_since_last = delta.days
         else:
             self._days_since_last = 99
+
+        # Get cost tracking data
+        self._cost_immediate = getattr(manager, "_last_immediate_cost", None)
+        self._cost_selected = getattr(manager, "_last_selected_cost", None)
+        self._cost_savings = getattr(manager, "_last_cost_savings", None)
+
+        # Get config parameters
+        self._cycle_days = manager._get_cycle_days()
+        self._holding_hours = manager._get_holding_time_hours()
+        self._soc_threshold = manager._get_soc_threshold()
 
         # Get active plan
         active_plan = manager._active_plan
@@ -132,9 +153,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._planned_window = None
 
             # Determine status based on days
-            if self._days_since_last >= 7:
+            if self._days_since_last >= self._cycle_days:
                 self._status = "overdue"
-            elif self._days_since_last >= 5:
+            elif self._days_since_last >= (self._cycle_days - 2):
                 self._status = "opportunistic"
             else:
                 self._status = "ok"
@@ -153,7 +174,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return sensor attributes."""
-        return {
+        attrs = {
             "last_balancing": (
                 self._last_balancing.isoformat() if self._last_balancing else None
             ),
@@ -166,7 +187,16 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 if self._last_planning_check
                 else None
             ),
+            # Configuration
+            "cycle_days": getattr(self, "_cycle_days", 7),
+            "holding_hours": getattr(self, "_holding_hours", 3),
+            "soc_threshold": getattr(self, "_soc_threshold", 80),
+            # Cost tracking
+            "cost_immediate_czk": getattr(self, "_cost_immediate", None),
+            "cost_selected_czk": getattr(self, "_cost_selected", None),
+            "cost_savings_czk": getattr(self, "_cost_savings", None),
         }
+        return attrs
 
     @property
     def device_info(self) -> Dict[str, Any]:
