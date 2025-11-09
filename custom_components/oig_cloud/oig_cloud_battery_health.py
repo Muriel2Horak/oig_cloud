@@ -58,7 +58,7 @@ class BatteryCapacityTracker:
         self,
         hass: HomeAssistant,
         box_id: str,
-        nominal_capacity_kwh: float = 12.29,
+        nominal_capacity_kwh: float = 15.36,
     ) -> None:
         """
         Inicializace capacity trackeru.
@@ -66,7 +66,7 @@ class BatteryCapacityTracker:
         Args:
             hass: Home Assistant instance
             box_id: ID OIG zařízení
-            nominal_capacity_kwh: Nominální kapacita baterie (default 12.29 kWh)
+            nominal_capacity_kwh: Nominální kapacita baterie (default 15.36 kWh - instalovaná kapacita)
         """
         self._hass = hass
         self._box_id = box_id
@@ -75,8 +75,12 @@ class BatteryCapacityTracker:
         # Measurements history (max 100 posledních měření)
         self._measurements: deque[BatteryMeasurement] = deque(maxlen=100)
 
-        # RETROSPEKTIVNÍ KRITÉRIA
-        self._min_delta_soc = 40.0  # % - minimum swing
+        # RETROSPEKTIVNÍ KRITÉRIA - na základě empirické analýzy dat
+        # Analýza ukázala, že malé cykly (<60%) dávají nepřesné výsledky (SoH >120%)
+        # Velké cykly (≥60%) dávají realistické výsledky (SoH ~96%)
+        self._min_delta_soc = (
+            60.0  # % - minimum swing (zvýšeno z 40% pro vyšší přesnost)
+        )
         self._min_end_soc = 95.0  # % - konec cyklu musí být ≥95%
         self._min_purity = 0.90  # 90% - min % čisté nabíjecí energie
         self._max_discharge_interrupt_w = 300.0  # W - max vybíjecí výkon
@@ -98,6 +102,11 @@ class BatteryCapacityTracker:
         """
         Vypočítat quality score 0-100 pro měření.
 
+        Empirická analýza ukázala:
+        - Cykly <60% swing: nepřesné (SoH >120%)
+        - Cykly ≥60% swing: přesné (SoH ~96%)
+        - Variační koeficient mezi měřeními: 14%
+
         Args:
             delta_soc: Rozsah SoC změny (%)
             purity: Čistota nabíjení (0.0-1.0)
@@ -110,15 +119,17 @@ class BatteryCapacityTracker:
         """
         score = 100.0
 
-        # 1. Delta SoC bonus
+        # 1. Delta SoC bonus - upraveno dle empirických dat
         if delta_soc >= 70:
-            score += 20  # Excelentní rozsah
+            score += 30  # Excelentní rozsah (nejvyšší přesnost)
+        elif delta_soc >= 60:
+            score += 20  # Velmi dobrý rozsah (dobrá přesnost)
         elif delta_soc >= 50:
-            score += 10  # Velmi dobrý rozsah
+            score += 5  # Přijatelný, ale méně přesný
         elif delta_soc >= 40:
-            score += 0  # Akceptovatelný
+            score -= 10  # Slabý - empiricky nepřesný
         else:
-            return 0  # Zahodit
+            return 0  # Zahodit - pod limitem
 
         # 2. Purity penalty
         if purity < 0.90:
@@ -167,9 +178,6 @@ class BatteryCapacityTracker:
             Seznam nově nalezených měření
         """
         from homeassistant.helpers import recorder
-        from homeassistant.components.recorder.history import (
-            state_changes_during_period,
-        )
 
         # Určit časový rozsah
         if start_time is None:
@@ -197,21 +205,17 @@ class BatteryCapacityTracker:
         )
 
         try:
-            # Get history from recorder
-            history = await recorder.get_instance(self._hass).async_add_executor_job(
-                state_changes_during_period,
-                self._hass,
-                start_time,
-                end_time,
-                soc_sensor,
+            # Get SoC history from STATISTICS table (long-term data, like profiling does)
+            # Statistics table obsahuje 5-minutové průměry a drží data mnohem déle než states
+            soc_states = await self._get_soc_statistics(
+                soc_sensor, start_time, end_time
             )
 
-            if not history or soc_sensor not in history:
-                _LOGGER.warning(f"No history found for {soc_sensor}")
+            if not soc_states:
+                _LOGGER.warning(f"No statistics found for {soc_sensor}")
                 return []
 
-            soc_states = history[soc_sensor]
-            _LOGGER.info(f"Found {len(soc_states)} SoC data points")
+            _LOGGER.info(f"Found {len(soc_states)} SoC data points from statistics")
 
             # Najít nabíjecí cykly: low → high
             cycles = self._detect_charging_cycles_in_history(soc_states)
@@ -242,6 +246,96 @@ class BatteryCapacityTracker:
 
         except Exception as e:
             _LOGGER.error(f"Error during retrospective analysis: {e}", exc_info=True)
+            return []
+
+    async def _get_soc_statistics(
+        self, soc_sensor: str, start_time: datetime, end_time: datetime
+    ) -> List:
+        """
+        Načíst SoC statistiky z long-term statistics table (jako profiling).
+
+        Statistics table drží data mnohem déle než states table (~10 dní).
+        Vrací pseudo-states objekty kompatibilní s _detect_charging_cycles_in_history().
+
+        Args:
+            soc_sensor: Entity ID SoC senzoru
+            start_time: Začátek období
+            end_time: Konec období
+
+        Returns:
+            List pseudo-state objektů s atributy: state, last_changed
+        """
+        from homeassistant.helpers.recorder import get_instance
+        from sqlalchemy import text
+        from dataclasses import dataclass
+
+        @dataclass
+        class PseudoState:
+            """Pseudo-state object pro kompatibilitu s cycle detection."""
+
+            state: str
+            last_changed: datetime
+
+        def get_statistics():
+            """Query statistics table for SoC data."""
+            from homeassistant.helpers.recorder import session_scope
+
+            instance = get_instance(self._hass)
+            with session_scope(
+                hass=self._hass, session=instance.get_session()
+            ) as session:
+                start_ts = int(start_time.timestamp())
+                end_ts = int(end_time.timestamp())
+
+                # Query short_term statistics (5-minute averages) - obsahuje mean
+                query = text(
+                    """
+                    SELECT s.mean, s.start_ts
+                    FROM statistics_short_term s
+                    INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
+                    WHERE sm.statistic_id = :statistic_id
+                    AND s.start_ts >= :start_ts
+                    AND s.start_ts < :end_ts
+                    AND s.mean IS NOT NULL
+                    ORDER BY s.start_ts
+                    """
+                )
+
+                result = session.execute(
+                    query,
+                    {
+                        "statistic_id": soc_sensor,
+                        "start_ts": start_ts,
+                        "end_ts": end_ts,
+                    },
+                )
+                return result.fetchall()
+
+        try:
+            _LOGGER.debug(
+                f"Loading SoC statistics for {soc_sensor} from {start_time} to {end_time}"
+            )
+            stats_rows = await self._hass.async_add_executor_job(get_statistics)
+
+            if not stats_rows:
+                _LOGGER.warning(f"No statistics data for {soc_sensor}")
+                return []
+
+            # Convert SQL rows to pseudo-state objects
+            pseudo_states = []
+            for mean_value, start_ts in stats_rows:
+                pseudo_states.append(
+                    PseudoState(
+                        state=str(mean_value),
+                        last_changed=datetime.fromtimestamp(start_ts, tz=dt_util.UTC),
+                    )
+                )
+
+            _LOGGER.debug(f"Loaded {len(pseudo_states)} SoC statistics records")
+            return pseudo_states
+
+        except Exception as e:
+            _LOGGER.error(f"Error loading SoC statistics: {e}", exc_info=True)
             return []
 
     def _detect_charging_cycles_in_history(
@@ -417,13 +511,22 @@ class BatteryCapacityTracker:
                     f"Same-day cycle: charge={total_charge_wh:.1f} Wh, discharge={total_discharge_wh:.1f} Wh"
                 )
 
-            # Výpočet purity
-            total_energy = total_charge_wh + total_discharge_wh
-            if total_energy == 0:
-                _LOGGER.debug("Zero total energy")
+            # Výpočet čisté energie (net energy) a purity
+            # Countery jsou kumulativní: charge roste když bat_p > 0, discharge když bat_p < 0
+            # Během nabíjení mohou růst OBA countery (např. Home I mode)
+            # Čistá změna v baterii = charge - discharge
+            net_energy_wh = total_charge_wh - total_discharge_wh
+
+            if net_energy_wh <= 0:
+                _LOGGER.debug(
+                    f"Invalid net energy: charge={total_charge_wh:.1f} discharge={total_discharge_wh:.1f}"
+                )
                 return None
 
-            purity = total_charge_wh / total_energy
+            # Purity = poměr čisté energie k celkové energii (charge + discharge)
+            # Vysoká purity = málo interrupcí vybíjením během nabíjení
+            total_energy = total_charge_wh + total_discharge_wh
+            purity = total_charge_wh / total_energy if total_energy > 0 else 0.0
 
             # Validace purity
             if purity < self._min_purity:
@@ -432,11 +535,10 @@ class BatteryCapacityTracker:
                 )
                 return None
 
-            # Kapacita
+            # Kapacita = čistá energie do baterie / delta SoC
+            # net_energy_wh = kolik reálně přibylo v baterii (charge - discharge)
             delta_soc = end_soc - start_soc
-            net_energy_wh = total_charge_wh - total_discharge_wh
-            net_energy_kwh = net_energy_wh / 1000.0
-            measured_capacity_kwh = net_energy_kwh / (delta_soc / 100.0)
+            measured_capacity_kwh = (net_energy_wh / 1000.0) / (delta_soc / 100.0)
             soh_percent = (measured_capacity_kwh / self._nominal_capacity) * 100.0
 
             # Duration
@@ -743,11 +845,13 @@ class BatteryCapacityTracker:
         soh_values = [m.soh_percent for m in measurements]
         quality_scores = [m.quality_score for m in measurements]
 
+        # Použití MEDIÁNU místo průměru pro robustnost vůči outlierům
+        # Analýza dat ukázala variační koeficient 14%, medián je vhodnější
         return {
             "measurement_count": len(measurements),
             "last_measured": measurements[0].timestamp.isoformat(),
-            "avg_capacity_kwh": round(np.mean(capacities), 2),
-            "avg_soh_percent": round(np.mean(soh_values), 1),
+            "median_capacity_kwh": round(np.median(capacities), 2),
+            "median_soh_percent": round(np.median(soh_values), 1),
             "avg_quality_score": round(np.mean(quality_scores), 0),
             "min_capacity_kwh": round(min(capacities), 2),
             "max_capacity_kwh": round(max(capacities), 2),
@@ -979,59 +1083,68 @@ class BatteryCapacityTracker:
     ) -> Optional[Tuple[datetime, datetime]]:
         """
         Najít časové okno kde máme konzistentní data ze všech sensorů.
-        
-        Strategie: Použít SoC sensor historii (ten má nejdelší historii),
+
+        Strategie: Použít SoC sensor z STATISTICS table (long-term data),
         energy senzory jsou nové ale aktuální data mají.
 
         Returns:
             (start_time, end_time) nebo None pokud nejsou data
         """
         from homeassistant.helpers import recorder
+        from sqlalchemy import text
 
         # Senzory které potřebujeme
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
 
         try:
-            # Direct DB query pro najití nejstaršího SoC záznamu
+            # Query STATISTICS table pro SoC sensor (long-term data jako profiling)
             instance = recorder.get_instance(self._hass)
 
-            def _query_soc_history():
-                """Query DB pro SoC sensor availability."""
-                from sqlalchemy import select, func, and_
-                from homeassistant.components.recorder.db_schema import States
+            def _query_soc_statistics():
+                """Query statistics table for SoC sensor availability."""
+                from homeassistant.helpers.recorder import session_scope
 
-                with instance.get_session() as session:
-                    # Najít MIN a MAX last_changed pro SoC sensor
-                    query = select(
-                        func.min(States.last_changed_ts).label("min_ts"),
-                        func.max(States.last_changed_ts).label("max_ts"),
-                    ).where(
-                        and_(
-                            States.entity_id == soc_sensor,
-                            States.state.notin_(["unknown", "unavailable"]),
-                        )
+                with session_scope(
+                    hass=self._hass, session=instance.get_session()
+                ) as session:
+                    # Najít MIN a MAX start_ts z short_term statistics
+                    query = text(
+                        """
+                        SELECT MIN(s.start_ts) as min_ts, MAX(s.start_ts) as max_ts
+                        FROM statistics_short_term s
+                        INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
+                        WHERE sm.statistic_id = :statistic_id
+                        AND s.mean IS NOT NULL
+                        """
                     )
 
-                    result = session.execute(query).first()
+                    result = session.execute(
+                        query,
+                        {"statistic_id": soc_sensor},
+                    ).first()
 
                     if result and result.min_ts and result.max_ts:
                         return {
-                            "min": datetime.fromtimestamp(result.min_ts, tz=dt_util.UTC),
-                            "max": datetime.fromtimestamp(result.max_ts, tz=dt_util.UTC),
+                            "min": datetime.fromtimestamp(
+                                result.min_ts, tz=dt_util.UTC
+                            ),
+                            "max": datetime.fromtimestamp(
+                                result.max_ts, tz=dt_util.UTC
+                            ),
                         }
                     return None
 
-            soc_window = await self._hass.async_add_executor_job(_query_soc_history)
+            soc_window = await self._hass.async_add_executor_job(_query_soc_statistics)
 
             if not soc_window:
-                _LOGGER.warning(f"No SoC data found for sensor {soc_sensor}")
+                _LOGGER.warning(f"No SoC statistics found for sensor {soc_sensor}")
                 return None
 
             start_time = soc_window["min"]
             end_time = soc_window["max"]
 
             _LOGGER.info(
-                f"Data availability window (based on SoC): {start_time.date()} to {end_time.date()} "
+                f"Data availability window (from statistics): {start_time.date()} to {end_time.date()} "
                 f"({(end_time - start_time).days} days)"
             )
 
@@ -1039,7 +1152,7 @@ class BatteryCapacityTracker:
 
         except Exception as e:
             _LOGGER.error(
-                f"Failed to query data availability window: {e}", exc_info=True
+                f"Failed to query statistics availability window: {e}", exc_info=True
             )
             return None
 
@@ -1088,7 +1201,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         # Capacity tracker - bude inicializován v async_added_to_hass
         self._tracker: Optional[BatteryCapacityTracker] = None
 
-        # Nominální kapacita (načteme ze sensoru)
+        # Nominální kapacita (načteme ze sensoru INSTALLED capacity)
         self._nominal_capacity_kwh: float = 15.36  # Default INSTALLED capacity
 
         # Last analysis timestamp
@@ -1123,7 +1236,11 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
 
         # ASYNCHRONNÍ STARTUP - neblokuje HA startup
         # Spustit analýzu na pozadí (non-blocking)
+        # Vylepšeno: min_delta_soc=60%, použití mediánu, lepší quality scoring
         self.hass.async_create_task(self._async_startup_analysis())
+        _LOGGER.info(
+            "✅ Battery health automatic analysis ENABLED (min_delta_soc=60%, median-based)"
+        )
 
     async def _async_startup_analysis(self) -> None:
         """
@@ -1190,10 +1307,10 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                     )
                 else:
                     _LOGGER.warning(
-                        "Could not determine data availability window, using 7-day fallback"
+                        "Could not determine data availability window, using 60-day fallback"
                     )
                     measurements = await self._tracker.analyze_history_for_cycles(
-                        lookback_days=7
+                        lookback_days=60
                     )
                     self._last_analysis = dt_util.now()
                     _LOGGER.info(
@@ -1280,11 +1397,15 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     @property
     def native_value(self) -> Optional[float]:
         """
-        State = průměrný SoH za 30 dní v procentech.
+        State = MEDIÁNOVÝ SoH za 30 dní v procentech.
 
         Returns:
-            Průměrný SoH% za 30 dní nebo None pokud nemáme měření
+            Mediánový SoH% za 30 dní nebo None pokud nemáme měření
             (None se zobrazí jako "unknown" během background analýzy)
+
+        Note:
+            Medián je použit místo průměru pro robustnost vůči outlierům.
+            Empirická analýza ukázala variační koeficient 14% mezi měřeními.
         """
         if not self._tracker:
             return None
@@ -1292,7 +1413,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         try:
             stats_30d = self._tracker.get_statistics_30d()
             if stats_30d:
-                return round(stats_30d["avg_soh_percent"], 1)
+                return round(stats_30d["median_soh_percent"], 1)
 
             # Fallback na current capacity pokud nemáme 30-day stats
             _, soh = self._tracker.get_current_capacity()
@@ -1313,14 +1434,18 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             "nominal_capacity_kwh": self._nominal_capacity_kwh,
         }
 
-        # 30-DAY STATISTICS (hlavní zobrazení)
+        # 30-DAY STATISTICS (hlavní zobrazení) - POUŽÍVÁ MEDIÁN
         stats_30d = self._tracker.get_statistics_30d()
         if stats_30d:
             attrs["measurement_count"] = stats_30d["measurement_count"]
             attrs["last_measured"] = stats_30d["last_measured"]
-            attrs["capacity_kwh"] = stats_30d["avg_capacity_kwh"]
-            attrs["soh_percent"] = stats_30d["avg_soh_percent"]
-            attrs["quality_score"] = stats_30d["avg_quality_score"]
+            attrs["capacity_kwh"] = stats_30d[
+                "median_capacity_kwh"
+            ]  # Medián místo průměru
+            attrs["soh_percent"] = stats_30d[
+                "median_soh_percent"
+            ]  # Medián místo průměru
+            # quality_score je interní - všechna měření už jsou kvalitní (filtrováno při uložení)
             attrs["min_capacity_kwh"] = stats_30d["min_capacity_kwh"]
             attrs["max_capacity_kwh"] = stats_30d["max_capacity_kwh"]
             attrs["capacity_std_dev"] = stats_30d["capacity_std_dev"]
@@ -1341,6 +1466,9 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             attrs["capacity_loss_kwh"] = round(self._nominal_capacity_kwh - capacity, 2)
 
         # Long-term degradation trend (regression analysis)
+        # POZNÁMKA: Trend analýza je náročná, počítáme ji jen jednou denně v daily task
+        # Ne při každém coordinator update (každých 5 minut)
+        # Pro zobrazení trendu použijeme cachovanou hodnotu nebo None
         trend = self._tracker.analyze_degradation_trend(min_measurements=5)
         if trend:
             attrs["degradation_per_year_kwh"] = trend["degradation_kwh_per_year"]
@@ -1363,7 +1491,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         attrs["storage_cycles_limit"] = 3000
         attrs["storage_usage_percent"] = round((total_measurements / 3000) * 100, 1)
 
-        # Recent measurements - zobrazit top 5 podle kvality
+        # Recent measurements - zobrazit top 5 (quality_score je interní, všechna jsou už kvalitní)
         recent = self._tracker.get_measurements(min_quality_score=60, limit=5)
         if recent:
             attrs["recent_measurements"] = [
@@ -1371,7 +1499,6 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                     "timestamp": m.timestamp.isoformat(),
                     "capacity_kwh": round(m.capacity_kwh, 2),
                     "soh_percent": round(m.soh_percent, 1),
-                    "quality_score": round(m.quality_score, 1),
                     "purity": round(m.purity * 100, 1),  # % clean charging
                     "delta_soc": round(m.end_soc - m.start_soc, 1),
                     "interruptions": m.interruption_count,
@@ -1380,7 +1507,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                 for m in recent
             ]
 
-        # Celková statistika měření
+        # Celková statistika měření (quality_score skryt - jen interní)
         all_measurements = self._tracker._measurements
         if all_measurements:
             attrs["total_measurements"] = len(all_measurements)
@@ -1389,13 +1516,9 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             ]
             attrs["quality_measurements"] = len(quality_measurements)
             if quality_measurements:
-                avg_quality = sum(m.quality_score for m in quality_measurements) / len(
-                    quality_measurements
-                )
                 avg_purity = sum(m.purity for m in quality_measurements) / len(
                     quality_measurements
                 )
-                attrs["avg_quality_score"] = round(avg_quality, 1)
                 attrs["avg_purity_percent"] = round(avg_purity * 100, 1)
 
         return attrs

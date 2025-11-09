@@ -5,18 +5,11 @@
 
 /* Container */
 .battery-health-tile {
-    background: var(--card-background-color, #1c1c1e);
-    border-radius: 12px;
-    padding: 20px;
-    margin: 12px 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: all 0.3s ease;
+/* Nepoužíváme vlastní styly - plně respektujeme .stat-card z cards.css */
+/* background, border, padding, atd. se nastavují inline v JS */
 }
 
-.battery-health-tile:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    transform: translateY(-2px);
-}
+/* Hover efekt je již definován v .stat-card:hover z cards.css */
 
 /* Header */
 .battery-health-tile .tile-header {

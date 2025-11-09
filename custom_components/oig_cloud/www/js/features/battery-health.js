@@ -172,7 +172,7 @@ function createBatteryHealthContainer() {
     wrapper.id = 'battery-health-container';
     wrapper.style.background = 'linear-gradient(135deg, rgba(76, 217, 100, 0.15) 0%, rgba(76, 217, 100, 0.05) 100%)';
     wrapper.style.border = '1px solid rgba(76, 217, 100, 0.3)';
-    wrapper.style.minHeight = '160px';
+    wrapper.style.minHeight = '160px'; // Shodný s efficiency tile pro konzistentní výšku
 
     // Vložit vedle Efficiency card (jako součást stejného grid)
     parentCard.parentNode.insertBefore(wrapper, parentCard.nextSibling);
