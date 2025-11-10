@@ -6484,7 +6484,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "mode_planned": group.get("mode", "Unknown"),  # Pro planned-only
                 "mode_match": True,  # Default pro planned-only
                 "status": self._determine_block_status(
-                    group_intervals[0], tab_name, now
+                    group_intervals[0], group_intervals[-1], tab_name, now
                 ),
                 "start_time": group.get("start_time", ""),
                 "end_time": group.get("end_time", ""),
@@ -6585,13 +6585,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return mode_blocks
 
     def _determine_block_status(
-        self, interval: Dict[str, Any], tab_name: str, now: datetime
+        self,
+        first_interval: Dict[str, Any],
+        last_interval: Dict[str, Any],
+        tab_name: str,
+        now: datetime,
     ) -> str:
         """
         Určit status bloku: completed | current | planned.
 
         Args:
-            interval: První interval v bloku
+            first_interval: První interval v bloku (start time)
+            last_interval: Poslední interval v bloku (end time)
             tab_name: "yesterday" | "today" | "tomorrow"
             now: Aktuální čas
 
@@ -6603,36 +6608,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         elif tab_name == "tomorrow":
             return "planned"
         else:  # today
-            interval_time_str = interval.get("time", "")
-            if not interval_time_str:
+            start_time_str = first_interval.get("time", "")
+            end_time_str = last_interval.get("time", "")
+
+            if not start_time_str or not end_time_str:
                 return "planned"
 
             try:
-                interval_time = datetime.fromisoformat(interval_time_str)
-                if interval_time.tzinfo is None:
-                    interval_time = dt_util.as_local(interval_time)
+                start_time = datetime.fromisoformat(start_time_str)
+                end_time = datetime.fromisoformat(end_time_str)
+
+                if start_time.tzinfo is None:
+                    start_time = dt_util.as_local(start_time)
+                if end_time.tzinfo is None:
+                    end_time = dt_util.as_local(end_time)
+
+                # Konec intervalu je začátek + 15 minut
+                end_time = end_time + timedelta(minutes=15)
 
                 current_minute = (now.minute // 15) * 15
                 current_interval_time = now.replace(
                     minute=current_minute, second=0, microsecond=0
                 )
 
-                # Remove timezone for comparison (both must be naive or both aware)
-                # interval_time might be naive from timeline data
-                interval_time_naive = (
-                    interval_time.replace(tzinfo=None)
-                    if interval_time.tzinfo
-                    else interval_time
+                # Remove timezone for comparison
+                start_time_naive = (
+                    start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
+                )
+                end_time_naive = (
+                    end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
                 )
                 current_interval_naive = current_interval_time.replace(tzinfo=None)
 
-                if interval_time_naive < current_interval_naive:
+                # Celý blok v minulosti?
+                if end_time_naive <= current_interval_naive:
                     return "completed"
-                elif interval_time_naive == current_interval_naive:
+                # Začátek v minulosti, konec v budoucnosti?
+                elif start_time_naive <= current_interval_naive < end_time_naive:
                     return "current"
+                # Celý blok v budoucnosti
                 else:
                     return "planned"
-            except:
+            except Exception as e:
+                _LOGGER.warning(f"[_determine_block_status] Error parsing times: {e}")
                 return "planned"
 
     def _get_mode_from_intervals(

@@ -204,9 +204,50 @@ class DetailTabsDialog {
         const { date, mode_blocks, summary } = tabData;
 
         const summaryHtml = this.renderSummary(summary, tabName);
-        const blocksHtml = mode_blocks.map((block, index) =>
-            this.renderModeBlock(block, index)
-        ).join('');
+
+        // Pro DNES tab: rozdělit na sekce podle statusu
+        let blocksHtml = '';
+        if (tabName === 'today') {
+            const completedBlocks = mode_blocks.filter(b => b.status === 'completed');
+            const currentBlocks = mode_blocks.filter(b => b.status === 'current');
+            const plannedBlocks = mode_blocks.filter(b => b.status === 'planned');
+
+            blocksHtml = `
+                ${completedBlocks.length > 0 ? `
+                    <div class="mode-section">
+                        <h3 class="section-header">⏮️ Uplynulé</h3>
+                        <div class="mode-blocks-container">
+                            ${completedBlocks.map((block, index) => this.renderModeBlock(block, index)).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${currentBlocks.length > 0 ? `
+                    <div class="mode-section current-section">
+                        <h3 class="section-header">▶️ Aktuální</h3>
+                        <div class="mode-blocks-container">
+                            ${currentBlocks.map((block, index) => this.renderModeBlock(block, index)).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${plannedBlocks.length > 0 ? `
+                    <div class="mode-section">
+                        <h3 class="section-header">⏭️ Plán</h3>
+                        <div class="mode-blocks-container">
+                            ${plannedBlocks.map((block, index) => this.renderModeBlock(block, index)).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        } else {
+            // VČERA/ZÍTRA: flat list
+            blocksHtml = `
+                <div class="mode-blocks-container">
+                    ${mode_blocks.map((block, index) => this.renderModeBlock(block, index)).join('')}
+                </div>
+            `;
+        }
 
         return `
             <div class="detail-tab-content">
@@ -214,9 +255,7 @@ class DetailTabsDialog {
                 ${summaryHtml}
 
                 <!-- Mode Blocks -->
-                <div class="mode-blocks-container">
-                    ${blocksHtml}
-                </div>
+                ${blocksHtml}
 
                 <!-- Date Footer -->
                 <div class="tab-footer">

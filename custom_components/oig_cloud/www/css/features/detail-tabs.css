@@ -74,6 +74,25 @@
     gap: 16px;
 }
 
+/* Mode Section (pro DNES tab - uplynulé/aktuální/plán) */
+.mode-section {
+    margin-bottom: 32px;
+}
+
+.mode-section .section-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border-color, #444);
+}
+
+.mode-section.current-section .section-header {
+    color: #2196F3;
+    border-bottom-color: #2196F3;
+}
+
 /* Individual Mode Block */
 .mode-block {
     background: transparent;
