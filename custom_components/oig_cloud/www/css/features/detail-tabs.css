@@ -213,127 +213,28 @@
     color: var(--text-secondary, #999);
 }
 
-.mode-block-status {
-    font-size: 0.75rem;
-    padding: 3px 8px;
-    border-radius: 10px;
-    font-weight: 500;
-}
-
-.mode-block-status.status-completed {
-    background: #E8F5E9;
-    color: #2E7D32;
-}
-
-.mode-block-status.status-current {
-    background: #FFF3E0;
-    color: #E65100;
-}
-
-.mode-block-status.status-planned {
-    background: #E3F2FD;
-    color: #1565C0;
-}
-
-.mode-block-match {
-    font-size: 0.9rem;
+/* Match badge in header */
+.block-match {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
     font-weight: 600;
 }
 
-.mode-block-match.match-yes {
+.block-match.match-yes {
+    background: rgba(76, 175, 80, 0.15);
     color: #4CAF50;
 }
 
-.mode-block-match.match-no {
+.block-match.match-no {
+    background: rgba(244, 67, 54, 0.15);
     color: #F44336;
 }
 
-/* Mode Comparison */
-.mode-comparison {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-}
-
-.mode-badge {
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.mode-badge.mode-historical {
-    background: var(--mode-color, #E0E0E0);
-    color: var(--mode-text, #000);
-}
-
-.mode-badge.mode-planned {
-    background: var(--mode-color, #E0E0E0);
-    color: var(--mode-text, #000);
-    opacity: 0.7;
-}
-
-.mode-separator {
-    font-size: 1rem;
-    color: var(--text-secondary, #666);
-}
-
-/* Cost Info */
-.mode-cost-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-    background: var(--background-secondary, #f9f9f9);
-    border-radius: 6px;
-    flex-wrap: wrap;
-}
-
-.cost-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.cost-label {
-    font-size: 0.65rem;
-    color: var(--text-secondary, #666);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.cost-value {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary, #000);
-}
-
-.cost-delta {
-    display: inline-block;
-    margin-top: 3px;
-    padding: 2px 6px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: 600;
-}
-
-.cost-delta.cost-higher {
-    color: #F44336; /* Red for higher cost */
-}
-
-.cost-delta.cost-lower {
-    color: #4CAF50; /* Green for lower cost */
-}
-
-.cost-delta.cost-equal {
-    color: var(--text-secondary, #666); /* Gray for equal */
-}
+/* Responsive Design */
 
 /* Energy Stats Toggle */
 .energy-stats-toggle {
@@ -468,111 +369,6 @@
    COMPACT BLOCK STYLES - Used by dashboard-timeline.js
    ================================================================ */
 
-.block-match {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 3px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.block-match.match-yes {
-    background: rgba(76, 175, 80, 0.2);
-    color: #81C784;
-}
-
-.block-match.match-no {
-    background: rgba(244, 67, 54, 0.2);
-    color: #E57373;
-}
-
-/* Block modes */
-.block-modes {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 8px;
-}
-
-.mode-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.mode-label {
-    min-width: 70px;
-    font-size: 11px;
-    color: var(--text-secondary, #aaa);
-}
-
-/* Block cost */
-.block-cost {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
-}
-
-.cost-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 2px 0;
-    font-size: 11px;
-}
-
-/* Block details */
-.block-details {
-    margin-top: 6px;
-}
-
-.block-details summary {
-    cursor: pointer;
-    padding: 4px 6px;
-    background: rgba(0, 0, 0, 0.15);
-    border-radius: 4px;
-    font-size: 10px;
-    color: var(--text-secondary, #aaa);
-    user-select: none;
-    transition: background 0.2s;
-}
-
-.block-details summary:hover {
-    background: rgba(0, 0, 0, 0.25);
-}
-
-.block-details[open] summary {
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-bottom: 1px solid var(--divider-color, #333);
-}
-
-/* Energy stats - 2 column grid */
-.energy-stats {
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.2);
-    border-bottom-left-radius: 4px;
-    border-bottom-right-radius: 4px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 12px;
-}
-
-.energy-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 2px 0;
-    font-size: 11px;
-    color: var(--text-secondary, #aaa);
-}
-
-.energy-value {
-    color: var(--primary-text-color, #fff);
-    font-weight: 500;
-    font-size: 11px;
-    margin-left: 6px;
-}
+/* These styles are for the timeline dialog popup, not for detail-tabs */
+/* Keep these minimal and separate from detail-tabs styles above */
 
