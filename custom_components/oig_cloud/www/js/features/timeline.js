@@ -813,69 +813,57 @@ class TimelineDialog {
                         </div>
                     </div>
 
-                    <!-- Mode Comparison -->
-                    <div class="block-modes">
-                        <div class="mode-row">
-                            <div class="mode-label">Skutečnost:</div>
-                            <div class="mode-badge" style="background: ${historicalMode.color};">
-                                ${historicalMode.icon} ${historicalMode.label}
+                    <!-- Single-line layout (aligned with detail-tabs.js) -->
+                    <div class="block-content-row">
+                        <!-- Režim -->
+                        <div class="block-item">
+                            <span class="item-label">Skutečnost/Plán:</span>
+                            <div class="item-value">
+                                <span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
+                                ${mode_planned && mode_planned !== 'Unknown' ? `
+                                <span class="mode-arrow">→</span>
+                                <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>
+                                ` : ''}
                             </div>
                         </div>
-                        ${mode_planned && mode_planned !== 'Unknown' ? `
-                        <div class="mode-row">
-                            <div class="mode-label">Plán:</div>
-                            <div class="mode-badge" style="background: ${plannedMode.color};">
-                                ${plannedMode.icon} ${plannedMode.label}
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
 
-                    <!-- Cost Info -->
-                    <div class="block-cost">
-                        <div class="cost-row">
-                            <span>Cena (skutečná):</span>
-                            <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                        <!-- Náklady -->
+                        <div class="block-item">
+                            <span class="item-label">Cena (skutečná/plán):</span>
+                            <div class="item-value">
+                                <span class="cost-actual">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                                ${cost_planned !== null && cost_planned !== undefined ? `
+                                <span class="cost-arrow">→</span>
+                                <span class="cost-planned">${cost_planned.toFixed(2)} Kč</span>
+                                ${costDeltaHtml}
+                                ` : ''}
+                            </div>
                         </div>
-                        ${cost_planned !== null && cost_planned !== undefined ? `
-                        <div class="cost-row">
-                            <span>Cena (plánovaná):</span>
-                            <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
-                        </div>
-                        ${costDeltaHtml}
-                        ` : ''}
-                    </div>
 
-                    <!-- Energy Stats (collapsible) -->
-                    <details class="block-details">
-                        <summary>📊 Detaily energie</summary>
-                        <div class="energy-stats">
-                            ${solar_total_kwh !== null && solar_total_kwh !== undefined ? `
-                            <div class="energy-row">
-                                <span>☀️ Solární</span>
-                                <span class="energy-value">${solar_total_kwh.toFixed(2)} kWh</span>
-                            </div>
-                            ` : ''}
-                            ${consumption_total_kwh !== null && consumption_total_kwh !== undefined ? `
-                            <div class="energy-row">
-                                <span>🔌 Spotřeba</span>
-                                <span class="energy-value">${consumption_total_kwh.toFixed(2)} kWh</span>
-                            </div>
-                            ` : ''}
-                            ${grid_import_total_kwh !== null && grid_import_total_kwh !== undefined ? `
-                            <div class="energy-row">
-                                <span>⬇️ Odběr ze sítě</span>
-                                <span class="energy-value">${grid_import_total_kwh.toFixed(2)} kWh</span>
-                            </div>
-                            ` : ''}
-                            ${grid_export_total_kwh !== null && grid_export_total_kwh !== undefined ? `
-                            <div class="energy-row">
-                                <span>⬆️ Export do sítě</span>
-                                <span class="energy-value">${grid_export_total_kwh.toFixed(2)} kWh</span>
-                            </div>
-                            ` : ''}
+                        <!-- Solár -->
+                        <div class="block-item">
+                            <span class="item-label">☀️ Solár:</span>
+                            <div class="item-value">${solar_total_kwh?.toFixed(2) || '0.00'} kWh</div>
                         </div>
-                    </details>
+
+                        <!-- Spotřeba -->
+                        <div class="block-item">
+                            <span class="item-label">🏠 Spotřeba:</span>
+                            <div class="item-value">${consumption_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        </div>
+
+                        <!-- Import -->
+                        <div class="block-item">
+                            <span class="item-label">⬇️ Import:</span>
+                            <div class="item-value">${grid_import_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        </div>
+
+                        <!-- Export -->
+                        <div class="block-item">
+                            <span class="item-label">⬆️ Export:</span>
+                            <div class="item-value">${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        </div>
+                    </div>
                 </div>
             `;
         }).join('');
