@@ -332,7 +332,7 @@ class DetailTabsDialog {
                 <!-- Header -->
                 <div class="block-header">
                     <div class="block-time">
-                        ${statusIcon} ${start_time} - ${end_time}
+                        ${statusIcon} <strong>${start_time} - ${end_time}</strong>
                         <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
                     </div>
                     <div class="block-match ${matchClass}">
@@ -340,61 +340,77 @@ class DetailTabsDialog {
                     </div>
                 </div>
 
-                <!-- Mode Comparison -->
-                <div class="block-modes">
-                    <div class="mode-row">
-                        <div class="mode-label">Skutečnost:</div>
-                        <div class="mode-badge" style="background: ${historicalMode.color};">
-                            ${historicalMode.icon} ${historicalMode.label}
+                <!-- Two-column layout -->
+                <div class="block-content-grid">
+                    <!-- Left Column: Modes & Cost -->
+                    <div class="block-column-left">
+                        <!-- Mode Comparison -->
+                        <div class="block-section">
+                            <h4 class="section-title">Režim</h4>
+                            <div class="block-modes">
+                                <div class="mode-row">
+                                    <div class="mode-label">Skutečnost:</div>
+                                    <div class="mode-badge" style="background: ${historicalMode.color};">
+                                        ${historicalMode.icon} ${historicalMode.label}
+                                    </div>
+                                </div>
+                                ${mode_planned !== 'Unknown' ? `
+                                <div class="mode-row">
+                                    <div class="mode-label">Plán:</div>
+                                    <div class="mode-badge" style="background: ${plannedMode.color};">
+                                        ${plannedMode.icon} ${plannedMode.label}
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </div>
                         </div>
-                    </div>
-                    ${mode_planned !== 'Unknown' ? `
-                    <div class="mode-row">
-                        <div class="mode-label">Plán:</div>
-                        <div class="mode-badge" style="background: ${plannedMode.color};">
-                            ${plannedMode.icon} ${plannedMode.label}
-                        </div>
-                    </div>
-                    ` : ''}
-                </div>
 
-                <!-- Cost Info -->
-                <div class="block-cost">
-                    <div class="cost-row">
-                        <span>Cena (skutečná):</span>
-                        <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                        <!-- Cost Info -->
+                        <div class="block-section">
+                            <h4 class="section-title">Náklady</h4>
+                            <div class="block-cost">
+                                <div class="cost-row">
+                                    <span>Skutečná:</span>
+                                    <span class="cost-value">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
+                                </div>
+                                ${cost_planned !== null && cost_planned !== undefined ? `
+                                <div class="cost-row">
+                                    <span>Plánovaná:</span>
+                                    <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
+                                </div>
+                                <div class="cost-row-delta">
+                                    ${costDeltaHtml}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
                     </div>
-                    ${cost_planned !== null && cost_planned !== undefined ? `
-                    <div class="cost-row">
-                        <span>Cena (plánovaná):</span>
-                        <span class="cost-value">${cost_planned.toFixed(2)} Kč</span>
-                    </div>
-                    ${costDeltaHtml}
-                    ` : ''}
-                </div>
 
-                <!-- Energy Stats (collapsible) -->
-                <details class="block-details">
-                    <summary>📊 Energetická bilance</summary>
-                    <div class="energy-stats">
-                        <div class="stat-row">
-                            <span>☀️ Solár:</span>
-                            <span>${solar_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>🏠 Spotřeba:</span>
-                            <span>${consumption_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>⬇️ Import:</span>
-                            <span>${grid_import_total_kwh?.toFixed(2) || '0.00'} kWh</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>⬆️ Export:</span>
-                            <span>${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</span>
+                    <!-- Right Column: Energy Stats -->
+                    <div class="block-column-right">
+                        <div class="block-section">
+                            <h4 class="section-title">📊 Energetická bilance</h4>
+                            <div class="energy-stats">
+                                <div class="stat-row">
+                                    <span>☀️ Solár:</span>
+                                    <span class="stat-value">${solar_total_kwh?.toFixed(2) || '0.00'} kWh</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span>🏠 Spotřeba:</span>
+                                    <span class="stat-value">${consumption_total_kwh?.toFixed(2) || '0.00'} kWh</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span>⬇️ Import:</span>
+                                    <span class="stat-value">${grid_import_total_kwh?.toFixed(2) || '0.00'} kWh</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span>⬆️ Export:</span>
+                                    <span class="stat-value">${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </details>
+                </div>
             </div>
         `;
     }

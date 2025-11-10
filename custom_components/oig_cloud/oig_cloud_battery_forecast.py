@@ -6865,7 +6865,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._unified_cost_tile_cache_timestamp = now
 
         build_duration = (dt_util.now() - build_start).total_seconds()
-        _LOGGER.info(f"Unified Cost Tile: Built in {build_duration:.2f}s, cached for 60s")
+        _LOGGER.info(
+            f"Unified Cost Tile: Built in {build_duration:.2f}s, cached for 60s"
+        )
 
         return result
 

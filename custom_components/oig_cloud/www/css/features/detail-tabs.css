@@ -77,7 +77,7 @@
     background: var(--card-background, #fff);
     border: 2px solid var(--border-color, #e0e0e0);
     border-radius: 8px;
-    padding: 8px;
+    padding: 16px;
     transition: border-color 0.3s, box-shadow 0.3s;
 }
 
@@ -97,18 +97,167 @@
 }
 
 /* Mode Block Header */
-.mode-block-header {
+.mode-block-header,
+.block-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #e0e0e0);
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
 }
 
-.mode-block-time {
+.mode-block-time,
+.block-time {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #000);
+}
+
+.block-duration {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text-secondary, #666);
+    margin-left: 8px;
+}
+
+/* Two-column grid layout */
+.block-content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.block-column-left,
+.block-column-right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Section styling */
+.block-section {
+    background: var(--background-secondary, #f9f9f9);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary, #666);
+    margin: 0 0 10px 0;
+}
+
+/* Mode badges */
+.block-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mode-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mode-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #666);
+    min-width: 80px;
+}
+
+.mode-badge {
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #fff;
+}
+
+/* Cost section */
+.block-cost {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+}
+
+.cost-row span:first-child {
+    color: var(--text-secondary, #666);
+}
+
+.cost-value {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary, #000);
+}
+
+.cost-row-delta {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-color, #e0e0e0);
+}
+
+.cost-delta {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
     font-size: 0.85rem;
     font-weight: 600;
+}
+
+.cost-delta.cost-higher {
+    background: rgba(244, 67, 54, 0.1);
+    color: #F44336;
+}
+
+.cost-delta.cost-lower {
+    background: rgba(76, 175, 80, 0.1);
+    color: #4CAF50;
+}
+
+.cost-delta.cost-equal {
+    background: rgba(158, 158, 158, 0.1);
+    color: var(--text-secondary, #666);
+}
+
+/* Energy stats */
+.energy-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+}
+
+.stat-row span:first-child {
+    color: var(--text-secondary, #666);
+}
+
+.stat-value {
+    font-weight: 600;
+    font-size: 1rem;
     color: var(--text-primary, #000);
 }
 
@@ -302,6 +451,12 @@
         grid-template-columns: 1fr;
     }
 
+    /* Stack columns vertically on mobile */
+    .block-content-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
     .mode-comparison {
         flex-direction: column;
         align-items: flex-start;
@@ -343,33 +498,21 @@
         border-color: var(--border-color-dark, #333);
     }
 
-    .mode-cost-info,
-    .energy-stats-toggle {
+    .block-section {
         background: var(--background-secondary-dark, #2a2a2a);
-    }
-
-    .energy-stats-toggle:hover {
-        background: var(--background-hover-dark, #333);
-    }
-
-    .energy-stats-content {
-        background: var(--card-background-dark, #1e1e1e);
-        border-color: var(--border-color-dark, #333);
     }
 
     .summary-tile-value,
     .mode-block-time,
+    .block-time,
     .cost-value,
-    .energy-stat-value,
-    .energy-stats-toggle-label {
+    .stat-value {
         color: var(--text-primary-dark, #fff);
     }
 
     .summary-tile-label,
-    .cost-label,
-    .energy-stat-label,
-    .mode-separator,
-    .energy-stats-toggle-icon {
+    .mode-label,
+    .section-title {
         color: var(--text-secondary-dark, #aaa);
     }
 }
@@ -377,29 +520,6 @@
 /* ================================================================
    COMPACT BLOCK STYLES - Used by dashboard-timeline.js
    ================================================================ */
-
-/* Block header */
-.block-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--divider-color, #333);
-}
-
-.block-time {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--primary-text-color, #fff);
-}
-
-.block-duration {
-    font-size: 11px;
-    color: var(--text-secondary, #aaa);
-    font-weight: normal;
-    margin-left: 4px;
-}
 
 .block-match {
     display: flex;

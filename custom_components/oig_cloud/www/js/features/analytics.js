@@ -243,23 +243,42 @@ function initTodayPlanTile(container, tileSummary) {
 /**
  * Load Unified Cost Tile data from API endpoint
  * PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1 (UCT-FE-001)
+ * Enhanced with retry logic for post-restart/reload scenarios
  */
-async function loadUnifiedCostTile() {
+async function loadUnifiedCostTile(retryCount = 0, maxRetries = 3) {
     try {
-        console.log('[Unified Cost Tile] Loading data from API...');
+        console.log(`[Unified Cost Tile] Loading data from API... (attempt ${retryCount + 1}/${maxRetries + 1})`);
         const response = await fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`);
 
         if (!response.ok) {
             console.error('[Unified Cost Tile] API error:', response.status);
+
+            // Retry on server errors (500+) or if data not yet available (503)
+            if (response.status >= 500 && retryCount < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff, max 5s
+                console.log(`[Unified Cost Tile] Retrying in ${delay}ms...`);
+                setTimeout(() => loadUnifiedCostTile(retryCount + 1, maxRetries), delay);
+            }
             return;
         }
 
         const data = await response.json();
-        console.log('[Unified Cost Tile] Data loaded from API:', data);
+        console.log('[Unified Cost Tile] Data loaded from API (cached on backend):', {
+            today: data.today ? 'present' : 'missing',
+            yesterday: data.yesterday ? 'present' : 'missing',
+            tomorrow: data.tomorrow ? 'present' : 'missing'
+        });
 
         renderUnifiedCostTile(data);
     } catch (error) {
         console.error('[Unified Cost Tile] Failed to load from API:', error);
+
+        // Retry on network errors
+        if (retryCount < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+            console.log(`[Unified Cost Tile] Network error, retrying in ${delay}ms...`);
+            setTimeout(() => loadUnifiedCostTile(retryCount + 1, maxRetries), delay);
+        }
     }
 }
 
