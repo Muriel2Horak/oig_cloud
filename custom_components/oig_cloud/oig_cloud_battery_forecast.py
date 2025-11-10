@@ -5070,7 +5070,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"sensor.oig_{self._box_id}_ac_in_ac_ad",  # Grid import [Wh kumulativně]
                 f"sensor.oig_{self._box_id}_ac_in_ac_pd",  # Grid export [Wh kumulativně]
                 f"sensor.oig_{self._box_id}_dc_in_fv_ad",  # Solar [Wh kumulativně]
-                f"sensor.oig_{self._box_id}_battery_soc",  # Baterie [%]
+                f"sensor.oig_{self._box_id}_batt_bat_c",  # Baterie [%] - OPRAVENO: správný název senzoru
                 f"sensor.oig_{self._box_id}_box_prms_mode",  # Režim střídače (box_prms_mode)
                 f"sensor.oig_{self._box_id}_spot_price_current_15min",  # Import spot price [Kč/kWh]
                 f"sensor.oig_{self._box_id}_export_price_current_15min",  # Export price [Kč/kWh]
@@ -5203,7 +5203,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             solar_kwh = get_delta(f"sensor.oig_{self._box_id}_dc_in_fv_ad")
 
             # OPRAVA: Použít hodnotu NA KONCI intervalu (end_time), ne prostě poslední
-            battery_soc = get_value_at_end(f"sensor.oig_{self._box_id}_battery_soc")
+            battery_soc = get_value_at_end(f"sensor.oig_{self._box_id}_batt_bat_c")
             mode_raw = get_value_at_end(f"sensor.oig_{self._box_id}_box_prms_mode")
 
             # Vypočítat battery_kwh z SOC
@@ -8309,6 +8309,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             ),
                             "solar_kwh": historical_metrics.get("solar_kwh", 0),
                             "battery_soc": historical_metrics.get("battery_soc", 0),
+                            "battery_kwh": historical_metrics.get("battery_kwh", 0),
                             "grid_import_kwh": historical_metrics.get(
                                 "grid_import",
                                 0,  # Function returns "grid_import" not "grid_import_kwh"
@@ -8328,6 +8329,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             "consumption_kwh": 0,
                             "solar_kwh": 0,
                             "battery_soc": 0,
+                            "battery_kwh": 0,
                             "grid_import_kwh": 0,
                             "grid_export_kwh": 0,
                             "net_cost": 0,
