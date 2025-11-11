@@ -12816,20 +12816,20 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug("[GridChargingPlan] No precomputed data yet")
                 return []
 
-            # 3. Získat today mode_blocks
+            # 3. Získat today + tomorrow mode_blocks
             detail_tabs = precomputed.get("detail_tabs", {})
-            today = detail_tabs.get("today", {})
-            mode_blocks = today.get("mode_blocks", [])
-
-            if not mode_blocks:
-                return []
 
             # 4. Filtrovat HOME UPS bloky - pouze active + planned (ne completed)
             now = dt_util.now()
             current_time = now.strftime("%H:%M")
 
             ups_blocks = []
-            for block in mode_blocks:
+
+            # Process TODAY blocks
+            today = detail_tabs.get("today", {})
+            today_blocks = today.get("mode_blocks", [])
+
+            for block in today_blocks:
                 # Zkontrolovat zda je to HOME UPS blok
                 mode_hist = block.get("mode_historical", "")
                 mode_plan = block.get("mode_planned", "")
@@ -12868,8 +12868,35 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     }
                 )
 
+            # Process TOMORROW blocks (všechny jsou planned)
+            tomorrow = detail_tabs.get("tomorrow", {})
+            tomorrow_blocks = tomorrow.get("mode_blocks", [])
+
+            for block in tomorrow_blocks:
+                # Zkontrolovat zda je to HOME UPS blok
+                mode_plan = block.get("mode_planned", "")
+                if "HOME UPS" not in mode_plan:
+                    continue
+
+                # Přidat zítřejší plánovaný blok
+                ups_blocks.append(
+                    {
+                        "time_from": block.get("start_time", ""),
+                        "time_to": block.get("end_time", ""),
+                        "day": "tomorrow",
+                        "mode": "Home UPS",
+                        "status": "planned",  # Všechny zítřejší bloky jsou planned
+                        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
+                        "cost_czk": block.get("cost_planned", 0.0),
+                        "battery_start_kwh": block.get("battery_soc_start", 0.0),
+                        "battery_end_kwh": block.get("battery_soc_end", 0.0),
+                        "interval_count": block.get("interval_count", 0),
+                        "duration_hours": block.get("duration_hours", 0.0),
+                    }
+                )
+
             _LOGGER.debug(
-                f"[GridChargingPlan] Found {len(ups_blocks)} active/future UPS blocks"
+                f"[GridChargingPlan] Found {len(ups_blocks)} active/future UPS blocks (today + tomorrow)"
             )
             return ups_blocks
 
@@ -12957,15 +12984,119 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Vrátí ON pokud právě TEĎKA běží HOME UPS (status=active)."""
+        """Vrátí ON pokud právě běží nebo brzy začne HOME UPS (s offsetem)."""
         charging_intervals, _, _ = self._calculate_charging_intervals()
 
-        # Sensor ON pouze pokud existuje AKTIVNÍ blok
-        for block in charging_intervals:
-            if block.get("status") == "active":
+        if not charging_intervals:
+            return "off"
+
+        # Získat aktuální čas
+        now = dt_util.now()
+        current_time = now.time()
+        
+        # Získat aktuální režim z coordinator
+        current_mode = self._get_current_mode()
+
+        # Seřadit bloky chronologicky (today před tomorrow)
+        sorted_blocks = sorted(
+            charging_intervals,
+            key=lambda b: (0 if b.get("day") == "today" else 1, b.get("time_from", ""))
+        )
+
+        # Projít všechny UPS bloky a zkontrolovat s offsety
+        for i, block in enumerate(sorted_blocks):
+            start_time_str = block.get("time_from", "00:00")
+            end_time_str = block.get("time_to", "23:59")
+            day = block.get("day", "today")
+
+            # Parse časy
+            try:
+                start_hour, start_min = map(int, start_time_str.split(":"))
+                end_hour, end_min = map(int, end_time_str.split(":"))
+                
+                start_time = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+                end_time = now.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+                
+                # Pokud je blok zítra, přidat 1 den
+                if day == "tomorrow":
+                    start_time = start_time + timedelta(days=1)
+                    end_time = end_time + timedelta(days=1)
+                
+                # Pokud end_time < start_time, je to přes půlnoc
+                if end_time < start_time:
+                    end_time = end_time + timedelta(days=1)
+                
+            except (ValueError, AttributeError):
+                _LOGGER.warning(f"[GridChargingPlan] Invalid time format: {start_time_str} - {end_time_str}")
+                continue
+
+            # Získat offset pro zapnutí (current_mode → HOME UPS)
+            offset_on = self._get_dynamic_offset(current_mode, "HOME UPS")
+            start_time_with_offset = start_time - timedelta(seconds=offset_on)
+
+            # Zkontrolovat zda je další blok taky HOME UPS (continuity)
+            next_block_is_ups = False
+            if i + 1 < len(sorted_blocks):
+                next_block = sorted_blocks[i + 1]
+                # Pokud další blok začíná hned po tomto (± 1 minuta), je to continuity
+                next_start = next_block.get("time_from", "")
+                if next_start == end_time_str or abs((self._parse_time_to_datetime(next_start, next_block.get("day")) - end_time).total_seconds()) <= 60:
+                    next_block_is_ups = True
+
+            # Získat offset pro vypnutí
+            if next_block_is_ups:
+                # Další blok je taky UPS, takže NEVYPíNÁME (offset = 0)
+                offset_off = 0
+            else:
+                # Najít následující režim (kam jdeme po UPS)
+                next_mode = self._get_next_mode_after_ups(block, sorted_blocks, i)
+                offset_off = self._get_dynamic_offset("HOME UPS", next_mode)
+            
+            end_time_with_offset = end_time - timedelta(seconds=offset_off)
+
+            # Zkontrolovat zda jsme v časovém okně s offsety
+            if start_time_with_offset <= now <= end_time_with_offset:
+                _LOGGER.debug(
+                    f"[GridChargingPlan] Sensor ON: now={now.strftime('%H:%M:%S')}, "
+                    f"block={start_time_str}-{end_time_str}, "
+                    f"offset_on={offset_on}s, offset_off={offset_off}s"
+                )
                 return "on"
 
         return "off"
+
+    def _get_current_mode(self) -> str:
+        """Získá aktuální režim z coordinator data."""
+        if not self.coordinator or not self.coordinator.data:
+            return "HOME I"  # Fallback
+        
+        box_data = self.coordinator.data.get(self._box_id, {})
+        current_mode = box_data.get("current_mode", "HOME I")
+        return current_mode
+
+    def _get_next_mode_after_ups(self, current_block: Dict, all_blocks: List[Dict], current_idx: int) -> str:
+        """Získá režim následující po UPS bloku."""
+        # Zkusit najít další non-UPS blok v precomputed data
+        if current_idx + 1 < len(all_blocks):
+            next_block = all_blocks[current_idx + 1]
+            next_mode = next_block.get("mode_planned", "HOME I")
+            if "HOME UPS" not in next_mode:
+                return next_mode
+        
+        # Fallback na HOME I (nejčastější режim po nabíjení)
+        return "HOME I"
+
+    def _parse_time_to_datetime(self, time_str: str, day: str) -> datetime:
+        """Parse time string to datetime."""
+        now = dt_util.now()
+        try:
+            hour, minute = map(int, time_str.split(":"))
+            dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if day == "tomorrow":
+                dt = dt + timedelta(days=1)
+            return dt
+        except (ValueError, AttributeError):
+            return now
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
