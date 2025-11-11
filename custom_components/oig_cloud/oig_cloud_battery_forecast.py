@@ -199,11 +199,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             None  # MD5 hash of timeline_data for efficient change detection
         )
 
-        # Unified Cost Tile cache (60s TTL)
-        self._unified_cost_tile_cache: Optional[Dict[str, Any]] = None
-        self._unified_cost_tile_cache_timestamp: Optional[datetime] = None
-        self._unified_cost_tile_cache_ttl = timedelta(seconds=60)
-
         # Phase 2.7: HOME I timeline cache for savings calculation
         self._home_i_timeline_cache: List[Dict[str, Any]] = []
 
@@ -6770,19 +6765,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         now = dt_util.now()
 
-        # Check cache first (60s TTL)
-        if (
-            self._unified_cost_tile_cache is not None
-            and self._unified_cost_tile_cache_timestamp is not None
-        ):
-            cache_age = now - self._unified_cost_tile_cache_timestamp
-            if cache_age < self._unified_cost_tile_cache_ttl:
-                _LOGGER.debug(
-                    f"Unified Cost Tile: Using cached data (age: {cache_age.total_seconds():.1f}s)"
-                )
-                return self._unified_cost_tile_cache
-
-        # Cache miss or expired - rebuild
+        # Build fresh data (bez cache)
         _LOGGER.info("Unified Cost Tile: Building fresh data...")
         build_start = dt_util.now()
 
@@ -6842,13 +6825,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             },
         }
 
-        # Update cache
-        self._unified_cost_tile_cache = result
-        self._unified_cost_tile_cache_timestamp = now
-
         build_duration = (dt_util.now() - build_start).total_seconds()
         _LOGGER.info(
-            f"Unified Cost Tile: Built in {build_duration:.2f}s, cached for 60s"
+            f"Unified Cost Tile: Built in {build_duration:.2f}s"
         )
 
         return result
