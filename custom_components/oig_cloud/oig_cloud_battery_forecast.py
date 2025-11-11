@@ -12682,111 +12682,132 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._last_offset_end = None
 
     def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
-        """Načte HOME UPS bloky z build_detail_tabs API (agregované podle mode)."""
+        """Načte HOME UPS bloky z timeline data v coordinator.data."""
         try:
-            # Získat battery forecast data přímo z coordinator.data
-            # (BatteryForecastSensor ukládá build_detail_tabs data tam)
-            battery_forecast_data = getattr(
-                self.coordinator, "battery_forecast_data", None
-            )
-            if not battery_forecast_data or not isinstance(battery_forecast_data, dict):
-                _LOGGER.warning(
-                    "[GridChargingPlan] No battery_forecast_data in coordinator"
-                )
+            # Získat battery forecast data z coordinator.data
+            if not self.coordinator or not self.coordinator.data:
+                _LOGGER.warning("[GridChargingPlan] No coordinator data available")
                 return []
 
-            # Načíst detail_tabs_data (která obsahuje agregované mode bloky)
-            detail_tabs_data = battery_forecast_data.get("detail_tabs_data", {})
-            if not detail_tabs_data:
-                _LOGGER.warning(
-                    "[GridChargingPlan] No detail_tabs_data in battery_forecast_data"
-                )
+            battery_forecast_data = self.coordinator.data.get("battery_forecast")
+            if not battery_forecast_data:
+                _LOGGER.warning("[GridChargingPlan] No battery_forecast in coordinator.data")
                 return []
 
-            detail_tabs = detail_tabs_data
+            # Timeline data obsahuje today a tomorrow s intervaly
+            timeline_data = battery_forecast_data.get("timeline_data", {})
+            if not timeline_data:
+                _LOGGER.warning("[GridChargingPlan] No timeline_data in battery_forecast")
+                return []
 
-            # Filtrovat pouze Home UPS bloky z today a tomorrow
+            # Zpracovat HOME UPS bloky z today a tomorrow
             home_ups_blocks = []
-
+            
             for tab_name in ["today", "tomorrow"]:
-                tab_data = detail_tabs.get(tab_name, {})
-                mode_blocks = tab_data.get("mode_blocks", [])
-
-                for block in mode_blocks:
-                    # Filtrovat pouze Home UPS režim (historical nebo planned)
-                    mode_historical = block.get("mode_historical", "")
-                    mode_planned = block.get("mode_planned", "")
-
-                    # Akceptovat pokud je Home UPS v historical NEBO planned
-                    if (
-                        "Home UPS" not in mode_historical
-                        and "Home UPS" not in mode_planned
-                    ):
-                        continue
-
-                    # Status bloku
-                    status = block.get("status", "planned")
-
-                    # Pouze current a planned (skipnout completed)
-                    if status == "completed":
-                        continue
-
-                    # Parsovat časy
-                    start_time_str = block.get("start_time", "")
-                    end_time_str = block.get("end_time", "")
-
-                    if not start_time_str or not end_time_str:
-                        continue
-
-                    # Určit den
-                    day = "today" if tab_name == "today" else "tomorrow"
-
-                    # Použít planned data pro energie a náklady
-                    cost_czk = block.get("cost_planned", 0.0) or 0.0
-                    grid_import_kwh = block.get("grid_import_total_kwh", 0.0) or 0.0
-                    battery_start_kwh = block.get("battery_kwh_start", 0.0) or 0.0
-                    battery_end_kwh = block.get("battery_kwh_end", 0.0) or 0.0
-                    interval_count = block.get("interval_count", 0)
-                    duration_hours = block.get("duration_hours", 0.0)
-
-                    # Sestavit blok v očekávaném formátu
-                    result_block = {
-                        "time_from": start_time_str,
-                        "time_to": end_time_str,
-                        "day": day,
-                        "mode": mode_planned or mode_historical,  # Preferovat planned
-                        "status": status,
-                        "grid_charge_kwh": round(grid_import_kwh, 3),
-                        "battery_start_kwh": round(battery_start_kwh, 2),
-                        "battery_end_kwh": round(battery_end_kwh, 2),
-                        "battery_delta_kwh": round(
-                            battery_end_kwh - battery_start_kwh, 3
-                        ),
-                        "cost_czk": round(cost_czk, 2),
-                        "interval_count": interval_count,
-                        "duration_hours": round(duration_hours, 2),
-                    }
-
-                    home_ups_blocks.append(result_block)
+                tab_data = timeline_data.get(tab_name, {})
+                intervals = tab_data.get("intervals", [])
+                
+                if not intervals:
+                    continue
+                
+                # Najít UPS bloky (mode obsahuje "Home UPS")
+                current_block = None
+                
+                for interval in intervals:
+                    mode = interval.get("mode", "")
+                    
+                    # Začátek UPS bloku
+                    if "Home UPS" in mode and current_block is None:
+                        current_block = {
+                            "start_interval": interval,
+                            "intervals": [interval],
+                        }
+                    # Pokračování UPS bloku
+                    elif "Home UPS" in mode and current_block is not None:
+                        current_block["intervals"].append(interval)
+                    # Konec UPS bloku
+                    elif "Home UPS" not in mode and current_block is not None:
+                        # Uložit dokončený blok
+                        self._finalize_ups_block(current_block, tab_name, home_ups_blocks)
+                        current_block = None
+                
+                # Uložit poslední blok pokud skončil na konci dne
+                if current_block is not None:
+                    self._finalize_ups_block(current_block, tab_name, home_ups_blocks)
 
             _LOGGER.info(
-                f"[GridChargingPlan] Found {len(home_ups_blocks)} HOME UPS blocks from detail_tabs"
+                f"[GridChargingPlan] Found {len(home_ups_blocks)} HOME UPS blocks from timeline"
             )
             return home_ups_blocks
 
         except Exception as e:
             _LOGGER.error(
-                f"[GridChargingPlan] Error getting HOME UPS blocks from detail_tabs: {e}",
+                f"[GridChargingPlan] Error getting HOME UPS blocks from timeline: {e}",
                 exc_info=True,
             )
             return []
+    
+    def _finalize_ups_block(
+        self, block: Dict[str, Any], tab_name: str, output_list: List[Dict[str, Any]]
+    ) -> None:
+        """Dokončí UPS blok a přidá ho do output listu."""
+        intervals = block["intervals"]
+        if not intervals:
+            return
+        
+        first = intervals[0]
+        last = intervals[-1]
+        
+        # Čas začátku a konce
+        time_from = first.get("time", "")
+        time_to = last.get("time", "")
+        
+        # Přidat 15 minut k time_to (poslední interval končí o 15 minut později)
+        try:
+            from datetime import datetime, timedelta
+            time_to_dt = datetime.fromisoformat(time_to.replace("Z", "+00:00"))
+            time_to_dt += timedelta(minutes=15)
+            time_to = time_to_dt.strftime("%H:%M")
+        except:
+            pass
+        
+        # Převést time z ISO formátu na HH:MM
+        try:
+            time_from = datetime.fromisoformat(time_from.replace("Z", "+00:00")).strftime("%H:%M")
+        except:
+            pass
+        
+        # Součet energií a nákladů
+        grid_charge_kwh = sum(i.get("grid_import", 0) for i in intervals)
+        cost_czk = sum(i.get("net_cost", 0) for i in intervals)
+        battery_start_kwh = first.get("battery_soc_start", 0)
+        battery_end_kwh = last.get("battery_soc_end", 0)
+        
+        # Status - pokud je alespoň jeden interval historical, je to current/completed
+        is_historical = any(i.get("data_type") == "historical" for i in intervals)
+        status = "current" if is_historical else "planned"
+        
+        result_block = {
+            "time_from": time_from,
+            "time_to": time_to,
+            "day": tab_name,
+            "mode": "Home UPS",
+            "status": status,
+            "grid_charge_kwh": round(grid_charge_kwh, 3),
+            "battery_start_kwh": round(battery_start_kwh, 2),
+            "battery_end_kwh": round(battery_end_kwh, 2),
+            "battery_delta_kwh": round(battery_end_kwh - battery_start_kwh, 3),
+            "cost_czk": round(cost_czk, 2),
+            "interval_count": len(intervals),
+            "duration_hours": round(len(intervals) * 0.25, 2),  # 15 min = 0.25h
+        }
+        
+        output_list.append(result_block)
 
     def _calculate_charging_intervals(
         self,
     ) -> tuple[List[Dict[str, Any]], float, float]:
-        """Vypočítá intervaly nabíjení ze sítě přímo z detail_tabs API."""
-        # NOVÁ IMPLEMENTACE: Čteme z detail_tabs API (agregované mode bloky)
-        # Synchronní volání - vše dostaneme přímo z BatteryForecastSensor
+        """Vypočítá intervaly nabíjení ze sítě z timeline dat."""
         charging_intervals = self._get_home_ups_blocks_from_detail_tabs()
 
         if not charging_intervals:
