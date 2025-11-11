@@ -6770,9 +6770,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
         build_duration = (dt_util.now() - build_start).total_seconds()
-        _LOGGER.info(
-            f"Unified Cost Tile: Built in {build_duration:.2f}s"
-        )
+        _LOGGER.info(f"Unified Cost Tile: Built in {build_duration:.2f}s")
 
         return result
 
@@ -12691,31 +12689,35 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
             battery_forecast_data = self.coordinator.data.get("battery_forecast")
             if not battery_forecast_data:
-                _LOGGER.warning("[GridChargingPlan] No battery_forecast in coordinator.data")
+                _LOGGER.warning(
+                    "[GridChargingPlan] No battery_forecast in coordinator.data"
+                )
                 return []
 
             # Timeline data obsahuje today a tomorrow s intervaly
             timeline_data = battery_forecast_data.get("timeline_data", {})
             if not timeline_data:
-                _LOGGER.warning("[GridChargingPlan] No timeline_data in battery_forecast")
+                _LOGGER.warning(
+                    "[GridChargingPlan] No timeline_data in battery_forecast"
+                )
                 return []
 
             # Zpracovat HOME UPS bloky z today a tomorrow
             home_ups_blocks = []
-            
+
             for tab_name in ["today", "tomorrow"]:
                 tab_data = timeline_data.get(tab_name, {})
                 intervals = tab_data.get("intervals", [])
-                
+
                 if not intervals:
                     continue
-                
+
                 # Najít UPS bloky (mode obsahuje "Home UPS")
                 current_block = None
-                
+
                 for interval in intervals:
                     mode = interval.get("mode", "")
-                    
+
                     # Začátek UPS bloku
                     if "Home UPS" in mode and current_block is None:
                         current_block = {
@@ -12728,9 +12730,11 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     # Konec UPS bloku
                     elif "Home UPS" not in mode and current_block is not None:
                         # Uložit dokončený blok
-                        self._finalize_ups_block(current_block, tab_name, home_ups_blocks)
+                        self._finalize_ups_block(
+                            current_block, tab_name, home_ups_blocks
+                        )
                         current_block = None
-                
+
                 # Uložit poslední blok pokud skončil na konci dne
                 if current_block is not None:
                     self._finalize_ups_block(current_block, tab_name, home_ups_blocks)
@@ -12746,7 +12750,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 exc_info=True,
             )
             return []
-    
+
     def _finalize_ups_block(
         self, block: Dict[str, Any], tab_name: str, output_list: List[Dict[str, Any]]
     ) -> None:
@@ -12754,39 +12758,42 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         intervals = block["intervals"]
         if not intervals:
             return
-        
+
         first = intervals[0]
         last = intervals[-1]
-        
+
         # Čas začátku a konce
         time_from = first.get("time", "")
         time_to = last.get("time", "")
-        
+
         # Přidat 15 minut k time_to (poslední interval končí o 15 minut později)
         try:
             from datetime import datetime, timedelta
+
             time_to_dt = datetime.fromisoformat(time_to.replace("Z", "+00:00"))
             time_to_dt += timedelta(minutes=15)
             time_to = time_to_dt.strftime("%H:%M")
         except:
             pass
-        
+
         # Převést time z ISO formátu na HH:MM
         try:
-            time_from = datetime.fromisoformat(time_from.replace("Z", "+00:00")).strftime("%H:%M")
+            time_from = datetime.fromisoformat(
+                time_from.replace("Z", "+00:00")
+            ).strftime("%H:%M")
         except:
             pass
-        
+
         # Součet energií a nákladů
         grid_charge_kwh = sum(i.get("grid_import", 0) for i in intervals)
         cost_czk = sum(i.get("net_cost", 0) for i in intervals)
         battery_start_kwh = first.get("battery_soc_start", 0)
         battery_end_kwh = last.get("battery_soc_end", 0)
-        
+
         # Status - pokud je alespoň jeden interval historical, je to current/completed
         is_historical = any(i.get("data_type") == "historical" for i in intervals)
         status = "current" if is_historical else "planned"
-        
+
         result_block = {
             "time_from": time_from,
             "time_to": time_to,
@@ -12801,7 +12808,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             "interval_count": len(intervals),
             "duration_hours": round(len(intervals) * 0.25, 2),  # 15 min = 0.25h
         }
-        
+
         output_list.append(result_block)
 
     def _calculate_charging_intervals(

@@ -119,14 +119,58 @@ class TimelineDialog {
         console.log('[TimelineDialog] Prefetching all tab data...');
 
         try {
-            await Promise.all([
-                this.loadTabData('yesterday'),
-                this.loadTabData('today'),
-                this.loadTabData('tomorrow')
-            ]);
+            await this.loadAllTabsData();
             console.log('[TimelineDialog] Prefetch complete');
         } catch (error) {
             console.warn('[TimelineDialog] Prefetch failed:', error);
+        }
+    }
+
+    /**
+     * Load all tabs data in ONE API call (more efficient)
+     */
+    async loadAllTabsData(forceRefresh = false) {
+        // Check if we already have all data cached
+        if (!forceRefresh && this.cache.yesterday && this.cache.today && this.cache.tomorrow) {
+            console.log('[TimelineDialog] All tabs already cached');
+            return;
+        }
+
+        console.log('[TimelineDialog] Loading ALL tabs data in one call...');
+
+        try {
+            // Call API WITHOUT tab filter → backend returns all 3 days
+            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs`;
+            const response = await fetch(apiUrl);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data) {
+                throw new Error('No data returned from detail_tabs');
+            }
+
+            // Cache each day's data
+            ['yesterday', 'today', 'tomorrow'].forEach(dayType => {
+                if (data[dayType]) {
+                    this.cache[dayType] = data[dayType];
+                    console.log(`[TimelineDialog] Cached ${dayType} data:`, this.cache[dayType]);
+                } else {
+                    console.warn(`[TimelineDialog] No ${dayType} data in response`);
+                    this.cache[dayType] = null;
+                }
+            });
+
+            console.log('[TimelineDialog] All tabs loaded and cached');
+        } catch (error) {
+            console.error('[TimelineDialog] Failed to load all tabs data:', error);
+            // Clear cache on error
+            this.cache.yesterday = null;
+            this.cache.today = null;
+            this.cache.tomorrow = null;
         }
     }
 
@@ -170,17 +214,10 @@ class TimelineDialog {
         this.isOpen = true;
         this.dialogElement.style.display = 'flex';
 
-        // Data should already be prefetched, but load if needed
-        const pendingLoads = [];
-        ['yesterday', 'today', 'tomorrow'].forEach(day => {
-            if (!this.cache[day]) {
-                pendingLoads.push(this.loadTabData(day));
-            }
-        });
-
-        if (pendingLoads.length > 0) {
-            console.log(`[TimelineDialog] Loading ${pendingLoads.length} missing tabs...`);
-            await Promise.all(pendingLoads);
+        // Load all tabs data in ONE API call if not cached
+        if (!this.cache.yesterday || !this.cache.today || !this.cache.tomorrow) {
+            console.log('[TimelineDialog] Loading missing tabs...');
+            await this.loadAllTabsData();
         }
 
         // Switch to active tab (this will render + set CSS classes)
@@ -2067,11 +2104,10 @@ class TimelineDialog {
         this.updateInterval = setInterval(() => {
             console.log('[TimelineDialog] Auto-refresh...');
 
-            // Reload today data (force refresh)
-            this.loadTabData('today', true).then(() => {
-                if (this.activeTab === 'today') {
-                    this.renderTab('today');
-                }
+            // Reload ALL tabs data in one call (force refresh)
+            this.loadAllTabsData(true).then(() => {
+                // Re-render active tab with fresh data
+                this.renderTab(this.activeTab);
             });
         }, 60000); // 60 seconds
     }
