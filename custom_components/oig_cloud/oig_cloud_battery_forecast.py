@@ -12863,6 +12863,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         ),
                         "battery_start_kwh": block.get("battery_soc_start", 0.0),
                         "battery_end_kwh": block.get("battery_soc_end", 0.0),
+                        "interval_count": block.get("interval_count", 0),
+                        "duration_hours": block.get("duration_hours", 0.0),
                     }
                 )
 
