@@ -199,10 +199,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             None  # MD5 hash of timeline_data for efficient change detection
         )
 
-        # Phase 2.7: HOME I timeline cache for savings calculation
-        self._home_i_timeline_cache: List[Dict[str, Any]] = []
-
-
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
         self._plan_status: str = "none"  # none | pending | active | completed
@@ -1508,13 +1504,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     }  # NEW: czk suffix
                 )
 
-        # Phase 2.7: Store HOME I timeline in instance variable
-        if fixed_mode == CBB_MODE_HOME_I:
-            self._home_i_timeline_cache = timeline_cache
-            _LOGGER.debug(
-                f"Cached HOME I timeline: {len(timeline_cache)} intervals, total_cost={total_cost:.2f} Kč"
-            )
-
         # Calculate adjusted total cost (includes penalty)
         adjusted_total_cost = total_cost + penalty_cost
 
@@ -2074,46 +2063,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         block["total_cost"] = round(total_cost, 2)
 
-        # Phase 2.7: Calculate savings vs HOME I
-        # Use cached HOME I timeline if available (from what-if analysis)
-        if hasattr(self, "_home_i_timeline_cache") and self._home_i_timeline_cache:
-            try:
-                # Match intervals by timestamp
-                home_i_cost_for_block = 0.0
-                for interval in intervals:
-                    interval_time = interval.get("time", "")
-                    if interval_time:
-                        # Find matching interval in HOME I timeline
-                        home_i_interval = next(
-                            (
-                                hi
-                                for hi in self._home_i_timeline_cache
-                                if hi.get("time") == interval_time
-                            ),
-                            None,
-                        )
-                        if home_i_interval:
-                            home_i_cost_for_block += home_i_interval.get("net_cost", 0)
-
-                # Savings = HOME I cost - actual optimized cost
-                savings = home_i_cost_for_block - total_cost
-                block["savings_vs_home_i"] = round(savings, 2)
-
-                # Add explanatory text
-                if savings > 0.5:
-                    block["savings_note"] = f"Ušetříte {savings:.2f} Kč oproti HOME I"
-                elif savings < -0.5:
-                    block["savings_note"] = (
-                        f"HOME I by byl levnější o {abs(savings):.2f} Kč"
-                    )
-                else:
-                    block["savings_note"] = "Podobné náklady jako HOME I"
-            except Exception as e:
-                _LOGGER.debug(f"Failed to calculate savings vs HOME I: {e}")
-                block["savings_vs_home_i"] = 0.0
-        else:
-            # No cached data - skip savings calculation
-            block["savings_vs_home_i"] = 0.0
+        # Phase 2.7: Savings calculation removed - cache nepotřebujeme
+        # (savings se počítají v build_mode_recommendations pokud je potřeba)
+        block["savings_vs_home_i"] = 0.0
 
         # Try to extract solar/load info if available
         # (This requires timeline to have been enriched with solar/load data)
@@ -3966,14 +3918,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "cost_czk": round(cost, 2),
                 "delta_czk": round(delta, 2),
             }
-
-        # Phase 2.7: Store HOME I timeline cache for savings calculation
-        if home_i_timeline_cache:
-            self._home_i_timeline_cache = home_i_timeline_cache
-            _LOGGER.debug(
-                f"[What-If] Cached HOME I timeline: {len(home_i_timeline_cache)} intervals, "
-                f"total_cost={alternatives['HOME I']['cost_czk']:.2f} Kč"
-            )
 
         # Add DO NOTHING (current optimized plan)
         alternatives["DO NOTHING"] = {
