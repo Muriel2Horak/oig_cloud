@@ -848,6 +848,10 @@ async def async_setup_entry(
                                 hass,
                             )
                             battery_forecast_sensors.append(sensor)
+
+                            # Uložit do coordinátoru pro použití v GridChargingPlanSensor
+                            coordinator.battery_forecast_helper = sensor
+
                             _LOGGER.debug(
                                 f"Created battery prediction sensor: {sensor_type}"
                             )

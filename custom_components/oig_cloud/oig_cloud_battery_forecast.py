@@ -7,7 +7,7 @@ import numpy as np
 import copy
 import json
 import hashlib
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -5208,8 +5208,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Vypočítat battery_kwh z SOC
             battery_kwh = 0.0
-            if battery_soc is not None and hasattr(self, "_battery_capacity"):
-                battery_kwh = (battery_soc / 100.0) * self._battery_capacity
+            if battery_soc is not None:
+                total_capacity = self._get_total_battery_capacity()
+                if total_capacity > 0:
+                    battery_kwh = (battery_soc / 100.0) * total_capacity
 
             # Načíst spot price a export price pro tento interval (z history)
             spot_price = (
@@ -5245,6 +5247,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             result = {
                 "battery_kwh": round(battery_kwh, 2),
+                "battery_soc": (
+                    round(battery_soc, 1) if battery_soc is not None else 0.0
+                ),
                 "mode": mode,
                 "mode_name": mode_name,
                 "solar_kwh": round(solar_kwh, 3),
@@ -5256,9 +5261,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "net_cost": round(net_cost, 2),
             }
 
-            _LOGGER.debug(
-                f"[fetch_interval_from_history] Result: consumption={result['consumption_kwh']}, "
-                f"net_cost={result['net_cost']}, grid_import={result['grid_import']}"
+            _LOGGER.info(
+                f"[fetch_interval_from_history] {start_time.strftime('%Y-%m-%d %H:%M')} -> "
+                f"battery_soc={battery_soc}, battery_kwh={battery_kwh:.2f}, "
+                f"consumption={result['consumption_kwh']:.3f}, net_cost={result['net_cost']:.2f}"
             )
 
             return result
@@ -6307,7 +6313,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         tabs_to_build = []  # Taby, které nejsou v cache nebo jsou expired
 
         for tab_name in tabs_to_process:
-            cache_key = f"{tab_name}_{now.date().isoformat()}"
+            # Vypočítat správné datum pro cache key podle tab_name
+            if tab_name == "yesterday":
+                cache_date = (now - timedelta(days=1)).date()
+            elif tab_name == "tomorrow":
+                cache_date = (now + timedelta(days=1)).date()
+            else:  # today
+                cache_date = now.date()
+
+            cache_key = (
+                f"{tab_name}_{cache_date.isoformat()}_v4"  # v4: fixed indentation bug
+            )
             cached = self._detail_tabs_cache.get(cache_key)
 
             if cached:
@@ -6361,6 +6377,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             date_str = tab_data.get("date", "")
 
             if not intervals:
+                # Prázdný tab - žádná data
                 tab_result = {
                     "date": date_str,
                     "mode_blocks": [],
@@ -6384,9 +6401,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 }
 
             # 5. FÁZE 5: Store in cache with appropriate TTL
-            cache_key = f"{tab_name}_{now.date().isoformat()}"
+            cache_key = f"{tab_name}_{date_str}_v4"  # v4: All fixes applied + correct indentation
             ttl = self._get_detail_tab_ttl(tab_name, now)
-
             self._detail_tabs_cache[cache_key] = {
                 "data": tab_result,
                 "timestamp": now,
@@ -6471,6 +6487,56 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"[build_mode_blocks_for_tab] tab={tab_name}, data_type={data_type}, intervals_count={len(intervals)}, mode_groups_count={len(mode_groups)}"
         )
 
+        total_capacity = self._get_total_battery_capacity() or 0.0
+
+        def _extract_soc_payload(
+            interval_entry: Dict[str, Any], branch: str
+        ) -> Tuple[float, float]:
+            """
+            Vrátit dvojici (percent, kWh) pro daný interval a větev (actual/planned).
+
+            Hodnoty v datech jsou bohužel nekonzistentní:
+            - Actual intervaly mají battery_soc v % a battery_kwh v kWh
+            - Planned intervaly ukládají battery_soc jako kWh (historický formát)
+
+            Aby FE dostal konzistentní % SOC, normalizujeme zde.
+            """
+
+            source = (
+                interval_entry.get(branch) if isinstance(interval_entry, dict) else None
+            )
+            if not isinstance(source, dict):
+                return (0.0, 0.0)
+
+            raw_soc = source.get("battery_soc")
+            raw_kwh = source.get("battery_kwh")
+
+            # Některé planned záznamy používají battery_capacity_kwh místo battery_kwh
+            if raw_kwh is None:
+                raw_kwh = source.get("battery_capacity_kwh")
+
+            soc_percent = None
+            kwh_value = raw_kwh
+
+            if raw_soc is not None:
+                if total_capacity > 0 and raw_soc <= total_capacity + 0.01:
+                    # Hodnota je pravděpodobně v kWh (<= fyzická kapacita)
+                    kwh_value = raw_soc if kwh_value is None else kwh_value
+                else:
+                    # Hodnota je v procentech (větší než fyzická kapacita)
+                    soc_percent = raw_soc
+
+            if soc_percent is None and kwh_value is not None and total_capacity > 0:
+                soc_percent = (kwh_value / total_capacity) * 100.0
+
+            if soc_percent is not None and kwh_value is None and total_capacity > 0:
+                kwh_value = (soc_percent / 100.0) * total_capacity
+
+            return (
+                round(soc_percent or 0.0, 1),
+                round(kwh_value or 0.0, 2),
+            )
+
         # Rozšířit o detailní metriky pro Detail Tabs
         mode_blocks = []
         for group in mode_groups:
@@ -6519,19 +6585,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             last_interval = group_intervals[-1]
 
             if data_type in ["completed", "both"]:
-                block["battery_soc_start"] = safe_nested_get(
-                    first_interval, "actual", "battery_kwh", default=0.0
+                start_soc_pct, start_soc_kwh = _extract_soc_payload(
+                    first_interval, "actual"
                 )
-                block["battery_soc_end"] = safe_nested_get(
-                    last_interval, "actual", "battery_kwh", default=0.0
-                )
+                end_soc_pct, end_soc_kwh = _extract_soc_payload(last_interval, "actual")
             else:
-                block["battery_soc_start"] = safe_nested_get(
-                    first_interval, "planned", "battery_kwh", default=0.0
+                start_soc_pct, start_soc_kwh = _extract_soc_payload(
+                    first_interval, "planned"
                 )
-                block["battery_soc_end"] = safe_nested_get(
-                    last_interval, "planned", "battery_kwh", default=0.0
+                end_soc_pct, end_soc_kwh = _extract_soc_payload(
+                    last_interval, "planned"
                 )
+
+            block["battery_soc_start"] = start_soc_pct
+            block["battery_soc_end"] = end_soc_pct
+            block["battery_kwh_start"] = start_soc_kwh
+            block["battery_kwh_end"] = end_soc_kwh
 
             # Energie totals
             solar_total = 0.0
@@ -12794,173 +12863,119 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._last_offset_start = None
         self._last_offset_end = None
 
+    def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
+        """Načte HOME UPS bloky z build_detail_tabs API (agregované podle mode)."""
+        try:
+            # Získat battery forecast data přímo z coordinator.data
+            # (BatteryForecastSensor ukládá build_detail_tabs data tam)
+            battery_forecast_data = getattr(
+                self.coordinator, "battery_forecast_data", None
+            )
+            if not battery_forecast_data or not isinstance(battery_forecast_data, dict):
+                _LOGGER.warning(
+                    "[GridChargingPlan] No battery_forecast_data in coordinator"
+                )
+                return []
+
+            # Načíst detail_tabs_data (která obsahuje agregované mode bloky)
+            detail_tabs_data = battery_forecast_data.get("detail_tabs_data", {})
+            if not detail_tabs_data:
+                _LOGGER.warning(
+                    "[GridChargingPlan] No detail_tabs_data in battery_forecast_data"
+                )
+                return []
+
+            detail_tabs = detail_tabs_data
+
+            # Filtrovat pouze Home UPS bloky z today a tomorrow
+            home_ups_blocks = []
+
+            for tab_name in ["today", "tomorrow"]:
+                tab_data = detail_tabs.get(tab_name, {})
+                mode_blocks = tab_data.get("mode_blocks", [])
+
+                for block in mode_blocks:
+                    # Filtrovat pouze Home UPS režim (historical nebo planned)
+                    mode_historical = block.get("mode_historical", "")
+                    mode_planned = block.get("mode_planned", "")
+
+                    # Akceptovat pokud je Home UPS v historical NEBO planned
+                    if (
+                        "Home UPS" not in mode_historical
+                        and "Home UPS" not in mode_planned
+                    ):
+                        continue
+
+                    # Status bloku
+                    status = block.get("status", "planned")
+
+                    # Pouze current a planned (skipnout completed)
+                    if status == "completed":
+                        continue
+
+                    # Parsovat časy
+                    start_time_str = block.get("start_time", "")
+                    end_time_str = block.get("end_time", "")
+
+                    if not start_time_str or not end_time_str:
+                        continue
+
+                    # Určit den
+                    day = "today" if tab_name == "today" else "tomorrow"
+
+                    # Použít planned data pro energie a náklady
+                    cost_czk = block.get("cost_planned", 0.0) or 0.0
+                    grid_import_kwh = block.get("grid_import_total_kwh", 0.0) or 0.0
+                    battery_start_kwh = block.get("battery_kwh_start", 0.0) or 0.0
+                    battery_end_kwh = block.get("battery_kwh_end", 0.0) or 0.0
+                    interval_count = block.get("interval_count", 0)
+                    duration_hours = block.get("duration_hours", 0.0)
+
+                    # Sestavit blok v očekávaném formátu
+                    result_block = {
+                        "time_from": start_time_str,
+                        "time_to": end_time_str,
+                        "day": day,
+                        "mode": mode_planned or mode_historical,  # Preferovat planned
+                        "status": status,
+                        "grid_charge_kwh": round(grid_import_kwh, 3),
+                        "battery_start_kwh": round(battery_start_kwh, 2),
+                        "battery_end_kwh": round(battery_end_kwh, 2),
+                        "battery_delta_kwh": round(
+                            battery_end_kwh - battery_start_kwh, 3
+                        ),
+                        "cost_czk": round(cost_czk, 2),
+                        "interval_count": interval_count,
+                        "duration_hours": round(duration_hours, 2),
+                    }
+
+                    home_ups_blocks.append(result_block)
+
+            _LOGGER.info(
+                f"[GridChargingPlan] Found {len(home_ups_blocks)} HOME UPS blocks from detail_tabs"
+            )
+            return home_ups_blocks
+
+        except Exception as e:
+            _LOGGER.error(
+                f"[GridChargingPlan] Error getting HOME UPS blocks from detail_tabs: {e}",
+                exc_info=True,
+            )
+            return []
+
     def _calculate_charging_intervals(
         self,
     ) -> tuple[List[Dict[str, Any]], float, float]:
-        """Vypočítá intervaly nabíjení ze sítě z battery_forecast dat."""
-        # Načíst battery_forecast data z coordinátoru
-        if not self.coordinator.data:
+        """Vypočítá intervaly nabíjení ze sítě přímo z detail_tabs API."""
+        # NOVÁ IMPLEMENTACE: Čteme z detail_tabs API (agregované mode bloky)
+        # Synchronní volání - vše dostaneme přímo z BatteryForecastSensor
+        charging_intervals = self._get_home_ups_blocks_from_detail_tabs()
+
+        if not charging_intervals:
             return [], 0.0, 0.0
 
-        battery_forecast = self.coordinator.data.get("battery_forecast")
-        if not battery_forecast or not isinstance(battery_forecast, dict):
-            return [], 0.0, 0.0
-
-        timeline_data = battery_forecast.get("timeline_data", [])
-        if not timeline_data:
-            return [], 0.0, 0.0
-
-        # Extrahovat intervaly s plánovaným nabíjením ze sítě
-        charging_intervals = []
-        total_energy = 0.0
-        total_cost = 0.0
-        now = datetime.now()
-        # Zahrnout intervaly od (now - 10 minut) pro detekci probíhajícího nabíjení
-        time_threshold = now - timedelta(minutes=10)
-
-        # Pro kontrolu, jestli se baterie nabíjí, potřebujeme předchozí kapacitu
-        # Inicializovat z posledního bodu PŘED time_threshold
-        prev_battery_capacity = None
-        for point in timeline_data:
-            try:
-                timestamp_str = point.get("timestamp", "")
-                timestamp = datetime.fromisoformat(timestamp_str)
-                if timestamp < time_threshold:
-                    prev_battery_capacity = point.get("battery_capacity_kwh", 0)
-                else:
-                    break  # Jakmile najdeme bod >= threshold, ukončíme
-            except (ValueError, TypeError):
-                continue
-
-        # Pokud jsme nenašli žádný bod před threshold (timeline začíná až od "teď"),
-        # použijeme AKTUÁLNÍ kapacitu baterie ze sensoru
-        if prev_battery_capacity is None:
-            # Zkusit načíst aktuální kapacitu ze sensoru
-            if hasattr(self, "hass") and self.hass:
-                sensor_id = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
-                state = self.hass.states.get(sensor_id)
-                if state and state.state not in ["unknown", "unavailable"]:
-                    try:
-                        prev_battery_capacity = float(state.state)
-                        _LOGGER.debug(
-                            f"Using current battery capacity from sensor: {prev_battery_capacity:.2f} kWh"
-                        )
-                    except (ValueError, TypeError):
-                        pass
-
-            # Fallback: použít první bod z timeline
-            if prev_battery_capacity is None and timeline_data:
-                prev_battery_capacity = timeline_data[0].get("battery_capacity_kwh", 0)
-                _LOGGER.debug(
-                    f"Using first timeline point as prev_capacity: {prev_battery_capacity:.2f} kWh"
-                )
-
-        for point in timeline_data:
-            grid_charge_kwh = point.get("grid_charge_kwh", 0)
-            battery_capacity = point.get("battery_capacity_kwh", 0)
-            # FIX: Timeline má klíč "mode_name" ne "mode"
-            mode = point.get("mode_name", point.get("mode", ""))
-
-            # OPRAVA: Detekce nabíjení podle režimu UPS místo grid_charge_kwh
-            # Při balancování může být grid_charge_kwh=0 (nabíjení ze solaru)
-            # ale mode je stále "Home UPS"
-            is_ups_mode = mode == "Home UPS"
-
-            if is_ups_mode:
-                timestamp_str = point.get("timestamp", "")
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                    # Interval trvá 15 minut
-                    interval_end = timestamp + timedelta(minutes=15)
-
-                    # FIX grid_charging_planned bug:
-                    # Zahrnout interval pokud:
-                    # 1. Aktuálně probíhá (timestamp <= now < interval_end), NEBO
-                    # 2. Začne v budoucnu (timestamp > now), NEBO
-                    # 3. Skončil nedávno (timestamp >= time_threshold) pro historii
-                    #
-                    # DŮLEŽITÉ: interval_end >= now (ne >), aby se zahrnul i interval
-                    # který právě skončil (now = 06:30, interval 06:15-06:30)
-                    if interval_end >= now or timestamp >= time_threshold:
-                        spot_price_czk = point.get("spot_price_czk", 0)
-
-                        # OPRAVA: Při režimu "Home UPS" vždy považujeme za nabíjení
-                        # (i když grid_charge_kwh=0, protože může být balancování ze solárů)
-                        # Zjistit, jestli se baterie SKUTEČNĚ nabíjí z gridu
-                        # (kapacita roste oproti předchozímu bodu)
-                        # DŮLEŽITÉ: battery_capacity v timeline je PŘED grid charge!
-                        # Musíme přičíst grid_charge_kwh pro správné porovnání
-                        is_actually_charging = False
-                        reason = point.get("reason", "")
-                        is_balancing_holding = "balancing_holding" in reason
-
-                        if prev_battery_capacity is not None:
-                            # Kapacita PO grid charge = kapacita před + grid charge
-                            capacity_after_charging = battery_capacity + grid_charge_kwh
-                            capacity_increase = (
-                                capacity_after_charging - prev_battery_capacity
-                            )
-                            # Pokud kapacita vzrostla, baterie se nabíjí
-                            # (tolerance 0.01 kWh pro zaokrouhlovací chyby)
-                            is_actually_charging = capacity_increase > 0.01
-
-                        # Přidat interval do seznamu (všechny s UPS režimem)
-                        # is_charging_battery = True protože máme "Home UPS" režim
-                        interval_data = {
-                            "timestamp": timestamp_str,
-                            "energy_kwh": round(
-                                grid_charge_kwh, 3
-                            ),  # Celková grid energie
-                            "spot_price_czk": round(spot_price_czk, 2),
-                            "battery_capacity_kwh": round(battery_capacity, 2),
-                            "is_charging_battery": True,  # OPRAVA: Vždy True při "Home UPS"
-                        }
-
-                        # Pokud se baterie SKUTEČNĚ nabíjí, počítáme energii a cenu
-                        if is_actually_charging:
-                            # Grid energie jde do baterie (grid_charge_kwh)
-                            # Může pokrýt i současnou spotřebu, ale to nás nezajímá
-                            # Chceme vědět kolik energie šlo DO BATERIE
-                            cost_czk = grid_charge_kwh * spot_price_czk
-                            interval_data["cost_czk"] = round(cost_czk, 2)
-                            interval_data["battery_charge_kwh"] = round(
-                                grid_charge_kwh, 3
-                            )  # Energie z gridu
-                            total_energy += grid_charge_kwh
-                            total_cost += cost_czk
-                        elif is_balancing_holding:
-                            # BALANCING HOLDING: Baterie na 100%, grid pokrývá spotřebu
-                            # Nezapočítáváme do total_energy (nebyla energie ze sítě DO baterie)
-                            # Ale chceme interval zobrazit v grid_charging_planned
-                            consumption_kwh = point.get("consumption_kwh", 0)
-                            holding_cost = consumption_kwh * spot_price_czk
-                            interval_data["cost_czk"] = round(holding_cost, 2)
-                            interval_data["battery_charge_kwh"] = 0.0
-                            interval_data["note"] = (
-                                "Balancing holding - battery at 100%, grid covers consumption"
-                            )
-                            # Holding cost se NEZAPOČÍTÁVÁ do total_cost (to je jen charging cost)
-                        else:
-                            # Grid pokrývá spotřebu, ne nabíjení baterie
-                            interval_data["cost_czk"] = 0.0
-                            interval_data["battery_charge_kwh"] = 0.0
-                            interval_data["note"] = (
-                                "Grid covers consumption, battery not charging"
-                            )
-
-                        charging_intervals.append(interval_data)
-
-                except (ValueError, TypeError) as e:
-                    _LOGGER.debug(
-                        f"Invalid timestamp in timeline: {timestamp_str}, error: {e}"
-                    )
-                    # I když je chyba, musíme update prev_battery_capacity
-                    prev_battery_capacity = battery_capacity
-                    continue
-
-            # KRITICKÉ: Aktualizovat prev_battery_capacity VŽDY (i když grid_charge=0)!
-            # Jinak při mezerách v nabíjení dostáváme špatné capacity_increase
-            prev_battery_capacity = battery_capacity
+        total_energy = sum(block["grid_charge_kwh"] for block in charging_intervals)
+        total_cost = sum(block["cost_czk"] for block in charging_intervals)
 
         return charging_intervals, total_energy, total_cost
 
@@ -13029,94 +13044,22 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Vrátí stav senzoru - on pokud TEĎKA probíhá HOME UPS interval."""
-        # Data jsou v coordinator.battery_forecast_data
-        battery_forecast = getattr(self.coordinator, "battery_forecast_data", None)
-        if not battery_forecast or not isinstance(battery_forecast, dict):
-            return "off"
+        """Vrátí stav senzoru - on pokud probíhá nebo je naplánováno nabíjení."""
+        # Vypočítat data on-demand (bez cache)
+        charging_intervals, _, _ = self._calculate_charging_intervals()
 
-        timeline_data = battery_forecast.get("timeline_data", [])
-        if not timeline_data:
-            return "off"
-
-        now = datetime.now()
-
-        # Projít timeline a najít interval který TEĎKA probíhá
-        for point in timeline_data:
-            try:
-                timestamp_str = point.get("timestamp", "")
-                timestamp = datetime.fromisoformat(timestamp_str)
-                interval_end = timestamp + timedelta(minutes=15)
-
-                # Pokud NOW je v tomto intervalu (timestamp <= now < interval_end)
-                if timestamp <= now < interval_end:
-                    # Zkontrolovat mód (může být "Home UPS" nebo "HOME UPS")
-                    mode = point.get("mode_name", point.get("mode", ""))
-                    if mode.upper() == "HOME UPS":
-                        return "on"
-                    else:
-                        return "off"
-            except (ValueError, TypeError):
-                continue
-
-        return "off"
+        # Sensor ON pokud existují charging intervaly (aktuální nebo plánované)
+        return "on" if charging_intervals else "off"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Vrátí atributy senzoru - všechny HOME UPS intervaly sloučené do bloků."""
-        # Data jsou v coordinator.battery_forecast_data
-        battery_forecast = getattr(self.coordinator, "battery_forecast_data", None)
-        if not battery_forecast or not isinstance(battery_forecast, dict):
-            _LOGGER.warning(
-                f"[GridChargingPlan] No battery_forecast_data in coordinator"
-            )
-            return {}
-
-        timeline_data = battery_forecast.get("timeline_data", [])
-        if not timeline_data:
-            _LOGGER.warning(
-                f"[GridChargingPlan] Empty timeline_data in battery_forecast"
-            )
-            return {}
-
-        _LOGGER.info(
-            f"[GridChargingPlan] Processing {len(timeline_data)} timeline points"
+        """Vrátí atributy senzoru - nabíjecí bloky z detail_tabs API."""
+        # Vypočítat data on-demand (bez cache)
+        charging_intervals, total_energy, total_cost = (
+            self._calculate_charging_intervals()
         )
 
-        now = datetime.now()
-
-        # PHASE 1: Najít všechny HOME UPS intervaly (15min granularita)
-        raw_intervals = []
-        for point in timeline_data:
-            try:
-                timestamp_str = point.get("timestamp", "")
-                timestamp = datetime.fromisoformat(timestamp_str)
-                mode = point.get("mode_name", point.get("mode", ""))
-
-                # Porovnat case-insensitive (může být "Home UPS" nebo "HOME UPS")
-                if mode.upper() == "HOME UPS":
-                    interval_end = timestamp + timedelta(minutes=15)
-                    energy_kwh = point.get("grid_charge_kwh", 0)
-                    spot_price = point.get("spot_price_czk", 0)
-
-                    # Filtrovat intervaly kde se SKUTEČNĚ nabíjí (energy_kwh > 0)
-                    if energy_kwh > 0:
-                        raw_intervals.append(
-                            {
-                                "timestamp": timestamp,
-                                "end": interval_end,
-                                "energy_kwh": energy_kwh,
-                                "spot_price_czk": spot_price,
-                                "cost_czk": energy_kwh * spot_price,
-                                "battery_capacity_kwh": point.get(
-                                    "battery_capacity_kwh", 0
-                                ),
-                            }
-                        )
-            except (ValueError, TypeError):
-                continue
-
-        if not raw_intervals:
+        if not charging_intervals:
             return {
                 "charging_blocks": [],
                 "total_energy_kwh": 0.0,
@@ -13126,104 +13069,53 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 "is_charging_planned": False,
             }
 
-        # PHASE 2: Sloučit souvislé intervaly do bloků
-        raw_intervals.sort(key=lambda x: x["timestamp"])
-
-        charging_blocks = []
-        current_block = None
-
-        for interval in raw_intervals:
-            if current_block is None:
-                # Začít nový blok
-                current_block = {
-                    "time_from": interval["timestamp"].strftime("%H:%M"),
-                    "time_to": interval["end"].strftime("%H:%M"),
-                    "start_timestamp": interval["timestamp"],
-                    "end_timestamp": interval["end"],
-                    "grid_charge_kwh": interval["energy_kwh"],
-                    "total_cost_czk": interval["cost_czk"],
-                    "avg_spot_price_czk": interval["spot_price_czk"],
-                    "battery_start_kwh": interval["battery_capacity_kwh"]
-                    - interval["energy_kwh"],
-                    "battery_end_kwh": interval["battery_capacity_kwh"],
-                    "interval_count": 1,
-                    "is_charging_battery": True,
-                }
-            else:
-                # Zkontrolovat, zda interval navazuje na předchozí (rozdíl max 15min)
-                time_gap = (
-                    interval["timestamp"] - current_block["end_timestamp"]
-                ).total_seconds()
-
-                if time_gap <= 15 * 60:  # Souvislý nebo navazující interval
-                    # Sloučit do aktuálního bloku
-                    current_block["time_to"] = interval["end"].strftime("%H:%M")
-                    current_block["end_timestamp"] = interval["end"]
-                    current_block["grid_charge_kwh"] += interval["energy_kwh"]
-                    current_block["total_cost_czk"] += interval["cost_czk"]
-                    current_block["battery_end_kwh"] = interval["battery_capacity_kwh"]
-                    current_block["interval_count"] += 1
-                    # Přepočítat průměrnou cenu
-                    current_block["avg_spot_price_czk"] = (
-                        current_block["total_cost_czk"]
-                        / current_block["grid_charge_kwh"]
-                        if current_block["grid_charge_kwh"] > 0
-                        else 0
-                    )
-                else:
-                    # Mezera > 15min - uzavřít aktuální blok a začít nový
-                    charging_blocks.append(current_block)
-                    current_block = {
-                        "time_from": interval["timestamp"].strftime("%H:%M"),
-                        "time_to": interval["end"].strftime("%H:%M"),
-                        "start_timestamp": interval["timestamp"],
-                        "end_timestamp": interval["end"],
-                        "grid_charge_kwh": interval["energy_kwh"],
-                        "total_cost_czk": interval["cost_czk"],
-                        "avg_spot_price_czk": interval["spot_price_czk"],
-                        "battery_start_kwh": interval["battery_capacity_kwh"]
-                        - interval["energy_kwh"],
-                        "battery_end_kwh": interval["battery_capacity_kwh"],
-                        "interval_count": 1,
-                        "is_charging_battery": True,
-                    }
-
-        # Přidat poslední blok
-        if current_block:
-            charging_blocks.append(current_block)
-
-        # PHASE 3: Vypočítat agregované metriky
-        total_energy_kwh = sum(block["grid_charge_kwh"] for block in charging_blocks)
-        total_cost_czk = sum(block["total_cost_czk"] for block in charging_blocks)
-
-        # Najít další budoucí nabíjecí blok
+        # Najít další budoucí nabíjecí blok (status=planned)
         next_charging_block = None
-        for block in charging_blocks:
-            if block["start_timestamp"] > now:
-                next_charging_block = block
+        for interval in charging_intervals:
+            if interval.get("status") == "planned":
+                next_charging_block = interval
                 break
 
         next_charging_time_range = None
         next_charging_duration = None
         if next_charging_block:
-            next_charging_time_range = (
-                f"{next_charging_block['time_from']} - {next_charging_block['time_to']}"
+            day_label = (
+                "zítra" if next_charging_block.get("day") == "tomorrow" else "dnes"
             )
-            duration_minutes = (
-                next_charging_block["end_timestamp"]
-                - next_charging_block["start_timestamp"]
-            ).seconds // 60
+            next_charging_time_range = f"{day_label} {next_charging_block['time_from']} - {next_charging_block['time_to']}"
+            duration_hours = next_charging_block.get("duration_hours", 0)
+            duration_minutes = int(duration_hours * 60)
             next_charging_duration = f"{duration_minutes} min"
 
-        # Cleanup: odstranit timestamp objekty před vrácením (nelze serializovat)
-        for block in charging_blocks:
-            del block["start_timestamp"]
-            del block["end_timestamp"]
+        # Přejmenovat charging_intervals na charging_blocks pro konzistenci s GUI
+        charging_blocks = []
+        for interval in charging_intervals:
+            # Přemapovat klíče pro zpětnou kompatibilitu
+            block = {
+                "time_from": interval["time_from"],
+                "time_to": interval["time_to"],
+                "day": interval["day"],  # Přidat den (today/tomorrow)
+                "mode": interval["mode"],
+                "status": interval["status"],
+                "grid_charge_kwh": interval["grid_charge_kwh"],
+                "total_cost_czk": interval["cost_czk"],
+                "battery_start_kwh": interval["battery_start_kwh"],
+                "battery_end_kwh": interval["battery_end_kwh"],
+                "interval_count": interval["interval_count"],
+                "is_charging_battery": True,  # Všechny bloky jsou nabíjecí (filtrováno v _calculate_charging_intervals)
+                # Průměrná cena
+                "avg_spot_price_czk": (
+                    round(interval["cost_czk"] / interval["grid_charge_kwh"], 2)
+                    if interval["grid_charge_kwh"] > 0
+                    else 0.0
+                ),
+            }
+            charging_blocks.append(block)
 
         return {
-            "charging_blocks": charging_blocks,  # Sloučené bloky místo jednotlivých intervalů
-            "total_energy_kwh": round(total_energy_kwh, 2),
-            "total_cost_czk": round(total_cost_czk, 2),
+            "charging_blocks": charging_blocks,
+            "total_energy_kwh": round(total_energy, 2),
+            "total_cost_czk": round(total_cost, 2),
             "next_charging_time_range": next_charging_time_range,
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
