@@ -227,6 +227,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "Will retry in async_added_to_hass()"
             )
 
+        # Phase 3.5: Storage Helper for precomputed UI data (timeline_extended + unified_cost_tile)
+        # File: oig_cloud.precomputed_data_{box_id}
+        # Updated every 15 min by coordinator → instant API responses
+        self._precomputed_store: Optional[Store] = None
+        if self._hass:
+            self._precomputed_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.precomputed_data_{self._box_id}",
+            )
+            _LOGGER.debug(
+                f"✅ Initialized Precomputed Data Storage: oig_cloud.precomputed_data_{self._box_id}"
+            )
+        else:
+            _LOGGER.debug(
+                "⚠️ Precomputed storage will be initialized in async_added_to_hass()"
+            )
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
@@ -241,6 +259,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             _LOGGER.info(
                 f"✅ Retry: Initialized Storage Helper: oig_cloud.battery_plans_{self._box_id}"
+            )
+
+        # Phase 3.5: Retry Precomputed Data Storage initialization if failed in __init__
+        if not self._precomputed_store and self._hass:
+            self._precomputed_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.precomputed_data_{self._box_id}",
+            )
+            _LOGGER.info(
+                f"✅ Retry: Initialized Precomputed Data Storage: oig_cloud.precomputed_data_{self._box_id}"
             )
 
         # Restore data z předchozí instance
@@ -1053,6 +1082,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
             )
             self.async_write_ha_state()
+
+            # PHASE 3.5: Precompute UI data for instant API responses
+            # Build timeline_extended + unified_cost_tile and save to storage
+            # This runs every 15 min after forecast update
+            await self._precompute_ui_data()
 
             # Notify dependent sensors (BatteryBalancing) that forecast is ready
             from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -6127,6 +6161,50 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"Error aggregating weekly plan for {week_str}: {e}", exc_info=True
             )
             return False
+
+    async def _precompute_ui_data(self) -> None:
+        """
+        Precompute UI data (timeline_extended + unified_cost_tile) and save to storage.
+
+        PHASE 3.5: Performance Optimization
+        - Called every 15 min after forecast update
+        - Saves precomputed data to ~/.storage/oig_cloud_precomputed_data_{box_id}.json
+        - API endpoints read from storage → instant response (< 100ms)
+        - Eliminates 4s wait time for build_timeline_extended() + build_unified_cost_tile()
+        """
+        if not self._precomputed_store:
+            _LOGGER.warning("⚠️ Precomputed storage not initialized, skipping")
+            return
+
+        try:
+            _LOGGER.info("📊 Precomputing UI data for instant API responses...")
+            start_time = dt_util.now()
+
+            # Build timeline_extended (yesterday + today + tomorrow)
+            timeline_extended = await self.build_timeline_extended()
+
+            # Build unified_cost_tile (today/yesterday/tomorrow cost summary)
+            unified_cost_tile = await self.build_unified_cost_tile()
+
+            # Save to storage
+            precomputed_data = {
+                "timeline_extended": timeline_extended,
+                "unified_cost_tile": unified_cost_tile,
+                "last_update": dt_util.now().isoformat(),
+                "version": 1,
+            }
+
+            await self._precomputed_store.async_save(precomputed_data)
+
+            duration = (dt_util.now() - start_time).total_seconds()
+            _LOGGER.info(
+                f"✅ Precomputed UI data saved to storage in {duration:.2f}s "
+                f"(timeline: {len(timeline_extended.get('today', {}).get('intervals', []))} intervals, "
+                f"cost: {unified_cost_tile.get('today', {}).get('plan_total_cost', 0):.2f} Kč)"
+            )
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to precompute UI data: {e}", exc_info=True)
 
     async def build_timeline_extended(self) -> Dict[str, Any]:
         """

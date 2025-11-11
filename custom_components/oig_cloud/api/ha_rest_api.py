@@ -35,6 +35,7 @@ from aiohttp import web
 from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -569,7 +570,35 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
-            # Build unified cost tile data
+            # PHASE 3.5: Read from precomputed storage for instant response
+            if (
+                hasattr(entity_obj, "_precomputed_store")
+                and entity_obj._precomputed_store
+            ):
+                try:
+                    precomputed_data = await entity_obj._precomputed_store.async_load()
+                    if precomputed_data and "unified_cost_tile" in precomputed_data:
+                        tile_data = precomputed_data["unified_cost_tile"]
+
+                        _LOGGER.debug(
+                            f"API: Serving unified cost tile from precomputed storage for {box_id}, "
+                            f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč, "
+                            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
+                            if precomputed_data.get("last_update")
+                            else "unknown age"
+                        )
+
+                        return web.json_response(tile_data)
+                    else:
+                        _LOGGER.warning(
+                            f"No precomputed unified_cost_tile data found for {box_id}, falling back to live build"
+                        )
+                except Exception as storage_error:
+                    _LOGGER.warning(
+                        f"Failed to read precomputed data: {storage_error}, falling back to live build"
+                    )
+
+            # Fallback: Build unified cost tile on-demand (old behavior)
             if hasattr(entity_obj, "build_unified_cost_tile"):
                 try:
                     _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
@@ -687,7 +716,46 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
-            # Build detail tabs data
+            # PHASE 3.5: Read from precomputed storage for instant response
+            if (
+                hasattr(entity_obj, "_precomputed_store")
+                and entity_obj._precomputed_store
+            ):
+                try:
+                    precomputed_data = await entity_obj._precomputed_store.async_load()
+                    if precomputed_data and "timeline_extended" in precomputed_data:
+                        timeline_extended = precomputed_data["timeline_extended"]
+
+                        # Filter by tab if requested
+                        if tab and tab in ["yesterday", "today", "tomorrow"]:
+                            detail_tabs = {tab: timeline_extended.get(tab, {})}
+                        else:
+                            # Return all tabs (excluding today_tile_summary)
+                            detail_tabs = {
+                                "yesterday": timeline_extended.get("yesterday", {}),
+                                "today": timeline_extended.get("today", {}),
+                                "tomorrow": timeline_extended.get("tomorrow", {}),
+                            }
+
+                        _LOGGER.debug(
+                            f"API: Serving detail tabs from precomputed storage for {box_id}, "
+                            f"tab_filter={tab}, "
+                            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
+                            if precomputed_data.get("last_update")
+                            else "unknown age"
+                        )
+
+                        return web.json_response(detail_tabs)
+                    else:
+                        _LOGGER.warning(
+                            f"No precomputed timeline_extended data found for {box_id}, falling back to live build"
+                        )
+                except Exception as storage_error:
+                    _LOGGER.warning(
+                        f"Failed to read precomputed data: {storage_error}, falling back to live build"
+                    )
+
+            # Fallback: Build detail tabs on-demand (old behavior)
             if hasattr(entity_obj, "build_detail_tabs"):
                 try:
                     detail_tabs = await entity_obj.build_detail_tabs(tab=tab)
