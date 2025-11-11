@@ -207,10 +207,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Phase 2.7: HOME I timeline cache for savings calculation
         self._home_i_timeline_cache: List[Dict[str, Any]] = []
 
-        # FÁZE 5: Detail Tabs cache with TTL
-        # Cache structure: {tab_name: {"data": {...}, "timestamp": datetime, "ttl": int}}
-        # TTL values: yesterday=None (infinite), today_historical=None, today_planned=60, tomorrow=60
-        self._detail_tabs_cache: Dict[str, Dict[str, Any]] = {}
 
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
@@ -6310,68 +6306,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             tabs_to_process = ["yesterday", "today", "tomorrow"]
 
         result = {}
-        tabs_to_build = []  # Taby, které nejsou v cache nebo jsou expired
 
-        for tab_name in tabs_to_process:
-            # Vypočítat správné datum pro cache key podle tab_name
-            if tab_name == "yesterday":
-                cache_date = (now - timedelta(days=1)).date()
-            elif tab_name == "tomorrow":
-                cache_date = (now + timedelta(days=1)).date()
-            else:  # today
-                cache_date = now.date()
-
-            cache_key = (
-                f"{tab_name}_{cache_date.isoformat()}_v4"  # v4: fixed indentation bug
-            )
-            cached = self._detail_tabs_cache.get(cache_key)
-
-            if cached:
-                # Check TTL
-                cache_timestamp = cached.get("timestamp")
-                cache_ttl = cached.get("ttl")  # None = infinite, int = seconds
-
-                if cache_ttl is None:
-                    # Infinite TTL - use cache
-                    result[tab_name] = cached["data"]
-                    _LOGGER.debug(f"[Detail Tabs Cache] HIT (infinite) for {cache_key}")
-                    continue
-                elif (
-                    cache_timestamp
-                    and (now - cache_timestamp).total_seconds() < cache_ttl
-                ):
-                    # TTL not expired - use cache
-                    result[tab_name] = cached["data"]
-                    age = (now - cache_timestamp).total_seconds()
-                    _LOGGER.debug(
-                        f"[Detail Tabs Cache] HIT ({age:.1f}s old, TTL={cache_ttl}s) for {cache_key}"
-                    )
-                    continue
-                else:
-                    # TTL expired
-                    age = (
-                        (now - cache_timestamp).total_seconds()
-                        if cache_timestamp
-                        else 0
-                    )
-                    _LOGGER.debug(
-                        f"[Detail Tabs Cache] EXPIRED ({age:.1f}s old, TTL={cache_ttl}s) for {cache_key}"
-                    )
-
-            # Cache miss nebo expired - build it
-            tabs_to_build.append(tab_name)
-            _LOGGER.debug(f"[Detail Tabs Cache] MISS for {cache_key}")
-
-        # Pokud všechny taby v cache, vrátíme result
-        if not tabs_to_build:
-            return result
-
-        # 1. Získat raw timeline data (reuse!) - pouze když potřebujeme
+        # 1. Získat raw timeline data
         # PHASE 3.0: Async call to load Storage Helper data
         timeline_extended = await self.build_timeline_extended()
 
-        # 2. Pro každý tab co potřebujeme buildit - zpracovat intervaly na mode bloky
-        for tab_name in tabs_to_build:
+        # 2. Pro každý tab - zpracovat intervaly na mode bloky
+        for tab_name in tabs_to_process:
             tab_data = timeline_extended.get(tab_name, {})
             intervals = tab_data.get("intervals", [])
             date_str = tab_data.get("date", "")
@@ -6400,55 +6341,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "summary": summary,
                 }
 
-            # 5. FÁZE 5: Store in cache with appropriate TTL
-            cache_key = f"{tab_name}_{date_str}_v4"  # v4: All fixes applied + correct indentation
-            ttl = self._get_detail_tab_ttl(tab_name, now)
-            self._detail_tabs_cache[cache_key] = {
-                "data": tab_result,
-                "timestamp": now,
-                "ttl": ttl,
-            }
-
-            ttl_str = "infinite" if ttl is None else f"{ttl}s"
-            _LOGGER.debug(f"[Detail Tabs Cache] WRITE {cache_key} (TTL={ttl_str})")
-
             result[tab_name] = tab_result
 
         return result
-
-    def _get_detail_tab_ttl(self, tab_name: str, now: datetime) -> Optional[int]:
-        """
-        Určit TTL pro Detail Tab cache.
-
-        FÁZE 5: Cache TTL Strategy
-        - yesterday: None (infinite) - historická data se nemění
-        - today: Split strategy
-          - completed blocks (historical): None (infinite)
-          - planned blocks (future): 60s
-          - Poznámka: Pro today vracíme 60s protože mix obsahuje planned data
-        - tomorrow: 60s - plánovaná data se mohou měnit (nové OTE ceny po 13:00)
-
-        Args:
-            tab_name: "yesterday" | "today" | "tomorrow"
-            now: Current datetime
-
-        Returns:
-            None = infinite TTL, int = TTL v sekundách
-        """
-        if tab_name == "yesterday":
-            # Historical data never changes
-            return None
-        elif tab_name == "today":
-            # Today contains mix - use 60s TTL because of planned part
-            # Future optimization: Split cache per block status
-            return 60
-        elif tab_name == "tomorrow":
-            # Planned data can change (new prices after 13:00)
-            return 60
-        else:
-            # Unknown tab - safe default
-            _LOGGER.warning(f"Unknown tab_name for TTL: {tab_name}")
-            return 60
 
     def _build_mode_blocks_for_tab(
         self, intervals: List[Dict[str, Any]], tab_name: str
