@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 
@@ -12757,7 +12757,28 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._last_offset_start = None
         self._last_offset_end = None
 
-    def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
+        # Cache pro UPS bloky z precomputed storage
+        self._cached_ups_blocks: List[Dict[str, Any]] = []
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        # Load initial data
+        await self._load_ups_blocks()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from coordinator."""
+        # Schedule async load of UPS blocks
+        if self.hass:
+            self.hass.async_create_task(self._load_ups_blocks())
+        super()._handle_coordinator_update()
+
+    async def _load_ups_blocks(self) -> None:
+        """Load UPS blocks from precomputed storage (async)."""
+        self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs()
+
+    async def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
         """
         Načte HOME UPS bloky z precomputed storage.
         Vrací pouze AKTIVNÍ a BUDOUCÍ bloky (ne completed z minulosti).
@@ -12766,7 +12787,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             # 1. Najít BatteryForecastSensor
             if not self.hass:
                 return []
-            
+
             battery_sensor = None
             component = self.hass.data.get("entity_components", {}).get("sensor")
             if component:
@@ -12778,34 +12799,30 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                     ):
                         battery_sensor = entity
                         break
-            
+
             if not battery_sensor:
                 _LOGGER.warning("[GridChargingPlan] BatteryForecastSensor not found")
                 return []
-            
-            # 2. Načíst precomputed data synchronně (jsme v sync kontextu)
-            import asyncio
-            loop = asyncio.get_event_loop()
-            precomputed = loop.run_until_complete(
-                battery_sensor._precomputed_store.async_load()
-            )
-            
+
+            # 2. Načíst precomputed data ASYNC
+            precomputed = await battery_sensor._precomputed_store.async_load()
+
             if not precomputed:
                 _LOGGER.debug("[GridChargingPlan] No precomputed data yet")
                 return []
-            
+
             # 3. Získat today mode_blocks
             detail_tabs = precomputed.get("detail_tabs", {})
             today = detail_tabs.get("today", {})
             mode_blocks = today.get("mode_blocks", [])
-            
+
             if not mode_blocks:
                 return []
-            
+
             # 4. Filtrovat HOME UPS bloky - pouze active + planned (ne completed)
             now = dt_util.now()
             current_time = now.strftime("%H:%M")
-            
+
             ups_blocks = []
             for block in mode_blocks:
                 # Zkontrolovat zda je to HOME UPS blok
@@ -12813,33 +12830,42 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 mode_plan = block.get("mode_planned", "")
                 if "HOME UPS" not in mode_hist and "HOME UPS" not in mode_plan:
                     continue
-                
+
                 # Filtrovat podle statusu a času
                 status = block.get("status", "")
                 end_time = block.get("end_time", "")
-                
+
                 # Přeskočit completed bloky z minulosti
                 if status == "completed" and end_time < current_time:
                     continue
-                
+
                 # Přidat aktivní nebo budoucí blok
-                ups_blocks.append({
-                    "time_from": block.get("start_time", ""),
-                    "time_to": end_time,
-                    "day": "today",
-                    "mode": "Home UPS",
-                    "status": status,
-                    "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
-                    "cost_czk": block.get("cost_historical" if status == "completed" else "cost_planned", 0.0),
-                    "battery_start_kwh": block.get("battery_soc_start", 0.0),
-                    "battery_end_kwh": block.get("battery_soc_end", 0.0),
-                })
-            
+                ups_blocks.append(
+                    {
+                        "time_from": block.get("start_time", ""),
+                        "time_to": end_time,
+                        "day": "today",
+                        "mode": "Home UPS",
+                        "status": status,
+                        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
+                        "cost_czk": block.get(
+                            (
+                                "cost_historical"
+                                if status == "completed"
+                                else "cost_planned"
+                            ),
+                            0.0,
+                        ),
+                        "battery_start_kwh": block.get("battery_soc_start", 0.0),
+                        "battery_end_kwh": block.get("battery_soc_end", 0.0),
+                    }
+                )
+
             _LOGGER.debug(
                 f"[GridChargingPlan] Found {len(ups_blocks)} active/future UPS blocks"
             )
             return ups_blocks
-            
+
         except Exception as e:
             _LOGGER.error(f"[GridChargingPlan] Error: {e}", exc_info=True)
             return []
@@ -12847,8 +12873,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def _calculate_charging_intervals(
         self,
     ) -> tuple[List[Dict[str, Any]], float, float]:
-        """Vypočítá intervaly nabíjení ze sítě z detail_tabs dat."""
-        charging_intervals = self._get_home_ups_blocks_from_detail_tabs()
+        """Vypočítá intervaly nabíjení ze sítě z CACHED detail_tabs dat."""
+        # Použít cache místo async volání
+        charging_intervals = self._cached_ups_blocks
 
         if not charging_intervals:
             return [], 0.0, 0.0
@@ -12925,12 +12952,12 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> str:
         """Vrátí ON pokud právě TEĎKA běží HOME UPS (status=active)."""
         charging_intervals, _, _ = self._calculate_charging_intervals()
-        
+
         # Sensor ON pouze pokud existuje AKTIVNÍ blok
         for block in charging_intervals:
             if block.get("status") == "active":
                 return "on"
-        
+
         return "off"
 
     @property
