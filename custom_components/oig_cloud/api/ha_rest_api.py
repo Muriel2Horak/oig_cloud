@@ -723,18 +723,18 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             ):
                 try:
                     precomputed_data = await entity_obj._precomputed_store.async_load()
-                    if precomputed_data and "timeline_extended" in precomputed_data:
-                        timeline_extended = precomputed_data["timeline_extended"]
+                    if precomputed_data and "detail_tabs" in precomputed_data:
+                        detail_tabs = precomputed_data["detail_tabs"]
 
                         # Filter by tab if requested
                         if tab and tab in ["yesterday", "today", "tomorrow"]:
-                            detail_tabs = {tab: timeline_extended.get(tab, {})}
+                            result = {tab: detail_tabs.get(tab, {})}
                         else:
-                            # Return all tabs (excluding today_tile_summary)
-                            detail_tabs = {
-                                "yesterday": timeline_extended.get("yesterday", {}),
-                                "today": timeline_extended.get("today", {}),
-                                "tomorrow": timeline_extended.get("tomorrow", {}),
+                            # Return all tabs
+                            result = {
+                                "yesterday": detail_tabs.get("yesterday", {}),
+                                "today": detail_tabs.get("today", {}),
+                                "tomorrow": detail_tabs.get("tomorrow", {}),
                             }
 
                         _LOGGER.debug(
@@ -745,10 +745,10 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                             else "unknown age"
                         )
 
-                        return web.json_response(detail_tabs)
+                        return web.json_response(result)
                     else:
                         _LOGGER.warning(
-                            f"No precomputed timeline_extended data found for {box_id}, falling back to live build"
+                            f"No precomputed detail_tabs data found for {box_id}, falling back to live build"
                         )
                 except Exception as storage_error:
                     _LOGGER.warning(

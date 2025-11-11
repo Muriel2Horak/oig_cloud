@@ -6164,13 +6164,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     async def _precompute_ui_data(self) -> None:
         """
-        Precompute UI data (timeline_extended + unified_cost_tile) and save to storage.
+        Precompute UI data (detail_tabs + unified_cost_tile) and save to storage.
 
         PHASE 3.5: Performance Optimization
         - Called every 15 min after forecast update
         - Saves precomputed data to ~/.storage/oig_cloud_precomputed_data_{box_id}.json
         - API endpoints read from storage → instant response (< 100ms)
-        - Eliminates 4s wait time for build_timeline_extended() + build_unified_cost_tile()
+        - Eliminates 4s wait time for build_detail_tabs() + build_unified_cost_tile()
         """
         if not self._precomputed_store:
             _LOGGER.warning("⚠️ Precomputed storage not initialized, skipping")
@@ -6180,15 +6180,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.info("📊 Precomputing UI data for instant API responses...")
             start_time = dt_util.now()
 
-            # Build timeline_extended (yesterday + today + tomorrow)
-            timeline_extended = await self.build_timeline_extended()
+            # Build detail_tabs (yesterday + today + tomorrow with mode_blocks)
+            detail_tabs = await self.build_detail_tabs()
 
             # Build unified_cost_tile (today/yesterday/tomorrow cost summary)
             unified_cost_tile = await self.build_unified_cost_tile()
 
             # Save to storage
             precomputed_data = {
-                "timeline_extended": timeline_extended,
+                "detail_tabs": detail_tabs,  # Changed from timeline_extended
                 "unified_cost_tile": unified_cost_tile,
                 "last_update": dt_util.now().isoformat(),
                 "version": 1,
@@ -6199,7 +6199,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             duration = (dt_util.now() - start_time).total_seconds()
             _LOGGER.info(
                 f"✅ Precomputed UI data saved to storage in {duration:.2f}s "
-                f"(timeline: {len(timeline_extended.get('today', {}).get('intervals', []))} intervals, "
+                f"(detail_tabs: {len(detail_tabs.get('today', {}).get('mode_blocks', []))} blocks, "
                 f"cost: {unified_cost_tile.get('today', {}).get('plan_total_cost', 0):.2f} Kč)"
             )
 
