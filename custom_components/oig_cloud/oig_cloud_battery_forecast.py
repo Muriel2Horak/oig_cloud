@@ -12777,6 +12777,11 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     async def _load_ups_blocks(self) -> None:
         """Load UPS blocks from precomputed storage (async)."""
         self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs()
+        _LOGGER.debug(
+            f"[GridChargingPlan] Loaded {len(self._cached_ups_blocks)} UPS blocks into cache"
+        )
+        # Trigger state update after loading cache
+        self.async_write_ha_state()
 
     async def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
         """
