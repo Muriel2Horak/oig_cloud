@@ -92,10 +92,12 @@ def get_box_id_from_device(
 
 # Schema pro update solární předpovědi
 SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema({})
-CHECK_BALANCING_SCHEMA = vol.Schema({
-    vol.Optional("box_id"): cv.string,
-    vol.Optional("force"): cv.boolean,
-})
+CHECK_BALANCING_SCHEMA = vol.Schema(
+    {
+        vol.Optional("box_id"): cv.string,
+        vol.Optional("force"): cv.boolean,
+    }
+)
 
 # Konstanty pro služby
 MODES: Dict[str, str] = {

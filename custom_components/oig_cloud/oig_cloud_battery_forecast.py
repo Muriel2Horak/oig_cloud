@@ -2331,13 +2331,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Parse balancing plan (handle both string and datetime objects)
                 holding_start_raw = balancing_plan["holding_start"]
                 holding_end_raw = balancing_plan["holding_end"]
-                
+
                 # Convert to datetime if needed
                 if isinstance(holding_start_raw, str):
                     holding_start = datetime.fromisoformat(holding_start_raw)
                 else:
                     holding_start = holding_start_raw
-                    
+
                 if isinstance(holding_end_raw, str):
                     holding_end = datetime.fromisoformat(holding_end_raw)
                 else:
@@ -2391,6 +2391,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
+        # CRITICAL: Respect holding period if in balancing mode
         battery_trajectory = [current_capacity]
         battery = current_capacity
         total_transition_cost = 0.0  # Track transition costs
@@ -2407,13 +2408,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
-            # HOME I logika: solar → baterie nebo baterie → load
-            if solar_kwh >= load_kwh:
-                net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
-            else:
-                net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
+            # Check if we're in holding period (balancing mode)
+            in_holding_period = False
+            if is_balancing_mode and holding_start and holding_end:
+                try:
+                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
+                    if interval_ts.tzinfo is None:
+                        interval_ts = dt_util.as_local(interval_ts)
+                    in_holding_period = holding_start <= interval_ts < holding_end
+                except:
+                    pass
 
-            battery += net_energy
+            if in_holding_period:
+                # During holding period: battery stays at 100%
+                battery = max_capacity
+            else:
+                # HOME I logika: solar → baterie nebo baterie → load
+                if solar_kwh >= load_kwh:
+                    net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
+                else:
+                    net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
+
+                battery += net_energy
+            
             # CRITICAL: Trajectory must contain UNCLAMPED values for accurate violation detection
             # Battery can go negative - this shows severity of minimum violation
             # NO CLAMP - we want to see the real trajectory, even if it violates constraints
@@ -4143,9 +4160,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return optimal_timeline, optimal_modes
 
-    def _update_balancing_plan_snapshot(
-        self, plan: Optional[Dict[str, Any]]
-    ) -> None:
+    def _update_balancing_plan_snapshot(self, plan: Optional[Dict[str, Any]]) -> None:
         """Keep BalancingManager plan snapshot in sync with legacy plan handling."""
 
         def _is_balancing_requester(requester: Optional[str]) -> bool:
@@ -4156,19 +4171,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._balancing_plan_snapshot = plan
 
         if plan:
-            if (
-                not self._active_charging_plan
-                or _is_balancing_requester(
-                    self._active_charging_plan.get("requester")
-                )
+            if not self._active_charging_plan or _is_balancing_requester(
+                self._active_charging_plan.get("requester")
             ):
                 self._active_charging_plan = plan
         else:
-            if (
-                self._active_charging_plan
-                and _is_balancing_requester(
-                    self._active_charging_plan.get("requester")
-                )
+            if self._active_charging_plan and _is_balancing_requester(
+                self._active_charging_plan.get("requester")
             ):
                 self._active_charging_plan = None
 
@@ -4279,9 +4288,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                         converted_plan = {
                             "charging_plan": {
-                                "holding_start": _iso(
-                                    balancing_plan_obj.holding_start
-                                ),
+                                "holding_start": _iso(balancing_plan_obj.holding_start),
                                 "holding_end": _iso(balancing_plan_obj.holding_end),
                                 "charging_intervals": intervals_payload,
                             },

@@ -278,9 +278,7 @@ class BalancingManager:
             _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
             forced_plan = await self._create_forced_plan()
             if forced_plan:
-                _LOGGER.warning(
-                    "🔴 FORCED balancing plan created (manual trigger)!"
-                )
+                _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
                 self._active_plan = forced_plan
                 await self._save_state()
                 return forced_plan
