@@ -2416,6 +2416,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if interval_ts.tzinfo is None:
                         interval_ts = dt_util.as_local(interval_ts)
                     in_holding_period = holding_start <= interval_ts < holding_end
+                    if in_holding_period and i < 3:  # Log first 3 holding intervals
+                        _LOGGER.info(
+                            f"🔒 Holding period interval {i}: {interval_ts.strftime('%H:%M')}, battery={battery:.2f} -> {max_capacity:.2f}"
+                        )
                 except:
                     pass
 
