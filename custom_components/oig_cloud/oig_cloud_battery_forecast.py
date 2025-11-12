@@ -2452,15 +2452,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                 except:
                     pass
-            
+
             # Check minimum only AFTER holding period
-            if holding_end_index is not None and holding_end_index < len(battery_trajectory):
+            if holding_end_index is not None and holding_end_index < len(
+                battery_trajectory
+            ):
                 min_reached = min(battery_trajectory[holding_end_index:])
+                _LOGGER.info(
+                    f"📊 Balancing: checking min from index {holding_end_index}/{len(battery_trajectory)} "
+                    f"(after holding_end {holding_end.strftime('%H:%M')}): min={min_reached:.2f} kWh"
+                )
             else:
                 min_reached = min(battery_trajectory)
+                _LOGGER.warning(
+                    f"⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
+                )
         else:
             min_reached = min(battery_trajectory)
-        
+
         final_capacity = battery_trajectory[-1]
 
         _LOGGER.info(
