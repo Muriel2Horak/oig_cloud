@@ -2443,10 +2443,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             
             # CRITICAL: Clamp to hardware limits (inverter won't go below/above)
             # This ensures forward pass matches real-world physics
-            battery = max(hardware_minimum, min(max_capacity, battery))
+            battery = max(physical_min_capacity, min(max_capacity, battery))
 
             battery_trajectory.append(battery)
-
         # In balancing mode, check minimum AFTER holding_end, not before
         if is_balancing_mode and holding_end:
             # Find index where holding ends
