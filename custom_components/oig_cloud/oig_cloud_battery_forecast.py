@@ -2328,9 +2328,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if is_balancing_mode:
             try:
-                # Parse balancing plan
-                holding_start = datetime.fromisoformat(balancing_plan["holding_start"])
-                holding_end = datetime.fromisoformat(balancing_plan["holding_end"])
+                # Parse balancing plan (handle both string and datetime objects)
+                holding_start_raw = balancing_plan["holding_start"]
+                holding_end_raw = balancing_plan["holding_end"]
+                
+                # Convert to datetime if needed
+                if isinstance(holding_start_raw, str):
+                    holding_start = datetime.fromisoformat(holding_start_raw)
+                else:
+                    holding_start = holding_start_raw
+                    
+                if isinstance(holding_end_raw, str):
+                    holding_end = datetime.fromisoformat(holding_end_raw)
+                else:
+                    holding_end = holding_end_raw
 
                 # Normalize timezone
                 if holding_start.tzinfo is None:
