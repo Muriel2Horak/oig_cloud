@@ -2396,6 +2396,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # In balancing mode, start simulation from holding_end with 100% battery
         battery_trajectory = [current_capacity]
         battery = current_capacity
+        forward_soc_before: List[Optional[float]] = [None] * n
+        forward_soc_after: List[Optional[float]] = [None] * n
         total_transition_cost = 0.0  # Track transition costs
         prev_mode_name = "Home I"  # Start mode
 
@@ -2421,6 +2423,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     pass
 
         for i in range(start_index, n):
+            forward_soc_before[i] = battery
             solar_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
             # Oprava: solar z forecast, load z load_forecast
             try:
@@ -2447,6 +2450,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             battery = max(physical_min_capacity, min(max_capacity, battery))
 
             battery_trajectory.append(battery)
+            forward_soc_after[i] = battery
         # In balancing mode, check minimum AFTER holding_end, not before
         if is_balancing_mode and holding_end:
             # Find index where holding ends
@@ -3010,13 +3014,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # - Pokud ANO → přidat HOME UPS charging v nejlevnějších nočních intervalech
         # - Iterativní proces: simuluj → detekuj porušení → oprav → opakuj
 
-        planning_min_kwargs: Dict[str, Any] = {}
+        planning_min_kwargs: Dict[str, Any] = {
+            "forward_soc_before": forward_soc_before,
+        }
         if is_balancing_mode and holding_end_index_for_validation is not None:
-            planning_min_kwargs = {
-                "start_index": holding_end_index_for_validation,
-                "starting_soc": max_capacity,
-                "min_candidate_index": holding_end_index_for_validation,
-            }
+            planning_min_kwargs.update(
+                {
+                    "start_index": holding_end_index_for_validation,
+                    "starting_soc": max_capacity,
+                    "min_candidate_index": holding_end_index_for_validation,
+                }
+            )
 
         modes = self._validate_planning_minimum(
             modes=modes,
@@ -3145,6 +3153,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         start_index: int = 0,
         starting_soc: Optional[float] = None,
         min_candidate_index: int = 0,
+        forward_soc_before: Optional[List[Optional[float]]] = None,
     ) -> List[int]:
         """
         PHASE 7: Validace planning minimum (33% = 5.07 kWh).
@@ -3175,6 +3184,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             start_index: Index od kterého validujeme (balancing → po holding_end)
             starting_soc: Volitelné přepsání úvodního SoC pro simulaci
             min_candidate_index: Nejnižší index, který lze přepsat na HOME UPS
+            forward_soc_before: SoC před každým intervalem (z forward passu) pro detekci dostupné kapacity
 
         Returns:
             Upravený seznam režimů garantující dodržení planning_min
@@ -3241,6 +3251,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # 4. Vyber kandidátní intervaly PŘED charge_before_index (cost-aware)
+            CHARGING_LOOKBACK_INTERVALS = 16  # ≈4h
+            effective_min_index = max(
+                min_candidate_index, charge_before_index - CHARGING_LOOKBACK_INTERVALS
+            )
+
             candidate_intervals = self._select_charging_intervals_before(
                 modes=modes,
                 spot_prices=spot_prices,
@@ -3248,8 +3263,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 deficit_kwh=deficit_kwh,
                 max_charge_per_interval=max_charge_per_interval,
                 max_capacity=max_capacity,
-                min_index=min_candidate_index,
+                min_index=effective_min_index,
+                soc_before=forward_soc_before,
             )
+
+            if (
+                not candidate_intervals
+                and effective_min_index > min_candidate_index
+            ):
+                candidate_intervals = self._select_charging_intervals_before(
+                    modes=modes,
+                    spot_prices=spot_prices,
+                    before_index=charge_before_index,
+                    deficit_kwh=deficit_kwh,
+                    max_charge_per_interval=max_charge_per_interval,
+                    max_capacity=max_capacity,
+                    min_index=min_candidate_index,
+                    soc_before=forward_soc_before,
+                )
 
             if not candidate_intervals:
                 # Nelze opravit (žádné dostupné intervaly)
@@ -3436,6 +3467,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         max_charge_per_interval: float,
         max_capacity: float,
         min_index: int = 0,
+        soc_before: Optional[List[Optional[float]]] = None,
     ) -> List[int]:
         """
         Vybrat více levných intervalů PŘED violation pro proaktivní nabíjení.
@@ -3454,6 +3486,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             max_charge_per_interval: Max nabíjecí výkon za 15min (kWh)
             max_capacity: Max kapacita baterie (kWh)
             min_index: Nejnižší index který smíme přepisovat (balancing → po holding)
+            soc_before: SoC před začátkem intervalu (z forward passu) pro zjištění volné kapacity
 
         Returns:
             Seznam indexů pro HOME UPS nabíjení (seřazeno podle času)
@@ -3461,6 +3494,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         candidates = []
 
         start = max(min_index, 0)
+        HEADROOM_THRESHOLD = 0.05  # kWh
+
         for i in range(start, before_index):
             # Skip pokud už je HOME UPS (nepřepisujeme existující logiku)
             if modes[i] == CBB_MODE_HOME_UPS:
@@ -3469,6 +3504,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Skip pokud nemáme cenu
             if i >= len(spot_prices):
                 continue
+
+            if soc_before is not None:
+                soc_val = None
+                if 0 <= i < len(soc_before):
+                    soc_val = soc_before[i]
+                if soc_val is not None and soc_val >= max_capacity - HEADROOM_THRESHOLD:
+                    # Baterie už je prakticky plná → UPS by nenabila
+                    continue
 
             price = spot_prices[i].get("price", 999.0)
 
