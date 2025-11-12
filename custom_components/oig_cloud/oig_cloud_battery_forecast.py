@@ -2397,7 +2397,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         battery = current_capacity
         total_transition_cost = 0.0  # Track transition costs
         prev_mode_name = "Home I"  # Start mode
-        
+
         # In balancing mode, skip to holding_end and start with 100%
         start_index = 0
         if is_balancing_mode and holding_end:
@@ -2432,20 +2432,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # In balancing mode, this entire block is skipped (we start from holding_end)
             # So no need for holding period check here anymore
-            
+
             # HOME I logika: solar → baterie nebo baterie → load
             if solar_kwh >= load_kwh:
                 net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
             else:
-                net_energy = (
-                    -(load_kwh - solar_kwh) / efficiency
-                )  # Vybíjení s losses
+                net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
 
             battery += net_energy
+            
+            # CRITICAL: Clamp to hardware limits (inverter won't go below/above)
+            # This ensures forward pass matches real-world physics
+            battery = max(hardware_minimum, min(max_capacity, battery))
 
-            # CRITICAL: Trajectory must contain UNCLAMPED values for accurate violation detection
-            # Battery can go negative - this shows severity of minimum violation
-            # NO CLAMP - we want to see the real trajectory, even if it violates constraints
             battery_trajectory.append(battery)
 
         # In balancing mode, check minimum AFTER holding_end, not before
