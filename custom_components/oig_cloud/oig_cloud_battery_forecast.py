@@ -2325,6 +2325,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         holding_end: Optional[datetime] = None
         preferred_charging_intervals: set = set()
         balancing_reason: str = "unknown"
+        holding_end_index_for_validation: Optional[int] = None
 
         if is_balancing_mode:
             try:
@@ -2440,7 +2441,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
 
             battery += net_energy
-            
+
             # CRITICAL: Clamp to hardware limits (inverter won't go below/above)
             # This ensures forward pass matches real-world physics
             battery = max(physical_min_capacity, min(max_capacity, battery))
@@ -2460,6 +2461,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                 except:
                     pass
+            holding_end_index_for_validation = holding_end_index
 
             # Check minimum only AFTER holding period
             if holding_end_index is not None and holding_end_index < len(
@@ -3008,6 +3010,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # - Pokud ANO → přidat HOME UPS charging v nejlevnějších nočních intervalech
         # - Iterativní proces: simuluj → detekuj porušení → oprav → opakuj
 
+        planning_min_kwargs: Dict[str, Any] = {}
+        if is_balancing_mode and holding_end_index_for_validation is not None:
+            planning_min_kwargs = {
+                "start_index": holding_end_index_for_validation,
+                "starting_soc": max_capacity,
+                "min_candidate_index": holding_end_index_for_validation,
+            }
+
         modes = self._validate_planning_minimum(
             modes=modes,
             spot_prices=spot_prices,
@@ -3019,6 +3029,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_capacity=min_capacity,  # planning_min = 33%
             physical_min_capacity=physical_min_capacity,  # hw_min = 20%
             efficiency=efficiency,
+            **planning_min_kwargs,
         )
 
         return self._build_result(
@@ -3131,6 +3142,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_capacity: float,  # planning_min = 33%
         physical_min_capacity: float,  # hw_min = 20%
         efficiency: float,
+        start_index: int = 0,
+        starting_soc: Optional[float] = None,
+        min_candidate_index: int = 0,
     ) -> List[int]:
         """
         PHASE 7: Validace planning minimum (33% = 5.07 kWh).
@@ -3158,6 +3172,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_capacity: Planning minimum (kWh, typicky 33% = 5.07)
             physical_min_capacity: HW minimum (kWh, typicky 20% = 3.07)
             efficiency: Účinnost baterie
+            start_index: Index od kterého validujeme (balancing → po holding_end)
+            starting_soc: Volitelné přepsání úvodního SoC pro simulaci
+            min_candidate_index: Nejnižší index, který lze přepsat na HOME UPS
 
         Returns:
             Upravený seznam režimů garantující dodržení planning_min
@@ -3187,6 +3204,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 min_capacity=min_capacity,
                 physical_min_capacity=physical_min_capacity,
                 efficiency=efficiency,
+                start_index=start_index,
+                starting_soc=starting_soc,
             )
 
             if violation_result is None:
@@ -3208,7 +3227,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             #      → musíme nabít PŘED/V intervalu 0 (nebo co nejdřív)
             #    - Pokud recovery_idx == 0: violation JE až na violation_index
             #      → můžeme nabít PŘED violation_index
-            charge_before_index = recovery_idx if recovery_idx > 0 else violation_index
+            candidate_floor = max(min_candidate_index, 0)
+            if recovery_idx is not None and recovery_idx > candidate_floor:
+                charge_before_index = recovery_idx
+            else:
+                charge_before_index = violation_index
 
             _LOGGER.info(
                 f"[PLANNING_MIN iter {iteration+1}] Violation @ interval {violation_index}: "
@@ -3225,6 +3248,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 deficit_kwh=deficit_kwh,
                 max_charge_per_interval=max_charge_per_interval,
                 max_capacity=max_capacity,
+                min_index=min_candidate_index,
             )
 
             if not candidate_intervals:
@@ -3307,6 +3331,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_capacity: float,
         physical_min_capacity: float,
         efficiency: float,
+        start_index: int = 0,
+        starting_soc: Optional[float] = None,
     ) -> Optional[tuple[int, float, int]]:
         """
         Najít první interval kde baterie klesne pod planning_min.
@@ -3318,18 +3344,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Planning_min (~25%) je PLÁNOVACÍ constraint, ne fyzikální limit
         - Kontrola začíná od recovery_index (kdy SoC >= planning_min)
         - Pokud current_soc < planning_min, snažíme se dostat zpět nad, pak kontrolujeme
+        - start_index / starting_soc umožňuje balancingu začít kontrolu až po holding period
 
         Returns:
             Tuple (violation_index, soc_at_violation, recovery_index) nebo None pokud žádné porušení
         """
-        battery_soc = current_capacity
+        n = len(modes)
+        if n == 0:
+            return None
+
+        start_index = max(0, min(start_index, n - 1))
+
+        battery_soc = (
+            starting_soc if starting_soc is not None else current_capacity
+        )
         recovery_index = None  # První interval kde SoC >= planning_min
 
         # Pokud už začínáme nad planning_min, recovery je hned
         if battery_soc >= min_capacity:
-            recovery_index = 0
+            recovery_index = start_index
 
-        for i, mode in enumerate(modes):
+        for i in range(start_index, n):
+            mode = modes[i]
             # Získat data pro interval
             spot_price = (
                 spot_prices[i].get("price", 0.0) if i < len(spot_prices) else 0.0
@@ -3399,6 +3435,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         deficit_kwh: float,
         max_charge_per_interval: float,
         max_capacity: float,
+        min_index: int = 0,
     ) -> List[int]:
         """
         Vybrat více levných intervalů PŘED violation pro proaktivní nabíjení.
@@ -3416,13 +3453,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             deficit_kwh: Kolik kWh potřebujeme dobít
             max_charge_per_interval: Max nabíjecí výkon za 15min (kWh)
             max_capacity: Max kapacita baterie (kWh)
+            min_index: Nejnižší index který smíme přepisovat (balancing → po holding)
 
         Returns:
             Seznam indexů pro HOME UPS nabíjení (seřazeno podle času)
         """
         candidates = []
 
-        for i in range(before_index):
+        start = max(min_index, 0)
+        for i in range(start, before_index):
             # Skip pokud už je HOME UPS (nepřepisujeme existující logiku)
             if modes[i] == CBB_MODE_HOME_UPS:
                 continue
