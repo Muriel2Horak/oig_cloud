@@ -2392,12 +2392,34 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
         # CRITICAL: Respect holding period if in balancing mode
+        # In balancing mode, start simulation from holding_end with 100% battery
         battery_trajectory = [current_capacity]
         battery = current_capacity
         total_transition_cost = 0.0  # Track transition costs
         prev_mode_name = "Home I"  # Start mode
+        
+        # In balancing mode, skip to holding_end and start with 100%
+        start_index = 0
+        if is_balancing_mode and holding_end:
+            battery = max_capacity  # Start with 100% after balancing
+            # Find index for holding_end
+            for i in range(n):
+                try:
+                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
+                    if interval_ts.tzinfo is None:
+                        interval_ts = dt_util.as_local(interval_ts)
+                    if interval_ts >= holding_end:
+                        start_index = i
+                        battery_trajectory = [max_capacity]  # Reset trajectory
+                        _LOGGER.info(
+                            f"📊 Balancing forward pass: starting from holding_end index {start_index} "
+                            f"({holding_end.strftime('%H:%M')}) with battery=100%"
+                        )
+                        break
+                except:
+                    pass
 
-        for i in range(n):
+        for i in range(start_index, n):
             solar_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
             # Oprava: solar z forecast, load z load_forecast
             try:
@@ -2408,34 +2430,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
-            # Check if we're in holding period (balancing mode)
-            in_holding_period = False
-            if is_balancing_mode and holding_start and holding_end:
-                try:
-                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
-                    if interval_ts.tzinfo is None:
-                        interval_ts = dt_util.as_local(interval_ts)
-                    in_holding_period = holding_start <= interval_ts < holding_end
-                    if in_holding_period and i < 3:  # Log first 3 holding intervals
-                        _LOGGER.info(
-                            f"🔒 Holding period interval {i}: {interval_ts.strftime('%H:%M')}, battery={battery:.2f} -> {max_capacity:.2f}"
-                        )
-                except:
-                    pass
-
-            if in_holding_period:
-                # During holding period: battery stays at 100%
-                battery = max_capacity
+            # In balancing mode, this entire block is skipped (we start from holding_end)
+            # So no need for holding period check here anymore
+            
+            # HOME I logika: solar → baterie nebo baterie → load
+            if solar_kwh >= load_kwh:
+                net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
             else:
-                # HOME I logika: solar → baterie nebo baterie → load
-                if solar_kwh >= load_kwh:
-                    net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
-                else:
-                    net_energy = (
-                        -(load_kwh - solar_kwh) / efficiency
-                    )  # Vybíjení s losses
+                net_energy = (
+                    -(load_kwh - solar_kwh) / efficiency
+                )  # Vybíjení s losses
 
-                battery += net_energy
+            battery += net_energy
 
             # CRITICAL: Trajectory must contain UNCLAMPED values for accurate violation detection
             # Battery can go negative - this shows severity of minimum violation
