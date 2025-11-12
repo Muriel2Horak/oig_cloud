@@ -305,3 +305,40 @@ battery = max(physical_min_capacity, min(max_capacity, battery))
 3. HYBRID return - nevrací plán, proto fallback na HOME UPS
 
 **Potřebujeme najít, kde HYBRID algoritmus končí** a proč nevidíme "FINAL HYBRID" log.
+
+---
+
+## ✅ Update: Opravy implementovány (12.11.2025 21:20)
+
+### Commit 1: Validator začíná od holding_end
+- `holding_end_index_for_validation` ukládá index konce holding period
+- `_validate_planning_minimum` dostává `start_index`, `starting_soc=100%`, `min_candidate_index`
+- Validator simuluje jen období PO holding_end
+- HOME UPS bloky se přidávají jen v oblasti, kterou lze měnit
+
+### Commit 2: SoC tracking + smart charging window
+- Forward pass trackuje `forward_soc_before/after` pro každý interval
+- Validator používá SoC trace pro detekci volné kapacity baterie
+- `CHARGING_LOOKBACK_INTERVALS = 16` (~4h) - omezení look-back okna
+- `HEADROOM_THRESHOLD = 0.05 kWh` - skip intervalů s plnou baterií
+- Řeší problém zbytečných HOME UPS bloků během holding period
+
+### Výsledky testování:
+✅ **Forward pass**: Funguje správně, začíná od holding_end (index 13) s baterií na 100%
+✅ **Validator**: Detekuje violations v intervalech 78-94 (PO holding_end)
+✅ **HOME UPS bloky**: Přidány v intervalech 64, 66, 68, 69, 75, 79 (rozumné okno před violations)
+✅ **SoC headroom check**: ŽÁDNÉ HOME UPS v intervalech 0-13 (holding period) ✨
+⚠️ **Max iterations**: Dosahuje 5 iterací (lepší než dřív, ale stále optimalizovatelné)
+
+### ❌ Zbývající problém: Timeline generation
+Timeline API vrací správné **režimy** (HOME UPS/HOME I mix), ale **battery_kwh=0.00** ve všech intervalech!
+
+**Možné příčiny:**
+1. HYBRID nevrací validní `_mode_optimization_result`
+2. Timeline fallback na baseline simulaci, která selhává
+3. `_calculate_timeline()` dostává `None` nebo prázdná data
+
+**Další kroky:**
+- Zkontrolovat, jestli HYBRID vrací validní výsledek
+- Najít, proč `_calculate_timeline()` vrací battery=0.00
+- Ověřit, že baseline simulace běží správně
