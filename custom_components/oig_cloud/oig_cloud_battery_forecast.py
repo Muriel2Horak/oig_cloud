@@ -7042,18 +7042,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             group["interval_count"] = interval_count
 
             if data_type in ["completed", "both"]:
-                # Má actual data
+                # Actual cost POUZE z intervalů, které už nastaly (mají actual data)
                 actual_cost = sum(
-                    (iv.get("actual") or {}).get("net_cost", 0)
+                    iv.get("actual", {}).get("net_cost", 0)
                     for iv in group["intervals"]
+                    if iv.get("actual") is not None
                 )
                 planned_cost = sum(
                     (iv.get("planned") or {}).get("net_cost", 0)
                     for iv in group["intervals"]
                 )
                 actual_savings = sum(
-                    (iv.get("actual") or {}).get("savings_vs_home_i", 0)
+                    iv.get("actual", {}).get("savings_vs_home_i", 0)
                     for iv in group["intervals"]
+                    if iv.get("actual") is not None
                 )
                 planned_savings = sum(
                     (iv.get("planned") or {}).get("savings_vs_home_i", 0)
