@@ -202,6 +202,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Unified charging planner - aktivní plán
         self._active_charging_plan: Optional[Dict[str, Any]] = None
         self._plan_status: str = "none"  # none | pending | active | completed
+        self._balancing_plan_snapshot: Optional[Dict[str, Any]] = None
 
         # Phase 2.9: Hourly history update tracking
         self._last_history_update_hour: Optional[int] = None
@@ -604,9 +605,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             attrs["balancing_cost"] = self._balancing_cost
 
         # PERSISTENCE: Active plan (kompaktní JSON, keep)
-        if hasattr(self, "_active_charging_plan") and self._active_charging_plan:
-            attrs["active_plan_data"] = json.dumps(self._active_charging_plan)
-            attrs["plan_status"] = getattr(self, "_plan_status", "pending")
+        plan_snapshot: Optional[Dict[str, Any]] = None
+        if getattr(self, "_balancing_plan_snapshot", None):
+            plan_snapshot = self._balancing_plan_snapshot
+        elif hasattr(self, "_active_charging_plan") and self._active_charging_plan:
+            plan_snapshot = self._active_charging_plan
+
+        if plan_snapshot:
+            attrs["active_plan_data"] = json.dumps(plan_snapshot)
+
+        attrs["plan_status"] = getattr(self, "_plan_status", "none")
 
         # Phase 2.9: REMOVED daily_plan_state from attributes
         # Důvod: Ukládá se do JSON storage místo HA database (optimalizace)
@@ -4124,6 +4132,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return optimal_timeline, optimal_modes
 
+    def _update_balancing_plan_snapshot(
+        self, plan: Optional[Dict[str, Any]]
+    ) -> None:
+        """Keep BalancingManager plan snapshot in sync with legacy plan handling."""
+
+        def _is_balancing_requester(requester: Optional[str]) -> bool:
+            if not requester:
+                return False
+            return requester.lower() in {"balancingmanager", "balancing_manager"}
+
+        self._balancing_plan_snapshot = plan
+
+        if plan:
+            if (
+                not self._active_charging_plan
+                or _is_balancing_requester(
+                    self._active_charging_plan.get("requester")
+                )
+            ):
+                self._active_charging_plan = plan
+        else:
+            if (
+                self._active_charging_plan
+                and _is_balancing_requester(
+                    self._active_charging_plan.get("requester")
+                )
+            ):
+                self._active_charging_plan = None
+
     def _calculate_timeline(
         self,
         current_capacity: float,
@@ -4191,13 +4228,84 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
         _LOGGER.debug(f"_calculate_timeline() using mode: {mode_name} ({mode})")
 
-        # UNIFIED PLANNER: Použít aktivní plán místo parametru balancing_plan
+        # UNIFIED PLANNER: Načíst aktivní plán z BalancingManageru nebo fallback na starý systém
         active_plan = self._active_charging_plan
+
+        # NEW: Try to load from BalancingManager first
+        try:
+            if self._hass and hasattr(self, "_config_entry"):
+                from .const import DOMAIN
+
+                entry_data = self._hass.data.get(DOMAIN, {}).get(
+                    self._config_entry.entry_id, {}
+                )
+                balancing_manager = entry_data.get("balancing_manager")
+                _LOGGER.debug(
+                    f"BalancingManager lookup: found={balancing_manager is not None}"
+                )
+
+                if balancing_manager:
+                    balancing_plan_obj = balancing_manager.get_active_plan()
+                    _LOGGER.info(
+                        f"BalancingManager plan: exists={balancing_plan_obj is not None}, "
+                        f"active={balancing_plan_obj.active if balancing_plan_obj else 'N/A'}"
+                    )
+
+                    if balancing_plan_obj and balancing_plan_obj.active:
+                        # Convert BalancingPlan to legacy charging_plan format for compatibility
+
+                        def _iso(value: Any) -> str:
+                            if isinstance(value, str):
+                                return value
+                            if hasattr(value, "isoformat"):
+                                return value.isoformat()
+                            return str(value)
+
+                        intervals_payload = [
+                            {"timestamp": interval.ts, "mode": interval.mode}
+                            for interval in balancing_plan_obj.intervals
+                        ]
+
+                        converted_plan = {
+                            "charging_plan": {
+                                "holding_start": _iso(
+                                    balancing_plan_obj.holding_start
+                                ),
+                                "holding_end": _iso(balancing_plan_obj.holding_end),
+                                "charging_intervals": intervals_payload,
+                            },
+                            "mode": balancing_plan_obj.mode.value,
+                            "requester": "BalancingManager",
+                            "reason": balancing_plan_obj.reason,
+                            "priority": balancing_plan_obj.priority.value,
+                            "locked": balancing_plan_obj.locked,
+                            "created_at": _iso(balancing_plan_obj.created_at),
+                        }
+
+                        if balancing_plan_obj.last_balancing_ts:
+                            converted_plan["last_balancing_ts"] = _iso(
+                                balancing_plan_obj.last_balancing_ts
+                            )
+
+                        active_plan = converted_plan
+                        self._update_balancing_plan_snapshot(converted_plan)
+                        _LOGGER.info(
+                            f"✅ Timeline using BalancingManager plan: "
+                            f"holding={balancing_plan_obj.holding_start} - {balancing_plan_obj.holding_end}, "
+                            f"intervals={len(balancing_plan_obj.intervals)}"
+                        )
+                    else:
+                        self._update_balancing_plan_snapshot(None)
+                        _LOGGER.debug("BalancingManager plan not active or missing")
+        except Exception as e:
+            _LOGGER.error(
+                f"❌ Could not load from BalancingManager for timeline: {e}",
+                exc_info=True,
+            )
 
         # Parse charging plan times if exists
         balancing_start: Optional[datetime] = None  # Start HOLDING period (už na 100%)
         balancing_end: Optional[datetime] = None  # End HOLDING period
-        balancing_charging_intervals: set = set()  # Intervaly kdy nabíjet (podle cen)
         balancing_reason: Optional[str] = None
         plan_requester: Optional[str] = None
 
@@ -4225,20 +4333,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 plan_mode = active_plan.get("mode", "unknown")
                 balancing_reason = f"{plan_requester}_{plan_mode}"
 
-                # Použít charging intervals z plánu
-                charging_intervals_data = charging_plan.get("charging_intervals", [])
-                balancing_charging_intervals = set()
-                for iv in charging_intervals_data:
-                    ts = datetime.fromisoformat(iv["timestamp"])
-                    # Normalize timezone
-                    if ts.tzinfo is None:
-                        ts = dt_util.as_local(ts)
-                    balancing_charging_intervals.add(ts)
-
                 _LOGGER.info(
                     f"Active charging plan: {plan_requester} ({plan_mode}), "
-                    f"holding {balancing_start.strftime('%H:%M')}-{balancing_end.strftime('%H:%M')}, "
-                    f"charging in {len(balancing_charging_intervals)} intervals"
+                    f"holding {balancing_start.strftime('%H:%M')}-{balancing_end.strftime('%H:%M')}"
                 )
             except (ValueError, TypeError, KeyError) as e:
                 _LOGGER.warning(f"Failed to parse active charging plan: {e}")
@@ -4344,18 +4441,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 load_kwh = self._get_load_avg_for_timestamp(timestamp, load_avg_sensors)
 
             # Zkontrolovat jestli jsme v balancing window
-            is_balancing_charging = False  # Nabíjení v levných intervalech
+            is_balancing_charging = False  # Nabíjení PŘED deadline (dosažení 100%)
             is_balancing_holding = False  # Držení na 100% během holding period
 
             if active_plan and balancing_start and balancing_end:
-                # Charging: jsme v některém z vybraných levných intervalů?
-                if timestamp in balancing_charging_intervals:
-                    is_balancing_charging = True
+                # SIMPLIFIED LOGIC: Balancing window je celé období od TEĎ do konce holding
+                # Timeline ví, že během tohoto období má být HOME_UPS (nabíjení → holding)
 
-                # Holding: interval je holding pokud:
-                # 1. Začíná v holding period (timestamp >= balancing_start)
-                # 2. Končí v holding period (timestamp + 15min <= balancing_end)
-                # 3. Holding period začíná během tohoto intervalu
+                # Holding: interval je holding pokud začíná V NEBO PO holding_start
+                # a končí PŘED NEBO V balancing_end
                 interval_end = timestamp + timedelta(minutes=15)
 
                 # Interval je holding pokud se překrývá s holding periodem
@@ -4367,6 +4461,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 if interval_overlaps_holding:
                     is_balancing_holding = True
+
+                # Charging: všechny intervaly PŘED holding_start (baterie ještě není na 100%)
+                # Timeline zobrazí tyto intervaly jako HOME_UPS (nabíjení)
+                elif timestamp < balancing_start:
+                    is_balancing_charging = True
 
             # Celkové balancing window = charging NEBO holding
             is_balancing_window = is_balancing_charging or is_balancing_holding
@@ -4403,8 +4502,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Grid charging - normální logika (může být přepsána balancingem)
             grid_kwh = 0.0
 
-            # Debug první pár bodů
-            if len(timeline) < 3:
+            # Debug první pár bodů A holding intervaly
+            if len(timeline) < 3 or (is_balancing_holding and len(timeline) < 30):
                 _LOGGER.info(
                     f"Timeline point {len(timeline)}: {timestamp_str}, mode={interval_mode_name}, "
                     f"battery_before={battery_kwh:.3f}, solar={solar_kwh:.3f}, "

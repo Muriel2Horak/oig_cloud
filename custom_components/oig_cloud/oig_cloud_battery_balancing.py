@@ -203,6 +203,11 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         """Return device info."""
         return self._device_info
 
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_from_manager()
+        super()._handle_coordinator_update()
+
     async def async_update(self) -> None:
         """Update sensor state."""
         self._update_from_manager()

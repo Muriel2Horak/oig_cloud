@@ -2,7 +2,7 @@
 
 import logging
 import voluptuous as vol
-from typing import Dict, Any, Optional, Callable, Awaitable
+from typing import Dict, Any, Optional, Callable, Awaitable, List
 from opentelemetry import trace
 
 from homeassistant.core import HomeAssistant, ServiceCall, Context, callback
@@ -92,6 +92,10 @@ def get_box_id_from_device(
 
 # Schema pro update solární předpovědi
 SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema({})
+CHECK_BALANCING_SCHEMA = vol.Schema({
+    vol.Optional("box_id"): cv.string,
+    vol.Optional("force"): cv.boolean,
+})
 
 # Konstanty pro služby
 MODES: Dict[str, str] = {
@@ -196,6 +200,95 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             _LOGGER.error(f"Failed to load dashboard tiles config: {e}")
             return {"config": None}
 
+    async def handle_check_balancing(call: ServiceCall) -> dict:
+        """Manuálně spustí balancing kontrolu přes BalancingManager."""
+
+        def _serialize_dt(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                return value
+            if hasattr(value, "isoformat"):
+                return value.isoformat()
+            return str(value)
+
+        requested_box = call.data.get("box_id")
+        force_balancing = call.data.get("force", False)
+        results: List[Dict[str, Any]] = []
+        domain_data = hass.data.get(DOMAIN, {})
+
+        for entry_id, entry_data in domain_data.items():
+            # Skip non-entry keys (e.g., ServiceShield)
+            if not isinstance(entry_data, dict) or entry_id == "shield":
+                continue
+
+            balancing_manager = entry_data.get("balancing_manager")
+            if not balancing_manager:
+                continue
+
+            manager_box_id = getattr(balancing_manager, "box_id", None)
+            if requested_box and manager_box_id != requested_box:
+                continue
+
+            try:
+                plan = await balancing_manager.check_balancing(force=force_balancing)
+                if plan:
+                    plan_summary = {
+                        "entry_id": entry_id,
+                        "box_id": manager_box_id,
+                        "plan_mode": plan.mode.value,
+                        "reason": plan.reason,
+                        "holding_start": _serialize_dt(plan.holding_start),
+                        "holding_end": _serialize_dt(plan.holding_end),
+                        "priority": plan.priority.value,
+                    }
+                    results.append(plan_summary)
+                    _LOGGER.info(
+                        "Manual balancing check created %s plan for box %s (%s)",
+                        plan.mode.value,
+                        manager_box_id,
+                        plan.reason,
+                    )
+                else:
+                    results.append(
+                        {
+                            "entry_id": entry_id,
+                            "box_id": manager_box_id,
+                            "plan_mode": None,
+                            "reason": "no_plan_needed",
+                        }
+                    )
+                    _LOGGER.info(
+                        "Manual balancing check executed for box %s - no plan needed",
+                        manager_box_id,
+                    )
+            except Exception as err:
+                _LOGGER.error(
+                    "Manual balancing check failed for box %s: %s",
+                    manager_box_id or "unknown",
+                    err,
+                    exc_info=True,
+                )
+                results.append(
+                    {
+                        "entry_id": entry_id,
+                        "box_id": manager_box_id,
+                        "error": str(err),
+                    }
+                )
+
+        if not results:
+            _LOGGER.warning(
+                "Manual balancing check: no BalancingManager instances matched box_id=%s",
+                requested_box or "any",
+            )
+
+        return {
+            "requested_box_id": requested_box,
+            "processed_entries": len(results),
+            "results": results,
+        }
+
     # Registrace služby pouze pokud ještě není registrovaná
     if not hass.services.has_service(DOMAIN, "update_solar_forecast"):
         hass.services.async_register(
@@ -224,6 +317,16 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             supports_response=True,
         )
         _LOGGER.debug("Registered get_dashboard_tiles service")
+
+    if not hass.services.has_service(DOMAIN, "check_balancing"):
+        hass.services.async_register(
+            DOMAIN,
+            "check_balancing",
+            handle_check_balancing,
+            schema=CHECK_BALANCING_SCHEMA,
+            supports_response=True,
+        )
+        _LOGGER.debug("Registered check_balancing service")
 
 
 async def async_setup_entry_services_with_shield(

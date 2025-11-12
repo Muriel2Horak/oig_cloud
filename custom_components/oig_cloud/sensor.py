@@ -879,8 +879,9 @@ async def async_setup_entry(
                             # Use first forecast sensor (typically battery_forecast)
                             forecast_sensor = battery_forecast_sensors[0]
                             balancing_manager.set_forecast_sensor(forecast_sensor)
+                            balancing_manager.set_coordinator(coordinator)
                             _LOGGER.info(
-                                "✅ Connected BalancingManager to forecast sensor"
+                                "✅ Connected BalancingManager to forecast sensor and coordinator"
                             )
                 except Exception as e:
                     _LOGGER.debug(

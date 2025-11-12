@@ -104,19 +104,31 @@ class BalancingPlan:
     @classmethod
     def from_dict(cls, data: Dict) -> BalancingPlan:
         """Create from dict."""
+        from datetime import datetime
+
+        # Convert ISO strings to datetime objects
+        def parse_datetime(value):
+            if isinstance(value, str):
+                return datetime.fromisoformat(value)
+            return value
+
         return cls(
             mode=BalancingMode(data["mode"]),
-            created_at=data["created_at"],
+            created_at=parse_datetime(data["created_at"]),
             reason=data["reason"],
-            holding_start=data["holding_start"],
-            holding_end=data["holding_end"],
+            holding_start=parse_datetime(data["holding_start"]),
+            holding_end=parse_datetime(data["holding_end"]),
             intervals=[
                 BalancingInterval.from_dict(i) for i in data.get("intervals", [])
             ],
             locked=data.get("locked", False),
             priority=BalancingPriority(data.get("priority", "normal")),
             active=data.get("active", True),
-            last_balancing_ts=data.get("last_balancing_ts"),
+            last_balancing_ts=(
+                parse_datetime(data.get("last_balancing_ts"))
+                if data.get("last_balancing_ts")
+                else None
+            ),
         )
 
     @classmethod

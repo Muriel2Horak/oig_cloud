@@ -84,6 +84,7 @@ class BalancingManager:
         self._last_balancing_ts: Optional[datetime] = None
         self._active_plan: Optional[BalancingPlan] = None
         self._forecast_sensor = None  # Reference to forecast sensor for timeline access
+        self._coordinator = None  # Reference to coordinator for refresh triggers
 
         # Cost tracking for frontend display
         self._last_immediate_cost: Optional[float] = None
@@ -157,6 +158,23 @@ class BalancingManager:
         }
         await self._store.async_save(data)
 
+        # CRITICAL: Trigger coordinator refresh to recalculate timeline with new plan
+        # This ensures UI (detail tabs) shows updated HOME_UPS blocks for balancing
+        # Use coordinator instead of direct call to avoid blocking/deadlock
+        if self._coordinator:
+            _LOGGER.info(
+                "🔄 Requesting coordinator refresh after balancing state change"
+            )
+            try:
+                # Schedule async refresh - non-blocking
+                await self._coordinator.async_request_refresh()
+                _LOGGER.info("✅ Coordinator refresh scheduled successfully")
+            except Exception as e:
+                _LOGGER.error(f"Failed to request coordinator refresh: {e}")
+                _LOGGER.info(
+                    "✅ Forecast sensor and storage updated with balancing plan"
+                )
+
     def set_forecast_sensor(self, forecast_sensor: Any) -> None:
         """Set reference to forecast sensor for timeline access.
 
@@ -165,15 +183,26 @@ class BalancingManager:
         """
         self._forecast_sensor = forecast_sensor
 
-    async def check_balancing(self) -> Optional[BalancingPlan]:
+    def set_coordinator(self, coordinator: Any) -> None:
+        """Set reference to coordinator for refresh triggers.
+
+        Args:
+            coordinator: DataUpdateCoordinator instance
+        """
+        self._coordinator = coordinator
+
+    async def check_balancing(self, force: bool = False) -> Optional[BalancingPlan]:
         """Check if balancing is needed and create plan.
 
         Called periodically (e.g., every 30 minutes) by coordinator.
 
+        Args:
+            force: If True, forces creation of balancing plan regardless of cooldown/cycle
+
         Returns:
             BalancingPlan if created, None otherwise
         """
-        _LOGGER.debug("BalancingManager: check_balancing() CALLED")
+        _LOGGER.debug(f"BalancingManager: check_balancing() CALLED (force={force})")
 
         if not self._forecast_sensor:
             _LOGGER.warning("Forecast sensor not set, cannot check balancing")
@@ -191,6 +220,73 @@ class BalancingManager:
             self._active_plan = None  # Clear active plan
             await self._save_state()
             return None
+
+        # 0.5 CRITICAL FIX: If we already have an ACTIVE plan, DO NOT create a new one!
+        # This prevents deadline from shifting every 30 minutes
+        # EXCEPTION: If deadline (holding_start) is in the past, we missed it -> create new plan
+        # BUT: If we're DURING holding period, keep the plan active!
+        if self._active_plan is not None:
+            now = dt_util.now()
+
+            # Ensure holding_start is datetime (might be string from old storage)
+            holding_start = self._active_plan.holding_start
+            if isinstance(holding_start, str):
+                from datetime import datetime
+
+                holding_start = datetime.fromisoformat(holding_start)
+
+            # Ensure holding_end is datetime too
+            holding_end = self._active_plan.holding_end
+            if isinstance(holding_end, str):
+                from datetime import datetime
+
+                holding_end = datetime.fromisoformat(holding_end)
+
+            # Ensure timezone aware for comparison
+            if holding_start.tzinfo is None:
+                holding_start = dt_util.as_local(holding_start)
+            if holding_end.tzinfo is None:
+                holding_end = dt_util.as_local(holding_end)
+
+            # Check if we're DURING holding period
+            if holding_start <= now <= holding_end:
+                _LOGGER.info(
+                    f"🔋 Currently IN holding period ({holding_start.strftime('%H:%M')}-"
+                    f"{holding_end.strftime('%H:%M')}). Keeping active plan."
+                )
+                return self._active_plan
+
+            # Check if holding period completely passed
+            if holding_end < now:
+                _LOGGER.warning(
+                    f"⏰ Holding period ended at {holding_end.strftime('%H:%M')}. "
+                    f"Clearing expired plan."
+                )
+                self._active_plan = None
+                await self._save_state()
+            else:
+                # Deadline still in future - keep existing plan
+                _LOGGER.debug(
+                    f"🔒 Active plan already exists ({self._active_plan.mode.name}), "
+                    f"deadline at {holding_start.strftime('%H:%M')}. "
+                    "Skipping new plan creation."
+                )
+                return self._active_plan
+
+        # FORCE MODE: Skip all checks and create forced plan immediately
+        if force:
+            _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
+            forced_plan = await self._create_forced_plan()
+            if forced_plan:
+                _LOGGER.warning(
+                    "🔴 FORCED balancing plan created (manual trigger)!"
+                )
+                self._active_plan = forced_plan
+                await self._save_state()
+                return forced_plan
+            else:
+                _LOGGER.error("Failed to create forced balancing plan!")
+                return None
 
         # Calculate days since last balancing
         days_since_last = self._get_days_since_last_balancing()
@@ -259,7 +355,7 @@ class BalancingManager:
             # Never balanced - assume cooldown passed
             return float(self._get_cooldown_hours())
 
-        delta = datetime.now() - self._last_balancing_ts
+        delta = dt_util.now() - self._last_balancing_ts
         return delta.total_seconds() / 3600.0
 
     async def _check_if_balancing_occurred(self) -> Tuple[bool, Optional[datetime]]:
@@ -329,12 +425,22 @@ class BalancingManager:
             for stat in hourly_stats:
                 # Use 'max' if available, otherwise 'mean'
                 soc = stat.get("max") or stat.get("mean")
-                # stat["start"] is already a datetime object from statistics API
-                stat_time = (
-                    stat["start"]
-                    if isinstance(stat["start"], datetime)
-                    else dt_util.parse_datetime(stat["start"])
-                )
+
+                # stat["start"] can be datetime, float (timestamp), or string
+                stat_start = stat.get("start")
+                if stat_start is None:
+                    continue
+
+                if isinstance(stat_start, datetime):
+                    stat_time = stat_start
+                elif isinstance(stat_start, (int, float)):
+                    stat_time = datetime.fromtimestamp(stat_start, tz=dt_util.UTC)
+                elif isinstance(stat_start, str):
+                    stat_time = dt_util.parse_datetime(stat_start)
+                    if stat_time is None:
+                        continue
+                else:
+                    continue
 
                 if soc and soc >= 99.0:
                     # Battery at high SoC during this hour
@@ -603,9 +709,26 @@ class BalancingManager:
         now = datetime.now()
         holding_time_hours = self._get_holding_time_hours()
 
-        # Start holding in 2 hours (time to charge + safety margin)
-        holding_start = now + timedelta(hours=2)
+        # Calculate required charging time based on current SoC
+        # Conservative estimate: 5% per 15min interval, round up
+        soc_needed = 100.0 - current_soc_percent
+        intervals_needed = max(1, int(soc_needed / 5.0) + 1)  # +1 for safety margin
+        charging_hours = intervals_needed * 0.25  # 15min = 0.25h
+
+        # Start holding when charging completes
+        # Round to next 15-min interval
+        minutes_from_now = int(charging_hours * 60)
+        minutes_rounded = (
+            (minutes_from_now + 14) // 15
+        ) * 15  # Round up to nearest 15min
+        holding_start = now + timedelta(minutes=minutes_rounded)
         holding_end = holding_start + timedelta(hours=holding_time_hours)
+
+        _LOGGER.info(
+            f"⚡ Forced balancing schedule: SoC {current_soc_percent:.1f}% → 100%, "
+            f"charging ~{charging_hours:.1f}h ({intervals_needed} intervals), "
+            f"holding {holding_start.strftime('%H:%M')}-{holding_end.strftime('%H:%M')}"
+        )
 
         # Plan aggressive UPS charging NOW
         charging_intervals = self._plan_ups_charging(
@@ -743,10 +866,11 @@ class BalancingManager:
 
         charge_needed_kwh = (100 - current_soc_percent) / 100 * battery_capacity_kwh
 
+        # Price is already in CZK/kWh (includes all fees)
         immediate_cost = charge_needed_kwh * current_price
 
         _LOGGER.debug(
-            f"Immediate cost: {charge_needed_kwh:.2f} kWh * {current_price:.2f} CZK/kWh "
+            f"Immediate cost: {charge_needed_kwh:.2f} kWh * {current_price:.4f} CZK/kWh "
             f"= {immediate_cost:.2f} CZK"
         )
 
@@ -811,6 +935,7 @@ class BalancingManager:
 
         # 4. Calculate waiting cost
         total_wait_energy = battery_loss_kwh + grid_consumption_kwh
+        # Price is already in CZK/kWh (includes all fees)
         waiting_cost = total_wait_energy * avg_wait_price
 
         # 5. Calculate SoC at window start
@@ -830,6 +955,7 @@ class BalancingManager:
             sum(charging_prices) / len(charging_prices) if charging_prices else 5.0
         )
 
+        # Price is already in CZK/kWh (includes all fees)
         charging_cost = charge_needed_kwh * avg_charging_price
 
         # 7. Total cost
@@ -837,8 +963,8 @@ class BalancingManager:
 
         _LOGGER.debug(
             f"Delayed cost for window {window_start.strftime('%H:%M')}: "
-            f"waiting={waiting_cost:.2f} CZK ({battery_loss_kwh:.2f} + {grid_consumption_kwh:.2f} kWh @ {avg_wait_price:.2f}), "
-            f"charging={charging_cost:.2f} CZK ({charge_needed_kwh:.2f} kWh @ {avg_charging_price:.2f}), "
+            f"waiting={waiting_cost:.2f} CZK ({battery_loss_kwh:.2f} + {grid_consumption_kwh:.2f} kWh @ {avg_wait_price:.4f}), "
+            f"charging={charging_cost:.2f} CZK ({charge_needed_kwh:.2f} kWh @ {avg_charging_price:.4f}), "
             f"total={total_cost:.2f} CZK"
         )
 
