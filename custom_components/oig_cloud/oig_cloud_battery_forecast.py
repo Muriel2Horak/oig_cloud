@@ -2427,16 +2427,40 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if solar_kwh >= load_kwh:
                     net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
                 else:
-                    net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
+                    net_energy = (
+                        -(load_kwh - solar_kwh) / efficiency
+                    )  # Vybíjení s losses
 
                 battery += net_energy
-            
+
             # CRITICAL: Trajectory must contain UNCLAMPED values for accurate violation detection
             # Battery can go negative - this shows severity of minimum violation
             # NO CLAMP - we want to see the real trajectory, even if it violates constraints
             battery_trajectory.append(battery)
 
-        min_reached = min(battery_trajectory)
+        # In balancing mode, check minimum AFTER holding_end, not before
+        if is_balancing_mode and holding_end:
+            # Find index where holding ends
+            holding_end_index = None
+            for i in range(n):
+                try:
+                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
+                    if interval_ts.tzinfo is None:
+                        interval_ts = dt_util.as_local(interval_ts)
+                    if interval_ts >= holding_end:
+                        holding_end_index = i
+                        break
+                except:
+                    pass
+            
+            # Check minimum only AFTER holding period
+            if holding_end_index is not None and holding_end_index < len(battery_trajectory):
+                min_reached = min(battery_trajectory[holding_end_index:])
+            else:
+                min_reached = min(battery_trajectory)
+        else:
+            min_reached = min(battery_trajectory)
+        
         final_capacity = battery_trajectory[-1]
 
         _LOGGER.info(
