@@ -693,11 +693,10 @@
                 </div>
 
                 <!-- Unified Cost Tile - PLAN_VS_ACTUAL_UX_REDESIGN_V2.md Fáze 1 -->
-                <div id="unified-cost-tile-container" class="stat-card" style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%); border: 1px solid rgba(33, 150, 243, 0.3); min-height: 160px; cursor: pointer; display: flex; flex-direction: column;">
-                    <!-- UnifiedCostTile component loaded via lazy module -->
-                    <div style="padding: 20px; text-align: center; color: var(--text-secondary); flex: 1; display: flex; flex-direction: column; justify-content: center;">
-                        <div style="font-size: 1.2em; margin-bottom: 10px;">💰 Náklady</div>
-                        <div style="font-size: 0.9em;">Načítání...</div>
+                <div id="cost-comparison-tile-container" class="stat-card cost-card">
+                    <div class="cost-card-placeholder">
+                        <span class="cost-card-title">💰 Nákladový přehled</span>
+                        <span class="cost-card-loading">Načítání…</span>
                     </div>
                 </div>
             </div>
@@ -713,25 +712,27 @@
             </div>
 
             <!-- Nápověda ovládání mimo graf -->
-            <div
-                style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 15px; margin-bottom: 15px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
-                <span style="opacity: 0.7; font-size: 0.85em;">
-                    💡 <strong>Ovládání grafu:</strong> Myší označte oblast pro zoom • Kolečkem zoom in/out •
-                    Shift+tažení = posun
+            <div class="chart-control-bar">
+                <span class="chart-control-tip">
+                    💡 <strong>Ovládání grafu:</strong> Myší označte oblast pro zoom • Kolečka zoom in/out • Shift+tažení = posun
                 </span>
-                <button onclick="resetChartZoom()"
-                    style="background: rgba(33,150,243,0.2); border: 1px solid rgba(33,150,243,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
-                    🔍 Reset Zoom
-                </button>
-                <button id="datalabel-toggle-btn" onclick="toggleDatalabelMode()"
-                    style="background: rgba(76,175,80,0.2); border: 1px solid rgba(76,175,80,0.5); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
-                    📊 Ceny: <span id="datalabel-mode-text">Auto</span>
-                </button>
+                <div class="chart-control-actions">
+                    <button class="chart-control-btn" onclick="resetChartZoom()">🔍 Reset Zoom</button>
+                    <button class="chart-control-btn" id="datalabel-toggle-btn" onclick="toggleDatalabelMode()">
+                        📊 Ceny: <span id="datalabel-mode-text">Auto</span>
+                    </button>
+                    <div class="chart-plan-toggle-group">
+                        <span class="chart-plan-label">Plán:</span>
+                        <button class="chart-plan-toggle-btn active" data-plan="hybrid">Hybrid</button>
+                        <button class="chart-plan-toggle-btn autonomy" data-plan="autonomy">Auto</button>
+                    </div>
+                </div>
             </div>
 
             <div class="chart-container" style="height: 520px;">
                 <div class="chart-title">
                     📊 Ceny elektřiny & Předpovědi
+                    <span id="chart-plan-pill" class="chart-plan-pill">Hybrid</span>
                 </div>
                 <div class="chart-wrapper"><canvas id="combined-chart"></canvas></div>
             </div>
@@ -858,7 +859,14 @@
         <div id="mode-timeline-dialog" class="dialog-overlay" style="display: none;" onclick="closeModeTimelineDialog()">
             <div class="dialog-content timeline-dialog" onclick="event.stopPropagation()">
                 <div class="dialog-header">
-                    <h3>📅 Optimalizovaný plán režimů (72h)</h3>
+                    <div class="dialog-header-left">
+                        <h3>📅 Optimalizovaný plán režimů (72h)</h3>
+                        <div class="plan-toggle">
+                            <span class="plan-toggle-label">Režim:</span>
+                            <button class="plan-toggle-btn active" data-plan="hybrid">HYBRID</button>
+                            <button class="plan-toggle-btn" data-plan="autonomy">AUTO</button>
+                        </div>
+                    </div>
                     <button class="dialog-close close-timeline-dialog" onclick="closeModeTimelineDialog()">&times;</button>
                 </div>
 

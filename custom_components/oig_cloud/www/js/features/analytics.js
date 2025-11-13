@@ -240,116 +240,63 @@ function initTodayPlanTile(container, tileSummary) {
  */
 
 
-/**
- * Load Unified Cost Tile data from API endpoint
- * PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1 (UCT-FE-001)
- * Enhanced with retry logic for post-restart/reload scenarios
- */
-async function loadUnifiedCostTile(retryCount = 0, maxRetries = 3) {
+var costComparisonTileInstance = null;
+
+async function loadCostComparisonTile(retryCount = 0, maxRetries = 3) {
     try {
-        console.log(`[Unified Cost Tile] Loading data from API... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        const response = await fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`);
+        console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        const [hybridRes, autonomyRes] = await Promise.all([
+            fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`),
+            fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile?mode=autonomy`)
+        ]);
 
-        if (!response.ok) {
-            console.error('[Unified Cost Tile] API error:', response.status);
-
-            // Retry on server errors (500+) or if data not yet available (503)
-            if (response.status >= 500 && retryCount < maxRetries) {
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff, max 5s
-                console.log(`[Unified Cost Tile] Retrying in ${delay}ms...`);
-                setTimeout(() => loadUnifiedCostTile(retryCount + 1, maxRetries), delay);
+        if (!hybridRes.ok || !autonomyRes.ok) {
+            console.error('[Cost Comparison] API error', hybridRes.status, autonomyRes.status);
+            if ((hybridRes.status >= 500 || autonomyRes.status >= 500) && retryCount < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+                setTimeout(() => loadCostComparisonTile(retryCount + 1, maxRetries), delay);
             }
             return;
         }
 
-        const data = await response.json();
-        console.log('[Unified Cost Tile] Data loaded from API (cached on backend):', {
-            today: data.today ? 'present' : 'missing',
-            yesterday: data.yesterday ? 'present' : 'missing',
-            tomorrow: data.tomorrow ? 'present' : 'missing'
-        });
-
-        renderUnifiedCostTile(data);
+        const [hybridData, autonomyData] = await Promise.all([hybridRes.json(), autonomyRes.json()]);
+        renderCostComparisonTile(hybridData, autonomyData);
     } catch (error) {
-        console.error('[Unified Cost Tile] Failed to load from API:', error);
-
-        // Retry on network errors
+        console.error('[Cost Comparison] Failed to load', error);
         if (retryCount < maxRetries) {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-            console.log(`[Unified Cost Tile] Network error, retrying in ${delay}ms...`);
-            setTimeout(() => loadUnifiedCostTile(retryCount + 1, maxRetries), delay);
+            setTimeout(() => loadCostComparisonTile(retryCount + 1, maxRetries), delay);
         }
     }
 }
 
-/**
- * Render Unified Cost Tile - consolidated view of today/yesterday/tomorrow costs
- * PLAN_VS_ACTUAL_UX_REDESIGN_V2.md - Fáze 1 (UCT-FE-001)
- * Event-driven refresh triggered by buildExtendedTimeline()
- */
-var unifiedCostTileInstance = null;
-
-function renderUnifiedCostTile(unifiedCostData) {
-    const container = document.getElementById('unified-cost-tile-container');
+function renderCostComparisonTile(hybridData, autonomyData) {
+    const container = document.getElementById('cost-comparison-tile-container');
     if (!container) {
-        console.warn('[Unified Cost Tile] Container not found - skipping render');
+        console.warn('[Cost Comparison] Container not found');
         return;
     }
 
-    // Lazy load UnifiedCostTile class if not already loaded
-    if (typeof UnifiedCostTile === 'undefined') {
-        console.log('[Unified Cost Tile] Loading module...');
+    if (typeof CostComparisonTile === 'undefined') {
         const script = document.createElement('script');
-        script.src = `modules/unified-cost-tile.js?v=${Date.now()}`;
-        script.onload = () => {
-            console.log('[Unified Cost Tile] Module loaded, rendering...');
-            initUnifiedCostTile(container, unifiedCostData);
-        };
-        script.onerror = () => {
-            console.error('[Unified Cost Tile] Failed to load module');
-        };
+        script.src = `modules/cost-comparison-tile.js?v=${Date.now()}`;
+        script.onload = () => renderCostComparisonTile(hybridData, autonomyData);
+        script.onerror = () => console.error('[Cost Comparison] Failed to load module');
         document.head.appendChild(script);
         return;
     }
 
-    // Update existing instance or create new one
-    if (unifiedCostTileInstance) {
-        console.log('[Unified Cost Tile] Updating existing instance');
-        unifiedCostTileInstance.update(unifiedCostData);
+    const options = {
+        onOpenHybrid: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'hybrid'),
+        onOpenAutonomy: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'autonomy')
+    };
+
+    if (costComparisonTileInstance) {
+        costComparisonTileInstance.update(hybridData, autonomyData);
     } else {
-        console.log('[Unified Cost Tile] Creating new instance');
-        initUnifiedCostTile(container, unifiedCostData);
+        costComparisonTileInstance = new CostComparisonTile(container, hybridData, autonomyData, options);
     }
 }
-
-/**
- * Initialize Unified Cost Tile instance
- * @param {HTMLElement} container - Container element
- * @param {object} unifiedCostData - unified_cost_tile data from sensor attributes
- */
-function initUnifiedCostTile(container, unifiedCostData) {
-    try {
-        unifiedCostTileInstance = new UnifiedCostTile(
-            container,
-            unifiedCostData,
-            () => {
-                // Click handler - open timeline dialog and show DNES tab
-                console.log('[Unified Cost Tile] Opening timeline dialog with DNES view...');
-
-                // Use DashboardTimeline.openTimelineDialog which handles initialization
-                if (window.DashboardTimeline && typeof window.DashboardTimeline.openTimelineDialog === 'function') {
-                    window.DashboardTimeline.openTimelineDialog('today');
-                } else {
-                    console.error('[Unified Cost Tile] DashboardTimeline.openTimelineDialog not available');
-                }
-            }
-        );
-        console.log('[Unified Cost Tile] Instance created successfully');
-    } catch (error) {
-        console.error('[Unified Cost Tile] Failed to create instance:', error);
-    }
-}
-
 
 /**
  * Render TODAY's plan vs actual comparison + future intervals

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### ✨ Added
+
+- **Battery planner wizard options** – new selector for Hybrid / Hybrid+Autonomy preview profiles plus cheap-window and DP tuning fields with full EN/CZ translations.
+- **Autonomy QA coverage** – regression tests for the cheap-window UPS helper and DP optimizer ensure the new planner knobs remain stable.
+
+### 🔧 Changed
+
+- **Timeline dialog** – plan toggle lets you switch between live Hybrid control and the new Autonomy preview dataset directly in the modal and from the autonomy cost tile.
+- **Analytics tile action** – the “Autonomní plán” card now opens the timeline dialog pre-filtered to the Autonomy plan instead of the unfinished detail dialog.
+
 ## [2.0.5] - 2025-10-29
 
 ### ✨ Added

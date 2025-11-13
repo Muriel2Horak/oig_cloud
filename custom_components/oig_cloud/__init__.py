@@ -56,6 +56,42 @@ analytics_device_info: Dict[str, Any] = {
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 
 
+def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Ensure new planner-related options exist on legacy config entries."""
+
+    defaults = {
+        "battery_planner_mode": "hybrid_autonomy",
+        "enable_autonomous_preview": True,
+        "enable_cheap_window_ups": True,
+        "cheap_window_percentile": 30,
+        "cheap_window_max_intervals": 20,
+        "cheap_window_soc_guard_kwh": 0.5,
+        "autonomy_soc_step_kwh": 0.5,
+        "autonomy_target_penalty": 3.0,
+        "autonomy_min_penalty": 15.0,
+        "autonomy_negative_export_penalty": 50.0,
+    }
+
+    options = dict(entry.options)
+    missing_keys = [
+        key for key in defaults.keys() if entry.options.get(key) is None
+    ]
+    updated = False
+
+    for key, default in defaults.items():
+        if options.get(key) is None:
+            options[key] = default
+            updated = True
+
+    if updated:
+        _LOGGER.info(
+            "🔧 Injecting missing planner options for entry %s: %s",
+            entry.entry_id,
+            ", ".join(missing_keys) if missing_keys else "none",
+        )
+        hass.config_entries.async_update_entry(entry, options=options)
+
+
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     """Set up OIG Cloud integration."""
     # OPRAVA: Debug setup telemetrie
@@ -490,6 +526,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info(f"Setting up OIG Cloud entry: {entry.title}")
     _LOGGER.debug(f"Config data keys: {list(entry.data.keys())}")
     _LOGGER.debug(f"Config options keys: {list(entry.options.keys())}")
+
+    # Inject defaults for new planner/autonomy options so legacy setups keep working
+    _ensure_planner_option_defaults(hass, entry)
 
     # MIGRACE 1: enable_spot_prices -> enable_pricing
     if "enable_spot_prices" in entry.options:

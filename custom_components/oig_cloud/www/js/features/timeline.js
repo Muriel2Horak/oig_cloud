@@ -85,12 +85,28 @@ class TimelineDialog {
         this.isOpen = false;
         this.updateInterval = null;
         this.activeTab = 'today'; // Default tab - DNES
+        this.plan = 'hybrid';
         this.cache = {
+            hybrid: this.createEmptyCache(),
+            autonomy: this.createEmptyCache()
+        };
+    }
+
+    createEmptyCache() {
+        return {
             yesterday: null,
             today: null,
             tomorrow: null,
+            detail: null,
             history: null
         };
+    }
+
+    getPlanCache(plan = this.plan) {
+        if (!this.cache[plan]) {
+            this.cache[plan] = this.createEmptyCache();
+        }
+        return this.cache[plan];
     }
 
     /**
@@ -119,7 +135,7 @@ class TimelineDialog {
         console.log('[TimelineDialog] Prefetching all tab data...');
 
         try {
-            await this.loadAllTabsData();
+            await this.loadAllTabsData(false, 'hybrid');
             console.log('[TimelineDialog] Prefetch complete');
         } catch (error) {
             console.warn('[TimelineDialog] Prefetch failed:', error);
@@ -129,18 +145,19 @@ class TimelineDialog {
     /**
      * Load all tabs data in ONE API call (more efficient)
      */
-    async loadAllTabsData(forceRefresh = false) {
-        // Check if we already have all data cached
-        if (!forceRefresh && this.cache.yesterday && this.cache.today && this.cache.tomorrow) {
-            console.log('[TimelineDialog] All tabs already cached');
+    async loadAllTabsData(forceRefresh = false, planOverride = null) {
+        const plan = planOverride || this.plan;
+        const planCache = this.getPlanCache(plan);
+
+        if (!forceRefresh && planCache.yesterday && planCache.today && planCache.tomorrow) {
+            console.log(`[TimelineDialog] All tabs already cached for plan ${plan}`);
             return;
         }
 
-        console.log('[TimelineDialog] Loading ALL tabs data in one call...');
+        console.log(`[TimelineDialog] Loading ALL tabs data for plan ${plan}...`);
 
         try {
-            // Call API WITHOUT tab filter → backend returns all 3 days
-            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs`;
+            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?plan=${plan}`;
             const response = await fetch(apiUrl);
 
             if (!response.ok) {
@@ -153,24 +170,20 @@ class TimelineDialog {
                 throw new Error('No data returned from detail_tabs');
             }
 
-            // Cache each day's data
-            ['yesterday', 'today', 'tomorrow'].forEach(dayType => {
+            ['yesterday', 'today', 'tomorrow', 'history', 'detail'].forEach(dayType => {
                 if (data[dayType]) {
-                    this.cache[dayType] = data[dayType];
-                    console.log(`[TimelineDialog] Cached ${dayType} data:`, this.cache[dayType]);
+                    planCache[dayType] = data[dayType];
+                    console.log(
+                        `[TimelineDialog] Cached ${dayType} data for plan ${plan}:`,
+                        planCache[dayType]
+                    );
                 } else {
-                    console.warn(`[TimelineDialog] No ${dayType} data in response`);
-                    this.cache[dayType] = null;
+                    planCache[dayType] = null;
                 }
             });
-
-            console.log('[TimelineDialog] All tabs loaded and cached');
         } catch (error) {
-            console.error('[TimelineDialog] Failed to load all tabs data:', error);
-            // Clear cache on error
-            this.cache.yesterday = null;
-            this.cache.today = null;
-            this.cache.tomorrow = null;
+            console.error(`[TimelineDialog] Failed to load tabs data for plan ${plan}:`, error);
+            this.cache[plan] = this.createEmptyCache();
         }
     }
 
@@ -184,6 +197,14 @@ class TimelineDialog {
             btn.addEventListener('click', (e) => {
                 const tab = e.currentTarget.dataset.tab;
                 this.switchTab(tab);
+            });
+        });
+
+        const planButtons = this.dialogElement.querySelectorAll('.plan-toggle-btn');
+        planButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const plan = btn.dataset.plan || 'hybrid';
+                this.switchPlan(plan);
             });
         });
 
@@ -204,7 +225,7 @@ class TimelineDialog {
     /**
      * Open dialog and load data
      */
-    async open() {
+    async open(tabName = null, planOverride = null) {
         if (this.isOpen) {
             console.log('[TimelineDialog] Already open');
             return;
@@ -214,10 +235,20 @@ class TimelineDialog {
         this.isOpen = true;
         this.dialogElement.style.display = 'flex';
 
+        if (tabName) {
+            this.activeTab = tabName;
+        }
+
+        if (planOverride && planOverride !== this.plan) {
+            this.plan = planOverride;
+        }
+        this.updatePlanButtons();
+
         // Load all tabs data in ONE API call if not cached
-        if (!this.cache.yesterday || !this.cache.today || !this.cache.tomorrow) {
+        const planCache = this.getPlanCache(this.plan);
+        if (!planCache.yesterday || !planCache.today || !planCache.tomorrow) {
             console.log('[TimelineDialog] Loading missing tabs...');
-            await this.loadAllTabsData();
+            await this.loadAllTabsData(false, this.plan);
         }
 
         // Switch to active tab (this will render + set CSS classes)
@@ -242,9 +273,12 @@ class TimelineDialog {
     /**
      * Load data for specific tab from API
      */
-    async loadTabData(dayType, forceRefresh = false) {
+    async loadTabData(dayType, forceRefresh = false, planOverride = null) {
+        const plan = planOverride || this.plan;
+        const planCache = this.getPlanCache(plan);
+
         // Check cache first (unless forced refresh)
-        if (!forceRefresh && this.cache[dayType]) {
+        if (!forceRefresh && planCache[dayType]) {
             console.log(`[TimelineDialog] Using cached ${dayType} data`);
             return;
         }
@@ -252,7 +286,7 @@ class TimelineDialog {
         console.log(`[TimelineDialog] Loading ${dayType} data...`);
 
         try {
-            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=${dayType}`;
+            const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=${dayType}&plan=${plan}`;
             const response = await fetch(apiUrl);
 
             if (!response.ok) {
@@ -273,19 +307,19 @@ class TimelineDialog {
             }
 
             // Cache the day-specific data
-            this.cache[dayType] = dayData;
-            console.log(`[TimelineDialog] ${dayType} data loaded:`, this.cache[dayType]);
+            planCache[dayType] = dayData;
+            console.log(`[TimelineDialog] ${dayType} data loaded for plan ${plan}:`, planCache[dayType]);
 
             // Extra debug
-            if (this.cache[dayType]?.mode_blocks) {
-                console.log(`[TimelineDialog] ${dayType} mode_blocks count: ${this.cache[dayType].mode_blocks.length}`);
-                if (this.cache[dayType].mode_blocks.length > 0) {
-                    console.log(`[TimelineDialog] First block:`, JSON.stringify(this.cache[dayType].mode_blocks[0], null, 2));
+            if (planCache[dayType]?.mode_blocks) {
+                console.log(`[TimelineDialog] ${dayType} mode_blocks count: ${planCache[dayType].mode_blocks.length}`);
+                if (planCache[dayType].mode_blocks.length > 0) {
+                    console.log(`[TimelineDialog] First block:`, JSON.stringify(planCache[dayType].mode_blocks[0], null, 2));
                 }
             }
         } catch (error) {
             console.error(`[TimelineDialog] Failed to load ${dayType} data:`, error);
-            this.cache[dayType] = null;
+            planCache[dayType] = null;
         }
     }
 
@@ -327,13 +361,36 @@ class TimelineDialog {
         this.renderTab(dayType);
     }
 
+    async switchPlan(plan) {
+        if (!plan || plan === this.plan) {
+            return;
+        }
+        this.plan = plan;
+        this.updatePlanButtons();
+        await this.loadAllTabsData(false, plan);
+        this.renderTab(this.activeTab);
+    }
+
+    updatePlanButtons() {
+        const planButtons = this.dialogElement?.querySelectorAll('.plan-toggle-btn');
+        planButtons?.forEach(btn => {
+            const isActive = btn.dataset.plan === this.plan;
+            if (isActive) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
     /**
      * Render specific tab based on dayType
      */
     renderTab(dayType) {
         console.log(`[TimelineDialog] Rendering ${dayType} tab`);
 
-        const data = this.cache[dayType];
+        const planCache = this.getPlanCache();
+        const data = planCache[dayType];
         const containerId = `${dayType}-timeline-container`;
         const container = document.getElementById(containerId);
 
@@ -2105,7 +2162,7 @@ class TimelineDialog {
             console.log('[TimelineDialog] Auto-refresh...');
 
             // Reload ALL tabs data in one call (force refresh)
-            this.loadAllTabsData(true).then(() => {
+            this.loadAllTabsData(true, this.plan).then(() => {
                 // Re-render active tab with fresh data
                 this.renderTab(this.activeTab);
             });
@@ -2421,7 +2478,11 @@ class TimelineDialog {
     destroy() {
         this.close();
         this.dialogElement = null;
-        this.cache = {};
+        this.cache = {
+            hybrid: this.createEmptyCache(),
+            autonomy: this.createEmptyCache()
+        };
+        this.plan = 'hybrid';
     }
 }
 
@@ -2435,22 +2496,22 @@ function initTimelineDialog() {
 }
 
 // Open dialog (called from Today Plan Tile)
-function openModeTimelineDialog() {
+function openModeTimelineDialog(tabName = null, plan = null) {
     if (!timelineDialogInstance) {
         initTimelineDialog();
     }
-    timelineDialogInstance.open();
+    timelineDialogInstance.open(tabName, plan);
 }
 
 // Alias for openModeTimelineDialog (used by Unified Cost Tile onclick)
-function openTimelineDialog(tabName = null) {
+function openTimelineDialog(tabName = null, plan = null) {
     if (!timelineDialogInstance) {
         initTimelineDialog();
     }
     if (tabName) {
-        timelineDialogInstance.open(tabName);
+        timelineDialogInstance.open(tabName, plan);
     } else {
-        timelineDialogInstance.open();
+        timelineDialogInstance.open(null, plan);
     }
 }
 
@@ -2507,9 +2568,10 @@ async function buildExtendedTimeline() {
             renderTodayPlanTile(todayTileSummary);
         }
 
-        // Update Unified Cost Tile (event-driven refresh)
-        // Load unified_cost_tile from API endpoint
-        await loadUnifiedCostTile();
+        // Update Cost Comparison Tile (event-driven refresh)
+        if (typeof loadCostComparisonTile === 'function') {
+            await loadCostComparisonTile();
+        }
 
     } catch (error) {
         console.error('[Extended Timeline] Error fetching data:', error);

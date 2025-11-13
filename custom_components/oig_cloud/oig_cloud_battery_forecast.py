@@ -246,6 +246,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "⚠️ Precomputed storage will be initialized in async_added_to_hass()"
             )
 
+        # Phase 4.0: Autonomous preview storage (parallel planner)
+        self._autonomy_preview: Optional[Dict[str, Any]] = None
+        self._autonomy_store: Optional[Store] = None
+        if self._hass:
+            self._autonomy_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.autonomy_{self._box_id}",
+            )
+            _LOGGER.debug(
+                f"✅ Initialized Autonomy Storage: oig_cloud.autonomy_{self._box_id}"
+            )
+        else:
+            _LOGGER.debug(
+                "⚠️ Autonomy storage will be initialized in async_added_to_hass()"
+            )
+
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
@@ -271,6 +288,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             _LOGGER.info(
                 f"✅ Retry: Initialized Precomputed Data Storage: oig_cloud.precomputed_data_{self._box_id}"
+            )
+
+        if not self._autonomy_store and self._hass:
+            self._autonomy_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.autonomy_{self._box_id}",
+            )
+            _LOGGER.info(
+                f"✅ Retry: Initialized Autonomy Storage: oig_cloud.autonomy_{self._box_id}"
             )
 
         # Restore data z předchozí instance
@@ -1090,6 +1117,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
             )
             self.async_write_ha_state()
+
+            await self._run_autonomy_preview(
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                target_capacity=target_capacity,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+            )
 
             # PHASE 3.5: Precompute UI data for instant API responses
             # Build timeline_extended + unified_cost_tile and save to storage
@@ -2514,6 +2552,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 baselines=baselines,  # Pass baselines even on early return
             )
 
+        cheap_price_threshold = None
+
         # ECONOMIC CHECK: Target charging makes sense ONLY if it prevents future grid imports
         # If battery doesn't drop below minimum with HOME I → NO economic benefit
         if needs_charging_for_target and not needs_charging_for_minimum:
@@ -2544,7 +2584,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
         else:
             # Cheap hours = bottom X percentile (default 30% = cheapest 30% of hours)
-            CHEAP_PRICE_PERCENTILE = 30  # TODO: Make configurable in config_flow
+            CHEAP_PRICE_PERCENTILE = self._config_entry.options.get(
+                "cheap_window_percentile", 30
+            )
             sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
             percentile_index = int(len(sorted_prices) * CHEAP_PRICE_PERCENTILE / 100)
             cheap_price_threshold = (
@@ -3039,6 +3081,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             efficiency=efficiency,
             **planning_min_kwargs,
         )
+
+        # EXTRA: Cheap-window UPS strategy for conservative HYBRID
+        if (
+            not is_balancing_mode
+            and cheap_price_threshold is not None
+            and self._config_entry.options.get("enable_cheap_window_ups", True)
+        ):
+            added = self._apply_cheap_window_ups(
+                modes=modes,
+                spot_prices=spot_prices,
+                forward_soc_before=forward_soc_before,
+                min_capacity=min_capacity,
+                cheap_price_threshold=cheap_price_threshold,
+            )
+            if added:
+                _LOGGER.info(
+                    f"🟢 Cheap-window UPS strategy applied to {added} intervals "
+                    f"(<= {cheap_price_threshold:.2f} Kč/kWh)"
+                )
 
         return self._build_result(
             modes,
@@ -3552,6 +3613,60 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         selected_indices.sort()
 
         return selected_indices
+
+    def _apply_cheap_window_ups(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        forward_soc_before: Optional[List[Optional[float]]],
+        min_capacity: float,
+        cheap_price_threshold: float,
+    ) -> int:
+        """Force HOME_UPS during cheapest intervals to preserve battery for later peak."""
+
+        max_intervals = self._config_entry.options.get("cheap_window_max_intervals", 20)
+        soc_guard = self._config_entry.options.get(
+            "cheap_window_soc_guard_kwh", 0.5
+        )
+
+        if max_intervals <= 0:
+            return 0
+
+        cheap_indices = [
+            idx
+            for idx, sp in enumerate(spot_prices)
+            if sp.get("price", 999) <= cheap_price_threshold
+        ]
+
+        applied = 0
+        for idx in cheap_indices:
+            if applied >= max_intervals:
+                break
+
+            if idx >= len(modes):
+                continue
+
+            if modes[idx] == CBB_MODE_HOME_UPS:
+                continue
+
+            soc_before = None
+            if (
+                forward_soc_before is not None
+                and 0 <= idx < len(forward_soc_before)
+            ):
+                soc_before = forward_soc_before[idx]
+
+            if soc_before is None:
+                continue
+
+            if soc_before < min_capacity + soc_guard:
+                # Baterie příliš nízko – raději využij baterii než UPS
+                continue
+
+            modes[idx] = CBB_MODE_HOME_UPS
+            applied += 1
+
+        return applied
 
     def _find_cheapest_night_interval_before(
         self,
@@ -6446,6 +6561,346 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except Exception as e:
             _LOGGER.error(f"Failed to precompute UI data: {e}", exc_info=True)
 
+    async def _run_autonomy_preview(
+        self,
+        *,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        target_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> None:
+        """Run autonomous planner preview (no hardware control)."""
+
+        if not self._config_entry.options.get("enable_autonomous_preview", True):
+            self._autonomy_preview = None
+            return
+
+        try:
+            preview = self._calculate_autonomy_plan(
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                target_capacity=target_capacity,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+            )
+
+            self._autonomy_preview = preview
+            await self._archive_autonomy_summary(preview)
+        except Exception as err:
+            self._autonomy_preview = None
+            _LOGGER.error(f"Autonomy preview failed: {err}", exc_info=True)
+
+    def _calculate_autonomy_plan(
+        self,
+        *,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        target_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+    ) -> Dict[str, Any]:
+        """Calculate autonomy preview plan using DP optimization."""
+
+        if not spot_prices:
+            raise ValueError("No spot prices available for autonomy preview")
+
+        physical_min_capacity = max_capacity * 0.20
+        efficiency = self._get_battery_efficiency()
+        home_charge_rate_kw = (
+            self._config_entry.options.get("home_charge_rate", 2.8) or 2.8
+        )
+        home_charge_rate_kwh_15min = home_charge_rate_kw / 4.0
+
+        optimization = self._optimize_autonomy_modes(
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            target_capacity=target_capacity,
+            physical_min_capacity=physical_min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            efficiency=efficiency,
+            home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+        )
+
+        modes = optimization["modes"]
+
+        result = self._build_result(
+            modes=modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            efficiency=efficiency,
+            baselines=None,
+            physical_min_capacity=physical_min_capacity,
+        )
+
+        timeline = result.get("optimal_timeline", [])
+        total_cost = result.get("total_cost", 0.0)
+        day_costs = self._aggregate_cost_by_day(timeline)
+
+        preview = {
+            "timeline": timeline,
+            "modes": modes,
+            "total_cost": total_cost,
+            "day_costs": day_costs,
+            "metadata": {
+                "generated_at": dt_util.now().isoformat(),
+                "plan": "autonomy",
+            },
+        }
+
+        return preview
+
+    def _optimize_autonomy_modes(
+        self,
+        *,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        target_capacity: float,
+        physical_min_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        efficiency: float,
+        home_charge_rate_kwh_15min: float,
+    ) -> Dict[str, Any]:
+        """Dynamic programming optimizer exploring all CBB modes."""
+
+        import math
+
+        n = len(spot_prices)
+        export_lookup = {
+            ep.get("time"): ep.get("price", 0.0) for ep in export_prices if ep.get("time")
+        }
+
+        solar_series = []
+        for sp in spot_prices:
+            try:
+                timestamp = datetime.fromisoformat(sp["time"])
+                if timestamp.tzinfo is None:
+                    timestamp = dt_util.as_local(timestamp)
+                solar_series.append(
+                    self._get_solar_for_timestamp(timestamp, solar_forecast)
+                )
+            except Exception:
+                solar_series.append(0.0)
+
+        soc_step = max(
+            0.25, self._config_entry.options.get("autonomy_soc_step_kwh", 0.5)
+        )
+        levels = max(
+            1,
+            int(math.ceil((max_capacity - physical_min_capacity) / soc_step)) + 1,
+        )
+        soc_levels = [
+            min(max_capacity, physical_min_capacity + i * soc_step)
+            for i in range(levels)
+        ]
+
+        def soc_to_index(value: float) -> int:
+            relative = (value - physical_min_capacity) / soc_step
+            idx = int(round(relative))
+            return max(0, min(levels - 1, idx))
+
+        INF = 10**12
+        dp = [[INF] * levels for _ in range(n + 1)]
+        choice: List[List[Optional[Tuple[int, int]]]] = [
+            [None] * levels for _ in range(n)
+        ]
+
+        avg_price = (
+            sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
+            if spot_prices
+            else 4.0
+        )
+        target_penalty = (
+            self._config_entry.options.get("autonomy_target_penalty", 3.0) * avg_price
+        )
+        min_violation_penalty = (
+            self._config_entry.options.get("autonomy_min_penalty", 15.0) * avg_price
+        )
+        export_penalty_multiplier = self._config_entry.options.get(
+            "autonomy_negative_export_penalty", 50.0
+        )
+
+        for s_idx, soc in enumerate(soc_levels):
+            deficit = max(0.0, target_capacity - soc)
+            dp[n][s_idx] = deficit * target_penalty
+
+        for i in range(n - 1, -1, -1):
+            price = spot_prices[i].get("price", 0.0)
+            export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
+            solar_kwh = solar_series[i] if i < len(solar_series) else 0.0
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            for s_idx, soc in enumerate(soc_levels):
+                best_cost = INF
+                best_choice = None
+
+                for mode in (
+                    CBB_MODE_HOME_I,
+                    CBB_MODE_HOME_II,
+                    CBB_MODE_HOME_III,
+                    CBB_MODE_HOME_UPS,
+                ):
+                    try:
+                        interval = self._simulate_interval(
+                            mode=mode,
+                            solar_kwh=solar_kwh,
+                            load_kwh=load_kwh,
+                            battery_soc_kwh=soc,
+                            capacity_kwh=max_capacity,
+                            hw_min_capacity_kwh=physical_min_capacity,
+                            spot_price_czk=price,
+                            export_price_czk=export_price,
+                            charge_efficiency=efficiency,
+                            discharge_efficiency=efficiency,
+                            home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                        )
+                    except Exception:
+                        continue
+
+                    new_soc = interval.get("new_soc_kwh", soc)
+                    if new_soc < physical_min_capacity - 0.05:
+                        continue
+
+                    penalty = 0.0
+                    if new_soc < min_capacity - 0.05:
+                        penalty += (min_capacity - new_soc) * min_violation_penalty
+
+                    if (
+                        export_price <= 0
+                        and interval.get("grid_export_kwh", 0) > 0.001
+                    ):
+                        penalty += (
+                            export_penalty_multiplier
+                            * interval.get("grid_export_kwh", 0)
+                        )
+
+                    cost = interval.get("net_cost", 0.0) + penalty
+                    next_idx = soc_to_index(new_soc)
+                    future_cost = dp[i + 1][next_idx]
+
+                    if future_cost >= INF:
+                        continue
+
+                    total = cost + future_cost
+                    if total < best_cost:
+                        best_cost = total
+                        best_choice = (mode, next_idx)
+
+                if best_choice:
+                    dp[i][s_idx] = best_cost
+                    choice[i][s_idx] = best_choice
+
+        start_idx = soc_to_index(current_capacity)
+        if dp[0][start_idx] >= INF:
+            raise RuntimeError("Autonomy DP failed to find feasible plan")
+
+        modes: List[int] = []
+        soc_idx = start_idx
+        for i in range(n):
+            selection = choice[i][soc_idx]
+            if not selection:
+                modes.append(CBB_MODE_HOME_I)
+            else:
+                mode, next_idx = selection
+                modes.append(mode)
+                soc_idx = next_idx
+
+        return {"modes": modes, "dp_cost": dp[0][start_idx]}
+
+    async def _archive_autonomy_summary(self, preview: Dict[str, Any]) -> None:
+        """Store daily cost summary for autonomy preview (for yesterday detail)."""
+
+        if not self._autonomy_store:
+            return
+
+        day_costs = preview.get("day_costs", {})
+        if not day_costs:
+            return
+
+        try:
+            data = await self._autonomy_store.async_load() or {}
+            daily = data.get("daily", {})
+
+            for day_str, cost in day_costs.items():
+                daily[day_str] = {
+                    "plan_total_cost": round(cost, 2),
+                    "saved_at": dt_util.now().isoformat(),
+                }
+
+            # Cleanup - keep last 14 days
+            if len(daily) > 14:
+                sorted_days = sorted(daily.keys())
+                for old_day in sorted_days[:-14]:
+                    daily.pop(old_day, None)
+
+            data["daily"] = daily
+            await self._autonomy_store.async_save(data)
+        except Exception as err:
+            _LOGGER.warning(f"Failed to archive autonomy summary: {err}")
+
+    def _aggregate_cost_by_day(
+        self, timeline: List[Dict[str, Any]]
+    ) -> Dict[str, float]:
+        """Aggregate planned cost by day."""
+
+        day_costs: Dict[str, float] = {}
+        for interval in timeline:
+            ts = interval.get("time")
+            if not ts:
+                continue
+            try:
+                day = datetime.fromisoformat(ts).date().isoformat()
+            except Exception:
+                continue
+            day_costs.setdefault(day, 0.0)
+            day_costs[day] += interval.get("net_cost", 0.0)
+        return day_costs
+
+    def _get_day_cost_from_timeline(
+        self, timeline: List[Dict[str, Any]], target_day: date
+    ) -> Optional[float]:
+        """Sum net_cost for specific date."""
+
+        if not timeline:
+            return None
+
+        total = 0.0
+        found = False
+        for interval in timeline:
+            ts = interval.get("time")
+            if not ts:
+                continue
+            try:
+                interval_day = datetime.fromisoformat(ts).date()
+            except Exception:
+                continue
+            if interval_day == target_day:
+                total += interval.get("net_cost", 0.0)
+                found = True
+        return total if found else None
+
     async def build_timeline_extended(self) -> Dict[str, Any]:
         """
         Postavit rozšířenou timeline strukturu pro API.
@@ -6494,66 +6949,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "today_tile_summary": today_tile_summary,  # ← NOVÉ pro dlaždici
         }
 
-    async def build_detail_tabs(self, tab: Optional[str] = None) -> Dict[str, Any]:
+    async def build_detail_tabs(
+        self, tab: Optional[str] = None, plan: str = "hybrid"
+    ) -> Dict[str, Any]:
         """
-        Build Detail Tabs data - agregace po CBB mode blocích.
-
-        Phase 3.0: Detail Tabs API
-        - Reuse build_timeline_extended() pro raw data
-        - Agreguje intervaly podle CBB módů pomocí _group_intervals_by_mode()
-        - Přidává mode_match detection (historical vs planned mode)
-        - Počítá adherence % (jak moc se držíme plánu)
-
-        FÁZE 5: Cache s TTL
-        - yesterday: cache bez TTL (historická data se nemění)
-        - today completed blocks: cache bez TTL (minulé intervaly se nemění)
-        - today planned blocks: cache 60s TTL (plán se může měnit)
-        - tomorrow: cache 60s TTL (plán se může měnit)
-
-        Args:
-            tab: Optional filter - "yesterday" | "today" | "tomorrow"
-                 None = vrátí všechny 3 taby
-
-        Returns:
-            Dict s mode_blocks pro každý tab:
-            {
-                "yesterday": {
-                    "date": "2025-11-05",
-                    "mode_blocks": [
-                        {
-                            "mode_historical": "HOME I",
-                            "mode_planned": "HOME I",
-                            "mode_match": true,
-                            "status": "completed",
-                            "start_time": "00:00",
-                            "end_time": "02:30",
-                            "interval_count": 10,
-                            "duration_hours": 2.5,
-                            "cost_historical": 12.50,
-                            "cost_planned": 12.00,
-                            "cost_delta": 0.50,
-                            "battery_soc_start": 50.0,
-                            "battery_soc_end": 45.2,
-                            "solar_total_kwh": 0.0,
-                            "consumption_total_kwh": 1.8,
-                            "grid_import_total_kwh": 1.8,
-                            "grid_export_total_kwh": 0.0,
-                            "adherence_pct": 100
-                        }
-                    ],
-                    "summary": {
-                        "total_cost": 28.50,
-                        "overall_adherence": 65,
-                        "mode_switches": 8
-                    }
-                },
-                "today": {...},
-                "tomorrow": {...}
-            }
+        Build Detail Tabs data (aggregated mode blocks).
         """
-        # FÁZE 5: Check cache first
-        now = dt_util.now()
-        tabs_to_process = []
+        plan_normalized = (plan or "hybrid").lower()
+        if plan_normalized != "hybrid":
+            hybrid_tabs = await self._build_hybrid_detail_tabs(tab=tab)
+            return await self._build_autonomy_detail_tabs(tab=tab, hybrid_tabs=hybrid_tabs)
+
+        return await self._build_hybrid_detail_tabs(tab=tab)
+
+    async def _build_hybrid_detail_tabs(
+        self, tab: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Internal helper that builds hybrid detail tabs."""
+
         if tab is None:
             tabs_to_process = ["yesterday", "today", "tomorrow"]
         elif tab in ["yesterday", "today", "tomorrow"]:
@@ -6562,20 +6975,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning(f"Invalid tab requested: {tab}, returning all tabs")
             tabs_to_process = ["yesterday", "today", "tomorrow"]
 
-        result = {}
-
-        # 1. Získat raw timeline data
-        # PHASE 3.0: Async call to load Storage Helper data
+        result: Dict[str, Any] = {}
         timeline_extended = await self.build_timeline_extended()
 
-        # 2. Pro každý tab - zpracovat intervaly na mode bloky
         for tab_name in tabs_to_process:
             tab_data = timeline_extended.get(tab_name, {})
             intervals = tab_data.get("intervals", [])
             date_str = tab_data.get("date", "")
 
             if not intervals:
-                # Prázdný tab - žádná data
                 tab_result = {
                     "date": date_str,
                     "mode_blocks": [],
@@ -6586,12 +6994,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     },
                 }
             else:
-                # 3. Agregovat intervaly podle módů
                 mode_blocks = self._build_mode_blocks_for_tab(intervals, tab_name)
-
-                # 4. Spočítat summary
                 summary = self._calculate_tab_summary(mode_blocks, intervals)
-
                 tab_result = {
                     "date": date_str,
                     "mode_blocks": mode_blocks,
@@ -6601,6 +7005,170 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             result[tab_name] = tab_result
 
         return result
+
+    async def _build_autonomy_detail_tabs(
+        self, tab: Optional[str] = None, hybrid_tabs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Build detail tabs for autonomy preview merged with hybrid actuals."""
+
+        preview = self._autonomy_preview or {}
+        timeline = preview.get("timeline", [])
+
+        today = dt_util.now().date()
+        yesterday = today - timedelta(days=1)
+        tomorrow = today + timedelta(days=1)
+
+        if tab is None:
+            tabs_to_process: List[str] = ["yesterday", "today", "tomorrow"]
+        else:
+            tabs_to_process = [tab]
+
+        def build_day(day_obj: date) -> Dict[str, Any]:
+            day_str = day_obj.isoformat()
+            intervals = [
+                iv for iv in timeline if iv.get("time", "").startswith(day_str)
+            ]
+            if not intervals:
+                return {
+                    "date": day_str,
+                    "mode_blocks": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                    },
+                }
+
+            mode_blocks = self._build_autonomy_mode_blocks(intervals)
+            total_cost = sum(block.get("cost_planned", 0.0) for block in mode_blocks)
+            summary = {
+                "total_cost": round(total_cost, 2),
+                "overall_adherence": 100,
+                "mode_switches": max(0, len(mode_blocks) - 1),
+            }
+
+            return {"date": day_str, "mode_blocks": mode_blocks, "summary": summary}
+
+        mapping = {
+            "yesterday": build_day(yesterday),
+            "today": build_day(today),
+            "tomorrow": build_day(tomorrow),
+        }
+
+        result: Dict[str, Any] = {}
+        hybrid_tabs = hybrid_tabs or {}
+
+        for key in tabs_to_process:
+            hybrid_tab = hybrid_tabs.get(key)
+            auto_tab = mapping.get(key)
+
+            if key == "today":
+                actual_blocks = []
+                if hybrid_tab:
+                    actual_blocks = [
+                        block
+                        for block in hybrid_tab.get("mode_blocks", [])
+                        if block.get("status") != "planned"
+                    ]
+                planned_blocks = auto_tab.get("mode_blocks", []) if auto_tab else []
+                summary = auto_tab.get("summary") or hybrid_tab.get("summary") or {
+                    "total_cost": 0.0,
+                    "overall_adherence": 100,
+                    "mode_switches": 0,
+                }
+                date_value = hybrid_tab.get("date") if hybrid_tab else auto_tab.get("date", "")
+
+                result[key] = {
+                    "date": date_value,
+                    "mode_blocks": actual_blocks + planned_blocks,
+                    "summary": summary,
+                }
+            elif key == "yesterday":
+                result[key] = hybrid_tab or auto_tab or {
+                    "date": yesterday.isoformat(),
+                    "mode_blocks": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                    },
+                }
+            elif key == "tomorrow":
+                result[key] = auto_tab or hybrid_tab or {
+                    "date": tomorrow.isoformat(),
+                    "mode_blocks": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                    },
+                }
+
+        return result
+
+    def _build_autonomy_mode_blocks(
+        self, intervals: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Aggregate intervals into planned mode blocks for autonomy preview."""
+
+        if not intervals:
+            return []
+
+        blocks = []
+        current_block: Dict[str, Any] = {}
+        block_intervals: List[Dict[str, Any]] = []
+
+        def flush_block():
+            if not block_intervals:
+                return
+            start_ts = block_intervals[0].get("time")
+            end_ts = block_intervals[-1].get("time")
+            cost = sum(iv.get("net_cost", 0.0) for iv in block_intervals)
+            solar_total = sum(iv.get("solar_kwh", 0.0) for iv in block_intervals)
+            load_total = sum(iv.get("load_kwh", 0.0) for iv in block_intervals)
+            import_total = sum(iv.get("grid_import", 0.0) for iv in block_intervals)
+            export_total = sum(iv.get("grid_export", 0.0) for iv in block_intervals)
+
+            start_label = self._format_time_label(start_ts)
+            end_label = self._format_time_label(end_ts)
+
+            block = {
+                "mode_historical": current_block["mode_name"],
+                "mode_planned": current_block["mode_name"],
+                "mode_match": True,
+                "status": "planned",
+                "start_time": start_label,
+                "end_time": end_label,
+                "interval_count": len(block_intervals),
+                "duration_hours": round(len(block_intervals) * 0.25, 2),
+                "cost_planned": round(cost, 2),
+                "battery_soc_start": block_intervals[0].get("battery_soc"),
+                "battery_soc_end": block_intervals[-1].get("battery_soc"),
+                "solar_total_kwh": round(solar_total, 3),
+                "consumption_total_kwh": round(load_total, 3),
+                "grid_import_total_kwh": round(import_total, 3),
+                "grid_export_total_kwh": round(export_total, 3),
+            }
+            blocks.append(block)
+
+        for interval in intervals:
+            mode_name = interval.get("mode_name") or CBB_MODE_NAMES.get(
+                interval.get("mode"), "Unknown"
+            )
+            if not current_block:
+                current_block = {"mode_name": mode_name}
+                block_intervals = [interval]
+                continue
+
+            if mode_name == current_block["mode_name"]:
+                block_intervals.append(interval)
+            else:
+                flush_block()
+                current_block = {"mode_name": mode_name}
+                block_intervals = [interval]
+
+        flush_block()
+        return blocks
 
     def _build_mode_blocks_for_tab(
         self, intervals: List[Dict[str, Any]], tab_name: str
@@ -6804,6 +7372,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             mode_blocks.append(block)
 
         return mode_blocks
+
+    def _format_time_label(self, iso_ts: Optional[str]) -> str:
+        """Format ISO timestamp to local HH:MM string."""
+        if not iso_ts:
+            return "--:--"
+        try:
+            ts = iso_ts
+            if iso_ts.endswith("Z"):
+                ts = iso_ts.replace("Z", "+00:00")
+            dt_obj = datetime.fromisoformat(ts)
+            if dt_obj.tzinfo is None:
+                dt_obj = dt_util.as_local(dt_obj)
+            else:
+                dt_obj = dt_obj.astimezone(dt_util.DEFAULT_TIME_ZONE)
+            return dt_obj.strftime("%H:%M")
+        except Exception:
+            return iso_ts
 
     def _determine_block_status(
         self,
@@ -7091,6 +7676,72 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         _LOGGER.info(f"Unified Cost Tile: Built in {build_duration:.2f}s")
 
         return result
+
+    async def build_autonomy_cost_tile(self) -> Dict[str, Any]:
+        """Build cost tile data for autonomous preview."""
+
+        now = dt_util.now()
+        today = now.date()
+        tomorrow = today + timedelta(days=1)
+        yesterday = today - timedelta(days=1)
+
+        preview = self._autonomy_preview or {}
+        timeline = preview.get("timeline", [])
+        day_costs_preview = preview.get("day_costs", {})
+
+        store_daily: Dict[str, Any] = {}
+        if self._autonomy_store:
+            try:
+                store_data = await self._autonomy_store.async_load() or {}
+                store_daily = store_data.get("daily", {})
+            except Exception as err:
+                _LOGGER.warning(f"Autonomy store load failed: {err}")
+
+        def build_day_entry(day_obj: date) -> Dict[str, Any]:
+            day_str = day_obj.isoformat()
+            planned_cost = day_costs_preview.get(day_str)
+            if planned_cost is None:
+                planned_cost = (
+                    store_daily.get(day_str, {}).get("plan_total_cost")
+                    if store_daily.get(day_str)
+                    else None
+                )
+
+            hybrid_cost = self._get_day_cost_from_timeline(
+                self._timeline_data, day_obj
+            )
+
+            entry = {
+                "date": day_str,
+                "plan_total_cost": round(planned_cost, 2)
+                if planned_cost is not None
+                else None,
+                "hybrid_plan_total": round(hybrid_cost, 2)
+                if hybrid_cost is not None
+                else None,
+            }
+
+            if (
+                entry["plan_total_cost"] is not None
+                and entry["hybrid_plan_total"] is not None
+            ):
+                entry["delta_vs_hybrid"] = round(
+                    entry["plan_total_cost"] - entry["hybrid_plan_total"], 2
+                )
+
+            return entry
+
+        tile = {
+            "today": build_day_entry(today),
+            "tomorrow": build_day_entry(tomorrow),
+            "yesterday": build_day_entry(yesterday),
+            "metadata": {
+                "last_update": now.isoformat(),
+                "plan": "autonomy",
+            },
+        }
+
+        return tile
 
     def _group_intervals_by_mode(
         self, intervals: List[Dict[str, Any]], data_type: str = "both"
@@ -12356,6 +13007,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """Vrátí BASELINE timeline (bez plánu) pro simulace a plánování."""
         if hasattr(self, "_baseline_timeline"):
             return self._baseline_timeline
+        return []
+
+    def get_autonomy_preview(self) -> Optional[Dict[str, Any]]:
+        """Return latest autonomous preview summary."""
+        return self._autonomy_preview
+
+    def get_autonomy_timeline(self) -> List[Dict[str, Any]]:
+        """Return autonomous timeline for API consumers."""
+        if self._autonomy_preview:
+            return self._autonomy_preview.get("timeline", [])
         return []
 
     # ========================================================================

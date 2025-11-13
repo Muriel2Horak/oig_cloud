@@ -76,7 +76,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
+        mode = request.query.get("mode", "hybrid").lower()
         timeline_type = request.query.get("type", "both")
+        plan = request.query.get("plan", "hybrid").lower()
 
         try:
             # Find sensor entity
@@ -99,6 +101,36 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                 return web.json_response(
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
+
+            if plan == "autonomy":
+                autonomy_timeline = []
+                if hasattr(entity_obj, "get_autonomy_timeline"):
+                    autonomy_timeline = entity_obj.get_autonomy_timeline()
+                if not autonomy_timeline:
+                    return web.json_response(
+                        {"error": "Autonomy preview not available"}, status=404
+                    )
+
+                last_update = (
+                    (entity_obj._autonomy_preview or {})
+                    .get("metadata", {})
+                    .get("generated_at")
+                )
+
+                response_data = {
+                    "plan": "autonomy",
+                    "timeline": autonomy_timeline,
+                    "metadata": {
+                        "box_id": box_id,
+                        "last_update": last_update,
+                        "points_count": len(autonomy_timeline),
+                        "size_kb": round(
+                            sys.getsizeof(str(autonomy_timeline)) / 1024, 1
+                        ),
+                    },
+                }
+
+                return web.json_response(response_data)
 
             # Get timeline data from sensor's internal variables
             active_timeline = getattr(entity_obj, "_timeline_data", [])
@@ -548,6 +580,8 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
+        mode = request.query.get("plan") or request.query.get("mode", "hybrid")
+        mode = (mode or "hybrid").lower()
 
         try:
             # Find sensor entity
@@ -570,55 +604,73 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
-            # PHASE 3.5: Read from precomputed storage for instant response
-            if (
-                hasattr(entity_obj, "_precomputed_store")
-                and entity_obj._precomputed_store
-            ):
-                try:
-                    precomputed_data = await entity_obj._precomputed_store.async_load()
-                    if precomputed_data and "unified_cost_tile" in precomputed_data:
-                        tile_data = precomputed_data["unified_cost_tile"]
-
-                        _LOGGER.debug(
-                            f"API: Serving unified cost tile from precomputed storage for {box_id}, "
-                            f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč, "
-                            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
-                            if precomputed_data.get("last_update")
-                            else "unknown age"
+            if mode == "autonomy":
+                if hasattr(entity_obj, "build_autonomy_cost_tile"):
+                    try:
+                        tile_data = await entity_obj.build_autonomy_cost_tile()
+                    except Exception as build_error:
+                        _LOGGER.error(
+                            f"API: Error in build_autonomy_cost_tile() for {box_id}: {build_error}",
+                            exc_info=True,
                         )
-
-                        return web.json_response(tile_data)
-                    else:
-                        _LOGGER.warning(
-                            f"No precomputed unified_cost_tile data found for {box_id}, falling back to live build"
+                        return web.json_response(
+                            {"error": f"Failed to build autonomy tile: {str(build_error)}"},
+                            status=500,
                         )
-                except Exception as storage_error:
-                    _LOGGER.warning(
-                        f"Failed to read precomputed data: {storage_error}, falling back to live build"
-                    )
-
-            # Fallback: Build unified cost tile on-demand (old behavior)
-            if hasattr(entity_obj, "build_unified_cost_tile"):
-                try:
-                    _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
-                    tile_data = await entity_obj.build_unified_cost_tile()
-                    _LOGGER.info(
-                        f"API: Unified cost tile built successfully: {tile_data.keys()}"
-                    )
-                except Exception as build_error:
-                    _LOGGER.error(
-                        f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
-                        exc_info=True,
-                    )
+                else:
                     return web.json_response(
-                        {"error": f"Failed to build tile: {str(build_error)}"},
-                        status=500,
+                        {"error": "Autonomy cost tile not supported"}, status=500
                     )
             else:
-                return web.json_response(
-                    {"error": "build_unified_cost_tile method not found"}, status=500
-                )
+                # PHASE 3.5: Read from precomputed storage for instant response
+                if (
+                    hasattr(entity_obj, "_precomputed_store")
+                    and entity_obj._precomputed_store
+                ):
+                    try:
+                        precomputed_data = await entity_obj._precomputed_store.async_load()
+                        if precomputed_data and "unified_cost_tile" in precomputed_data:
+                            tile_data = precomputed_data["unified_cost_tile"]
+
+                            _LOGGER.debug(
+                                f"API: Serving unified cost tile from precomputed storage for {box_id}, "
+                                f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč, "
+                                f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
+                                if precomputed_data.get("last_update")
+                                else "unknown age"
+                            )
+
+                            return web.json_response(tile_data)
+                        else:
+                            _LOGGER.warning(
+                                f"No precomputed unified_cost_tile data found for {box_id}, falling back to live build"
+                            )
+                    except Exception as storage_error:
+                        _LOGGER.warning(
+                            f"Failed to read precomputed data: {storage_error}, falling back to live build"
+                        )
+
+                # Fallback: Build unified cost tile on-demand (old behavior)
+                if hasattr(entity_obj, "build_unified_cost_tile"):
+                    try:
+                        _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
+                        tile_data = await entity_obj.build_unified_cost_tile()
+                        _LOGGER.info(
+                            f"API: Unified cost tile built successfully: {tile_data.keys()}"
+                        )
+                    except Exception as build_error:
+                        _LOGGER.error(
+                            f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
+                            exc_info=True,
+                        )
+                        return web.json_response(
+                            {"error": f"Failed to build tile: {str(build_error)}"},
+                            status=500,
+                        )
+                else:
+                    return web.json_response(
+                        {"error": "build_unified_cost_tile method not found"}, status=500
+                    )
 
             _LOGGER.debug(
                 f"API: Serving unified cost tile for {box_id}, "
@@ -693,6 +745,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
         """
         hass: HomeAssistant = request.app["hass"]
         tab = request.query.get("tab", None)
+        plan = request.query.get("plan", "hybrid").lower()
 
         try:
             # Find sensor entity
@@ -718,7 +771,8 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
             # PHASE 3.5: Read from precomputed storage for instant response
             if (
-                hasattr(entity_obj, "_precomputed_store")
+                plan == "hybrid"
+                and hasattr(entity_obj, "_precomputed_store")
                 and entity_obj._precomputed_store
             ):
                 try:
@@ -758,7 +812,9 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             # Fallback: Build detail tabs on-demand (old behavior)
             if hasattr(entity_obj, "build_detail_tabs"):
                 try:
-                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab)
+                    detail_tabs = await entity_obj.build_detail_tabs(
+                        tab=tab, plan=plan
+                    )
                 except Exception as build_error:
                     _LOGGER.error(
                         f"API: Error in build_detail_tabs() for {box_id}: {build_error}",

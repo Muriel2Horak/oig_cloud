@@ -37,6 +37,7 @@ class DetailTabsDialog {
         this.dialogElement = null;
         this.isOpen = false;
         this.activeTab = 'today'; // Default tab - DNES
+        this.plan = 'hybrid';
         this.cache = {
             yesterday: null,
             today: null,
@@ -80,7 +81,7 @@ class DetailTabsDialog {
     /**
      * Open dialog with specific tab
      */
-    async open(tab = 'today') {
+    async open(tab = 'today', plan = 'hybrid') {
         if (!this.dialogElement) {
             console.error('[DetailTabs] Dialog not initialized');
             return;
@@ -88,6 +89,7 @@ class DetailTabsDialog {
 
         this.isOpen = true;
         this.activeTab = tab;
+        this.plan = plan || 'hybrid';
         this.dialogElement.style.display = 'block';
 
         // Fetch data
@@ -101,7 +103,7 @@ class DetailTabsDialog {
             this.startAutoRefresh();
         }
 
-        console.log(`[DetailTabs] Dialog opened with ${tab} tab`);
+        console.log(`[DetailTabs] Dialog opened with ${tab} tab (${this.plan})`);
     }
 
     /**
@@ -149,7 +151,15 @@ class DetailTabsDialog {
      */
     async fetchData() {
         try {
-            const apiUrl = `/api/oig_cloud/battery_forecast/${this.boxId}/detail_tabs`;
+            const params = [];
+            if (this.plan) {
+                params.push(`plan=${this.plan}`);
+            }
+            if (this.activeTab) {
+                params.push(`tab=${this.activeTab}`);
+            }
+            const query = params.length ? `?${params.join('&')}` : '';
+            const apiUrl = `/api/oig_cloud/battery_forecast/${this.boxId}/detail_tabs${query}`;
             console.log(`[DetailTabs] Fetching data from ${apiUrl}`);
 
             const response = await fetch(apiUrl);
@@ -159,11 +169,12 @@ class DetailTabsDialog {
 
             const data = await response.json();
 
-            // Store in cache
-            this.cache.yesterday = data.yesterday || null;
-            this.cache.today = data.today || null;
-            this.cache.tomorrow = data.tomorrow || null;
-            this.cache.lastUpdate = new Date();
+            this.cache = {
+                yesterday: data.yesterday || null,
+                today: data.today || null,
+                tomorrow: data.tomorrow || null,
+                lastUpdate: new Date()
+            };
 
             console.log('[DetailTabs] Data fetched:', {
                 yesterday: this.cache.yesterday?.mode_blocks?.length || 0,
@@ -380,11 +391,13 @@ class DetailTabsDialog {
                ${costDeltaHtml}`
             : `<span class="cost-actual">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>`;
 
+        const timeRange = this.formatTimeRange(start_time, end_time);
+
         return `
             <div class="mode-block ${matchClass}" data-index="${index}">
                 <div class="block-header">
                     <div class="block-time">
-                        ${statusIcon} <strong>${start_time} - ${end_time}</strong>
+                        ${statusIcon} <strong>${timeRange}</strong>
                         <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
                     </div>
                     <div class="block-match ${matchClass}">
@@ -431,6 +444,27 @@ class DetailTabsDialog {
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Format ISO timestamps into local HH:MM range (cs-CZ)
+     */
+    formatTimeRange(startIso, endIso) {
+        try {
+            const fmt = new Intl.DateTimeFormat('cs-CZ', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            const startDate = new Date(startIso);
+            const endDate = new Date(endIso);
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                return `${startIso} - ${endIso}`;
+            }
+            return `${fmt.format(startDate)} – ${fmt.format(endDate)}`;
+        } catch (err) {
+            console.warn('[DetailTabs] Failed to format time range', err);
+            return `${startIso} - ${endIso}`;
+        }
     }
 
     /**
@@ -522,9 +556,9 @@ function initDetailTabsDialog(boxId) {
 /**
  * Open Detail Tabs Dialog
  */
-function openDetailTabsDialog(tab = 'today') {
+function openDetailTabsDialog(tab = 'today', plan = 'hybrid') {
     if (window.DetailTabsDialog) {
-        window.DetailTabsDialog.open(tab);
+        window.DetailTabsDialog.open(tab, plan);
     } else {
         console.error('[DetailTabs] Dialog not initialized. Call initDetailTabsDialog() first.');
     }

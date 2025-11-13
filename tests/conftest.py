@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock
 from typing import Dict, Any, Optional
 import sys
+import types
 from datetime import datetime, timedelta
 
 # NOVÉ: Mock homeassistant modules before they are imported
@@ -11,20 +12,132 @@ mock_modules = [
     "homeassistant.config_entries",
     "homeassistant.const",
     "homeassistant.exceptions",
-    "homeassistant.helpers",
     "homeassistant.helpers.device_registry",
     "homeassistant.helpers.entity_registry",
-    "homeassistant.helpers.update_coordinator",
     "homeassistant.helpers.entity",
     "homeassistant.helpers.entity_platform",
-    "homeassistant.components.sensor",
     "homeassistant.util",
     "homeassistant.util.dt",
+    "aiohttp",
 ]
 
 for module in mock_modules:
     if module not in sys.modules:
         sys.modules[module] = MagicMock()
+
+
+def _create_module(name: str) -> types.ModuleType:
+    module = types.ModuleType(name)
+    module.__file__ = f"{name}.py"
+    return module
+
+
+# homeassistant.const – EntityCategory placeholder
+const_module = _create_module("homeassistant.const")
+
+
+class EntityCategory:
+    CONFIG = "config"
+    DIAGNOSTIC = "diagnostic"
+
+
+const_module.EntityCategory = EntityCategory
+const_module.CONF_PASSWORD = "password"
+const_module.CONF_USERNAME = "username"
+class Platform:
+    SENSOR = "sensor"
+    BINARY_SENSOR = "binary_sensor"
+
+const_module.Platform = Platform
+sys.modules["homeassistant.const"] = const_module
+
+# homeassistant.helpers package + storage/restore_state submodules
+helpers_module = _create_module("homeassistant.helpers")
+helpers_module.__path__ = []
+sys.modules["homeassistant.helpers"] = helpers_module
+
+storage_module = _create_module("homeassistant.helpers.storage")
+
+
+class Store:
+    def __init__(self, hass: Any, version: int, key: str) -> None:
+        self.hass = hass
+        self.version = version
+        self.key = key
+        self._data: Optional[Dict[str, Any]] = None
+
+    async def async_load(self) -> Optional[Dict[str, Any]]:
+        return self._data
+
+    async def async_save(self, data: Dict[str, Any]) -> None:
+        self._data = data
+
+
+storage_module.Store = Store
+sys.modules["homeassistant.helpers.storage"] = storage_module
+helpers_module.storage = storage_module
+
+aiohttp_client_module = _create_module("homeassistant.helpers.aiohttp_client")
+
+async def async_get_clientsession(hass: Any) -> Any:
+    return MagicMock()
+
+aiohttp_client_module.async_get_clientsession = async_get_clientsession
+sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client_module
+helpers_module.aiohttp_client = aiohttp_client_module
+
+restore_state_module = _create_module("homeassistant.helpers.restore_state")
+
+
+class RestoreEntity:
+    """Minimal HA RestoreEntity placeholder."""
+
+    async def async_added_to_hass(self) -> None:
+        return None
+
+
+restore_state_module.RestoreEntity = RestoreEntity
+sys.modules["homeassistant.helpers.restore_state"] = restore_state_module
+helpers_module.restore_state = restore_state_module
+
+# homeassistant.components.sensor placeholders
+sensor_module = _create_module("homeassistant.components.sensor")
+
+
+class SensorEntity:
+    """Basic SensorEntity stand-in."""
+
+    def __init__(self, coordinator: Optional[Any] = None) -> None:
+        self.coordinator = coordinator
+
+
+class SensorDeviceClass:
+    ENERGY_STORAGE = "energy_storage"
+
+
+class SensorStateClass:
+    TOTAL_INCREASING = "total_increasing"
+
+
+sensor_module.SensorEntity = SensorEntity
+sensor_module.SensorDeviceClass = SensorDeviceClass
+sensor_module.SensorStateClass = SensorStateClass
+sys.modules["homeassistant.components.sensor"] = sensor_module
+
+# homeassistant.helpers.update_coordinator placeholders
+helpers_update_module = _create_module("homeassistant.helpers.update_coordinator")
+helpers_update_module.__path__ = []
+sys.modules["homeassistant.helpers.update_coordinator"] = helpers_update_module
+
+
+class CoordinatorEntity:
+    """Basic CoordinatorEntity placeholder."""
+
+    def __init__(self, coordinator: Optional[Any] = None) -> None:
+        self.coordinator = coordinator
+
+
+helpers_update_module.CoordinatorEntity = CoordinatorEntity
 
 # NOVÉ: Mock specific classes that are commonly used
 sys.modules["homeassistant.core"].HomeAssistant = Mock
@@ -60,9 +173,8 @@ class MockDataUpdateCoordinator:
         pass
 
 
-sys.modules["homeassistant.helpers.update_coordinator"].DataUpdateCoordinator = (
-    MockDataUpdateCoordinator
-)
+helpers_update_module.DataUpdateCoordinator = MockDataUpdateCoordinator
+helpers_update_module.UpdateFailed = Exception
 
 # NOVÉ: Mock datetime utilities
 sys.modules["homeassistant.util.dt"].now = lambda: datetime.now()

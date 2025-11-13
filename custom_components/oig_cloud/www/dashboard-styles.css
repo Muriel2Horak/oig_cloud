@@ -4269,6 +4269,60 @@
             animation: slideIn 0.3s ease-out;
         }
 
+        .timeline-dialog .dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dialog-header-left {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .plan-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 999px;
+            padding: 4px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .plan-toggle-label {
+            font-size: 0.7em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        .plan-toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.75em;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .plan-toggle-btn.active {
+            background: var(--primary-color);
+            color: #fff;
+        }
+
+        .plan-toggle-btn:not(.active):hover {
+            color: var(--text-primary);
+        }
+
         /* Timeline summary */
         .timeline-summary {
             display: grid;
@@ -5346,12 +5400,98 @@
             box-shadow: none;
         }
 
-        #unified-cost-tile-container:hover {
-            background: var(--bg-hover);
-            border-color: rgba(33, 150, 243, 0.5);
-            transform: translateY(-1px);
-            box-shadow: 0 3px 8px var(--shadow-color);
-        }
+#unified-cost-tile-container:hover {
+    background: var(--bg-hover);
+    border-color: rgba(33, 150, 243, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px var(--shadow-color);
+}
+
+.autonomy-mode .autonomy-day-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.autonomy-mode .autonomy-day-card {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.autonomy-mode .autonomy-day-label {
+    font-size: 0.7em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.autonomy-mode .autonomy-day-value {
+    font-size: 1.35em;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.autonomy-mode .autonomy-day-delta {
+    font-size: 0.85em;
+}
+
+.autonomy-mode .autonomy-day-delta.positive {
+    color: #4CAF50;
+}
+
+.autonomy-mode .autonomy-day-delta.negative {
+    color: #FF7043;
+}
+
+.autonomy-mode .autonomy-day-delta.neutral,
+.autonomy-mode .autonomy-day-delta.muted {
+    color: var(--text-secondary);
+}
+
+.autonomy-mode .autonomy-delta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 0.8em;
+    color: var(--text-tertiary);
+}
+
+.autonomy-mode .autonomy-delta-pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.autonomy-mode .autonomy-delta-pill.positive {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
+}
+
+.autonomy-mode .autonomy-delta-pill.negative {
+    background: rgba(255, 112, 67, 0.15);
+    color: #FF7043;
+}
+
+.autonomy-mode .autonomy-delta-pill.neutral {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+}
+
+.autonomy-mode .autonomy-footnote-row {
+    margin-top: 10px;
+    font-size: 0.7em;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+}
 
         /* COMPACT HEADER: DNES 51 Kč [===] 3% ✅ */
         .uct-header-compact {
@@ -6911,4 +7051,310 @@
     color: var(--text-secondary);
     font-size: 0.9rem;
 }
+.chart-control-bar {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 10px 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
 
+.chart-control-tip {
+    opacity: 0.75;
+    font-size: 0.85em;
+}
+
+.chart-control-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.chart-control-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8em;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chart-control-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.chart-plan-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 999px;
+    padding: 4px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chart-plan-label {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.chart-plan-toggle-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.chart-plan-toggle-btn.active {
+    background: rgba(33, 150, 243, 0.3);
+    color: #fff;
+}
+
+.chart-plan-toggle-btn.autonomy.active {
+    background: rgba(255, 215, 0, 0.25);
+    color: #FFEB3B;
+}
+
+.chart-plan-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75em;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(33, 150, 243, 0.25);
+    color: #BBDEFB;
+    margin-left: 8px;
+}
+
+.chart-plan-pill.autonomy {
+    background: rgba(255, 215, 0, 0.2);
+    color: #FFE082;
+}
+
+.cost-card {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.05) 100%);
+    border: 1px solid rgba(33, 150, 243, 0.35);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 12px;
+    min-height: 0;
+    cursor: pointer;
+}
+
+.cost-card:hover {
+    border-color: rgba(33, 150, 243, 0.6);
+}
+
+.cost-card-placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    padding: 16px;
+}
+
+.cost-card-title {
+    font-size: 1.1em;
+}
+
+.cost-card-loading {
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.cost-main-row {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) minmax(70px, 0.7fr) minmax(130px, 1fr);
+    gap: 6px;
+    align-items: stretch;
+}
+
+.cost-main-card {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: transform 0.15s ease, border 0.15s ease;
+    border: 1px solid transparent;
+    min-width: 0;
+}
+
+.cost-main-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.cost-main-label {
+    font-size: 0.72em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.cost-main-value {
+    font-size: 1.65em;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.cost-delta-pill {
+    border-radius: 10px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.2);
+    text-align: center;
+    min-height: 56px;
+    font-size: 0.7em;
+}
+
+.cost-delta-icon {
+    font-size: 0.85em;
+}
+
+.cost-delta-value {
+    font-size: 1em;
+    font-weight: 600;
+    margin-top: 1px;
+}
+
+.cost-delta-label {
+    font-size: 0.6em;
+    color: var(--text-secondary);
+}
+
+.cost-delta-pill.positive {
+    background: rgba(76, 175, 80, 0.2);
+    border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.cost-delta-pill.negative {
+    background: rgba(255, 112, 67, 0.2);
+    border: 1px solid rgba(255, 112, 67, 0.4);
+}
+
+.cost-delta-pill.neutral {
+    border: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.cost-meta-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+
+.cost-meta-block {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 150px;
+    flex: 1;
+}
+
+.cost-meta-title {
+    font-size: 0.65em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.cost-meta-emphasis {
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.cost-meta-line {
+    font-size: 0.75em;
+    color: var(--text-secondary);
+}
+
+.cost-plan-chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.cost-plan-chip {
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.75em;
+    min-width: 0;
+}
+
+.cost-plan-chip-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+    font-size: 0.65em;
+}
+
+.cost-plan-chip-value {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+}
+
+.cost-plan-chip.positive {
+    border: 1px solid rgba(76, 175, 80, 0.5);
+    background: rgba(76, 175, 80, 0.15);
+    color: #C8E6C9;
+}
+
+.cost-plan-chip.positive .cost-plan-chip-value {
+    color: #C8E6C9;
+}
+
+.cost-plan-chip.negative {
+    border: 1px solid rgba(255, 112, 67, 0.5);
+    background: rgba(255, 112, 67, 0.15);
+    color: #FFCCBC;
+}
+
+.cost-plan-chip.negative .cost-plan-chip-value {
+    color: #FFCCBC;
+}
+
+.cost-plan-chip.neutral {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 1200px) {
+    .cost-main-row {
+        grid-template-columns: minmax(0, 1fr) minmax(70px, auto) minmax(0, 1fr);
+    }
+    .cost-plan-chips {
+        grid-template-columns: 1fr;
+    }
+}

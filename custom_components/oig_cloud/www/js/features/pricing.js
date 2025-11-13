@@ -10,12 +10,22 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
 };
 
 // Cache for timeline data to prevent re-fetching on tab switch
+var pricingPlanMode = 'hybrid';
+
 var timelineDataCache = {
-    data: null,
-    timestamp: null,
     ttl: 60000,  // 60 seconds TTL
-    chartsRendered: false  // Flag to skip re-rendering if charts already drawn
+    perPlan: {
+        hybrid: { data: null, timestamp: null, chartsRendered: false },
+        autonomy: { data: null, timestamp: null, chartsRendered: false }
+    }
 };
+
+function getTimelineCacheBucket(plan) {
+    if (!timelineDataCache.perPlan[plan]) {
+        timelineDataCache.perPlan[plan] = { data: null, timestamp: null, chartsRendered: false };
+    }
+    return timelineDataCache.perPlan[plan];
+}
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
@@ -58,6 +68,43 @@ function isLightTheme() {
     return false; // Default: dark theme
 }
 
+function updateChartPlanIndicator() {
+    const buttons = document.querySelectorAll('.chart-plan-toggle-btn');
+    buttons.forEach((btn) => {
+        const plan = btn.getAttribute('data-plan');
+        btn.classList.toggle('active', plan === pricingPlanMode);
+    });
+
+    const pill = document.getElementById('chart-plan-pill');
+    if (pill) {
+        pill.textContent = pricingPlanMode === 'autonomy' ? 'Auto' : 'Hybrid';
+        pill.classList.toggle('autonomy', pricingPlanMode === 'autonomy');
+    }
+}
+
+function initChartPlanToggle() {
+    const buttons = document.querySelectorAll('.chart-plan-toggle-btn');
+    if (!buttons.length) {
+        return;
+    }
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const plan = btn.getAttribute('data-plan') || 'hybrid';
+            if (plan === pricingPlanMode) {
+                return;
+            }
+            pricingPlanMode = plan;
+            const cacheBucket = getTimelineCacheBucket(plan);
+            cacheBucket.chartsRendered = false;
+            updateChartPlanIndicator();
+            loadPricingData();
+        });
+    });
+
+    updateChartPlanIndicator();
+}
+
 function getTextColor() {
     return isLightTheme() ? '#333333' : '#ffffff';
 }
@@ -78,6 +125,8 @@ function toLocalISOString(date) {
 }
 
 function getBoxId() {
+    updateChartPlanIndicator();
+
     const hass = getHass();
     if (!hass || !hass.states) return null;
     for (const entityId in hass.states) {
@@ -603,21 +652,22 @@ async function loadPricingData() {
     let allLabels = [];
 
     // === PHASE 1.5: Fetch pricing data from timeline API ===
-    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
+    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active&plan=${pricingPlanMode}`;
     let timelineData = [];
+    const cacheBucket = getTimelineCacheBucket(pricingPlanMode);
 
     // Check cache first
     const now = Date.now();
-    const cacheValid = timelineDataCache.data &&
-                      timelineDataCache.timestamp &&
-                      (now - timelineDataCache.timestamp) < timelineDataCache.ttl;
+    const cacheValid = cacheBucket.data &&
+                      cacheBucket.timestamp &&
+                      (now - cacheBucket.timestamp) < timelineDataCache.ttl;
 
     if (cacheValid) {
-        console.log(`[Pricing] Using cached timeline data (age: ${Math.round((now - timelineDataCache.timestamp) / 1000)}s)`);
-        timelineData = timelineDataCache.data;
+        console.log(`[Pricing] Using cached ${pricingPlanMode} timeline data (age: ${Math.round((now - cacheBucket.timestamp) / 1000)}s)`);
+        timelineData = cacheBucket.data;
 
         // If charts are already rendered with this data, skip the entire function
-        if (timelineDataCache.chartsRendered) {
+        if (cacheBucket.chartsRendered) {
             const perfEnd = performance.now();
             console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
 
@@ -632,15 +682,17 @@ async function loadPricingData() {
             const response = await fetch(timelineUrl);
             if (response.ok) {
                 const data = await response.json();
-                timelineData = data.active || [];
+                timelineData = pricingPlanMode === 'autonomy'
+                    ? (data.timeline || [])
+                    : (data.active || []);
 
                 // Update cache
-                timelineDataCache.data = timelineData;
-                timelineDataCache.timestamp = now;
-                timelineDataCache.chartsRendered = false;  // Reset flag - new data needs rendering
+                cacheBucket.data = timelineData;
+                cacheBucket.timestamp = now;
+                cacheBucket.chartsRendered = false;  // Reset flag - new data needs rendering
 
                 const fetchEnd = performance.now();
-                console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points`);
+                console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points for ${pricingPlanMode} plan`);
             } else {
                 console.error('[Pricing] Failed to fetch timeline:', response.status);
             }
@@ -1460,14 +1512,14 @@ async function loadPricingData() {
     }
 
     // Mark charts as rendered to skip re-rendering on next tab switch
-    timelineDataCache.chartsRendered = true;
+    getTimelineCacheBucket(pricingPlanMode).chartsRendered = true;
 
-    // Load unified cost tile (72h costs summary)
-    if (typeof loadUnifiedCostTile === 'function') {
+    // Load combined cost comparison tile (hybrid + autonomy)
+    if (typeof loadCostComparisonTile === 'function') {
         try {
-            await loadUnifiedCostTile();
+            await loadCostComparisonTile();
         } catch (error) {
-            console.error('[Pricing] Failed to load unified cost tile:', error);
+            console.error('[Pricing] Failed to load cost comparison tile:', error);
         }
     }
 
@@ -1793,8 +1845,11 @@ window.DashboardPricing = {
     updateWhatIfAnalysis,
     init: function() {
         console.log('[DashboardPricing] Initialized');
+        initChartPlanToggle();
     }
 };
 
 console.log('[DashboardPricing] Module loaded');
-
+if (window.DashboardPricing && typeof window.DashboardPricing.init === 'function') {
+    window.DashboardPricing.init();
+}
