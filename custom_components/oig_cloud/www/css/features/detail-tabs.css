@@ -11,10 +11,9 @@
     margin: 0 auto;
 }
 
-/* Summary Tiles at Top */
 .detail-summary-tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
     margin-bottom: 24px;
 }
@@ -31,6 +30,42 @@
 .summary-tile:hover {
     transform: translateY(-2px);
     border-color: var(--primary-color, #2196F3);
+}
+
+.summary-tile.metric-tile {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.summary-tile.metric-tile .tile-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.summary-tile.metric-tile .tile-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary, #bbb);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.summary-tile.meta-tile {
+    min-height: 120px;
+    padding: 18px;
+    text-align: center;
+}
+
+@media (max-width: 960px) {
+    .detail-summary-tiles {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .summary-tile {
+        padding: 14px;
+    }
 }
 
 .summary-tile-label {
@@ -65,6 +100,79 @@
 .summary-tile-icon {
     font-size: 1.2rem;
     margin-right: 8px;
+}
+
+.metric-plan,
+.metric-actual {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+}
+
+.metric-plan {
+    color: var(--text-secondary, #bbb);
+}
+
+.metric-actual {
+    color: var(--text-primary, #fff);
+}
+
+.metric-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary, #999);
+}
+
+.metric-value {
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+}
+
+.metric-context {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 6px;
+    border: 1px solid transparent;
+}
+
+.metric-context--positive {
+    color: #4CAF50;
+    background: rgba(76, 175, 80, 0.12);
+    border-color: rgba(76, 175, 80, 0.4);
+}
+
+.metric-context--negative {
+    color: #F44336;
+    background: rgba(244, 67, 54, 0.12);
+    border-color: rgba(244, 67, 54, 0.4);
+}
+
+.metric-context--neutral {
+    color: #FFC107;
+    background: rgba(255, 193, 7, 0.12);
+    border-color: rgba(255, 193, 7, 0.4);
+}
+.metric-delta {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.metric-delta.delta-positive {
+    color: #f44336;
+}
+
+.metric-delta.delta-negative {
+    color: #4caf50;
 }
 
 /* Mode Blocks Container */
@@ -114,6 +222,10 @@
 
 .mode-block.match-no {
     border-left-color: #F44336;
+}
+
+.mode-block.match-neutral {
+    border-left-color: #FFC107;
 }
 
 /* Mode Block Header */
@@ -171,6 +283,17 @@
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.metric-value-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.metric-arrow {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #999);
 }
 
 /* Mode badges */
@@ -251,6 +374,11 @@
 .block-match.match-no {
     background: rgba(244, 67, 54, 0.15);
     color: #F44336;
+}
+
+.block-match.match-neutral {
+    background: rgba(255, 193, 7, 0.15);
+    color: #FFC107;
 }
 
 /* Responsive Design */
@@ -391,3 +519,195 @@
 /* These styles are for the timeline dialog popup, not for detail-tabs */
 /* Keep these minimal and separate from detail-tabs styles above */
 
+/* ================================================================
+   SMART METRIC TILES - Nový kompaktní design pro summary
+   ================================================================ */
+
+.summary-tiles-smart {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.summary-tile-smart {
+    background: rgba(12, 17, 30, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 18px;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.summary-tile-smart:hover {
+    border-color: rgba(33, 150, 243, 0.4);
+    transform: translateY(-2px);
+}
+
+.summary-tile-smart .tile-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.summary-tile-smart .tile-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.65);
+    font-weight: 600;
+}
+
+.summary-tile-smart .tile-icon {
+    font-size: 18px;
+}
+
+.summary-tile-smart .tile-value-label {
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.summary-tile-smart .tile-value-big {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+    line-height: 1.2;
+}
+
+.summary-tile-smart .tile-value-big .unit {
+    font-size: 0.95rem;
+    margin-left: 4px;
+    opacity: 0.7;
+    font-weight: 400;
+}
+
+.summary-tile-smart .tile-sub-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.summary-tile-smart .tile-sub-row.hint-row {
+    font-style: italic;
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.tile-delta {
+    margin-top: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.tile-delta span:last-child {
+    font-weight: 600;
+}
+
+.tile-delta.delta-better {
+    color: #9ccc65;
+    border-color: rgba(156, 204, 101, 0.5);
+    background: rgba(156, 204, 101, 0.12);
+}
+
+.tile-delta.delta-worse {
+    color: #ff8a80;
+    border-color: rgba(255, 138, 128, 0.5);
+    background: rgba(255, 138, 128, 0.12);
+}
+
+.tile-delta.delta-neutral {
+    color: rgba(255, 255, 255, 0.75);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Kompaktní meta info pod kartami */
+.summary-meta-compact {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 16px;
+}
+
+.summary-meta-compact .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.summary-meta-compact .meta-separator {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .summary-tiles-smart {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .summary-tile-smart .tile-value-big {
+        font-size: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .summary-tiles-smart {
+        grid-template-columns: 1fr;
+    }
+}
+.plan-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin: 10px 0 18px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.plan-status-banner span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.plan-status-banner.plan-hybrid {
+    border-color: rgba(0, 188, 212, 0.4);
+    background: rgba(0, 188, 212, 0.08);
+}
+
+.plan-status-banner.plan-autonomy {
+    border-color: rgba(255, 193, 7, 0.5);
+    background: rgba(255, 193, 7, 0.12);
+}
+
+.plan-status-banner .plan-hint {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.comparison-section {
+    margin-top: 16px;
+}

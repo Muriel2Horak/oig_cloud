@@ -442,6 +442,8 @@
                     <div class="node-label">Střídač</div>
                     <div class="node-value entity-value" id="inverter-mode" data-entity="box_prms_mode"
                         data-tooltip="Režim střídače" onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</div>
+                    <div class="node-status planner-mode-badge" id="planner-mode-badge"
+                        data-tooltip="Stav automatického přepínání režimů podle plánu">Režim plánovače: --</div>
                     <div class="node-details">
                         <div class="detail-group">
                             <div class="detail-subheader" style="display: flex; align-items: center; gap: 8px;">
@@ -861,10 +863,22 @@
                 <div class="dialog-header">
                     <div class="dialog-header-left">
                         <h3>📅 Optimalizovaný plán režimů (72h)</h3>
-                        <div class="plan-toggle">
-                            <span class="plan-toggle-label">Režim:</span>
-                            <button class="plan-toggle-btn active" data-plan="hybrid">HYBRID</button>
-                            <button class="plan-toggle-btn" data-plan="autonomy">AUTO</button>
+                        <div class="timeline-header-controls">
+                            <div class="plan-toggle">
+                                <span class="plan-toggle-label">Režim:</span>
+                                <button class="plan-toggle-btn active" data-plan="hybrid">HYBRID</button>
+                                <button class="plan-toggle-btn" data-plan="autonomy">AUTO</button>
+                            </div>
+                            <div class="auto-mode-toggle" id="auto-mode-toggle">
+                                <label class="auto-mode-switch">
+                                    <input type="checkbox" id="auto-mode-toggle-input">
+                                    <span class="auto-mode-switch-track"></span>
+                                </label>
+                                <div class="auto-mode-toggle-text">
+                                    <span class="auto-mode-toggle-title">Auto přepínání</span>
+                                    <span class="auto-mode-toggle-status" id="auto-mode-toggle-status">Načítám…</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <button class="dialog-close close-timeline-dialog" onclick="closeModeTimelineDialog()">&times;</button>

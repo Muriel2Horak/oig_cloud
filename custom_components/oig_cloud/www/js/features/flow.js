@@ -284,6 +284,107 @@ window.cleanupParticles = stopAllParticleFlows;
 // Cache pro smoothing rychlosti - zabraňuje náhlým skokům
 const speedCache = {};
 
+// ============================
+// Planner settings integration
+// ============================
+const PLANNER_SETTINGS_CACHE_TTL = 60 * 1000; // 1 minuta cache
+const plannerSettingsState = {
+    data: null,
+    lastFetch: 0,
+    promise: null
+};
+
+async function fetchPlannerSettings(force = false) {
+    const now = Date.now();
+    if (!force && plannerSettingsState.data && now - plannerSettingsState.lastFetch < PLANNER_SETTINGS_CACHE_TTL) {
+        return plannerSettingsState.data;
+    }
+
+    if (plannerSettingsState.promise) {
+        return plannerSettingsState.promise;
+    }
+
+    plannerSettingsState.promise = (async () => {
+        if (!window.INVERTER_SN) {
+            return null;
+        }
+
+        const endpoint = `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`;
+
+        try {
+            const hass = window.DashboardAPI?.getHass?.() || window.getHass?.();
+            let payload;
+
+            if (hass && typeof hass.callApi === 'function') {
+                payload = await hass.callApi('GET', endpoint);
+            } else {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = window.DashboardAPI?.getHAToken?.();
+                if (token) {
+                    headers.Authorization = `Bearer ${token}`;
+                }
+
+                const response = await fetch(`/api/${endpoint}`, {
+                    method: 'GET',
+                    headers,
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                payload = await response.json();
+            }
+
+            plannerSettingsState.data = payload;
+            plannerSettingsState.lastFetch = Date.now();
+            return payload;
+        } catch (error) {
+            console.warn('[Flow] Failed to fetch planner settings', error);
+            return null;
+        } finally {
+            plannerSettingsState.promise = null;
+        }
+    })();
+
+    return plannerSettingsState.promise;
+}
+
+async function updatePlannerModeBadge(force = false) {
+    const badge = document.getElementById('planner-mode-badge');
+    if (!badge) {
+        return;
+    }
+
+    const data = await fetchPlannerSettings(force);
+    const newState = data ? (data.auto_mode_switch_enabled ? 'enabled' : 'disabled') : 'unknown';
+    let labelText = 'Plánovač: --';
+    let className = 'auto-unknown';
+
+    if (!data) {
+        labelText = 'Plánovač: N/A';
+    } else if (newState === 'enabled') {
+        labelText = 'Plánovač: AUTO';
+        className = 'auto-enabled';
+    } else {
+        labelText = 'Plánovač: MANUÁL';
+        className = 'auto-disabled';
+    }
+
+    if (typeof updateElementIfChanged === 'function') {
+        updateElementIfChanged('planner-mode-badge', labelText, 'planner-mode-badge-text');
+    } else if (badge.textContent !== labelText) {
+        badge.textContent = labelText;
+    }
+
+    if (badge.dataset.modeState !== newState) {
+        badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
+        badge.classList.add(className);
+        badge.dataset.modeState = newState;
+    }
+}
+
 /**
  * Vypočítá parametry toku podle výkonu a maxima s VYHLAZENÍM rychlosti
  * @param {number} power - Výkon v W (může být záporný)
@@ -1298,6 +1399,8 @@ async function loadData() {
             inverterModeElement.classList.add('mode-changing');
         }
     }
+
+    await updatePlannerModeBadge();
 
     // Aktualizovat boiler mode (ve flow diagramu), ale zachovat třídu mode-changing pokud existuje
     const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));

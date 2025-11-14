@@ -7,6 +7,7 @@ import numpy as np
 import copy
 import json
 import hashlib
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
@@ -23,9 +24,10 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers.event import async_track_point_in_time
 
 from .oig_cloud_data_sensor import OigCloudDataSensor
-from .const import DOMAIN  # TODO 3: Import DOMAIN for BalancingManager access
+from .const import DOMAIN, CONF_AUTO_MODE_SWITCH  # TODO 3: Import DOMAIN for BalancingManager access
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +98,24 @@ MIN_MODE_DURATION = {
     "Home UPS": 2,  # UPS must run at least 30 minutes (2×15min)
     "Home I": 1,
     "Home II": 1,
+}
+
+# Mapping from autonomy planner labels to HA service names
+AUTONOMY_MODE_SERVICE_MAP = {
+    "HOME I": "Home 1",
+    "HOME 1": "Home 1",
+    "HOME II": "Home 2",
+    "HOME 2": "Home 2",
+    "HOME III": "Home 3",
+    "HOME 3": "Home 3",
+    "HOME UPS": "Home UPS",
+}
+
+CBB_MODE_SERVICE_MAP = {
+    CBB_MODE_HOME_I: "Home 1",
+    CBB_MODE_HOME_II: "Home 2",
+    CBB_MODE_HOME_III: "Home 3",
+    CBB_MODE_HOME_UPS: "Home UPS",
 }
 
 # AC Charging - modes where charging is DISABLED (only solar DC/DC allowed)
@@ -181,6 +201,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             {}
         )  # NOVÉ: pro dashboard (4 hodnoty)
         self._first_update: bool = True  # Flag pro první update (setup)
+        self._autonomy_switch_handles: List[Any] = []
+        self._last_autonomy_request: Optional[Tuple[str, datetime]] = None
 
         # Phase 2.5: DP Multi-Mode Optimization result
         self._mode_optimization_result: Optional[Dict[str, Any]] = None
@@ -511,6 +533,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
+        self._cancel_autonomy_switch_schedule()
         await super().async_will_remove_from_hass()
 
     def _handle_coordinator_update(self) -> None:
@@ -905,6 +928,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 except Exception as e:
                     _LOGGER.warning(f"Failed to get load for {sp.get('time')}: {e}")
                     load_forecast.append(0.125)  # 500W fallback
+
+            if adaptive_profiles:
+                recent_ratio = await self._calculate_recent_consumption_ratio(
+                    adaptive_profiles
+                )
+                if recent_ratio and recent_ratio > 1.2:
+                    self._apply_consumption_boost_to_forecast(
+                        load_forecast, recent_ratio
+                    )
 
             # Run HYBRID optimization (simplified, reliable)
             try:
@@ -3918,6 +3950,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "load_kwh": load_kwh,
                     "grid_import": grid_import,
                     "grid_export": grid_export,
+                    "grid_net": round(grid_import - grid_export, 3),
                     "spot_price": price,
                     "spot_price_czk": price,  # Alias pro zpětnou kompatibilitu
                     "export_price_czk": export_price,  # Phase 1.5: Export (sell) price
@@ -6537,6 +6570,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Build detail_tabs (yesterday + today + tomorrow with mode_blocks)
             detail_tabs = await self.build_detail_tabs()
+            autonomy_detail_tabs: Dict[str, Any] = {}
+            try:
+                autonomy_detail_tabs = await self.build_detail_tabs(plan="autonomy")
+            except Exception as err:
+                _LOGGER.debug(
+                    "Failed to precompute autonomy detail_tabs, falling back to hybrid: %s",
+                    err,
+                )
 
             # Build unified_cost_tile (today/yesterday/tomorrow cost summary)
             unified_cost_tile = await self.build_unified_cost_tile()
@@ -6544,6 +6585,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Save to storage
             precomputed_data = {
                 "detail_tabs": detail_tabs,  # Changed from timeline_extended
+                "detail_tabs_autonomy": autonomy_detail_tabs,
                 "unified_cost_tile": unified_cost_tile,
                 "last_update": dt_util.now().isoformat(),
                 "version": 1,
@@ -6577,6 +6619,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if not self._config_entry.options.get("enable_autonomous_preview", True):
             self._autonomy_preview = None
+            self._cancel_autonomy_switch_schedule()
             return
 
         try:
@@ -6593,9 +6636,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             self._autonomy_preview = preview
             await self._archive_autonomy_summary(preview)
+            await self._update_autonomy_switch_schedule()
         except Exception as err:
             self._autonomy_preview = None
             _LOGGER.error(f"Autonomy preview failed: {err}", exc_info=True)
+            await self._update_autonomy_switch_schedule()
 
     def _calculate_autonomy_plan(
         self,
@@ -6613,6 +6658,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if not spot_prices:
             raise ValueError("No spot prices available for autonomy preview")
+
+        start_ts = time.perf_counter()
+        horizon = len(spot_prices)
+        _LOGGER.info(
+            "🧠 Autonomy preview ▶️ start: start_soc=%.2f kWh, horizon=%d intervals",
+            current_capacity,
+            horizon,
+        )
 
         physical_min_capacity = max_capacity * 0.20
         efficiency = self._get_battery_efficiency()
@@ -6652,12 +6705,162 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         timeline = result.get("optimal_timeline", [])
+        final_modes = list(result.get("optimal_modes", modes))
+
+        def _count_short_ups(block_modes: List[int]) -> int:
+            """Count number of UPS intervals that violate min duration."""
+            short = 0
+            i = 0
+            min_len = MIN_MODE_DURATION.get("Home UPS", 2)
+            while i < len(block_modes):
+                if block_modes[i] == CBB_MODE_HOME_UPS:
+                    j = i
+                    while j < len(block_modes) and block_modes[j] == CBB_MODE_HOME_UPS:
+                        j += 1
+                    block_len = j - i
+                    if block_len < min_len:
+                        short += block_len
+                    i = j
+                else:
+                    i += 1
+            return short
+
+        def _build_soc_trace(block_modes: List[int]) -> List[float]:
+            """Simulate SoC before each interval for guard checks."""
+            trace: List[float] = []
+            soc = current_capacity
+            for idx, mode in enumerate(block_modes):
+                trace.append(soc)
+                spot_price = spot_prices[idx].get("price", 0.0)
+                export_price = (
+                    export_prices[idx].get("price", 0.0)
+                    if idx < len(export_prices)
+                    else 0.0
+                )
+                load_kwh = load_forecast[idx] if idx < len(load_forecast) else 0.125
+                try:
+                    timestamp = datetime.fromisoformat(spot_prices[idx].get("time", ""))
+                    if timestamp.tzinfo is None:
+                        timestamp = dt_util.as_local(timestamp)
+                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+                except Exception:
+                    solar_kwh = 0.0
+
+                interval = self._simulate_interval(
+                    mode=mode,
+                    solar_kwh=solar_kwh,
+                    load_kwh=load_kwh,
+                    battery_soc_kwh=soc,
+                    capacity_kwh=max_capacity,
+                    hw_min_capacity_kwh=physical_min_capacity,
+                    spot_price_czk=spot_price,
+                    export_price_czk=export_price,
+                    charge_efficiency=efficiency,
+                    discharge_efficiency=efficiency,
+                    home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                )
+                soc = interval.get("new_soc_kwh", soc)
+            return trace
+
+        sorted_prices = sorted(sp.get("price", 0.0) for sp in spot_prices)
+        cheap_price_threshold: Optional[float] = None
+        if sorted_prices and self._config_entry.options.get(
+            "enable_cheap_window_ups", True
+        ):
+            percentile = self._config_entry.options.get("cheap_window_percentile", 30)
+            idx = min(
+                len(sorted_prices) - 1,
+                max(0, int(len(sorted_prices) * percentile / 100)),
+            )
+            cheap_price_threshold = sorted_prices[idx]
+
+        short_ups_before = _count_short_ups(final_modes)
+        final_modes = self._enforce_min_mode_duration(final_modes)
+
+        soc_trace = _build_soc_trace(final_modes)
+        validated_modes = self._validate_planning_minimum(
+            modes=final_modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            physical_min_capacity=physical_min_capacity,
+            efficiency=efficiency,
+            forward_soc_before=soc_trace,
+        )
+        planning_adjusted = validated_modes != final_modes
+        final_modes = validated_modes
+
+        soc_trace = _build_soc_trace(final_modes)
+        cheap_added = 0
+        if cheap_price_threshold is not None:
+            cheap_added = self._apply_cheap_window_ups(
+                modes=final_modes,
+                spot_prices=spot_prices,
+                forward_soc_before=soc_trace,
+                min_capacity=min_capacity,
+                cheap_price_threshold=cheap_price_threshold,
+            )
+            if cheap_added:
+                final_modes = self._enforce_min_mode_duration(final_modes)
+
+        result = self._build_result(
+            modes=final_modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            efficiency=efficiency,
+            baselines=None,
+            physical_min_capacity=physical_min_capacity,
+        )
+
+        timeline = result.get("optimal_timeline", [])
+        final_modes = list(result.get("optimal_modes", final_modes))
         total_cost = result.get("total_cost", 0.0)
+
+        _, enforced_modes = self._enforce_min_capacity_constraint(
+            optimal_timeline=timeline,
+            optimal_modes=final_modes,
+            min_capacity=min_capacity,
+            max_capacity=max_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            physical_min_capacity=physical_min_capacity,
+        )
+
+        if enforced_modes != final_modes:
+            final_modes = enforced_modes
+            result = self._build_result(
+                modes=final_modes,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                efficiency=efficiency,
+                baselines=None,
+                physical_min_capacity=physical_min_capacity,
+            )
+            timeline = result.get("optimal_timeline", [])
+            total_cost = result.get("total_cost", 0.0)
+
         day_costs = self._aggregate_cost_by_day(timeline)
 
         preview = {
             "timeline": timeline,
-            "modes": modes,
+            "modes": list(result.get("optimal_modes", final_modes)),
             "total_cost": total_cost,
             "day_costs": day_costs,
             "metadata": {
@@ -6665,6 +6868,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "plan": "autonomy",
             },
         }
+
+        final_modes_out = preview["modes"]
+        short_ups_after = _count_short_ups(final_modes_out)
+        runtime_ms = (time.perf_counter() - start_ts) * 1000.0
+        _LOGGER.info(
+            "🧠 Autonomy preview ✅ done in %.1f ms (UPS=%d, short_fixed=%d, planning_fix=%s, cheap_added=%d)",
+            runtime_ms,
+            final_modes_out.count(CBB_MODE_HOME_UPS),
+            max(0, short_ups_before - short_ups_after),
+            "yes" if planning_adjusted else "no",
+            cheap_added,
+        )
 
         return preview
 
@@ -6956,11 +7171,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Build Detail Tabs data (aggregated mode blocks).
         """
         plan_normalized = (plan or "hybrid").lower()
-        if plan_normalized != "hybrid":
-            hybrid_tabs = await self._build_hybrid_detail_tabs(tab=tab)
-            return await self._build_autonomy_detail_tabs(tab=tab, hybrid_tabs=hybrid_tabs)
 
-        return await self._build_hybrid_detail_tabs(tab=tab)
+        hybrid_tabs = await self._build_hybrid_detail_tabs(tab=tab)
+        autonomy_tabs = await self._build_autonomy_only_tabs(tab=tab)
+
+        if plan_normalized == "autonomy":
+            return self._decorate_plan_tabs(
+                primary_tabs=autonomy_tabs,
+                secondary_tabs=hybrid_tabs,
+                primary_plan="autonomy",
+                secondary_plan="hybrid",
+            )
+
+        return self._decorate_plan_tabs(
+            primary_tabs=hybrid_tabs,
+            secondary_tabs=autonomy_tabs,
+            primary_plan="hybrid",
+            secondary_plan="autonomy",
+        )
 
     async def _build_hybrid_detail_tabs(
         self, tab: Optional[str] = None
@@ -6991,7 +7219,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "total_cost": 0.0,
                         "overall_adherence": 100,
                         "mode_switches": 0,
+                        "metrics": self._default_metrics_summary(),
                     },
+                    "intervals": [],
                 }
             else:
                 mode_blocks = self._build_mode_blocks_for_tab(intervals, tab_name)
@@ -7000,16 +7230,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "date": date_str,
                     "mode_blocks": mode_blocks,
                     "summary": summary,
+                    "intervals": intervals,
                 }
 
             result[tab_name] = tab_result
 
         return result
 
-    async def _build_autonomy_detail_tabs(
-        self, tab: Optional[str] = None, hybrid_tabs: Optional[Dict[str, Any]] = None
+    async def _build_autonomy_only_tabs(
+        self, tab: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Build detail tabs for autonomy preview merged with hybrid actuals."""
+        """Build detail tabs purely from autonomy preview (no hybrid merge)."""
 
         preview = self._autonomy_preview or {}
         timeline = preview.get("timeline", [])
@@ -7036,18 +7267,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "total_cost": 0.0,
                         "overall_adherence": 100,
                         "mode_switches": 0,
+                        "metrics": self._default_metrics_summary(),
                     },
+                    "intervals": [],
                 }
 
             mode_blocks = self._build_autonomy_mode_blocks(intervals)
             total_cost = sum(block.get("cost_planned", 0.0) for block in mode_blocks)
-            summary = {
-                "total_cost": round(total_cost, 2),
-                "overall_adherence": 100,
-                "mode_switches": max(0, len(mode_blocks) - 1),
-            }
+            pseudo_intervals = []
+            for iv in intervals:
+                pseudo_intervals.append(
+                    {
+                        "time": iv.get("time"),
+                        "planned": {
+                            "net_cost": iv.get("net_cost", 0.0),
+                            "solar_kwh": iv.get("solar_kwh", 0.0),
+                            "consumption_kwh": iv.get("load_kwh", 0.0),
+                            "grid_import": iv.get("grid_import", 0.0),
+                            "grid_export": iv.get("grid_export", 0.0),
+                            "mode_name": iv.get("mode_name"),
+                        },
+                        "actual": None,
+                        "status": "planned",
+                    }
+                )
 
-            return {"date": day_str, "mode_blocks": mode_blocks, "summary": summary}
+            summary = self._calculate_tab_summary(mode_blocks, pseudo_intervals)
+
+            return {
+                "date": day_str,
+                "mode_blocks": mode_blocks,
+                "summary": summary,
+                "intervals": pseudo_intervals,
+            }
 
         mapping = {
             "yesterday": build_day(yesterday),
@@ -7056,53 +7308,70 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
         result: Dict[str, Any] = {}
-        hybrid_tabs = hybrid_tabs or {}
 
         for key in tabs_to_process:
-            hybrid_tab = hybrid_tabs.get(key)
-            auto_tab = mapping.get(key)
+            result[key] = mapping.get(
+                key,
+                {
+                    "date": (
+                        yesterday if key == "yesterday" else tomorrow if key == "tomorrow" else today
+                    ).isoformat(),
+                    "mode_blocks": [],
+                    "intervals": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                        "metrics": self._default_metrics_summary(),
+                    },
+                },
+            )
 
-            if key == "today":
-                actual_blocks = []
-                if hybrid_tab:
-                    actual_blocks = [
+        return result
+
+    def _decorate_plan_tabs(
+        self,
+        primary_tabs: Dict[str, Any],
+        secondary_tabs: Dict[str, Any],
+        primary_plan: str,
+        secondary_plan: str,
+    ) -> Dict[str, Any]:
+        """Attach metadata and optional comparison blocks to plan tabs."""
+
+        result: Dict[str, Any] = {}
+
+        for key, tab_data in primary_tabs.items():
+            tab_copy = {
+                "date": tab_data.get("date"),
+                "mode_blocks": copy.deepcopy(tab_data.get("mode_blocks", [])),
+                "summary": copy.deepcopy(tab_data.get("summary", {})),
+                "intervals": copy.deepcopy(tab_data.get("intervals", [])),
+            }
+
+            metadata = tab_data.get("metadata", {}).copy()
+            metadata["active_plan"] = primary_plan
+            metadata["comparison_plan_available"] = secondary_plan if secondary_tabs.get(key) else None
+            tab_copy["metadata"] = metadata
+
+            comparison_source = secondary_tabs.get(key)
+            if comparison_source:
+                has_current = any(
+                    block.get("status") == "current"
+                    for block in tab_copy.get("mode_blocks", [])
+                )
+                if not has_current:
+                    comparison_blocks = [
                         block
-                        for block in hybrid_tab.get("mode_blocks", [])
-                        if block.get("status") != "planned"
+                        for block in comparison_source.get("mode_blocks", [])
+                        if block.get("status") in ("current", "planned")
                     ]
-                planned_blocks = auto_tab.get("mode_blocks", []) if auto_tab else []
-                summary = auto_tab.get("summary") or hybrid_tab.get("summary") or {
-                    "total_cost": 0.0,
-                    "overall_adherence": 100,
-                    "mode_switches": 0,
-                }
-                date_value = hybrid_tab.get("date") if hybrid_tab else auto_tab.get("date", "")
+                    if comparison_blocks:
+                        tab_copy["comparison"] = {
+                            "plan": secondary_plan,
+                            "mode_blocks": comparison_blocks,
+                        }
 
-                result[key] = {
-                    "date": date_value,
-                    "mode_blocks": actual_blocks + planned_blocks,
-                    "summary": summary,
-                }
-            elif key == "yesterday":
-                result[key] = hybrid_tab or auto_tab or {
-                    "date": yesterday.isoformat(),
-                    "mode_blocks": [],
-                    "summary": {
-                        "total_cost": 0.0,
-                        "overall_adherence": 100,
-                        "mode_switches": 0,
-                    },
-                }
-            elif key == "tomorrow":
-                result[key] = auto_tab or hybrid_tab or {
-                    "date": tomorrow.isoformat(),
-                    "mode_blocks": [],
-                    "summary": {
-                        "total_cost": 0.0,
-                        "overall_adherence": 100,
-                        "mode_switches": 0,
-                    },
-                }
+            result[key] = tab_copy
 
         return result
 
@@ -7117,6 +7386,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         blocks = []
         current_block: Dict[str, Any] = {}
         block_intervals: List[Dict[str, Any]] = []
+        now = dt_util.now()
+
+        def _determine_autonomy_block_status(
+            start_iso: Optional[str], end_iso: Optional[str]
+        ) -> str:
+            start_dt = self._parse_autonomy_timestamp(start_iso)
+            end_dt = self._parse_autonomy_timestamp(end_iso)
+            if not start_dt or not end_dt:
+                return "planned"
+            end_dt = end_dt + timedelta(minutes=15)
+            if end_dt <= now:
+                return "completed"
+            if start_dt <= now < end_dt:
+                return "current"
+            return "planned"
 
         def flush_block():
             if not block_intervals:
@@ -7136,7 +7420,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "mode_historical": current_block["mode_name"],
                 "mode_planned": current_block["mode_name"],
                 "mode_match": True,
-                "status": "planned",
+                "status": _determine_autonomy_block_status(start_ts, end_ts),
                 "start_time": start_label,
                 "end_time": end_label,
                 "interval_count": len(block_intervals),
@@ -7144,10 +7428,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "cost_planned": round(cost, 2),
                 "battery_soc_start": block_intervals[0].get("battery_soc"),
                 "battery_soc_end": block_intervals[-1].get("battery_soc"),
+                "solar_planned_kwh": round(solar_total, 3),
+                "solar_actual_kwh": None,
                 "solar_total_kwh": round(solar_total, 3),
+                "consumption_planned_kwh": round(load_total, 3),
+                "consumption_actual_kwh": None,
                 "consumption_total_kwh": round(load_total, 3),
-                "grid_import_total_kwh": round(import_total, 3),
+                "grid_import_planned_kwh": round(import_total - export_total, 3),
+                "grid_import_actual_kwh": None,
+                "grid_import_total_kwh": round(import_total - export_total, 3),
+                "grid_export_planned_kwh": round(export_total, 3),
+                "grid_export_actual_kwh": None,
                 "grid_export_total_kwh": round(export_total, 3),
+                "solar_delta_kwh": None,
+                "consumption_delta_kwh": None,
+                "grid_import_delta_kwh": None,
+                "grid_export_delta_kwh": None,
             }
             blocks.append(block)
 
@@ -7170,6 +7466,167 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         flush_block()
         return blocks
 
+    def _auto_mode_switch_enabled(self) -> bool:
+        options = {}
+        if self._config_entry:
+            options = self._config_entry.options or {}
+        return bool(options.get(CONF_AUTO_MODE_SWITCH, False))
+
+    def _normalize_service_mode(self, mode_value: Optional[Union[str, int]]) -> Optional[str]:
+        if mode_value is None:
+            return None
+        if isinstance(mode_value, int):
+            return CBB_MODE_SERVICE_MAP.get(mode_value)
+
+        mode_str = str(mode_value).strip()
+        if not mode_str:
+            return None
+        upper = mode_str.upper()
+        if upper in AUTONOMY_MODE_SERVICE_MAP:
+            return AUTONOMY_MODE_SERVICE_MAP[upper]
+
+        # Attempt to standardize other strings (e.g., Home 1)
+        title = mode_str.title()
+        if title in AUTONOMY_MODE_SERVICE_MAP.values():
+            return title
+
+        return None
+
+    def _parse_autonomy_timestamp(self, value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        dt_obj = dt_util.parse_datetime(value)
+        if dt_obj is None:
+            try:
+                dt_obj = datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_util.as_local(dt_obj)
+        return dt_obj
+
+    def _get_current_box_mode(self) -> Optional[str]:
+        if not self._hass:
+            return None
+        entity_id = f"sensor.oig_{self._box_id}_box_prms_mode"
+        state = self._hass.states.get(entity_id)
+        if not state or not state.state:
+            return None
+        normalized = self._normalize_service_mode(state.state)
+        return normalized
+
+    def _cancel_autonomy_switch_schedule(self) -> None:
+        if not self._autonomy_switch_handles:
+            return
+        for unsub in self._autonomy_switch_handles:
+            try:
+                unsub()
+            except Exception as err:
+                _LOGGER.debug(f"Failed to cancel scheduled auto switch: {err}")
+        self._autonomy_switch_handles = []
+
+    async def _execute_autonomy_mode_change(self, target_mode: str, reason: str) -> None:
+        if not self._hass:
+            return
+
+        now = dt_util.now()
+        if (
+            self._last_autonomy_request
+            and self._last_autonomy_request[0] == target_mode
+            and (now - self._last_autonomy_request[1]).total_seconds() < 90
+        ):
+            _LOGGER.debug(
+                f"[AutonomySwitch] Skipping duplicate request for {target_mode} ({reason})"
+            )
+            return
+
+        try:
+            await self._hass.services.async_call(
+                DOMAIN,
+                "set_box_mode",
+                {"mode": target_mode},
+                blocking=False,
+            )
+            self._last_autonomy_request = (target_mode, now)
+            _LOGGER.info(
+                f"[AutonomySwitch] Requested mode '{target_mode}' ({reason})"
+            )
+        except Exception as err:
+            _LOGGER.error(
+                f"[AutonomySwitch] Failed to switch to {target_mode}: {err}",
+                exc_info=True,
+            )
+
+    async def _ensure_current_mode(self, desired_mode: str, reason: str) -> None:
+        current_mode = self._get_current_box_mode()
+        if current_mode == desired_mode:
+            _LOGGER.debug(
+                f"[AutonomySwitch] Mode already {desired_mode} ({reason}), no action"
+            )
+            return
+        await self._execute_autonomy_mode_change(desired_mode, reason)
+
+    async def _update_autonomy_switch_schedule(self) -> None:
+        """Sync scheduled set_box_mode calls with autonomy preview."""
+        # Always cancel previous schedule first
+        self._cancel_autonomy_switch_schedule()
+
+        if not self._hass or not self._auto_mode_switch_enabled():
+            _LOGGER.debug("[AutonomySwitch] Auto mode switching disabled")
+            return
+
+        timeline = self.get_autonomy_timeline()
+        if not timeline:
+            _LOGGER.debug("[AutonomySwitch] Autonomy timeline empty, nothing to schedule")
+            return
+
+        now = dt_util.now()
+        current_mode: Optional[str] = None
+        last_mode: Optional[str] = None
+        scheduled_events: List[Tuple[datetime, str]] = []
+
+        for interval in timeline:
+            timestamp = interval.get("time") or interval.get("timestamp")
+            mode_label = (
+                self._normalize_service_mode(interval.get("mode_name"))
+                or self._normalize_service_mode(interval.get("mode"))
+            )
+            if not timestamp or not mode_label:
+                continue
+
+            start_dt = self._parse_autonomy_timestamp(timestamp)
+            if not start_dt:
+                continue
+
+            if start_dt <= now:
+                current_mode = mode_label
+                last_mode = mode_label
+                continue
+
+            if mode_label == last_mode:
+                continue
+
+            last_mode = mode_label
+            scheduled_events.append((start_dt, mode_label))
+
+        if current_mode:
+            await self._ensure_current_mode(current_mode, "current autonomy block")
+
+        if not scheduled_events:
+            _LOGGER.debug("[AutonomySwitch] No upcoming mode changes to schedule")
+            return
+
+        for when, mode in scheduled_events:
+            async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
+                await self._execute_autonomy_mode_change(
+                    desired_mode, f"scheduled {event_time.isoformat()}"
+                )
+
+            unsub = async_track_point_in_time(self._hass, _callback, when)
+            self._autonomy_switch_handles.append(unsub)
+            _LOGGER.info(
+                f"[AutonomySwitch] Scheduled switch to {mode} at {when.isoformat()}"
+            )
     def _build_mode_blocks_for_tab(
         self, intervals: List[Dict[str, Any]], tab_name: str
     ) -> List[Dict[str, Any]]:
@@ -7257,6 +7714,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 round(kwh_value or 0.0, 2),
             )
 
+        # Helper pro grid net
+        def _interval_net(interval_entry: Dict[str, Any], branch: str) -> Optional[float]:
+            if not isinstance(interval_entry.get(branch), dict):
+                return None
+            import_val = safe_nested_get(interval_entry, branch, "grid_import", default=None)
+            if import_val is None:
+                import_val = safe_nested_get(interval_entry, branch, "grid_import_kwh", default=None)
+            export_val = safe_nested_get(interval_entry, branch, "grid_export", default=None)
+            if export_val is None:
+                export_val = safe_nested_get(interval_entry, branch, "grid_export_kwh", default=None)
+            if import_val is None and export_val is None:
+                return None
+            return (import_val or 0.0) - (export_val or 0.0)
+
         # Rozšířit o detailní metriky pro Detail Tabs
         mode_blocks = []
         for group in mode_groups:
@@ -7322,42 +7793,126 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             block["battery_kwh_start"] = start_soc_kwh
             block["battery_kwh_end"] = end_soc_kwh
 
-            # Energie totals
-            solar_total = 0.0
-            consumption_total = 0.0
-            grid_import_total = 0.0
-            grid_export_total = 0.0
+            # Energie totals (plan vs actual)
+            solar_plan_total = 0.0
+            solar_actual_total = 0.0
+            solar_actual_samples = 0
+
+            consumption_plan_total = 0.0
+            consumption_actual_total = 0.0
+            consumption_actual_samples = 0
+
+            grid_plan_net_total = 0.0
+            grid_actual_net_total = 0.0
+            grid_actual_samples = 0
+
+            grid_plan_export_total = 0.0
+            grid_actual_export_total = 0.0
+            grid_export_actual_samples = 0
 
             for iv in group_intervals:
-                if data_type in ["completed", "both"]:
-                    solar_total += safe_nested_get(iv, "actual", "solar_kwh", default=0)
-                    consumption_total += safe_nested_get(
-                        iv, "actual", "consumption_kwh", default=0
-                    )
-                    grid_import_total += safe_nested_get(
-                        iv, "actual", "grid_import", default=0
-                    )
-                    grid_export_total += safe_nested_get(
-                        iv, "actual", "grid_export", default=0
-                    )
-                else:
-                    solar_total += safe_nested_get(
-                        iv, "planned", "solar_kwh", default=0
-                    )
-                    consumption_total += safe_nested_get(
-                        iv, "planned", "consumption_kwh", default=0
-                    )
-                    grid_import_total += safe_nested_get(
-                        iv, "planned", "grid_import", default=0
-                    )
-                    grid_export_total += safe_nested_get(
-                        iv, "planned", "grid_export", default=0
-                    )
+                # Planned values
+                solar_plan_total += safe_nested_get(iv, "planned", "solar_kwh", default=0)
+                consumption_plan_total += safe_nested_get(
+                    iv, "planned", "consumption_kwh", default=0
+                )
+                grid_plan_net_total += _interval_net(iv, "planned") or 0.0
+                grid_plan_export_total += safe_nested_get(
+                    iv, "planned", "grid_export", default=0
+                ) or safe_nested_get(iv, "planned", "grid_export_kwh", default=0)
 
-            block["solar_total_kwh"] = round(solar_total, 2)
-            block["consumption_total_kwh"] = round(consumption_total, 2)
-            block["grid_import_total_kwh"] = round(grid_import_total, 2)
-            block["grid_export_total_kwh"] = round(grid_export_total, 2)
+                # Actual values
+                actual_solar = safe_nested_get(iv, "actual", "solar_kwh", default=None)
+                if actual_solar is not None:
+                    solar_actual_total += actual_solar
+                    solar_actual_samples += 1
+
+                actual_consumption = safe_nested_get(
+                    iv, "actual", "consumption_kwh", default=None
+                )
+                if actual_consumption is not None:
+                    consumption_actual_total += actual_consumption
+                    consumption_actual_samples += 1
+
+                actual_net = _interval_net(iv, "actual")
+                if actual_net is not None:
+                    grid_actual_net_total += actual_net
+                    grid_actual_samples += 1
+
+                actual_export = safe_nested_get(
+                    iv, "actual", "grid_export", default=None
+                )
+                if actual_export is None:
+                    actual_export = safe_nested_get(
+                        iv, "actual", "grid_export_kwh", default=None
+                    )
+                if actual_export is not None:
+                    grid_actual_export_total += actual_export
+                    grid_export_actual_samples += 1
+
+            def _round_or_none(value: float, samples: int) -> Optional[float]:
+                return round(value, 2) if samples > 0 else None
+
+            block["solar_planned_kwh"] = round(solar_plan_total, 2)
+            block["solar_actual_kwh"] = _round_or_none(
+                solar_actual_total, solar_actual_samples
+            )
+
+            block["consumption_planned_kwh"] = round(consumption_plan_total, 2)
+            block["consumption_actual_kwh"] = _round_or_none(
+                consumption_actual_total, consumption_actual_samples
+            )
+
+            block["grid_import_planned_kwh"] = round(grid_plan_net_total, 2)
+            block["grid_import_actual_kwh"] = _round_or_none(
+                grid_actual_net_total, grid_actual_samples
+            )
+
+            block["grid_export_planned_kwh"] = round(grid_plan_export_total, 2)
+            block["grid_export_actual_kwh"] = _round_or_none(
+                grid_actual_export_total, grid_export_actual_samples
+            )
+
+            # Backwards compatible totals (use actual if available else planned)
+            block["solar_total_kwh"] = (
+                block["solar_actual_kwh"]
+                if block["solar_actual_kwh"] is not None
+                else block["solar_planned_kwh"]
+            )
+            block["consumption_total_kwh"] = (
+                block["consumption_actual_kwh"]
+                if block["consumption_actual_kwh"] is not None
+                else block["consumption_planned_kwh"]
+            )
+            block["grid_import_total_kwh"] = (
+                block["grid_import_actual_kwh"]
+                if block["grid_import_actual_kwh"] is not None
+                else block["grid_import_planned_kwh"]
+            )
+            block["grid_export_total_kwh"] = (
+                block["grid_export_actual_kwh"]
+                if block["grid_export_actual_kwh"] is not None
+                else block["grid_export_planned_kwh"]
+            )
+
+            # Delta helpers
+            def _calc_delta(actual_val: Optional[float], planned_val: float) -> Optional[float]:
+                if actual_val is None:
+                    return None
+                return round(actual_val - planned_val, 2)
+
+            block["solar_delta_kwh"] = _calc_delta(
+                block["solar_actual_kwh"], block["solar_planned_kwh"]
+            )
+            block["consumption_delta_kwh"] = _calc_delta(
+                block["consumption_actual_kwh"], block["consumption_planned_kwh"]
+            )
+            block["grid_import_delta_kwh"] = _calc_delta(
+                block["grid_import_actual_kwh"], block["grid_import_planned_kwh"]
+            )
+            block["grid_export_delta_kwh"] = _calc_delta(
+                block["grid_export_actual_kwh"], block["grid_export_planned_kwh"]
+            )
 
             # Adherence % (pro completed bloky)
             if data_type in ["completed", "both"] and block["mode_match"]:
@@ -7501,6 +8056,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "total_cost": 0.0,
                 "overall_adherence": 100,
                 "mode_switches": 0,
+                "metrics": self._default_metrics_summary(),
             }
 
         # Total cost (historical pokud máme, jinak planned)
@@ -7539,10 +8095,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Mode switches = počet bloků - 1
         mode_switches = max(0, total_blocks - 1)
 
+        metrics = self._aggregate_interval_metrics(intervals)
+
         summary = {
             "total_cost": round(total_cost, 2),
             "overall_adherence": overall_adherence,
             "mode_switches": mode_switches,
+            "metrics": metrics,
         }
 
         # Add sub-summaries if we have both completed and planned (TODAY case)
@@ -7572,6 +8131,122 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
         return summary
+
+    def _aggregate_interval_metrics(
+        self, intervals: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Aggregate plan vs actual metrics for summary tiles."""
+
+        def _get_plan_value(interval: Dict[str, Any], key: str) -> float:
+            return safe_nested_get(interval, "planned", key, default=0.0)
+
+        def _get_actual_value(interval: Dict[str, Any], key: str) -> Optional[float]:
+            actual = interval.get("actual")
+            if not actual:
+                return None
+            value = actual.get(key)
+            if value is None:
+                # Some actual payloads use _kwh suffix
+                return actual.get(f"{key}_kwh")
+            return value
+
+        def _get_grid_net(payload: Dict[str, Any], prefix: str) -> float:
+            import_key = "grid_import"
+            export_key = "grid_export"
+            import_val = safe_nested_get(payload, prefix, import_key, default=None)
+            if import_val is None:
+                import_val = safe_nested_get(payload, prefix, f"{import_key}_kwh", default=0.0)
+            export_val = safe_nested_get(payload, prefix, export_key, default=None)
+            if export_val is None:
+                export_val = safe_nested_get(payload, prefix, f"{export_key}_kwh", default=0.0)
+            return (import_val or 0.0) - (export_val or 0.0)
+
+        metrics_template = {
+            "plan": 0.0,
+            "actual": 0.0,
+            "actual_samples": 0,
+        }
+
+        metrics = {
+            "cost": dict(metrics_template),
+            "solar": dict(metrics_template),
+            "consumption": dict(metrics_template),
+            "grid": dict(metrics_template),
+        }
+
+        for interval in intervals or []:
+            plan_cost = _get_plan_value(interval, "net_cost")
+            actual_cost = _get_actual_value(interval, "net_cost")
+            metrics["cost"]["plan"] += plan_cost
+            if actual_cost is not None:
+                metrics["cost"]["actual"] += actual_cost
+                metrics["cost"]["actual_samples"] += 1
+            else:
+                metrics["cost"]["actual"] += plan_cost
+
+            plan_solar = _get_plan_value(interval, "solar_kwh")
+            actual_solar = _get_actual_value(interval, "solar_kwh")
+            metrics["solar"]["plan"] += plan_solar
+            if actual_solar is not None:
+                metrics["solar"]["actual"] += actual_solar
+                metrics["solar"]["actual_samples"] += 1
+            else:
+                metrics["solar"]["actual"] += plan_solar
+
+            plan_consumption = _get_plan_value(interval, "consumption_kwh")
+            actual_consumption = _get_actual_value(interval, "consumption_kwh")
+            metrics["consumption"]["plan"] += plan_consumption
+            if actual_consumption is not None:
+                metrics["consumption"]["actual"] += actual_consumption
+                metrics["consumption"]["actual_samples"] += 1
+            else:
+                metrics["consumption"]["actual"] += plan_consumption
+
+            plan_grid = _get_grid_net(interval, "planned")
+            actual_grid = None
+            actual_payload = interval.get("actual")
+            if actual_payload:
+                actual_grid = (
+                    (actual_payload.get("grid_import") or actual_payload.get("grid_import_kwh") or 0.0)
+                    - (actual_payload.get("grid_export") or actual_payload.get("grid_export_kwh") or 0.0)
+                )
+            metrics["grid"]["plan"] += plan_grid
+            if actual_grid is not None:
+                metrics["grid"]["actual"] += actual_grid
+                metrics["grid"]["actual_samples"] += 1
+            else:
+                metrics["grid"]["actual"] += plan_grid
+
+        formatted_metrics: Dict[str, Dict[str, Any]] = {}
+        metric_units = {
+            "cost": "Kč",
+            "solar": "kWh",
+            "consumption": "kWh",
+            "grid": "kWh",
+        }
+
+        for key, value in metrics.items():
+            formatted_metrics[key] = {
+                "plan": round(value["plan"], 2),
+                "actual": round(value["actual"], 2),
+                "unit": metric_units.get(key, ""),
+                "has_actual": value["actual_samples"] > 0,
+            }
+
+        return formatted_metrics
+
+    def _default_metrics_summary(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "cost": {"plan": 0.0, "actual": 0.0, "unit": "Kč", "has_actual": False},
+            "solar": {"plan": 0.0, "actual": 0.0, "unit": "kWh", "has_actual": False},
+            "consumption": {
+                "plan": 0.0,
+                "actual": 0.0,
+                "unit": "kWh",
+                "has_actual": False,
+            },
+            "grid": {"plan": 0.0, "actual": 0.0, "unit": "kWh", "has_actual": False},
+        }
 
     async def build_unified_cost_tile(self) -> Dict[str, Any]:
         """
@@ -12374,6 +13049,79 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(f"Error getting today hourly consumption: {e}")
             return []
 
+    async def _calculate_recent_consumption_ratio(
+        self, adaptive_profiles: Optional[Dict[str, Any]], hours: int = 3
+    ) -> Optional[float]:
+        """Porovná reálnou spotřebu vs plán za posledních N hodin."""
+        if (
+            not adaptive_profiles
+            or not isinstance(adaptive_profiles, dict)
+            or "today_profile" not in adaptive_profiles
+        ):
+            return None
+
+        actual_hourly = await self._get_today_hourly_consumption()
+        if not actual_hourly:
+            return None
+
+        total_hours = len(actual_hourly)
+        if total_hours == 0:
+            return None
+
+        lookback = min(hours, total_hours)
+        actual_total = sum(actual_hourly[-lookback:])
+
+        today_profile = adaptive_profiles.get("today_profile") or {}
+        hourly_plan = today_profile.get("hourly_consumption")
+        if not isinstance(hourly_plan, list):
+            return None
+
+        start_hour = today_profile.get("start_hour", 0)
+        planned_total = 0.0
+        start_index = total_hours - lookback
+        avg_fallback = today_profile.get("avg_kwh_h", 0.5)
+
+        for idx in range(lookback):
+            hour = start_index + idx
+            plan_idx = hour - start_hour
+            if 0 <= plan_idx < len(hourly_plan):
+                planned_total += hourly_plan[plan_idx]
+            else:
+                planned_total += avg_fallback
+
+        if planned_total <= 0:
+            return None
+
+        ratio = actual_total / planned_total
+        _LOGGER.debug(
+            "[LoadForecast] Recent consumption ratio (last %dh): actual=%.2f kWh, planned=%.2f kWh → %.2fx",
+            lookback,
+            actual_total,
+            planned_total,
+            ratio,
+        )
+        return ratio
+
+    def _apply_consumption_boost_to_forecast(
+        self, load_forecast: List[float], ratio: float, hours: int = 3
+    ) -> None:
+        """Navýší krátkodobý load forecast podle zjištěné odchylky."""
+        if not load_forecast:
+            return
+
+        capped_ratio = min(ratio, 1.5)
+        intervals = min(len(load_forecast), max(1, hours * 4))
+
+        for idx in range(intervals):
+            load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
+
+        _LOGGER.info(
+            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high consumption drift (ratio %.2fx)",
+            intervals,
+            (capped_ratio - 1) * 100,
+            ratio,
+        )
+
     def _calculate_profile_similarity(
         self, today_hourly: List[float], profile_hourly: List[float]
     ) -> float:
@@ -13679,14 +14427,19 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
     async def _load_ups_blocks(self) -> None:
         """Load UPS blocks from precomputed storage (async)."""
-        self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs()
+        plan_key = self._get_active_plan_key()
+        self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs(
+            plan=plan_key
+        )
         _LOGGER.debug(
             f"[GridChargingPlan] Loaded {len(self._cached_ups_blocks)} UPS blocks into cache"
         )
         # Trigger state update after loading cache
         self.async_write_ha_state()
 
-    async def _get_home_ups_blocks_from_detail_tabs(self) -> List[Dict[str, Any]]:
+    async def _get_home_ups_blocks_from_detail_tabs(
+        self, plan: str = "hybrid"
+    ) -> List[Dict[str, Any]]:
         """
         Načte HOME UPS bloky z precomputed storage.
         Vrací pouze AKTIVNÍ a BUDOUCÍ bloky (ne completed z minulosti).
@@ -13720,7 +14473,13 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 return []
 
             # 3. Získat today + tomorrow mode_blocks
-            detail_tabs = precomputed.get("detail_tabs", {})
+            plan_key = "autonomy" if plan.lower() in ("autonomy", "auto") else "hybrid"
+            detail_key = (
+                "detail_tabs_autonomy" if plan_key == "autonomy" else "detail_tabs"
+            )
+            detail_tabs = precomputed.get(detail_key, {})
+            if plan_key == "autonomy" and not detail_tabs:
+                detail_tabs = precomputed.get("detail_tabs", {})
 
             # 4. Filtrovat HOME UPS bloky - pouze active + planned (ne completed)
             now = dt_util.now()
@@ -13806,6 +14565,15 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         except Exception as e:
             _LOGGER.error(f"[GridChargingPlan] Error: {e}", exc_info=True)
             return []
+
+    def _get_active_plan_key(self) -> str:
+        """Return 'autonomy' when auto mode switching is enabled, otherwise 'hybrid'."""
+        config_entry = getattr(self.coordinator, "config_entry", None)
+        if not config_entry:
+            return "hybrid"
+        if config_entry.options.get(CONF_AUTO_MODE_SWITCH, False):
+            return "autonomy"
+        return "hybrid"
 
     def _calculate_charging_intervals(
         self,

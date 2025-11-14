@@ -90,6 +90,11 @@ class TimelineDialog {
             hybrid: this.createEmptyCache(),
             autonomy: this.createEmptyCache()
         };
+        this.autoModeSwitchEnabled = null;
+        this.autoSettingsLoaded = false;
+        this.autoModeToggleBusy = false;
+        this.autoModeToggleErrorTimeout = null;
+        this.autoPlanSyncEnabled = true;
     }
 
     createEmptyCache() {
@@ -107,6 +112,187 @@ class TimelineDialog {
             this.cache[plan] = this.createEmptyCache();
         }
         return this.cache[plan];
+    }
+
+    setupAutoModeToggle() {
+        const input = document.getElementById('auto-mode-toggle-input');
+        if (!input || input.dataset.listenerAttached === '1') {
+            return;
+        }
+
+        input.addEventListener('change', (event) => {
+            this.handleAutoModeToggleChange(event.target.checked);
+        });
+        input.dataset.listenerAttached = '1';
+    }
+
+    setAutoModeToggleLoading(isLoading, message = null) {
+        const container = document.getElementById('auto-mode-toggle');
+        const statusEl = document.getElementById('auto-mode-toggle-status');
+        const input = document.getElementById('auto-mode-toggle-input');
+        if (!container || !statusEl || !input) {
+            return;
+        }
+
+        container.classList.toggle('loading', isLoading);
+        input.disabled = !!isLoading;
+        if (isLoading && message) {
+            statusEl.textContent = message;
+            statusEl.classList.remove('enabled', 'disabled', 'error');
+        }
+    }
+
+    updateAutoModeToggleUI() {
+        const container = document.getElementById('auto-mode-toggle');
+        const statusEl = document.getElementById('auto-mode-toggle-status');
+        const input = document.getElementById('auto-mode-toggle-input');
+        if (!container || !statusEl || !input) {
+            return;
+        }
+
+        container.classList.remove('error');
+        statusEl.classList.remove('error');
+
+        if (this.autoModeSwitchEnabled === null) {
+            statusEl.textContent = 'N/A';
+            statusEl.classList.remove('enabled');
+            statusEl.classList.add('disabled');
+            input.checked = false;
+            return;
+        }
+
+        const enabled = !!this.autoModeSwitchEnabled;
+        input.checked = enabled;
+        statusEl.textContent = enabled ? 'Zapnuto' : 'Vypnuto';
+        statusEl.classList.toggle('enabled', enabled);
+        statusEl.classList.toggle('disabled', !enabled);
+    }
+
+    showAutoModeToggleError(message) {
+        const container = document.getElementById('auto-mode-toggle');
+        const statusEl = document.getElementById('auto-mode-toggle-status');
+        if (!container || !statusEl) {
+            return;
+        }
+
+        container.classList.add('error');
+        statusEl.classList.add('error');
+        statusEl.textContent = message;
+
+        if (this.autoModeToggleErrorTimeout) {
+            clearTimeout(this.autoModeToggleErrorTimeout);
+        }
+
+        this.autoModeToggleErrorTimeout = setTimeout(() => {
+            container.classList.remove('error');
+            statusEl.classList.remove('error');
+            this.updateAutoModeToggleUI();
+            this.autoModeToggleErrorTimeout = null;
+        }, 3000);
+    }
+
+    async requestPlannerSettings(method = 'GET', payload = null) {
+        if (!window.INVERTER_SN) {
+            throw new Error('Missing inverter serial number');
+        }
+
+        const endpoint = `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`;
+        const hass = typeof window !== 'undefined' && typeof window.getHass === 'function'
+            ? window.getHass()
+            : null;
+
+        if (hass && typeof hass.callApi === 'function') {
+            return hass.callApi(method, endpoint, method === 'GET' ? undefined : payload || {});
+        }
+
+        const headers = { 'Content-Type': 'application/json' };
+        const token = window.DashboardAPI?.getHAToken?.();
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        } else {
+            console.warn('[TimelineDialog] HA token not available, relying on cookies for auth');
+        }
+
+        const response = await fetch(`/api/${endpoint}`, {
+            method,
+            headers,
+            body: method === 'GET' ? undefined : JSON.stringify(payload || {}),
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    async ensurePlannerSettingsLoaded(force = false) {
+        if (this.autoSettingsLoaded && !force) {
+            this.updateAutoModeToggleUI();
+            return;
+        }
+
+        if (!window.INVERTER_SN) {
+            return;
+        }
+
+        this.setAutoModeToggleLoading(true, 'Načítám…');
+        try {
+            const data = await this.requestPlannerSettings('GET');
+            this.autoModeSwitchEnabled = !!data.auto_mode_switch_enabled;
+            this.autoSettingsLoaded = true;
+            this.updateAutoModeToggleUI();
+        } catch (error) {
+            console.error('[TimelineDialog] Failed to load planner settings', error);
+            this.showAutoModeToggleError('Chyba načtení');
+        } finally {
+            this.setAutoModeToggleLoading(false);
+        }
+    }
+
+    async handleAutoModeToggleChange(enabled) {
+        if (this.autoModeToggleBusy || !window.INVERTER_SN) {
+            return;
+        }
+
+        const previousValue = this.autoModeSwitchEnabled;
+        this.autoModeToggleBusy = true;
+        this.setAutoModeToggleLoading(true, 'Ukládám…');
+
+        try {
+            const data = await this.requestPlannerSettings('POST', {
+                auto_mode_switch_enabled: enabled
+            });
+            this.autoModeSwitchEnabled = !!data.auto_mode_switch_enabled;
+            this.autoSettingsLoaded = true;
+            const desiredPlan = this.autoModeSwitchEnabled ? 'autonomy' : 'hybrid';
+            this.updateAutoModeToggleUI();
+            await this.syncPlanWithAutoMode(desiredPlan);
+        } catch (error) {
+            console.error('[TimelineDialog] Failed to update planner settings', error);
+            this.autoModeSwitchEnabled = previousValue;
+            const input = document.getElementById('auto-mode-toggle-input');
+            if (input) {
+                input.checked = !!previousValue;
+            }
+            this.showAutoModeToggleError('Chyba uložení');
+        } finally {
+            this.setAutoModeToggleLoading(false);
+            this.autoModeToggleBusy = false;
+        }
+    }
+
+    async syncPlanWithAutoMode(desiredPlan) {
+        if (!this.autoPlanSyncEnabled) {
+            return;
+        }
+        if (!desiredPlan || this.plan === desiredPlan) {
+            return;
+        }
+
+        console.log(`[TimelineDialog] Syncing plan view to active mode: ${desiredPlan}`);
+        await this.switchPlan(desiredPlan);
     }
 
     /**
@@ -220,6 +406,8 @@ class TimelineDialog {
                 this.close();
             }
         });
+
+        this.setupAutoModeToggle();
     }
 
     /**
@@ -239,10 +427,12 @@ class TimelineDialog {
             this.activeTab = tabName;
         }
 
+        this.autoPlanSyncEnabled = !planOverride;
         if (planOverride && planOverride !== this.plan) {
             this.plan = planOverride;
         }
         this.updatePlanButtons();
+        await this.ensurePlannerSettingsLoaded(false);
 
         // Load all tabs data in ONE API call if not cached
         const planCache = this.getPlanCache(this.plan);
@@ -268,6 +458,9 @@ class TimelineDialog {
 
         // Stop update interval
         this.stopUpdateInterval();
+        this.autoPlanSyncEnabled = true;
+        const desiredPlan = this.autoModeSwitchEnabled ? 'autonomy' : 'hybrid';
+        this.syncPlanWithAutoMode(desiredPlan);
     }
 
     /**
@@ -365,6 +558,7 @@ class TimelineDialog {
         if (!plan || plan === this.plan) {
             return;
         }
+        this.autoPlanSyncEnabled = false;
         this.plan = plan;
         this.updatePlanButtons();
         await this.loadAllTabsData(false, plan);
@@ -789,15 +983,21 @@ class TimelineDialog {
     }
 
     /**
-     * FÁZE 6: Render Detail Tab Header (summary tiles)
+     * FÁZE 6.1: Render Detail Tab Header
+     * Přináší metriky (cost/solar/consumption/grid) srovnání plán vs. realita.
      */
     renderDetailTabHeader(summary, tabName) {
-        const { total_cost, overall_adherence, mode_switches } = summary;
+        if (!summary) {
+            return '';
+        }
+
+        const { overall_adherence, mode_switches } = summary;
+        const metrics = summary.metrics || {};
 
         // Adherence color coding
         let adherenceColor = '#888'; // Gray default
         let adherenceIcon = '📊';
-        if (overall_adherence !== null) {
+        if (typeof overall_adherence === 'number') {
             if (overall_adherence >= 80) {
                 adherenceColor = '#4CAF50'; // Green
                 adherenceIcon = '✅';
@@ -810,32 +1010,153 @@ class TimelineDialog {
             }
         }
 
-        return `
-            <div class="detail-summary-tiles">
-                <!-- Total Cost -->
-                <div class="summary-tile">
-                    <div class="tile-icon">💰</div>
-                    <div class="tile-value">${total_cost?.toFixed(2) || '0.00'} Kč</div>
-                    <div class="tile-label">Celková cena</div>
-                </div>
+        const metricTiles = [
+            this.renderSummaryMetricTile(metrics.cost, '💰', 'Náklady', 'cost'),
+            this.renderSummaryMetricTile(metrics.solar, '☀️', 'Solární výroba', 'solar'),
+            this.renderSummaryMetricTile(metrics.consumption, '🏠', 'Spotřeba', 'consumption'),
+            this.renderSummaryMetricTile(metrics.grid, '⚡', 'Odběr ze sítě', 'grid'),
+        ]
+            .filter(Boolean)
+            .join('');
 
-                <!-- Adherence % -->
-                <div class="summary-tile" style="border-left: 4px solid ${adherenceColor};">
-                    <div class="tile-icon">${adherenceIcon}</div>
-                    <div class="tile-value">
-                        ${overall_adherence !== null ? overall_adherence.toFixed(1) : 'N/A'}%
+        const metaInfo =
+            typeof overall_adherence === 'number'
+                ? `
+                    <div class="summary-meta-compact">
+                        <span class="meta-item">${overall_adherence.toFixed(0)}% shoda</span>
+                        <span class="meta-separator">|</span>
+                        <span class="meta-item">${mode_switches || 0} přepnutí</span>
                     </div>
-                    <div class="tile-label">Dodržení plánu</div>
-                </div>
+                `
+                : '';
 
-                <!-- Mode Switches -->
-                <div class="summary-tile">
-                    <div class="tile-icon">🔄</div>
-                    <div class="tile-value">${mode_switches || 0}</div>
-                    <div class="tile-label">Přepnutí módu</div>
+        return `
+            <div class="summary-tiles-smart">
+                ${metricTiles}
+            </div>
+            ${metaInfo}
+        `;
+    }
+
+    /**
+     * Helper: render single metric tile (plan vs actual)
+     */
+    renderSummaryMetricTile(metric, icon, label, metricKey) {
+        if (!metric) {
+            return '';
+        }
+
+        const unit = metric.unit || '';
+        const plan = Number(metric.plan ?? 0);
+        const hasActual =
+            metric.has_actual && metric.actual !== null && metric.actual !== undefined;
+        const actual = hasActual ? Number(metric.actual) : null;
+
+        const mainValue = hasActual ? actual : plan;
+        const mainLabel = hasActual ? 'Skutečnost' : 'Plán';
+
+        const planRow = hasActual
+            ? `
+                <div class="tile-sub-row">
+                    <span>Plán:</span>
+                    <span>${this.formatMetricValue(plan)} ${unit}</span>
                 </div>
+            `
+            : '';
+
+        const hintRow = !hasActual
+            ? `
+                <div class="tile-sub-row hint-row">
+                    Plánovaná hodnota (čeká na živá data)
+                </div>
+            `
+            : '';
+
+        let deltaRow = '';
+        if (hasActual) {
+            const delta = (actual ?? 0) - plan;
+            const absDelta = Math.abs(delta);
+
+            const contextInfo = this.getMetricContext(delta, metricKey);
+            const deltaClassMap = {
+                'metric-context--positive': 'delta-better',
+                'metric-context--negative': 'delta-worse',
+                'metric-context--neutral': 'delta-neutral',
+            };
+            const deltaClass = deltaClassMap[contextInfo.className] || 'delta-neutral';
+            const deltaValueText =
+                absDelta >= 0.01
+                    ? `${delta > 0 ? '+' : ''}${this.formatMetricValue(delta)} ${unit}`
+                    : '±0';
+
+            deltaRow = `
+                <div class="tile-delta ${deltaClass}">
+                    <span>${contextInfo.text}</span>
+                    <span>${deltaValueText}</span>
+                </div>
+            `;
+        }
+
+        const supplemental = [planRow, hintRow, deltaRow].filter(Boolean).join('');
+
+        return `
+            <div class="summary-tile-smart">
+                <div class="tile-header">
+                    <div class="tile-title">
+                        <span class="tile-icon">${icon}</span>
+                        <span class="tile-label">${label}</span>
+                    </div>
+                    <span class="tile-value-label">${mainLabel}</span>
+                </div>
+                <div class="tile-value-big">
+                    ${this.formatMetricValue(mainValue)} <span class="unit">${unit}</span>
+                </div>
+                ${supplemental}
             </div>
         `;
+    }
+
+    getMetricContext(delta, metricKey) {
+        const preferences = {
+            cost: 'lower',
+            solar: 'higher',
+            consumption: 'lower',
+            grid: 'lower',
+        };
+
+        const preference = preferences[metricKey] || 'lower';
+
+        if (delta === null) {
+            return { text: 'Na plánu', className: 'metric-context--neutral' };
+        }
+
+        if (Math.abs(delta) < 0.001) {
+            return { text: 'Na plánu', className: 'metric-context--neutral' };
+        }
+
+        const isBetter =
+            preference === 'higher' ? delta > 0 : preference === 'lower' ? delta < 0 : false;
+
+        return {
+            text: isBetter ? 'Lépe než plán' : 'Hůře než plán',
+            className: isBetter ? 'metric-context--positive' : 'metric-context--negative',
+        };
+    }
+
+    formatMetricValue(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+            return '0.00';
+        }
+
+        const abs = Math.abs(num);
+        if (abs >= 1000) {
+            return num.toFixed(0);
+        }
+        if (abs >= 100) {
+            return num.toFixed(1);
+        }
+        return num.toFixed(2);
     }
 
     /**
@@ -992,8 +1313,19 @@ class TimelineDialog {
             total_cost: plannedBlocks.reduce((sum, b) => sum + (b.cost_planned || 0), 0)
         };
 
+        const activePlan = data.metadata?.active_plan?.toUpperCase?.();
+        const planBanner = activePlan ? `
+            <div class="plan-status-banner plan-${activePlan.toLowerCase()}">
+                <span>Aktivní plán: ${activePlan}</span>
+                ${!data.comparison && data.metadata?.comparison_plan_available ? `<span class="plan-hint">Druhý plán: ${data.metadata.comparison_plan_available.toUpperCase()}</span>` : ''}
+            </div>
+        ` : '';
+
+        const comparisonHtml = this.renderComparisonSection(data.comparison);
+
         return `
             ${this.renderDetailTabHeader(summary, 'Dnes')}
+            ${planBanner}
 
             <!-- Uplynulé (Collapsed) -->
             ${completedBlocks.length > 0 ? `
@@ -1048,6 +1380,8 @@ class TimelineDialog {
                     </div>
                 </div>
             ` : ''}
+
+            ${comparisonHtml}
         `;
     }
 
@@ -1597,9 +1931,20 @@ class TimelineDialog {
             return this.renderNoData('tomorrow');
         }
 
+        const activePlan = data.metadata?.active_plan?.toUpperCase?.();
+        const planBanner = activePlan ? `
+            <div class="plan-status-banner plan-${activePlan.toLowerCase()}">
+                <span>Aktivní plán: ${activePlan}</span>
+                ${!data.comparison && data.metadata?.comparison_plan_available ? `<span class="plan-hint">Druhý plán: ${data.metadata.comparison_plan_available.toUpperCase()}</span>` : ''}
+            </div>
+        ` : '';
+
+        const comparisonHtml = this.renderComparisonSection(data.comparison);
+
         // All blocks should be planned for tomorrow
         return `
             ${this.renderDetailTabHeader(summary, 'Zítra')}
+            ${planBanner}
 
             <!-- Collapsible section for planned blocks -->
             <div class="collapsible-section">
@@ -1618,6 +1963,8 @@ class TimelineDialog {
                     ${this.renderModeBlocks(mode_blocks, { showCosts: true, showAdherence: false })}
                 </div>
             </div>
+
+            ${comparisonHtml}
         `;
 
         const topMode = Object.entries(modeDistribution)
@@ -1679,6 +2026,24 @@ class TimelineDialog {
                 <div class="tomorrow-intervals">
                     <h4>📅 Plán intervalů</h4>
                     ${this.renderTomorrowIntervals(intervals)}
+                </div>
+            </div>
+        `;
+    }
+
+    renderComparisonSection(comparison) {
+        if (!comparison || !comparison.mode_blocks || comparison.mode_blocks.length === 0) {
+            return '';
+        }
+        const planName = comparison.plan ? comparison.plan.toUpperCase() : 'JINÝ PLÁN';
+        return `
+            <div class="collapsible-section comparison-section">
+                <div class="section-header-simple">
+                    <span class="section-icon">🔀</span>
+                    <span class="section-name">Alternativní plán (${planName})</span>
+                </div>
+                <div class="section-content visible">
+                    ${this.renderModeBlocks(comparison.mode_blocks, { showCosts: true, showAdherence: false })}
                 </div>
             </div>
         `;

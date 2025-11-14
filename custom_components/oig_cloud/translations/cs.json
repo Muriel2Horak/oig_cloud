@@ -127,6 +127,7 @@
           "balancing_economic_threshold": "Cena pro ekonomick\u00e9 balancing (CZK/kWh)",
           "go_back": "\u2b05\ufe0f Chci se vr\u00e1tit zp\u011bt (za\u0161krtnout + kliknout Odeslat)",
           "battery_planner_mode": "Profil pl\u00e1nova\u010de (Hybrid vs Autonomie)",
+          "auto_mode_switch_enabled": "Automatick\u00e9 p\u0159ep\u00edn\u00e1n\u00ed re\u017eim\u016f podle pl\u00e1nu",
           "enable_cheap_window_ups": "Strategie levn\u00fdch hodin pro HOME UPS (HYBRID)",
           "cheap_window_percentile": "Percentil levn\u00fdch hodin (%)",
           "cheap_window_max_intervals": "Max. po\u010det HOME UPS interval\u016f",
@@ -151,6 +152,7 @@
           "balancing_economic_threshold": "V dnech 5-7 po posledn\u00edm vyrovn\u00e1n\u00ed pou\u017e\u00edt tento cenov\u00fd pr\u00e1h (typicky 2.5 CZK/kWh)",
           "go_back": "Za\u0161krtn\u011bte toto pol\u00ed\u010dko a stiskn\u011bte tla\u010d\u00edtko 'Odeslat' - vr\u00e1t\u00edte se o krok zp\u011bt",
           "battery_planner_mode": "Zvolte, jestli m\u00e1 b\u011b\u017eet pouze hybridn\u00ed \u0159\u00edzen\u00ed nebo i autonomn\u00ed simulace vedle n\u011bj.",
+          "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat slu\u017ebu zm\u011bny re\u017eimu (set_box_mode) automaticky podle vypo\u010dten\u00e9ho pl\u00e1nu. Stejn\u00e9 nastaven\u00ed jako v pr\u016fvodci.",
           "enable_cheap_window_ups": "Vynut\u00ed re\u017eim HOME UPS v nejlevn\u011bj\u0161\u00edch intervalech a \u0161et\u0159\u00ed tak kapacitu na drah\u00e9 hodiny.",
           "cheap_window_percentile": "Ceny pod t\u00edmto percentilem se pova\u017euj\u00ed za levn\u00e9 pro dr\u017een\u00ed UPS.",
           "cheap_window_max_intervals": "Horn\u00ed limit 15min blok\u016f, kdy se m\u016f\u017ee UPS n\u00e1siln\u011b dr\u017eet.",
@@ -604,6 +606,7 @@
       "battery_prediction": {
         "data": {
           "battery_planner_mode": "Profil pl\u00e1nova\u010de",
+          "auto_mode_switch_enabled": "Automatick\u00e9 p\u0159ep\u00edn\u00e1n\u00ed re\u017eim\u016f podle pl\u00e1nu",
           "enable_cheap_window_ups": "Strategie levn\u00fdch hodin pro UPS",
           "cheap_window_percentile": "Percentil levn\u00fdch hodin (%)",
           "cheap_window_max_intervals": "Max. po\u010det UPS interval\u016f",
@@ -615,6 +618,7 @@
         },
         "data_description": {
           "battery_planner_mode": "P\u0159ep\u00ednejte mezi \u010dist\u00fdm hybridem nebo hybrid + autonomn\u00ed n\u00e1hled.",
+          "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat slu\u017ebu zm\u011bny re\u017eimu (set_box_mode) automaticky podle vypo\u010dten\u00e9ho pl\u00e1nu. Stejn\u00e9 nastaven\u00ed jako v pr\u016fvodci.",
           "enable_cheap_window_ups": "Zapn\u011bte, pokud chcete v nejlevn\u011bj\u0161\u00edch hodin\u00e1ch dr\u017eet HOME UPS a \u0161et\u0159it drah\u00e9 p\u00e1smo.",
           "cheap_window_percentile": "Ur\u010duje, kter\u00e1 \u010d\u00e1st cenov\u00e9 k\u0159ivky se pova\u017euje za levnou pro UPS.",
           "cheap_window_max_intervals": "Horn\u00ed limit celkov\u00e9ho po\u010dtu 15min interval\u016f s vynucen\u00fdm UPS.",

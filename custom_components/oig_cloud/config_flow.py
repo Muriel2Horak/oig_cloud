@@ -17,6 +17,7 @@ from .const import (
     DOMAIN,
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_AUTO_MODE_SWITCH,
 )
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
@@ -1499,6 +1500,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 default=planner_mode,
             ): vol.In(BATTERY_PLANNER_MODE_CHOICES),
             vol.Optional(
+                CONF_AUTO_MODE_SWITCH,
+                default=defaults.get(CONF_AUTO_MODE_SWITCH, False),
+            ): bool,
+            vol.Optional(
                 "min_capacity_percent",
                 default=defaults.get("min_capacity_percent", 20.0),
             ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
@@ -2518,6 +2523,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         "target_capacity_percent", 80.0
                     ),
                     "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
+                    CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
+                        CONF_AUTO_MODE_SWITCH, False
+                    ),
                     # Economic charging
                     "enable_economic_charging": self._wizard_data.get(
                         "enable_economic_charging", True
@@ -2809,6 +2817,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "target_capacity_percent", 80.0
                 ),
                 "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
+                CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
+                    CONF_AUTO_MODE_SWITCH, False
+                ),
                 # Economic charging
                 "enable_economic_charging": self._wizard_data.get(
                     "enable_economic_charging", True
@@ -3293,6 +3304,11 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 default=current_options.get("home_charge_rate", 2.8),
                 description="⚡ Nabíjecí výkon ze sítě (kW)",
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            vol.Optional(
+                CONF_AUTO_MODE_SWITCH,
+                default=current_options.get(CONF_AUTO_MODE_SWITCH, False),
+                description="🤖 Automaticky volat přepnutí režimu podle plánu",
+            ): bool,
             # ECONOMIC CHARGING
             vol.Optional(
                 "enable_economic_charging",

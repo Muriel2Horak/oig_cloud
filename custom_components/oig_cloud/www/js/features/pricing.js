@@ -1123,6 +1123,7 @@ async function loadPricingData() {
             const baselineData = [];          // Předchozí kapacita (baseline pro stack)
             const solarStackData = [];        // Solar přírůstek
             const gridStackData = [];         // Grid přírůstek
+            const gridNetData = [];           // Netto odběr ze sítě (import - export)
 
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i];
@@ -1134,6 +1135,9 @@ async function loadPricingData() {
                     const targetCapacity = timelineEntry.battery_capacity_kwh || 0;
                     const solarCharge = timelineEntry.solar_charge_kwh || 0;
                     const gridCharge = timelineEntry.grid_charge_kwh || 0;
+                    const gridNet = typeof timelineEntry.grid_net === 'number'
+                        ? timelineEntry.grid_net
+                        : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
 
                     // Baseline = odkud vyšli (cílová - přírůstky)
                     const baseline = targetCapacity - solarCharge - gridCharge;
@@ -1142,11 +1146,13 @@ async function loadPricingData() {
                     baselineData.push(baseline);
                     solarStackData.push(solarCharge);
                     gridStackData.push(gridCharge);
+                    gridNetData.push(gridNet);
                 } else {
                     batteryCapacityData.push(null);
                     baselineData.push(null);
                     solarStackData.push(null);
                     gridStackData.push(null);
+                    gridNetData.push(null);
                 }
             }
 
@@ -1212,6 +1218,23 @@ async function loadPricingData() {
                 stack: 'charging',
                 order: 3
             });
+
+            if (gridNetData.some(v => v !== null)) {
+                datasets.push({
+                    label: '📡 Netto odběr ze sítě',
+                    data: gridNetData,
+                    borderColor: '#00BCD4',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    type: 'line',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    yAxisID: 'y-solar',
+                    order: 2
+                });
+            }
         }
     }
 

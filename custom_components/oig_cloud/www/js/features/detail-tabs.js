@@ -278,50 +278,184 @@ class DetailTabsDialog {
 
     /**
      * Render summary tiles at top of tab
+     * BE již počítá aggregované metriky v summary.metrics
      */
     renderSummary(summary, tabName) {
-        const { total_cost, overall_adherence, mode_switches } = summary;
+        if (!summary) {
+            return '';
+        }
 
-        // Adherence color coding
-        let adherenceColor = '#888'; // Gray for planned-only
-        let adherenceIcon = '📊';
-        if (overall_adherence !== null) {
-            if (overall_adherence >= 80) {
-                adherenceColor = '#4CAF50'; // Green
-                adherenceIcon = '✅';
-            } else if (overall_adherence >= 50) {
-                adherenceColor = '#FF9800'; // Orange
-                adherenceIcon = '⚠️';
-            } else {
-                adherenceColor = '#F44336'; // Red
-                adherenceIcon = '❌';
+        const { overall_adherence, mode_switches } = summary;
+        const metrics = summary.metrics || {};
+
+        // Hlavní 4 metriky (BE aggregace)
+        const metricTiles = [
+            this.renderSmartMetricTile(metrics.cost, '💰', 'Náklady', 'Kč', tabName),
+            this.renderSmartMetricTile(metrics.solar, '☀️', 'Solární výroba', 'kWh', tabName),
+            this.renderSmartMetricTile(metrics.consumption, '🏠', 'Spotřeba', 'kWh', tabName),
+            this.renderSmartMetricTile(metrics.grid, '⚡', 'Odběr ze sítě', 'kWh', tabName),
+        ]
+            .filter(Boolean)
+            .join('');
+
+        // Kompaktní meta info pod hlavními metrikami
+        const adherenceLabel = overall_adherence !== null && overall_adherence < 100
+            ? `${overall_adherence.toFixed(0)}% shoda`
+            : '✓ Dle plánu';
+
+        const metaInfo = `
+            <div class="summary-meta-compact">
+                <span class="meta-item">${adherenceLabel}</span>
+                <span class="meta-separator">|</span>
+                <span class="meta-item">${mode_switches || 0} přepnutí</span>
+            </div>
+        `;
+
+        return `
+            <div class="summary-tiles-smart">
+                ${metricTiles}
+            </div>
+            ${overall_adherence !== null && overall_adherence < 100 ? metaInfo : ''}
+        `;
+    }
+
+    /**
+     * Render smart metric tile - jednoduchý design s porovnáním
+     * Logika: Pokud máme actual, zobrazujeme actual vs plán
+     *         Pokud nemáme actual, zobrazujeme jen plán
+     */
+    renderSmartMetricTile(metric, icon, label, unit, tabName) {
+        if (!metric) {
+            return '';
+        }
+
+        const plan = Number(metric.plan ?? 0);
+        const actualValue =
+            metric.actual === null || metric.actual === undefined
+                ? null
+                : Number(metric.actual);
+        const hasActual =
+            actualValue !== null &&
+            (metric.has_actual || metric.actual_samples > 0) &&
+            tabName !== 'tomorrow';
+
+        const mainValue = hasActual ? actualValue : plan;
+        const mainLabel = hasActual ? 'Skutečnost' : 'Plán';
+
+        const planRow = hasActual
+            ? `
+                <div class="tile-sub-row">
+                    <span>Plán:</span>
+                    <span>${this.formatMetricValue(plan)} ${unit}</span>
+                </div>
+            `
+            : '';
+
+        const hintRow =
+            !hasActual && tabName === 'tomorrow'
+                ? `
+                    <div class="tile-sub-row hint-row">
+                        Plánovaná hodnota (čeká na živá data)
+                    </div>
+                `
+                : '';
+
+        let deltaRow = '';
+        if (hasActual) {
+            const delta = actualValue - plan;
+            const absDelta = Math.abs(delta);
+
+            const preferLower = label === 'Náklady' || label === 'Odběr ze sítě';
+            const preferHigher = label === 'Solární výroba';
+
+            let deltaState = 'delta-neutral';
+            if (absDelta >= 0.01) {
+                if (preferLower) {
+                    deltaState = delta <= 0 ? 'delta-better' : 'delta-worse';
+                } else if (preferHigher) {
+                    deltaState = delta >= 0 ? 'delta-better' : 'delta-worse';
+                }
             }
+
+            const deltaText =
+                deltaState === 'delta-better'
+                    ? 'Lépe než plán'
+                    : deltaState === 'delta-worse'
+                    ? 'Hůře než plán'
+                    : 'Rozdíl vs. plán';
+
+            const deltaValueText =
+                absDelta >= 0.01
+                    ? `${delta > 0 ? '+' : ''}${this.formatMetricValue(delta)} ${unit}`
+                    : '±0';
+
+            deltaRow = `
+                <div class="tile-delta ${deltaState}">
+                    <span>${deltaText}</span>
+                    <span>${deltaValueText}</span>
+                </div>
+            `;
+        }
+
+        const supplemental = [planRow, hintRow, deltaRow].filter(Boolean).join('');
+
+        return `
+            <div class="summary-tile-smart">
+                <div class="tile-header">
+                    <div class="tile-title">
+                        <span class="tile-icon">${icon}</span>
+                        <span class="tile-label">${label}</span>
+                    </div>
+                    <span class="tile-value-label">${mainLabel}</span>
+                </div>
+                <div class="tile-value-big">
+                    ${this.formatMetricValue(mainValue)} <span class="unit">${unit}</span>
+                </div>
+                ${supplemental}
+            </div>
+        `;
+    }
+
+    renderSummaryMetricTile(metric, icon, label) {
+        if (!metric) {
+            return '';
+        }
+
+        const plan = metric.plan ?? 0;
+        const actual = metric.actual ?? null;
+        const unit = metric.unit || '';
+        const hasActual = metric.has_actual;
+        const delta =
+            hasActual && actual !== null ? actual - plan : null;
+
+        const planLabel = `${plan.toFixed(2)} ${unit}`;
+
+        let actualHtml = '';
+        if (hasActual && actual !== null) {
+            const deltaClass =
+                delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
+            const deltaLabel =
+                delta !== null && Math.abs(delta) > 0.009
+                    ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
+                    : '';
+            actualHtml = `
+                <div class="metric-actual">
+                    <span class="metric-label">Skutečnost:</span>
+                    <span class="metric-value">${actual.toFixed(2)} ${unit}</span>
+                    ${deltaLabel}
+                </div>
+            `;
         }
 
         return `
-            <div class="summary-tiles">
-                <!-- Total Cost -->
-                <div class="summary-tile">
-                    <div class="tile-icon">💰</div>
-                    <div class="tile-value">${total_cost?.toFixed(2) || '0.00'} Kč</div>
-                    <div class="tile-label">Celková cena</div>
+            <div class="summary-tile metric-tile">
+                <div class="tile-icon">${icon}</div>
+                <div class="tile-label">${label}</div>
+                <div class="metric-plan">
+                    <span class="metric-label">Plán:</span>
+                    <span class="metric-value">${planLabel}</span>
                 </div>
-
-                <!-- Adherence % -->
-                <div class="summary-tile" style="border-left: 4px solid ${adherenceColor};">
-                    <div class="tile-icon">${adherenceIcon}</div>
-                    <div class="tile-value">
-                        ${overall_adherence !== null ? overall_adherence.toFixed(1) : 'N/A'}%
-                    </div>
-                    <div class="tile-label">Dodržení plánu</div>
-                </div>
-
-                <!-- Mode Switches -->
-                <div class="summary-tile">
-                    <div class="tile-icon">🔄</div>
-                    <div class="tile-value">${mode_switches || 0}</div>
-                    <div class="tile-label">Přepnutí módu</div>
-                </div>
+                ${actualHtml}
             </div>
         `;
     }
@@ -341,11 +475,14 @@ class DetailTabsDialog {
             cost_historical,
             cost_planned,
             cost_delta,
-            adherence_pct,
-            solar_total_kwh,
-            consumption_total_kwh,
-            grid_import_total_kwh,
-            grid_export_total_kwh
+            solar_planned_kwh,
+            solar_actual_kwh,
+            consumption_planned_kwh,
+            consumption_actual_kwh,
+            grid_import_planned_kwh,
+            grid_import_actual_kwh,
+            grid_export_planned_kwh,
+            grid_export_actual_kwh
         } = block;
 
         // Get mode config
@@ -360,14 +497,26 @@ class DetailTabsDialog {
         };
         const statusIcon = statusIcons[status] || '❓';
 
+        const isPlannedOnly = status === 'planned';
+        const hasActualData =
+            !isPlannedOnly &&
+            mode_historical &&
+            mode_historical !== 'Unknown' &&
+            cost_historical !== null &&
+            cost_historical !== undefined;
+
         // Match indicator
-        const matchClass = mode_match ? 'match-yes' : 'match-no';
-        const matchIcon = mode_match ? '✅' : '❌';
-        const matchLabel = mode_match ? 'Shoda' : 'Odchylka';
+        const matchClass = isPlannedOnly
+            ? 'match-neutral'
+            : mode_match
+              ? 'match-yes'
+              : 'match-no';
+        const matchIcon = isPlannedOnly ? 'ℹ️' : mode_match ? '✅' : '❌';
+        const matchLabel = isPlannedOnly ? 'Plán' : mode_match ? 'Shoda' : 'Odchylka';
 
         // Cost delta indicator
         let costDeltaHtml = '';
-        if (cost_delta !== null && cost_delta !== undefined) {
+        if (!isPlannedOnly && cost_delta !== null && cost_delta !== undefined) {
             const deltaClass = cost_delta > 0 ? 'cost-higher' : cost_delta < 0 ? 'cost-lower' : 'cost-equal';
             const deltaIcon = cost_delta > 0 ? '⬆️' : cost_delta < 0 ? '⬇️' : '➡️';
             costDeltaHtml = `
@@ -378,18 +527,24 @@ class DetailTabsDialog {
         }
 
         // Build compact single-line layout
-        const modeCompare = mode_planned !== 'Unknown'
-            ? `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
+        let modeCompare;
+        if (hasActualData && mode_planned !== 'Unknown') {
+            modeCompare = `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
                <span class="mode-arrow">→</span>
-               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`
-            : `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>`;
+               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+        } else {
+            modeCompare = `<span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+        }
 
-        const costCompare = cost_planned !== null && cost_planned !== undefined
-            ? `<span class="cost-actual">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>
-               <span class="cost-arrow">→</span>
-               <span class="cost-planned">${cost_planned.toFixed(2)} Kč</span>
-               ${costDeltaHtml}`
-            : `<span class="cost-actual">${cost_historical?.toFixed(2) || 'N/A'} Kč</span>`;
+        const costCompare = this.renderPlanActualValue(
+            hasActualData ? cost_historical : null,
+            cost_planned ?? 0,
+            'Kč',
+            costDeltaHtml
+        );
+
+        const modeLabelText = hasActualData ? 'Skutečnost/Plán:' : 'Plánovaný režim:';
+        const costLabelText = hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:';
 
         const timeRange = this.formatTimeRange(start_time, end_time);
 
@@ -408,41 +563,96 @@ class DetailTabsDialog {
                 <div class="block-content-row">
                     <!-- Režim -->
                     <div class="block-item">
-                        <span class="item-label">Skutečnost/Plán:</span>
+                        <span class="item-label">${modeLabelText}</span>
                         <div class="item-value">${modeCompare}</div>
                     </div>
 
                     <!-- Náklady -->
                     <div class="block-item">
-                        <span class="item-label">Cena (skutečná/plán):</span>
+                        <span class="item-label">${costLabelText}</span>
                         <div class="item-value">${costCompare}</div>
                     </div>
 
                     <!-- Solár -->
                     <div class="block-item">
                         <span class="item-label">☀️ Solár:</span>
-                        <div class="item-value">${solar_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        <div class="item-value">
+                            ${this.renderPlanActualValue(
+                                solar_actual_kwh,
+                                solar_planned_kwh,
+                                'kWh'
+                            )}
+                        </div>
                     </div>
 
                     <!-- Spotřeba -->
                     <div class="block-item">
                         <span class="item-label">🏠 Spotřeba:</span>
-                        <div class="item-value">${consumption_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        <div class="item-value">
+                            ${this.renderPlanActualValue(
+                                consumption_actual_kwh,
+                                consumption_planned_kwh,
+                                'kWh'
+                            )}
+                        </div>
                     </div>
 
                     <!-- Import -->
                     <div class="block-item">
                         <span class="item-label">⬇️ Import:</span>
-                        <div class="item-value">${grid_import_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        <div class="item-value">
+                            ${this.renderPlanActualValue(
+                                grid_import_actual_kwh,
+                                grid_import_planned_kwh,
+                                'kWh'
+                            )}
+                        </div>
                     </div>
 
                     <!-- Export -->
                     <div class="block-item">
                         <span class="item-label">⬆️ Export:</span>
-                        <div class="item-value">${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</div>
+                        <div class="item-value">
+                            ${this.renderPlanActualValue(
+                                grid_export_actual_kwh,
+                                grid_export_planned_kwh,
+                                'kWh'
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
+        `;
+    }
+
+    renderPlanActualValue(actual, planned, unit = 'kWh', extra = '') {
+        const hasActual =
+            actual !== null && actual !== undefined;
+        const planValue =
+            planned !== null && planned !== undefined
+                ? `${planned.toFixed(2)} ${unit}`
+                : 'N/A';
+
+        if (!hasActual) {
+            return `<span class="metric-plan">${planValue}</span>`;
+        }
+
+        const delta = actual - (planned ?? 0);
+        const deltaClass =
+            delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
+        const deltaLabel =
+            Math.abs(delta) > 0.009
+                ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
+                : '';
+
+        return `
+            <span class="metric-value-pair">
+                <span class="metric-actual">${actual.toFixed(2)} ${unit}</span>
+                <span class="metric-arrow">→</span>
+                <span class="metric-plan">${planValue}</span>
+                ${deltaLabel}
+                ${extra || ''}
+            </span>
         `;
     }
 
@@ -497,6 +707,22 @@ class DetailTabsDialog {
             month: 'long',
             day: 'numeric'
         });
+    }
+
+    formatMetricValue(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+            return '0.00';
+        }
+
+        const abs = Math.abs(num);
+        if (abs >= 1000) {
+            return num.toFixed(0);
+        }
+        if (abs >= 100) {
+            return num.toFixed(1);
+        }
+        return num.toFixed(2);
     }
 
     /**

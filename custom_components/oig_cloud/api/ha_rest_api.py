@@ -29,18 +29,40 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from aiohttp import web
 from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.util import dt as dt_util
+from homeassistant.config_entries import ConfigEntry
+
+from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH
 
 _LOGGER = logging.getLogger(__name__)
 
 # API routes base
 API_BASE = "/api/oig_cloud"
+
+
+def _find_entry_for_box(hass: HomeAssistant, box_id: str) -> Optional[ConfigEntry]:
+    """Locate config entry that owns a given box_id."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        return None
+
+    domain_data = hass.data.get(DOMAIN, {})
+    for entry in entries:
+        entry_data = domain_data.get(entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
+        if not coordinator or not hasattr(coordinator, "data"):
+            continue
+        box_map = getattr(coordinator, "data", {})
+        if isinstance(box_map, dict) and box_id in box_map:
+            return entry
+
+    return None
 
 
 class OIGCloudBatteryTimelineView(HomeAssistantView):
@@ -79,6 +101,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
         mode = request.query.get("mode", "hybrid").lower()
         timeline_type = request.query.get("type", "both")
         plan = request.query.get("plan", "hybrid").lower()
+        plan_key = "autonomy" if plan in ("autonomy", "auto") else "hybrid"
 
         try:
             # Find sensor entity
@@ -746,6 +769,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         tab = request.query.get("tab", None)
         plan = request.query.get("plan", "hybrid").lower()
+        plan_key = "autonomy" if plan in ("autonomy", "auto") else "hybrid"
 
         try:
             # Find sensor entity
@@ -771,42 +795,50 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
             # PHASE 3.5: Read from precomputed storage for instant response
             if (
-                plan == "hybrid"
+                plan_key in ("hybrid", "autonomy")
                 and hasattr(entity_obj, "_precomputed_store")
                 and entity_obj._precomputed_store
             ):
                 try:
                     precomputed_data = await entity_obj._precomputed_store.async_load()
-                    if precomputed_data and "detail_tabs" in precomputed_data:
-                        detail_tabs = precomputed_data["detail_tabs"]
-
-                        # Filter by tab if requested
-                        if tab and tab in ["yesterday", "today", "tomorrow"]:
-                            result = {tab: detail_tabs.get(tab, {})}
-                        else:
-                            # Return all tabs
-                            result = {
-                                "yesterday": detail_tabs.get("yesterday", {}),
-                                "today": detail_tabs.get("today", {}),
-                                "tomorrow": detail_tabs.get("tomorrow", {}),
-                            }
-
-                        _LOGGER.debug(
-                            f"API: Serving detail tabs from precomputed storage for {box_id}, "
-                            f"tab_filter={tab}, "
-                            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
-                            if precomputed_data.get("last_update")
-                            else "unknown age"
+                    if precomputed_data:
+                        detail_key = (
+                            "detail_tabs_autonomy"
+                            if plan_key == "autonomy"
+                            else "detail_tabs"
                         )
+                        detail_tabs = precomputed_data.get(detail_key)
+                        if plan_key == "autonomy" and not detail_tabs:
+                            detail_tabs = precomputed_data.get("detail_tabs")
 
-                        return web.json_response(result)
-                    else:
-                        _LOGGER.warning(
-                            f"No precomputed detail_tabs data found for {box_id}, falling back to live build"
-                        )
+                        if detail_tabs:
+                            # Filter by tab if requested
+                            if tab and tab in ["yesterday", "today", "tomorrow"]:
+                                result = {tab: detail_tabs.get(tab, {})}
+                            else:
+                                # Return all tabs
+                                result = {
+                                    "yesterday": detail_tabs.get("yesterday", {}),
+                                    "today": detail_tabs.get("today", {}),
+                                    "tomorrow": detail_tabs.get("tomorrow", {}),
+                                }
+
+                            _LOGGER.debug(
+                                f"API: Serving detail tabs ({plan_key}) from precomputed storage for {box_id}, "
+                                f"tab_filter={tab}, "
+                                f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
+                                if precomputed_data.get("last_update")
+                                else "unknown age"
+                            )
+
+                            return web.json_response(result)
+
+                    _LOGGER.warning(
+                        f"No precomputed detail_tabs ({plan_key}) data found for {box_id}, falling back to live build"
+                    )
                 except Exception as storage_error:
                     _LOGGER.warning(
-                        f"Failed to read precomputed data: {storage_error}, falling back to live build"
+                        f"Failed to read precomputed data ({plan_key}): {storage_error}, falling back to live build"
                     )
 
             # Fallback: Build detail tabs on-demand (old behavior)
@@ -842,6 +874,66 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class OIGCloudPlannerSettingsView(HomeAssistantView):
+    """API endpoint to read/update planner settings."""
+
+    url = f"{API_BASE}/battery_forecast/{{box_id}}/planner_settings"
+    name = "api:oig_cloud:planner_settings"
+    requires_auth = True
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        value = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+        return web.json_response({"auto_mode_switch_enabled": value})
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+
+        if not isinstance(payload, dict) or "auto_mode_switch_enabled" not in payload:
+            return web.json_response(
+                {"error": "auto_mode_switch_enabled field required"}, status=400
+            )
+
+        desired = bool(payload.get("auto_mode_switch_enabled"))
+        current = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+
+        if desired == current:
+            return web.json_response(
+                {
+                    "auto_mode_switch_enabled": current,
+                    "updated": False,
+                }
+            )
+
+        new_options = dict(entry.options)
+        new_options[CONF_AUTO_MODE_SWITCH] = desired
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Planner settings updated for %s: auto_mode_switch_enabled=%s",
+            box_id,
+            desired,
+        )
+
+        return web.json_response(
+            {
+                "auto_mode_switch_enabled": desired,
+                "updated": True,
+            }
+        )
+
+
 @callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
@@ -856,6 +948,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudBatteryTimelineView())
     hass.http.register_view(OIGCloudUnifiedCostTileView())
     hass.http.register_view(OIGCloudDetailTabsView())
+    hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
@@ -866,6 +959,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/battery_forecast/<box_id>/timeline\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/unified_cost_tile\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/detail_tabs\n"
+        f"  - {API_BASE}/battery_forecast/<box_id>/planner_settings\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"

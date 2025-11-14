@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import now as dt_now, utcnow as dt_utcnow
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.event import async_track_point_in_time
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
@@ -47,6 +48,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Battery forecast data
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
 
+        # Spot price cache shared between scheduler/fallback and coordinator updates
+        self._spot_prices_cache: Optional[Dict[str, Any]] = None
+
         # NOVÉ: OTE API inicializace - OPRAVA logiky
         pricing_enabled = self.config_entry and self.config_entry.options.get(
             "enable_pricing", False
@@ -59,10 +63,10 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
                 self.ote_api = OteApi()
 
-                # Naplánovat aktualizaci na příští den ve 13:00
+                # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
                 # OPRAVA: Použít zoneinfo místo pytz
                 now = datetime.now(ZoneInfo("Europe/Prague"))
-                next_update = now.replace(hour=13, minute=0, second=0, microsecond=0)
+                next_update = now.replace(hour=13, minute=5, second=0, microsecond=0)
                 if next_update <= now:
                     next_update += timedelta(days=1)
 
@@ -70,6 +74,10 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
                 # NOVÉ: Naplánovat fallback hodinové kontroly
                 self._schedule_hourly_fallback()
+
+                # NOVĚ: Aktivovat i hlavní plánovač a provést první fetch asynchronně
+                self._schedule_spot_price_update()
+                self.hass.async_create_task(self._update_spot_prices())
 
             except Exception as e:
                 _LOGGER.error(f"Failed to initialize OTE API: {e}")
@@ -135,9 +143,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _schedule_spot_price_update(self) -> None:
         """Naplánuje aktualizaci spotových cen."""
         now = dt_now()
-        today_13 = now.replace(hour=13, minute=0, second=0, microsecond=0)
+        today_13 = now.replace(hour=13, minute=5, second=0, microsecond=0)
 
-        # Pokud je už po 13:00 dnes, naplánujeme na zítra
+        # Pokud je už po 13:05 dnes, naplánujeme na zítra
         if now >= today_13:
             next_update = today_13 + timedelta(days=1)
         else:
@@ -149,9 +157,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         async def spot_price_callback(now: datetime) -> None:
             await self._update_spot_prices()
 
-        self.hass.helpers.event.async_track_point_in_time(
-            spot_price_callback, next_update
-        )
+        async_track_point_in_time(self.hass, spot_price_callback, next_update)
 
     def _schedule_hourly_fallback(self) -> None:
         """Naplánuje hodinové fallback stahování OTE dat."""
@@ -218,6 +224,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
                 if spot_data and spot_data.get("prices_czk_kwh"):
                     # Aktualizujeme data v koordinátoru
+                    self._spot_prices_cache = spot_data
                     if hasattr(self, "data") and self.data:
                         self.data["spot_prices"] = spot_data
                         self.async_update_listeners()
@@ -247,7 +254,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         try:
             _LOGGER.info(
-                "Attempting to update spot prices from OTE (scheduled 13:00 update)"
+                "Attempting to update spot prices from OTE (scheduled 13:05 update)"
             )
             spot_data = await self.ote_api.get_spot_prices()
 
@@ -255,6 +262,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.info(
                     f"Successfully updated spot prices: {spot_data.get('hours_count', 0)} hours"
                 )
+                self._spot_prices_cache = spot_data
                 self._last_spot_fetch = dt_now()
                 self._spot_retry_count = 0
                 self._hourly_fallback_active = (
@@ -266,7 +274,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     self.data["spot_prices"] = spot_data
                     self.async_update_listeners()
 
-                # Naplánujeme další aktualizaci na zítra ve 13:00
+                # Naplánujeme další aktualizaci na zítra ve 13:05
                 self._schedule_spot_price_update()
 
             else:
@@ -281,7 +289,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         """Handle spot price retry logic - pouze pro scheduled updates."""
         self._spot_retry_count += 1
 
-        # Omezit retry pouze na důležité časy (kolem 13:00)
+        # Omezit retry pouze na důležité časy (kolem 13:05)
         now = dt_now()
         is_important_time = 12 <= now.hour <= 15  # Retry pouze 12-15h
 
@@ -496,13 +504,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 await self._update_battery_forecast()
 
             # NOVÉ: Přidáme spotové ceny pokud jsou k dispozici
-            if (
-                self.ote_api
-                and hasattr(self, "data")
-                and self.data
-                and "spot_prices" in self.data
-            ):
-                stats["spot_prices"] = self.data["spot_prices"]
+            if self._spot_prices_cache:
+                stats["spot_prices"] = self._spot_prices_cache
                 _LOGGER.debug("Including cached spot prices in coordinator data")
             elif self.ote_api and not hasattr(self, "_initial_spot_attempted"):
                 # První pokus o získání spotových cen při startu
@@ -512,6 +515,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     spot_data = await self.ote_api.get_spot_prices()
                     if spot_data and spot_data.get("hours_count", 0) > 0:
                         stats["spot_prices"] = spot_data
+                        self._spot_prices_cache = spot_data
                         _LOGGER.info("Initial spot price data loaded successfully")
                     else:
                         _LOGGER.warning("Initial spot price fetch returned empty data")

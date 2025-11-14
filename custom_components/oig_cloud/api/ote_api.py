@@ -144,10 +144,27 @@ class OteApi:
     # ---------- interní utilitky ----------
 
     def _is_cache_valid(self) -> bool:
+        """Cache platí jen pro stejný den a po 13h musí obsahovat i zítřejší data."""
         if not self._cache_time or not self._last_data:
             return False
-        now = datetime.now()
-        return self._cache_time.date() == now.date()
+
+        now = datetime.now(self.timezone)
+        cache_day = self._cache_time.astimezone(self.timezone).date()
+
+        if cache_day != now.date():
+            return False
+
+        prices = self._last_data.get("prices_czk_kwh", {}) if self._last_data else {}
+
+        if now.hour >= 13:
+            tomorrow_prefix = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            has_tomorrow = any(
+                key.startswith(tomorrow_prefix) for key in prices.keys()
+            )
+            if not has_tomorrow:
+                return False
+
+        return True
 
     def _dam_period_query(
         self,
@@ -415,7 +432,7 @@ class OteApi:
 
             if data:
                 self._last_data = data
-                self._cache_time = datetime.now()
+                self._cache_time = datetime.now(self.timezone)
                 return data
 
         except Exception as e:
