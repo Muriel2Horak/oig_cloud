@@ -19,6 +19,10 @@ var timelineDataCache = {
         autonomy: { data: null, timestamp: null, chartsRendered: false }
     }
 };
+const timelineFetchPromises = {
+    hybrid: null,
+    autonomy: null
+};
 
 function getTimelineCacheBucket(plan) {
     if (!timelineDataCache.perPlan[plan]) {
@@ -680,58 +684,25 @@ async function loadPricingData() {
     if (!boxId) {
         if (loadingOverlay) loadingOverlay.style.display = 'none';
         return;
-    }    const datasets = [];
+    }
+    const datasets = [];
     let allLabels = [];
 
-    // === PHASE 1.5: Fetch pricing data from timeline API ===
-    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active&plan=${pricingPlanMode}`;
-    let timelineData = [];
+    const { data: rawTimelineData, fromCache } = await getTimelineData(pricingPlanMode, boxId);
     const cacheBucket = getTimelineCacheBucket(pricingPlanMode);
 
-    // Check cache first
-    const now = Date.now();
-    const cacheValid = cacheBucket.data &&
-                      cacheBucket.timestamp &&
-                      (now - cacheBucket.timestamp) < timelineDataCache.ttl;
-
-    if (cacheValid) {
-        console.log(`[Pricing] Using cached ${pricingPlanMode} timeline data (age: ${Math.round((now - cacheBucket.timestamp) / 1000)}s)`);
-        timelineData = cacheBucket.data;
-
-        // If charts are already rendered with this data, skip the entire function
+    if (fromCache) {
+        console.log(`[Pricing] Using cached ${pricingPlanMode} timeline data (age: ${Math.round((Date.now() - cacheBucket.timestamp) / 1000)}s)`);
         if (cacheBucket.chartsRendered) {
             const perfEnd = performance.now();
             console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
 
-            // Hide loading overlay
             if (loadingOverlay) loadingOverlay.style.display = 'none';
             return;
         }
-    } else {
-        const fetchStart = performance.now();
-        console.log('[Pricing] Fetching fresh timeline data from API...');
-        try {
-            const response = await fetch(timelineUrl);
-            if (response.ok) {
-                const data = await response.json();
-                timelineData = pricingPlanMode === 'autonomy'
-                    ? (data.timeline || [])
-                    : (data.active || []);
-
-                // Update cache
-                cacheBucket.data = timelineData;
-                cacheBucket.timestamp = now;
-                cacheBucket.chartsRendered = false;  // Reset flag - new data needs rendering
-
-                const fetchEnd = performance.now();
-                console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points for ${pricingPlanMode} plan`);
-            } else {
-                console.error('[Pricing] Failed to fetch timeline:', response.status);
-            }
-        } catch (error) {
-            console.error('[Pricing] Error fetching timeline:', error);
-        }
     }
+
+    let timelineData = Array.isArray(rawTimelineData) ? [...rawTimelineData] : [];
 
     // OPRAVA: Filtrovat pouze aktuální a budoucí intervaly
     const nowDate = new Date();
@@ -1899,4 +1870,51 @@ window.DashboardPricing = {
 console.log('[DashboardPricing] Module loaded');
 if (window.DashboardPricing && typeof window.DashboardPricing.init === 'function') {
     window.DashboardPricing.init();
+}
+async function fetchTimelineFromAPI(plan, boxId) {
+    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active&plan=${plan}`;
+    const fetchStart = performance.now();
+    console.log(`[Pricing] Fetching ${plan} timeline from API...`);
+    const response = await fetch(timelineUrl);
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const timelineData = plan === 'autonomy' ? (data.timeline || []) : (data.active || []);
+    const fetchEnd = performance.now();
+    console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points for ${plan} plan`);
+    return timelineData;
+}
+
+async function getTimelineData(plan, boxId, force = false) {
+    const cacheBucket = getTimelineCacheBucket(plan);
+    const now = Date.now();
+    const cacheValid = !force &&
+        cacheBucket.data &&
+        cacheBucket.timestamp &&
+        (now - cacheBucket.timestamp) < timelineDataCache.ttl;
+
+    if (cacheValid) {
+        return { data: cacheBucket.data, fromCache: true };
+    }
+
+    if (!timelineFetchPromises[plan]) {
+        timelineFetchPromises[plan] = fetchTimelineFromAPI(plan, boxId)
+            .then((timelineData) => {
+                cacheBucket.data = timelineData;
+                cacheBucket.timestamp = Date.now();
+                cacheBucket.chartsRendered = false;
+                return timelineData;
+            })
+            .catch((error) => {
+                console.error(`[Pricing] Failed to fetch ${plan} timeline:`, error);
+                throw error;
+            })
+            .finally(() => {
+                timelineFetchPromises[plan] = null;
+            });
+    }
+
+    const data = await timelineFetchPromises[plan];
+    return { data, fromCache: false };
 }
