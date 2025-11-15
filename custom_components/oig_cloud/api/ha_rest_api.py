@@ -671,6 +671,34 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
+            precomputed_tile = None
+            precomputed_data = None
+            if (
+                hasattr(entity_obj, "_precomputed_store")
+                and entity_obj._precomputed_store
+            ):
+                try:
+                    precomputed_data = await entity_obj._precomputed_store.async_load()
+                except Exception as storage_error:
+                    _LOGGER.warning(
+                        "Failed to read precomputed cost tile: %s", storage_error
+                    )
+
+            tile_key = (
+                "unified_cost_tile_autonomy"
+                if mode == "autonomy"
+                else "unified_cost_tile_hybrid"
+            )
+            if precomputed_data:
+                precomputed_tile = precomputed_data.get(tile_key)
+
+            if precomputed_tile:
+                _LOGGER.debug(
+                    "API: Serving %s unified cost tile from precomputed storage",
+                    mode,
+                )
+                return web.json_response(precomputed_tile)
+
             if mode == "autonomy":
                 if hasattr(entity_obj, "build_autonomy_cost_tile"):
                     try:

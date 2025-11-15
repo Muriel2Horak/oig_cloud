@@ -241,8 +241,41 @@ function initTodayPlanTile(container, tileSummary) {
 
 
 var costComparisonTileInstance = null;
+const COST_TILE_CACHE_TTL = 60 * 1000;
+let costComparisonTileCache = null;
+let costComparisonTileLastFetch = 0;
+let costComparisonTilePromise = null;
 
-async function loadCostComparisonTile(retryCount = 0, maxRetries = 3) {
+async function loadCostComparisonTile(force = false) {
+    const now = Date.now();
+
+    if (!force && costComparisonTileCache && now - costComparisonTileLastFetch < COST_TILE_CACHE_TTL) {
+        renderCostComparisonTile(
+            costComparisonTileCache.hybrid,
+            costComparisonTileCache.autonomy
+        );
+        return costComparisonTileCache;
+    }
+
+    if (!force && costComparisonTilePromise) {
+        return costComparisonTilePromise;
+    }
+
+    costComparisonTilePromise = fetchCostComparisonTileData()
+        .then((payload) => {
+            costComparisonTileCache = payload;
+            costComparisonTileLastFetch = Date.now();
+            renderCostComparisonTile(payload.hybrid, payload.autonomy);
+            return payload;
+        })
+        .finally(() => {
+            costComparisonTilePromise = null;
+        });
+
+    return costComparisonTilePromise;
+}
+
+async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
     try {
         console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
         const [hybridRes, autonomyRes] = await Promise.all([
@@ -254,19 +287,22 @@ async function loadCostComparisonTile(retryCount = 0, maxRetries = 3) {
             console.error('[Cost Comparison] API error', hybridRes.status, autonomyRes.status);
             if ((hybridRes.status >= 500 || autonomyRes.status >= 500) && retryCount < maxRetries) {
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-                setTimeout(() => loadCostComparisonTile(retryCount + 1, maxRetries), delay);
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                return fetchCostComparisonTileData(retryCount + 1, maxRetries);
             }
-            return;
+            throw new Error(`HTTP ${hybridRes.status}/${autonomyRes.status}`);
         }
 
         const [hybridData, autonomyData] = await Promise.all([hybridRes.json(), autonomyRes.json()]);
-        renderCostComparisonTile(hybridData, autonomyData);
+        return { hybrid: hybridData, autonomy: autonomyData };
     } catch (error) {
         console.error('[Cost Comparison] Failed to load', error);
         if (retryCount < maxRetries) {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-            setTimeout(() => loadCostComparisonTile(retryCount + 1, maxRetries), delay);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return fetchCostComparisonTileData(retryCount + 1, maxRetries);
         }
+        throw error;
     }
 }
 

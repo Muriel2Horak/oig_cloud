@@ -656,6 +656,13 @@ async function loadPricingData() {
     const perfStart = performance.now();
     console.log('[Pricing] === loadPricingData START ===');
 
+    // Start cost tile loading ASAP (non-blocking)
+    if (typeof loadCostComparisonTile === 'function') {
+        loadCostComparisonTile().catch((error) => {
+            console.error('[Pricing] Cost tile preload failed:', error);
+        });
+    }
+
     await ensurePricingPlanMode();
 
     // Show loading overlay
@@ -1563,14 +1570,6 @@ async function loadPricingData() {
     getTimelineCacheBucket(pricingPlanMode).chartsRendered = true;
 
     // Load combined cost comparison tile (hybrid + autonomy)
-    if (typeof loadCostComparisonTile === 'function') {
-        try {
-            await loadCostComparisonTile();
-        } catch (error) {
-            console.error('[Pricing] Failed to load cost comparison tile:', error);
-        }
-    }
-
     // Hide loading overlay
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';

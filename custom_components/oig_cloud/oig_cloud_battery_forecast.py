@@ -270,6 +270,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # File: oig_cloud.precomputed_data_{box_id}
         # Updated every 15 min by coordinator → instant API responses
         self._precomputed_store: Optional[Store] = None
+        self._precompute_interval = timedelta(minutes=15)
+        self._last_precompute_at: Optional[datetime] = None
+        self._precompute_task: Optional[asyncio.Task] = None
         if self._hass:
             self._precomputed_store = Store(
                 self._hass,
@@ -1214,7 +1217,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # PHASE 3.5: Precompute UI data for instant API responses
             # Build timeline_extended + unified_cost_tile and save to storage
             # This runs every 15 min after forecast update
-            await self._precompute_ui_data()
+            self._schedule_precompute(force=self._last_precompute_at is None)
 
             # Notify dependent sensors (BatteryBalancing) that forecast is ready
             from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -6622,16 +6625,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Build BOTH planners always (they are independent)
             detail_tabs_hybrid: Dict[str, Any] = {}
             detail_tabs_autonomy: Dict[str, Any] = {}
-            
+
             try:
                 detail_tabs_hybrid = await self.build_detail_tabs(plan="hybrid")
             except Exception as err:
-                _LOGGER.error(f"Failed to build hybrid detail_tabs: {err}", exc_info=True)
-            
+                _LOGGER.error(
+                    f"Failed to build hybrid detail_tabs: {err}", exc_info=True
+                )
+
             try:
                 detail_tabs_autonomy = await self.build_detail_tabs(plan="autonomy")
             except Exception as err:
-                _LOGGER.error(f"Failed to build autonomy detail_tabs: {err}", exc_info=True)
+                _LOGGER.error(
+                    f"Failed to build autonomy detail_tabs: {err}", exc_info=True
+                )
 
             # Build unified_cost_tile for BOTH planners - they are independent algorithms
             unified_cost_tile_hybrid = await self.build_unified_cost_tile()
@@ -6673,6 +6680,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         except Exception as e:
             _LOGGER.error(f"Failed to precompute UI data: {e}", exc_info=True)
+        finally:
+            self._last_precompute_at = dt_util.now()
+
+    def _schedule_precompute(self, force: bool = False) -> None:
+        """Schedule precompute job with throttling."""
+        if not self.hass or not self._precomputed_store:
+            return
+
+        now = dt_util.now()
+        if (
+            not force
+            and self._last_precompute_at
+            and (now - self._last_precompute_at) < self._precompute_interval
+        ):
+            _LOGGER.debug(
+                "[Precompute] Skipping (last run %ss ago)",
+                (now - self._last_precompute_at).total_seconds(),
+            )
+            return
+
+        if self._precompute_task and not self._precompute_task.done():
+            _LOGGER.debug("[Precompute] Job already running, skipping")
+            return
+
+        async def _runner():
+            try:
+                await self._precompute_ui_data()
+            except Exception as err:  # pragma: no cover - logged inside
+                _LOGGER.error("[Precompute] Job failed: %s", err, exc_info=True)
+            finally:
+                self._precompute_task = None
+
+        self._precompute_task = self.hass.async_create_task(_runner())
 
     async def _run_autonomy_preview(
         self,
@@ -8740,9 +8780,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 total += safe_float(actual.get("net_cost", 0.0))
             return round(total, 2)
 
-        actual_cost_so_far = sum_actual_cost_until(
-            today_intervals, current_slot_start
-        )
+        actual_cost_so_far = sum_actual_cost_until(today_intervals, current_slot_start)
         active_plan = "hybrid"
         active_plan_getter = getattr(self, "_get_active_plan_key", None)
         if callable(active_plan_getter):
@@ -8762,9 +8800,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else None
         )
 
-        hybrid_today_cost = self._get_day_cost_from_timeline(
-            self._timeline_data, today
-        )
+        hybrid_today_cost = self._get_day_cost_from_timeline(self._timeline_data, today)
         today_plan_total = resolve_autonomy_plan_total(today)
         today_entry = {
             "date": today.isoformat(),
@@ -9887,7 +9923,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Get tomorrow's timeline
         tomorrow_timeline = await self._build_day_timeline(tomorrow)
         intervals = tomorrow_timeline.get("intervals", [])
-        
+
         if not intervals:
             return {
                 "plan_total_cost": 0.0,

@@ -3012,7 +3012,9 @@ async function buildExtendedTimeline() {
 
         // Update Cost Comparison Tile (event-driven refresh)
         if (typeof loadCostComparisonTile === 'function') {
-            await loadCostComparisonTile();
+            loadCostComparisonTile().catch((error) => {
+                console.error('[TimelineDialog] Failed to load cost comparison tile', error);
+            });
         }
 
     } catch (error) {
