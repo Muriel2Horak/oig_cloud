@@ -7311,9 +7311,15 @@
 
 .cost-main-row {
     display: grid;
-    grid-template-columns: minmax(130px, 1fr) minmax(70px, 0.7fr) minmax(130px, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
     align-items: stretch;
+}
+
+.cost-delta-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 4px;
 }
 
 .cost-main-card {
@@ -7344,6 +7350,18 @@
     color: var(--text-primary);
     line-height: 1.1;
     white-space: nowrap;
+}
+
+.cost-main-breakdown {
+    font-size: 0.75em;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.cost-main-breakdown-divider {
+    opacity: 0.6;
 }
 
 .cost-delta-pill {

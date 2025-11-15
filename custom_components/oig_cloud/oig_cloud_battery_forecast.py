@@ -6608,27 +6608,56 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.info("📊 Precomputing UI data for instant API responses...")
             start_time = dt_util.now()
 
-            # Build detail_tabs (yesterday + today + tomorrow with mode_blocks)
-            detail_tabs = await self.build_detail_tabs()
-            autonomy_detail_tabs: Dict[str, Any] = {}
-            try:
-                autonomy_detail_tabs = await self.build_detail_tabs(plan="autonomy")
-            except Exception as err:
-                _LOGGER.debug(
-                    "Failed to precompute autonomy detail_tabs, falling back to hybrid: %s",
-                    err,
-                )
+            # Build detail_tabs for BOTH planners - they are independent algorithms
+            # Each algorithm has its own timeline, but they share:
+            # - Yesterday (historical actual)
+            # - Today completed intervals (historical actual)
+            # - Today active interval (current actual)
+            # They differ in:
+            # - Today future intervals (each has its own plan)
+            # - Tomorrow (each has its own plan)
+            config_options = self._config_entry.options if self._config_entry else {}
+            battery_planner_mode = config_options.get("battery_planner_mode", "hybrid")
 
-            # Build unified_cost_tile (today/yesterday/tomorrow cost summary)
-            unified_cost_tile = await self.build_unified_cost_tile()
+            # Build BOTH planners always (they are independent)
+            detail_tabs_hybrid: Dict[str, Any] = {}
+            detail_tabs_autonomy: Dict[str, Any] = {}
+            
+            try:
+                detail_tabs_hybrid = await self.build_detail_tabs(plan="hybrid")
+            except Exception as err:
+                _LOGGER.error(f"Failed to build hybrid detail_tabs: {err}", exc_info=True)
+            
+            try:
+                detail_tabs_autonomy = await self.build_detail_tabs(plan="autonomy")
+            except Exception as err:
+                _LOGGER.error(f"Failed to build autonomy detail_tabs: {err}", exc_info=True)
+
+            # Build unified_cost_tile for BOTH planners - they are independent algorithms
+            unified_cost_tile_hybrid = await self.build_unified_cost_tile()
+            unified_cost_tile_autonomy = await self.build_autonomy_cost_tile()
+
+            # Snapshot current timelines for both planners
+            timeline_hybrid = copy.deepcopy(
+                getattr(self, "_hybrid_timeline", None) or self._timeline_data or []
+            )
+            timeline_autonomy = []
+            if self._autonomy_preview:
+                timeline_autonomy = copy.deepcopy(
+                    self._autonomy_preview.get("timeline", []) or []
+                )
 
             # Save to storage
             precomputed_data = {
-                "detail_tabs": detail_tabs,  # Changed from timeline_extended
-                "detail_tabs_autonomy": autonomy_detail_tabs,
-                "unified_cost_tile": unified_cost_tile,
+                "detail_tabs_hybrid": detail_tabs_hybrid,  # Standard algorithm
+                "detail_tabs_autonomy": detail_tabs_autonomy,  # Dynamic algorithm
+                "active_planner": battery_planner_mode,  # Which planner is active (for default view)
+                "unified_cost_tile_hybrid": unified_cost_tile_hybrid,  # Standard algorithm costs
+                "unified_cost_tile_autonomy": unified_cost_tile_autonomy,  # Dynamic algorithm costs
+                "timeline_hybrid": timeline_hybrid,
+                "timeline_autonomy": timeline_autonomy,
                 "last_update": dt_util.now().isoformat(),
-                "version": 1,
+                "version": 2,  # Dual-planner architecture
             }
 
             await self._precomputed_store.async_save(precomputed_data)
@@ -6636,8 +6665,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             duration = (dt_util.now() - start_time).total_seconds()
             _LOGGER.info(
                 f"✅ Precomputed UI data saved to storage in {duration:.2f}s "
-                f"(detail_tabs: {len(detail_tabs.get('today', {}).get('mode_blocks', []))} blocks, "
-                f"cost: {unified_cost_tile.get('today', {}).get('plan_total_cost', 0):.2f} Kč)"
+                f"(hybrid: {len(detail_tabs_hybrid.get('today', {}).get('mode_blocks', []))} blocks, "
+                f"autonomy: {len(detail_tabs_autonomy.get('today', {}).get('mode_blocks', []))} blocks, "
+                f"hybrid_cost: {unified_cost_tile_hybrid.get('today', {}).get('plan_total_cost', 0):.2f} Kč, "
+                f"autonomy_cost: {unified_cost_tile_autonomy.get('today', {}).get('plan_total_cost', 0):.2f} Kč)"
             )
 
         except Exception as e:
@@ -7238,12 +7269,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         autonomy_tabs = await self._build_autonomy_only_tabs(
             tab=tab,
             timeline_extended=timeline_extended,
-            include_actual=(
-                self._get_auto_mode_plan() == "autonomy"
-                and (
-                    self._auto_mode_switch_enabled() or self._is_autonomy_preview_only()
-                )
-            ),
+            include_actual=True,
         )
 
         if plan_normalized == "autonomy":
@@ -7315,7 +7341,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self,
         tab: Optional[str] = None,
         timeline_extended: Optional[Dict[str, Any]] = None,
-        include_actual: bool = False,
+        include_actual: bool = True,
     ) -> Dict[str, Any]:
         """Build detail tabs purely from autonomy preview (no hybrid merge)."""
 
@@ -8568,6 +8594,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
         try:
+            # Yesterday is always the same for both planners (historical data)
             yesterday_data = self._get_yesterday_cost_from_archive()
         except Exception as e:
             _LOGGER.error(f"Failed to get yesterday cost data: {e}", exc_info=True)
@@ -8604,7 +8631,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return result
 
     async def build_autonomy_cost_tile(self) -> Dict[str, Any]:
-        """Build cost tile data for autonomous preview."""
+        """Build cost tile data for autonomous preview with blended totals."""
 
         now = dt_util.now()
         today = now.date()
@@ -8623,49 +8650,172 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except Exception as err:
                 _LOGGER.warning(f"Autonomy store load failed: {err}")
 
-        def build_day_entry(day_obj: date) -> Dict[str, Any]:
+        timeline_extended = await self.build_timeline_extended()
+        today_tab = (timeline_extended or {}).get("today", {})
+        today_intervals: List[Dict[str, Any]] = today_tab.get("intervals", [])
+        yesterday_summary = self._get_yesterday_cost_from_archive()
+
+        def safe_float(value: Any, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        current_slot_start = now.replace(
+            minute=(now.minute // 15) * 15,
+            second=0,
+            microsecond=0,
+        )
+
+        def parse_time(ts: Optional[str]) -> Optional[datetime]:
+            if not ts:
+                return None
+            dt_obj = dt_util.parse_datetime(ts)
+            if dt_obj is None:
+                try:
+                    dt_obj = datetime.fromisoformat(ts)
+                except Exception:
+                    return None
+            if dt_obj.tzinfo is None:
+                dt_obj = dt_util.as_local(dt_obj)
+            return dt_obj
+
+        def iter_autonomy_intervals(day_obj: date):
+            prefix = day_obj.isoformat()
+            for entry in timeline:
+                ts_str = entry.get("time") or entry.get("timestamp")
+                if not ts_str or not ts_str.startswith(prefix):
+                    continue
+                dt_obj = parse_time(ts_str)
+                if not dt_obj or dt_obj.date() != day_obj:
+                    continue
+                yield entry, dt_obj
+
+        def resolve_autonomy_plan_total(day_obj: date) -> Optional[float]:
             day_str = day_obj.isoformat()
-            planned_cost = day_costs_preview.get(day_str)
-            if planned_cost is None:
-                planned_cost = (
-                    store_daily.get(day_str, {}).get("plan_total_cost")
-                    if store_daily.get(day_str)
-                    else None
+            value = day_costs_preview.get(day_str)
+            if value is None and store_daily.get(day_str):
+                value = store_daily[day_str].get("plan_total_cost")
+            if value is not None:
+                try:
+                    return round(float(value), 2)
+                except (TypeError, ValueError):
+                    return None
+            total = 0.0
+            found = False
+            for entry, _ in iter_autonomy_intervals(day_obj):
+                total += safe_float(entry.get("net_cost", 0.0))
+                found = True
+            return round(total, 2) if found else None
+
+        def sum_future_autonomy(
+            day_obj: date,
+            cutoff: Optional[datetime],
+            include_cutoff: bool,
+        ) -> Optional[float]:
+            total = 0.0
+            found = False
+            for entry, dt_obj in iter_autonomy_intervals(day_obj):
+                if cutoff and (
+                    dt_obj < cutoff or (not include_cutoff and dt_obj == cutoff)
+                ):
+                    continue
+                found = True
+                total += safe_float(entry.get("net_cost", 0.0))
+            return round(total, 2) if found else None
+
+        def sum_actual_cost_until(
+            intervals: List[Dict[str, Any]], cutoff: datetime
+        ) -> float:
+            total = 0.0
+            for interval in intervals:
+                ts = parse_time(interval.get("time"))
+                if not ts or ts >= cutoff:
+                    continue
+                actual = interval.get("actual")
+                if not actual:
+                    continue
+                total += safe_float(actual.get("net_cost", 0.0))
+            return round(total, 2)
+
+        actual_cost_so_far = sum_actual_cost_until(
+            today_intervals, current_slot_start
+        )
+        active_plan = "hybrid"
+        active_plan_getter = getattr(self, "_get_active_plan_key", None)
+        if callable(active_plan_getter):
+            try:
+                active_plan = active_plan_getter() or "hybrid"
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to resolve active plan key: %s. Defaulting to hybrid.", err
                 )
+        include_current_interval = active_plan == "autonomy"
+        future_autonomy_cost = sum_future_autonomy(
+            today, current_slot_start, include_current_interval
+        )
+        blended_total = (
+            round(actual_cost_so_far + future_autonomy_cost, 2)
+            if future_autonomy_cost is not None
+            else None
+        )
 
-            hybrid_cost = self._get_day_cost_from_timeline(self._timeline_data, day_obj)
+        hybrid_today_cost = self._get_day_cost_from_timeline(
+            self._timeline_data, today
+        )
+        today_plan_total = resolve_autonomy_plan_total(today)
+        today_entry = {
+            "date": today.isoformat(),
+            "plan_total_cost": today_plan_total,
+            "hybrid_plan_total": (
+                round(hybrid_today_cost, 2) if hybrid_today_cost is not None else None
+            ),
+            "delta_vs_hybrid": (
+                round(today_plan_total - hybrid_today_cost, 2)
+                if today_plan_total is not None and hybrid_today_cost is not None
+                else None
+            ),
+            "blended_total_cost": blended_total,
+            "actual_total_cost": actual_cost_so_far,
+            "actual_cost_so_far": actual_cost_so_far,
+            "future_plan_cost": future_autonomy_cost,
+        }
 
-            entry = {
-                "date": day_str,
-                "plan_total_cost": (
-                    round(planned_cost, 2) if planned_cost is not None else None
-                ),
-                "hybrid_plan_total": (
-                    round(hybrid_cost, 2) if hybrid_cost is not None else None
-                ),
-            }
+        tomorrow_plan_total = resolve_autonomy_plan_total(tomorrow)
+        hybrid_tomorrow_cost = self._get_day_cost_from_timeline(
+            self._timeline_data, tomorrow
+        )
+        tomorrow_entry: Dict[str, Any] = {
+            "date": tomorrow.isoformat(),
+            "plan_total_cost": tomorrow_plan_total,
+            "hybrid_plan_total": (
+                round(hybrid_tomorrow_cost, 2)
+                if hybrid_tomorrow_cost is not None
+                else None
+            ),
+        }
+        if (
+            tomorrow_plan_total is not None
+            and tomorrow_entry["hybrid_plan_total"] is not None
+        ):
+            tomorrow_entry["delta_vs_hybrid"] = round(
+                tomorrow_plan_total - tomorrow_entry["hybrid_plan_total"], 2
+            )
 
-            if (
-                entry["plan_total_cost"] is not None
-                and entry["hybrid_plan_total"] is not None
-            ):
-                entry["delta_vs_hybrid"] = round(
-                    entry["plan_total_cost"] - entry["hybrid_plan_total"], 2
-                )
-
-            return entry
-
-        tile = {
-            "today": build_day_entry(today),
-            "tomorrow": build_day_entry(tomorrow),
-            "yesterday": build_day_entry(yesterday),
+        result = {
+            "today": today_entry,
+            "yesterday": yesterday_summary,
+            "tomorrow": tomorrow_entry,
             "metadata": {
                 "last_update": now.isoformat(),
                 "plan": "autonomy",
+                "preview_available": bool(timeline),
             },
         }
 
-        return tile
+        return result
 
     def _group_intervals_by_mode(
         self, intervals: List[Dict[str, Any]], data_type: str = "both"
@@ -9464,6 +9614,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "plan_total_cost": round(plan_total, 2),
             "actual_total_cost": round(actual_total, 2),
             "delta": round(delta, 2),
+            "blended_total_cost": round(actual_completed + plan_future, 2),
+            "actual_cost_so_far": round(actual_completed, 2),
+            "future_plan_cost": round(plan_future, 2),
             "performance": performance,
             "completed_intervals": completed_count,
             "total_intervals": total_intervals,
@@ -9734,7 +9887,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Get tomorrow's timeline
         tomorrow_timeline = await self._build_day_timeline(tomorrow)
         intervals = tomorrow_timeline.get("intervals", [])
-
+        
         if not intervals:
             return {
                 "plan_total_cost": 0.0,
@@ -14731,8 +14884,11 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 "detail_tabs_autonomy" if plan_key == "autonomy" else "detail_tabs"
             )
             detail_tabs = precomputed.get(detail_key, {})
-            if plan_key == "autonomy" and not detail_tabs:
-                detail_tabs = precomputed.get("detail_tabs", {})
+            if not detail_tabs:
+                _LOGGER.debug(
+                    "[GridChargingPlan] No %s detail tabs data available", plan_key
+                )
+                return []
 
             # 4. Filtrovat HOME UPS bloky - pouze active + planned (ne completed)
             now = dt_util.now()

@@ -10,7 +10,7 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
 };
 
 // Cache for timeline data to prevent re-fetching on tab switch
-var pricingPlanMode = 'hybrid';
+var pricingPlanMode = null;
 
 var timelineDataCache = {
     ttl: 60000,  // 60 seconds TTL
@@ -68,6 +68,27 @@ function isLightTheme() {
     return false; // Default: dark theme
 }
 
+async function ensurePricingPlanMode(force = false) {
+    if (pricingPlanMode && !force) {
+        return pricingPlanMode;
+    }
+
+    if (window.PlannerState) {
+        try {
+            const plan = await window.PlannerState.getDefaultPlan(force);
+            pricingPlanMode = plan || 'hybrid';
+        } catch (error) {
+            console.warn('[Pricing] Failed to resolve default plan', error);
+            pricingPlanMode = 'hybrid';
+        }
+    } else {
+        pricingPlanMode = 'hybrid';
+    }
+
+    updateChartPlanIndicator();
+    return pricingPlanMode;
+}
+
 function updateChartPlanIndicator() {
     const buttons = document.querySelectorAll('.chart-plan-toggle-btn');
     buttons.forEach((btn) => {
@@ -77,7 +98,9 @@ function updateChartPlanIndicator() {
 
     const pill = document.getElementById('chart-plan-pill');
     if (pill) {
-        pill.textContent = pricingPlanMode === 'autonomy' ? 'Auto' : 'Hybrid';
+        const label = window.PLAN_LABELS?.[pricingPlanMode]?.short
+            || (pricingPlanMode === 'autonomy' ? 'Dynamický' : 'Standardní');
+        pill.textContent = label;
         pill.classList.toggle('autonomy', pricingPlanMode === 'autonomy');
     }
 }
@@ -102,7 +125,7 @@ function initChartPlanToggle() {
         });
     });
 
-    updateChartPlanIndicator();
+    ensurePricingPlanMode();
 }
 
 function getTextColor() {
@@ -632,6 +655,8 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
 async function loadPricingData() {
     const perfStart = performance.now();
     console.log('[Pricing] === loadPricingData START ===');
+
+    await ensurePricingPlanMode();
 
     // Show loading overlay
     const loadingOverlay = document.getElementById('pricing-loading-overlay');

@@ -125,7 +125,40 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
+            precomputed_data: Optional[Dict[str, Any]] = None
+            if (
+                hasattr(entity_obj, "_precomputed_store")
+                and getattr(entity_obj, "_precomputed_store")
+            ):
+                try:
+                    precomputed_data = (
+                        await entity_obj._precomputed_store.async_load()
+                        or {}
+                    )
+                except Exception as storage_error:
+                    _LOGGER.warning(
+                        f"Failed to read precomputed timeline data: {storage_error}"
+                    )
+
             if plan == "autonomy":
+                stored_autonomy = (precomputed_data or {}).get("timeline_autonomy")
+                if stored_autonomy:
+                    last_update = (precomputed_data or {}).get("last_update")
+                    response_data = {
+                        "plan": "autonomy",
+                        "timeline": stored_autonomy,
+                        "metadata": {
+                            "box_id": box_id,
+                            "last_update": last_update,
+                            "points_count": len(stored_autonomy),
+                            "size_kb": round(
+                                sys.getsizeof(str(stored_autonomy)) / 1024, 1
+                            ),
+                        },
+                    }
+
+                    return web.json_response(response_data)
+
                 autonomy_timeline = []
                 if hasattr(entity_obj, "get_autonomy_timeline"):
                     autonomy_timeline = entity_obj.get_autonomy_timeline()
@@ -155,10 +188,21 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
                 return web.json_response(response_data)
 
-            # Get timeline data from sensor's internal variables
-            active_timeline = getattr(entity_obj, "_timeline_data", [])
+            # Get timeline data from storage or sensor's internal variables
+            stored_active = None
+            if precomputed_data:
+                stored_active = precomputed_data.get("timeline_hybrid")
+                if stored_active:
+                    _LOGGER.debug(
+                        "API: Serving hybrid timeline from precomputed storage for %s",
+                        box_id,
+                    )
+
+            active_timeline = stored_active or getattr(entity_obj, "_timeline_data", [])
             baseline_timeline = getattr(entity_obj, "_baseline_timeline", [])
             last_update = getattr(entity_obj, "_last_update", None)
+            if stored_active and precomputed_data:
+                last_update = precomputed_data.get("last_update", last_update)
 
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
@@ -808,8 +852,12 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                             else "detail_tabs"
                         )
                         detail_tabs = precomputed_data.get(detail_key)
-                        if plan_key == "autonomy" and not detail_tabs:
-                            detail_tabs = precomputed_data.get("detail_tabs")
+                        if not detail_tabs:
+                            _LOGGER.debug(
+                                "API: detail_tabs(%s) missing in precomputed store",
+                                plan_key,
+                            )
+                            detail_tabs = None
 
                         if detail_tabs:
                             # Filter by tab if requested

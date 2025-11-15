@@ -368,7 +368,15 @@ class TimelineDialog {
         console.log('[TimelineDialog] Prefetching all tab data...');
 
         try {
-            await this.loadAllTabsData(false, 'hybrid');
+            let defaultPlan = 'hybrid';
+            if (window.PlannerState) {
+                try {
+                    defaultPlan = await window.PlannerState.getDefaultPlan();
+                } catch (error) {
+                    console.warn('[TimelineDialog] Failed to resolve default plan for prefetch', error);
+                }
+            }
+            await this.loadAllTabsData(false, defaultPlan);
             console.log('[TimelineDialog] Prefetch complete');
         } catch (error) {
             console.warn('[TimelineDialog] Prefetch failed:', error);

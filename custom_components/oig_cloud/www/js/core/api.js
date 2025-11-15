@@ -386,6 +386,106 @@ function getInverterSN() {
 }
 
 // ============================================================================
+// PLANNER SETTINGS / PLAN LABELS
+// ============================================================================
+
+const PLAN_LABELS = {
+    hybrid: { short: 'Standardní', long: 'Standardní plánování' },
+    autonomy: { short: 'Dynamický', long: 'Dynamické plánování' }
+};
+
+const PlannerState = (() => {
+    const CACHE_TTL = 60 * 1000; // 1 minuta
+    let cache = null;
+    let lastFetch = 0;
+    let inflight = null;
+
+    const resolveActivePlan = (settings) => {
+        if (!settings) {
+            return 'hybrid';
+        }
+        if (settings.planner_mode === 'autonomy_preview') {
+            return 'autonomy';
+        }
+        const preferred = settings.auto_mode_plan || 'autonomy';
+        if (settings.auto_mode_switch_enabled && preferred === 'autonomy') {
+            return 'autonomy';
+        }
+        return 'hybrid';
+    };
+
+    const fetchSettings = async (force = false) => {
+        const now = Date.now();
+        if (!force && cache && now - lastFetch < CACHE_TTL) {
+            return cache;
+        }
+        if (inflight) {
+            return inflight;
+        }
+
+        inflight = (async () => {
+            if (!window.INVERTER_SN) {
+                return null;
+            }
+
+            const endpoint = `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`;
+
+            try {
+                const hass = window.DashboardAPI?.getHass?.() || window.getHass?.();
+                let payload;
+
+                if (hass && typeof hass.callApi === 'function') {
+                    payload = await hass.callApi('GET', endpoint);
+                } else {
+                    const headers = { 'Content-Type': 'application/json' };
+                    const token = window.DashboardAPI?.getHAToken?.();
+                    if (token) {
+                        headers.Authorization = `Bearer ${token}`;
+                    }
+
+                    const response = await fetch(`/api/${endpoint}`, {
+                        method: 'GET',
+                        headers,
+                        credentials: 'same-origin'
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    payload = await response.json();
+                }
+
+                cache = payload;
+                lastFetch = Date.now();
+                return payload;
+            } catch (error) {
+                console.warn('[PlannerState] Failed to fetch planner settings', error);
+                return null;
+            } finally {
+                inflight = null;
+            }
+        })();
+
+        return inflight;
+    };
+
+    const getDefaultPlan = async (force = false) => {
+        const settings = await fetchSettings(force);
+        return resolveActivePlan(settings);
+    };
+
+    const getLabels = (plan = 'hybrid') => PLAN_LABELS[plan] || PLAN_LABELS.hybrid;
+
+    return {
+        fetchSettings,
+        getDefaultPlan,
+        resolveActivePlan,
+        getLabels
+    };
+})();
+
+// ============================================================================
 // EXPORT DEFAULT (backward compatibility)
 // ============================================================================
 
@@ -408,9 +508,13 @@ if (typeof window !== 'undefined') {
         openEntityDialog,
         batchLoadSensors,
         setInverterSN,
-        getInverterSN
+        getInverterSN,
+        plannerState: PlannerState,
+        planLabels: PLAN_LABELS
     };
 
     // Backward compatibility - expose getHass globally
     window.getHass = getHass;
+    window.PlannerState = PlannerState;
+    window.PLAN_LABELS = PLAN_LABELS;
 }

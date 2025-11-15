@@ -6,6 +6,7 @@ class CostComparisonTile {
         this.onOpenHybrid = options.onOpenHybrid;
         this.onOpenAutonomy = options.onOpenAutonomy;
         this.boundContainerClick = null;
+        this.hasData = false;
         this.render();
     }
 
@@ -15,15 +16,54 @@ class CostComparisonTile {
         this.render();
     }
 
+    getPlanLabel(plan, variant = 'short') {
+        const fallback = plan === 'autonomy' ? 'Dynamický' : 'Standardní';
+        const labels = window.PLAN_LABELS && window.PLAN_LABELS[plan];
+        if (!labels) {
+            return fallback;
+        }
+        return labels[variant] || labels.short || fallback;
+    }
+
+    getDisplayCost(dayData) {
+        if (!dayData) {
+            return null;
+        }
+        if (dayData.blended_total_cost != null) {
+            return dayData.blended_total_cost;
+        }
+        if (dayData.plan_total_cost != null) {
+            return dayData.plan_total_cost;
+        }
+        return null;
+    }
+
+    getActualCost(dayData) {
+        if (!dayData) {
+            return null;
+        }
+        if (dayData.actual_cost_so_far != null) {
+            return dayData.actual_cost_so_far;
+        }
+        if (dayData.actual_total_cost != null) {
+            return dayData.actual_total_cost;
+        }
+        return null;
+    }
+
     render() {
         if (!this.hybrid.today || !this.autonomy.today) {
-            this.container.innerHTML = this.renderPlaceholder();
+            if (!this.hasData) {
+                this.container.innerHTML = this.renderPlaceholder();
+            }
             return;
         }
 
+        this.hasData = true;
         this.container.classList.add('cost-card');
         this.container.innerHTML = `
             ${this.renderMainRow()}
+            ${this.renderDeltaRow()}
             ${this.renderMetaRow()}
         `;
 
@@ -45,18 +85,43 @@ class CostComparisonTile {
 
         return `
             <div class="cost-main-row">
-                ${this.renderMainCard('Hybrid', hybridToday.plan_total_cost, 'hybrid')}
-                ${this.renderDeltaPill(hybridToday.plan_total_cost, autonomyToday.plan_total_cost)}
-                ${this.renderMainCard('Auto', autonomyToday.plan_total_cost, 'autonomy')}
+                ${this.renderMainCard('hybrid', hybridToday)}
+                ${this.renderMainCard('autonomy', autonomyToday)}
             </div>
         `;
     }
 
-    renderMainCard(label, value, plan) {
+    renderDeltaRow() {
+        const hybridToday = this.hybrid.today || {};
+        const autonomyToday = this.autonomy.today || {};
+
+        return `
+            <div class="cost-delta-container">
+                ${this.renderDeltaPill(
+                    this.getDisplayCost(hybridToday),
+                    this.getDisplayCost(autonomyToday)
+                )}
+            </div>
+        `;
+    }
+
+    renderMainCard(plan, dayData) {
+        const label = this.getPlanLabel(plan);
+        const value = this.getDisplayCost(dayData);
+        const actual = this.getActualCost(dayData);
+        const future = dayData?.future_plan_cost ?? null;
+        const hasBreakdown = actual != null && future != null;
+
         return `
             <div class="cost-main-card" data-plan="${plan}">
                 <div class="cost-main-label">${label}</div>
                 <div class="cost-main-value">${this.formatCost(value)}</div>
+                ${hasBreakdown ? `
+                    <div class="cost-main-breakdown">
+                        <span>${this.formatCost(actual)}</span>
+                        <span class="cost-main-breakdown-divider">+</span>
+                        <span>${this.formatCost(future)}</span>
+                    </div>` : ''}
             </div>
         `;
     }
@@ -69,13 +134,13 @@ class CostComparisonTile {
         const delta = Math.round(autonomyCost - hybridCost);
         const deltaClass = delta === 0 ? 'neutral' : delta > 0 ? 'negative' : 'positive';
         const icon = delta === 0 ? '≈' : delta > 0 ? '▲' : '▼';
-        const label = delta === 0 ? 'Stejné náklady' : delta > 0 ? 'Auto dražší' : 'Auto levnější';
+        const label = delta === 0 ? 'Stejné náklady' : delta > 0 ? 'Dynamický dražší' : 'Dynamický levnější';
 
         return `
             <div class="cost-delta-pill ${deltaClass}" title="${label}">
                 <span class="cost-delta-icon">${icon}</span>
                 <div class="cost-delta-value">${delta > 0 ? '+' : ''}${delta} Kč</div>
-                <div class="cost-delta-label">Auto vs Hybrid</div>
+                <div class="cost-delta-label">Dynamický vs Standardní</div>
             </div>
         `;
     }
@@ -112,8 +177,8 @@ class CostComparisonTile {
             : null;
 
         const deltaText = [
-            `H ${this.formatDelta(hybridDelta)}`,
-            `A ${this.formatDelta(autoDelta)}`
+            `Std ${this.formatDelta(hybridDelta)}`,
+            `Dyn ${this.formatDelta(autoDelta)}`
         ].join(' · ');
 
         return `
@@ -146,10 +211,12 @@ class CostComparisonTile {
         }
 
         if (tomorrowHybrid || tomorrowAuto) {
+            const stdCost = tomorrowHybrid?.plan_total_cost;
+            const dynCost = tomorrowAuto?.plan_total_cost;
             chips.push(
                 this.renderPlanChip(
                     'Zítra',
-                    `H ${this.formatCost(tomorrowHybrid?.plan_total_cost)} • A ${this.formatCost(tomorrowAuto?.plan_total_cost)}`,
+                    `Std ${this.formatCost(stdCost)} • Dyn ${this.formatCost(dynCost)}`,
                     'neutral'
                 )
             );
