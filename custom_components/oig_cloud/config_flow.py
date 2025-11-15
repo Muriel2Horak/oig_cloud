@@ -24,9 +24,8 @@ from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 _LOGGER = logging.getLogger(__name__)
 
 BATTERY_PLANNER_MODE_CHOICES = {
-    "hybrid": "⚙️ Hybrid planner (HW control)",
-    "hybrid_autonomy": "🤖 Hybrid + Autonomous preview",
-    "autonomy_preview": "🧪 Autonomous preview only (simulation)",
+    "hybrid": "📊 Standardní plánování",
+    "autonomy": "⚡ Dynamické plánování",
 }
 VALID_PLANNER_MODES = set(BATTERY_PLANNER_MODE_CHOICES.keys())
 
@@ -1613,9 +1612,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=100.0)),
                     vol.Optional(
                         "autonomy_negative_export_penalty",
-                        default=defaults.get(
-                            "autonomy_negative_export_penalty", 50.0
-                        ),
+                        default=defaults.get("autonomy_negative_export_penalty", 50.0),
                     ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=200.0)),
                 }
             )
@@ -2734,6 +2731,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             # Převést UI pricing scénáře na backend atributy (stejně jako v ConfigFlow)
             pricing_backend = self._map_pricing_to_backend(self._wizard_data)
 
+            # Získat planner mode a aplikovat overrides (CRITICAL - bylo missing!)
+            planner_mode_value = self._get_planner_mode_value(self._wizard_data)
+
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
             new_options = {
                 # Intervaly
@@ -2901,26 +2901,41 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 # Auto module
                 "enable_auto": self._wizard_data.get("enable_auto", False),
+                # Hybrid/autonomy planner settings (CRITICAL - bylo missing!)
+                "battery_planner_mode": planner_mode_value,
+                "enable_autonomous_preview": planner_mode_value != "hybrid",
             }
 
             # Přidat debug log
-            _LOGGER.info(
-                f"🔧 OptionsFlow: Updating config entry with {len(new_options)} options"
+            _LOGGER.warning(
+                f"🔧 OptionsFlow wizard_summary: Updating config entry with {len(new_options)} options"
             )
             _LOGGER.debug(
                 f"🔧 OptionsFlow: New options keys: {list(new_options.keys())}"
             )
 
-            # Aktualizovat entry
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
-            )
+            try:
+                # Aktualizovat entry
+                _LOGGER.warning("🔍 About to call async_update_entry")
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_options
+                )
+                _LOGGER.warning("🔍 async_update_entry completed")
 
-            # Automaticky reloadnout integraci pro aplikování změn
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                # Automaticky reloadnout integraci pro aplikování změn
+                _LOGGER.warning("🔍 About to reload integration")
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                _LOGGER.warning("🔍 Integration reload completed")
 
-            # Vrátit výsledek bez dat (OptionsFlow nemá title ani data)
-            return self.async_create_entry(title="", data=new_options)
+                # CRITICAL: V OptionsFlow NESMÍME volat async_create_entry,
+                # protože by to přepsalo options! Místo toho ukončit flow.
+                _LOGGER.warning(
+                    "🔍 OptionsFlow wizard completed - showing success message"
+                )
+                return self.async_abort(reason="reconfigure_successful")
+            except Exception as e:
+                _LOGGER.exception("❌ OptionsFlow wizard_summary FAILED: %s", e)
+                raise
 
         # Zobrazit summary se stejnou logikou jako v ConfigFlow
         summary_lines = [

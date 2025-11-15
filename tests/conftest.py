@@ -18,6 +18,7 @@ mock_modules = [
     "homeassistant.helpers.entity_platform",
     "homeassistant.util",
     "homeassistant.util.dt",
+    "homeassistant.helpers.event",
     "aiohttp",
 ]
 
@@ -175,6 +176,27 @@ class MockDataUpdateCoordinator:
 
 helpers_update_module.DataUpdateCoordinator = MockDataUpdateCoordinator
 helpers_update_module.UpdateFailed = Exception
+
+# homeassistant.helpers.event placeholder
+event_module = _create_module("homeassistant.helpers.event")
+
+
+def async_track_point_in_time(hass: Any, action: Any, point_in_time: Any) -> Any:
+    """Return dummy unsubscribe callback for scheduled actions."""
+    return lambda: None
+
+
+event_module.async_track_point_in_time = async_track_point_in_time
+
+
+def async_call_later(hass: Any, delay: float, action: Any) -> Any:
+    """Return dummy cancel callback for delayed actions."""
+    return lambda: None
+
+
+event_module.async_call_later = async_call_later
+sys.modules["homeassistant.helpers.event"] = event_module
+helpers_module.event = event_module
 
 # NOVÉ: Mock datetime utilities
 sys.modules["homeassistant.util.dt"].now = lambda: datetime.now()

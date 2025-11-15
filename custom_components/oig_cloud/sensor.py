@@ -380,6 +380,9 @@ async def async_setup_entry(
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
+    # PERFORMANCE FIX: Collect all sensors in one list instead of calling async_add_entities 17 times
+    all_sensors: List[Any] = []
+
     # OPRAVA: Kontrola dostupnosti dat před vytvořením senzorů
     if coordinator.data is None:
         _LOGGER.warning("Coordinator data is None during sensor setup, retrying...")
@@ -483,7 +486,9 @@ async def async_setup_entry(
 
         if basic_sensors:
             _LOGGER.info(f"Registering {len(basic_sensors)} basic sensors")
-            async_add_entities(basic_sensors, True)
+            all_sensors.extend(
+                basic_sensors
+            )  # PERFORMANCE: Collect instead of immediate add
         else:
             _LOGGER.warning("No basic sensors could be created")
     except Exception as e:
@@ -538,7 +543,7 @@ async def async_setup_entry(
 
             if computed_sensors:
                 _LOGGER.info(f"Registering {len(computed_sensors)} computed sensors")
-                async_add_entities(computed_sensors, True)
+                all_sensors.extend(computed_sensors)  # PERFORMANCE: Collect
             else:
                 _LOGGER.debug("No computed sensors found")
         else:
@@ -596,7 +601,7 @@ async def async_setup_entry(
                     _LOGGER.info(
                         f"Registering {len(extended_sensors)} extended sensors"
                     )
-                    async_add_entities(extended_sensors, True)
+                    all_sensors.extend(extended_sensors)  # PERFORMANCE: Collect
                 else:
                     _LOGGER.debug("No extended sensors found")
             else:
@@ -653,7 +658,7 @@ async def async_setup_entry(
                     _LOGGER.info(
                         f"Registering {len(statistics_sensors)} statistics sensors"
                     )
-                    async_add_entities(statistics_sensors, True)
+                    all_sensors.extend(statistics_sensors)  # PERFORMANCE: Collect
                 else:
                     _LOGGER.debug("No statistics sensors found")
             else:
@@ -691,7 +696,7 @@ async def async_setup_entry(
                 _LOGGER.debug(
                     f"Registering {len(solar_sensors)} solar forecast sensors"
                 )
-                async_add_entities(solar_sensors, True)
+                all_sensors.extend(solar_sensors)  # PERFORMANCE: Collect
 
                 # Uložíme reference na solar forecast senzory pro službu
                 hass.data[DOMAIN][entry.entry_id][
@@ -747,7 +752,7 @@ async def async_setup_entry(
                 _LOGGER.debug(
                     f"Registering {len(shield_sensors)} ServiceShield sensors"
                 )
-                async_add_entities(shield_sensors, True)
+                all_sensors.extend(shield_sensors)  # PERFORMANCE: Collect
             else:
                 _LOGGER.debug("No ServiceShield sensors found")
         else:
@@ -807,7 +812,7 @@ async def async_setup_entry(
                 _LOGGER.info(
                     f"Registering {len(notification_sensors)} notification sensors"
                 )
-                async_add_entities(notification_sensors, True)
+                all_sensors.extend(notification_sensors)  # PERFORMANCE: Collect
             else:
                 _LOGGER.debug("No notification sensors found")
         else:
@@ -867,7 +872,7 @@ async def async_setup_entry(
                 _LOGGER.info(
                     f"Registering {len(battery_forecast_sensors)} battery prediction sensors"
                 )
-                async_add_entities(battery_forecast_sensors, True)
+                all_sensors.extend(battery_forecast_sensors)  # PERFORMANCE: Collect
 
                 # TODO 3: Set forecast sensor reference in BalancingManager
                 try:
@@ -899,7 +904,7 @@ async def async_setup_entry(
                         analytics_device_info,
                         hass,
                     )
-                    async_add_entities([health_sensor], True)
+                    all_sensors.append(health_sensor)  # PERFORMANCE: Collect
                     _LOGGER.info("✅ Registered Battery Health sensor")
                 except Exception as e:
                     _LOGGER.error(f"Failed to create Battery Health sensor: {e}")
@@ -913,7 +918,7 @@ async def async_setup_entry(
                         analytics_device_info,
                         hass,
                     )
-                    async_add_entities([performance_sensor], True)
+                    all_sensors.append(performance_sensor)  # PERFORMANCE: Collect
                     _LOGGER.info(
                         "✅ Registered Battery Forecast Performance tracking sensor"
                     )
@@ -948,7 +953,7 @@ async def async_setup_entry(
                         _LOGGER.info(
                             f"Registering {len(balancing_sensors)} battery balancing sensors"
                         )
-                        async_add_entities(balancing_sensors, True)
+                        all_sensors.extend(balancing_sensors)  # PERFORMANCE: Collect
                 except Exception as e:
                     _LOGGER.error(f"Error creating battery balancing sensors: {e}")
 
@@ -974,7 +979,9 @@ async def async_setup_entry(
                         _LOGGER.info(
                             f"Registering {len(grid_charging_sensors)} grid charging plan sensors"
                         )
-                        async_add_entities(grid_charging_sensors, True)
+                        all_sensors.extend(
+                            grid_charging_sensors
+                        )  # PERFORMANCE: Collect
                 except Exception as e:
                     _LOGGER.error(f"Error creating grid charging plan sensors: {e}")
 
@@ -1004,7 +1011,7 @@ async def async_setup_entry(
                         _LOGGER.info(
                             f"Registering {len(efficiency_sensors)} battery efficiency sensors"
                         )
-                        async_add_entities(efficiency_sensors, True)
+                        all_sensors.extend(efficiency_sensors)  # PERFORMANCE: Collect
                 except Exception as e:
                     _LOGGER.error(f"Error creating battery efficiency sensors: {e}")
 
@@ -1034,7 +1041,7 @@ async def async_setup_entry(
                         _LOGGER.info(
                             f"Registering {len(adaptive_sensors)} adaptive load profiles sensors"
                         )
-                        async_add_entities(adaptive_sensors, True)
+                        all_sensors.extend(adaptive_sensors)  # PERFORMANCE: Collect
                 except Exception as e:
                     _LOGGER.error(f"Error creating adaptive load profiles sensors: {e}")
             else:
@@ -1111,7 +1118,7 @@ async def async_setup_entry(
 
             if analytics_sensors:
                 _LOGGER.info(f"Registering {len(analytics_sensors)} analytics sensors")
-                async_add_entities(analytics_sensors, True)
+                all_sensors.extend(analytics_sensors)  # PERFORMANCE: Collect
                 _LOGGER.info(
                     f"Successfully registered {len(analytics_sensors)} analytics sensors"
                 )
@@ -1177,7 +1184,7 @@ async def async_setup_entry(
 
             if chmu_sensors:
                 _LOGGER.info(f"Registering {len(chmu_sensors)} ČHMÚ sensors")
-                async_add_entities(chmu_sensors, True)
+                all_sensors.extend(chmu_sensors)  # PERFORMANCE: Collect
                 _LOGGER.info(
                     f"Successfully registered {len(chmu_sensors)} ČHMÚ sensors"
                 )
@@ -1226,7 +1233,7 @@ async def async_setup_entry(
 
                 if boiler_sensors:
                     _LOGGER.info(f"Registering {len(boiler_sensors)} boiler sensors")
-                    async_add_entities(boiler_sensors, True)
+                    all_sensors.extend(boiler_sensors)  # PERFORMANCE: Collect
                     _LOGGER.info(
                         f"Successfully registered {len(boiler_sensors)} boiler sensors"
                     )
@@ -1247,6 +1254,17 @@ async def async_setup_entry(
         _LOGGER.info("🔥 Boiler module disabled - skipping boiler sensors")
 
     # ================================================================
+    # PERFORMANCE FIX: Register all sensors at once instead of 17 separate calls
+    # ================================================================
+    if all_sensors:
+        _LOGGER.info(
+            f"🚀 Registering {len(all_sensors)} sensors in one batch (PERFORMANCE OPTIMIZATION)"
+        )
+        async_add_entities(all_sensors, True)
+        _LOGGER.info(f"✅ All {len(all_sensors)} sensors registered successfully")
+    else:
+        _LOGGER.warning("⚠️ No sensors were created during setup")
+
     _LOGGER.info("OIG Cloud sensor setup completed")
 
 

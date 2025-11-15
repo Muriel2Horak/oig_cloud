@@ -24,6 +24,7 @@ from .const import (
     CONF_STANDARD_SCAN_INTERVAL,
     CONF_EXTENDED_SCAN_INTERVAL,
     CONF_AUTO_MODE_SWITCH,
+    CONF_AUTO_MODE_PLAN,
 )
 from .oig_cloud_coordinator import OigCloudCoordinator
 
@@ -64,6 +65,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "battery_planner_mode": "hybrid_autonomy",
         "enable_autonomous_preview": True,
         CONF_AUTO_MODE_SWITCH: False,
+        CONF_AUTO_MODE_PLAN: "autonomy",
         "enable_cheap_window_ups": True,
         "cheap_window_percentile": 30,
         "cheap_window_max_intervals": 20,

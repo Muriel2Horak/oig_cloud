@@ -38,7 +38,7 @@ from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.util import dt as dt_util
 from homeassistant.config_entries import ConfigEntry
 
-from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH
+from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH, CONF_AUTO_MODE_PLAN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -888,7 +888,15 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
             return web.json_response({"error": "Box not found"}, status=404)
 
         value = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
-        return web.json_response({"auto_mode_switch_enabled": value})
+        plan = entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
+        planner_mode = entry.options.get("battery_planner_mode", "hybrid_autonomy")
+        return web.json_response(
+            {
+                "auto_mode_switch_enabled": value,
+                "auto_mode_plan": plan,
+                "planner_mode": planner_mode,
+            }
+        )
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
@@ -901,34 +909,64 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         except Exception:
             return web.json_response({"error": "Invalid JSON payload"}, status=400)
 
-        if not isinstance(payload, dict) or "auto_mode_switch_enabled" not in payload:
-            return web.json_response(
-                {"error": "auto_mode_switch_enabled field required"}, status=400
-            )
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
 
-        desired = bool(payload.get("auto_mode_switch_enabled"))
-        current = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+        current_enabled = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+        current_plan = entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
+        planner_mode = entry.options.get("battery_planner_mode", "hybrid_autonomy")
 
-        if desired == current:
+        desired_enabled = current_enabled
+        desired_plan = current_plan
+
+        if "auto_mode_switch_enabled" in payload:
+            desired_enabled = bool(payload.get("auto_mode_switch_enabled"))
+
+        if "auto_mode_plan" in payload:
+            raw_plan = str(payload.get("auto_mode_plan", "")).lower()
+            if raw_plan not in ("autonomy", "hybrid"):
+                return web.json_response(
+                    {"error": "auto_mode_plan must be 'autonomy' or 'hybrid'"},
+                    status=400,
+                )
+            desired_plan = raw_plan
+
+        if planner_mode == "autonomy_preview":
+            if payload.get("auto_mode_switch_enabled"):
+                return web.json_response(
+                    {
+                        "error": "Autonomy preview mode runs in simulation only – automatic switching is disabled."
+                    },
+                    status=400,
+                )
+            desired_enabled = False
+            desired_plan = "autonomy"
+
+        if desired_enabled == current_enabled and desired_plan == current_plan:
             return web.json_response(
                 {
-                    "auto_mode_switch_enabled": current,
+                    "auto_mode_switch_enabled": current_enabled,
+                    "auto_mode_plan": current_plan,
                     "updated": False,
                 }
             )
 
         new_options = dict(entry.options)
-        new_options[CONF_AUTO_MODE_SWITCH] = desired
+        new_options[CONF_AUTO_MODE_SWITCH] = desired_enabled
+        new_options[CONF_AUTO_MODE_PLAN] = desired_plan
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info(
-            "Planner settings updated for %s: auto_mode_switch_enabled=%s",
+            "Planner settings updated for %s: auto_mode_switch_enabled=%s, plan=%s",
             box_id,
-            desired,
+            desired_enabled,
+            desired_plan,
         )
 
         return web.json_response(
             {
-                "auto_mode_switch_enabled": desired,
+                "auto_mode_switch_enabled": desired_enabled,
+                "auto_mode_plan": desired_plan,
+                "planner_mode": planner_mode,
                 "updated": True,
             }
         )

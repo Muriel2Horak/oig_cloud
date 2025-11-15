@@ -8,7 +8,7 @@ import copy
 import json
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -24,12 +24,22 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import (
+    async_track_point_in_time,
+    async_call_later,
+    async_track_time_interval,
+)
 
 from .oig_cloud_data_sensor import OigCloudDataSensor
-from .const import DOMAIN, CONF_AUTO_MODE_SWITCH  # TODO 3: Import DOMAIN for BalancingManager access
+from .const import (
+    DOMAIN,
+    CONF_AUTO_MODE_SWITCH,
+    CONF_AUTO_MODE_PLAN,
+)  # TODO 3: Import DOMAIN for BalancingManager access
 
 _LOGGER = logging.getLogger(__name__)
+
+AUTO_SWITCH_STARTUP_DELAY = timedelta(minutes=4)
 
 
 # PHASE 3.0 FIX: Safe nested get helper to prevent AttributeError on None values
@@ -203,6 +213,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._first_update: bool = True  # Flag pro první update (setup)
         self._autonomy_switch_handles: List[Any] = []
         self._last_autonomy_request: Optional[Tuple[str, datetime]] = None
+        self._auto_switch_ready_at: Optional[datetime] = (
+            dt_util.now() + AUTO_SWITCH_STARTUP_DELAY
+        )
+        self._autonomy_switch_retry_unsub: Optional[Callable[[], None]] = None
+        self._autonomy_watchdog_unsub: Optional[Callable[[], None]] = None
+        self._autonomy_watchdog_interval: timedelta = timedelta(seconds=30)
 
         # Phase 2.5: DP Multi-Mode Optimization result
         self._mode_optimization_result: Optional[Dict[str, Any]] = None
@@ -321,6 +337,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.info(
                 f"✅ Retry: Initialized Autonomy Storage: oig_cloud.autonomy_{self._box_id}"
             )
+
+        if self._auto_mode_switch_enabled():
+            self._start_autonomy_watchdog()
 
         # Restore data z předchozí instance
         if last_state := await self.async_get_last_state():
@@ -534,6 +553,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
         self._cancel_autonomy_switch_schedule()
+        self._stop_autonomy_watchdog()
         await super().async_will_remove_from_hass()
 
     def _handle_coordinator_update(self) -> None:
@@ -933,7 +953,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 recent_ratio = await self._calculate_recent_consumption_ratio(
                     adaptive_profiles
                 )
-                if recent_ratio and recent_ratio > 1.2:
+                if recent_ratio and recent_ratio > 1.1:
                     self._apply_consumption_boost_to_forecast(
                         load_forecast, recent_ratio
                     )
@@ -1004,23 +1024,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._mode_optimization_result = None
                 self._mode_recommendations = []
 
-            # Use HYBRID timeline if available (nový formát s mode, mode_name, net_cost)
-            # Jinak fallback na _calculate_timeline (starý formát)
+            # ================================================================
+            # PHASE 2.10: Determine ACTIVE planner based on battery_planner_mode
+            # Both HYBRID and AUTONOMY are always calculated for comparison
+            # ================================================================
+            config_options = self._config_entry.options if self._config_entry else {}
+            battery_planner_mode = config_options.get("battery_planner_mode", "hybrid")
+
             has_dp_results = (
                 hasattr(self, "_mode_optimization_result")
                 and self._mode_optimization_result is not None
             )
 
             if has_dp_results:
-                # Use HYBRID optimal_timeline (nový formát)
-                self._timeline_data = self._mode_optimization_result.get(
+                # Store HYBRID timeline
+                hybrid_timeline = self._mode_optimization_result.get(
                     "optimal_timeline", []
                 )
-                # Uložit HYBRID timeline i jako _hybrid_timeline pro balancing modul
-                self._hybrid_timeline = self._timeline_data
-                _LOGGER.debug(
-                    f"Using HYBRID timeline: {len(self._timeline_data)} intervals"
-                )
+                self._hybrid_timeline = hybrid_timeline
+
+                # Choose active timeline based on planner mode
+                if battery_planner_mode == "autonomy":
+                    # TODO: Use AUTONOMY timeline when available
+                    # For now, fallback to HYBRID (AUTONOMY implementation follows)
+                    self._timeline_data = hybrid_timeline
+                    _LOGGER.info(
+                        f"⚡ ACTIVE PLANNER: Dynamické plánování (AUTONOMY) - {len(hybrid_timeline)} intervals"
+                    )
+                else:
+                    # Default: HYBRID (Standardní plánování)
+                    self._timeline_data = hybrid_timeline
+                    _LOGGER.info(
+                        f"📊 ACTIVE PLANNER: Standardní plánování (HYBRID) - {len(hybrid_timeline)} intervals"
+                    )
             else:
                 # Fallback: old format timeline
                 _LOGGER.debug(
@@ -1160,6 +1196,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_forecast=solar_forecast,
                 load_forecast=load_forecast,
             )
+
+            # ================================================================
+            # PHASE 2.11: Apply AUTONOMY timeline if selected as active planner
+            # ================================================================
+            if battery_planner_mode == "autonomy" and self._autonomy_preview:
+                autonomy_timeline = self._autonomy_preview.get("timeline", [])
+                if autonomy_timeline:
+                    # Swap: AUTONOMY becomes active, HYBRID becomes comparison
+                    self._timeline_data = autonomy_timeline
+                    # Keep hybrid_timeline for comparison (already set above)
+                    _LOGGER.info(
+                        f"⚡ SWITCHED TO: Dynamické plánování (AUTONOMY) - {len(autonomy_timeline)} intervals, "
+                        f"cost={self._autonomy_preview.get('total_cost', 0):.2f} Kč"
+                    )
 
             # PHASE 3.5: Precompute UI data for instant API responses
             # Build timeline_extended + unified_cost_tile and save to storage
@@ -3360,10 +3410,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 soc_before=forward_soc_before,
             )
 
-            if (
-                not candidate_intervals
-                and effective_min_index > min_candidate_index
-            ):
+            if not candidate_intervals and effective_min_index > min_candidate_index:
                 candidate_intervals = self._select_charging_intervals_before(
                     modes=modes,
                     spot_prices=spot_prices,
@@ -3479,9 +3526,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         start_index = max(0, min(start_index, n - 1))
 
-        battery_soc = (
-            starting_soc if starting_soc is not None else current_capacity
-        )
+        battery_soc = starting_soc if starting_soc is not None else current_capacity
         recovery_index = None  # První interval kde SoC >= planning_min
 
         # Pokud už začínáme nad planning_min, recovery je hned
@@ -3657,9 +3702,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """Force HOME_UPS during cheapest intervals to preserve battery for later peak."""
 
         max_intervals = self._config_entry.options.get("cheap_window_max_intervals", 20)
-        soc_guard = self._config_entry.options.get(
-            "cheap_window_soc_guard_kwh", 0.5
-        )
+        soc_guard = self._config_entry.options.get("cheap_window_soc_guard_kwh", 0.5)
 
         if max_intervals <= 0:
             return 0
@@ -3682,10 +3725,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
 
             soc_before = None
-            if (
-                forward_soc_before is not None
-                and 0 <= idx < len(forward_soc_before)
-            ):
+            if forward_soc_before is not None and 0 <= idx < len(forward_soc_before):
                 soc_before = forward_soc_before[idx]
 
             if soc_before is None:
@@ -4563,7 +4603,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                 "holding_end": _iso(balancing_plan_obj.holding_end),
                                 "charging_intervals": intervals_payload,
                             },
-                            "mode": balancing_plan_obj.mode.value,
+                            "mode": balancing_plan_obj.mode.name,  # Use enum name (HYBRID/AUTONOMY) instead of value (1/2)
                             "requester": "BalancingManager",
                             "reason": balancing_plan_obj.reason,
                             "priority": balancing_plan_obj.priority.value,
@@ -6619,7 +6659,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if not self._config_entry.options.get("enable_autonomous_preview", True):
             self._autonomy_preview = None
-            self._cancel_autonomy_switch_schedule()
+            await self._update_autonomy_switch_schedule()
             return
 
         try:
@@ -6904,7 +6944,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         n = len(spot_prices)
         export_lookup = {
-            ep.get("time"): ep.get("price", 0.0) for ep in export_prices if ep.get("time")
+            ep.get("time"): ep.get("price", 0.0)
+            for ep in export_prices
+            if ep.get("time")
         }
 
         solar_series = []
@@ -7002,13 +7044,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if new_soc < min_capacity - 0.05:
                         penalty += (min_capacity - new_soc) * min_violation_penalty
 
-                    if (
-                        export_price <= 0
-                        and interval.get("grid_export_kwh", 0) > 0.001
-                    ):
-                        penalty += (
-                            export_penalty_multiplier
-                            * interval.get("grid_export_kwh", 0)
+                    if export_price <= 0 and interval.get("grid_export_kwh", 0) > 0.001:
+                        penalty += export_penalty_multiplier * interval.get(
+                            "grid_export_kwh", 0
                         )
 
                     cost = interval.get("net_cost", 0.0) + penalty
@@ -7029,7 +7067,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         start_idx = soc_to_index(current_capacity)
         if dp[0][start_idx] >= INF:
-            raise RuntimeError("Autonomy DP failed to find feasible plan")
+            _LOGGER.warning(
+                "Autonomy DP infeasible with current parameters, enforcing minimum SOC via greedy fallback"
+            )
+            fallback_modes = []
+            soc = current_capacity
+            for i in range(n):
+                hour = datetime.fromisoformat(
+                    spot_prices[i].get("time", now.isoformat())
+                ).hour
+                cheap_hours = {0, 1, 2, 3, 4, 5, 13, 14, 15, 16}
+                if soc < min_capacity or (
+                    soc < min_capacity + 0.5 and hour in cheap_hours
+                ):
+                    fallback_modes.append(CBB_MODE_HOME_UPS)
+                    soc = min(
+                        soc + home_charge_rate_kwh_15min * efficiency, max_capacity
+                    )
+                else:
+                    fallback_modes.append(CBB_MODE_HOME_I)
+                    load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+                    soc = max(soc - load_kwh, min_capacity)
+            return {"modes": fallback_modes, "dp_cost": INF}
 
         modes: List[int] = []
         soc_idx = start_idx
@@ -7172,8 +7231,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         plan_normalized = (plan or "hybrid").lower()
 
-        hybrid_tabs = await self._build_hybrid_detail_tabs(tab=tab)
-        autonomy_tabs = await self._build_autonomy_only_tabs(tab=tab)
+        timeline_extended = await self.build_timeline_extended()
+        hybrid_tabs = await self._build_hybrid_detail_tabs(
+            tab=tab, timeline_extended=timeline_extended
+        )
+        autonomy_tabs = await self._build_autonomy_only_tabs(
+            tab=tab,
+            timeline_extended=timeline_extended,
+            include_actual=(
+                self._get_auto_mode_plan() == "autonomy"
+                and (
+                    self._auto_mode_switch_enabled() or self._is_autonomy_preview_only()
+                )
+            ),
+        )
 
         if plan_normalized == "autonomy":
             return self._decorate_plan_tabs(
@@ -7191,7 +7262,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
     async def _build_hybrid_detail_tabs(
-        self, tab: Optional[str] = None
+        self,
+        tab: Optional[str] = None,
+        timeline_extended: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Internal helper that builds hybrid detail tabs."""
 
@@ -7204,7 +7277,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             tabs_to_process = ["yesterday", "today", "tomorrow"]
 
         result: Dict[str, Any] = {}
-        timeline_extended = await self.build_timeline_extended()
+        if timeline_extended is None:
+            timeline_extended = await self.build_timeline_extended()
 
         for tab_name in tabs_to_process:
             tab_data = timeline_extended.get(tab_name, {})
@@ -7238,7 +7312,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return result
 
     async def _build_autonomy_only_tabs(
-        self, tab: Optional[str] = None
+        self,
+        tab: Optional[str] = None,
+        timeline_extended: Optional[Dict[str, Any]] = None,
+        include_actual: bool = False,
     ) -> Dict[str, Any]:
         """Build detail tabs purely from autonomy preview (no hybrid merge)."""
 
@@ -7253,6 +7330,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             tabs_to_process: List[str] = ["yesterday", "today", "tomorrow"]
         else:
             tabs_to_process = [tab]
+
+        actual_intervals_by_date: Dict[str, Dict[str, Any]] = {}
+        if include_actual and timeline_extended:
+            for key in ("yesterday", "today", "tomorrow"):
+                day_data = (timeline_extended or {}).get(key, {})
+                date_key = day_data.get("date")
+                intervals = day_data.get("intervals", [])
+                if not date_key or not intervals:
+                    continue
+                lookup: Dict[str, Any] = {}
+                for interval in intervals:
+                    ts = interval.get("time")
+                    if ts:
+                        lookup[ts] = interval
+                if lookup:
+                    actual_intervals_by_date[date_key] = lookup
 
         def build_day(day_obj: date) -> Dict[str, Any]:
             day_str = day_obj.isoformat()
@@ -7272,10 +7365,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "intervals": [],
                 }
 
-            mode_blocks = self._build_autonomy_mode_blocks(intervals)
-            total_cost = sum(block.get("cost_planned", 0.0) for block in mode_blocks)
             pseudo_intervals = []
+            actual_lookup = (
+                actual_intervals_by_date.get(day_str) if include_actual else None
+            )
             for iv in intervals:
+                status = "planned"
+                actual_payload = None
+                if actual_lookup:
+                    actual_interval = actual_lookup.get(iv.get("time"))
+                    if actual_interval:
+                        actual_payload = actual_interval.get("actual")
+                        status = actual_interval.get("status", status)
+
                 pseudo_intervals.append(
                     {
                         "time": iv.get("time"),
@@ -7287,11 +7389,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             "grid_export": iv.get("grid_export", 0.0),
                             "mode_name": iv.get("mode_name"),
                         },
-                        "actual": None,
-                        "status": "planned",
+                        "actual": actual_payload,
+                        "status": status,
                     }
                 )
 
+            tab_name = (
+                "today"
+                if day_obj == today
+                else "yesterday" if day_obj == yesterday else "tomorrow"
+            )
+            mode_blocks = self._build_mode_blocks_for_tab(pseudo_intervals, tab_name)
             summary = self._calculate_tab_summary(mode_blocks, pseudo_intervals)
 
             return {
@@ -7314,7 +7422,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 key,
                 {
                     "date": (
-                        yesterday if key == "yesterday" else tomorrow if key == "tomorrow" else today
+                        yesterday
+                        if key == "yesterday"
+                        else tomorrow if key == "tomorrow" else today
                     ).isoformat(),
                     "mode_blocks": [],
                     "intervals": [],
@@ -7350,7 +7460,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             metadata = tab_data.get("metadata", {}).copy()
             metadata["active_plan"] = primary_plan
-            metadata["comparison_plan_available"] = secondary_plan if secondary_tabs.get(key) else None
+            metadata["comparison_plan_available"] = (
+                secondary_plan if secondary_tabs.get(key) else None
+            )
             tab_copy["metadata"] = metadata
 
             comparison_source = secondary_tabs.get(key)
@@ -7375,104 +7487,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return result
 
-    def _build_autonomy_mode_blocks(
-        self, intervals: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Aggregate intervals into planned mode blocks for autonomy preview."""
-
-        if not intervals:
-            return []
-
-        blocks = []
-        current_block: Dict[str, Any] = {}
-        block_intervals: List[Dict[str, Any]] = []
-        now = dt_util.now()
-
-        def _determine_autonomy_block_status(
-            start_iso: Optional[str], end_iso: Optional[str]
-        ) -> str:
-            start_dt = self._parse_autonomy_timestamp(start_iso)
-            end_dt = self._parse_autonomy_timestamp(end_iso)
-            if not start_dt or not end_dt:
-                return "planned"
-            end_dt = end_dt + timedelta(minutes=15)
-            if end_dt <= now:
-                return "completed"
-            if start_dt <= now < end_dt:
-                return "current"
-            return "planned"
-
-        def flush_block():
-            if not block_intervals:
-                return
-            start_ts = block_intervals[0].get("time")
-            end_ts = block_intervals[-1].get("time")
-            cost = sum(iv.get("net_cost", 0.0) for iv in block_intervals)
-            solar_total = sum(iv.get("solar_kwh", 0.0) for iv in block_intervals)
-            load_total = sum(iv.get("load_kwh", 0.0) for iv in block_intervals)
-            import_total = sum(iv.get("grid_import", 0.0) for iv in block_intervals)
-            export_total = sum(iv.get("grid_export", 0.0) for iv in block_intervals)
-
-            start_label = self._format_time_label(start_ts)
-            end_label = self._format_time_label(end_ts)
-
-            block = {
-                "mode_historical": current_block["mode_name"],
-                "mode_planned": current_block["mode_name"],
-                "mode_match": True,
-                "status": _determine_autonomy_block_status(start_ts, end_ts),
-                "start_time": start_label,
-                "end_time": end_label,
-                "interval_count": len(block_intervals),
-                "duration_hours": round(len(block_intervals) * 0.25, 2),
-                "cost_planned": round(cost, 2),
-                "battery_soc_start": block_intervals[0].get("battery_soc"),
-                "battery_soc_end": block_intervals[-1].get("battery_soc"),
-                "solar_planned_kwh": round(solar_total, 3),
-                "solar_actual_kwh": None,
-                "solar_total_kwh": round(solar_total, 3),
-                "consumption_planned_kwh": round(load_total, 3),
-                "consumption_actual_kwh": None,
-                "consumption_total_kwh": round(load_total, 3),
-                "grid_import_planned_kwh": round(import_total - export_total, 3),
-                "grid_import_actual_kwh": None,
-                "grid_import_total_kwh": round(import_total - export_total, 3),
-                "grid_export_planned_kwh": round(export_total, 3),
-                "grid_export_actual_kwh": None,
-                "grid_export_total_kwh": round(export_total, 3),
-                "solar_delta_kwh": None,
-                "consumption_delta_kwh": None,
-                "grid_import_delta_kwh": None,
-                "grid_export_delta_kwh": None,
-            }
-            blocks.append(block)
-
-        for interval in intervals:
-            mode_name = interval.get("mode_name") or CBB_MODE_NAMES.get(
-                interval.get("mode"), "Unknown"
+    def _get_planner_mode(self) -> str:
+        if self._config_entry and self._config_entry.options:
+            return self._config_entry.options.get(
+                "battery_planner_mode", "hybrid_autonomy"
             )
-            if not current_block:
-                current_block = {"mode_name": mode_name}
-                block_intervals = [interval]
-                continue
+        return "hybrid_autonomy"
 
-            if mode_name == current_block["mode_name"]:
-                block_intervals.append(interval)
-            else:
-                flush_block()
-                current_block = {"mode_name": mode_name}
-                block_intervals = [interval]
-
-        flush_block()
-        return blocks
+    def _is_autonomy_preview_only(self) -> bool:
+        return self._get_planner_mode() == "autonomy_preview"
 
     def _auto_mode_switch_enabled(self) -> bool:
         options = {}
         if self._config_entry:
             options = self._config_entry.options or {}
+        if self._is_autonomy_preview_only():
+            return False
         return bool(options.get(CONF_AUTO_MODE_SWITCH, False))
 
-    def _normalize_service_mode(self, mode_value: Optional[Union[str, int]]) -> Optional[str]:
+    def _get_auto_mode_plan(self) -> str:
+        plan = "autonomy"
+        if self._config_entry and self._config_entry.options:
+            plan = self._config_entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
+        if plan not in ("autonomy", "hybrid"):
+            return "autonomy"
+        return plan
+
+    def _normalize_service_mode(
+        self, mode_value: Optional[Union[str, int]]
+    ) -> Optional[str]:
         if mode_value is None:
             return None
         if isinstance(mode_value, int):
@@ -7516,16 +7559,124 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return normalized
 
     def _cancel_autonomy_switch_schedule(self) -> None:
-        if not self._autonomy_switch_handles:
-            return
-        for unsub in self._autonomy_switch_handles:
-            try:
-                unsub()
-            except Exception as err:
-                _LOGGER.debug(f"Failed to cancel scheduled auto switch: {err}")
+        if self._autonomy_switch_handles:
+            for unsub in self._autonomy_switch_handles:
+                try:
+                    unsub()
+                except Exception as err:
+                    _LOGGER.debug(f"Failed to cancel scheduled auto switch: {err}")
         self._autonomy_switch_handles = []
+        self._clear_autonomy_switch_retry()
 
-    async def _execute_autonomy_mode_change(self, target_mode: str, reason: str) -> None:
+    def _clear_autonomy_switch_retry(self) -> None:
+        if not self._autonomy_switch_retry_unsub:
+            return
+        try:
+            self._autonomy_switch_retry_unsub()
+        except Exception as err:
+            _LOGGER.debug(f"Failed to cancel delayed auto switch sync: {err}")
+        finally:
+            self._autonomy_switch_retry_unsub = None
+
+    def _start_autonomy_watchdog(self) -> None:
+        """Ensure periodic enforcement of planned modes is running."""
+        if (
+            not self._hass
+            or self._autonomy_watchdog_unsub
+            or not self._auto_mode_switch_enabled()
+        ):
+            return
+
+        self._autonomy_watchdog_unsub = async_track_time_interval(
+            self._hass,
+            self._autonomy_watchdog_tick,
+            self._autonomy_watchdog_interval,
+        )
+        _LOGGER.debug(
+            "[AutonomySwitch] Watchdog started (interval=%ss)",
+            int(self._autonomy_watchdog_interval.total_seconds()),
+        )
+
+    def _stop_autonomy_watchdog(self) -> None:
+        """Stop watchdog if running."""
+        if self._autonomy_watchdog_unsub:
+            self._autonomy_watchdog_unsub()
+            self._autonomy_watchdog_unsub = None
+            _LOGGER.debug("[AutonomySwitch] Watchdog stopped")
+
+    async def _autonomy_watchdog_tick(self, now: datetime) -> None:
+        """Periodic check that correct mode is applied."""
+        if not self._auto_mode_switch_enabled():
+            self._stop_autonomy_watchdog()
+            return
+
+        timeline, _ = self._get_mode_switch_timeline()
+        if not timeline:
+            return
+
+        desired_mode = self._get_planned_mode_for_time(now, timeline)
+        if not desired_mode:
+            return
+
+        current_mode = self._get_current_box_mode()
+        if current_mode == desired_mode:
+            return
+
+        _LOGGER.warning(
+            "[AutonomySwitch] Watchdog correcting mode from %s -> %s",
+            current_mode or "unknown",
+            desired_mode,
+        )
+        await self._ensure_current_mode(desired_mode, "watchdog enforcement")
+
+    def _get_planned_mode_for_time(
+        self, reference_time: datetime, timeline: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Return planned mode for the interval covering reference_time."""
+        planned_mode: Optional[str] = None
+
+        for interval in timeline:
+            timestamp = interval.get("time") or interval.get("timestamp")
+            mode_label = self._normalize_service_mode(
+                interval.get("mode_name")
+            ) or self._normalize_service_mode(interval.get("mode"))
+            if not timestamp or not mode_label:
+                continue
+
+            start_dt = self._parse_autonomy_timestamp(timestamp)
+            if not start_dt:
+                continue
+
+            if start_dt <= reference_time:
+                planned_mode = mode_label
+                continue
+
+            # Timeline is sorted; once we pass reference_time we can stop
+            break
+
+        return planned_mode
+
+    def _schedule_autonomy_switch_retry(self, delay_seconds: float) -> None:
+        if not self._hass or delay_seconds <= 0:
+            return
+        if self._autonomy_switch_retry_unsub:
+            return
+
+        def _retry(now: datetime) -> None:
+            self._autonomy_switch_retry_unsub = None
+            if self._hass:
+                self._hass.async_create_task(self._update_autonomy_switch_schedule())
+
+        self._autonomy_switch_retry_unsub = async_call_later(
+            self._hass, delay_seconds, _retry
+        )
+        _LOGGER.debug(
+            "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds", delay_seconds
+        )
+
+    async def _execute_autonomy_mode_change(
+        self, target_mode: str, reason: str
+    ) -> None:
         if not self._hass:
             return
 
@@ -7544,13 +7695,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             await self._hass.services.async_call(
                 DOMAIN,
                 "set_box_mode",
-                {"mode": target_mode},
+                {
+                    "mode": target_mode,
+                    "acknowledgement": True,
+                },
                 blocking=False,
             )
             self._last_autonomy_request = (target_mode, now)
-            _LOGGER.info(
-                f"[AutonomySwitch] Requested mode '{target_mode}' ({reason})"
-            )
+            _LOGGER.info(f"[AutonomySwitch] Requested mode '{target_mode}' ({reason})")
         except Exception as err:
             _LOGGER.error(
                 f"[AutonomySwitch] Failed to switch to {target_mode}: {err}",
@@ -7566,6 +7718,42 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return
         await self._execute_autonomy_mode_change(desired_mode, reason)
 
+    def _get_mode_switch_timeline(self) -> Tuple[List[Dict[str, Any]], str]:
+        """
+        Return the best available timeline for automatic mode switching.
+
+        Preference order:
+        - Use plan selected for auto switching (autonomy/hybrid)
+        - CRITICAL: Do NOT fall back to different plan if preferred is missing!
+          This prevents switching from autonomy HOME I to hybrid HOME UPS.
+        """
+        preferred_plan = self._get_auto_mode_plan()
+
+        if preferred_plan == "autonomy":
+            timeline = self.get_autonomy_timeline()
+            if timeline:
+                return timeline, "autonomy"
+            # FIXED: Don't fall back to hybrid if autonomy is preferred but missing
+            _LOGGER.warning(
+                "[AutonomySwitch] Autonomy plan preferred but timeline not available - no fallback to hybrid"
+            )
+            return [], "none"
+
+        # Hybrid is preferred (or default)
+        hybrid_timeline = getattr(self, "_timeline_data", None) or []
+        if hybrid_timeline:
+            return hybrid_timeline, "hybrid"
+
+        # Fall back to autonomy only if hybrid was preferred but missing
+        timeline = self.get_autonomy_timeline()
+        if timeline:
+            _LOGGER.warning(
+                "[AutonomySwitch] Hybrid plan preferred but not available - falling back to autonomy"
+            )
+            return timeline, "autonomy"
+
+        return [], "none"
+
     async def _update_autonomy_switch_schedule(self) -> None:
         """Sync scheduled set_box_mode calls with autonomy preview."""
         # Always cancel previous schedule first
@@ -7573,24 +7761,44 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if not self._hass or not self._auto_mode_switch_enabled():
             _LOGGER.debug("[AutonomySwitch] Auto mode switching disabled")
-            return
-
-        timeline = self.get_autonomy_timeline()
-        if not timeline:
-            _LOGGER.debug("[AutonomySwitch] Autonomy timeline empty, nothing to schedule")
+            self._stop_autonomy_watchdog()
             return
 
         now = dt_util.now()
+        if self._auto_switch_ready_at:
+            if now < self._auto_switch_ready_at:
+                wait_seconds = (self._auto_switch_ready_at - now).total_seconds()
+                _LOGGER.debug(
+                    "[AutonomySwitch] Startup delay active (%.0fs remaining)",
+                    wait_seconds,
+                )
+                self._schedule_autonomy_switch_retry(wait_seconds)
+                return
+            self._auto_switch_ready_at = None
+            self._clear_autonomy_switch_retry()
+
+        timeline, timeline_source = self._get_mode_switch_timeline()
+        if not timeline:
+            _LOGGER.debug(
+                "[AutonomySwitch] No timeline available for auto switching (source=%s)",
+                timeline_source,
+            )
+            return
+        if timeline_source != "autonomy":
+            _LOGGER.debug(
+                "[AutonomySwitch] Autonomy preview missing, falling back to %s timeline",
+                timeline_source,
+            )
+
         current_mode: Optional[str] = None
         last_mode: Optional[str] = None
         scheduled_events: List[Tuple[datetime, str]] = []
 
         for interval in timeline:
             timestamp = interval.get("time") or interval.get("timestamp")
-            mode_label = (
-                self._normalize_service_mode(interval.get("mode_name"))
-                or self._normalize_service_mode(interval.get("mode"))
-            )
+            mode_label = self._normalize_service_mode(
+                interval.get("mode_name")
+            ) or self._normalize_service_mode(interval.get("mode"))
             if not timestamp or not mode_label:
                 continue
 
@@ -7611,12 +7819,30 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if current_mode:
             await self._ensure_current_mode(current_mode, "current autonomy block")
+        else:
+            current_capacity = self._get_current_battery_capacity()
+            planning_min = self._get_min_battery_capacity()
+            if (
+                current_capacity is not None
+                and planning_min is not None
+                and current_capacity <= planning_min + 0.1
+            ):
+                _LOGGER.warning(
+                    "[AutonomySwitch] SOC %.2f kWh <= planning minimum %.2f kWh - forcing immediate Home UPS",
+                    current_capacity,
+                    planning_min,
+                )
+                await self._ensure_current_mode(
+                    "Home UPS", "soc below planning minimum"
+                )
 
         if not scheduled_events:
             _LOGGER.debug("[AutonomySwitch] No upcoming mode changes to schedule")
+            self._start_autonomy_watchdog()
             return
 
         for when, mode in scheduled_events:
+
             async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
                 await self._execute_autonomy_mode_change(
                     desired_mode, f"scheduled {event_time.isoformat()}"
@@ -7627,6 +7853,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.info(
                 f"[AutonomySwitch] Scheduled switch to {mode} at {when.isoformat()}"
             )
+        self._start_autonomy_watchdog()
+
     def _build_mode_blocks_for_tab(
         self, intervals: List[Dict[str, Any]], tab_name: str
     ) -> List[Dict[str, Any]]:
@@ -7715,15 +7943,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
         # Helper pro grid net
-        def _interval_net(interval_entry: Dict[str, Any], branch: str) -> Optional[float]:
+        def _interval_net(
+            interval_entry: Dict[str, Any], branch: str
+        ) -> Optional[float]:
             if not isinstance(interval_entry.get(branch), dict):
                 return None
-            import_val = safe_nested_get(interval_entry, branch, "grid_import", default=None)
+            import_val = safe_nested_get(
+                interval_entry, branch, "grid_import", default=None
+            )
             if import_val is None:
-                import_val = safe_nested_get(interval_entry, branch, "grid_import_kwh", default=None)
-            export_val = safe_nested_get(interval_entry, branch, "grid_export", default=None)
+                import_val = safe_nested_get(
+                    interval_entry, branch, "grid_import_kwh", default=None
+                )
+            export_val = safe_nested_get(
+                interval_entry, branch, "grid_export", default=None
+            )
             if export_val is None:
-                export_val = safe_nested_get(interval_entry, branch, "grid_export_kwh", default=None)
+                export_val = safe_nested_get(
+                    interval_entry, branch, "grid_export_kwh", default=None
+                )
             if import_val is None and export_val is None:
                 return None
             return (import_val or 0.0) - (export_val or 0.0)
@@ -7812,7 +8050,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             for iv in group_intervals:
                 # Planned values
-                solar_plan_total += safe_nested_get(iv, "planned", "solar_kwh", default=0)
+                solar_plan_total += safe_nested_get(
+                    iv, "planned", "solar_kwh", default=0
+                )
                 consumption_plan_total += safe_nested_get(
                     iv, "planned", "consumption_kwh", default=0
                 )
@@ -7896,7 +8136,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # Delta helpers
-            def _calc_delta(actual_val: Optional[float], planned_val: float) -> Optional[float]:
+            def _calc_delta(
+                actual_val: Optional[float], planned_val: float
+            ) -> Optional[float]:
                 if actual_val is None:
                     return None
                 return round(actual_val - planned_val, 2)
@@ -8155,10 +8397,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             export_key = "grid_export"
             import_val = safe_nested_get(payload, prefix, import_key, default=None)
             if import_val is None:
-                import_val = safe_nested_get(payload, prefix, f"{import_key}_kwh", default=0.0)
+                import_val = safe_nested_get(
+                    payload, prefix, f"{import_key}_kwh", default=0.0
+                )
             export_val = safe_nested_get(payload, prefix, export_key, default=None)
             if export_val is None:
-                export_val = safe_nested_get(payload, prefix, f"{export_key}_kwh", default=0.0)
+                export_val = safe_nested_get(
+                    payload, prefix, f"{export_key}_kwh", default=0.0
+                )
             return (import_val or 0.0) - (export_val or 0.0)
 
         metrics_template = {
@@ -8207,8 +8453,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             actual_payload = interval.get("actual")
             if actual_payload:
                 actual_grid = (
-                    (actual_payload.get("grid_import") or actual_payload.get("grid_import_kwh") or 0.0)
-                    - (actual_payload.get("grid_export") or actual_payload.get("grid_export_kwh") or 0.0)
+                    actual_payload.get("grid_import")
+                    or actual_payload.get("grid_import_kwh")
+                    or 0.0
+                ) - (
+                    actual_payload.get("grid_export")
+                    or actual_payload.get("grid_export_kwh")
+                    or 0.0
                 )
             metrics["grid"]["plan"] += plan_grid
             if actual_grid is not None:
@@ -8382,18 +8633,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     else None
                 )
 
-            hybrid_cost = self._get_day_cost_from_timeline(
-                self._timeline_data, day_obj
-            )
+            hybrid_cost = self._get_day_cost_from_timeline(self._timeline_data, day_obj)
 
             entry = {
                 "date": day_str,
-                "plan_total_cost": round(planned_cost, 2)
-                if planned_cost is not None
-                else None,
-                "hybrid_plan_total": round(hybrid_cost, 2)
-                if hybrid_cost is not None
-                else None,
+                "plan_total_cost": (
+                    round(planned_cost, 2) if planned_cost is not None else None
+                ),
+                "hybrid_plan_total": (
+                    round(hybrid_cost, 2) if hybrid_cost is not None else None
+                ),
             }
 
             if (
@@ -13109,17 +13358,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not load_forecast:
             return
 
-        capped_ratio = min(ratio, 1.5)
-        intervals = min(len(load_forecast), max(1, hours * 4))
+        capped_ratio = min(ratio, 3.0)
+        intervals = min(
+            len(load_forecast),
+            max(4, int(math.ceil(hours * 4 * min(capped_ratio, 2.5)))),
+        )
 
         for idx in range(intervals):
             load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
 
         _LOGGER.info(
-            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high consumption drift (ratio %.2fx)",
+            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high consumption drift (ratio %.2fx, capped %.2fx)",
             intervals,
             (capped_ratio - 1) * 100,
             ratio,
+            capped_ratio,
         )
 
     def _calculate_profile_similarity(
@@ -14567,11 +14820,19 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             return []
 
     def _get_active_plan_key(self) -> str:
-        """Return 'autonomy' when auto mode switching is enabled, otherwise 'hybrid'."""
+        """Return plan currently controlling automation (autonomy/hybrid)."""
         config_entry = getattr(self.coordinator, "config_entry", None)
         if not config_entry:
             return "hybrid"
-        if config_entry.options.get(CONF_AUTO_MODE_SWITCH, False):
+        if config_entry.options.get("battery_planner_mode") == "autonomy_preview":
+            return "autonomy"
+        plan = config_entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
+        if plan not in ("autonomy", "hybrid"):
+            plan = "autonomy"
+        if (
+            config_entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+            and plan == "autonomy"
+        ):
             return "autonomy"
         return "hybrid"
 

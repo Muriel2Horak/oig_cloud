@@ -90,6 +90,8 @@ class TimelineDialog {
             hybrid: this.createEmptyCache(),
             autonomy: this.createEmptyCache()
         };
+        this.plannerMode = 'hybrid_autonomy';
+        this.autoModePlan = 'autonomy';
         this.autoModeSwitchEnabled = null;
         this.autoSettingsLoaded = false;
         this.autoModeToggleBusy = false;
@@ -228,8 +230,16 @@ class TimelineDialog {
     }
 
     async ensurePlannerSettingsLoaded(force = false) {
+        const applyCurrentPreference = async () => {
+            const desiredPlan = this.autoModeSwitchEnabled
+                ? (this.autoModePlan || 'autonomy')
+                : (this.plannerMode === 'autonomy_preview' ? 'autonomy' : 'hybrid');
+            await this.syncPlanWithAutoMode(desiredPlan);
+        };
+
         if (this.autoSettingsLoaded && !force) {
             this.updateAutoModeToggleUI();
+            await applyCurrentPreference();
             return;
         }
 
@@ -241,8 +251,15 @@ class TimelineDialog {
         try {
             const data = await this.requestPlannerSettings('GET');
             this.autoModeSwitchEnabled = !!data.auto_mode_switch_enabled;
+            if (data.auto_mode_plan) {
+                this.autoModePlan = data.auto_mode_plan;
+            }
+            if (data.planner_mode) {
+                this.plannerMode = data.planner_mode;
+            }
             this.autoSettingsLoaded = true;
             this.updateAutoModeToggleUI();
+            await applyCurrentPreference();
         } catch (error) {
             console.error('[TimelineDialog] Failed to load planner settings', error);
             this.showAutoModeToggleError('Chyba načtení');
@@ -261,12 +278,22 @@ class TimelineDialog {
         this.setAutoModeToggleLoading(true, 'Ukládám…');
 
         try {
-            const data = await this.requestPlannerSettings('POST', {
-                auto_mode_switch_enabled: enabled
-            });
+            const payload = { auto_mode_switch_enabled: enabled };
+            if (enabled) {
+                payload.auto_mode_plan = this.autoModePlan || this.plan || 'autonomy';
+            }
+            const data = await this.requestPlannerSettings('POST', payload);
             this.autoModeSwitchEnabled = !!data.auto_mode_switch_enabled;
+            if (data.auto_mode_plan) {
+                this.autoModePlan = data.auto_mode_plan;
+            }
+            if (data.planner_mode) {
+                this.plannerMode = data.planner_mode;
+            }
             this.autoSettingsLoaded = true;
-            const desiredPlan = this.autoModeSwitchEnabled ? 'autonomy' : 'hybrid';
+            const desiredPlan = this.autoModeSwitchEnabled
+                ? (this.autoModePlan || 'autonomy')
+                : (this.plannerMode === 'autonomy_preview' ? 'autonomy' : 'hybrid');
             this.updateAutoModeToggleUI();
             await this.syncPlanWithAutoMode(desiredPlan);
         } catch (error) {
@@ -292,7 +319,27 @@ class TimelineDialog {
         }
 
         console.log(`[TimelineDialog] Syncing plan view to active mode: ${desiredPlan}`);
-        await this.switchPlan(desiredPlan);
+        await this.switchPlan(desiredPlan, { origin: 'auto', forceRefresh: true });
+    }
+
+    async updateAutoModePlanPreference(plan) {
+        if (!plan || !window.INVERTER_SN) {
+            return;
+        }
+
+        try {
+            const data = await this.requestPlannerSettings('POST', {
+                auto_mode_plan: plan
+            });
+            if (data.auto_mode_plan) {
+                this.autoModePlan = data.auto_mode_plan;
+            }
+            if (data.planner_mode) {
+                this.plannerMode = data.planner_mode;
+            }
+        } catch (error) {
+            console.error('[TimelineDialog] Failed to update auto mode plan preference', error);
+        }
     }
 
     /**
@@ -390,7 +437,7 @@ class TimelineDialog {
         planButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const plan = btn.dataset.plan || 'hybrid';
-                this.switchPlan(plan);
+                this.switchPlan(plan, { origin: 'manual' });
             });
         });
 
@@ -459,7 +506,9 @@ class TimelineDialog {
         // Stop update interval
         this.stopUpdateInterval();
         this.autoPlanSyncEnabled = true;
-        const desiredPlan = this.autoModeSwitchEnabled ? 'autonomy' : 'hybrid';
+        const desiredPlan = this.autoModeSwitchEnabled
+            ? (this.autoModePlan || 'autonomy')
+            : (this.plannerMode === 'autonomy_preview' ? 'autonomy' : 'hybrid');
         this.syncPlanWithAutoMode(desiredPlan);
     }
 
@@ -554,15 +603,35 @@ class TimelineDialog {
         this.renderTab(dayType);
     }
 
-    async switchPlan(plan) {
-        if (!plan || plan === this.plan) {
+    async switchPlan(plan, options = {}) {
+        if (!plan) {
             return;
         }
-        this.autoPlanSyncEnabled = false;
+
+        const origin = options.origin || 'manual';
+        const forceRefresh = options.forceRefresh !== undefined ? options.forceRefresh : true;
+
+        if (!forceRefresh && plan === this.plan) {
+            return;
+        }
+
+        if (origin === 'manual') {
+            this.autoPlanSyncEnabled = false;
+        }
+
         this.plan = plan;
         this.updatePlanButtons();
-        await this.loadAllTabsData(false, plan);
+
+        if (forceRefresh) {
+            this.cache[plan] = this.createEmptyCache();
+        }
+
+        await this.loadAllTabsData(forceRefresh, plan);
         this.renderTab(this.activeTab);
+
+        if (origin === 'manual' && this.autoModeSwitchEnabled) {
+            await this.updateAutoModePlanPreference(plan);
+        }
     }
 
     updatePlanButtons() {
