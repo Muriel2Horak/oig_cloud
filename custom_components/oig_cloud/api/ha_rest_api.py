@@ -126,14 +126,12 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                 )
 
             precomputed_data: Optional[Dict[str, Any]] = None
-            if (
-                hasattr(entity_obj, "_precomputed_store")
-                and getattr(entity_obj, "_precomputed_store")
+            if hasattr(entity_obj, "_precomputed_store") and getattr(
+                entity_obj, "_precomputed_store"
             ):
                 try:
                     precomputed_data = (
-                        await entity_obj._precomputed_store.async_load()
-                        or {}
+                        await entity_obj._precomputed_store.async_load() or {}
                     )
                 except Exception as storage_error:
                     _LOGGER.warning(
@@ -689,15 +687,21 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                 if mode == "autonomy"
                 else "unified_cost_tile_hybrid"
             )
+            comparison_summary = (
+                precomputed_data.get("cost_comparison") if precomputed_data else None
+            )
             if precomputed_data:
                 precomputed_tile = precomputed_data.get(tile_key)
 
             if precomputed_tile:
+                response_payload = dict(precomputed_tile)
+                if comparison_summary and isinstance(response_payload, dict):
+                    response_payload["comparison"] = comparison_summary
                 _LOGGER.debug(
                     "API: Serving %s unified cost tile from precomputed storage",
                     mode,
                 )
-                return web.json_response(precomputed_tile)
+                return web.json_response(response_payload)
 
             if mode == "autonomy":
                 if hasattr(entity_obj, "build_autonomy_cost_tile"):
@@ -709,7 +713,9 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                             exc_info=True,
                         )
                         return web.json_response(
-                            {"error": f"Failed to build autonomy tile: {str(build_error)}"},
+                            {
+                                "error": f"Failed to build autonomy tile: {str(build_error)}"
+                            },
                             status=500,
                         )
                 else:
@@ -717,35 +723,6 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                         {"error": "Autonomy cost tile not supported"}, status=500
                     )
             else:
-                # PHASE 3.5: Read from precomputed storage for instant response
-                if (
-                    hasattr(entity_obj, "_precomputed_store")
-                    and entity_obj._precomputed_store
-                ):
-                    try:
-                        precomputed_data = await entity_obj._precomputed_store.async_load()
-                        if precomputed_data and "unified_cost_tile" in precomputed_data:
-                            tile_data = precomputed_data["unified_cost_tile"]
-
-                            _LOGGER.debug(
-                                f"API: Serving unified cost tile from precomputed storage for {box_id}, "
-                                f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč, "
-                                f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
-                                if precomputed_data.get("last_update")
-                                else "unknown age"
-                            )
-
-                            return web.json_response(tile_data)
-                        else:
-                            _LOGGER.warning(
-                                f"No precomputed unified_cost_tile data found for {box_id}, falling back to live build"
-                            )
-                    except Exception as storage_error:
-                        _LOGGER.warning(
-                            f"Failed to read precomputed data: {storage_error}, falling back to live build"
-                        )
-
-                # Fallback: Build unified cost tile on-demand (old behavior)
                 if hasattr(entity_obj, "build_unified_cost_tile"):
                     try:
                         _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
@@ -764,8 +741,13 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                         )
                 else:
                     return web.json_response(
-                        {"error": "build_unified_cost_tile method not found"}, status=500
+                        {"error": "build_unified_cost_tile method not found"},
+                        status=500,
                     )
+
+            if comparison_summary and isinstance(tile_data, dict):
+                tile_data = dict(tile_data)
+                tile_data["comparison"] = comparison_summary
 
             _LOGGER.debug(
                 f"API: Serving unified cost tile for {box_id}, "
@@ -877,7 +859,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                         detail_key = (
                             "detail_tabs_autonomy"
                             if plan_key == "autonomy"
-                            else "detail_tabs"
+                            else "detail_tabs_hybrid"
                         )
                         detail_tabs = precomputed_data.get(detail_key)
                         if not detail_tabs:
@@ -920,9 +902,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             # Fallback: Build detail tabs on-demand (old behavior)
             if hasattr(entity_obj, "build_detail_tabs"):
                 try:
-                    detail_tabs = await entity_obj.build_detail_tabs(
-                        tab=tab, plan=plan
-                    )
+                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab, plan=plan)
                 except Exception as build_error:
                     _LOGGER.error(
                         f"API: Error in build_detail_tabs() for {box_id}: {build_error}",

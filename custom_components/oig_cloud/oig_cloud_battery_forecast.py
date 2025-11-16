@@ -6643,6 +6643,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Build unified_cost_tile for BOTH planners - they are independent algorithms
             unified_cost_tile_hybrid = await self.build_unified_cost_tile()
             unified_cost_tile_autonomy = await self.build_autonomy_cost_tile()
+            cost_comparison = self._build_cost_comparison_summary(
+                unified_cost_tile_hybrid,
+                unified_cost_tile_autonomy,
+            )
 
             # Snapshot current timelines for both planners
             timeline_hybrid = copy.deepcopy(
@@ -6663,6 +6667,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "unified_cost_tile_autonomy": unified_cost_tile_autonomy,  # Dynamic algorithm costs
                 "timeline_hybrid": timeline_hybrid,
                 "timeline_autonomy": timeline_autonomy,
+                "cost_comparison": cost_comparison,
                 "last_update": dt_util.now().isoformat(),
                 "version": 2,  # Dual-planner architecture
             }
@@ -6951,6 +6956,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if enforced_modes != final_modes:
             final_modes = enforced_modes
+            result = self._build_result(
+                modes=final_modes,
+                spot_prices=spot_prices,
+                export_prices=export_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=min_capacity,
+                efficiency=efficiency,
+                baselines=None,
+                physical_min_capacity=physical_min_capacity,
+            )
+            timeline = result.get("optimal_timeline", [])
+            total_cost = result.get("total_cost", 0.0)
+
+        # Ensure post-processed plan still respects minimum mode duration (30m UPS, etc.)
+        enforced_duration_modes = self._enforce_min_mode_duration(final_modes)
+        if enforced_duration_modes != final_modes:
+            final_modes = enforced_duration_modes
             result = self._build_result(
                 modes=final_modes,
                 spot_prices=spot_prices,
@@ -7444,17 +7469,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         actual_payload = actual_interval.get("actual")
                         status = actual_interval.get("status", status)
 
+                planned_payload = {
+                    "mode": iv.get("mode"),
+                    "mode_name": iv.get("mode_name"),
+                    "battery_soc": iv.get("battery_soc"),
+                    "battery_kwh": iv.get("battery_soc"),
+                    "battery_capacity_kwh": iv.get("battery_capacity_kwh"),
+                    "solar_kwh": iv.get("solar_kwh", 0.0),
+                    "consumption_kwh": iv.get("load_kwh", 0.0),
+                    "grid_import": iv.get("grid_import", 0.0),
+                    "grid_export": iv.get("grid_export", 0.0),
+                    "grid_import_kwh": iv.get("grid_import", 0.0),
+                    "grid_export_kwh": iv.get("grid_export", 0.0),
+                    "spot_price": iv.get("spot_price_czk", iv.get("spot_price", 0.0)),
+                    "net_cost": iv.get("net_cost", 0.0),
+                    "savings_vs_home_i": iv.get("savings_vs_home_i", 0.0),
+                }
+
                 pseudo_intervals.append(
                     {
                         "time": iv.get("time"),
-                        "planned": {
-                            "net_cost": iv.get("net_cost", 0.0),
-                            "solar_kwh": iv.get("solar_kwh", 0.0),
-                            "consumption_kwh": iv.get("load_kwh", 0.0),
-                            "grid_import": iv.get("grid_import", 0.0),
-                            "grid_export": iv.get("grid_export", 0.0),
-                            "mode_name": iv.get("mode_name"),
-                        },
+                        "planned": planned_payload,
                         "actual": actual_payload,
                         "status": status,
                     }
@@ -8852,6 +8887,73 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
         return result
+
+    def _build_cost_comparison_summary(
+        self,
+        hybrid_tile: Optional[Dict[str, Any]],
+        autonomy_tile: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Prepare compact cost comparison snapshot for FE."""
+
+        try:
+            today_h = (hybrid_tile or {}).get("today", {}) or {}
+            today_a = (autonomy_tile or {}).get("today", {}) or {}
+            actual_spent = today_h.get("actual_cost_so_far")
+            if actual_spent is None:
+                actual_spent = today_h.get("actual_total_cost")
+            if actual_spent is None:
+                actual_spent = today_a.get("actual_cost_so_far")
+            if actual_spent is None:
+                actual_spent = today_a.get("actual_total_cost")
+            actual_spent = round(actual_spent or 0, 2)
+
+            def plan_summary(day_data, plan_key):
+                future = day_data.get("future_plan_cost")
+                if future is None:
+                    future = day_data.get("plan_total_cost")
+                future = round(future or 0, 2)
+                total = round(actual_spent + future, 2)
+                return {
+                    "plan_key": plan_key,
+                    "future_plan_cost": future,
+                    "actual_cost": actual_spent,
+                    "total_cost": total,
+                }
+
+            standard_summary = plan_summary(today_h, "hybrid")
+            dynamic_summary = plan_summary(today_a, "autonomy")
+            delta = round(
+                dynamic_summary["total_cost"] - standard_summary["total_cost"], 2
+            )
+
+            tomorrow_std = (
+                (hybrid_tile or {}).get("tomorrow", {}) or {}
+            ).get("plan_total_cost")
+            tomorrow_dyn = (
+                (autonomy_tile or {}).get("tomorrow", {}) or {}
+            ).get("plan_total_cost")
+
+            summary = {
+                "active_plan": self._get_active_plan_key(),
+                "actual_spent": actual_spent,
+                "plans": {
+                    "standard": standard_summary,
+                    "dynamic": dynamic_summary,
+                },
+                "delta_vs_standard": delta,
+                "baseline": today_h.get("baseline_comparison"),
+                "yesterday": (hybrid_tile or {}).get("yesterday"),
+                "tomorrow": {
+                    "standard": tomorrow_std,
+                    "dynamic": tomorrow_dyn,
+                },
+            }
+            return summary
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to build cost comparison summary: %s", err, exc_info=True
+            )
+            return None
 
     def _group_intervals_by_mode(
         self, intervals: List[Dict[str, Any]], data_type: str = "both"

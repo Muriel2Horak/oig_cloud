@@ -404,13 +404,15 @@ const PlannerState = (() => {
         if (!settings) {
             return 'hybrid';
         }
-        if (settings.planner_mode === 'autonomy_preview') {
+        // Use battery_planner_mode directly from settings
+        const plannerMode = settings.planner_mode;
+        if (plannerMode === 'autonomy' || plannerMode === 'autonomy_preview') {
             return 'autonomy';
         }
-        const preferred = settings.auto_mode_plan || 'autonomy';
-        if (settings.auto_mode_switch_enabled && preferred === 'autonomy') {
-            return 'autonomy';
+        if (plannerMode === 'hybrid') {
+            return 'hybrid';
         }
+        // Legacy fallback for old planner_mode values
         return 'hybrid';
     };
 
@@ -475,11 +477,14 @@ const PlannerState = (() => {
         return resolveActivePlan(settings);
     };
 
+    const getCachedSettings = () => cache;
+
     const getLabels = (plan = 'hybrid') => PLAN_LABELS[plan] || PLAN_LABELS.hybrid;
 
     return {
         fetchSettings,
         getDefaultPlan,
+        getCachedSettings,
         resolveActivePlan,
         getLabels
     };

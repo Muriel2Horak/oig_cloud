@@ -250,10 +250,7 @@ async function loadCostComparisonTile(force = false) {
     const now = Date.now();
 
     if (!force && costComparisonTileCache && now - costComparisonTileLastFetch < COST_TILE_CACHE_TTL) {
-        renderCostComparisonTile(
-            costComparisonTileCache.hybrid,
-            costComparisonTileCache.autonomy
-        );
+        renderCostComparisonTile(costComparisonTileCache);
         return costComparisonTileCache;
     }
 
@@ -261,11 +258,29 @@ async function loadCostComparisonTile(force = false) {
         return costComparisonTilePromise;
     }
 
-    costComparisonTilePromise = fetchCostComparisonTileData()
-        .then((payload) => {
+    const plannerPromise = window.PlannerState?.fetchSettings?.() || Promise.resolve(null);
+
+    costComparisonTilePromise = Promise.all([
+        fetchCostComparisonTileData(),
+        plannerPromise
+    ])
+        .then(([rawTiles, plannerSettings]) => {
+            const activePlan = window.PlannerState?.resolveActivePlan?.(
+                plannerSettings || window.PlannerState?.getCachedSettings?.()
+            ) || 'hybrid';
+            const summary = buildCostComparisonSummary(
+                rawTiles.hybrid,
+                rawTiles.autonomy,
+                activePlan
+            );
+            const payload = {
+                hybrid: rawTiles.hybrid,
+                autonomy: rawTiles.autonomy,
+                comparison: summary
+            };
             costComparisonTileCache = payload;
             costComparisonTileLastFetch = Date.now();
-            renderCostComparisonTile(payload.hybrid, payload.autonomy);
+            renderCostComparisonTile(payload);
             return payload;
         })
         .finally(() => {
@@ -284,8 +299,11 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
         ]);
 
         if (!hybridRes.ok || !autonomyRes.ok) {
-            console.error('[Cost Comparison] API error', hybridRes.status, autonomyRes.status);
-            if ((hybridRes.status >= 500 || autonomyRes.status >= 500) && retryCount < maxRetries) {
+            const shouldRetry = (code) => code >= 500;
+            if (
+                retryCount < maxRetries &&
+                (shouldRetry(hybridRes.status) || shouldRetry(autonomyRes.status))
+            ) {
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
                 await new Promise((resolve) => setTimeout(resolve, delay));
                 return fetchCostComparisonTileData(retryCount + 1, maxRetries);
@@ -293,7 +311,10 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
             throw new Error(`HTTP ${hybridRes.status}/${autonomyRes.status}`);
         }
 
-        const [hybridData, autonomyData] = await Promise.all([hybridRes.json(), autonomyRes.json()]);
+        const [hybridData, autonomyData] = await Promise.all([
+            hybridRes.json(),
+            autonomyRes.json()
+        ]);
         return { hybrid: hybridData, autonomy: autonomyData };
     } catch (error) {
         console.error('[Cost Comparison] Failed to load', error);
@@ -306,7 +327,53 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
     }
 }
 
-function renderCostComparisonTile(hybridData, autonomyData) {
+function buildCostComparisonSummary(hybridTile, autonomyTile, activePlan = 'hybrid') {
+    const todayHybrid = (hybridTile || {}).today || {};
+    const todayAutonomy = (autonomyTile || {}).today || {};
+
+    const actualSpent =
+        todayHybrid.actual_cost_so_far ??
+        todayHybrid.actual_total_cost ??
+        todayAutonomy.actual_cost_so_far ??
+        todayAutonomy.actual_total_cost ??
+        0;
+
+    function planSummary(dayData, planKey) {
+        const future =
+            dayData.future_plan_cost ??
+            dayData.plan_total_cost ??
+            0;
+        return {
+            plan_key: planKey,
+            actual_cost: actualSpent,
+            future_plan_cost: future,
+            total_cost: actualSpent + future
+        };
+    }
+
+    const standardSummary = planSummary(todayHybrid, 'hybrid');
+    const dynamicSummary = planSummary(todayAutonomy, 'autonomy');
+
+    return {
+        active_plan: activePlan,
+        actual_spent: Math.round(actualSpent * 100) / 100,
+        plans: {
+            standard: standardSummary,
+            dynamic: dynamicSummary
+        },
+        delta_vs_standard: Math.round(
+            dynamicSummary.total_cost - standardSummary.total_cost
+        ),
+        baseline: todayHybrid.baseline_comparison || null,
+        yesterday: (hybridTile || {}).yesterday || null,
+        tomorrow: {
+            standard: (hybridTile || {}).tomorrow?.plan_total_cost ?? null,
+            dynamic: (autonomyTile || {}).tomorrow?.plan_total_cost ?? null
+        }
+    };
+}
+
+function renderCostComparisonTile(data) {
     const container = document.getElementById('cost-comparison-tile-container');
     if (!container) {
         console.warn('[Cost Comparison] Container not found');
@@ -315,10 +382,21 @@ function renderCostComparisonTile(hybridData, autonomyData) {
 
     if (typeof CostComparisonTile === 'undefined') {
         const script = document.createElement('script');
+        const payload = JSON.parse(JSON.stringify(data || {}));
         script.src = `modules/cost-comparison-tile.js?v=${Date.now()}`;
-        script.onload = () => renderCostComparisonTile(hybridData, autonomyData);
+        script.onload = () => renderCostComparisonTile(payload);
         script.onerror = () => console.error('[Cost Comparison] Failed to load module');
         document.head.appendChild(script);
+        return;
+    }
+
+    if (!data || !data.comparison) {
+        container.innerHTML = `
+            <div class="cost-card-placeholder">
+                <span class="cost-card-title">💰 Nákladový přehled</span>
+                <span class="cost-card-loading">Čekám na data…</span>
+            </div>
+        `;
         return;
     }
 
@@ -328,9 +406,9 @@ function renderCostComparisonTile(hybridData, autonomyData) {
     };
 
     if (costComparisonTileInstance) {
-        costComparisonTileInstance.update(hybridData, autonomyData);
+        costComparisonTileInstance.update(data);
     } else {
-        costComparisonTileInstance = new CostComparisonTile(container, hybridData, autonomyData, options);
+        costComparisonTileInstance = new CostComparisonTile(container, data, options);
     }
 }
 
