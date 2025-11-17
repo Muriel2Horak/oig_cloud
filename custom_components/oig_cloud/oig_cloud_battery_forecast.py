@@ -5824,17 +5824,60 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         plan_data = {
             "date": today_str,
             "plan": plan_storage.get("intervals", []),
-            "actual": [],  # Will be filled below
+            "actual": [],  # Will be filled/overwritten below
         }
 
         if not plan_data:
             _LOGGER.debug(f"No plan for {today_str}, skipping actual update")
             return
 
+        existing_actual: List[Dict[str, Any]] = []
+        if (
+            self._daily_plan_state
+            and self._daily_plan_state.get("date") == today_str
+        ):
+            existing_actual = copy.deepcopy(self._daily_plan_state.get("actual", []))
+            plan_data["actual"] = existing_actual
+        else:
+            existing_actual = plan_data.get("actual", [])
+
         _LOGGER.info(f"📊 Updating actual values from history for {today_str}...")
 
-        # Načíst existing actual intervaly
-        existing_actual = plan_data.get("actual", [])
+        # Doplň chybějící net_cost do existujících intervalů (zpětná kompatibilita)
+        patched_existing: List[Dict[str, Any]] = []
+        for interval in existing_actual:
+            if interval.get("net_cost") is not None:
+                patched_existing.append(interval)
+                continue
+            ts = interval.get("time")
+            if not ts:
+                patched_existing.append(interval)
+                continue
+            start_dt = dt_util.parse_datetime(ts)
+            if start_dt is None:
+                try:
+                    start_dt = datetime.fromisoformat(ts)
+                except Exception:
+                    start_dt = None
+            if start_dt is None:
+                patched_existing.append(interval)
+                continue
+            if start_dt.tzinfo is None:
+                start_dt = dt_util.as_local(start_dt)
+            interval_end = start_dt + timedelta(minutes=15)
+            historical_patch = await self._fetch_interval_from_history(
+                start_dt, interval_end
+            )
+            if historical_patch:
+                interval = {
+                    **interval,
+                    "net_cost": round(historical_patch.get("net_cost", 0), 2),
+                    "spot_price": round(historical_patch.get("spot_price", 0), 2),
+                    "export_price": round(historical_patch.get("export_price", 0), 2),
+                }
+            patched_existing.append(interval)
+        existing_actual = patched_existing
+        plan_data["actual"] = existing_actual
 
         # Vytvořit set existujících časů pro rychlé vyhledávání
         existing_times = {interval.get("time") for interval in existing_actual}
@@ -5873,6 +5916,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         ),
                         "grid_import_kwh": round(actual_data.get("grid_import", 0), 4),
                         "grid_export_kwh": round(actual_data.get("grid_export", 0), 4),
+                        "net_cost": round(actual_data.get("net_cost", 0), 2),
+                        "spot_price": round(actual_data.get("spot_price", 0), 2),
+                        "export_price": round(actual_data.get("export_price", 0), 2),
                         "mode": actual_data.get("mode", 0),
                         "mode_name": actual_data.get("mode_name", "N/A"),
                     }
@@ -10112,10 +10158,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Calculate from archived data
             plan_total = sum(
-                interval.get("net_cost", 0) for interval in archive_data.get("plan", [])
+                self._resolve_interval_cost(interval, prefer_actual=False)
+                for interval in archive_data.get("plan", [])
             )
             actual_total = sum(
-                interval.get("net_cost", 0) for interval in actual_intervals
+                self._resolve_interval_cost(interval, prefer_actual=True)
+                for interval in actual_intervals
             )
             delta = actual_total - plan_total
 
@@ -10242,6 +10290,55 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "performance": "on_plan",
                 "note": "No archive data available",
             }
+
+    def _resolve_interval_cost(
+        self, interval: Optional[Dict[str, Any]], prefer_actual: bool = True
+    ) -> float:
+        """Extract or derive interval cost from archived payload."""
+
+        if not interval:
+            return 0.0
+
+        payload_candidates: List[Optional[Dict[str, Any]]] = []
+        if isinstance(interval, dict):
+            if prefer_actual:
+                payload_candidates.append(interval.get("actual"))
+                payload_candidates.append(interval if not interval.get("actual") else None)
+                payload_candidates.append(interval.get("planned"))
+            else:
+                payload_candidates.append(interval.get("planned"))
+                payload_candidates.append(interval if not interval.get("planned") else None)
+                payload_candidates.append(interval.get("actual"))
+        else:
+            payload_candidates.append(interval)  # type: ignore[arg-type]
+
+        for payload in payload_candidates:
+            if not payload or not isinstance(payload, dict):
+                continue
+            value = payload.get("net_cost")
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    pass
+
+            # Derive from energy + price data if available
+            grid_import = payload.get("grid_import_kwh", payload.get("grid_import"))
+            grid_export = payload.get("grid_export_kwh", payload.get("grid_export"))
+            spot_price = payload.get("spot_price_czk", payload.get("spot_price"))
+            export_price = payload.get(
+                "export_price_czk", payload.get("export_price")
+            )
+
+            if grid_import is not None and spot_price is not None:
+                try:
+                    import_cost = float(grid_import) * float(spot_price)
+                    export_cost = float(grid_export or 0) * float(export_price or 0)
+                    return round(import_cost - export_cost, 2)
+                except (TypeError, ValueError):
+                    continue
+
+        return 0.0
 
     async def _build_tomorrow_cost_data(self) -> Dict[str, Any]:
         """

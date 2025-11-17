@@ -81,8 +81,10 @@ class UnifiedCostTile {
         const savingsClass = savings > 0 ? 'positive' : (savings < 0 ? 'negative' : 'neutral');
 
         // Yesterday/tomorrow context
-        const hasYesterday = yesterday && yesterday.actual_total_cost > 0;
-        const hasTomorrow = tomorrow && tomorrow.plan_total_cost > 0;
+        const yesterdayContext = this.buildContextValue(yesterday, { preferActual: true, planLabel: 'plán' });
+        const tomorrowContext = this.buildContextValue(tomorrow, { preferActual: false, planLabel: '' });
+        const hasYesterday = yesterdayContext !== null;
+        const hasTomorrow = tomorrowContext !== null;
 
         // Tooltips from backend
         const todayTooltip = today.tooltips?.today || '';
@@ -118,8 +120,8 @@ class UnifiedCostTile {
                 <!-- Context footer: Včera | Zítra -->
                 ${(hasYesterday || hasTomorrow) ? `
                 <div class="uct-footer">
-                    ${hasYesterday ? `<span data-tooltip="${this.escapeHtml(yesterdayTooltip)}">Včera ${this.formatCostCompact(yesterday.actual_total_cost)}</span>` : '<span>—</span>'}
-                    ${hasTomorrow ? `<span data-tooltip="${this.escapeHtml(tomorrowTooltip)}">Zítra ${this.formatCostCompact(tomorrow.plan_total_cost)}</span>` : '<span>—</span>'}
+                    ${hasYesterday ? `<span data-tooltip="${this.escapeHtml(yesterdayTooltip)}">Včera ${yesterdayContext}</span>` : '<span>—</span>'}
+                    ${hasTomorrow ? `<span data-tooltip="${this.escapeHtml(tomorrowTooltip)}">Zítra ${tomorrowContext}</span>` : '<span>—</span>'}
                 </div>
                 ` : ''}
             </div>
@@ -141,6 +143,43 @@ class UnifiedCostTile {
         if (!total || total === 0) return '0%';
         const pct = Math.round((delta / total) * 100);
         return `${pct > 0 ? '+' : ''}${pct}%`;
+    }
+
+    asNumber(value) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    /**
+     * Build context value for footer rows (yesterday/tomorrow)
+     */
+    buildContextValue(dayData, { preferActual = true, planLabel = '' } = {}) {
+        if (!dayData) {
+            return null;
+        }
+
+        const actual = this.asNumber(dayData.actual_total_cost);
+        const plan = this.asNumber(dayData.plan_total_cost);
+
+        if (preferActual && actual !== null) {
+            if (plan !== null && Math.round(plan) !== Math.round(actual)) {
+                return `${this.formatCostCompact(actual)} (${this.formatCostCompact(plan)} ${planLabel || 'plán'})`;
+            }
+            return this.formatCostCompact(actual);
+        }
+
+        if (plan !== null) {
+            return `${this.formatCostCompact(plan)}${planLabel ? ` ${planLabel}` : ''}`;
+        }
+
+        if (!preferActual && actual !== null) {
+            return this.formatCostCompact(actual);
+        }
+
+        return null;
     }
 
     /**

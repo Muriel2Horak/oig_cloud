@@ -1284,6 +1284,9 @@ class TimelineDialog {
             // Get mode config
             const historicalMode = MODE_CONFIG[mode_historical] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_historical };
             const plannedMode = MODE_CONFIG[mode_planned] || { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: mode_planned };
+            const hasActualMode = Boolean(mode_historical && mode_historical !== 'Unknown' && status !== 'planned');
+            const hasPlannedMode = Boolean(mode_planned && mode_planned !== 'Unknown');
+            const plannedOnly = !hasActualMode && hasPlannedMode;
 
             // Status icon
             const statusIcons = {
@@ -1327,13 +1330,15 @@ class TimelineDialog {
                     <div class="block-content-row">
                         <!-- Režim -->
                         <div class="block-item">
-                            <span class="item-label">Skutečnost/Plán:</span>
+                            <span class="item-label">${plannedOnly ? 'Plán:' : 'Skutečnost/Plán:'}</span>
                             <div class="item-value">
-                                <span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
-                                ${mode_planned && mode_planned !== 'Unknown' ? `
+                                ${hasActualMode ? `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>` : ''}
+                                ${hasActualMode && hasPlannedMode ? `
                                 <span class="mode-arrow">→</span>
                                 <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>
-                                ` : ''}
+                                ` : (!hasActualMode && hasPlannedMode ? `
+                                <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>
+                                ` : '')}
                             </div>
                         </div>
 

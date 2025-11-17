@@ -5,7 +5,7 @@ import logging
 import json
 import os
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from collections import deque
@@ -17,8 +17,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later
+from homeassistant.const import EntityCategory, EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 
@@ -1365,6 +1366,8 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
 
         # Last analysis timestamp
         self._last_analysis: Optional[datetime] = None
+        self._backfill_task: Optional[asyncio.Task] = None
+        self._backfill_unsub: Optional[Callable[[], None]] = None
 
         _LOGGER.info(f"Battery Health sensor initialized for box {self._box_id}")
 
@@ -1401,8 +1404,13 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             "✅ Battery health automatic analysis ENABLED "
             "(ΔSoC >=60%% for high quality, fallback to 45%% when data is sparse, median-based)"
         )
-        # Spustit asynchronní backfill historických intervalů (neblokuje start)
-        self.hass.async_create_task(self._async_backfill_missing_cycles())
+        # Spustit asynchronní backfill historických intervalů (nezávisle na startu HA)
+        if self.hass.is_running:
+            self._schedule_backfill(reason="integration reload")
+        else:
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, self._handle_ha_started
+            )
 
     async def _async_startup_analysis(self) -> None:
         """
@@ -1488,13 +1496,59 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             )
             _LOGGER.info("Battery Health sensor will retry analysis in daily task")
 
+    def _schedule_backfill(
+        self, delay: float = 10.0, reason: str = "initial schedule"
+    ) -> None:
+        """Naplánovat spuštění backfill úlohy se zpožděním."""
+        if not self._tracker:
+            _LOGGER.debug("Backfill schedule skipped: tracker not yet initialized")
+            return
+
+        if self._backfill_task and not self._backfill_task.done():
+            _LOGGER.debug(
+                "Backfill already running, skipping schedule (reason=%s)", reason
+            )
+            return
+
+        if self._backfill_unsub:
+            self._backfill_unsub()
+            self._backfill_unsub = None
+
+        _LOGGER.info(
+            "♻️ Backfill scheduled in %.1f s (%s)", delay, reason
+        )
+        self._backfill_unsub = async_call_later(
+            self.hass, delay, self._start_backfill_task
+        )
+
+    @callback
+    def _handle_ha_started(self, _event: Any) -> None:
+        """Callback při plném startu HA."""
+        self._schedule_backfill(reason="Home Assistant startup")
+
+    def _start_backfill_task(self, _now: Optional[datetime] = None) -> None:
+        """Spustit asynchronní backfill úlohu (bez dalšího plánování)."""
+        if not self._tracker:
+            _LOGGER.debug("Backfill start skipped: tracker not yet initialized")
+            return
+
+        if self._backfill_unsub:
+            self._backfill_unsub()
+            self._backfill_unsub = None
+
+        if self._backfill_task and not self._backfill_task.done():
+            _LOGGER.debug("Backfill task already running, skipping new start")
+            return
+
+        self._backfill_task = self.hass.async_create_task(
+            self._async_backfill_missing_cycles()
+        )
+
     async def _async_backfill_missing_cycles(self) -> None:
         """Asynchronní úloha pro dopočítání historických cyklů."""
         if not self._tracker:
+            _LOGGER.debug("Backfill aborted: tracker missing")
             return
-
-        # Nechat HA nejdřív kompletně nastartovat
-        await asyncio.sleep(10)
 
         _LOGGER.info("♻️ Starting background battery health backfill task...")
 
@@ -1510,6 +1564,20 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             _LOGGER.error(
                 f"Background battery health backfill failed: {e}", exc_info=True
             )
+        finally:
+            self._backfill_task = None
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Uklidit naplánované úlohy při odstranění senzoru."""
+        if self._backfill_unsub:
+            self._backfill_unsub()
+            self._backfill_unsub = None
+
+        if self._backfill_task:
+            self._backfill_task.cancel()
+            self._backfill_task = None
+
+        await super().async_will_remove_from_hass()
 
     async def _daily_analysis_task(self, *args: Any) -> None:
         """Denní úloha pro analýzu nových cyklů."""
