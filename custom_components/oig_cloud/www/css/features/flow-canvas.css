@@ -1045,30 +1045,56 @@
             overflow-x: auto;
         }
 
-        .grid-charging-popup table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
+.grid-charging-popup table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
 
-        .grid-charging-popup thead tr {
-            border-bottom: 1px solid var(--border-secondary);
-        }
+.grid-charging-popup thead tr {
+    border-bottom: 1px solid var(--border-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
 
-        .grid-charging-popup tfoot tr {
-            border-top: 1px solid var(--border-secondary);
-        }
+.grid-charging-popup tfoot tr {
+    border-top: 1px solid var(--border-secondary);
+}
 
-        .grid-charging-popup th,
-        .grid-charging-popup td {
-            padding: 4px 6px;
-            white-space: nowrap;
-        }
+.grid-charging-popup th,
+.grid-charging-popup td {
+    padding: 6px 8px;
+    white-space: nowrap;
+}
 
-        .grid-charging-popup tbody tr:hover {
-            background: rgba(255, 215, 64, 0.18);
-            transition: background 0.2s ease-in-out;
-        }
+.grid-charging-popup tbody tr:not(:last-child) {
+    border-bottom: 1px dashed rgba(255,255,255,0.15);
+}
+
+.grid-charging-popup tbody tr:nth-child(odd) {
+    background-color: rgba(255,255,255,0.02);
+}
+
+.grid-charging-popup tbody tr:hover {
+    background: rgba(255, 215, 64, 0.15);
+    transition: background 0.2s ease-in-out;
+}
+
+.grid-charging-popup td:first-child,
+.grid-charging-popup th:first-child {
+    text-align: left;
+    font-weight: 600;
+}
+
+.grid-charging-popup td:nth-child(2),
+.grid-charging-popup td:nth-child(3),
+.grid-charging-popup th:nth-child(2),
+.grid-charging-popup th:nth-child(3) {
+    text-align: right;
+}
 
         .detail-group {
             margin-top: 6px;

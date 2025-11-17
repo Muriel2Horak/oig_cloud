@@ -1,5 +1,6 @@
 """Battery Health Monitoring - měření skutečné kapacity a degradace baterie."""
 
+import asyncio
 import logging
 import json
 import os
@@ -71,9 +72,13 @@ class BatteryCapacityTracker:
         self._hass = hass
         self._box_id = box_id
         self._nominal_capacity = nominal_capacity_kwh
+        self._storage_lock = asyncio.Lock()
+        self._storage_initialized = False
 
         # Measurements history (max 100 posledních měření)
         self._measurements: deque[BatteryMeasurement] = deque(maxlen=100)
+        self._stored_cycle_ids: set[str] = set()
+        self._processing_cycle_ids: set[str] = set()
 
         # RETROSPEKTIVNÍ KRITÉRIA - na základě empirické analýzy dat
         # Analýza ukázala, že malé cykly (<60%) dávají nepřesné výsledky (SoH >120%)
@@ -93,6 +98,10 @@ class BatteryCapacityTracker:
             f"BatteryCapacityTracker initialized (RETROSPECTIVE mode), "
             f"nominal capacity: {nominal_capacity_kwh:.2f} kWh"
         )
+
+    def _generate_cycle_id(self, timestamp_end: datetime) -> str:
+        """Vytvořit unikátní ID cyklu podle času ukončení."""
+        return f"cycle_{timestamp_end.strftime('%Y-%m-%d_%H%M%S')}"
 
     def _calculate_quality_score(
         self,
@@ -178,6 +187,59 @@ class BatteryCapacityTracker:
         swing_factor = min(1.0, delta_soc / self._min_delta_soc)
         confidence = base * swing_factor
         return round(max(0.0, min(1.0, confidence)), 3)
+
+    async def backfill_history(self, chunk_days: int = 14) -> int:
+        """
+        Projít celou historickou dostupnost a doplnit chybějící cykly.
+
+        Args:
+            chunk_days: Délka jednoho backfill bloku v dnech
+
+        Returns:
+            Počet nově uložených měření
+        """
+        if not self._storage_initialized:
+            await self._load_cycles_from_storage()
+
+        window = await self._find_data_availability_window()
+        if not window:
+            _LOGGER.warning("Backfill aborted: data window unavailable")
+            return 0
+
+        start_time, end_time = window
+        chunk_start = start_time
+        total_new = 0
+
+        _LOGGER.info(
+            "Starting historical backfill: %s → %s (chunk=%d days)",
+            start_time,
+            end_time,
+            chunk_days,
+        )
+
+        while chunk_start < end_time:
+            chunk_end = min(chunk_start + timedelta(days=chunk_days), end_time)
+            _LOGGER.debug(
+                "Backfill chunk %s → %s", chunk_start.isoformat(), chunk_end.isoformat()
+            )
+            measurements = await self.analyze_history_for_cycles(
+                start_time=chunk_start, end_time=chunk_end
+            )
+            if measurements:
+                for measurement in measurements:
+                    await self._save_cycle_to_storage(measurement)
+                total_new += len(measurements)
+                _LOGGER.info(
+                    "Backfill chunk stored %d new measurements (total=%d)",
+                    len(measurements),
+                    total_new,
+                )
+
+            chunk_start = chunk_end
+            await asyncio.sleep(0)
+
+        _LOGGER.info("Historical backfill finished, %d new measurements stored", total_new)
+        return total_new
 
     async def analyze_history_for_cycles(
         self,
@@ -283,15 +345,26 @@ class BatteryCapacityTracker:
             # Pro každý cyklus spočítat kapacitu
             new_measurements = []
             for cycle_start, cycle_end, start_soc, end_soc in cycles:
-                # Načíst energy data pro tento interval
-                measurement = await self._calculate_capacity_from_energy(
-                    cycle_start,
-                    cycle_end,
-                    start_soc,
-                    end_soc,
-                    charge_energy_sensor,
-                    discharge_energy_sensor,
-                )
+                cycle_id = self._generate_cycle_id(cycle_end)
+                if cycle_id in self._stored_cycle_ids or cycle_id in self._processing_cycle_ids:
+                    _LOGGER.debug("Cycle %s already stored, skipping energy calculation", cycle_id)
+                    continue
+                measurement: Optional[BatteryMeasurement] = None
+                self._processing_cycle_ids.add(cycle_id)
+
+                try:
+                    # Načíst energy data pro tento interval
+                    measurement = await self._calculate_capacity_from_energy(
+                        cycle_start,
+                        cycle_end,
+                        start_soc,
+                        end_soc,
+                        charge_energy_sensor,
+                        discharge_energy_sensor,
+                    )
+                finally:
+                    if measurement is None:
+                        self._processing_cycle_ids.discard(cycle_id)
 
                 if measurement:
                     self._measurements.append(measurement)
@@ -981,19 +1054,24 @@ class BatteryCapacityTracker:
 
         if not os.path.exists(storage_path):
             _LOGGER.info(f"No existing storage found at {storage_path}")
+            self._stored_cycle_ids = set()
+            self._storage_initialized = True
             return None
 
         try:
 
-            def _load():
-                with open(storage_path, "r") as f:
-                    return json.load(f)
+            async with self._storage_lock:
 
-            data = await self._hass.async_add_executor_job(_load)
+                def _load():
+                    with open(storage_path, "r") as f:
+                        return json.load(f)
+
+                data = await self._hass.async_add_executor_job(_load)
 
             # Načíst cycles
             cycles = data.get("cycles", [])
             _LOGGER.info(f"Loading {len(cycles)} cycles from storage")
+            self._stored_cycle_ids = {cycle.get("id") for cycle in cycles if cycle.get("id")}
 
             for cycle_data in cycles:
                 # Rekonstruovat BatteryMeasurement z JSON
@@ -1028,12 +1106,15 @@ class BatteryCapacityTracker:
             if last_analysis_str:
                 last_analysis = datetime.fromisoformat(last_analysis_str)
                 _LOGGER.info(f"Last analysis was at {last_analysis}")
+                self._storage_initialized = True
                 return last_analysis
 
+            self._storage_initialized = True
             return None
 
         except Exception as e:
             _LOGGER.error(f"Failed to load storage: {e}", exc_info=True)
+            self._storage_initialized = False
             return None
 
     async def _save_cycle_to_storage(self, measurement: BatteryMeasurement) -> None:
@@ -1046,104 +1127,115 @@ class BatteryCapacityTracker:
         storage_path = self._get_storage_path()
 
         try:
-            # Načíst existující data
-            if os.path.exists(storage_path):
+            async with self._storage_lock:
+                # Načíst existující data
+                if os.path.exists(storage_path):
 
-                def _load():
-                    with open(storage_path, "r") as f:
-                        return json.load(f)
+                    def _load():
+                        with open(storage_path, "r") as f:
+                            return json.load(f)
 
-                data = await self._hass.async_add_executor_job(_load)
-            else:
-                # Vytvořit nový storage
-                data = {
-                    "version": 1,
-                    "box_id": self._box_id,
-                    "nominal_capacity_kwh": self._nominal_capacity,
-                    "cycles": [],
+                    data = await self._hass.async_add_executor_job(_load)
+                else:
+                    # Vytvořit nový storage
+                    data = {
+                        "version": 1,
+                        "box_id": self._box_id,
+                        "nominal_capacity_kwh": self._nominal_capacity,
+                        "cycles": [],
+                    }
+
+                # Přidat nový cyklus
+                cycle_id = self._generate_cycle_id(measurement.timestamp)
+
+                # Zkontrolovat duplikáty (stejný timestamp)
+                existing_ids = {c.get("id") for c in data["cycles"]}
+                if cycle_id in existing_ids:
+                    _LOGGER.debug(f"Cycle {cycle_id} already exists, skipping")
+                    self._processing_cycle_ids.discard(cycle_id)
+                    return
+
+                cycle_data = {
+                    "id": cycle_id,
+                    "timestamp_start": (
+                        measurement.timestamp - timedelta(hours=measurement.duration_hours)
+                    ).isoformat(),
+                    "timestamp_end": measurement.timestamp.isoformat(),
+                    "input_params": {
+                        "soc_start": round(measurement.start_soc, 1),
+                        "soc_end": round(measurement.end_soc, 1),
+                        "delta_soc": round(measurement.delta_soc, 1),
+                        "charge_energy_wh": round(measurement.total_charge_wh, 1),
+                        "discharge_energy_wh": round(measurement.total_discharge_wh, 1),
+                        "net_energy_wh": round(
+                            measurement.total_charge_wh - measurement.total_discharge_wh, 1
+                        ),
+                        "duration_hours": round(measurement.duration_hours, 2),
+                        "purity_percent": round(measurement.purity * 100, 1),
+                        "interruption_count": measurement.interruption_count,
+                        "spans_midnight": False,  # TODO: Track this in measurement
+                    },
+                    "output_data": {
+                        "measured_capacity_kwh": round(measurement.capacity_kwh, 2),
+                        "soh_percent": round(measurement.soh_percent, 1),
+                        "quality_score": round(measurement.quality_score, 0),
+                        "method": measurement.method,
+                        "validated": measurement.validated,
+                    },
+                    "metadata": {
+                        "created_at": dt_util.now().isoformat(),
+                    },
                 }
 
-            # Přidat nový cyklus
-            cycle_id = f"cycle_{measurement.timestamp.strftime('%Y-%m-%d_%H%M%S')}"
+                data["cycles"].append(cycle_data)
+                data["last_analysis"] = dt_util.now().isoformat()
 
-            # Zkontrolovat duplikáty (stejný timestamp)
-            existing_ids = {c.get("id") for c in data["cycles"]}
-            if cycle_id in existing_ids:
-                _LOGGER.debug(f"Cycle {cycle_id} already exists, skipping")
-                return
+                # Automatické prořezávání starých záznamů
+                # Limit: 3000 kvalitních měření = ~30 let při realistickém scénáři (1x týdně)
+                # Poznámka: Toto NEJSOU nabíjecí cykly (těch je ~365/rok), ale kvalitní měření
+                # kapacity (start <90%, end >95%, purity >90%) - typicky ~50/rok
+                MAX_CYCLES = 3000  # Dostatečná rezerva pro celou životnost baterie
+                if len(data["cycles"]) > MAX_CYCLES:
+                    # Seřadit podle timestamp_end (nejstarší první)
+                    data["cycles"].sort(key=lambda c: c["timestamp_end"])
+                    # Ponechat pouze nejnovější
+                    removed_count = len(data["cycles"]) - MAX_CYCLES
+                    data["cycles"] = data["cycles"][-MAX_CYCLES:]
+                    _LOGGER.warning(
+                        f"Storage cleanup: removed {removed_count} oldest measurements, "
+                        f"kept {MAX_CYCLES} most recent (expect ~50-100 new measurements/year)"
+                    )
 
-            cycle_data = {
-                "id": cycle_id,
-                "timestamp_start": (
-                    measurement.timestamp - timedelta(hours=measurement.duration_hours)
-                ).isoformat(),
-                "timestamp_end": measurement.timestamp.isoformat(),
-                "input_params": {
-                    "soc_start": round(measurement.start_soc, 1),
-                    "soc_end": round(measurement.end_soc, 1),
-                    "delta_soc": round(measurement.delta_soc, 1),
-                    "charge_energy_wh": round(measurement.total_charge_wh, 1),
-                    "discharge_energy_wh": round(measurement.total_discharge_wh, 1),
-                    "net_energy_wh": round(
-                        measurement.total_charge_wh - measurement.total_discharge_wh, 1
-                    ),
-                    "duration_hours": round(measurement.duration_hours, 2),
-                    "purity_percent": round(measurement.purity * 100, 1),
-                    "interruption_count": measurement.interruption_count,
-                    "spans_midnight": False,  # TODO: Track this in measurement
-                },
-                "output_data": {
-                    "measured_capacity_kwh": round(measurement.capacity_kwh, 2),
-                    "soh_percent": round(measurement.soh_percent, 1),
-                    "quality_score": round(measurement.quality_score, 0),
-                    "method": measurement.method,
-                    "validated": measurement.validated,
-                },
-                "metadata": {
-                    "created_at": dt_util.now().isoformat(),
-                },
-            }
+                # Varování když se blížíme limitu (90%)
+                if len(data["cycles"]) > MAX_CYCLES * 0.9:
+                    _LOGGER.info(
+                        f"Storage usage: {len(data['cycles'])}/{MAX_CYCLES} measurements "
+                        f"({len(data['cycles'])*100/MAX_CYCLES:.0f}%) - "
+                        f"~{len(data['cycles']) / 50:.0f} years of data at typical rate"
+                    )
 
-            data["cycles"].append(cycle_data)
-            data["last_analysis"] = dt_util.now().isoformat()
+                # Uložit zpět
+                def _save():
+                    os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+                    with open(storage_path, "w") as f:
+                        json.dump(data, f, indent=2)
 
-            # Automatické prořezávání starých záznamů
-            # Limit: 3000 kvalitních měření = ~30 let při realistickém scénáři (1x týdně)
-            # Poznámka: Toto NEJSOU nabíjecí cykly (těch je ~365/rok), ale kvalitní měření
-            # kapacity (start <90%, end >95%, purity >90%) - typicky ~50/rok
-            MAX_CYCLES = 3000  # Dostatečná rezerva pro celou životnost baterie
-            if len(data["cycles"]) > MAX_CYCLES:
-                # Seřadit podle timestamp_end (nejstarší první)
-                data["cycles"].sort(key=lambda c: c["timestamp_end"])
-                # Ponechat pouze nejnovější
-                removed_count = len(data["cycles"]) - MAX_CYCLES
-                data["cycles"] = data["cycles"][-MAX_CYCLES:]
-                _LOGGER.warning(
-                    f"Storage cleanup: removed {removed_count} oldest measurements, "
-                    f"kept {MAX_CYCLES} most recent (expect ~50-100 new measurements/year)"
+                await self._hass.async_add_executor_job(_save)
+                self._stored_cycle_ids.add(cycle_id)
+                self._storage_initialized = True
+                self._processing_cycle_ids.discard(cycle_id)
+                _LOGGER.debug(
+                    f"Saved cycle {cycle_id} to storage (total: {len(data['cycles'])} cycles)"
                 )
-
-            # Varování když se blížíme limitu (90%)
-            if len(data["cycles"]) > MAX_CYCLES * 0.9:
-                _LOGGER.info(
-                    f"Storage usage: {len(data['cycles'])}/{MAX_CYCLES} measurements "
-                    f"({len(data['cycles'])*100/MAX_CYCLES:.0f}%) - "
-                    f"~{len(data['cycles']) / 50:.0f} years of data at typical rate"
-                )
-
-            # Uložit zpět
-            def _save():
-                os.makedirs(os.path.dirname(storage_path), exist_ok=True)
-                with open(storage_path, "w") as f:
-                    json.dump(data, f, indent=2)
-
-            await self._hass.async_add_executor_job(_save)
-            _LOGGER.debug(
-                f"Saved cycle {cycle_id} to storage (total: {len(data['cycles'])} cycles)"
-            )
 
         except Exception as e:
             _LOGGER.error(f"Failed to save cycle to storage: {e}", exc_info=True)
+            # Umožnit opětovné zpracování v případě chyby
+            try:
+                cycle_id = self._generate_cycle_id(measurement.timestamp)
+                self._processing_cycle_ids.discard(cycle_id)
+            except Exception:
+                pass
 
     async def _find_data_availability_window(
         self,
@@ -1309,6 +1401,8 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             "✅ Battery health automatic analysis ENABLED "
             "(ΔSoC >=60%% for high quality, fallback to 45%% when data is sparse, median-based)"
         )
+        # Spustit asynchronní backfill historických intervalů (neblokuje start)
+        self.hass.async_create_task(self._async_backfill_missing_cycles())
 
     async def _async_startup_analysis(self) -> None:
         """
@@ -1393,6 +1487,29 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
                 f"Background battery health analysis failed: {e}", exc_info=True
             )
             _LOGGER.info("Battery Health sensor will retry analysis in daily task")
+
+    async def _async_backfill_missing_cycles(self) -> None:
+        """Asynchronní úloha pro dopočítání historických cyklů."""
+        if not self._tracker:
+            return
+
+        # Nechat HA nejdřív kompletně nastartovat
+        await asyncio.sleep(10)
+
+        _LOGGER.info("♻️ Starting background battery health backfill task...")
+
+        try:
+            new_cycles = await self._tracker.backfill_history(chunk_days=14)
+            if new_cycles:
+                self._last_analysis = dt_util.now()
+                self.async_write_ha_state()
+            _LOGGER.info(
+                "♻️ Battery health backfill complete: %d new measurements", new_cycles
+            )
+        except Exception as e:
+            _LOGGER.error(
+                f"Background battery health backfill failed: {e}", exc_info=True
+            )
 
     async def _daily_analysis_task(self, *args: Any) -> None:
         """Denní úloha pro analýzu nových cyklů."""
