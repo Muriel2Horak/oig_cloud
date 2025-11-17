@@ -3397,7 +3397,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # 4. Vyber kandidátní intervaly PŘED charge_before_index (cost-aware)
-            CHARGING_LOOKBACK_INTERVALS = 16  # ≈4h
+            config_options = (
+                self._config_entry.options
+                if self._config_entry and self._config_entry.options
+                else {}
+            )
+            CHARGING_LOOKBACK_INTERVALS = int(
+                config_options.get("planning_min_lookback_intervals", 48)
+            )  # default ≈12h
             effective_min_index = max(
                 min_candidate_index, charge_before_index - CHARGING_LOOKBACK_INTERVALS
             )
@@ -3513,6 +3520,62 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             efficiency=efficiency,
             forward_soc_before=soc_trace,
         )
+
+    def _force_target_alignment(
+        self,
+        *,
+        modes: List[int],
+        soc_trace: Optional[List[Optional[float]]],
+        spot_prices: List[Dict[str, Any]],
+        target_capacity: float,
+    ) -> List[int]:
+        """Force early UPS charging when celý horizont je drahý."""
+        if not soc_trace or not modes or not spot_prices:
+            return modes
+
+        options = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else {}
+        )
+        price_threshold = options.get("autonomy_force_target_price", 5.5)
+        min_share = options.get("autonomy_force_target_share", 0.6)
+        max_intervals = int(options.get("autonomy_force_target_max_intervals", 12))
+        target_margin = options.get("autonomy_force_target_margin_kwh", 0.4)
+
+        if price_threshold <= 0 or max_intervals <= 0:
+            return modes
+
+        expensive_ratio = sum(
+            1 for sp in spot_prices if sp.get("price", 0.0) >= price_threshold
+        ) / max(1, len(spot_prices))
+        if expensive_ratio < min_share:
+            return modes
+
+        new_modes = list(modes)
+        applied = 0
+        for idx in range(min(len(new_modes), max_intervals)):
+            soc_before = (
+                soc_trace[idx] if idx < len(soc_trace) else None
+            )
+            if soc_before is not None and soc_before >= target_capacity - target_margin:
+                break
+            if new_modes[idx] == CBB_MODE_HOME_UPS:
+                continue
+            new_modes[idx] = CBB_MODE_HOME_UPS
+            applied += 1
+
+        if applied:
+            avg_price = (
+                sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
+            )
+            _LOGGER.warning(
+                "[Autonomy] Forced %d early UPS intervals to chase target SoC (avg price %.2f Kč, threshold %.2f Kč)",
+                applied,
+                avg_price,
+                price_threshold,
+            )
+        return new_modes
 
     def _find_first_planning_violation(
         self,
@@ -6957,6 +7020,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         final_modes = self._enforce_min_mode_duration(final_modes)
 
         soc_trace = _build_soc_trace(final_modes)
+        forced_modes = self._force_target_alignment(
+            modes=final_modes,
+            soc_trace=soc_trace,
+            spot_prices=spot_prices,
+            target_capacity=target_capacity,
+        )
+        if forced_modes != final_modes:
+            final_modes = forced_modes
+            planning_adjusted = True
+            soc_trace = _build_soc_trace(final_modes)
+
         validated_modes = self._validate_planning_minimum(
             modes=final_modes,
             spot_prices=spot_prices,
@@ -7168,7 +7242,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else 4.0
         )
         target_penalty = (
-            self._config_entry.options.get("autonomy_target_penalty", 3.0) * avg_price
+            self._config_entry.options.get("autonomy_target_penalty", 5.0) * avg_price
+        )
+        target_bias_penalty = (
+            self._config_entry.options.get("autonomy_target_bias_weight", 0.5)
+            * avg_price
         )
         min_violation_penalty = (
             self._config_entry.options.get("autonomy_min_penalty", 15.0) * avg_price
@@ -7225,6 +7303,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if export_price <= 0 and interval.get("grid_export_kwh", 0) > 0.001:
                         penalty += export_penalty_multiplier * interval.get(
                             "grid_export_kwh", 0
+                        )
+
+                    if target_bias_penalty > 0 and new_soc < target_capacity - 0.05:
+                        penalty += target_bias_penalty * (
+                            target_capacity - new_soc
                         )
 
                     cost = interval.get("net_cost", 0.0) + penalty
