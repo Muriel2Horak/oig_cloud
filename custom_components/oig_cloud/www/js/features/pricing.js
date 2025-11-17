@@ -13,10 +13,9 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
 var pricingPlanMode = null;
 
 var timelineDataCache = {
-    ttl: 60000,  // 60 seconds TTL
     perPlan: {
-        hybrid: { data: null, timestamp: null, chartsRendered: false },
-        autonomy: { data: null, timestamp: null, chartsRendered: false }
+        hybrid: { data: null, timestamp: null, chartsRendered: false, stale: true },
+        autonomy: { data: null, timestamp: null, chartsRendered: false, stale: true }
     }
 };
 const timelineFetchPromises = {
@@ -26,10 +25,21 @@ const timelineFetchPromises = {
 
 function getTimelineCacheBucket(plan) {
     if (!timelineDataCache.perPlan[plan]) {
-        timelineDataCache.perPlan[plan] = { data: null, timestamp: null, chartsRendered: false };
+        timelineDataCache.perPlan[plan] = { data: null, timestamp: null, chartsRendered: false, stale: true };
     }
     return timelineDataCache.perPlan[plan];
 }
+
+function invalidatePricingTimelineCache(plan) {
+    const plans = plan ? [plan] : Object.keys(timelineDataCache.perPlan);
+    plans.forEach((key) => {
+        const bucket = getTimelineCacheBucket(key);
+        bucket.stale = true;
+        bucket.chartsRendered = false;
+    });
+}
+
+window.invalidatePricingTimelineCache = invalidatePricingTimelineCache;
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
@@ -1888,11 +1898,9 @@ async function fetchTimelineFromAPI(plan, boxId) {
 
 async function getTimelineData(plan, boxId, force = false) {
     const cacheBucket = getTimelineCacheBucket(plan);
-    const now = Date.now();
     const cacheValid = !force &&
         cacheBucket.data &&
-        cacheBucket.timestamp &&
-        (now - cacheBucket.timestamp) < timelineDataCache.ttl;
+        !cacheBucket.stale;
 
     if (cacheValid) {
         return { data: cacheBucket.data, fromCache: true };
@@ -1904,6 +1912,7 @@ async function getTimelineData(plan, boxId, force = false) {
                 cacheBucket.data = timelineData;
                 cacheBucket.timestamp = Date.now();
                 cacheBucket.chartsRendered = false;
+                cacheBucket.stale = false;
                 return timelineData;
             })
             .catch((error) => {

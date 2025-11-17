@@ -3451,6 +3451,69 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         return modes
 
+    def _enforce_minimum_exposure_guard(
+        self,
+        *,
+        modes: List[int],
+        soc_trace: Optional[List[Optional[float]]],
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        physical_min_capacity: float,
+        efficiency: float,
+    ) -> List[int]:
+        """Prevent hovering near planning minimum for too long."""
+        if not soc_trace or not modes:
+            return modes
+
+        options = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else {}
+        )
+        allowed_ratio = max(0.0, options.get("autonomy_min_floor_ratio", 0.05))
+        guard_margin_kwh = max(0.0, options.get("autonomy_min_floor_margin_kwh", 0.25))
+        guard_boost_kwh = max(0.0, options.get("autonomy_min_floor_boost_kwh", 2.0))
+
+        guard_threshold = min_capacity + guard_margin_kwh
+        allowed_intervals = max(1, int(len(modes) * allowed_ratio))
+        near_floor_indices = [
+            idx
+            for idx, soc in enumerate(soc_trace)
+            if soc is not None and soc <= guard_threshold
+        ]
+
+        if len(near_floor_indices) <= allowed_intervals:
+            return modes
+
+        boosted_min_capacity = min(max_capacity, min_capacity + guard_boost_kwh)
+        _LOGGER.warning(
+            "[Autonomy] Minimum exposure guard triggered: %d/%d intervals near floor (threshold %.2f kWh). "
+            "Boosting planning minimum to %.2f kWh",
+            len(near_floor_indices),
+            len(modes),
+            guard_threshold,
+            boosted_min_capacity,
+        )
+
+        return self._validate_planning_minimum(
+            modes=modes,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=boosted_min_capacity,
+            physical_min_capacity=physical_min_capacity,
+            efficiency=efficiency,
+            forward_soc_before=soc_trace,
+        )
+
     def _find_first_planning_violation(
         self,
         modes: List[int],
@@ -6911,6 +6974,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         final_modes = validated_modes
 
         soc_trace = _build_soc_trace(final_modes)
+        guarded_modes = self._enforce_minimum_exposure_guard(
+            modes=final_modes,
+            soc_trace=soc_trace,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            physical_min_capacity=physical_min_capacity,
+            efficiency=efficiency,
+        )
+        if guarded_modes != final_modes:
+            _LOGGER.info("[Autonomy] Minimum exposure guard adjusted plan")
+            final_modes = guarded_modes
+            planning_adjusted = True
+            soc_trace = _build_soc_trace(final_modes)
+
         cheap_added = 0
         if cheap_price_threshold is not None:
             cheap_added = self._apply_cheap_window_ups(
@@ -7775,6 +7857,39 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds", delay_seconds
         )
 
+    def _get_mode_switch_offset(self, from_mode: Optional[str], to_mode: str) -> float:
+        """Return reaction-time offset based on shield tracker statistics."""
+        fallback = (
+            self._config_entry.options.get("autonomy_switch_lead_seconds", 180.0)
+            if self._config_entry and self._config_entry.options
+            else 180.0
+        )
+        if not from_mode or not self._hass or not self._config_entry:
+            return fallback
+
+        try:
+            entry = self._hass.data.get(DOMAIN, {}).get(
+                self._config_entry.entry_id, {}
+            )
+            service_shield = entry.get("service_shield")
+            mode_tracker = getattr(service_shield, "mode_tracker", None)
+            if not mode_tracker:
+                return fallback
+
+            offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
+            if offset_seconds is None or offset_seconds <= 0:
+                return fallback
+
+            return float(offset_seconds)
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.warning(
+                "[AutonomySwitch] Failed to read mode switch offset %s→%s: %s",
+                from_mode,
+                to_mode,
+                err,
+            )
+            return fallback
+
     async def _execute_autonomy_mode_change(
         self, target_mode: str, reason: str
     ) -> None:
@@ -7893,7 +8008,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         current_mode: Optional[str] = None
         last_mode: Optional[str] = None
-        scheduled_events: List[Tuple[datetime, str]] = []
+        scheduled_events: List[Tuple[datetime, str, Optional[str]]] = []
 
         for interval in timeline:
             timestamp = interval.get("time") or interval.get("timestamp")
@@ -7915,8 +8030,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if mode_label == last_mode:
                 continue
 
+            previous_mode = last_mode
             last_mode = mode_label
-            scheduled_events.append((start_dt, mode_label))
+            scheduled_events.append((start_dt, mode_label, previous_mode))
 
         if current_mode:
             await self._ensure_current_mode(current_mode, "current autonomy block")
@@ -7942,17 +8058,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             self._start_autonomy_watchdog()
             return
 
-        for when, mode in scheduled_events:
+        for when, mode, prev_mode in scheduled_events:
+            lead_seconds = self._get_mode_switch_offset(
+                prev_mode or current_mode or "Home 1", mode
+            )
+            adjusted_when = when - timedelta(seconds=lead_seconds)
+            if adjusted_when <= now:
+                adjusted_when = now + timedelta(seconds=1)
 
             async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
                 await self._execute_autonomy_mode_change(
                     desired_mode, f"scheduled {event_time.isoformat()}"
                 )
 
-            unsub = async_track_point_in_time(self._hass, _callback, when)
+            unsub = async_track_point_in_time(self._hass, _callback, adjusted_when)
             self._autonomy_switch_handles.append(unsub)
             _LOGGER.info(
-                f"[AutonomySwitch] Scheduled switch to {mode} at {when.isoformat()}"
+                f"[AutonomySwitch] Scheduled switch to {mode} at {adjusted_when.isoformat()} (lead {lead_seconds:.0f}s, target {when.isoformat()})"
             )
         self._start_autonomy_watchdog()
 

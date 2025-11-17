@@ -115,6 +115,10 @@ function subscribeToShield() {
                         }
                     }
 
+                    // Invalidovat cache, aby se při další aktualizaci načetla nová timeline
+                    if (typeof window.invalidatePricingTimelineCache === 'function') {
+                        window.invalidatePricingTimelineCache();
+                    }
                     // console.log(`[Pricing] Sensor data changed: ${entityId}`, newState?.state);
                     debouncedLoadPricingData(); // Trigger pricing chart update (debounced)
 
