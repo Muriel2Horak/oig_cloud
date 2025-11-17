@@ -32,7 +32,7 @@ function renderIconHTML(icon, color = 'var(--text-primary)') {
             'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
             'power-plug': '🔌', 'power-socket': '🔌',
             // Auto
-            'car': '🚗', 'car-electric': '�', 'car-battery': '🔋', 'ev-station': '🔌',
+            'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
             'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
             // Zabezpečení
             'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
@@ -50,7 +50,7 @@ function renderIconHTML(icon, color = 'var(--text-primary)') {
             'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
             'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
             // Počasí
-            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '�',
+            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
             'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
             // Ostatní
             'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',

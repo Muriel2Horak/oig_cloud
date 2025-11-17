@@ -1189,10 +1189,8 @@ async function loadData() {
     if (gridChargingIndicator) {
         if (isGridCharging) {
             gridChargingIndicator.classList.add('active');
-            gridChargingIndicator.classList.add('pulse');
         } else {
             gridChargingIndicator.classList.remove('active');
-            gridChargingIndicator.classList.remove('pulse');
         }
     }
 

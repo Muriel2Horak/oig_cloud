@@ -81,6 +81,9 @@ class BatteryCapacityTracker:
         self._min_delta_soc = (
             60.0  # % - minimum swing (zvýšeno z 40% pro vyšší přesnost)
         )
+        # Pokud máme málo kvalitních cyklů, povolíme i medium-swing cykly (45-60 %)
+        self._fallback_min_delta_soc = 45.0  # % - nouzový limit pro sparse data
+        self._min_strict_cycle_target = 2  # min. počet kvalitních cyklů před fallbackem
         self._min_end_soc = 95.0  # % - konec cyklu musí být ≥95%
         self._min_purity = 0.90  # 90% - min % čisté nabíjecí energie
         self._max_discharge_interrupt_w = 300.0  # W - max vybíjecí výkon
@@ -103,7 +106,7 @@ class BatteryCapacityTracker:
         Vypočítat quality score 0-100 pro měření.
 
         Empirická analýza ukázala:
-        - Cykly <60% swing: nepřesné (SoH >120%)
+        - Cykly <60% swing: nepřesné (SoH >120%), ale při nedostatku dat je použijeme s penalizací
         - Cykly ≥60% swing: přesné (SoH ~96%)
         - Variační koeficient mezi měřeními: 14%
 
@@ -120,14 +123,18 @@ class BatteryCapacityTracker:
         score = 100.0
 
         # 1. Delta SoC bonus - upraveno dle empirických dat
-        if delta_soc >= 70:
+        if delta_soc >= 75:
             score += 30  # Excelentní rozsah (nejvyšší přesnost)
-        elif delta_soc >= 60:
+        elif delta_soc >= 65:
             score += 20  # Velmi dobrý rozsah (dobrá přesnost)
+        elif delta_soc >= 60:
+            score += 10  # Dobrá přesnost, ale menší swing
+        elif delta_soc >= 55:
+            score += 0  # Akceptovatelný swing
         elif delta_soc >= 50:
-            score += 5  # Přijatelný, ale méně přesný
-        elif delta_soc >= 40:
-            score -= 10  # Slabý - empiricky nepřesný
+            score -= 10  # Medium swing - menší důvěra
+        elif delta_soc >= 45:
+            score -= 25  # Fallback swing, použijeme jen při nedostatku dat
         else:
             return 0  # Zahodit - pod limitem
 
@@ -159,6 +166,18 @@ class BatteryCapacityTracker:
             score += 15  # Cross-validated
 
         return max(0, min(100, score))
+
+    def _calculate_confidence_from_quality(
+        self, quality_score: float, delta_soc: float
+    ) -> float:
+        """Odvodit confidence (0-1) z quality score a velikosti swingu."""
+        base = max(0.0, min(1.0, quality_score / 100.0))
+        if self._min_delta_soc <= 0:
+            return round(base, 3)
+
+        swing_factor = min(1.0, delta_soc / self._min_delta_soc)
+        confidence = base * swing_factor
+        return round(max(0.0, min(1.0, confidence)), 3)
 
     async def analyze_history_for_cycles(
         self,
@@ -218,8 +237,48 @@ class BatteryCapacityTracker:
             _LOGGER.info(f"Found {len(soc_states)} SoC data points from statistics")
 
             # Najít nabíjecí cykly: low → high
-            cycles = self._detect_charging_cycles_in_history(soc_states)
-            _LOGGER.info(f"Detected {len(cycles)} potential charging cycles")
+            cycles = self._detect_charging_cycles_in_history(
+                soc_states, self._min_delta_soc
+            )
+            strict_cycle_count = len(cycles)
+            fallback_cycle_count = 0
+
+            # Pokud máme málo kvalitních cyklů, použij fallback ΔSoC threshold
+            if (
+                strict_cycle_count < self._min_strict_cycle_target
+                and self._fallback_min_delta_soc < self._min_delta_soc
+            ):
+                fallback_candidates = self._detect_charging_cycles_in_history(
+                    soc_states, self._fallback_min_delta_soc
+                )
+                existing_keys = {(c[0], c[1]) for c in cycles}
+                for candidate in fallback_candidates:
+                    delta_soc = candidate[3] - candidate[2]
+                    key = (candidate[0], candidate[1])
+                    if (
+                        delta_soc >= self._fallback_min_delta_soc
+                        and delta_soc < self._min_delta_soc
+                        and key not in existing_keys
+                    ):
+                        cycles.append(candidate)
+                        existing_keys.add(key)
+                        fallback_cycle_count += 1
+
+                if fallback_cycle_count:
+                    _LOGGER.info(
+                        "Enabled fallback ΔSoC threshold %.0f%% "
+                        "(strict cycles=%d, added medium cycles=%d)",
+                        self._fallback_min_delta_soc,
+                        strict_cycle_count,
+                        fallback_cycle_count,
+                    )
+
+            _LOGGER.info(
+                "Detected %d potential charging cycles (strict=%d, fallback=%d)",
+                len(cycles),
+                strict_cycle_count,
+                fallback_cycle_count,
+            )
 
             # Pro každý cyklus spočítat kapacitu
             new_measurements = []
@@ -339,10 +398,14 @@ class BatteryCapacityTracker:
             return []
 
     def _detect_charging_cycles_in_history(
-        self, soc_states: List
+        self, soc_states: List, min_delta_soc: float
     ) -> List[Tuple[datetime, datetime, float, float]]:
         """
         Detekovat nabíjecí cykly v historii SoC.
+
+        Args:
+            soc_states: Historie SoC hodnot (pseudo-states)
+            min_delta_soc: Minimální požadovaný swing pro detekci cyklu
 
         Returns:
             List of (start_time, end_time, start_soc, end_soc)
@@ -375,10 +438,7 @@ class BatteryCapacityTracker:
                     and cycle_start_soc is not None
                 ):
                     delta_soc = soc - cycle_start_soc
-                    if (
-                        delta_soc >= self._min_delta_soc
-                        and cycle_start_time is not None
-                    ):
+                    if delta_soc >= min_delta_soc and cycle_start_time is not None:
                         cycles.append(
                             (cycle_start_time, timestamp, cycle_start_soc, soc)
                         )
@@ -564,8 +624,10 @@ class BatteryCapacityTracker:
                 )
                 return None
 
-            # Confidence
-            confidence = quality_score / 100.0
+            # Confidence reflektuje i hloubku swingu
+            confidence = self._calculate_confidence_from_quality(
+                quality_score, delta_soc
+            )
 
             measurement = BatteryMeasurement(
                 timestamp=end_time,
@@ -935,16 +997,21 @@ class BatteryCapacityTracker:
 
             for cycle_data in cycles:
                 # Rekonstruovat BatteryMeasurement z JSON
+                delta_soc = cycle_data["input_params"]["delta_soc"]
+                quality_score = cycle_data["output_data"]["quality_score"]
+
                 measurement = BatteryMeasurement(
                     timestamp=datetime.fromisoformat(cycle_data["timestamp_end"]),
                     capacity_kwh=cycle_data["output_data"]["measured_capacity_kwh"],
                     soh_percent=cycle_data["output_data"]["soh_percent"],
                     start_soc=cycle_data["input_params"]["soc_start"],
                     end_soc=cycle_data["input_params"]["soc_end"],
-                    delta_soc=cycle_data["input_params"]["delta_soc"],
+                    delta_soc=delta_soc,
                     method=cycle_data["output_data"]["method"],
                     validated=cycle_data["output_data"]["validated"],
-                    confidence=cycle_data["output_data"]["quality_score"] / 100.0,
+                    confidence=self._calculate_confidence_from_quality(
+                        quality_score, delta_soc
+                    ),
                     total_charge_wh=cycle_data["input_params"]["charge_energy_wh"],
                     total_discharge_wh=cycle_data["input_params"][
                         "discharge_energy_wh"
@@ -952,7 +1019,7 @@ class BatteryCapacityTracker:
                     duration_hours=cycle_data["input_params"]["duration_hours"],
                     purity=cycle_data["input_params"]["purity_percent"] / 100.0,
                     interruption_count=cycle_data["input_params"]["interruption_count"],
-                    quality_score=cycle_data["output_data"]["quality_score"],
+                    quality_score=quality_score,
                 )
                 self._measurements.append(measurement)
 
@@ -1236,10 +1303,11 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
 
         # ASYNCHRONNÍ STARTUP - neblokuje HA startup
         # Spustit analýzu na pozadí (non-blocking)
-        # Vylepšeno: min_delta_soc=60%, použití mediánu, lepší quality scoring
+        # Vylepšeno: primární min_delta_soc=60%, fallback=45% při nedostatku dat, použití mediánu
         self.hass.async_create_task(self._async_startup_analysis())
         _LOGGER.info(
-            "✅ Battery health automatic analysis ENABLED (min_delta_soc=60%, median-based)"
+            "✅ Battery health automatic analysis ENABLED "
+            "(ΔSoC >=60%% for high quality, fallback to 45%% when data is sparse, median-based)"
         )
 
     async def _async_startup_analysis(self) -> None:

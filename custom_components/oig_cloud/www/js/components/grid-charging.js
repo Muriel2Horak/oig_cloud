@@ -1,5 +1,79 @@
 // === GRID CHARGING PLAN FUNCTIONS ===
 
+function getDayLabel(day) {
+    if (day === 'tomorrow') return 'zítra';
+    if (day === 'today') return 'dnes';
+    return '';
+}
+
+function getBlockEnergyKwh(block) {
+    if (!block) return 0;
+    const energy = Number(block.grid_charge_kwh);
+    if (Number.isFinite(energy) && energy > 0) {
+        return energy;
+    }
+    const start = Number(block.battery_start_kwh);
+    const end = Number(block.battery_end_kwh);
+    if (Number.isFinite(start) && Number.isFinite(end)) {
+        const delta = end - start;
+        return delta > 0 ? delta : 0;
+    }
+    return 0;
+}
+
+function sortChargingBlocks(blocks = []) {
+    return [...blocks].sort((a, b) => {
+        const dayScore = (a?.day === 'tomorrow' ? 1 : 0) - (b?.day === 'tomorrow' ? 1 : 0);
+        if (dayScore !== 0) return dayScore;
+        return (a?.time_from || '').localeCompare(b?.time_from || '');
+    });
+}
+
+function formatPlanWindow(blocks) {
+    if (!Array.isArray(blocks) || blocks.length === 0) return null;
+    const sorted = sortChargingBlocks(blocks);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+
+    const startLabel = getDayLabel(first?.day);
+    const endLabel = getDayLabel(last?.day);
+
+    if (startLabel === endLabel) {
+        const prefix = startLabel ? `${startLabel} ` : '';
+        if (!first?.time_from || !last?.time_to) {
+            return prefix.trim() || null;
+        }
+        return `${prefix}${first.time_from} – ${last.time_to}`;
+    }
+
+    const startText = first ? `${startLabel ? `${startLabel} ` : ''}${first.time_from || '--'}` : '--';
+    const endText = last ? `${endLabel ? `${endLabel} ` : ''}${last.time_to || '--'}` : '--';
+    return `${startText} → ${endText}`;
+}
+
+function formatBlockLabel(block) {
+    if (!block) return '--';
+    const label = getDayLabel(block.day);
+    const prefix = label ? `${label} ` : '';
+    const from = block.time_from || '--';
+    const to = block.time_to || '--';
+    return `${prefix}${from} - ${to}`;
+}
+
+function updateChargingRow(rowId, valueId, block, shouldShow) {
+    const rowEl = document.getElementById(rowId);
+    const valueEl = document.getElementById(valueId);
+    if (!rowEl || !valueEl) return;
+
+    if (block && shouldShow) {
+        rowEl.style.display = 'flex';
+        valueEl.textContent = formatBlockLabel(block);
+    } else {
+        rowEl.style.display = 'none';
+        valueEl.textContent = '--';
+    }
+}
+
 // Update target warning indicator - kontrola dosažitelnosti cílové kapacity
 async function updateTargetWarningIndicator() {
     const forecastData = await getSensorString(getSensorId('battery_forecast'));
@@ -96,149 +170,62 @@ async function updateGridChargingPlan() {
     const gridChargingData = await getSensorString(getSensorId('grid_charging_planned'));
     const isPlanned = gridChargingData.value === 'on';
 
-    // console.log('[Grid Charging] updateGridChargingPlan() called');
-    // console.log('[Grid Charging] Sensor ID:', getSensorId('grid_charging_planned'));
-    // console.log('[Grid Charging] Sensor value:', gridChargingData.value);
-    // console.log('[Grid Charging] Is planned:', isPlanned);
-    // console.log('[Grid Charging] Attributes:', gridChargingData.attributes);
+    const rawBlocks = gridChargingData.attributes?.charging_blocks || [];
+    const chargingBlocks = sortChargingBlocks(rawBlocks);
+    const hasBlocks = chargingBlocks.length > 0;
+    const totalEnergy = Number(gridChargingData.attributes?.total_energy_kwh) || 0;
+    const totalCost = Number(gridChargingData.attributes?.total_cost_czk) || 0;
+    const planWindow = formatPlanWindow(chargingBlocks);
+    const runningBlock = chargingBlocks.find(block => {
+        const status = (block.status || '').toLowerCase();
+        return status === 'running' || status === 'active';
+    });
+    const upcomingBlock = runningBlock
+        ? chargingBlocks[chargingBlocks.indexOf(runningBlock) + 1] || null
+        : chargingBlocks[0] || null;
+    const shouldShowNext = upcomingBlock && (!runningBlock || upcomingBlock !== runningBlock);
 
-    // Update indicator in battery card - always visible, but with active/inactive state
+    updateChargingRow('grid-charging-current-row', 'grid-charging-current', runningBlock, !!runningBlock);
+    updateChargingRow('grid-charging-next-row', 'grid-charging-next', upcomingBlock, !!shouldShowNext);
+
     const indicator = document.getElementById('battery-grid-charging-indicator');
     if (indicator) {
-        // console.log('[Grid Charging] Indicator found, setting active class:', isPlanned);
         if (isPlanned) {
             indicator.classList.add('active');
         } else {
             indicator.classList.remove('active');
         }
 
-        // Build tooltip with charging blocks table
-        if (gridChargingData.attributes?.charging_blocks?.length > 0) {
-            const blocks = gridChargingData.attributes.charging_blocks;
-            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
-            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
-
-            let tooltipHTML = '<div style="text-align: left; font-size: 11px; min-width: 250px;">';
-            tooltipHTML += '<strong style="display: block; margin-bottom: 8px; font-size: 12px;">Plánované nabíjení z gridu</strong>';
-            tooltipHTML += '<table style="width: 100%; border-collapse: collapse;">';
-            tooltipHTML += '<thead><tr style="border-bottom: 1px solid rgba(255,255,255,0.2);">';
-            tooltipHTML += '<th style="padding: 4px; text-align: left;">Čas</th>';
-            tooltipHTML += '<th style="padding: 4px; text-align: right;">Energie</th>';
-            tooltipHTML += '<th style="padding: 4px; text-align: right;">Cena</th>';
-            tooltipHTML += '</tr></thead>';
-            tooltipHTML += '<tbody>';
-
-            blocks.forEach(block => {
-                const dayLabel = block.day === 'tomorrow' ? '(zítra)' : '';
-                const timeRange = `${block.time_from}-${block.time_to} ${dayLabel}`;
-                const energy = (block.grid_charge_kwh || 0).toFixed(2);
-                const cost = (block.total_cost_czk || 0).toFixed(2);
-                tooltipHTML += '<tr>';
-                tooltipHTML += `<td style="padding: 2px 4px;">${timeRange}</td>`;
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${energy} kWh</td>`;
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${cost} Kč</td>`;
-                tooltipHTML += '</tr>';
-            });
-
-            tooltipHTML += '</tbody>';
-            tooltipHTML += '<tfoot><tr style="border-top: 1px solid rgba(255,255,255,0.3); font-weight: bold;">';
-            tooltipHTML += '<td style="padding: 4px;">Celkem</td>';
-            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalEnergy.toFixed(2)} kWh</td>`;
-            tooltipHTML += `<td style="padding: 4px; text-align: right;">${totalCost.toFixed(2)} Kč</td>`;
-            tooltipHTML += '</tr></tfoot>';
-            tooltipHTML += '</table>';
-            tooltipHTML += '</div>';
-
-            indicator.setAttribute('data-tooltip-html', tooltipHTML);
-        } else {
-            indicator.setAttribute('data-tooltip', 'Žádné plánované nabíjení');
-        }
-
-        // Re-inicializovat tooltips aby fungovaly i na dynamicky přidaných elementech
-        initTooltips();
-    }
-    // else {
-    //     console.error('[Grid Charging] Indicator element NOT FOUND!');
-    // }
-
-    // Show/hide section in battery details
-    // OPRAVA: Zobrazit když existují bloky (ne jen když sensor je ON)
-    const section = document.getElementById('grid-charging-plan-section');
-    if (section) {
-        const hasBlocks = gridChargingData.attributes?.charging_blocks?.length > 0;
-        const shouldShow = hasBlocks; // Zobrazit když jsou plánované bloky
-        // console.log('[Grid Charging] Section found, hasBlocks:', hasBlocks, 'shouldShow:', shouldShow);
-        section.style.display = shouldShow ? 'block' : 'none';
-    }
-    // else {
-    //     console.error('[Grid Charging] Section element NOT FOUND!');
-    // }
-
-    // Update energy (total_energy_kwh)
-    const energyElement = document.getElementById('grid-charging-energy');
-    if (energyElement && gridChargingData.attributes && gridChargingData.attributes.total_energy_kwh !== undefined) {
-        const energy = parseFloat(gridChargingData.attributes.total_energy_kwh);
-        energyElement.textContent = energy.toFixed(1) + ' kWh';
-    }
-
-    // Update cost
-    const costElement = document.getElementById('grid-charging-cost');
-    if (costElement && gridChargingData.attributes && gridChargingData.attributes.total_cost_czk !== undefined) {
-        const cost = parseFloat(gridChargingData.attributes.total_cost_czk);
-        costElement.textContent = '~' + cost.toFixed(2) + ' Kč';
-    }
-
-    // Update start time - relativní čas
-    const startElement = document.getElementById('grid-charging-start');
-    if (startElement && gridChargingData.attributes) {
-        // Použít next_charging_time_range místo next_charging_start
-        const nextTimeRange = gridChargingData.attributes.next_charging_time_range;
-        if (nextTimeRange) {
-            startElement.textContent = nextTimeRange;
-        } else {
-            startElement.textContent = '--';
-        }
-    }
-
-    // Update target warning indicator - načíst data z battery_forecast sensoru
-    await updateTargetWarningIndicator();
-
-    // Build tooltip HTML with blocks table - na IKONĚ indikátoru
-    if (indicator && gridChargingData.attributes) {
-        if (gridChargingData.attributes.charging_blocks && gridChargingData.attributes.charging_blocks.length > 0) {
-            const blocks = gridChargingData.attributes.charging_blocks;
-            const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
-            const totalCost = gridChargingData.attributes.total_cost_czk || 0;
-            const nextTimeRange = gridChargingData.attributes.next_charging_time_range || '';
-
+        if (hasBlocks) {
+            const planSummary = planWindow || gridChargingData.attributes?.next_charging_time_range || '--';
             let tooltipHtml = `
-                <div style="padding: 8px;">
-                    <strong>Start:</strong> ${nextTimeRange}<br>
+                <div class="grid-charging-popup">
+                    <strong>Období:</strong> ${planSummary}<br>
                     <strong>Plánované dobití:</strong> ${totalEnergy.toFixed(1)} kWh<br>
                     <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
                     <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border-secondary);">
-                    <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                    <table>
                         <thead>
-                            <tr style="border-bottom: 1px solid var(--border-primary);">
-                                <th style="padding: 4px; text-align: left;">Čas</th>
-                                <th style="padding: 4px; text-align: right;">kWh</th>
-                                <th style="padding: 4px; text-align: right;">Kč</th>
+                            <tr>
+                                <th>Čas</th>
+                                <th style="text-align: right;">kWh</th>
+                                <th style="text-align: right;">Kč</th>
                             </tr>
                         </thead>
                         <tbody>
             `;
 
-            blocks.forEach((block) => {
+            chargingBlocks.forEach((block) => {
                 const dayLabel = block.day === 'tomorrow' ? ' (zítra)' : '';
                 const timeRange = `${block.time_from}-${block.time_to}${dayLabel}`;
-                const energy = block.grid_charge_kwh ? block.grid_charge_kwh.toFixed(2) : '-';
-                const cost = block.total_cost_czk ? block.total_cost_czk.toFixed(2) : '-';
+                const energyValue = getBlockEnergyKwh(block);
+                const costValue = Number(block.total_cost_czk) || 0;
 
                 tooltipHtml += `
-                    <tr style="border-bottom: 1px solid var(--border-tertiary);">
-                        <td style="padding: 4px;">${timeRange}</td>
-                        <td style="padding: 4px; text-align: right;">${energy}</td>
-                        <td style="padding: 4px; text-align: right;">${cost}</td>
+                    <tr>
+                        <td>${timeRange}</td>
+                        <td style="text-align: right;">${energyValue.toFixed(2)}</td>
+                        <td style="text-align: right;">${costValue.toFixed(2)}</td>
                     </tr>
                 `;
             });
@@ -250,8 +237,29 @@ async function updateGridChargingPlan() {
             `;
 
             indicator.setAttribute('data-tooltip-html', tooltipHtml);
+        } else {
+            indicator.setAttribute('data-tooltip', 'Žádné plánované nabíjení');
         }
+
+        initTooltips();
     }
+
+    const section = document.getElementById('grid-charging-plan-section');
+    if (section) {
+        section.style.display = hasBlocks ? 'block' : 'none';
+    }
+
+    const energyElement = document.getElementById('grid-charging-energy');
+    if (energyElement) {
+        energyElement.textContent = totalEnergy.toFixed(1) + ' kWh';
+    }
+
+    const costElement = document.getElementById('grid-charging-cost');
+    if (costElement) {
+        costElement.textContent = '~' + totalCost.toFixed(2) + ' Kč';
+    }
+
+    await updateTargetWarningIndicator();
 }
 
 async function updateBatteryBalancingCard() {
@@ -615,47 +623,60 @@ function showGridChargingPopup() {
             return;
         }
 
-        const blocks = gridChargingData.attributes.charging_blocks;
+        const blocks = sortChargingBlocks(gridChargingData.attributes.charging_blocks);
         const totalEnergy = gridChargingData.attributes.total_energy_kwh || 0;
         const totalCost = gridChargingData.attributes.total_cost_czk || 0;
+        const planWindow = formatPlanWindow(blocks);
 
         // Build table HTML
         let tableHtml = `
-            <div style="margin-bottom: 15px;">
-                <strong>Celková energie:</strong> ${totalEnergy.toFixed(2)} kWh<br>
-                <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
-                <thead>
-                    <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-primary);">
-                        <th style="padding: 8px; text-align: left;">Čas</th>
-                        <th style="padding: 8px; text-align: right;">Energie</th>
-                        <th style="padding: 8px; text-align: right;">∅ Cena</th>
-                        <th style="padding: 8px; text-align: right;">Náklady</th>
-                        <th style="padding: 8px; text-align: center;">Baterie</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div class="grid-charging-popup grid-charging-dialog">
+                <div style="margin-bottom: 10px;">
+                    <strong>Období:</strong> ${planWindow || '--'}<br>
+                    <strong>Celková energie:</strong> ${totalEnergy.toFixed(2)} kWh<br>
+                    <strong>Celková cena:</strong> ~${totalCost.toFixed(2)} Kč
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Čas</th>
+                            <th style="text-align: right;">Energie</th>
+                            <th style="text-align: right;">∅ Cena</th>
+                            <th style="text-align: right;">Náklady</th>
+                            <th style="text-align: center;">Baterie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         `;
 
         blocks.forEach((block, index) => {
             const rowBg = index % 2 === 0 ? 'var(--bg-tertiary)' : 'transparent';
-            const batteryChange = `${block.battery_start_kwh.toFixed(1)} → ${block.battery_end_kwh.toFixed(1)} kWh`;
-            const energyText = block.grid_charge_kwh.toFixed(2) + ' kWh';
-            const avgPriceText = block.avg_spot_price_czk.toFixed(2) + ' Kč/kWh';
-            const costText = block.total_cost_czk.toFixed(2) + ' Kč';
-            const intervalInfo = `${block.interval_count}× 15min`;
+            const batteryStart = Number(block.battery_start_kwh);
+            const batteryEnd = Number(block.battery_end_kwh);
+            const batteryChange = Number.isFinite(batteryStart) && Number.isFinite(batteryEnd)
+                ? `${batteryStart.toFixed(1)} → ${batteryEnd.toFixed(1)} kWh`
+                : '--';
+            const energyValue = getBlockEnergyKwh(block);
+            const energyText = energyValue.toFixed(2) + ' kWh';
+            const avgPriceValue = Number(block.avg_spot_price_czk) || 0;
+            const avgPriceText = avgPriceValue > 0 ? avgPriceValue.toFixed(2) + ' Kč/kWh' : '—';
+            const costValue = Number(block.total_cost_czk) || 0;
+            const costText = costValue.toFixed(2) + ' Kč';
+            const intervalCount = Number(block.interval_count) || 0;
+            const intervalInfo = intervalCount > 0 ? `${intervalCount}× 15min` : ' ';
+            const blockDay = getDayLabel(block.day);
+            const daySuffix = blockDay ? ` (${blockDay})` : '';
 
             tableHtml += `
-                <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-tertiary);">
-                    <td style="padding: 8px;">
-                        <strong>${block.time_from} - ${block.time_to}</strong><br>
+                <tr style="background: ${rowBg};">
+                    <td>
+                        <strong>${block.time_from} - ${block.time_to}${daySuffix}</strong><br>
                         <small style="opacity: 0.7;">${intervalInfo}</small>
                     </td>
-                    <td style="padding: 8px; text-align: right;">${energyText}</td>
-                    <td style="padding: 8px; text-align: right;">${avgPriceText}</td>
-                    <td style="padding: 8px; text-align: right;"><strong>${costText}</strong></td>
-                    <td style="padding: 8px; text-align: center; font-size: 0.85em;">
+                    <td style="text-align: right;">${energyText}</td>
+                    <td style="text-align: right;">${avgPriceText}</td>
+                    <td style="text-align: right;"><strong>${costText}</strong></td>
+                    <td style="text-align: center; font-size: 0.85em;">
                         ${batteryChange}
                     </td>
                 </tr>
@@ -663,8 +684,9 @@ function showGridChargingPopup() {
         });
 
         tableHtml += `
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
         `;
 
         showDialog('⚡ Plánované nabíjení ze sítě', tableHtml);

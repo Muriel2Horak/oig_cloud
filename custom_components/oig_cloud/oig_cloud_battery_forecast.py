@@ -7608,23 +7608,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             intervals = [
                 iv for iv in timeline if iv.get("time", "").startswith(day_str)
             ]
-            if not intervals:
-                return {
-                    "date": day_str,
-                    "mode_blocks": [],
-                    "summary": {
-                        "total_cost": 0.0,
-                        "overall_adherence": 100,
-                        "mode_switches": 0,
-                        "metrics": self._default_metrics_summary(),
-                    },
-                    "intervals": [],
-                }
-
-            pseudo_intervals = []
             actual_lookup = (
                 actual_intervals_by_date.get(day_str) if include_actual else None
             )
+            pseudo_intervals: List[Dict[str, Any]] = []
+            seen_times: set[str] = set()
+
             for iv in intervals:
                 status = "planned"
                 actual_payload = None
@@ -7659,7 +7648,42 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "status": status,
                     }
                 )
+                if iv.get("time"):
+                    seen_times.add(iv.get("time"))
 
+            if actual_lookup:
+                for ts in sorted(actual_lookup.keys()):
+                    if not ts or ts in seen_times:
+                        continue
+                    actual_interval = actual_lookup.get(ts) or {}
+                    pseudo_intervals.append(
+                        {
+                            "time": ts,
+                            "planned": copy.deepcopy(
+                                (actual_interval.get("planned") or {})
+                            ),
+                            "actual": copy.deepcopy(
+                                (actual_interval.get("actual") or {})
+                            ),
+                            "status": actual_interval.get("status", "historical"),
+                        }
+                    )
+                    seen_times.add(ts)
+
+            if not pseudo_intervals:
+                return {
+                    "date": day_str,
+                    "mode_blocks": [],
+                    "summary": {
+                        "total_cost": 0.0,
+                        "overall_adherence": 100,
+                        "mode_switches": 0,
+                        "metrics": self._default_metrics_summary(),
+                    },
+                    "intervals": [],
+                }
+
+            pseudo_intervals.sort(key=lambda item: item.get("time") or "")
             tab_name = (
                 "today"
                 if day_obj == today

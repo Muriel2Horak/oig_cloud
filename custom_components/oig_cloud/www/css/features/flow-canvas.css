@@ -324,7 +324,6 @@
         /* Active ON state - plná opacity, animovaná */
         .battery-grid-charging-indicator.active {
             opacity: 1;
-            animation: pulse-charging 2s ease-in-out infinite;
         }
 
         .battery-grid-charging-indicator:hover {
@@ -1013,6 +1012,17 @@
             letter-spacing: 0.3px;
         }
 
+        /* Battery node needs more compact labels to keep card narrow */
+        .node.battery .detail-label {
+            font-size: 9px;
+            text-transform: none !important;
+            letter-spacing: 0.1px;
+            font-weight: 500;
+        }
+        .node.battery .detail-row {
+            gap: 3px;
+        }
+
         .detail-value {
             font-weight: 600;
             font-size: 11px;
@@ -1024,6 +1034,40 @@
             /* Zvětšeno z 8px */
             opacity: 0.7;
             margin-left: 4px;
+        }
+
+        /* Grid charging popup/table styling */
+        .grid-charging-popup {
+            max-width: 340px;
+            font-size: 11px;
+            line-height: 1.4;
+            text-align: left;
+            overflow-x: auto;
+        }
+
+        .grid-charging-popup table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .grid-charging-popup thead tr {
+            border-bottom: 1px solid var(--border-secondary);
+        }
+
+        .grid-charging-popup tfoot tr {
+            border-top: 1px solid var(--border-secondary);
+        }
+
+        .grid-charging-popup th,
+        .grid-charging-popup td {
+            padding: 4px 6px;
+            white-space: nowrap;
+        }
+
+        .grid-charging-popup tbody tr:hover {
+            background: rgba(255, 215, 64, 0.18);
+            transition: background 0.2s ease-in-out;
         }
 
         .detail-group {
@@ -2723,4 +2767,3 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-

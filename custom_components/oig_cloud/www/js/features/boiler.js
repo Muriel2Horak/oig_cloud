@@ -9,7 +9,8 @@ const boilerState = {
     currentCategory: null,
     plan: null,
     charts: {},
-    initialized: false
+    initialized: false,
+    refreshTimer: null
 };
 
 // Czech labels
@@ -38,23 +39,15 @@ const DAY_LABELS = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 async function initBoilerDashboard() {
     console.log('🔥 [Boiler] Initializing dashboard');
 
-    if (boilerState.initialized) {
-        console.log('🔥 [Boiler] Already initialized');
-        return;
+    if (!boilerState.initialized) {
+        boilerState.initialized = true;
+
+        // Auto-refresh každých 5 minut (pouze jednou)
+        boilerState.refreshTimer = setInterval(() => loadBoilerData(), 5 * 60 * 1000);
     }
 
-    // Načíst data z API
+    // Vždy načti aktuální data
     await loadBoilerData();
-
-    // Vytvořit vizualizace
-    createBoilerHeatmap();
-    createBoilerTimeline();
-    updateBoilerStats();
-
-    boilerState.initialized = true;
-
-    // Auto-refresh každých 5 minut
-    setInterval(() => loadBoilerData(), 5 * 60 * 1000);
 }
 
 /**
@@ -98,6 +91,23 @@ async function loadBasicBoilerData() {
 
     } catch (err) {
         console.error('[Boiler] Failed to load data:', err);
+    }
+}
+
+/**
+ * Combined loader that hydrates both API-driven and hass-driven widgets.
+ */
+async function loadBoilerData() {
+    try {
+        await loadBasicBoilerData();
+    } catch (error) {
+        console.error('[Boiler] Basic loader failed:', error);
+    }
+
+    try {
+        await loadExtendedBoilerData();
+    } catch (error) {
+        console.error('[Boiler] Extended loader failed:', error);
     }
 }
 
@@ -918,6 +928,7 @@ function toggleBoilerControlPanel() {
 // Export enhanced boiler functions
 window.DashboardBoiler = Object.assign(window.DashboardBoiler || {}, {
     initBoilerDashboard,
+    loadBoilerData,
     loadBasicBoilerData,
     loadExtendedBoilerData,
     initializeBoilerChart,

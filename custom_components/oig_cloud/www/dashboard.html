@@ -395,9 +395,13 @@
                                             <span class="detail-label">Cena:</span>
                                             <span class="detail-value" id="grid-charging-cost">-- Kč</span>
                                         </div>
-                                        <div class="detail-row">
-                                            <span class="detail-label">Start:</span>
-                                            <span class="detail-value" id="grid-charging-start">--</span>
+                                        <div class="detail-row" id="grid-charging-current-row" style="display: none;">
+                                            <span class="detail-label">Probíhá:</span>
+                                            <span class="detail-value" id="grid-charging-current">--</span>
+                                        </div>
+                                        <div class="detail-row" id="grid-charging-next-row" style="display: none;">
+                                            <span class="detail-label">Další:</span>
+                                            <span class="detail-value" id="grid-charging-next">--</span>
                                         </div>
                                         <div class="detail-row" id="target-warning-row" style="display: none;">
                                             <span class="detail-label"></span>
@@ -685,7 +689,7 @@
                 <!-- Nejlepší období PRODEJE (nejvyšší cena) -->
                 <div class="stat-card"
                     style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
-                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">� Nejlepší prodej</div>
+                    <div class="stat-label" style="color: #4CAF50; font-weight: 600;">📈 Nejlepší prodej</div>
                     <div class="stat-value" id="best-export-price" style="font-size: 1.8em; margin: 10px 0;">--</div>
                     <div id="best-export-time"
                         style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px; min-height: 20px;">

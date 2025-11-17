@@ -620,6 +620,9 @@ function updateShieldQueue() {
         if (allRequests.length === 0) {
             container.innerHTML = '<div class="queue-empty">✅ Fronta je prázdná</div>';
             stopShieldQueueLiveUpdate(); // Stop live updates when queue is empty
+
+            // OPRAVA: Pokud je fronta prázdná, skryj všechny lístky (fallback, když monitor shieldu vynechá update)
+            ['box_mode', 'boiler_mode', 'grid_mode', 'grid_limit'].forEach((type) => hideChangingIndicator(type));
             return;
         }
 

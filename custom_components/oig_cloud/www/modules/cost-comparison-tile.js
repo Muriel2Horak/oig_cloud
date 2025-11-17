@@ -71,23 +71,44 @@ class CostComparisonTile {
     }
 
     renderHistoryRows(activePlanKey) {
-        const yesterdayCost = this.summary.yesterday?.actual_total_cost ?? this.summary.yesterday?.plan_total_cost ?? null;
+        const yesterdaySource =
+            this.summary.yesterday ||
+            this.data?.hybrid?.yesterday ||
+            this.data?.autonomy?.yesterday ||
+            null;
+        const yesterdayActual = this.asNumber(yesterdaySource?.actual_total_cost);
+        const yesterdayPlan = this.asNumber(yesterdaySource?.plan_total_cost);
+        const yesterdayCost =
+            yesterdayActual ??
+            yesterdayPlan ??
+            null;
+        const yesterdayNote =
+            yesterdayActual != null
+                ? 'skutečnost'
+                : yesterdayPlan != null
+                    ? 'plán'
+                    : '';
+        const yesterdayPlanNote =
+            yesterdayActual != null && yesterdayPlan != null && Math.round(yesterdayPlan) !== Math.round(yesterdayActual)
+                ? `plán ${this.formatCost(yesterdayPlan)}`
+                : '';
         const tomorrowKey = activePlanKey === 'dynamic' ? 'dynamic' : 'standard';
         const tomorrowCost = (this.summary.tomorrow || {})[tomorrowKey] ?? null;
         const tomorrowLabel = this.getPlanLabel(tomorrowKey === 'dynamic' ? 'autonomy' : 'hybrid');
         const blocks = [
-            this.renderHistoryCard('Včera', this.formatCost(yesterdayCost), 'skutečnost'),
+            this.renderHistoryCard('Včera', this.formatCost(yesterdayCost), yesterdayNote, yesterdayPlanNote),
             this.renderHistoryCard('Zítra', this.formatCost(tomorrowCost), tomorrowLabel)
         ];
         return `<div class="cost-history-grid">${blocks.join('')}</div>`;
     }
 
-    renderHistoryCard(label, value, note) {
+    renderHistoryCard(label, value, note, secondaryNote = '') {
         return `
             <div class="cost-history-card">
                 <span class="cost-history-label">${label}</span>
                 <span class="cost-history-value">${value}</span>
                 ${note ? `<span class="cost-history-note">${note}</span>` : ''}
+                ${secondaryNote ? `<span class="cost-history-note subtle">${secondaryNote}</span>` : ''}
             </div>
         `;
     }
@@ -147,6 +168,14 @@ class CostComparisonTile {
             return '--';
         }
         return `${Math.round(value)} Kč`;
+    }
+
+    asNumber(value) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? null : parsed;
     }
 }
 

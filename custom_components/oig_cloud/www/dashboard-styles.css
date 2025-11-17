@@ -897,7 +897,6 @@
         /* Active ON state - plná opacity, animovaná */
         .battery-grid-charging-indicator.active {
             opacity: 1;
-            animation: pulse-charging 2s ease-in-out infinite;
         }
 
         .battery-grid-charging-indicator:hover {
@@ -7291,7 +7290,7 @@
 }
 
 .cost-card-compact {
-    gap: 10px;
+    gap: 6px;
     padding: 14px;
     justify-content: space-between;
 }
@@ -7415,6 +7414,10 @@
 .cost-history-note {
     font-size: 0.68em;
     color: var(--text-secondary);
+}
+
+.cost-history-note.subtle {
+    opacity: 0.7;
 }
 
 .cost-hero {

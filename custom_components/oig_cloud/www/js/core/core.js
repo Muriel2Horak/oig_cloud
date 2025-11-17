@@ -666,20 +666,9 @@ function switchTab(tabName) {
         }, 150);
     }
 
-    // Load data when entering boiler tab
-    if (tabName === 'boiler') {
-        console.log('[Tab] ========== SWITCHING TO BOILER TAB ==========');
-        // Počkat až se tab zobrazí a canvas bude viditelný
-        setTimeout(() => {
-            console.log('[Boiler] Tab visible, loading boiler data...');
-            loadBoilerData();
-        }, 150);
-    }
 }
 
 // === BOILER (enhanced in dashboard-boiler.js) ===
-var loadBoilerData = window.DashboardBoiler.loadBoilerData;
-var updateBoilerChart = window.DashboardBoiler.updateBoilerChart;
 var loadPricingData = window.DashboardPricing.loadPricingData;
 var updatePlannedConsumptionStats = window.DashboardPricing.updatePlannedConsumptionStats;
 var tileDialog = null;
@@ -723,7 +712,7 @@ function renderIcon(icon, color) {
             'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
             'power-plug': '🔌', 'power-socket': '🔌',
             // Auto
-            'car': '🚗', 'car-electric': '🚗', 'car-battery': '🔋', 'ev-station': '🔌',
+            'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
             'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
             // Zabezpečení
             'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',

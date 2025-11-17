@@ -1,6 +1,6 @@
 # Export Integrity Fixes - Summary
 
-## �� Úkol
+## 🎯 Úkol
 Opravit všechny chybějící exportované funkce v JS modulech dashboardu.
 
 ## 🔍 Metodika
