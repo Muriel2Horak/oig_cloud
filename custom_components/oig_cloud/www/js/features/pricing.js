@@ -23,6 +23,129 @@ const timelineFetchPromises = {
     autonomy: null
 };
 
+const PRICING_MODE_CONFIG = {
+    'HOME I': { icon: '🏠', color: 'rgba(76, 175, 80, 0.16)', label: 'HOME I' },
+    'HOME II': { icon: '⚡', color: 'rgba(33, 150, 243, 0.16)', label: 'HOME II' },
+    'HOME III': { icon: '🔋', color: 'rgba(156, 39, 176, 0.16)', label: 'HOME III' },
+    'HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.18)', label: 'HOME UPS' },
+    'FULL HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.18)', label: 'FULL HOME UPS' },
+    'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.18)', label: 'DO NOTHING' }
+};
+
+const PRICING_MODE_ICON_PLUGIN_ID = 'pricingModeIcons';
+let pricingModeIconPluginRegistered = false;
+
+const pricingModeIconPlugin = {
+    id: PRICING_MODE_ICON_PLUGIN_ID,
+    beforeDatasetsDraw(chart, args, pluginOptions) {
+        const segments = pluginOptions?.segments;
+        if (!segments || segments.length === 0) {
+            return;
+        }
+
+        const chartArea = chart.chartArea;
+        const xScale = chart.scales?.x;
+        if (!chartArea || !xScale) {
+            return;
+        }
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.globalAlpha = pluginOptions?.backgroundOpacity ?? 0.12;
+
+        segments.forEach((segment) => {
+            const bounds = getPricingModeSegmentBounds(xScale, segment);
+            if (!bounds) {
+                return;
+            }
+
+            ctx.fillStyle = segment.color || 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(bounds.left, chartArea.top, bounds.width, chartArea.bottom - chartArea.top);
+        });
+
+        ctx.restore();
+    },
+    afterDatasetsDraw(chart, args, pluginOptions) {
+        const segments = pluginOptions?.segments;
+        if (!segments || segments.length === 0) {
+            return;
+        }
+
+        const xScale = chart.scales?.x;
+        const chartArea = chart.chartArea;
+        if (!xScale || !chartArea) {
+            return;
+        }
+
+        const iconSize = pluginOptions?.iconSize ?? 16;
+        const labelSize = pluginOptions?.labelSize ?? 9;
+        const iconOffset = pluginOptions?.iconOffset ?? 12;
+        const iconFont = `${iconSize}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+        const labelFont = `${labelSize}px "Inter", sans-serif`;
+        const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
+        const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
+        const baselineY = chartArea.bottom + iconOffset;
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        segments.forEach((segment) => {
+            const bounds = getPricingModeSegmentBounds(xScale, segment);
+            if (!bounds) {
+                return;
+            }
+
+            const centerX = bounds.left + bounds.width / 2;
+            ctx.font = iconFont;
+            ctx.fillStyle = iconColor;
+            ctx.fillText(segment.icon || '❓', centerX, baselineY);
+
+            if (segment.shortLabel) {
+                ctx.font = labelFont;
+                ctx.fillStyle = labelColor;
+                ctx.fillText(segment.shortLabel, centerX, baselineY + iconSize - 2);
+            }
+        });
+
+        ctx.restore();
+    }
+};
+
+function ensurePricingModeIconPluginRegistered() {
+    if (typeof Chart === 'undefined' || !Chart.register) {
+        return;
+    }
+
+    if (!pricingModeIconPluginRegistered) {
+        Chart.register(pricingModeIconPlugin);
+        pricingModeIconPluginRegistered = true;
+    }
+}
+
+function getPricingModeSegmentBounds(xScale, segment) {
+    if (!segment?.start || !segment?.end) {
+        return null;
+    }
+
+    const xStart = xScale.getPixelForValue(segment.start);
+    const xEnd = xScale.getPixelForValue(segment.end);
+
+    if (!isFinite(xStart) || !isFinite(xEnd)) {
+        return null;
+    }
+
+    const left = Math.min(xStart, xEnd);
+    const width = Math.max(Math.abs(xEnd - xStart), 2);
+
+    if (!isFinite(width) || width <= 0) {
+        return null;
+    }
+
+    return { left, width };
+}
+
 function getTimelineCacheBucket(plan) {
     if (!timelineDataCache.perPlan[plan]) {
         timelineDataCache.perPlan[plan] = { data: null, timestamp: null, chartsRendered: false, stale: true };
@@ -148,6 +271,165 @@ function getTextColor() {
 
 function getGridColor() {
     return isLightTheme() ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
+}
+
+function resolvePricingMode(point) {
+    if (!point) {
+        return null;
+    }
+
+    const raw =
+        point.mode_name ||
+        point.mode_planned ||
+        point.mode ||
+        point.mode_display ||
+        null;
+
+    if (!raw || typeof raw !== 'string') {
+        return null;
+    }
+
+    const normalized = raw.trim();
+    return normalized.length ? normalized : null;
+}
+
+function getPricingModeShortLabel(modeName) {
+    if (!modeName) {
+        return '';
+    }
+
+    if (modeName.startsWith('HOME ')) {
+        return modeName.replace('HOME ', '').trim();
+    }
+
+    if (modeName === 'FULL HOME UPS' || modeName === 'HOME UPS') {
+        return 'UPS';
+    }
+
+    if (modeName === 'DO NOTHING') {
+        return 'DN';
+    }
+
+    return modeName.substring(0, 3).toUpperCase();
+}
+
+function getPricingModeMeta(modeName) {
+    if (!modeName) {
+        return { icon: '❓', color: 'rgba(158, 158, 158, 0.15)', label: 'Unknown' };
+    }
+
+    if (window.DashboardTimeline?.MODE_CONFIG?.[modeName]) {
+        const base = window.DashboardTimeline.MODE_CONFIG[modeName];
+        return {
+            icon: base.icon || '❓',
+            color: adjustModeColorAlpha(base.color || 'rgba(158, 158, 158, 0.15)'),
+            label: base.label || modeName
+        };
+    }
+
+    return PRICING_MODE_CONFIG[modeName] || { icon: '❓', color: 'rgba(158, 158, 158, 0.15)', label: modeName };
+}
+
+function adjustModeColorAlpha(color, targetAlpha = 0.15) {
+    if (typeof color !== 'string') {
+        return `rgba(158, 158, 158, ${targetAlpha})`;
+    }
+
+    if (color.startsWith('rgba')) {
+        const match = color.match(/rgba\(([^)]+)\)/);
+        if (match && match[1]) {
+            const parts = match[1].split(',').map(part => part.trim());
+            if (parts.length === 4) {
+                return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${targetAlpha})`;
+            }
+        }
+    }
+
+    if (color.startsWith('rgb(')) {
+        return color.replace('rgb', 'rgba').replace(')', `, ${targetAlpha})`);
+    }
+
+    return color;
+}
+
+function buildPricingModeSegments(timelineData) {
+    if (!Array.isArray(timelineData) || timelineData.length === 0) {
+        return [];
+    }
+
+    const segments = [];
+    let currentSegment = null;
+
+    timelineData.forEach((point) => {
+        const modeName = resolvePricingMode(point);
+        if (!modeName) {
+            currentSegment = null;
+            return;
+        }
+
+        const startTime = new Date(point.timestamp);
+        const endTime = new Date(startTime.getTime() + 15 * 60 * 1000);
+
+        if (!currentSegment || currentSegment.mode !== modeName) {
+            currentSegment = {
+                mode: modeName,
+                start: startTime,
+                end: endTime
+            };
+            segments.push(currentSegment);
+        } else {
+            currentSegment.end = endTime;
+        }
+    });
+
+    return segments.map((segment) => {
+        const meta = getPricingModeMeta(segment.mode);
+        return {
+            ...segment,
+            icon: meta.icon,
+            color: meta.color,
+            label: meta.label,
+            shortLabel: getPricingModeShortLabel(segment.mode)
+        };
+    });
+}
+
+function buildPricingModeIconOptions(segments) {
+    if (!segments || segments.length === 0) {
+        return null;
+    }
+
+    return {
+        segments,
+        iconSize: 18,
+        labelSize: 10,
+        iconOffset: 12,
+        iconColor: 'rgba(255, 255, 255, 0.95)',
+        labelColor: 'rgba(255, 255, 255, 0.7)',
+        backgroundOpacity: 0.14
+    };
+}
+
+function applyPricingModeIconPadding(options, pluginOptions) {
+    if (!options) {
+        return;
+    }
+
+    if (!options.layout) {
+        options.layout = {};
+    }
+
+    if (!options.layout.padding) {
+        options.layout.padding = {};
+    }
+
+    const padding = options.layout.padding;
+    const additionalBottom = pluginOptions
+        ? pluginOptions.iconOffset + pluginOptions.iconSize + (pluginOptions.labelSize || 0) + 8
+        : 12;
+
+    padding.top = padding.top ?? 12;
+    padding.bottom = additionalBottom;
 }
 
 // Convert Date to local ISO string (without timezone conversion to UTC)
@@ -722,6 +1004,12 @@ async function loadPricingData() {
     });
     console.log(`[Pricing] After filtering future intervals: ${timelineData.length} points`);
 
+    const modeSegments = buildPricingModeSegments(timelineData);
+    const modeIconOptions = buildPricingModeIconOptions(modeSegments);
+    if (modeIconOptions) {
+        ensurePricingModeIconPluginRegistered();
+    }
+
     // Convert timeline to prices format for compatibility with existing code
     const prices = timelineData.map(point => ({
         timestamp: point.timestamp,
@@ -1288,10 +1576,11 @@ async function loadPricingData() {
             combinedChart.data.labels = allLabels;
         }
 
+        let updateMode = 'none';
         if (datasetsChanged) {
             // Pokud se změnil počet datasetů, musíme je nahradit
             combinedChart.data.datasets = datasets;
-            combinedChart.update();
+            updateMode = undefined;
         } else {
             // Jinak jen aktualizujeme data v existujících datasetech
             datasets.forEach((newDataset, idx) => {
@@ -1304,8 +1593,15 @@ async function loadPricingData() {
                     combinedChart.data.datasets[idx].borderColor = newDataset.borderColor;
                 }
             });
-            combinedChart.update('none'); // Update bez animace, rychlejší
         }
+
+        if (!combinedChart.options.plugins) {
+            combinedChart.options.plugins = {};
+        }
+
+        combinedChart.options.plugins.pricingModeIcons = modeIconOptions || null;
+        applyPricingModeIconPadding(combinedChart.options, modeIconOptions);
+        combinedChart.update(updateMode); // Update bez animace když se jen mění data
     } else {
         // DETAILNÍ DEBUG PRO ANALÝZU PROBLÉMU S ČASOVOU OSOU
         // console.log('[Pricing] Creating NEW chart with', allLabels.length, 'labels');
@@ -1316,11 +1612,7 @@ async function loadPricingData() {
         //     console.log('[Pricing] Time offset (hours):', (new Date() - allLabels[0]) / (1000 * 60 * 60));
         // }
 
-        combinedChart = new Chart(ctx, {
-            type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
-            data: { labels: allLabels, datasets: datasets },
-            plugins: [ChartDataLabels], // Registrace datalabels pluginu
-            options: {
+        const chartOptions = {
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
@@ -1434,7 +1726,8 @@ async function loadPricingData() {
                         limits: {
                             x: { minRange: 3600000 } // Min 1 hodina (v milisekundách)
                         }
-                    }
+                    },
+                    pricingModeIcons: modeIconOptions || null
                 },
                 scales: {
                     x: {
@@ -1516,7 +1809,15 @@ async function loadPricingData() {
                         }
                     }
                 }
-            }
+        };
+
+        applyPricingModeIconPadding(chartOptions, modeIconOptions);
+
+        combinedChart = new Chart(ctx, {
+            type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
+            data: { labels: allLabels, datasets: datasets },
+            plugins: [ChartDataLabels], // Registrace datalabels pluginu
+            options: chartOptions
         });
 
         // Inicializace detailu pro nový graf

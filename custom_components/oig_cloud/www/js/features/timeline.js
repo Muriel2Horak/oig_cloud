@@ -2,9 +2,147 @@ const MODE_CONFIG = {
     'HOME I': { icon: '🏠', color: 'rgba(76, 175, 80, 0.7)', label: 'HOME I' },
     'HOME II': { icon: '⚡', color: 'rgba(33, 150, 243, 0.7)', label: 'HOME II' },
     'HOME III': { icon: '🔋', color: 'rgba(156, 39, 176, 0.7)', label: 'HOME III' },
+    'HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'HOME UPS' },
     'FULL HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'FULL HOME UPS' },
     'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.7)', label: 'DO NOTHING' }
 };
+
+const TIMELINE_MODE_ICON_PLUGIN_ID = 'timelineModeIcons';
+let timelineModeIconPluginRegistered = false;
+
+const timelineModeIconPlugin = {
+    id: TIMELINE_MODE_ICON_PLUGIN_ID,
+    beforeDatasetsDraw(chart, args, pluginOptions) {
+        const segments = pluginOptions?.segments;
+        if (!segments || segments.length === 0) {
+            return;
+        }
+
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data || meta.data.length === 0) {
+            return;
+        }
+
+        const chartArea = chart.chartArea;
+        if (!chartArea) {
+            return;
+        }
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.globalAlpha = pluginOptions?.backgroundOpacity ?? 0.12;
+
+        segments.forEach((segment) => {
+            const pixelRange = getModeSegmentPixelRange(meta, segment);
+            if (!pixelRange) {
+                return;
+            }
+
+            ctx.fillStyle = segment.color || 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(
+                pixelRange.left,
+                chartArea.top,
+                pixelRange.width,
+                chartArea.bottom - chartArea.top
+            );
+        });
+
+        ctx.restore();
+    },
+    afterDatasetsDraw(chart, args, pluginOptions) {
+        const segments = pluginOptions?.segments;
+        if (!segments || segments.length === 0) {
+            return;
+        }
+
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data || meta.data.length === 0) {
+            return;
+        }
+
+        const chartArea = chart.chartArea;
+        if (!chartArea) {
+            return;
+        }
+
+        const iconSize = pluginOptions?.iconSize ?? 18;
+        const labelSize = pluginOptions?.labelSize ?? 10;
+        const iconOffset = pluginOptions?.iconOffset ?? 8;
+        const iconFont = `${iconSize}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+        const labelFont = `${labelSize}px "Inter", sans-serif`;
+        const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
+        const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
+        const axisY = chartArea.bottom + iconOffset;
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        segments.forEach((segment) => {
+            const pixelRange = getModeSegmentPixelRange(meta, segment);
+            if (!pixelRange) {
+                return;
+            }
+            const centerX = pixelRange.left + pixelRange.width / 2;
+
+            ctx.font = iconFont;
+            ctx.fillStyle = iconColor;
+            ctx.fillText(segment.icon || '❓', centerX, axisY);
+
+            if (segment.shortLabel) {
+                ctx.font = labelFont;
+                ctx.fillStyle = labelColor;
+                ctx.fillText(segment.shortLabel, centerX, axisY + iconSize - 2);
+            }
+        });
+
+        ctx.restore();
+    }
+};
+
+function ensureTimelineModeIconPluginRegistered() {
+    if (typeof Chart === 'undefined' || !Chart.register) {
+        return;
+    }
+
+    if (!timelineModeIconPluginRegistered) {
+        Chart.register(timelineModeIconPlugin);
+        timelineModeIconPluginRegistered = true;
+    }
+}
+
+function getModeSegmentPixelRange(meta, segment) {
+    const elements = meta?.data || [];
+    if (!elements.length) {
+        return null;
+    }
+
+    const lastIndex = elements.length - 1;
+    const startIndex = Math.max(0, Math.min(segment.startIndex, lastIndex));
+    const endIndex = Math.max(0, Math.min(segment.endIndex, lastIndex));
+    const startEl = elements[startIndex];
+    const endEl = elements[endIndex];
+
+    if (!startEl || !endEl) {
+        return null;
+    }
+
+    const startWidth = startEl.width ?? 0;
+    const endWidth = endEl.width ?? 0;
+    const left = (startEl.x ?? 0) - startWidth / 2;
+    const right = (endEl.x ?? 0) + endWidth / 2;
+    const width = right - left;
+
+    if (!isFinite(width) || width <= 0) {
+        return null;
+    }
+
+    return {
+        left,
+        width
+    };
+}
 
 // Global Today Plan Tile instance
 var todayPlanTileInstance = null;
@@ -1600,6 +1738,88 @@ class TimelineDialog {
         return groups;
     }
 
+    resolveIntervalMode(interval) {
+        if (!interval) {
+            return null;
+        }
+
+        const status = interval.status;
+        const baseMode = (status === 'historical' || status === 'current')
+            ? (interval.actual?.mode_name || interval.planned?.mode_name || interval.mode_name)
+            : (interval.planned?.mode_name || interval.mode_name || interval.actual?.mode_name);
+
+        if (!baseMode || typeof baseMode !== 'string') {
+            return null;
+        }
+
+        const normalized = baseMode.trim();
+        return normalized.length ? normalized : null;
+    }
+
+    getModeShortLabel(modeName) {
+        if (!modeName) {
+            return '';
+        }
+
+        if (modeName.startsWith('HOME ')) {
+            return modeName.replace('HOME ', '').trim();
+        }
+
+        if (modeName === 'FULL HOME UPS') {
+            return 'UPS';
+        }
+
+        if (modeName === 'HOME UPS') {
+            return 'UPS';
+        }
+
+        if (modeName === 'DO NOTHING') {
+            return 'DN';
+        }
+
+        return modeName.substring(0, 3).toUpperCase();
+    }
+
+    buildModeSegmentsForChart(intervals) {
+        if (!Array.isArray(intervals) || intervals.length === 0) {
+            return [];
+        }
+
+        const segments = [];
+        let currentSegment = null;
+
+        intervals.forEach((interval, idx) => {
+            const mode = this.resolveIntervalMode(interval);
+
+            if (!mode) {
+                currentSegment = null;
+                return;
+            }
+
+            if (!currentSegment || currentSegment.mode !== mode) {
+                currentSegment = {
+                    mode,
+                    startIndex: idx,
+                    endIndex: idx
+                };
+                segments.push(currentSegment);
+            } else {
+                currentSegment.endIndex = idx;
+            }
+        });
+
+        return segments.map((segment) => {
+            const config = MODE_CONFIG[segment.mode] || { icon: '❓', color: 'rgba(158, 158, 158, 0.6)', label: segment.mode || 'Unknown' };
+            return {
+                ...segment,
+                icon: config.icon || '❓',
+                color: config.color || 'rgba(158, 158, 158, 0.6)',
+                label: config.label || segment.mode,
+                shortLabel: this.getModeShortLabel(segment.mode)
+            };
+        });
+    }
+
     /**
      * Render intervals for VČERA tab (backward compatibility fallback)
      * Shows all completed intervals grouped by mode
@@ -2795,6 +3015,20 @@ class TimelineDialog {
         const deltaData = [];
         const colors = [];
         let nowIndex = -1;
+        const modeSegments = this.buildModeSegmentsForChart(intervals);
+        const timelineModeIconsOptions = modeSegments.length ? {
+            segments: modeSegments,
+            iconSize: 18,
+            labelSize: 10,
+            iconOffset: 10,
+            iconColor: 'rgba(255, 255, 255, 0.95)',
+            labelColor: 'rgba(255, 255, 255, 0.7)',
+            backgroundOpacity: 0.14
+        } : null;
+
+        if (timelineModeIconsOptions) {
+            ensureTimelineModeIconPluginRegistered();
+        }
 
         intervals.forEach((interval, idx) => {
             const intervalTime = new Date(interval.time);
@@ -2903,6 +3137,15 @@ class TimelineDialog {
                     },
                     annotation: {
                         annotations: annotations
+                    },
+                    ...(timelineModeIconsOptions ? { timelineModeIcons: timelineModeIconsOptions } : {})
+                },
+                layout: {
+                    padding: {
+                        top: 12,
+                        bottom: timelineModeIconsOptions
+                            ? timelineModeIconsOptions.iconOffset + timelineModeIconsOptions.iconSize + timelineModeIconsOptions.labelSize + 6
+                            : 12
                     }
                 },
                 scales: {
