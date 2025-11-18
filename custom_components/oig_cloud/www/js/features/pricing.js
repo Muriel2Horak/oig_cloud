@@ -65,52 +65,74 @@ const pricingModeIconPlugin = {
 
         ctx.restore();
     },
-    afterDatasetsDraw(chart, args, pluginOptions) {
-        const segments = pluginOptions?.segments;
-        if (!segments || segments.length === 0) {
-            return;
-        }
+	afterDatasetsDraw(chart, args, pluginOptions) {
+		const segments = pluginOptions?.segments;
+		if (!segments || segments.length === 0) {
+			return;
+		}
 
-        const xScale = chart.scales?.x;
-        const chartArea = chart.chartArea;
-        if (!xScale || !chartArea) {
-            return;
-        }
+		const xScale = chart.scales?.x;
+		const chartArea = chart.chartArea;
+		if (!xScale || !chartArea) {
+			return;
+		}
 
-        const iconSize = pluginOptions?.iconSize ?? 16;
-        const labelSize = pluginOptions?.labelSize ?? 9;
-        const iconOffset = pluginOptions?.iconOffset ?? 12;
-        const iconFont = `${iconSize}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
-        const labelFont = `${labelSize}px "Inter", sans-serif`;
-        const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
-        const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
-        const baselineY = chartArea.bottom + iconOffset;
+		const iconSize = pluginOptions?.iconSize ?? 16;
+		const labelSize = pluginOptions?.labelSize ?? 9;
+		const iconFont = `${iconSize}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+		const labelFont = `${labelSize}px "Inter", sans-serif`;
+		const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
+		const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
+		const axisBandPadding = pluginOptions?.axisBandPadding ?? 6;
+		const axisBandHeight = pluginOptions?.axisBandHeight ?? (iconSize + labelSize + 10);
+		const axisBandColor = pluginOptions?.axisBandColor || 'rgba(6, 10, 18, 0.92)';
+		const iconAlignment = pluginOptions?.iconAlignment || 'start';
+		const iconStartOffset = pluginOptions?.iconStartOffset ?? 12;
+		const iconBaselineOffset = pluginOptions?.iconBaselineOffset ?? 4;
+		const axisBandTop = chartArea.bottom + axisBandPadding;
+		const axisBandWidth = chartArea.right - chartArea.left;
+		const baselineY = axisBandTop + iconBaselineOffset;
 
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
+		const ctx = chart.ctx;
+		ctx.save();
+		ctx.fillStyle = axisBandColor;
+		ctx.fillRect(chartArea.left, axisBandTop, axisBandWidth, axisBandHeight);
+		ctx.restore();
 
-        segments.forEach((segment) => {
-            const bounds = getPricingModeSegmentBounds(xScale, segment);
-            if (!bounds) {
-                return;
-            }
+		ctx.save();
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'top';
 
-            const centerX = bounds.left + bounds.width / 2;
-            ctx.font = iconFont;
-            ctx.fillStyle = iconColor;
-            ctx.fillText(segment.icon || '❓', centerX, baselineY);
+		segments.forEach((segment) => {
+			const bounds = getPricingModeSegmentBounds(xScale, segment);
+			if (!bounds) {
+				return;
+			}
 
-            if (segment.shortLabel) {
-                ctx.font = labelFont;
-                ctx.fillStyle = labelColor;
-                ctx.fillText(segment.shortLabel, centerX, baselineY + iconSize - 2);
-            }
-        });
+			let iconX;
+			if (iconAlignment === 'start') {
+				iconX = bounds.left + iconStartOffset;
+				const maxStart = bounds.left + bounds.width - iconSize / 2;
+				if (iconX > maxStart) {
+					iconX = bounds.left + bounds.width / 2;
+				}
+			} else {
+				iconX = bounds.left + bounds.width / 2;
+			}
 
-        ctx.restore();
-    }
+			ctx.font = iconFont;
+			ctx.fillStyle = iconColor;
+			ctx.fillText(segment.icon || '❓', iconX, baselineY);
+
+			if (segment.shortLabel) {
+				ctx.font = labelFont;
+				ctx.fillStyle = labelColor;
+				ctx.fillText(segment.shortLabel, iconX, baselineY + iconSize - 2);
+			}
+		});
+
+		ctx.restore();
+	}
 };
 
 function ensurePricingModeIconPluginRegistered() {
@@ -403,10 +425,15 @@ function buildPricingModeIconOptions(segments) {
         segments,
         iconSize: 18,
         labelSize: 10,
-        iconOffset: 12,
+        iconAlignment: 'start',
+        iconStartOffset: 14,
+        iconBaselineOffset: 6,
         iconColor: 'rgba(255, 255, 255, 0.95)',
         labelColor: 'rgba(255, 255, 255, 0.7)',
-        backgroundOpacity: 0.14
+        backgroundOpacity: 0.14,
+        axisBandPadding: 6,
+        axisBandHeight: 30,
+        axisBandColor: 'rgba(8, 12, 20, 0.9)'
     };
 }
 
@@ -424,12 +451,12 @@ function applyPricingModeIconPadding(options, pluginOptions) {
     }
 
     const padding = options.layout.padding;
-    const additionalBottom = pluginOptions
-        ? pluginOptions.iconOffset + pluginOptions.iconSize + (pluginOptions.labelSize || 0) + 8
-        : 12;
+    const axisBandPadding = pluginOptions?.axisBandPadding ?? 6;
+    const axisBandHeight = pluginOptions?.axisBandHeight ?? (pluginOptions?.iconSize || 18) + (pluginOptions?.labelSize || 10) + 6;
+    const extra = pluginOptions ? axisBandPadding + axisBandHeight + 6 : 12;
 
     padding.top = padding.top ?? 12;
-    padding.bottom = additionalBottom;
+    padding.bottom = Math.max(padding.bottom || 0, extra);
 }
 
 // Convert Date to local ISO string (without timezone conversion to UTC)

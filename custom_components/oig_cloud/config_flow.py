@@ -973,7 +973,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_solar_forecast", False):
             total += 1  # wizard_solar
         if self._wizard_data.get("enable_battery_prediction", False):
-            total += 1  # wizard_battery
+            total += 2  # wizard_battery + wizard_planner
         if self._wizard_data.get("enable_pricing", False):
             total += 3  # wizard_pricing (3 kroky: import, export, distribution)
         if self._wizard_data.get("enable_extended_sensors", False):
@@ -1020,10 +1020,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_solar_forecast", False):
             current += 1
 
-        # Battery
+        # Battery + Planner settings
+        battery_enabled = self._wizard_data.get("enable_battery_prediction", False)
         if step_id == "wizard_battery":
             return current
-        if self._wizard_data.get("enable_battery_prediction", False):
+        if battery_enabled:
+            current += 1
+
+        if step_id == "wizard_planner":
+            return current if battery_enabled else current
+        if battery_enabled:
             current += 1
 
         # Pricing - 3 kroky (import, export, distribution)
@@ -1097,6 +1103,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_intervals",
             "wizard_solar",
             "wizard_battery",
+            "wizard_planner",
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
@@ -1119,6 +1126,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ):
                 continue
             if step == "wizard_battery" and not self._wizard_data.get(
+                "enable_battery_prediction"
+            ):
+                continue
+            if step == "wizard_planner" and not self._wizard_data.get(
                 "enable_battery_prediction"
             ):
                 continue
@@ -1423,6 +1434,102 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return vol.Schema(schema_fields)
 
+    async def async_step_wizard_planner(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Wizard Step 5b: Planner-specific parameters."""
+
+        # Pokud je planner vypnutý, přeskoč krok (obrana proti nekonzistenci)
+        if not self._wizard_data.get("enable_battery_prediction", False):
+            next_step = self._get_next_step("wizard_planner")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_planner")
+
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_planner")
+
+            next_step = self._get_next_step("wizard_planner")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_planner",
+            data_schema=self._get_planner_schema(),
+            description_placeholders=self._get_step_placeholders("wizard_planner"),
+        )
+
+    def _get_planner_schema(
+        self, defaults: Optional[Dict[str, Any]] = None
+    ) -> vol.Schema:
+        """Get schema for planner-specific settings (cheap window & autonomy)."""
+        if defaults is None:
+            defaults = self._wizard_data if self._wizard_data else {}
+
+        planner_mode = self._get_planner_mode_value(defaults)
+        schema_fields: Dict[Any, Any] = {}
+
+        show_hybrid_params = planner_mode in ("hybrid", "hybrid_autonomy")
+        if show_hybrid_params:
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "enable_cheap_window_ups",
+                        default=defaults.get("enable_cheap_window_ups", True),
+                    ): bool,
+                    vol.Optional(
+                        "cheap_window_percentile",
+                        default=defaults.get("cheap_window_percentile", 30),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=5, max=80)),
+                    vol.Optional(
+                        "cheap_window_max_intervals",
+                        default=defaults.get("cheap_window_max_intervals", 20),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=2, max=96)),
+                    vol.Optional(
+                        "cheap_window_soc_guard_kwh",
+                        default=defaults.get("cheap_window_soc_guard_kwh", 0.5),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                }
+            )
+
+        show_autonomy_params = planner_mode in (
+            "hybrid_autonomy",
+            "autonomy_preview",
+            "autonomy",
+        )
+        if show_autonomy_params:
+            schema_fields.update(
+                {
+                    vol.Optional(
+                        "autonomy_soc_step_kwh",
+                        default=defaults.get("autonomy_soc_step_kwh", 0.5),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.25, max=3.0)),
+                    vol.Optional(
+                        "autonomy_target_penalty",
+                        default=defaults.get("autonomy_target_penalty", 0.5),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0)),
+                    vol.Optional(
+                        "autonomy_target_bias_weight",
+                        default=defaults.get("autonomy_target_bias_weight", 0.05),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                    vol.Optional(
+                        "autonomy_min_penalty",
+                        default=defaults.get("autonomy_min_penalty", 2.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=100.0)),
+                    vol.Optional(
+                        "autonomy_negative_export_penalty",
+                        default=defaults.get("autonomy_negative_export_penalty", 50.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=200.0)),
+                }
+            )
+
+        schema_fields[vol.Optional("go_back", default=False)] = (
+            selector.BooleanSelector()
+        )
+
+        return vol.Schema(schema_fields)
+
     async def async_step_wizard_battery(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -1567,55 +1674,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 )
             ),
         }
-
-        show_hybrid_params = planner_mode in ("hybrid", "hybrid_autonomy")
-        if show_hybrid_params:
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "enable_cheap_window_ups",
-                        default=defaults.get("enable_cheap_window_ups", True),
-                    ): bool,
-                    vol.Optional(
-                        "cheap_window_percentile",
-                        default=defaults.get("cheap_window_percentile", 30),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=5, max=80)),
-                    vol.Optional(
-                        "cheap_window_max_intervals",
-                        default=defaults.get("cheap_window_max_intervals", 20),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=2, max=96)),
-                    vol.Optional(
-                        "cheap_window_soc_guard_kwh",
-                        default=defaults.get("cheap_window_soc_guard_kwh", 0.5),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-                }
-            )
-
-        show_autonomy_params = planner_mode in (
-            "hybrid_autonomy",
-            "autonomy_preview",
-        )
-        if show_autonomy_params:
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "autonomy_soc_step_kwh",
-                        default=defaults.get("autonomy_soc_step_kwh", 0.5),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.25, max=3.0)),
-                    vol.Optional(
-                        "autonomy_target_penalty",
-                        default=defaults.get("autonomy_target_penalty", 3.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
-                    vol.Optional(
-                        "autonomy_min_penalty",
-                        default=defaults.get("autonomy_min_penalty", 15.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=100.0)),
-                    vol.Optional(
-                        "autonomy_negative_export_penalty",
-                        default=defaults.get("autonomy_negative_export_penalty", 50.0),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=200.0)),
-                }
-            )
 
         # Přidat go_back na konec
         schema_fields[vol.Optional("go_back", default=False)] = (
@@ -2570,10 +2628,13 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         "autonomy_soc_step_kwh", 0.5
                     ),
                     "autonomy_target_penalty": self._wizard_data.get(
-                        "autonomy_target_penalty", 3.0
+                        "autonomy_target_penalty", 0.5
+                    ),
+                    "autonomy_target_bias_weight": self._wizard_data.get(
+                        "autonomy_target_bias_weight", 0.05
                     ),
                     "autonomy_min_penalty": self._wizard_data.get(
-                        "autonomy_min_penalty", 15.0
+                        "autonomy_min_penalty", 2.0
                     ),
                     "autonomy_negative_export_penalty": self._wizard_data.get(
                         "autonomy_negative_export_penalty", 50.0
@@ -3399,12 +3460,17 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             ): vol.All(vol.Coerce(float), vol.Range(min=0.25, max=3.0)),
             vol.Optional(
                 "autonomy_target_penalty",
-                default=current_options.get("autonomy_target_penalty", 3.0),
+                default=current_options.get("autonomy_target_penalty", 0.5),
                 description="🎯 Jak silně trestat nesplnění cílové kapacity (násobek průměrné ceny)",
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0)),
+            vol.Optional(
+                "autonomy_target_bias_weight",
+                default=current_options.get("autonomy_target_bias_weight", 0.05),
+                description="⚖️ Bias směrem k cílové kapacitě (0 = volnější, vyšší = drží SoC výš)",
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
             vol.Optional(
                 "autonomy_min_penalty",
-                default=current_options.get("autonomy_min_penalty", 15.0),
+                default=current_options.get("autonomy_min_penalty", 2.0),
                 description="⚠️ Penalizace za pokles pod plánovací minimum (násobek ceny)",
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=100.0)),
             vol.Optional(

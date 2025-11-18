@@ -71,9 +71,10 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "cheap_window_max_intervals": 20,
         "cheap_window_soc_guard_kwh": 0.5,
         "autonomy_soc_step_kwh": 0.5,
-        "autonomy_target_penalty": 3.0,
-        "autonomy_min_penalty": 15.0,
+        "autonomy_target_penalty": 0.5,
+        "autonomy_min_penalty": 2.0,
         "autonomy_negative_export_penalty": 50.0,
+        "autonomy_target_bias_weight": 0.05,
     }
 
     options = dict(entry.options)
@@ -86,6 +87,19 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         if options.get(key) is None:
             options[key] = default
             updated = True
+
+    # Migrace starších hodnot na nové vyvážené defaulty
+    if options.get("autonomy_min_penalty") in (15.0, 8.0):
+        options["autonomy_min_penalty"] = defaults["autonomy_min_penalty"]
+        updated = True
+    if options.get("autonomy_target_penalty") == 3.0:
+        options["autonomy_target_penalty"] = defaults["autonomy_target_penalty"]
+        updated = True
+    if options.get("autonomy_target_bias_weight") is None or options.get(
+        "autonomy_target_bias_weight"
+    ) == 0.5:
+        options["autonomy_target_bias_weight"] = defaults["autonomy_target_bias_weight"]
+        updated = True
 
     if updated:
         _LOGGER.info(

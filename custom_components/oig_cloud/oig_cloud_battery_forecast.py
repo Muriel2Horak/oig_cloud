@@ -7291,11 +7291,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             self._config_entry.options.get("autonomy_target_penalty", 5.0) * avg_price
         )
         target_bias_penalty = (
-            self._config_entry.options.get("autonomy_target_bias_weight", 0.5)
+            self._config_entry.options.get("autonomy_target_bias_weight", 0.05)
             * avg_price
         )
         min_violation_penalty = (
-            self._config_entry.options.get("autonomy_min_penalty", 15.0) * avg_price
+            self._config_entry.options.get("autonomy_min_penalty", 8.0) * avg_price
         )
         export_penalty_multiplier = self._config_entry.options.get(
             "autonomy_negative_export_penalty", 50.0
