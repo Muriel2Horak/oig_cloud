@@ -8043,6 +8043,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             return fallback
 
+    def _get_service_shield(self) -> Optional[Any]:
+        """Safe helper to get ServiceShield instance."""
+        if not self._hass or not self._config_entry:
+            return None
+
+        entry = self._hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
+        return entry.get("service_shield")
+
     async def _execute_autonomy_mode_change(
         self, target_mode: str, reason: str
     ) -> None:
@@ -8050,6 +8058,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return
 
         now = dt_util.now()
+        service_shield = self._get_service_shield()
+        if service_shield and hasattr(service_shield, "has_pending_mode_change"):
+            if service_shield.has_pending_mode_change(target_mode):
+                _LOGGER.debug(
+                    "[AutonomySwitch] Skipping %s (%s) - shield already processing mode change",
+                    target_mode,
+                    reason,
+                )
+                return
+
         if (
             self._last_autonomy_request
             and self._last_autonomy_request[0] == target_mode

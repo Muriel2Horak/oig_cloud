@@ -1501,22 +1501,24 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     ) -> None:
         """Naplánovat spuštění backfill úlohy se zpožděním."""
         if not self._tracker:
-            _LOGGER.debug("Backfill schedule skipped: tracker not yet initialized")
+            _LOGGER.warning(
+                "♻️ Backfill schedule skipped (reason=%s): tracker not yet initialized",
+                reason,
+            )
             return
 
         if self._backfill_task and not self._backfill_task.done():
-            _LOGGER.debug(
-                "Backfill already running, skipping schedule (reason=%s)", reason
+            _LOGGER.info(
+                "♻️ Backfill already running, skipping schedule (reason=%s)", reason
             )
             return
 
         if self._backfill_unsub:
+            _LOGGER.debug("♻️ Canceling previous backfill timer before rescheduling")
             self._backfill_unsub()
             self._backfill_unsub = None
 
-        _LOGGER.info(
-            "♻️ Backfill scheduled in %.1f s (%s)", delay, reason
-        )
+        _LOGGER.info("♻️ Backfill scheduled in %.1f s (%s)", delay, reason)
         self._backfill_unsub = async_call_later(
             self.hass, delay, self._start_backfill_task
         )
@@ -1529,7 +1531,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     def _start_backfill_task(self, _now: Optional[datetime] = None) -> None:
         """Spustit asynchronní backfill úlohu (bez dalšího plánování)."""
         if not self._tracker:
-            _LOGGER.debug("Backfill start skipped: tracker not yet initialized")
+            _LOGGER.warning("♻️ Backfill start skipped: tracker not yet initialized")
             return
 
         if self._backfill_unsub:
@@ -1537,9 +1539,10 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             self._backfill_unsub = None
 
         if self._backfill_task and not self._backfill_task.done():
-            _LOGGER.debug("Backfill task already running, skipping new start")
+            _LOGGER.info("♻️ Backfill task already running, skipping new start")
             return
 
+        _LOGGER.info("♻️ Launching background battery health backfill task now")
         self._backfill_task = self.hass.async_create_task(
             self._async_backfill_missing_cycles()
         )
@@ -1547,7 +1550,7 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
     async def _async_backfill_missing_cycles(self) -> None:
         """Asynchronní úloha pro dopočítání historických cyklů."""
         if not self._tracker:
-            _LOGGER.debug("Backfill aborted: tracker missing")
+            _LOGGER.warning("♻️ Backfill aborted: tracker missing")
             return
 
         _LOGGER.info("♻️ Starting background battery health backfill task...")

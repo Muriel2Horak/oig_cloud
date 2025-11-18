@@ -910,18 +910,26 @@ async function monitorShieldActivity() {
         //     total: allRequests.length
         // });
 
-        // Track which service types are active
+        // Track which service types mají aktivní indikátor
         const activeServices = new Set();
 
-        // Parse all requests and show indicators
-        allRequests.forEach(request => {
-            const parsed = parseServiceRequest(request);
-            if (parsed) {
+        const processRequestList = (requests, { allowIfActive } = { allowIfActive: false }) => {
+            requests.forEach((request) => {
+                const parsed = parseServiceRequest(request);
+                if (!parsed) {
+                    return;
+                }
+                if (!allowIfActive && activeServices.has(parsed.type)) {
+                    return;
+                }
                 activeServices.add(parsed.type);
-                // Pass the full request object for started_at access
-                showChangingIndicator(parsed.type, parsed.targetValue, request.started_at);
-            }
-        });
+                showChangingIndicator(parsed.type, parsed.targetValue, request.started_at || request.queued_at || request.created_at || null);
+            });
+        };
+
+        // Priorita: běžící requesty → teprve potom čekající (pokud pro daný typ nic neběží)
+        processRequestList(runningRequests, { allowIfActive: false });
+        processRequestList(queuedRequests, { allowIfActive: false });
 
         // Hide indicators for service types that are no longer active
         const allServiceTypes = ['box_mode', 'boiler_mode', 'grid_mode', 'grid_limit'];

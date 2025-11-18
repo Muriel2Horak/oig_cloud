@@ -423,6 +423,41 @@ class ServiceShield:
             "queue_services": [item[0] for item in self.queue],
         }
 
+    def has_pending_mode_change(self, target_mode: Optional[str] = None) -> bool:
+        """Zjistí, jestli už probíhá nebo čeká service set_box_mode."""
+
+        def _matches_target(entities: Dict[str, str]) -> bool:
+            if not entities:
+                return False
+            if not target_mode:
+                return True
+
+            normalized_target = self._normalize_value(target_mode)
+            for value in entities.values():
+                if self._normalize_value(value) == normalized_target:
+                    return True
+            return False
+
+        # Pending (běžící) služby
+        for service_name, info in self.pending.items():
+            if service_name == "oig_cloud.set_box_mode" and _matches_target(
+                info.get("entities", {})
+            ):
+                return True
+
+        # Queue (čekající) služby
+        for service_name, _params, expected_entities, *_ in self.queue:
+            if service_name == "oig_cloud.set_box_mode" and _matches_target(
+                expected_entities
+            ):
+                return True
+
+        # Běží, ale pending záznam není? (defenzivní kontrola)
+        if self.running == "oig_cloud.set_box_mode":
+            return True
+
+        return False
+
     def _normalize_value(self, val: Any) -> str:
         val = str(val or "").strip().lower().replace(" ", "").replace("/", "")
         mapping = {
