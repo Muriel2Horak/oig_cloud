@@ -4080,8 +4080,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # Deficit → baterie vybíjí (HOME I fyzika)
                     deficit = load_kwh - solar_kwh  # Kolik chybí po solaru
 
-                    # Kolik máme k dispozici v baterii (nad HW minimem = physical_min!)
-                    available_battery = max(0, battery - physical_min_capacity)
+                    # Kolik máme k dispozici v baterii (nad PLANNING minimem!)
+                    # _build_result musí respektovat planning_min (22%), ne physical_min (20%)
+                    available_battery = max(0, battery - min_capacity)
 
                     # Kolik reálně vybereme (s účinností)
                     actual_discharge = min(deficit / efficiency, available_battery)
@@ -4094,8 +4095,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if grid_import > 0.001:  # Potřebujeme grid
                         total_cost += grid_import * price
 
-                    # Clamp na HW minimum (physical_min, NE planning_min!)
-                    battery = max(battery, physical_min_capacity)
+                    # Clamp na PLANNING minimum (22%), ne HW minimum (20%)!
+                    # Timeline simulation musí respektovat user-configured planning minimum
+                    battery = max(battery, min_capacity)
 
                     # solar_charge_kwh a grid_charge_kwh zůstávají 0 (vybíjení)
 
@@ -7086,16 +7088,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         final_modes = self._enforce_min_mode_duration(final_modes)
 
         soc_trace = _build_soc_trace(final_modes)
-        forced_modes = self._force_target_alignment(
-            modes=final_modes,
-            soc_trace=soc_trace,
-            spot_prices=spot_prices,
-            target_capacity=target_capacity,
-        )
-        if forced_modes != final_modes:
-            final_modes = forced_modes
-            planning_adjusted = True
-            soc_trace = _build_soc_trace(final_modes)
+        # _force_target_alignment disabled - DP now has hard constraint for target SOC
+        # No need for post-processing to force early charging
+        # forced_modes = self._force_target_alignment(
+        #     modes=final_modes,
+        #     soc_trace=soc_trace,
+        #     spot_prices=spot_prices,
+        #     target_capacity=target_capacity,
+        # )
+        # if forced_modes != final_modes:
+        #     final_modes = forced_modes
+        #     planning_adjusted = True
+        #     soc_trace = _build_soc_trace(final_modes)
 
         validated_modes = self._validate_planning_minimum(
             modes=final_modes,
@@ -7309,39 +7313,38 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "autonomy_negative_export_penalty", 50.0
         )
 
-        # Calculate average price to set reasonable target penalty
+        # Calculate average price for logging only
         avg_price = (
             sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
             if spot_prices
             else 5.0
         )
 
-        # Target penalty: Should encourage reaching target in cheap hours
-        # Set to 1× average price: DP will reach target if charging cost < avg price
-        target_penalty = 1.0 * avg_price
+        # Effective target: max of configured target OR current SOC
+        # (If already above target, don't force discharge below it)
+        effective_target = max(target_capacity, current_capacity)
 
         _LOGGER.info(
-            "[DP] Constraints: min=%.2f kWh (hard), target=%.2f kWh (penalty=%.2f Kč/kWh), cheap_threshold=%s",
+            "[DP] Hard constraints: min=%.2f kWh (must never go below), target=%.2f kWh (config), "
+            "effective_target=%.2f kWh (max of target or current), avg_price=%.2f Kč, cheap_threshold=%s",
             min_capacity,
             target_capacity,
-            target_penalty,
+            effective_target,
+            avg_price,
             f"{cheap_price_threshold:.2f} Kč" if cheap_price_threshold else "None",
         )
 
-        # Initialize final states with target penalty
-        # States below min = INVALID (INF)
-        # States below target = penalty proportional to deficit
-        # States at/above target = zero penalty (optimal)
+        # Initialize final states with HARD CONSTRAINTS (no penalties!)
+        # 1. MUST end at or above planning minimum (22%)
+        # 2. MUST end at or above effective_target (80% OR current SOC if higher)
+        # Between these constraints, DP will choose CHEAPEST path
         for s_idx, soc in enumerate(soc_levels):
             if soc < min_capacity - 0.05:
-                dp[n][s_idx] = INF  # Cannot end below min (HARD constraint)
-            elif soc >= target_capacity - 0.05:
-                dp[n][s_idx] = 0.0  # At/above target = optimal
+                dp[n][s_idx] = INF  # HARD: Cannot end below planning min
+            elif soc < effective_target - 0.05:
+                dp[n][s_idx] = INF  # HARD: Cannot end below effective target
             else:
-                # Below target: penalty to encourage reaching it
-                # Penalty = deficit × target_penalty (2× avg price)
-                deficit = target_capacity - soc
-                dp[n][s_idx] = deficit * target_penalty
+                dp[n][s_idx] = 0.0  # At/above effective target = feasible, zero terminal cost
 
         for i in range(n - 1, -1, -1):
             price = spot_prices[i].get("price", 0.0)

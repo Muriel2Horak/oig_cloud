@@ -83,7 +83,7 @@ const pricingModeIconPlugin = {
 		const labelFont = `${labelSize}px "Inter", sans-serif`;
 		const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
 		const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
-		const axisBandPadding = pluginOptions?.axisBandPadding ?? 6;
+		const axisBandPadding = pluginOptions?.axisBandPadding ?? 40;
 		const axisBandHeight = pluginOptions?.axisBandHeight ?? (iconSize + labelSize + 10);
 		const axisBandColor = pluginOptions?.axisBandColor || 'rgba(6, 10, 18, 0.92)';
 		const iconAlignment = pluginOptions?.iconAlignment || 'start';
@@ -431,7 +431,7 @@ function buildPricingModeIconOptions(segments) {
         iconColor: 'rgba(255, 255, 255, 0.95)',
         labelColor: 'rgba(255, 255, 255, 0.7)',
         backgroundOpacity: 0.14,
-        axisBandPadding: 6,
+        axisBandPadding: 40,
         axisBandHeight: 30,
         axisBandColor: 'rgba(8, 12, 20, 0.9)'
     };
@@ -451,7 +451,7 @@ function applyPricingModeIconPadding(options, pluginOptions) {
     }
 
     const padding = options.layout.padding;
-    const axisBandPadding = pluginOptions?.axisBandPadding ?? 6;
+    const axisBandPadding = pluginOptions?.axisBandPadding ?? 40;
     const axisBandHeight = pluginOptions?.axisBandHeight ?? (pluginOptions?.iconSize || 18) + (pluginOptions?.labelSize || 10) + 6;
     const extra = pluginOptions ? axisBandPadding + axisBandHeight + 6 : 12;
 
