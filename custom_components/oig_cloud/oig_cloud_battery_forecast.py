@@ -3555,9 +3555,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         new_modes = list(modes)
         applied = 0
         for idx in range(min(len(new_modes), max_intervals)):
-            soc_before = (
-                soc_trace[idx] if idx < len(soc_trace) else None
-            )
+            soc_before = soc_trace[idx] if idx < len(soc_trace) else None
             if soc_before is not None and soc_before >= target_capacity - target_margin:
                 break
             if new_modes[idx] == CBB_MODE_HOME_UPS:
@@ -3566,8 +3564,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             applied += 1
 
         if applied:
-            avg_price = (
-                sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
+            avg_price = sum(sp.get("price", 0.0) for sp in spot_prices) / len(
+                spot_prices
             )
             _LOGGER.warning(
                 "[Autonomy] Forced %d early UPS intervals to chase target SoC (avg price %.2f Kč, threshold %.2f Kč)",
@@ -5832,10 +5830,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return
 
         existing_actual: List[Dict[str, Any]] = []
-        if (
-            self._daily_plan_state
-            and self._daily_plan_state.get("date") == today_str
-        ):
+        if self._daily_plan_state and self._daily_plan_state.get("date") == today_str:
             existing_actual = copy.deepcopy(self._daily_plan_state.get("actual", []))
             plan_data["actual"] = existing_actual
         else:
@@ -8064,9 +8059,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return fallback
 
         try:
-            entry = self._hass.data.get(DOMAIN, {}).get(
-                self._config_entry.entry_id, {}
-            )
+            entry = self._hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
             service_shield = entry.get("service_shield")
             mode_tracker = getattr(service_shield, "mode_tracker", None)
             if not mode_tracker:
@@ -9262,12 +9255,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 dynamic_summary["total_cost"] - standard_summary["total_cost"], 2
             )
 
-            tomorrow_std = (
-                (hybrid_tile or {}).get("tomorrow", {}) or {}
-            ).get("plan_total_cost")
-            tomorrow_dyn = (
-                (autonomy_tile or {}).get("tomorrow", {}) or {}
-            ).get("plan_total_cost")
+            tomorrow_std = ((hybrid_tile or {}).get("tomorrow", {}) or {}).get(
+                "plan_total_cost"
+            )
+            tomorrow_dyn = ((autonomy_tile or {}).get("tomorrow", {}) or {}).get(
+                "plan_total_cost"
+            )
 
             summary = {
                 "active_plan": self._get_active_plan_key(),
@@ -10364,11 +10357,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if isinstance(interval, dict):
             if prefer_actual:
                 payload_candidates.append(interval.get("actual"))
-                payload_candidates.append(interval if not interval.get("actual") else None)
+                payload_candidates.append(
+                    interval if not interval.get("actual") else None
+                )
                 payload_candidates.append(interval.get("planned"))
             else:
                 payload_candidates.append(interval.get("planned"))
-                payload_candidates.append(interval if not interval.get("planned") else None)
+                payload_candidates.append(
+                    interval if not interval.get("planned") else None
+                )
                 payload_candidates.append(interval.get("actual"))
         else:
             payload_candidates.append(interval)  # type: ignore[arg-type]
@@ -10387,9 +10384,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             grid_import = payload.get("grid_import_kwh", payload.get("grid_import"))
             grid_export = payload.get("grid_export_kwh", payload.get("grid_export"))
             spot_price = payload.get("spot_price_czk", payload.get("spot_price"))
-            export_price = payload.get(
-                "export_price_czk", payload.get("export_price")
-            )
+            export_price = payload.get("export_price_czk", payload.get("export_price"))
 
             if grid_import is not None and spot_price is not None:
                 try:
