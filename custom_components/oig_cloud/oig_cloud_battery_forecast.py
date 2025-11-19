@@ -1242,6 +1242,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         charge_efficiency: float = 0.95,  # AC→DC + DC→battery efficiency
         discharge_efficiency: float = 0.95,  # battery→DC + DC→AC efficiency
         home_charge_rate_kwh_15min: float = 0.7,  # HOME UPS: 2.8kW = 0.7kWh/15min
+        planning_min_capacity_kwh: float = None,  # Planning minimum (může být vyšší než hw_min)
     ) -> dict:
         """
         Simulovat jeden 15min interval s konkrétním CBB režimem.
@@ -1308,15 +1309,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # CRITICAL OPTIMIZATION: NOC (solar == 0) → HOME I/II/III IDENTICKÉ!
         # =====================================================================
         # Podle CBB_MODES_DEFINITIVE.md TABULKA 2:
-        # "HOME I/II/III: Všechny IDENTICKÉ - baterie vybíjí do 20% SoC"
+        # "HOME I/II/III: Všechny IDENTICKÉ - baterie vybíjí do planning_min SoC"
+        
+        # Use planning_min if provided, otherwise fall back to hw_min
+        effective_min = planning_min_capacity_kwh if planning_min_capacity_kwh is not None else hw_min_capacity_kwh
 
         if solar_kwh < 0.001 and mode in [
             CBB_MODE_HOME_I,
             CBB_MODE_HOME_II,
             CBB_MODE_HOME_III,
         ]:
-            # NOC: Společná logika - vybíjení baterie do hw_min
-            available_battery = max(0.0, battery_soc_kwh - hw_min_capacity_kwh)
+            # NOC: Společná logika - vybíjení baterie do effective_min (planning min nebo hw min)
+            available_battery = max(0.0, battery_soc_kwh - effective_min)
             usable_from_battery = available_battery * discharge_efficiency
 
             battery_discharge_kwh = min(load_kwh, usable_from_battery)
@@ -1363,9 +1367,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     result["export_revenue_czk"] = remaining_surplus * export_price_czk
 
             else:
-                # FVE < load → deficit vybíjí baterii
+                # FVE < load → deficit vybíjí baterii (do planning_min nebo hw_min)
                 deficit = load_kwh - solar_kwh
-                available_battery = max(0.0, battery_soc_kwh - hw_min_capacity_kwh)
+                available_battery = max(0.0, battery_soc_kwh - effective_min)
                 usable_from_battery = available_battery * discharge_efficiency
 
                 battery_discharge_kwh = min(deficit, usable_from_battery)
@@ -7365,6 +7369,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             charge_efficiency=efficiency,
                             discharge_efficiency=efficiency,
                             home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                            planning_min_capacity_kwh=min_capacity,  # ← KLÍČOVÁ OPRAVA
                         )
                     except Exception:
                         continue
