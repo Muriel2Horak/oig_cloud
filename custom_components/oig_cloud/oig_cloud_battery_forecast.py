@@ -7316,30 +7316,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else 5.0
         )
 
-        # Target penalty: Only apply if planning extends into tomorrow's cheap hours
-        # If planning ends before tomorrow morning (< next day 06:00), disable penalty
-        # This allows DP to wait for tomorrow's cheap hours instead of forcing target tonight
-        last_interval_time = datetime.fromisoformat(spot_prices[-1].get("time"))
-        now = datetime.now()
-        tomorrow_06 = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-        
-        planning_reaches_cheap_hours = last_interval_time >= tomorrow_06
-        
-        if not planning_reaches_cheap_hours:
-            # Planning ends before tomorrow's cheap hours - DON'T force target
-            target_penalty = 0.0
-            _LOGGER.info(
-                "[DP] Planning ends at %s (before tomorrow 06:00) - target penalty DISABLED",
-                last_interval_time.strftime("%Y-%m-%d %H:%M")
-            )
-        else:
-            # Planning extends into tomorrow's cheap hours - apply target penalty
-            target_penalty = 1.0 * avg_price
-            _LOGGER.info(
-                "[DP] Planning reaches %s (past tomorrow 06:00) - target penalty ENABLED (%.2f Kč/kWh)",
-                last_interval_time.strftime("%Y-%m-%d %H:%M"),
-                target_penalty
-            )
+        # Target penalty: Should encourage reaching target in cheap hours
+        # Set to 1× average price: DP will reach target if charging cost < avg price
+        target_penalty = 1.0 * avg_price
 
         _LOGGER.info(
             "[DP] Constraints: min=%.2f kWh (hard), target=%.2f kWh (penalty=%.2f Kč/kWh), cheap_threshold=%s",
@@ -7424,10 +7403,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         and mode == CBB_MODE_HOME_UPS
                         and interval.get("grid_charge_kwh", 0) > 0.001
                     ):
-                        # Very strong incentive: 80% cost reduction for cheap charging
-                        # Makes charging in cheap hours almost free (only 20% of real cost)
+                        # Moderate incentive: 50% cost reduction for cheap charging
+                        # Still makes cheap hours attractive but not "too good to pass up"
                         grid_charge = interval.get("grid_charge_kwh", 0)
-                        incentive = 0.8 * grid_charge * price
+                        incentive = 0.5 * grid_charge * price
                         cost -= incentive
                     next_idx = soc_to_index(new_soc)
                     future_cost = dp[i + 1][next_idx]
