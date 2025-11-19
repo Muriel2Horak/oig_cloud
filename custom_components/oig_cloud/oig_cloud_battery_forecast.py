@@ -1310,9 +1310,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # =====================================================================
         # Podle CBB_MODES_DEFINITIVE.md TABULKA 2:
         # "HOME I/II/III: Všechny IDENTICKÉ - baterie vybíjí do planning_min SoC"
-        
+
         # Use planning_min if provided, otherwise fall back to hw_min
-        effective_min = planning_min_capacity_kwh if planning_min_capacity_kwh is not None else hw_min_capacity_kwh
+        effective_min = (
+            planning_min_capacity_kwh
+            if planning_min_capacity_kwh is not None
+            else hw_min_capacity_kwh
+        )
 
         if solar_kwh < 0.001 and mode in [
             CBB_MODE_HOME_I,
@@ -7311,12 +7315,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if spot_prices
             else 5.0
         )
+
+        # Target penalty: Only apply if planning extends into tomorrow's cheap hours
+        # If planning ends before tomorrow morning (< next day 06:00), disable penalty
+        # This allows DP to wait for tomorrow's cheap hours instead of forcing target tonight
+        last_interval_time = datetime.fromisoformat(spot_prices[-1].get("time"))
+        now = datetime.now()
+        tomorrow_06 = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
         
-        # Target penalty: Should encourage reaching target in cheap hours
-        # Set to 1× average price: DP will reach target if charging cost < avg price
-        # This prevents expensive evening charging
-        target_penalty = 1.0 * avg_price
+        planning_reaches_cheap_hours = last_interval_time >= tomorrow_06
         
+        if not planning_reaches_cheap_hours:
+            # Planning ends before tomorrow's cheap hours - DON'T force target
+            target_penalty = 0.0
+            _LOGGER.info(
+                "[DP] Planning ends at %s (before tomorrow 06:00) - target penalty DISABLED",
+                last_interval_time.strftime("%Y-%m-%d %H:%M")
+            )
+        else:
+            # Planning extends into tomorrow's cheap hours - apply target penalty
+            target_penalty = 1.0 * avg_price
+            _LOGGER.info(
+                "[DP] Planning reaches %s (past tomorrow 06:00) - target penalty ENABLED (%.2f Kč/kWh)",
+                last_interval_time.strftime("%Y-%m-%d %H:%M"),
+                target_penalty
+            )
+
         _LOGGER.info(
             "[DP] Constraints: min=%.2f kWh (hard), target=%.2f kWh (penalty=%.2f Kč/kWh), cheap_threshold=%s",
             min_capacity,
@@ -7375,21 +7399,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         continue
 
                     new_soc = interval.get("new_soc_kwh", soc)
-                    
+
                     # HARD CONSTRAINT 1: Cannot go below physical minimum (HW limit)
                     if new_soc < physical_min_capacity - 0.05:
                         continue
-                    
+
                     # HARD CONSTRAINT 2: Cannot go below planning minimum
                     if new_soc < min_capacity - 0.05:
                         continue
 
                     # Calculate real cost (no artificial penalties)
                     cost = interval.get("net_cost", 0.0)
-                    
+
                     # Penalty for exporting when export price is zero/negative
                     if export_price <= 0 and interval.get("grid_export_kwh", 0) > 0.001:
-                        cost += export_penalty_multiplier * interval.get("grid_export_kwh", 0)
+                        cost += export_penalty_multiplier * interval.get(
+                            "grid_export_kwh", 0
+                        )
 
                     # Apply cheap charging incentive: if charging in cheap interval, reduce cost
                     if (
