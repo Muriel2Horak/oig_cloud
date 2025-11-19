@@ -7301,21 +7301,40 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "autonomy_negative_export_penalty", 50.0
         )
 
+        # Calculate average price to set reasonable target penalty
+        avg_price = (
+            sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
+            if spot_prices
+            else 5.0
+        )
+        
+        # Target penalty: Should encourage reaching target in cheap hours
+        # Set to 1× average price: DP will reach target if charging cost < avg price
+        # This prevents expensive evening charging
+        target_penalty = 1.0 * avg_price
+        
         _LOGGER.info(
-            "[DP] Hard constraints: min=%.2f kWh (hard), target=%.2f kWh (NO penalty - DP optimizes costs only), cheap_threshold=%s",
+            "[DP] Constraints: min=%.2f kWh (hard), target=%.2f kWh (penalty=%.2f Kč/kWh), cheap_threshold=%s",
             min_capacity,
             target_capacity,
+            target_penalty,
             f"{cheap_price_threshold:.2f} Kč" if cheap_price_threshold else "None",
         )
 
-        # Initialize final states: Only min is enforced (hard constraint)
-        # Target is IGNORED - DP will find cheapest path that keeps SoC above min
-        # This prevents expensive evening charging when tomorrow's cheap hours are not visible
+        # Initialize final states with target penalty
+        # States below min = INVALID (INF)
+        # States below target = penalty proportional to deficit
+        # States at/above target = zero penalty (optimal)
         for s_idx, soc in enumerate(soc_levels):
             if soc < min_capacity - 0.05:
                 dp[n][s_idx] = INF  # Cannot end below min (HARD constraint)
+            elif soc >= target_capacity - 0.05:
+                dp[n][s_idx] = 0.0  # At/above target = optimal
             else:
-                dp[n][s_idx] = 0.0  # All states above min are equally valid
+                # Below target: penalty to encourage reaching it
+                # Penalty = deficit × target_penalty (2× avg price)
+                deficit = target_capacity - soc
+                dp[n][s_idx] = deficit * target_penalty
 
         for i in range(n - 1, -1, -1):
             price = spot_prices[i].get("price", 0.0)
@@ -7374,9 +7393,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         and mode == CBB_MODE_HOME_UPS
                         and interval.get("grid_charge_kwh", 0) > 0.001
                     ):
-                        # Incentive = reduce cost by 20% for cheap charging
+                        # Very strong incentive: 80% cost reduction for cheap charging
+                        # Makes charging in cheap hours almost free (only 20% of real cost)
                         grid_charge = interval.get("grid_charge_kwh", 0)
-                        incentive = 0.2 * grid_charge * price
+                        incentive = 0.8 * grid_charge * price
                         cost -= incentive
                     next_idx = soc_to_index(new_soc)
                     future_cost = dp[i + 1][next_idx]
