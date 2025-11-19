@@ -1510,10 +1510,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         default=defaults.get("autonomy_target_penalty", 0.5),
                     ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0)),
                     vol.Optional(
-                        "autonomy_target_bias_weight",
-                        default=defaults.get("autonomy_target_bias_weight", 0.05),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-                    vol.Optional(
                         "autonomy_min_penalty",
                         default=defaults.get("autonomy_min_penalty", 2.0),
                     ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=100.0)),
@@ -2630,9 +2626,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "autonomy_target_penalty": self._wizard_data.get(
                         "autonomy_target_penalty", 0.5
                     ),
-                    "autonomy_target_bias_weight": self._wizard_data.get(
-                        "autonomy_target_bias_weight", 0.05
-                    ),
                     "autonomy_min_penalty": self._wizard_data.get(
                         "autonomy_min_penalty", 2.0
                     ),
@@ -3463,11 +3456,6 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 default=current_options.get("autonomy_target_penalty", 0.5),
                 description="🎯 Jak silně trestat nesplnění cílové kapacity (násobek průměrné ceny)",
             ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0)),
-            vol.Optional(
-                "autonomy_target_bias_weight",
-                default=current_options.get("autonomy_target_bias_weight", 0.05),
-                description="⚖️ Bias směrem k cílové kapacitě (0 = volnější, vyšší = drží SoC výš)",
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
             vol.Optional(
                 "autonomy_min_penalty",
                 default=current_options.get("autonomy_min_penalty", 2.0),

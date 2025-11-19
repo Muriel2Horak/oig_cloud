@@ -276,3 +276,51 @@ const futurePlan = sum(future, 'planned.net_cost');
 - Drift ratio = 0.565 znamená, že utrácíme 56.5% plánu
 - EOD predikce by měla být 111.86 Kč, ne 106.18 Kč
 - Timeline_extended je jediný spolehlivý zdroj pro intervaly
+
+---
+
+## ⚠️ HOME II mimo plán (nejdražší spot)
+
+### Co se stalo
+
+- **19. 11. 12:45–14:15** a znovu v **15:00** běžel střídač v režimu **HOME II**, přestože aktivní plán očekával **HOME I** (vybíjení baterie).
+- Po celou dobu zůstala baterie na **14.9 kWh**, místo aby podle plánu klesla k ~14.2 kWh – reálná spotřeba šla zbytečně ze sítě.
+- Celkem se v těchto špičkových hodinách importovalo **0.666 kWh** místo plánovaných 0 kWh a utratilo se navíc **3.50 Kč**.
+
+### Důkaz dat
+
+| Čas (CET) | Plán (timeline_autonomy_live) | Reálná data (latest_timeline_live) | Spot [Kč/kWh] | Δ grid [kWh] | Δ náklad [Kč] |
+|-----------|-------------------------------|------------------------------------|---------------|--------------|---------------|
+| 12:45     | HOME I · grid 0.000 kWh       | HOME II · grid 0.140 kWh           | 4.89          | +0.140       | +0.68 |
+| 13:00     | HOME I · grid 0.000 kWh       | HOME II · grid 0.035 kWh           | 4.89          | +0.035       | +0.17 |
+| 13:15     | HOME I · grid 0.000 kWh       | HOME II · grid 0.035 kWh           | 4.93          | +0.035       | +0.17 |
+| 13:30     | HOME I · grid 0.000 kWh       | HOME II · grid 0.035 kWh           | 5.11          | +0.035       | +0.18 |
+| 13:45     | HOME I · grid 0.000 kWh       | HOME II · grid 0.035 kWh           | 5.39          | +0.035       | +0.19 |
+| 14:00     | HOME I · grid 0.000 kWh       | HOME II · grid 0.089 kWh           | 4.98          | +0.089       | +0.44 |
+| 14:15     | HOME I · grid 0.000 kWh       | HOME II · grid 0.089 kWh           | 5.37          | +0.089       | +0.48 |
+| 15:00     | HOME I · grid 0.000 kWh       | HOME II · grid 0.206 kWh           | 5.71          | +0.206       | +1.17 |
+
+> Zdroj: `timeline_autonomy_live.json` (plán) × `latest_timeline_live.json` (z reality) – viz jejich záznamy pro 19. listopadu 2025 kolem 12:45–15:00.
+
+### Logy a přístup k datům
+
+- **Historie režimů**: `mode_history_17_18.json` + `mode_history_2025-11-18.json` potvrzuje, že HA logbook opravdu přepínal `Home 1 ↔ Home 2` v několika minutových intervalech.
+- **Aktuální logy HA**: přes `ssh ha` lze okamžitě zkontrolovat komponentu `service_shield` a volání `set_box_mode`:
+
+  ```bash
+  ssh ha "ha core logs | tail -n 200"
+  ssh ha "ha core logs | grep -i 'oig_cloud' | tail -n 200"
+  ```
+
+- **API přístup**: soubor `.ha_config` obsahuje `HA_URL`, `HA_TOKEN` a `BOX_ID`, takže lze kdykoli stáhnout aktuální timeline:
+
+  ```bash
+  source .ha_config
+  curl -H "Authorization: Bearer $HA_TOKEN" "$TIMELINE_API?type=active" > latest_timeline_live.json
+  ```
+
+### Dopad a akce
+
+1. **Zjištění důvodu přepnutí** – chybí logy „oig_cloud.set_box_mode“ v časech 12:45–14:15, takže je třeba z HA logbooku/Recorderu zjistit, co vydalo příkaz „Home 2“ (možný fallback `service_shield` při chybě aktivního plánu).
+2. **Monitoring** – přidat alert, když plánovaný mód ≠ skutečný mód > 1 interval (lze porovnávat `timeline_autonomy_live` vs. `/api/states/sensor.oig_*_box_prms_mode`).
+3. **Validace plánu** – ověřit, že `plan_manager` skutečně aplikuje blok HOME I v časech s vysokými cenami; pokud se plán nepřehraje, je potřeba logovat důvod (např. `cannot_apply_plan`).

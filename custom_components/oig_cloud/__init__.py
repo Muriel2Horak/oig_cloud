@@ -74,7 +74,6 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "autonomy_target_penalty": 0.5,
         "autonomy_min_penalty": 2.0,
         "autonomy_negative_export_penalty": 50.0,
-        "autonomy_target_bias_weight": 0.05,
     }
 
     options = dict(entry.options)
@@ -95,12 +94,6 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
     if options.get("autonomy_target_penalty") == 3.0:
         options["autonomy_target_penalty"] = defaults["autonomy_target_penalty"]
         updated = True
-    if options.get("autonomy_target_bias_weight") is None or options.get(
-        "autonomy_target_bias_weight"
-    ) == 0.5:
-        options["autonomy_target_bias_weight"] = defaults["autonomy_target_bias_weight"]
-        updated = True
-
     if updated:
         _LOGGER.info(
             "🔧 Injecting missing planner options for entry %s: %s",

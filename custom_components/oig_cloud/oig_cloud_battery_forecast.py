@@ -6962,6 +6962,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         home_charge_rate_kwh_15min = home_charge_rate_kw / 4.0
 
+        # Calculate cheap price threshold for DP optimization
+        sorted_prices = sorted(sp.get("price", 0.0) for sp in spot_prices)
+        cheap_price_threshold: Optional[float] = None
+        if sorted_prices and self._config_entry.options.get(
+            "enable_cheap_window_ups", True
+        ):
+            percentile = self._config_entry.options.get("cheap_window_percentile", 30)
+            idx = min(
+                len(sorted_prices) - 1,
+                max(0, int(len(sorted_prices) * percentile / 100)),
+            )
+            cheap_price_threshold = sorted_prices[idx]
+            _LOGGER.info(
+                f"📊 Cheap price threshold (P{percentile}): {cheap_price_threshold:.2f} Kč/kWh"
+            )
+
         optimization = self._optimize_autonomy_modes(
             current_capacity=current_capacity,
             max_capacity=max_capacity,
@@ -6974,6 +6990,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast=load_forecast,
             efficiency=efficiency,
             home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+            cheap_price_threshold=cheap_price_threshold,
         )
 
         modes = optimization["modes"]
@@ -7113,17 +7130,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             planning_adjusted = True
             soc_trace = _build_soc_trace(final_modes)
 
+        # DISABLED: DP already handles cheap charging optimization via incentive
+        # Post-processing cheap_window_ups is no longer needed and causes conflicts
         cheap_added = 0
-        if cheap_price_threshold is not None:
-            cheap_added = self._apply_cheap_window_ups(
-                modes=final_modes,
-                spot_prices=spot_prices,
-                forward_soc_before=soc_trace,
-                min_capacity=min_capacity,
-                cheap_price_threshold=cheap_price_threshold,
-            )
-            if cheap_added:
-                final_modes = self._enforce_min_mode_duration(final_modes)
+        # if cheap_price_threshold is not None:
+        #     cheap_added = self._apply_cheap_window_ups(
+        #         modes=final_modes,
+        #         spot_prices=spot_prices,
+        #         forward_soc_before=soc_trace,
+        #         min_capacity=min_capacity,
+        #         cheap_price_threshold=cheap_price_threshold,
+        #     )
+        #     if cheap_added:
+        #         final_modes = self._enforce_min_mode_duration(final_modes)
 
         result = self._build_result(
             modes=final_modes,
@@ -7235,6 +7254,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
         efficiency: float,
         home_charge_rate_kwh_15min: float,
+        cheap_price_threshold: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Dynamic programming optimizer exploring all CBB modes."""
 
@@ -7287,18 +7307,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if spot_prices
             else 4.0
         )
+        # Target penalty: incentivize reaching target at end of planning horizon
+        # Higher value = stronger preference to reach target (but not exceed it)
+        # Default 10.0 means: missing 1 kWh at end costs 10× avg spot price
         target_penalty = (
-            self._config_entry.options.get("autonomy_target_penalty", 5.0) * avg_price
-        )
-        target_bias_penalty = (
-            self._config_entry.options.get("autonomy_target_bias_weight", 0.05)
-            * avg_price
+            self._config_entry.options.get("autonomy_target_penalty", 10.0) * avg_price
         )
         min_violation_penalty = (
             self._config_entry.options.get("autonomy_min_penalty", 8.0) * avg_price
         )
         export_penalty_multiplier = self._config_entry.options.get(
             "autonomy_negative_export_penalty", 50.0
+        )
+
+        _LOGGER.info(
+            "[DP] Parameters: min_penalty=%.2f (avg_price=%.2f) target_penalty=%.2f (multiplier=%.1f)"
+            " export_penalty=%s cheap_threshold=%s",
+            self._config_entry.options.get("autonomy_min_penalty", 8.0),
+            avg_price,
+            target_penalty,
+            self._config_entry.options.get("autonomy_target_penalty", 10.0),
+            export_penalty_multiplier,
+            f"{cheap_price_threshold:.2f} Kč" if cheap_price_threshold else "None",
         )
 
         for s_idx, soc in enumerate(soc_levels):
@@ -7351,12 +7381,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             "grid_export_kwh", 0
                         )
 
-                    if target_bias_penalty > 0 and new_soc < target_capacity - 0.05:
-                        penalty += target_bias_penalty * (
-                            target_capacity - new_soc
+                    # Apply cheap charging incentive: if charging in cheap interval, reduce cost
+                    incentive = 0.0
+                    if (
+                        cheap_price_threshold is not None
+                        and price <= cheap_price_threshold
+                        and mode == CBB_MODE_HOME_UPS
+                        and interval.get("grid_charge_kwh", 0) > 0.001
+                    ):
+                        # Incentive = reduce cost by 20% for cheap charging
+                        # This makes DP prefer charging in cheap intervals
+                        grid_charge = interval.get("grid_charge_kwh", 0)
+                        incentive = 0.2 * grid_charge * price
+                        _LOGGER.debug(
+                            f"[DP i={i}] Cheap charging incentive: -{incentive:.2f} Kč "
+                            f"(price={price:.2f} <= threshold={cheap_price_threshold:.2f}, "
+                            f"charge={grid_charge:.3f} kWh)"
                         )
 
-                    cost = interval.get("net_cost", 0.0) + penalty
+                    cost = interval.get("net_cost", 0.0) + penalty - incentive
                     next_idx = soc_to_index(new_soc)
                     future_cost = dp[i + 1][next_idx]
 
