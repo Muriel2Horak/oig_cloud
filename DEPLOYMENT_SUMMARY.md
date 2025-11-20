@@ -1,7 +1,7 @@
 # OIG Cloud Dashboard - Deployment Summary
-**Date**: 2025-11-03  
-**Version**: 2.0.0 (Post-Refactoring)  
-**Branch**: temp  
+**Date**: 2025-11-03
+**Version**: 2.0.0 (Post-Refactoring)
+**Branch**: temp
 **Commit**: 4c79a28
 
 ---
@@ -76,6 +76,8 @@ CSS Integrity:       ✅ PASSED (0 duplicate selectors)
 - ✅ No empty/stub functions
 - ✅ Documentation complete (4 MD files)
 - ✅ Verification scripts created
+
+
 
 ### Post-Deployment
 - ✅ Files uploaded: 177
@@ -166,15 +168,15 @@ CSS Integrity:       ✅ PASSED (0 duplicate selectors)
 ### Common Issues & Solutions
 
 #### Issue: "undefined is not a function"
-**Cause**: Missing export  
+**Cause**: Missing export
 **Fix**: Already fixed in this deployment ✅
 
 #### Issue: Elements not updating
-**Cause**: Fallback values not showing  
+**Cause**: Fallback values not showing
 **Fix**: Already implemented (.fallback-value class) ✅
 
 #### Issue: Dashboard blank
-**Cause**: JS load order  
+**Cause**: JS load order
 **Fix**: Script load order verified ✅
 
 ---
@@ -231,6 +233,18 @@ All criteria **MET** ✅:
 
 ---
 
-**Status**: ✅ DEPLOYED & VERIFIED  
-**Quality**: ✅ ALL CHECKS PASSED  
+**Status**: ✅ DEPLOYED & VERIFIED
+**Quality**: ✅ ALL CHECKS PASSED
 **Ready**: ✅ PRODUCTION READY
+
+---
+
+## 2025-11-20 – Recorder DB URL fix (HA)
+
+- Change: Host v `recorder.db_url` přepnut na `core-mariadb` (Supervisor DNS) místo pevné IP adresy.
+- Místo: `/var/lib/homeassistant/homeassistant/configuration.yaml` na vzdáleném HA (`10.0.0.143`).
+- Důvod: Stabilnější připojení k MariaDB add-onu bez závislosti na IP, rychlejší start bez timeoutů Recorderu.
+- Ověření:
+- `ssh ha 'ha core logs -n 200 | egrep -i "recorder|mariadb|mysql"'`
+- `ssh ha 'docker inspect addon_core_mariadb --format "{{json .NetworkSettings.Networks}}"'`
+
