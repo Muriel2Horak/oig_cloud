@@ -6909,12 +6909,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
     ) -> None:
-        """Run autonomous planner preview (no hardware control)."""
-
-        if not self._config_entry.options.get("enable_autonomous_preview", True):
-            self._autonomy_preview = None
-            await self._update_autonomy_switch_schedule()
-            return
+        """Run autonomous planner preview (no hardware control).
+        
+        CRITICAL: Always generate autonomy timeline in parallel with hybrid,
+        regardless of enable_autonomous_preview setting. Both timelines should
+        always be available for comparison and auto-switching.
+        """
 
         # Gracefully skip when spot prices are not available
         if not spot_prices:
