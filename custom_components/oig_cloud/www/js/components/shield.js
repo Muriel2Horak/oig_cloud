@@ -550,7 +550,7 @@ async function callService(domain, service, data) {
     } catch (e) {
         console.error(`[Service] ❌ Error calling ${domain}.${service}:`, e);
         console.error('[Service] Error details:', e.message, e.stack);
-        window.DashboardUtils?.window.DashboardUtils?.showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
+        window.DashboardUtils?.showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
         return false;
     }
 }
