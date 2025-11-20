@@ -6977,26 +6977,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         home_charge_rate_kwh_15min = home_charge_rate_kw / 4.0
 
-        # Calculate cheap price threshold for DP optimization
-        sorted_prices = sorted(sp.get("price", 0.0) for sp in spot_prices)
-        cheap_price_threshold: Optional[float] = None
-        if sorted_prices and self._config_entry.options.get(
-            "enable_cheap_window_ups", True
-        ):
-            percentile = self._config_entry.options.get("cheap_window_percentile", 50)
-            idx = min(
-                len(sorted_prices) - 1,
-                max(0, int(len(sorted_prices) * percentile / 100)),
-            )
-            cheap_price_threshold = sorted_prices[idx]
-            _LOGGER.info(
-                f"📊 Cheap price threshold (P{percentile}): {cheap_price_threshold:.2f} Kč/kWh"
-            )
+        options = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else {}
+        )
+        floor_margin = max(0.0, options.get("autonomy_min_floor_margin_kwh", 0.3))
+        planning_floor = min(max_capacity, min_capacity + floor_margin)
 
         optimization = self._optimize_autonomy_modes(
             current_capacity=current_capacity,
             max_capacity=max_capacity,
-            min_capacity=min_capacity,
+            planning_floor_kwh=planning_floor,
             target_capacity=target_capacity,
             physical_min_capacity=physical_min_capacity,
             spot_prices=spot_prices,
@@ -7005,162 +6997,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast=load_forecast,
             efficiency=efficiency,
             home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
-            cheap_price_threshold=cheap_price_threshold,
         )
 
         modes = optimization["modes"]
+        if not modes:
+            _LOGGER.warning("Autonomy DP returned empty plan")
+            return {"timeline": [], "total_cost": 0.0, "horizon": 0}
 
-        result = self._build_result(
-            modes=modes,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-            max_capacity=max_capacity,
-            min_capacity=min_capacity,
-            efficiency=efficiency,
-            baselines=None,
-            physical_min_capacity=physical_min_capacity,
-        )
-
-        timeline = result.get("optimal_timeline", [])
-        final_modes = list(result.get("optimal_modes", modes))
-
-        def _count_short_ups(block_modes: List[int]) -> int:
-            """Count number of UPS intervals that violate min duration."""
-            short = 0
-            i = 0
-            min_len = MIN_MODE_DURATION.get("Home UPS", 2)
-            while i < len(block_modes):
-                if block_modes[i] == CBB_MODE_HOME_UPS:
-                    j = i
-                    while j < len(block_modes) and block_modes[j] == CBB_MODE_HOME_UPS:
-                        j += 1
-                    block_len = j - i
-                    if block_len < min_len:
-                        short += block_len
-                    i = j
-                else:
-                    i += 1
-            return short
-
-        def _build_soc_trace(block_modes: List[int]) -> List[float]:
-            """Simulate SoC before each interval for guard checks."""
-            trace: List[float] = []
-            soc = current_capacity
-            for idx, mode in enumerate(block_modes):
-                trace.append(soc)
-                spot_price = spot_prices[idx].get("price", 0.0)
-                export_price = (
-                    export_prices[idx].get("price", 0.0)
-                    if idx < len(export_prices)
-                    else 0.0
-                )
-                load_kwh = load_forecast[idx] if idx < len(load_forecast) else 0.125
-                try:
-                    timestamp = datetime.fromisoformat(spot_prices[idx].get("time", ""))
-                    if timestamp.tzinfo is None:
-                        timestamp = dt_util.as_local(timestamp)
-                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except Exception:
-                    solar_kwh = 0.0
-
-                interval = self._simulate_interval(
-                    mode=mode,
-                    solar_kwh=solar_kwh,
-                    load_kwh=load_kwh,
-                    battery_soc_kwh=soc,
-                    capacity_kwh=max_capacity,
-                    hw_min_capacity_kwh=physical_min_capacity,
-                    spot_price_czk=spot_price,
-                    export_price_czk=export_price,
-                    charge_efficiency=efficiency,
-                    discharge_efficiency=efficiency,
-                    home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
-                )
-                soc = interval.get("new_soc_kwh", soc)
-            return trace
-
-        sorted_prices = sorted(sp.get("price", 0.0) for sp in spot_prices)
-        cheap_price_threshold: Optional[float] = None
-        if sorted_prices and self._config_entry.options.get(
-            "enable_cheap_window_ups", True
-        ):
-            percentile = self._config_entry.options.get("cheap_window_percentile", 30)
-            idx = min(
-                len(sorted_prices) - 1,
-                max(0, int(len(sorted_prices) * percentile / 100)),
-            )
-            cheap_price_threshold = sorted_prices[idx]
-
-        short_ups_before = _count_short_ups(final_modes)
-        final_modes = self._enforce_min_mode_duration(final_modes)
-
-        soc_trace = _build_soc_trace(final_modes)
-        # _force_target_alignment disabled - DP now has hard constraint for target SOC
-        # No need for post-processing to force early charging
-        # forced_modes = self._force_target_alignment(
-        #     modes=final_modes,
-        #     soc_trace=soc_trace,
-        #     spot_prices=spot_prices,
-        #     target_capacity=target_capacity,
-        # )
-        # if forced_modes != final_modes:
-        #     final_modes = forced_modes
-        #     planning_adjusted = True
-        #     soc_trace = _build_soc_trace(final_modes)
-
-        validated_modes = self._validate_planning_minimum(
-            modes=final_modes,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-            max_capacity=max_capacity,
-            min_capacity=min_capacity,
-            physical_min_capacity=physical_min_capacity,
-            efficiency=efficiency,
-            forward_soc_before=soc_trace,
-        )
-        planning_adjusted = validated_modes != final_modes
-        final_modes = validated_modes
-
-        soc_trace = _build_soc_trace(final_modes)
-        guarded_modes = self._enforce_minimum_exposure_guard(
-            modes=final_modes,
-            soc_trace=soc_trace,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-            max_capacity=max_capacity,
-            min_capacity=min_capacity,
-            physical_min_capacity=physical_min_capacity,
-            efficiency=efficiency,
-        )
-        if guarded_modes != final_modes:
-            _LOGGER.info("[Autonomy] Minimum exposure guard adjusted plan")
-            final_modes = guarded_modes
-            planning_adjusted = True
-            soc_trace = _build_soc_trace(final_modes)
-
-        # DISABLED: DP already handles cheap charging optimization via incentive
-        # Post-processing cheap_window_ups is no longer needed and causes conflicts
-        cheap_added = 0
-        # if cheap_price_threshold is not None:
-        #     cheap_added = self._apply_cheap_window_ups(
-        #         modes=final_modes,
-        #         spot_prices=spot_prices,
-        #         forward_soc_before=soc_trace,
-        #         min_capacity=min_capacity,
-        #         cheap_price_threshold=cheap_price_threshold,
-        #     )
-        #     if cheap_added:
-        #         final_modes = self._enforce_min_mode_duration(final_modes)
-
+        final_modes = self._enforce_min_mode_duration(modes)
         result = self._build_result(
             modes=final_modes,
             spot_prices=spot_prices,
@@ -7169,7 +7013,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast=load_forecast,
             current_capacity=current_capacity,
             max_capacity=max_capacity,
-            min_capacity=min_capacity,
+            min_capacity=planning_floor,
             efficiency=efficiency,
             baselines=None,
             physical_min_capacity=physical_min_capacity,
@@ -7178,57 +7022,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         timeline = result.get("optimal_timeline", [])
         final_modes = list(result.get("optimal_modes", final_modes))
         total_cost = result.get("total_cost", 0.0)
-
-        _, enforced_modes = self._enforce_min_capacity_constraint(
-            optimal_timeline=timeline,
-            optimal_modes=final_modes,
-            min_capacity=min_capacity,
-            max_capacity=max_capacity,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-            physical_min_capacity=physical_min_capacity,
-        )
-
-        if enforced_modes != final_modes:
-            final_modes = enforced_modes
-            result = self._build_result(
-                modes=final_modes,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                efficiency=efficiency,
-                baselines=None,
-                physical_min_capacity=physical_min_capacity,
-            )
-            timeline = result.get("optimal_timeline", [])
-            total_cost = result.get("total_cost", 0.0)
-
-        # Ensure post-processed plan still respects minimum mode duration (30m UPS, etc.)
-        enforced_duration_modes = self._enforce_min_mode_duration(final_modes)
-        if enforced_duration_modes != final_modes:
-            final_modes = enforced_duration_modes
-            result = self._build_result(
-                modes=final_modes,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                efficiency=efficiency,
-                baselines=None,
-                physical_min_capacity=physical_min_capacity,
-            )
-            timeline = result.get("optimal_timeline", [])
-            total_cost = result.get("total_cost", 0.0)
 
         day_costs = self._aggregate_cost_by_day(timeline)
 
@@ -7240,19 +7033,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "metadata": {
                 "generated_at": dt_util.now().isoformat(),
                 "plan": "autonomy",
+                "planning_floor_kwh": round(planning_floor, 3),
             },
         }
 
         final_modes_out = preview["modes"]
-        short_ups_after = _count_short_ups(final_modes_out)
         runtime_ms = (time.perf_counter() - start_ts) * 1000.0
+        precharge_count = optimization.get("precharge_intervals", 0)
+        dp_cost = optimization.get("dp_cost", 0.0)
         _LOGGER.info(
-            "🧠 Autonomy preview ✅ done in %.1f ms (UPS=%d, short_fixed=%d, planning_fix=%s, cheap_added=%d)",
+            "🧠 Autonomy preview ✅ done in %.1f ms (UPS=%d, enforced_floor=%.2f kWh, precharge=%d, dp_cost=%.2f Kč)",
             runtime_ms,
             final_modes_out.count(CBB_MODE_HOME_UPS),
-            max(0, short_ups_before - short_ups_after),
-            "yes" if planning_adjusted else "no",
-            cheap_added,
+            planning_floor,
+            precharge_count,
+            dp_cost,
         )
 
         return preview
@@ -7262,7 +7057,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         *,
         current_capacity: float,
         max_capacity: float,
-        min_capacity: float,
+        planning_floor_kwh: float,
         target_capacity: float,
         physical_min_capacity: float,
         spot_prices: List[Dict[str, Any]],
@@ -7271,21 +7066,33 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
         efficiency: float,
         home_charge_rate_kwh_15min: float,
-        cheap_price_threshold: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Dynamic programming optimizer exploring all CBB modes."""
+        """Simplified DP optimizer following the four core autonomy rules."""
 
+        import bisect
         import math
 
         n = len(spot_prices)
+        if n == 0:
+            return {"modes": [], "dp_cost": 0.0, "precharge_intervals": 0}
+
+        options = (
+            self._config_entry.options
+            if self._config_entry and self._config_entry.options
+            else {}
+        )
+        soc_step = max(0.1, options.get("autonomy_soc_step_kwh", 0.5))
+        eps = 1e-6
+
         export_lookup = {
             ep.get("time"): ep.get("price", 0.0)
             for ep in export_prices
             if ep.get("time")
         }
 
-        solar_series = []
+        solar_series: List[float] = []
         for sp in spot_prices:
+            timestamp = None
             try:
                 timestamp = datetime.fromisoformat(sp["time"])
                 if timestamp.tzinfo is None:
@@ -7296,185 +7103,206 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except Exception:
                 solar_series.append(0.0)
 
-        soc_step = max(
-            0.25, self._config_entry.options.get("autonomy_soc_step_kwh", 0.5)
-        )
+        # Pre-charge immediately if we already sit below the safety floor.
+        forced_modes: List[int] = []
+        soc = current_capacity
+        precharge_idx = 0
+        while (
+            soc < planning_floor_kwh - 0.05
+            and precharge_idx < n
+            and precharge_idx < len(solar_series)
+        ):
+            price = spot_prices[precharge_idx].get("price", 0.0)
+            export_price = export_lookup.get(
+                spot_prices[precharge_idx].get("time"), 0.0
+            )
+            solar_kwh = solar_series[precharge_idx]
+            load_kwh = (
+                load_forecast[precharge_idx]
+                if precharge_idx < len(load_forecast)
+                else 0.125
+            )
+            sim = self._simulate_interval(
+                mode=CBB_MODE_HOME_UPS,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc_kwh=soc,
+                capacity_kwh=max_capacity,
+                hw_min_capacity_kwh=physical_min_capacity,
+                spot_price_czk=price,
+                export_price_czk=export_price,
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
+                home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                planning_min_capacity_kwh=planning_floor_kwh,
+            )
+            soc = sim.get("new_soc_kwh", soc)
+            forced_modes.append(CBB_MODE_HOME_UPS)
+            precharge_idx += 1
+
+        # If we used the entire horizon for emergency charging, we are done.
+        if precharge_idx >= n:
+            return {
+                "modes": forced_modes,
+                "dp_cost": 0.0,
+                "precharge_intervals": len(forced_modes),
+            }
+
+        truncated_spot = spot_prices[precharge_idx:]
+        truncated_solar = solar_series[precharge_idx:]
+        truncated_load = load_forecast[precharge_idx:]
+        horizon = len(truncated_spot)
+
+        # Build discrete SoC ladder anchored at the planning floor.
         levels = max(
-            1,
-            int(math.ceil((max_capacity - physical_min_capacity) / soc_step)) + 1,
+            1, int(math.ceil((max_capacity - planning_floor_kwh) / soc_step)) + 1
         )
         soc_levels = [
-            min(max_capacity, physical_min_capacity + i * soc_step)
-            for i in range(levels)
+            min(max_capacity, planning_floor_kwh + i * soc_step) for i in range(levels)
         ]
 
         def soc_to_index(value: float) -> int:
-            relative = (value - physical_min_capacity) / soc_step
-            idx = int(round(relative))
-            return max(0, min(levels - 1, idx))
+            return max(
+                0,
+                min(
+                    len(soc_levels) - 1,
+                    bisect.bisect_left(soc_levels, value + eps),
+                ),
+            )
 
-        INF = 10**12
-        dp = [[INF] * levels for _ in range(n + 1)]
+        INF_COST = 1e12
+        INF_DEV = 1e6
+        dp: List[List[Tuple[float, float]]] = [
+            [(INF_COST, INF_DEV) for _ in soc_levels] for _ in range(horizon + 1)
+        ]
         choice: List[List[Optional[Tuple[int, int]]]] = [
-            [None] * levels for _ in range(n)
+            [None for _ in soc_levels] for _ in range(horizon)
         ]
 
-        export_penalty_multiplier = self._config_entry.options.get(
-            "autonomy_negative_export_penalty", 50.0
+        for s_idx, soc_level in enumerate(soc_levels):
+            deviation = abs(soc_level - target_capacity)
+            dp[horizon][s_idx] = (0.0, deviation)
+
+        candidate_modes = (
+            CBB_MODE_HOME_I,
+            CBB_MODE_HOME_II,
+            CBB_MODE_HOME_III,
+            CBB_MODE_HOME_UPS,
         )
 
-        # Calculate average price for logging only
-        avg_price = (
-            sum(sp.get("price", 0.0) for sp in spot_prices) / len(spot_prices)
-            if spot_prices
-            else 5.0
-        )
+        def _is_better(current: Tuple[float, float], best: Tuple[float, float]) -> bool:
+            cost_a, dev_a = current
+            cost_b, dev_b = best
+            if cost_a < cost_b - 1e-6:
+                return True
+            if cost_a > cost_b + 1e-6:
+                return False
+            return dev_a < dev_b - 1e-6
 
-        # Effective target: max of configured target OR current SOC
-        # (If already above target, don't force discharge below it)
-        effective_target = max(target_capacity, current_capacity)
+        for i in range(horizon - 1, -1, -1):
+            price = truncated_spot[i].get("price", 0.0)
+            export_price = export_lookup.get(truncated_spot[i].get("time"), 0.0)
+            solar_kwh = truncated_solar[i] if i < len(truncated_solar) else 0.0
+            load_kwh = (
+                truncated_load[i] if i < len(truncated_load) else 0.125
+            )  # fallback
 
-        _LOGGER.info(
-            "[DP] Hard constraints: min=%.2f kWh (must never go below), target=%.2f kWh (config), "
-            "effective_target=%.2f kWh (max of target or current), avg_price=%.2f Kč, cheap_threshold=%s",
-            min_capacity,
-            target_capacity,
-            effective_target,
-            avg_price,
-            f"{cheap_price_threshold:.2f} Kč" if cheap_price_threshold else "None",
-        )
-
-        # Initialize final states with HARD CONSTRAINTS (no penalties!)
-        # 1. MUST end at or above planning minimum (22%)
-        # 2. MUST end at or above effective_target (80% OR current SOC if higher)
-        # Between these constraints, DP will choose CHEAPEST path
-        for s_idx, soc in enumerate(soc_levels):
-            if soc < min_capacity - 0.05:
-                dp[n][s_idx] = INF  # HARD: Cannot end below planning min
-            elif soc < effective_target - 0.05:
-                dp[n][s_idx] = INF  # HARD: Cannot end below effective target
-            else:
-                dp[n][
-                    s_idx
-                ] = 0.0  # At/above effective target = feasible, zero terminal cost
-
-        for i in range(n - 1, -1, -1):
-            price = spot_prices[i].get("price", 0.0)
-            export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
-            solar_kwh = solar_series[i] if i < len(solar_series) else 0.0
-            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-
-            for s_idx, soc in enumerate(soc_levels):
-                best_cost = INF
+            for s_idx, soc_level in enumerate(soc_levels):
+                best_pair = (INF_COST, INF_DEV)
                 best_choice = None
 
-                for mode in (
-                    CBB_MODE_HOME_I,
-                    CBB_MODE_HOME_II,
-                    CBB_MODE_HOME_III,
-                    CBB_MODE_HOME_UPS,
-                ):
-                    try:
-                        interval = self._simulate_interval(
-                            mode=mode,
-                            solar_kwh=solar_kwh,
-                            load_kwh=load_kwh,
-                            battery_soc_kwh=soc,
-                            capacity_kwh=max_capacity,
-                            hw_min_capacity_kwh=physical_min_capacity,
-                            spot_price_czk=price,
-                            export_price_czk=export_price,
-                            charge_efficiency=efficiency,
-                            discharge_efficiency=efficiency,
-                            home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
-                            planning_min_capacity_kwh=min_capacity,  # ← KLÍČOVÁ OPRAVA
-                        )
-                    except Exception:
+                for mode in candidate_modes:
+                    sim = self._simulate_interval(
+                        mode=mode,
+                        solar_kwh=solar_kwh,
+                        load_kwh=load_kwh,
+                        battery_soc_kwh=soc_level,
+                        capacity_kwh=max_capacity,
+                        hw_min_capacity_kwh=physical_min_capacity,
+                        spot_price_czk=price,
+                        export_price_czk=export_price,
+                        charge_efficiency=efficiency,
+                        discharge_efficiency=efficiency,
+                        home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                        planning_min_capacity_kwh=planning_floor_kwh,
+                    )
+                    new_soc = sim.get("new_soc_kwh", soc_level)
+                    if new_soc < planning_floor_kwh - 0.01:
                         continue
 
-                    new_soc = interval.get("new_soc_kwh", soc)
-
-                    # HARD CONSTRAINT 1: Cannot go below physical minimum (HW limit)
-                    if new_soc < physical_min_capacity - 0.05:
-                        continue
-
-                    # HARD CONSTRAINT 2: Cannot go below planning minimum
-                    if new_soc < min_capacity - 0.05:
-                        continue
-
-                    # Calculate real cost (no artificial penalties)
-                    cost = interval.get("net_cost", 0.0)
-
-                    # Penalty for exporting when export price is zero/negative
-                    if export_price <= 0 and interval.get("grid_export_kwh", 0) > 0.001:
-                        cost += export_penalty_multiplier * interval.get(
-                            "grid_export_kwh", 0
-                        )
-
-                    # Apply cheap charging incentive: if charging in cheap interval, reduce cost
-                    if (
-                        cheap_price_threshold is not None
-                        and price <= cheap_price_threshold
-                        and mode == CBB_MODE_HOME_UPS
-                        and interval.get("grid_charge_kwh", 0) > 0.001
-                    ):
-                        # Moderate incentive: 50% cost reduction for cheap charging
-                        # Still makes cheap hours attractive but not "too good to pass up"
-                        grid_charge = interval.get("grid_charge_kwh", 0)
-                        incentive = 0.5 * grid_charge * price
-                        cost -= incentive
                     next_idx = soc_to_index(new_soc)
-                    future_cost = dp[i + 1][next_idx]
-
-                    if future_cost >= INF:
+                    future_cost, future_dev = dp[i + 1][next_idx]
+                    if future_cost >= INF_COST:
                         continue
 
-                    total = cost + future_cost
-                    if total < best_cost:
-                        best_cost = total
+                    interval_cost = sim.get(
+                        "net_cost_czk", sim.get("net_cost", 0.0)
+                    )
+                    total_pair = (interval_cost + future_cost, future_dev)
+
+                    if _is_better(total_pair, best_pair):
+                        best_pair = total_pair
                         best_choice = (mode, next_idx)
 
                 if best_choice:
-                    dp[i][s_idx] = best_cost
+                    dp[i][s_idx] = best_pair
                     choice[i][s_idx] = best_choice
 
-        start_idx = soc_to_index(current_capacity)
-        if dp[0][start_idx] >= INF:
+        start_soc = max(soc, planning_floor_kwh)
+        start_idx = soc_to_index(start_soc)
+        start_cost, _ = dp[0][start_idx]
+        if start_cost >= INF_COST:
             _LOGGER.warning(
-                "Autonomy DP infeasible with current parameters, enforcing minimum SOC via greedy fallback"
+                "Autonomy DP infeasible, falling back to greedy floor-guarded plan"
             )
-            fallback_modes = []
+            fallback_modes: List[int] = []
             soc = current_capacity
             for i in range(n):
-                hour = datetime.fromisoformat(
-                    spot_prices[i].get("time", now.isoformat())
-                ).hour
-                cheap_hours = {0, 1, 2, 3, 4, 5, 13, 14, 15, 16}
-                if soc < min_capacity or (
-                    soc < min_capacity + 0.5 and hour in cheap_hours
-                ):
-                    fallback_modes.append(CBB_MODE_HOME_UPS)
-                    soc = min(
-                        soc + home_charge_rate_kwh_15min * efficiency, max_capacity
-                    )
+                price = spot_prices[i].get("price", 0.0)
+                export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
+                solar_kwh = solar_series[i]
+                load_kwh = (
+                    load_forecast[i] if i < len(load_forecast) else 0.125
+                )
+                if soc <= planning_floor_kwh + 0.05:
+                    mode = CBB_MODE_HOME_UPS
                 else:
-                    fallback_modes.append(CBB_MODE_HOME_I)
-                    load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-                    soc = max(soc - load_kwh, min_capacity)
-            return {"modes": fallback_modes, "dp_cost": INF}
+                    mode = CBB_MODE_HOME_I
+                fallback_modes.append(mode)
+                sim = self._simulate_interval(
+                    mode=mode,
+                    solar_kwh=solar_kwh,
+                    load_kwh=load_kwh,
+                    battery_soc_kwh=soc,
+                    capacity_kwh=max_capacity,
+                    hw_min_capacity_kwh=physical_min_capacity,
+                    spot_price_czk=price,
+                    export_price_czk=export_price,
+                    charge_efficiency=efficiency,
+                    discharge_efficiency=efficiency,
+                    home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+                    planning_min_capacity_kwh=planning_floor_kwh,
+                )
+                soc = sim.get("new_soc_kwh", soc)
+            return {"modes": fallback_modes, "dp_cost": INF_COST, "precharge_intervals": 0}
 
-        modes: List[int] = []
+        dp_modes: List[int] = []
         soc_idx = start_idx
-        for i in range(n):
+        for i in range(horizon):
             selection = choice[i][soc_idx]
             if not selection:
-                modes.append(CBB_MODE_HOME_I)
-            else:
-                mode, next_idx = selection
-                modes.append(mode)
-                soc_idx = next_idx
+                dp_modes.append(CBB_MODE_HOME_I)
+                continue
+            mode, next_idx = selection
+            dp_modes.append(mode)
+            soc_idx = next_idx
 
-        return {"modes": modes, "dp_cost": dp[0][start_idx]}
+        combined_modes = forced_modes + dp_modes
+        return {
+            "modes": combined_modes,
+            "dp_cost": start_cost,
+            "precharge_intervals": len(forced_modes),
+        }
 
     async def _archive_autonomy_summary(self, preview: Dict[str, Any]) -> None:
         """Store daily cost summary for autonomy preview (for yesterday detail)."""
