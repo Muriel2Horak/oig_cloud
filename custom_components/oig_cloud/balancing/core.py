@@ -488,6 +488,14 @@ class BalancingManager:
                 )
                 return (True, completion_time)
 
+        except RuntimeError as e:
+            # Recorder DB nemusí být hned po startu připravená
+            if "database connection has not been established" in str(e).lower():
+                _LOGGER.warning(
+                    "Error checking balancing completion: Recorder not ready yet; skipping"
+                )
+                return (False, None)
+            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
         except Exception as e:
             _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
 

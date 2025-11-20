@@ -47,6 +47,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Battery forecast data
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
+        self._battery_forecast_task: Optional[asyncio.Task] = None
 
         # Spot price cache shared between scheduler/fallback and coordinator updates
         self._spot_prices_cache: Optional[Dict[str, Any]] = None
@@ -118,6 +119,14 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(
             f"Coordinator initialized with intervals: standard={standard_interval_seconds}s, extended={extended_interval_seconds}s, jitter=±{JITTER_SECONDS}s"
+        )
+
+        # Startup grace period to avoid loading-heavy work during HA bootstrap
+        self._startup_ts: datetime = dt_utcnow()
+        self._startup_grace_seconds: int = (
+            int(config_entry.options.get("startup_grace_seconds", 30))
+            if config_entry and hasattr(config_entry, "options")
+            else 30
         )
 
     def update_intervals(self, standard_interval: int, extended_interval: int) -> None:
@@ -321,17 +330,17 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Aktualizace základních dat."""
-        _LOGGER.info("🔄 _async_update_data called - starting update cycle")
+        _LOGGER.debug("🔄 _async_update_data called - starting update cycle")
 
         # Apply jitter - random delay at start of update
         jitter = random.uniform(-JITTER_SECONDS, JITTER_SECONDS)
 
         # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
         if jitter > 0:
-            _LOGGER.info(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
+            _LOGGER.debug(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
             await asyncio.sleep(jitter)
         else:
-            _LOGGER.info(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
+            _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
 
         try:
             # Standardní OIG data
@@ -390,6 +399,20 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
             else:
                 _LOGGER.warning("No config entry available for this coordinator")
+
+            # Startup grace: během prvních X sekund po startu dělej jen lehké operace
+            elapsed = (dt_utcnow() - self._startup_ts).total_seconds()
+            if elapsed < self._startup_grace_seconds:
+                remaining = self._startup_grace_seconds - int(elapsed)
+                _LOGGER.debug(
+                    f"Startup grace active ({remaining}s left) – skipping extended stats, spot fetch, and forecast"
+                )
+                # Minimal return: základní stats + případné cached spot ceny
+                result = stats.copy() if stats else {}
+                if self._spot_prices_cache:
+                    result["spot_prices"] = self._spot_prices_cache
+                    _LOGGER.debug("Including cached spot prices during startup grace")
+                return result
 
             should_update_extended = self._should_update_extended()
             _LOGGER.debug(f"Should update extended: {should_update_extended}")
@@ -501,7 +524,16 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             if self.config_entry and self.config_entry.options.get(
                 "enable_battery_prediction", True
             ):
-                await self._update_battery_forecast()
+                # Do not block coordinator update/startup; run in background
+                if (
+                    not self._battery_forecast_task
+                    or self._battery_forecast_task.done()
+                ):
+                    self._battery_forecast_task = self.hass.async_create_task(
+                        self._update_battery_forecast()
+                    )
+                else:
+                    _LOGGER.debug("Battery forecast task already running, skipping")
 
             # NOVÉ: Přidáme spotové ceny pokud jsou k dispozici
             if self._spot_prices_cache:

@@ -6915,6 +6915,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             await self._update_autonomy_switch_schedule()
             return
 
+        # Gracefully skip when spot prices are not available
+        if not spot_prices:
+            self._autonomy_preview = None
+            _LOGGER.warning("No spot prices available - autonomy preview skipped")
+            await self._update_autonomy_switch_schedule()
+            return
+
         try:
             preview = self._calculate_autonomy_plan(
                 current_capacity=current_capacity,
@@ -6948,9 +6955,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
     ) -> Dict[str, Any]:
         """Calculate autonomy preview plan using DP optimization."""
-
+        # If prices are missing, return an empty plan instead of raising
         if not spot_prices:
-            raise ValueError("No spot prices available for autonomy preview")
+            _LOGGER.warning(
+                "No spot prices available for autonomy preview - returning empty plan"
+            )
+            return {"timeline": [], "total_cost": 0.0, "horizon": 0}
 
         start_ts = time.perf_counter()
         horizon = len(spot_prices)
@@ -7344,7 +7354,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             elif soc < effective_target - 0.05:
                 dp[n][s_idx] = INF  # HARD: Cannot end below effective target
             else:
-                dp[n][s_idx] = 0.0  # At/above effective target = feasible, zero terminal cost
+                dp[n][
+                    s_idx
+                ] = 0.0  # At/above effective target = feasible, zero terminal cost
 
         for i in range(n - 1, -1, -1):
             price = spot_prices[i].get("price", 0.0)

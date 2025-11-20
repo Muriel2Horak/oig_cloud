@@ -239,7 +239,9 @@ class BatteryCapacityTracker:
             chunk_start = chunk_end
             await asyncio.sleep(0)
 
-        _LOGGER.info("Historical backfill finished, %d new measurements stored", total_new)
+        _LOGGER.info(
+            "Historical backfill finished, %d new measurements stored", total_new
+        )
         return total_new
 
     async def analyze_history_for_cycles(
@@ -347,8 +349,13 @@ class BatteryCapacityTracker:
             new_measurements = []
             for cycle_start, cycle_end, start_soc, end_soc in cycles:
                 cycle_id = self._generate_cycle_id(cycle_end)
-                if cycle_id in self._stored_cycle_ids or cycle_id in self._processing_cycle_ids:
-                    _LOGGER.debug("Cycle %s already stored, skipping energy calculation", cycle_id)
+                if (
+                    cycle_id in self._stored_cycle_ids
+                    or cycle_id in self._processing_cycle_ids
+                ):
+                    _LOGGER.debug(
+                        "Cycle %s already stored, skipping energy calculation", cycle_id
+                    )
                     continue
                 measurement: Optional[BatteryMeasurement] = None
                 self._processing_cycle_ids.add(cycle_id)
@@ -1072,7 +1079,9 @@ class BatteryCapacityTracker:
             # Načíst cycles
             cycles = data.get("cycles", [])
             _LOGGER.info(f"Loading {len(cycles)} cycles from storage")
-            self._stored_cycle_ids = {cycle.get("id") for cycle in cycles if cycle.get("id")}
+            self._stored_cycle_ids = {
+                cycle.get("id") for cycle in cycles if cycle.get("id")
+            }
 
             for cycle_data in cycles:
                 # Rekonstruovat BatteryMeasurement z JSON
@@ -1159,7 +1168,8 @@ class BatteryCapacityTracker:
                 cycle_data = {
                     "id": cycle_id,
                     "timestamp_start": (
-                        measurement.timestamp - timedelta(hours=measurement.duration_hours)
+                        measurement.timestamp
+                        - timedelta(hours=measurement.duration_hours)
                     ).isoformat(),
                     "timestamp_end": measurement.timestamp.isoformat(),
                     "input_params": {
@@ -1169,7 +1179,9 @@ class BatteryCapacityTracker:
                         "charge_energy_wh": round(measurement.total_charge_wh, 1),
                         "discharge_energy_wh": round(measurement.total_discharge_wh, 1),
                         "net_energy_wh": round(
-                            measurement.total_charge_wh - measurement.total_discharge_wh, 1
+                            measurement.total_charge_wh
+                            - measurement.total_discharge_wh,
+                            1,
                         ),
                         "duration_hours": round(measurement.duration_hours, 2),
                         "purity_percent": round(measurement.purity * 100, 1),
@@ -1543,9 +1555,23 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
             return
 
         _LOGGER.info("♻️ Launching background battery health backfill task now")
-        self._backfill_task = self.hass.async_create_task(
-            self._async_backfill_missing_cycles()
-        )
+
+        coro: asyncio.coroutines.Coroutine = self._async_backfill_missing_cycles()
+
+        # Zajistit thread-safe plánování i pokud bychom byli voláni mimo event loop
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is self.hass.loop:
+            self._backfill_task = self.hass.async_create_task(coro)
+        else:
+
+            def _schedule() -> None:
+                self._backfill_task = self.hass.async_create_task(coro)
+
+            self.hass.loop.call_soon_threadsafe(_schedule)
 
     async def _async_backfill_missing_cycles(self) -> None:
         """Asynchronní úloha pro dopočítání historických cyklů."""
