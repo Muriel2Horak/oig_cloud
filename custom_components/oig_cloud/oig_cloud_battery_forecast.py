@@ -6910,7 +6910,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
     ) -> None:
         """Run autonomous planner preview (no hardware control).
-        
+
         CRITICAL: Always generate autonomy timeline in parallel with hybrid,
         regardless of enable_autonomous_preview setting. Both timelines should
         always be available for comparison and auto-switching.
@@ -7045,6 +7045,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return preview
 
+
     def _optimize_autonomy_modes(
         self,
         *,
@@ -7060,7 +7061,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         efficiency: float,
         home_charge_rate_kwh_15min: float,
     ) -> Dict[str, Any]:
-        """Dynamic programming optimizer with iterative UPS pre-charging."""
+        """Dynamic programming optimizer with iterative pre-charge scheduling."""
 
         import bisect
         import math
@@ -7076,6 +7077,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         soc_step = max(0.1, options.get("autonomy_soc_step_kwh", 0.5))
         eps = 1e-6
+        guard_margin = 0.3  # keep SoC at least +0.3 kWh above planning floor
 
         export_lookup = {
             ep.get("time"): ep.get("price", 0.0)
@@ -7098,14 +7100,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         forced_modes: Dict[int, int] = {}
         iteration = 0
         max_iterations = max(1, n * 2)
+        gain_per_slot = home_charge_rate_kwh_15min * efficiency
 
-        if current_capacity < planning_floor_kwh - eps:
-            deficit = planning_floor_kwh - current_capacity
+        # If we already start below the planning floor, reserve early UPS slots.
+        if current_capacity < planning_floor_kwh + guard_margin - eps:
+            deficit = planning_floor_kwh + guard_margin - current_capacity
             idx = 0
-            gain = home_charge_rate_kwh_15min * efficiency
             while deficit > 0 and idx < n:
                 forced_modes[idx] = CBB_MODE_HOME_UPS
-                deficit -= gain
+                deficit -= gain_per_slot
+                iteration += 1
                 idx += 1
 
         def run_dp() -> Dict[str, Any]:
@@ -7165,7 +7169,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 forced_mode = forced_modes.get(i)
                 modes_to_try = (
-                    (forced_mode,) if forced_mode is not None else candidate_modes
+                    (forced_mode,)
+                    if forced_mode is not None
+                    else candidate_modes
                 )
 
                 for s_idx, soc_level in enumerate(soc_levels):
@@ -7222,8 +7228,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     price = spot_prices[i].get("price", 0.0)
                     export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
                     solar_kwh = solar_series[i]
-                    load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-                    if soc <= planning_floor_kwh + 0.05:
+                    load_kwh = (
+                        load_forecast[i] if i < len(load_forecast) else 0.125
+                    )
+                    if soc <= planning_floor_kwh + guard_margin:
                         mode = CBB_MODE_HOME_UPS
                     else:
                         mode = CBB_MODE_HOME_I
@@ -7282,13 +7290,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 return dp_result
 
-            cheapest_idx = self._select_cheapest_precharge_slot(
-                spot_prices=spot_prices,
-                forced_modes=forced_modes,
-                current_modes=modes,
-                violation_idx=violation_idx,
-            )
-            if cheapest_idx is None:
+            deficit = planning_floor_kwh + guard_margin - soc_trace[violation_idx]
+            if deficit <= 0:
+                # floating point noise
+                dp_result["precharge_intervals"] = sum(
+                    1 for mode in forced_modes.values() if mode == CBB_MODE_HOME_UPS
+                )
+                return dp_result
+
+            required_slots = max(1, math.ceil(deficit / max(gain_per_slot, 1e-6)))
+            candidates = [
+                (spot_prices[idx].get("price", float("inf")), idx)
+                for idx in range(0, violation_idx)
+                if forced_modes.get(idx) != CBB_MODE_HOME_UPS
+            ]
+            candidates.sort()
+            selected = [idx for _, idx in candidates[:required_slots]]
+            if not selected:
                 _LOGGER.warning(
                     "Autonomy DP: Unable to satisfy planning minimum before %s",
                     spot_prices[violation_idx].get("time"),
@@ -7298,8 +7316,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 return dp_result
 
-            forced_modes[cheapest_idx] = CBB_MODE_HOME_UPS
-            iteration += 1
+            for idx in selected:
+                forced_modes[idx] = CBB_MODE_HOME_UPS
+            iteration += len(selected)
             if iteration >= max_iterations:
                 _LOGGER.warning(
                     "Autonomy DP: reached max UPS iterations (%d)", max_iterations
@@ -7830,11 +7849,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return bool(options.get(CONF_AUTO_MODE_SWITCH, False))
 
     def _get_auto_mode_plan(self) -> str:
-        plan = "autonomy"
+        """Get the planner mode for auto-switching. Uses battery_planner_mode from config."""
+        plan = "hybrid"  # Default: Standard planning
         if self._config_entry and self._config_entry.options:
-            plan = self._config_entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
+            plan = self._config_entry.options.get("battery_planner_mode", "hybrid")
         if plan not in ("autonomy", "hybrid"):
-            return "autonomy"
+            plan = "hybrid"  # Force valid value, no fallback
         return plan
 
     def _normalize_service_mode(
