@@ -25,6 +25,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.event import async_track_point_in_time, async_call_later
+
 try:  # HA 2025.1 removed async_track_time_interval
     from homeassistant.helpers.event import async_track_time_interval
 except ImportError:  # pragma: no cover - fallback for newer HA
@@ -7096,16 +7097,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         forced_modes: Dict[int, int] = {}
         iteration = 0
-        max_iterations = max(1, n)
+        max_iterations = max(1, n * 2)
 
-        # If we already start below planning floor, force earliest slots to UPS.
-        if current_capacity < planning_floor_kwh - 1e-6:
+        if current_capacity < planning_floor_kwh - eps:
             deficit = planning_floor_kwh - current_capacity
             idx = 0
-            gained = home_charge_rate_kwh_15min * efficiency
+            gain = home_charge_rate_kwh_15min * efficiency
             while deficit > 0 and idx < n:
                 forced_modes[idx] = CBB_MODE_HOME_UPS
-                deficit -= gained
+                deficit -= gain
                 idx += 1
 
         def run_dp() -> Dict[str, Any]:
@@ -7165,9 +7165,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 forced_mode = forced_modes.get(i)
                 modes_to_try = (
-                    (forced_mode,)
-                    if forced_mode is not None
-                    else candidate_modes
+                    (forced_mode,) if forced_mode is not None else candidate_modes
                 )
 
                 for s_idx, soc_level in enumerate(soc_levels):
@@ -7211,21 +7209,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         dp[i][s_idx] = best_pair
                         choice[i][s_idx] = best_choice
 
-            start_idx = soc_to_index(current_capacity)
+            start_soc = max(current_capacity, planning_floor_kwh)
+            start_idx = soc_to_index(start_soc)
             start_cost, _ = dp[0][start_idx]
             if start_cost >= INF_COST:
                 _LOGGER.warning(
                     "Autonomy DP infeasible, falling back to greedy floor-guarded plan"
                 )
                 fallback_modes: List[int] = []
-                soc = current_capacity
+                soc = start_soc
                 for i in range(n):
                     price = spot_prices[i].get("price", 0.0)
                     export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
                     solar_kwh = solar_series[i]
-                    load_kwh = (
-                        load_forecast[i] if i < len(load_forecast) else 0.125
-                    )
+                    load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
                     if soc <= planning_floor_kwh + 0.05:
                         mode = CBB_MODE_HOME_UPS
                     else:
@@ -7284,6 +7281,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     1 for mode in forced_modes.values() if mode == CBB_MODE_HOME_UPS
                 )
                 return dp_result
+
             cheapest_idx = self._select_cheapest_precharge_slot(
                 spot_prices=spot_prices,
                 forced_modes=forced_modes,
@@ -7371,8 +7369,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     ) -> Optional[int]:
         """Return index of first interval that breaches planning minimum."""
 
+        guard = floor_kwh + 0.05  # 50Wh guard band to avoid hovering at the floor
         for idx, soc in enumerate(soc_trace):
-            if soc < floor_kwh - 0.01:
+            if soc <= guard:
                 return idx
         return None
 
@@ -7937,12 +7936,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         timeline, timeline_source = self._get_mode_switch_timeline()
         if not timeline:
-            _LOGGER.debug(f"[AutonomySwitch] Watchdog: No timeline (source={timeline_source})")
+            _LOGGER.debug(
+                f"[AutonomySwitch] Watchdog: No timeline (source={timeline_source})"
+            )
             return
 
         desired_mode = self._get_planned_mode_for_time(now, timeline)
         if not desired_mode:
-            _LOGGER.debug("[AutonomySwitch] Watchdog: No desired mode found for current time")
+            _LOGGER.debug(
+                "[AutonomySwitch] Watchdog: No desired mode found for current time"
+            )
             return
 
         current_mode = self._get_current_box_mode()
@@ -8108,9 +8111,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Return the best available timeline for automatic mode switching.
 
         Preference order:
-        - Use plan selected for auto switching (autonomy/hybrid)
-        - CRITICAL: Do NOT fall back to different plan if preferred is missing!
-          This prevents switching from autonomy HOME I to hybrid HOME UPS.
+        1. Use plan selected for auto switching (autonomy/hybrid)
+        2. If preferred plan is not available, fall back to available timeline
+
+        CRITICAL FIX: When autonomy is preferred but not available,
+        fall back to hybrid if hybrid timeline exists. This allows auto-switching
+        to work even when autonomy timeline is not generated.
         """
         preferred_plan = self._get_auto_mode_plan()
 
@@ -8118,10 +8124,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             timeline = self.get_autonomy_timeline()
             if timeline:
                 return timeline, "autonomy"
-            # FIXED: Don't fall back to hybrid if autonomy is preferred but missing
+            # CHANGED: Fall back to hybrid if autonomy is preferred but missing
             _LOGGER.warning(
-                "[AutonomySwitch] Autonomy plan preferred but timeline not available - no fallback to hybrid"
+                "[AutonomySwitch] Autonomy plan preferred but timeline not available - falling back to hybrid"
             )
+            # Try hybrid timeline as fallback
+            hybrid_timeline = getattr(self, "_timeline_data", None) or []
+            if hybrid_timeline:
+                _LOGGER.info(
+                    f"[AutonomySwitch] Using hybrid timeline as fallback ({len(hybrid_timeline)} intervals)"
+                )
+                return hybrid_timeline, "hybrid_fallback"
             return [], "none"
 
         # Hybrid is preferred (or default)
@@ -8148,9 +8161,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug("[AutonomySwitch] No hass instance, auto switching disabled")
             self._stop_autonomy_watchdog()
             return
-        
+
         if not self._auto_mode_switch_enabled():
-            auto_enabled = self._config_entry.options.get(CONF_AUTO_MODE_SWITCH, False) if self._config_entry else False
+            auto_enabled = (
+                self._config_entry.options.get(CONF_AUTO_MODE_SWITCH, False)
+                if self._config_entry
+                else False
+            )
             _LOGGER.info(
                 f"[AutonomySwitch] Auto mode switching disabled (CONF_AUTO_MODE_SWITCH={auto_enabled})"
             )
