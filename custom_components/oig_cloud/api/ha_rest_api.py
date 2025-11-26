@@ -49,26 +49,26 @@ API_BASE = "/api/oig_cloud"
 def _transform_timeline_for_api(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Transform timeline from internal format to API format.
-    
+
     Internal format uses long descriptive keys:
     - solar_production_kwh → solar_kwh
     - consumption_kwh → load_kwh
     - grid_charge_kwh → stays same
-    
+
     API format uses short keys expected by frontend.
     """
     transformed = []
     for point in timeline:
         new_point = point.copy()
-        
+
         # Rename long keys to short keys
         if "solar_production_kwh" in new_point:
             new_point["solar_kwh"] = new_point.pop("solar_production_kwh")
         if "consumption_kwh" in new_point:
             new_point["load_kwh"] = new_point.pop("consumption_kwh")
-        
+
         transformed.append(new_point)
-    
+
     return transformed
 
 

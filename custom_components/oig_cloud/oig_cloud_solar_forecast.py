@@ -526,17 +526,28 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             await self._broadcast_forecast_data()
 
         except asyncio.TimeoutError:
-            _LOGGER.warning(f"[{self.entity_id}] Timeout fetching solar forecast data")
-            self._last_forecast_data = {
-                "error": "Timeout",
-                "response_time": datetime.now().isoformat(),
-            }
+            _LOGGER.warning(
+                f"[{self.entity_id}] Timeout fetching solar forecast data - preserving cached data"
+            )
+            # DŮLEŽITÉ: Při chybě NEZAPISOVAT do _last_forecast_data!
+            # Zachováváme stará platná data místo jejich přepsání chybovým objektem.
+            if self._last_forecast_data:
+                _LOGGER.info(
+                    f"[{self.entity_id}] Using cached solar forecast data from previous successful fetch"
+                )
+            # else: necháváme _last_forecast_data = None, ale to je OK - nemáme žádná data
+
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error fetching solar forecast data: {e}")
-            self._last_forecast_data = {
-                "error": str(e),
-                "response_time": datetime.now().isoformat(),
-            }
+            _LOGGER.error(
+                f"[{self.entity_id}] Error fetching solar forecast data: {e} - preserving cached data"
+            )
+            # DŮLEŽITÉ: Při chybě NEZAPISOVAT do _last_forecast_data!
+            # Zachováváme stará platná data místo jejich přepsání chybovým objektem.
+            if self._last_forecast_data:
+                _LOGGER.info(
+                    f"[{self.entity_id}] Using cached solar forecast data from previous successful fetch"
+                )
+            # else: necháváme _last_forecast_data = None
 
     async def _broadcast_forecast_data(self) -> None:
         """Pošle signál ostatním solar forecast sensorům o nových datech."""

@@ -225,7 +225,15 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         except Exception as e:
             _LOGGER.error(f"🌦️ Error fetching ČHMÚ warning data: {e}", exc_info=True)
-            self._attr_available = False
+            # DŮLEŽITÉ: Při chybě API zachováváme stará data místo jejich mazání!
+            if self._last_warning_data:
+                _LOGGER.warning(
+                    f"🌦️ ČHMÚ API nedostupné - používám cached data z {self._last_warning_data.get('last_update', 'unknown')}"
+                )
+                # Ponecháváme self._attr_available = True, protože máme stará platná data
+            else:
+                # Nemáme žádná data - označíme jako nedostupný
+                self._attr_available = False
 
     def _get_gps_coordinates(self) -> tuple[Optional[float], Optional[float]]:
         """
