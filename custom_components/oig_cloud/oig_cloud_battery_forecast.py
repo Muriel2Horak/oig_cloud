@@ -6771,6 +6771,33 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             return False
 
+    def _transform_timeline_for_api(
+        self, timeline: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform timeline from internal format to API format.
+
+        Internal format uses long descriptive keys:
+        - solar_production_kwh → solar_kwh
+        - consumption_kwh → load_kwh
+        - grid_charge_kwh → stays same
+
+        API format uses short keys expected by frontend.
+        """
+        transformed = []
+        for point in timeline:
+            new_point = point.copy()
+
+            # Rename long keys to short keys
+            if "solar_production_kwh" in new_point:
+                new_point["solar_kwh"] = new_point.pop("solar_production_kwh")
+            if "consumption_kwh" in new_point:
+                new_point["load_kwh"] = new_point.pop("consumption_kwh")
+
+            transformed.append(new_point)
+
+        return transformed
+
     async def _precompute_ui_data(self) -> None:
         """
         Precompute UI data (detail_tabs + unified_cost_tile) and save to storage.
@@ -6836,6 +6863,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     self._autonomy_preview.get("timeline", []) or []
                 )
 
+            # Transform timelines from internal format to API format
+            # (solar_production_kwh → solar_kwh, consumption_kwh → load_kwh)
+            timeline_hybrid_api = self._transform_timeline_for_api(timeline_hybrid)
+            timeline_autonomy_api = self._transform_timeline_for_api(timeline_autonomy)
+
             # Save to storage
             precomputed_data = {
                 "detail_tabs_hybrid": detail_tabs_hybrid,  # Standard algorithm
@@ -6843,8 +6875,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "active_planner": battery_planner_mode,  # Which planner is active (for default view)
                 "unified_cost_tile_hybrid": unified_cost_tile_hybrid,  # Standard algorithm costs
                 "unified_cost_tile_autonomy": unified_cost_tile_autonomy,  # Dynamic algorithm costs
-                "timeline_hybrid": timeline_hybrid,
-                "timeline_autonomy": timeline_autonomy,
+                "timeline_hybrid": timeline_hybrid_api,  # Transformed to API format
+                "timeline_autonomy": timeline_autonomy_api,  # Transformed to API format
                 "cost_comparison": cost_comparison,
                 "last_update": dt_util.now().isoformat(),
                 "version": 2,  # Dual-planner architecture
@@ -7045,7 +7077,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return preview
 
-
     def _optimize_autonomy_modes(
         self,
         *,
@@ -7169,9 +7200,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 forced_mode = forced_modes.get(i)
                 modes_to_try = (
-                    (forced_mode,)
-                    if forced_mode is not None
-                    else candidate_modes
+                    (forced_mode,) if forced_mode is not None else candidate_modes
                 )
 
                 for s_idx, soc_level in enumerate(soc_levels):
@@ -7228,9 +7257,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     price = spot_prices[i].get("price", 0.0)
                     export_price = export_lookup.get(spot_prices[i].get("time"), 0.0)
                     solar_kwh = solar_series[i]
-                    load_kwh = (
-                        load_forecast[i] if i < len(load_forecast) else 0.125
-                    )
+                    load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
                     if soc <= planning_floor_kwh + guard_margin:
                         mode = CBB_MODE_HOME_UPS
                     else:

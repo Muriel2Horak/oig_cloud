@@ -2,12 +2,14 @@
 # Pouze DAM Period (PT15M) + agregace na hodiny průměrem.
 # Důležité: OTE SOAP endpoint je HTTP a vyžaduje správnou SOAPAction.
 
+import json
 import logging
+import os
 import aiohttp
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, date, time, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Optional, Any, TypedDict, cast, Literal
+from typing import Dict, List, Optional, Any, TypedDict, cast
 from decimal import Decimal
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -132,7 +134,7 @@ class CnbRate:
 class OteApi:
     """Pouze DAM Period (PT15M) + agregace na hodiny průměrem."""
 
-    def __init__(self) -> None:
+    def __init__(self, cache_path: Optional[str] = None) -> None:
         self._last_data: Dict[str, Any] = {}
         self._cache_time: Optional[datetime] = None
         self._eur_czk_rate: Optional[float] = None
@@ -140,31 +142,92 @@ class OteApi:
         self.timezone = ZoneInfo("Europe/Prague")
         self.utc = ZoneInfo("UTC")
         self._cnb_rate = CnbRate()
+        self._cache_path: Optional[str] = cache_path
+        self._load_cached_spot_prices()
+
+    def _load_cached_spot_prices(self) -> None:
+        if not self._cache_path:
+            return
+        try:
+            with open(self._cache_path, "r", encoding="utf-8") as cache_file:
+                payload = json.load(cache_file)
+            data = payload.get("last_data")
+            cache_time = payload.get("cache_time")
+            if data:
+                self._last_data = data
+            if cache_time:
+                self._cache_time = datetime.fromisoformat(cache_time)
+            _LOGGER.info("Loaded cached OTE spot prices (%s)", self._cache_path)
+        except FileNotFoundError:
+            return
+        except Exception as err:
+            _LOGGER.warning("Failed to load cached OTE spot prices: %s", err)
+
+    def _persist_cache(self) -> None:
+        if not self._cache_path or not self._last_data:
+            return
+        try:
+            directory = os.path.dirname(self._cache_path)
+            if directory and not os.path.exists(directory):
+                os.makedirs(directory, exist_ok=True)
+            payload = {
+                "last_data": self._last_data,
+                "cache_time": (
+                    self._cache_time.isoformat() if self._cache_time else None
+                ),
+            }
+            with open(self._cache_path, "w", encoding="utf-8") as cache_file:
+                json.dump(payload, cache_file)
+        except Exception as err:
+            _LOGGER.warning("Failed to persist OTE cache: %s", err)
 
     # ---------- interní utilitky ----------
 
+    def _has_data_for_date(self, target_date: date) -> bool:
+        """Kontroluje, zda cache obsahuje data pro daný den."""
+        if not self._last_data:
+            return False
+
+        prices = self._last_data.get("prices_czk_kwh", {})
+        if not prices:
+            return False
+
+        date_prefix = target_date.strftime("%Y-%m-%d")
+        return any(key.startswith(date_prefix) for key in prices.keys())
+
     def _is_cache_valid(self) -> bool:
-        """Cache platí jen pro stejný den a po 13h musí obsahovat i zítřejší data."""
+        """Cache je validní pokud obsahuje požadovaná data.
+
+        - Před 13h: musí mít data pro dnešek
+        - Po 13h: musí mít data pro dnešek A zítřek
+        """
         if not self._cache_time or not self._last_data:
             return False
 
         now = datetime.now(self.timezone)
-        cache_day = self._cache_time.astimezone(self.timezone).date()
+        today = now.date()
 
-        if cache_day != now.date():
+        # Vždy musíme mít data pro dnešek
+        if not self._has_data_for_date(today):
             return False
 
-        prices = self._last_data.get("prices_czk_kwh", {}) if self._last_data else {}
-
+        # Po 13h musíme mít i data pro zítřek
         if now.hour >= 13:
-            tomorrow_prefix = (now + timedelta(days=1)).strftime("%Y-%m-%d")
-            has_tomorrow = any(
-                key.startswith(tomorrow_prefix) for key in prices.keys()
-            )
-            if not has_tomorrow:
+            tomorrow = today + timedelta(days=1)
+            if not self._has_data_for_date(tomorrow):
                 return False
 
         return True
+
+    def _should_fetch_new_data(self) -> bool:
+        """Rozhodne, jestli máme stahovat nová data z OTE.
+
+        Stahujeme pokud cache není validní:
+        - Nemáme cache nebo nemá dnešní data
+        - Po 13h a nemáme zítřejší data
+        - Po půlnoci a nemáme data pro nový dnešek
+        """
+        return not self._is_cache_valid()
 
     def _dam_period_query(
         self,
@@ -384,9 +447,19 @@ class OteApi:
         if date is None:
             date = datetime.now(tz=self.timezone)
 
+        # Pokud máme validní cache (dnešek + případně zítřek po 13h), použij ji
         if self._is_cache_valid():
-            _LOGGER.debug("Using cached spot prices from OTE SOAP API")
+            _LOGGER.debug(
+                "Using cached spot prices (valid for today%s)",
+                " and tomorrow" if datetime.now(self.timezone).hour >= 13 else "",
+            )
             return self._last_data
+
+        # Cache není validní - chybí data, musíme stáhnout z OTE
+        _LOGGER.info(
+            "Cache missing required data - fetching from OTE (hour=%d)",
+            datetime.now(self.timezone).hour,
+        )
 
         try:
             eur_czk_rate = await self.get_cnb_exchange_rate()
@@ -433,10 +506,18 @@ class OteApi:
             if data:
                 self._last_data = data
                 self._cache_time = datetime.now(self.timezone)
+                self._persist_cache()
                 return data
 
         except Exception as e:
-            _LOGGER.error(f"Error fetching spot prices: {e}", exc_info=True)
+            _LOGGER.error(f"Error fetching spot prices from OTE: {e}", exc_info=True)
+            # Fallback na cached data pokud existují
+            if self._last_data:
+                _LOGGER.warning(
+                    "OTE nedostupné - používám cached data z %s",
+                    self._cache_time.isoformat() if self._cache_time else "unknown",
+                )
+                return self._last_data
 
         return {}
 

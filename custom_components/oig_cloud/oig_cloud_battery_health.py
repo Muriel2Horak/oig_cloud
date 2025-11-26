@@ -94,6 +94,9 @@ class BatteryCapacityTracker:
         self._min_purity = 0.90  # 90% - min % čisté nabíjecí energie
         self._max_discharge_interrupt_w = 300.0  # W - max vybíjecí výkon
         self._min_quality_score = 60.0  # Minimum pro zařazení
+        # Bezpečnostní limity pro sanity check (SoH nad 105 % nechceme)
+        self._max_soh_percent = 105.0
+        self._min_soh_percent = 60.0
 
         _LOGGER.info(
             f"BatteryCapacityTracker initialized (RETROSPECTIVE mode), "
@@ -308,11 +311,8 @@ class BatteryCapacityTracker:
             strict_cycle_count = len(cycles)
             fallback_cycle_count = 0
 
-            # Pokud máme málo kvalitních cyklů, použij fallback ΔSoC threshold
-            if (
-                strict_cycle_count < self._min_strict_cycle_target
-                and self._fallback_min_delta_soc < self._min_delta_soc
-            ):
+            # Přidej fallback ΔSoC cykly (nižší swing), pokud jsou k dispozici
+            if self._fallback_min_delta_soc < self._min_delta_soc:
                 fallback_candidates = self._detect_charging_cycles_in_history(
                     soc_states, self._fallback_min_delta_soc
                 )
@@ -682,6 +682,22 @@ class BatteryCapacityTracker:
             measured_capacity_kwh = (net_energy_wh / 1000.0) / (delta_soc / 100.0)
             soh_percent = (measured_capacity_kwh / self._nominal_capacity) * 100.0
 
+            # Sanity check: odmítnout nereálné kapacity (SoH mimo povolený rozsah)
+            if (
+                soh_percent > self._max_soh_percent
+                or soh_percent < self._min_soh_percent
+            ):
+                _LOGGER.warning(
+                    "Cycle rejected: unrealistic SoH %.1f%% (capacity=%.2f kWh, ΔSoC=%.1f%%, "
+                    "charge=%.1f Wh, discharge=%.1f Wh)",
+                    soh_percent,
+                    measured_capacity_kwh,
+                    delta_soc,
+                    total_charge_wh,
+                    total_discharge_wh,
+                )
+                return None
+
             # Duration
             duration = end_time - start_time
             duration_hours = duration.total_seconds() / 3600
@@ -984,15 +1000,18 @@ class BatteryCapacityTracker:
         if not measurements:
             return None
 
-        capacities = [m.capacity_kwh for m in measurements]
-        soh_values = [m.soh_percent for m in measurements]
-        quality_scores = [m.quality_score for m in measurements]
+        # Seřadit podle času (novější první) pro správné last_measured
+        measurements_sorted = sorted(measurements, key=lambda m: m.timestamp, reverse=True)
+
+        capacities = [m.capacity_kwh for m in measurements_sorted]
+        soh_values = [m.soh_percent for m in measurements_sorted]
+        quality_scores = [m.quality_score for m in measurements_sorted]
 
         # Použití MEDIÁNU místo průměru pro robustnost vůči outlierům
         # Analýza dat ukázala variační koeficient 14%, medián je vhodnější
         return {
             "measurement_count": len(measurements),
-            "last_measured": measurements[0].timestamp.isoformat(),
+            "last_measured": measurements_sorted[0].timestamp.isoformat(),
             "median_capacity_kwh": round(np.median(capacities), 2),
             "median_soh_percent": round(np.median(soh_values), 1),
             "avg_quality_score": round(np.mean(quality_scores), 0),
@@ -1088,10 +1107,24 @@ class BatteryCapacityTracker:
                 delta_soc = cycle_data["input_params"]["delta_soc"]
                 quality_score = cycle_data["output_data"]["quality_score"]
 
+                soh_percent = cycle_data["output_data"]["soh_percent"]
+                measured_capacity_kwh = cycle_data["output_data"]["measured_capacity_kwh"]
+                if (
+                    soh_percent > self._max_soh_percent
+                    or soh_percent < self._min_soh_percent
+                ):
+                    _LOGGER.warning(
+                        "Skipping stored cycle %s due to unrealistic SoH %.1f%% (capacity=%.2f kWh)",
+                        cycle_data.get("id"),
+                        soh_percent,
+                        measured_capacity_kwh,
+                    )
+                    continue
+
                 measurement = BatteryMeasurement(
                     timestamp=datetime.fromisoformat(cycle_data["timestamp_end"]),
-                    capacity_kwh=cycle_data["output_data"]["measured_capacity_kwh"],
-                    soh_percent=cycle_data["output_data"]["soh_percent"],
+                    capacity_kwh=measured_capacity_kwh,
+                    soh_percent=soh_percent,
                     start_soc=cycle_data["input_params"]["soc_start"],
                     end_soc=cycle_data["input_params"]["soc_end"],
                     delta_soc=delta_soc,
@@ -1399,6 +1432,18 @@ class OigCloudBatteryHealthSensor(RestoreEntity, CoordinatorEntity, SensorEntity
         )
 
         _LOGGER.info("Battery Health sensor added to HA, tracker initialized")
+
+        # Načíst uložené cykly hned po startu (aby se stav neztratil po restartu)
+        try:
+            self._last_analysis = await self._tracker._load_cycles_from_storage()
+            if self._tracker._measurements:
+                _LOGGER.info(
+                    "Loaded %d stored battery cycles on startup (last_analysis=%s)",
+                    len(self._tracker._measurements),
+                    self._last_analysis,
+                )
+        except Exception as e:
+            _LOGGER.error(f"Failed to load stored battery cycles on startup: {e}")
 
         # Naplánovat denní úlohu v 01:00
         from homeassistant.helpers.event import async_track_time_change

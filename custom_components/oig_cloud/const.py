@@ -9,6 +9,7 @@ CONF_ENABLE_STATISTICS = "enable_statistics"
 CONF_ENABLE_PRICING = "enable_pricing"  # Sjednoceno: pricing + spotové ceny
 CONF_ENABLE_CHMU_WARNINGS = "enable_chmu_warnings"  # ČHMÚ meteorologická varování
 CONF_SPOT_PRICES_UPDATE_INTERVAL = "spot_prices_update_interval"
+OTE_SPOT_PRICE_CACHE_FILE = "oig_ote_spot_prices.json"
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"

@@ -46,6 +46,32 @@ _LOGGER = logging.getLogger(__name__)
 API_BASE = "/api/oig_cloud"
 
 
+def _transform_timeline_for_api(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Transform timeline from internal format to API format.
+    
+    Internal format uses long descriptive keys:
+    - solar_production_kwh → solar_kwh
+    - consumption_kwh → load_kwh
+    - grid_charge_kwh → stays same
+    
+    API format uses short keys expected by frontend.
+    """
+    transformed = []
+    for point in timeline:
+        new_point = point.copy()
+        
+        # Rename long keys to short keys
+        if "solar_production_kwh" in new_point:
+            new_point["solar_kwh"] = new_point.pop("solar_production_kwh")
+        if "consumption_kwh" in new_point:
+            new_point["load_kwh"] = new_point.pop("consumption_kwh")
+        
+        transformed.append(new_point)
+    
+    return transformed
+
+
 def _find_entry_for_box(hass: HomeAssistant, box_id: str) -> Optional[ConfigEntry]:
     """Locate config entry that owns a given box_id."""
     entries = hass.config_entries.async_entries(DOMAIN)
@@ -202,6 +228,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             if stored_active and precomputed_data:
                 last_update = precomputed_data.get("last_update", last_update)
 
+            # Transform baseline timeline to API format (long keys → short keys)
+            baseline_timeline_api = _transform_timeline_for_api(baseline_timeline)
+
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
 
@@ -209,7 +238,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                 response_data["active"] = active_timeline
 
             if timeline_type in ("baseline", "both"):
-                response_data["baseline"] = baseline_timeline
+                response_data["baseline"] = baseline_timeline_api
 
             # Add metadata
             response_data["metadata"] = {

@@ -11,11 +11,24 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.dt import now as dt_now
 from homeassistant.config_entries import ConfigEntry
 
+from .const import OTE_SPOT_PRICE_CACHE_FILE
 from .oig_cloud_sensor import OigCloudSensor
 from .api.ote_api import OteApi
 from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _ote_cache_path(hass) -> str:
+    return hass.config.path(".storage", OTE_SPOT_PRICE_CACHE_FILE)
+
+
+# Retry plán: 5, 10, 15, 30 minut a pak každou hodinu
+RETRY_DELAYS_SECONDS = [300, 600, 900, 1800]
+HOURLY_RETRY_SECONDS = 3600
+# Denní stahování ve 13:00
+DAILY_FETCH_HOUR = 13
+DAILY_FETCH_MINUTE = 0
 
 
 class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
@@ -35,12 +48,15 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._sensor_config: Dict[str, Any] = SENSOR_TYPES_SPOT.get(sensor_type, {})
         self._entry: ConfigEntry = entry
         self._analytics_device_info: Dict[str, Any] = device_info
-        self._ote_api: OteApi = OteApi()
+        cache_path = _ote_cache_path(coordinator.hass)
+        self._ote_api: OteApi = OteApi(cache_path=cache_path)
 
         self._spot_data_15min: Dict[str, Any] = {}
         self._last_update: Optional[datetime] = None
         self._track_time_interval_remove: Optional[Any] = None
         self._track_15min_remove: Optional[Any] = None
+        self._retry_remove: Optional[Any] = None
+        self._retry_attempt: int = 0
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
@@ -53,17 +69,23 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         # Obnovit data ze stavu
         await self._restore_data()
 
-        # Nastavit pravidelné stahování (denně v 13:30)
+        # Nastavit pravidelné stahování (denně v 13:00)
         self._setup_daily_tracking()
 
         # Nastavit aktualizaci každých 15 minut
         self._setup_15min_tracking()
 
-        # Okamžitě stáhnout aktuální data
-        try:
-            await self._fetch_spot_data_with_retry()
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
+        # Okamžitě stáhnout aktuální data, pokud daily_tracking už nespustil fetch
+        now = dt_now()
+        current_minutes = now.hour * 60 + now.minute
+        daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
+
+        # Pokud je >= 13:00, daily_tracking už spustil fetch, nevoláme druhý
+        if current_minutes < daily_update_time:
+            try:
+                await self._fetch_spot_data_with_retry()
+            except Exception as e:
+                _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
 
     async def _restore_data(self) -> None:
         """Obnovení dat z uloženého stavu."""
@@ -79,19 +101,19 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
 
     def _setup_daily_tracking(self) -> None:
-        """Nastavení denního stahování dat v 13:30."""
+        """Nastavení denního stahování dat ve 13:00 s retry."""
         now = dt_now()
         current_minutes = now.hour * 60 + now.minute
-        daily_update_time = 13 * 60 + 30  # 13:30
+        daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE  # 13:00
 
-        if current_minutes > daily_update_time:
+        if current_minutes >= daily_update_time:
             self.hass.async_create_task(self._fetch_spot_data_with_retry())
 
         self._track_time_interval_remove = async_track_time_change(
             self.hass,
             self._fetch_spot_data_with_retry,
-            hour=13,
-            minute=30,
+            hour=DAILY_FETCH_HOUR,
+            minute=DAILY_FETCH_MINUTE,
             second=0,
         )
 
@@ -121,52 +143,91 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         if self._track_15min_remove:
             self._track_15min_remove()
 
+        self._cancel_retry_timer()
+        await self._ote_api.close()
+
     async def _fetch_spot_data_with_retry(self, *_: Any) -> None:
-        """Stažení 15min spotových cen s retry logikou."""
-        max_retries: int = 6
-        retry_delay: int = 600  # 10 minut
+        """Jednorázový fetch + plánování dalších pokusů až do úspěchu."""
+        success = await self._do_fetch_15min_data()
+        if success:
+            self._retry_attempt = 0
+            self._cancel_retry_timer()
+        else:
+            self._schedule_retry(self._do_fetch_15min_data)
 
-        for attempt in range(max_retries):
-            try:
+    async def _do_fetch_15min_data(self) -> bool:
+        """Stáhne data, vrátí True při úspěchu, jinak False."""
+        try:
+            _LOGGER.info(
+                f"[{self.entity_id}] Fetching 15min spot data - attempt {self._retry_attempt + 1}"
+            )
+
+            spot_data = await self._ote_api.get_spot_prices()
+
+            if spot_data and "prices15m_czk_kwh" in spot_data:
+                self._spot_data_15min = spot_data
+                self._last_update = dt_now()
+
+                intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
                 _LOGGER.info(
-                    f"[{self.entity_id}] Fetching 15min spot data - attempt {attempt + 1}/{max_retries}"
+                    f"[{self.entity_id}] 15min spot data successful - {intervals_count} intervals"
                 )
 
-                spot_data = await self._ote_api.get_spot_prices()
+                # Aktualizovat stav tohoto senzoru
+                self.async_write_ha_state()
 
-                if spot_data and "prices15m_czk_kwh" in spot_data:
-                    self._spot_data_15min = spot_data
-                    self._last_update = dt_now()
+                # Trigger coordinator refresh pro všechny závislé senzory
+                await self.coordinator.async_request_refresh()
 
-                    intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
-                    _LOGGER.info(
-                        f"[{self.entity_id}] 15min spot data successful - {intervals_count} intervals"
-                    )
-
-                    # Aktualizovat stav tohoto senzoru
-                    self.async_write_ha_state()
-
-                    # Trigger coordinator refresh pro všechny závislé senzory
-                    await self.coordinator.async_request_refresh()
-
-                    return
-
+                # Úspěch jen pokud máme všechna potřebná data (cache je validní)
+                if self._ote_api._is_cache_valid():
+                    return True
                 else:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] No 15min data on attempt {attempt + 1}"
+                    _LOGGER.info(
+                        f"[{self.entity_id}] Data received but incomplete (missing tomorrow after 13:00), will retry"
                     )
+                    return False
 
-            except Exception as e:
-                _LOGGER.error(
-                    f"[{self.entity_id}] Error fetching 15min data on attempt {attempt + 1}: {e}"
-                )
+            _LOGGER.warning(
+                f"[{self.entity_id}] No 15min data on attempt {self._retry_attempt + 1}"
+            )
 
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
+        except Exception as e:
+            _LOGGER.error(
+                f"[{self.entity_id}] Error fetching 15min data on attempt {self._retry_attempt + 1}: {e}"
+            )
 
-        _LOGGER.error(
-            f"[{self.entity_id}] Failed to fetch 15min data after {max_retries} attempts"
+        return False
+
+    def _schedule_retry(self, fetch_coro) -> None:
+        """Naplánuje další pokus podle retry schématu."""
+        delay = (
+            RETRY_DELAYS_SECONDS[self._retry_attempt]
+            if self._retry_attempt < len(RETRY_DELAYS_SECONDS)
+            else HOURLY_RETRY_SECONDS
         )
+        self._retry_attempt += 1
+        _LOGGER.info(
+            f"[{self.entity_id}] Retrying spot data in {delay // 60} minutes (attempt {self._retry_attempt})"
+        )
+
+        self._cancel_retry_timer()
+
+        async def _retry_after_delay():
+            """Čeká a pak zavolá fetch."""
+            _LOGGER.info(f"[{self.entity_id}] ⏰ Retry task waiting {delay}s...")
+            await asyncio.sleep(delay)
+            _LOGGER.info(f"[{self.entity_id}] 🔔 Retry timer fired!")
+            await fetch_coro()
+
+        self._retry_remove = self.hass.async_create_task(_retry_after_delay())
+
+    def _cancel_retry_timer(self) -> None:
+        """Zruší naplánovaný retry task, pokud existuje."""
+        if self._retry_remove:
+            if not self._retry_remove.done():
+                self._retry_remove.cancel()
+            self._retry_remove = None
 
     def _get_current_interval_index(self, now: datetime) -> int:
         """Vrátí index 15min intervalu (0-95) pro daný čas."""
@@ -185,7 +246,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         pricing_model: str = options.get("export_pricing_model", "percentage")
         export_fee_percent: float = options.get("export_fee_percent", 15.0)
         export_fixed_fee_czk: float = options.get("export_fixed_fee_czk", 0.20)
-
         # Výpočet výkupní ceny
         if pricing_model == "percentage":
             # Dostaneme X% ze spotové ceny (obvykle 85-90%)
@@ -247,6 +307,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 return attrs
 
             now = dt_now()
+
             current_interval_index = self._get_current_interval_index(now)
             prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
 
@@ -368,13 +429,16 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._entry = entry
         # OPRAVA: Uložit device_info pro použití v property (ne _attr_device_info!)
         self._analytics_device_info = device_info
-        self._ote_api = OteApi()
+        cache_path = _ote_cache_path(coordinator.hass)
+        self._ote_api = OteApi(cache_path=cache_path)
 
         self._spot_data_15min: Dict[str, Any] = {}
         self._last_update: Optional[datetime] = None
         self._track_time_interval_remove = None
         self._track_15min_remove = None
         self._data_hash: Optional[str] = None  # Phase 1.5: Hash for change detection
+        self._retry_remove: Optional[Any] = None
+        self._retry_attempt: int = 0
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
@@ -387,17 +451,23 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         # Obnovit data ze stavu
         await self._restore_data()
 
-        # Nastavit pravidelné stahování (denně v 13:30)
+        # Nastavit pravidelné stahování (denně v 13:00)
         self._setup_daily_tracking()
 
         # Nastavit aktualizaci každých 15 minut
         self._setup_15min_tracking()
 
-        # Okamžitě stáhnout aktuální data
-        try:
-            await self._fetch_spot_data_with_retry()
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
+        # Okamžitě stáhnout aktuální data, pokud daily_tracking už nespustil fetch
+        now = dt_now()
+        current_minutes = now.hour * 60 + now.minute
+        daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
+
+        # Pokud je >= 13:00, daily_tracking už spustil fetch, nevoláme druhý
+        if current_minutes < daily_update_time:
+            try:
+                await self._fetch_spot_data_with_retry()
+            except Exception as e:
+                _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
 
     async def _restore_data(self) -> None:
         """Obnovení dat z uloženého stavu."""
@@ -413,22 +483,21 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
 
     def _setup_daily_tracking(self) -> None:
-        """Nastavení denního stahování dat v 13:30."""
-        # Aktualizace jednou denně v 13:30 (po publikaci dat)
+        """Nastavení denního stahování dat ve 13:00 s retry."""
         now = dt_now()
         current_minutes = now.hour * 60 + now.minute
-        daily_update_time = 13 * 60 + 30  # 13:30
+        daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE  # 13:00
 
-        if current_minutes > daily_update_time:
+        if current_minutes >= daily_update_time:
             # Data pro dnešek už jsou k dispozici
             self.hass.async_create_task(self._fetch_spot_data_with_retry())
 
-        # Nastavit denní aktualizaci v 13:30
+        # Nastavit denní aktualizaci ve 13:00
         self._track_time_interval_remove = async_track_time_change(
             self.hass,
             self._fetch_spot_data_with_retry,
-            hour=13,
-            minute=30,
+            hour=DAILY_FETCH_HOUR,
+            minute=DAILY_FETCH_MINUTE,
             second=0,
         )
 
@@ -460,51 +529,87 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
             self._track_15min_remove()
 
     async def _fetch_spot_data_with_retry(self, *_: Any) -> None:
-        """Stažení 15min spotových cen s retry logikou."""
-        max_retries = 6
-        retry_delay = 600  # 10 minut
+        """Jednorázový fetch + plánování dalších pokusů až do úspěchu."""
+        success = await self._do_fetch_15min_spot_data()
+        if success:
+            self._retry_attempt = 0
+            self._cancel_retry_timer()
+        else:
+            self._schedule_retry(self._do_fetch_15min_spot_data)
 
-        for attempt in range(max_retries):
-            try:
+    async def _do_fetch_15min_spot_data(self) -> bool:
+        """Stáhne data, vrátí True při úspěchu, jinak False."""
+        try:
+            _LOGGER.info(
+                f"[{self.entity_id}] Fetching 15min spot data - attempt {self._retry_attempt + 1}"
+            )
+
+            spot_data = await self._ote_api.get_spot_prices()
+
+            if spot_data and "prices15m_czk_kwh" in spot_data:
+                self._spot_data_15min = spot_data
+                self._last_update = dt_now()
+
+                intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
                 _LOGGER.info(
-                    f"[{self.entity_id}] Fetching 15min spot data - attempt {attempt + 1}/{max_retries}"
+                    f"[{self.entity_id}] 15min spot data successful - {intervals_count} intervals"
                 )
 
-                spot_data = await self._ote_api.get_spot_prices()
+                # Aktualizovat stav tohoto senzoru
+                self.async_write_ha_state()
 
-                if spot_data and "prices15m_czk_kwh" in spot_data:
-                    self._spot_data_15min = spot_data
-                    self._last_update = dt_now()
+                # Trigger coordinator refresh pro všechny závislé senzory
+                await self.coordinator.async_request_refresh()
 
-                    intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
-                    _LOGGER.info(
-                        f"[{self.entity_id}] 15min spot data successful - {intervals_count} intervals"
-                    )
-
-                    # Aktualizovat stav tohoto senzoru
-                    self.async_write_ha_state()
-
-                    # Trigger coordinator refresh pro všechny závislé senzory
-                    await self.coordinator.async_request_refresh()
-
-                    return
-
+                # Úspěch jen pokud máme všechna potřebná data (cache je validní)
+                if self._ote_api._is_cache_valid():
+                    return True
                 else:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] No 15min data on attempt {attempt + 1}"
+                    _LOGGER.info(
+                        f"[{self.entity_id}] Data received but incomplete (missing tomorrow after 13:00), will retry"
                     )
+                    return False
 
-            except Exception as e:
-                _LOGGER.error(
-                    f"[{self.entity_id}] Error fetching 15min data on attempt {attempt + 1}: {e}"
-                )
+            _LOGGER.warning(
+                f"[{self.entity_id}] No 15min data on attempt {self._retry_attempt + 1}"
+            )
 
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
+        except Exception as e:
+            _LOGGER.error(
+                f"[{self.entity_id}] Error fetching 15min data on attempt {self._retry_attempt + 1}: {e}"
+            )
 
-        _LOGGER.error(
-            f"[{self.entity_id}] Failed to fetch 15min data after {max_retries} attempts"
+        return False
+
+    def _schedule_retry(self, fetch_coro) -> None:
+        """Naplánuje další pokus podle retry schématu."""
+        delay = (
+            RETRY_DELAYS_SECONDS[self._retry_attempt]
+            if self._retry_attempt < len(RETRY_DELAYS_SECONDS)
+            else HOURLY_RETRY_SECONDS
         )
+        self._retry_attempt += 1
+        _LOGGER.info(
+            f"[{self.entity_id}] Retrying spot data in {delay // 60} minutes (attempt {self._retry_attempt})"
+        )
+
+        self._cancel_retry_timer()
+
+        async def _retry_after_delay():
+            """Čeká a pak zavolá fetch."""
+            _LOGGER.info(f"[{self.entity_id}] ⏰ Retry task waiting {delay}s...")
+            await asyncio.sleep(delay)
+            _LOGGER.info(f"[{self.entity_id}] 🔔 Retry timer fired!")
+            await fetch_coro()
+
+        self._retry_remove = self.hass.async_create_task(_retry_after_delay())
+
+    def _cancel_retry_timer(self) -> None:
+        """Zruší naplánovaný retry task, pokud existuje."""
+        if self._retry_remove:
+            if not self._retry_remove.done():
+                self._retry_remove.cancel()
+            self._retry_remove = None
 
     def _get_current_interval_index(self, now: datetime) -> int:
         """Vrátí index 15min intervalu (0-95) pro daný čas."""
@@ -576,7 +681,6 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         distribution_fee_vt_kwh = options.get("distribution_fee_vt_kwh", 1.50)
         distribution_fee_nt_kwh = options.get("distribution_fee_nt_kwh", 1.20)
         vat_rate = options.get("vat_rate", 21.0)
-        dual_tariff_enabled = options.get("dual_tariff_enabled", True)
 
         # 1. Obchodní cena
         if pricing_model == "percentage":
@@ -763,11 +867,14 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
 
         self._sensor_type = sensor_type
         self._sensor_config = SENSOR_TYPES_SPOT.get(sensor_type, {})
-        self._ote_api = OteApi()
+        cache_path = _ote_cache_path(coordinator.hass)
+        self._ote_api = OteApi(cache_path=cache_path)
 
         self._spot_data: Dict[str, Any] = {}
         self._last_update: Optional[datetime] = None
         self._track_time_interval_remove = None
+        self._retry_remove: Optional[Any] = None
+        self._retry_attempt: int = 0
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -796,11 +903,17 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         # Nastavit pravidelné stahování
         self._setup_time_tracking()
 
-        # Okamžitě stáhnout aktuální data
-        try:
-            await self._fetch_spot_data_with_retry()
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
+        # Okamžitě stáhnout aktuální data, pokud _setup_time_tracking už nespustil fetch
+        now = dt_now()
+        current_minutes = now.hour * 60 + now.minute
+        daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
+
+        # Pokud je >= 13:00, _setup_time_tracking už spustil fetch, nevoláme druhý
+        if current_minutes < daily_update_time:
+            try:
+                await self._fetch_spot_data_with_retry()
+            except Exception as e:
+                _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
 
     async def _restore_data(self) -> None:
         """Obnovení dat z uloženého stavu."""
@@ -817,23 +930,25 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
 
     def _setup_time_tracking(self) -> None:
         """Nastavení pravidelného stahování dat - jednou denně po 13:00 s retry logikou."""
-        # Aktualizace jednou denně v 13:30 (po publikaci dat)
-        daily_update_time = 13 * 60 + 30  # 13:30 v minutách
+        # Aktualizace jednou denně ve 13:00 (po publikaci dat)
+        daily_update_time = (
+            DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
+        )  # 13:00 v minutách
 
-        # Pokud je aktuální čas po 13:30, stáhneme data hned
+        # Pokud je aktuální čas po 13:00, stáhneme data hned
         now = dt_now()
         current_minutes = now.hour * 60 + now.minute
 
-        if current_minutes > daily_update_time:
+        if current_minutes >= daily_update_time:
             # Data pro dnešek už jsou k dispozici
             self.hass.async_create_task(self._fetch_spot_data_with_retry())
 
-        # Nastavit denní aktualizaci v 13:30
+        # Nastavit denní aktualizaci ve 13:00
         self._track_time_interval_remove = async_track_time_change(
             self.hass,
             self._fetch_spot_data_with_retry,
-            hour=13,
-            minute=30,
+            hour=DAILY_FETCH_HOUR,
+            minute=DAILY_FETCH_MINUTE,
             second=0,
         )
 
@@ -844,58 +959,89 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         if self._track_time_interval_remove:
             self._track_time_interval_remove()
 
+        self._cancel_retry_timer()
         await self._ote_api.close()
 
     async def _fetch_spot_data_with_retry(self, *_: Any) -> None:
-        """Stažení spotových cen s retry logikou pokud data nejsou dostupná."""
-        max_retries = 6  # Celkem 6 pokusů = 1 hodina (každých 10 minut)
-        retry_delay = 600  # 10 minut v sekundách
+        """Jednorázový fetch + plánování dalších pokusů až do úspěchu."""
+        success = await self._do_fetch_spot_data()
+        if success:
+            self._retry_attempt = 0
+            self._cancel_retry_timer()
+        else:
+            self._schedule_retry(self._do_fetch_spot_data)
 
-        for attempt in range(max_retries):
-            try:
+    async def _do_fetch_spot_data(self) -> bool:
+        """Stáhne data, vrátí True při úspěchu, jinak False."""
+        try:
+            _LOGGER.info(
+                f"[{self.entity_id}] Fetching spot data - attempt {self._retry_attempt + 1}"
+            )
+
+            spot_data = await self._ote_api.get_spot_prices()
+
+            if spot_data and self._validate_spot_data(spot_data):
+                self._spot_data = spot_data
+                self._last_update = dt_now()
+
+                hours_count = spot_data.get("hours_count", 0)
+                tomorrow_available = bool(spot_data.get("tomorrow_stats"))
                 _LOGGER.info(
-                    f"[{self.entity_id}] Fetching spot data - attempt {attempt + 1}/{max_retries}"
+                    f"[{self.entity_id}] Spot data successful - {hours_count} hours, tomorrow: {'yes' if tomorrow_available else 'no'}"
                 )
 
-                # Stáhnout spotové ceny
-                spot_data = await self._ote_api.get_spot_prices()
+                # Aktualizovat stav senzoru
+                self.async_write_ha_state()
 
-                if spot_data and self._validate_spot_data(spot_data):
-                    # Data jsou kompletní
-                    self._spot_data = spot_data
-                    self._last_update = dt_now()
-
-                    hours_count = spot_data.get("hours_count", 0)
-                    tomorrow_available = bool(spot_data.get("tomorrow_stats"))
-                    _LOGGER.info(
-                        f"[{self.entity_id}] Spot data successful - {hours_count} hours, tomorrow: {'yes' if tomorrow_available else 'no'}"
-                    )
-
-                    # Aktualizovat stav senzoru
-                    self.async_write_ha_state()
-                    return  # Úspěch - ukončit retry
-
+                # Úspěch jen pokud máme všechna potřebná data (cache je validní)
+                if self._ote_api._is_cache_valid():
+                    return True
                 else:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] Incomplete spot data received on attempt {attempt + 1}"
+                    _LOGGER.info(
+                        f"[{self.entity_id}] Data received but incomplete (missing tomorrow after 13:00), will retry"
                     )
+                    return False
 
-            except Exception as e:
-                _LOGGER.error(
-                    f"[{self.entity_id}] Error fetching spot data on attempt {attempt + 1}: {e}"
-                )
+            _LOGGER.warning(
+                f"[{self.entity_id}] Incomplete spot data received on attempt {self._retry_attempt + 1}"
+            )
 
-            # Pokud není poslední pokus, počkat před dalším
-            if attempt < max_retries - 1:
-                _LOGGER.info(
-                    f"[{self.entity_id}] Retrying in {retry_delay // 60} minutes..."
-                )
-                await asyncio.sleep(retry_delay)
+        except Exception as e:
+            _LOGGER.error(
+                f"[{self.entity_id}] Error fetching spot data on attempt {self._retry_attempt + 1}: {e}"
+            )
 
-        # Všechny pokusy selhaly
-        _LOGGER.error(
-            f"[{self.entity_id}] Failed to fetch spot data after {max_retries} attempts"
+        return False
+
+    def _schedule_retry(self, fetch_coro) -> None:
+        """Naplánuje další pokus podle retry schématu."""
+        delay = (
+            RETRY_DELAYS_SECONDS[self._retry_attempt]
+            if self._retry_attempt < len(RETRY_DELAYS_SECONDS)
+            else HOURLY_RETRY_SECONDS
         )
+        self._retry_attempt += 1
+        _LOGGER.info(
+            f"[{self.entity_id}] Retrying spot data in {delay // 60} minutes (attempt {self._retry_attempt})"
+        )
+
+        self._cancel_retry_timer()
+
+        async def _retry_after_delay():
+            """Čeká a pak zavolá fetch."""
+            _LOGGER.info(f"[{self.entity_id}] ⏰ Retry task waiting {delay}s...")
+            await asyncio.sleep(delay)
+            _LOGGER.info(f"[{self.entity_id}] 🔔 Retry timer fired!")
+            await fetch_coro()
+
+        self._retry_remove = self.hass.async_create_task(_retry_after_delay())
+
+    def _cancel_retry_timer(self) -> None:
+        """Zruší naplánovaný retry task, pokud existuje."""
+        if self._retry_remove:
+            if not self._retry_remove.done():
+                self._retry_remove.cancel()
+            self._retry_remove = None
 
     def _validate_spot_data(self, data: Dict[str, Any]) -> bool:
         """Validace že data jsou kompletní a použitelná."""
