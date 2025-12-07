@@ -204,6 +204,9 @@ backups/
 *.bak
 *.backup
 
+# Development documentation (local only)
+.dev_docs/
+
 # Docker volumes
 config/
 

@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
 import time
 
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.config_entries import ConfigEntry
@@ -117,7 +116,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 # Načtení warning dat
                 if isinstance(data.get("warning_data"), dict):
                     self._last_warning_data = data["warning_data"]
-                    _LOGGER.debug(f"🌦️ Loaded warning data from storage")
+                    _LOGGER.debug("🌦️ Loaded warning data from storage")
                 else:
                     _LOGGER.debug("🌦️ No warning data found in storage")
             else:
@@ -299,9 +298,30 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Global sensor - všechna varování pro ČR
         if self._sensor_type == "chmu_warning_level_global":
+            # OPRAVA: Omezit velikost all_warnings aby nepřekročilo 16KB limit
+            all_warnings_raw = self._last_warning_data.get("all_warnings", [])
+            # Limitovat na max 20 varování a zkrátit description
+            all_warnings_limited = []
+            for w in all_warnings_raw[:20]:  # Max 20 varování
+                warning_short = {
+                    "event": w.get("event", ""),
+                    "severity": w.get("severity", 0),
+                    "onset": w.get("onset", ""),
+                    "expires": w.get("expires", ""),
+                    "areas": w.get("areas", [])[:5],  # Max 5 oblastí
+                }
+                # Zkrátit description na max 200 znaků
+                desc = w.get("description", "")
+                if len(desc) > 200:
+                    warning_short["description"] = desc[:197] + "..."
+                else:
+                    warning_short["description"] = desc
+                all_warnings_limited.append(warning_short)
+
             attrs = {
                 "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
-                "all_warnings": self._last_warning_data.get("all_warnings", []),
+                "all_warnings": all_warnings_limited,
+                "warnings_truncated": len(all_warnings_raw) > 20,
                 "highest_severity": self._last_warning_data.get(
                     "highest_severity_cz", 0
                 ),

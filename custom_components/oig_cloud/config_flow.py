@@ -5,14 +5,13 @@ import aiohttp
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.core import callback, HomeAssistant
+from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
+    pass
 from .const import (
-    CONF_NO_TELEMETRY,
     DEFAULT_NAME,
     DOMAIN,
     CONF_USERNAME,
@@ -114,7 +113,7 @@ async def validate_solar_forecast_api_key(
                 elif response.status == 401:
                     # Unauthorized - špatný API klíč
                     _LOGGER.warning(
-                        f"🔑 Solar Forecast API key validation: UNAUTHORIZED (401)"
+                        "🔑 Solar Forecast API key validation: UNAUTHORIZED (401)"
                     )
                     raise InvalidSolarForecastApiKey(
                         "API key is invalid or unauthorized"
@@ -122,7 +121,7 @@ async def validate_solar_forecast_api_key(
                 elif response.status == 429:
                     # Rate limit - klíč je platný, ale překročen limit
                     _LOGGER.warning(
-                        f"🔑 Solar Forecast API key validation: RATE LIMITED (429) - but key seems valid"
+                        "🔑 Solar Forecast API key validation: RATE LIMITED (429) - but key seems valid"
                     )
                     return True  # Klíč je OK, jen je rate limited
                 else:
@@ -3603,9 +3602,9 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                             user_input.get("solar_forecast_longitude", 13.9373742)
                         )
 
-                        _LOGGER.info(f"🔑 Validating Solar Forecast API key...")
+                        _LOGGER.info("🔑 Validating Solar Forecast API key...")
                         await validate_solar_forecast_api_key(api_key, lat, lon)
-                        _LOGGER.info(f"🔑 API key validation successful!")
+                        _LOGGER.info("🔑 API key validation successful!")
                     except InvalidSolarForecastApiKey as e:
                         _LOGGER.error(f"🔑 API key validation failed: {e}")
                         errors["solar_forecast_api_key"] = "invalid_api_key"
@@ -3769,10 +3768,10 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                         )
 
                         _LOGGER.info(
-                            f"🔑 Validating Solar Forecast API key (module disabled)..."
+                            "🔑 Validating Solar Forecast API key (module disabled)..."
                         )
                         await validate_solar_forecast_api_key(api_key, lat, lon)
-                        _LOGGER.info(f"🔑 API key validation successful!")
+                        _LOGGER.info("🔑 API key validation successful!")
                     except InvalidSolarForecastApiKey as e:
                         _LOGGER.error(f"🔑 API key validation failed: {e}")
                         errors["solar_forecast_api_key"] = "invalid_api_key"

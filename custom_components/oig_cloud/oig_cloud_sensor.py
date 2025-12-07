@@ -1,17 +1,15 @@
 """Base sensor for OIG Cloud integration."""
 
 import logging
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEFAULT_NAME, DOMAIN
 
 from .coordinator import OigCloudDataUpdateCoordinator
-from .lib.oig_cloud_client.models import OigCloudData
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import json
 import logging
 
-from .simulation import BatterySimulation, IntervalSimulation, SimulationContext
+from .simulation import BatterySimulation, IntervalSimulation
 
 _LOGGER = logging.getLogger(__name__)
 

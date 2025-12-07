@@ -5,7 +5,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.core import callback, HomeAssistant, Context, Event
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.components import logbook
 from homeassistant.util.dt import now as dt_now
 import logging
 import uuid
@@ -147,9 +146,9 @@ class ServiceShield:
                     data=telemetry_data,
                 )
 
-                _LOGGER.debug(f"[TELEMETRY DEBUG] Telemetry sent successfully")
+                _LOGGER.debug("[TELEMETRY DEBUG] Telemetry sent successfully")
             else:
-                _LOGGER.debug(f"[TELEMETRY DEBUG] No telemetry handler available!")
+                _LOGGER.debug("[TELEMETRY DEBUG] No telemetry handler available!")
 
         except Exception as e:
             _LOGGER.error(
@@ -160,22 +159,26 @@ class ServiceShield:
         """Registruje callback, který se zavolá při změně shield stavu."""
         if callback not in self._state_change_callbacks:
             self._state_change_callbacks.append(callback)
-            _LOGGER.debug(f"[OIG Shield] Registrován callback pro aktualizaci senzoru")
+            _LOGGER.debug("[OIG Shield] Registrován callback pro aktualizaci senzoru")
 
     def unregister_state_change_callback(self, callback: Callable[[], None]) -> None:
         """Odregistruje callback."""
         if callback in self._state_change_callbacks:
             self._state_change_callbacks.remove(callback)
-            _LOGGER.debug(f"[OIG Shield] Odregistrován callback")
+            _LOGGER.debug("[OIG Shield] Odregistrován callback")
 
     def _notify_state_change(self) -> None:
         """Zavolá všechny registrované callbacky při změně stavu."""
         _LOGGER.debug(
             f"[OIG Shield] Notifikuji {len(self._state_change_callbacks)} callbacků o změně stavu"
         )
-        for callback in self._state_change_callbacks:
+        for cb in self._state_change_callbacks:
             try:
-                self.hass.async_create_task(callback())
+                result = cb()
+                # Pokud callback vrátí coroutine, naplánuj ji
+                if result is not None and hasattr(result, "__await__"):
+                    self.hass.async_create_task(result)
+                # Pokud vrátí None (synchronní callback), nic nedělej
             except Exception as e:
                 _LOGGER.error(f"[OIG Shield] Chyba při volání callback: {e}")
 
@@ -542,7 +545,7 @@ class ServiceShield:
             and "limit" in params
         ):
             _LOGGER.info(
-                f"[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
+                "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
             )
 
             # Vytvoříme 2 samostatné volání
@@ -552,7 +555,7 @@ class ServiceShield:
             limit_params = {k: v for k, v in params.items() if k != "mode"}
 
             # Zavoláme intercept rekurzivně pro každý parametr
-            _LOGGER.info(f"[Grid Delivery] Step 1/2: Processing mode change")
+            _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
             await self.intercept_service_call(
                 domain,
                 service,
@@ -562,7 +565,7 @@ class ServiceShield:
                 context,
             )
 
-            _LOGGER.info(f"[Grid Delivery] Step 2/2: Processing limit change")
+            _LOGGER.info("[Grid Delivery] Step 2/2: Processing limit change")
             await self.intercept_service_call(
                 domain,
                 service,
@@ -572,7 +575,7 @@ class ServiceShield:
                 context,
             )
 
-            _LOGGER.info(f"[Grid Delivery] Both calls queued successfully")
+            _LOGGER.info("[Grid Delivery] Both calls queued successfully")
             return
 
         expected_entities = self.extract_expected_entities(service_name, params)
@@ -595,7 +598,7 @@ class ServiceShield:
         )
 
         if not expected_entities:
-            _LOGGER.info(f"[INTERCEPT DEBUG] No expected entities - returning early")
+            _LOGGER.info("[INTERCEPT DEBUG] No expected entities - returning early")
             await self._log_event(
                 "skipped",
                 service_name,
@@ -608,7 +611,7 @@ class ServiceShield:
         new_expected_set = frozenset(expected_entities.items())
 
         # Debug: Vypsat frontu a pending před kontrolou deduplikace
-        _LOGGER.info(f"[DEDUP DEBUG] Checking for duplicates:")
+        _LOGGER.info("[DEDUP DEBUG] Checking for duplicates:")
         _LOGGER.info(f"[DEDUP DEBUG]   New service: {service_name}")
         _LOGGER.info(f"[DEDUP DEBUG]   New params: {params}")
         _LOGGER.info(f"[DEDUP DEBUG]   New expected: {expected_entities}")
@@ -648,7 +651,7 @@ class ServiceShield:
             ):
                 duplicate_found = True
                 duplicate_location = "queue"
-                _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND IN QUEUE!")
+                _LOGGER.info("[DEDUP DEBUG] ✅ DUPLICATE FOUND IN QUEUE!")
                 _LOGGER.info(
                     f"[DEDUP DEBUG]   Matching: service={q[0]}, params={q[1]}, expected={q[2]}"
                 )
@@ -668,7 +671,7 @@ class ServiceShield:
                 ):
                     duplicate_found = True
                     duplicate_location = "pending"
-                    _LOGGER.info(f"[DEDUP DEBUG] ✅ DUPLICATE FOUND IN PENDING!")
+                    _LOGGER.info("[DEDUP DEBUG] ✅ DUPLICATE FOUND IN PENDING!")
                     _LOGGER.info(
                         f"[DEDUP DEBUG]   Matching: service={pending_service_key}, expected={pending_entities}"
                     )
@@ -711,7 +714,7 @@ class ServiceShield:
 
         if all_ok:
             _LOGGER.info(
-                f"[INTERCEPT DEBUG] All entities already match - returning early"
+                "[INTERCEPT DEBUG] All entities already match - returning early"
             )
             # OPRAVA: Logujeme telemetrii i pro skipped požadavky
             await self._log_telemetry(
@@ -735,7 +738,7 @@ class ServiceShield:
             return
 
         # ߚࠓpustíme hned
-        _LOGGER.info(f"[INTERCEPT DEBUG] Will execute service - logging telemetry")
+        _LOGGER.info("[INTERCEPT DEBUG] Will execute service - logging telemetry")
         # TELEMETRIE: Zde se odešle telemetrie při skutečném volání služby
         await self._log_telemetry(
             "change_requested",
@@ -956,11 +959,11 @@ class ServiceShield:
                 )
                 await coordinator.async_request_refresh()
                 _LOGGER.debug(
-                    f"[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
+                    "[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
                 )
             else:
                 _LOGGER.warning(
-                    f"[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
+                    "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
                 )
         except Exception as e:
             _LOGGER.error(
@@ -1009,7 +1012,7 @@ class ServiceShield:
                 ):
                     if service_name == "oig_cloud.set_formating_mode":
                         _LOGGER.info(
-                            f"[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
+                            "[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
                         )
                         # Pro formating_mode považujeme timeout za úspěšné dokončení
                         await self._log_event(
@@ -1531,7 +1534,6 @@ class ServiceShield:
         elif service_name == "oig_cloud.set_grid_delivery":
             # OPRAVA: Wrapper rozděluje mode + limit na 2 samostatná volání
             # Každé volání má jen JEDEN parametr → vrátíme jen JEDNU entitu
-            result_entities = {}
 
             # PŘÍPAD 1: Pouze LIMIT (bez mode)
             if "limit" in data and "mode" not in data:
@@ -2166,7 +2168,7 @@ class ModeTransitionTracker:
                 ):
                     # Spočítat dobu od posledního požadavku
                     # Hledáme změnu requested_mode v předchozích stavech
-                    requested_mode = curr_state.attributes.get("requested_mode")
+                    curr_state.attributes.get("requested_mode")
 
                     # Jednoduchá heuristika: když se state změnil, předpokládáme že
                     # změna proběhla od posledního stavu

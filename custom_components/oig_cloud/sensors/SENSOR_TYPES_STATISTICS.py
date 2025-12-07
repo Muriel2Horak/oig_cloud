@@ -1,11 +1,10 @@
 """Definice statistických senzorů pro OIG Cloud."""
 
-from typing import List, Dict, Any
+from typing import Dict, Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     UnitOfPower,
     UnitOfEnergy,
-    UnitOfTime,
     PERCENTAGE,
     EntityCategory,
 )

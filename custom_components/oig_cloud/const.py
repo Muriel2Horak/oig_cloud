@@ -1,6 +1,5 @@
 """Constants for the OIG Cloud integration."""
 
-from .release_const import COMPONENT_VERSION, SERVICE_NAME
 
 DOMAIN = "oig_cloud"
 

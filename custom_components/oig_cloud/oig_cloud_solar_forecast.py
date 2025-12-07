@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import aiohttp
 import time
 
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.config_entries import ConfigEntry
@@ -553,7 +552,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         """Pošle signál ostatním solar forecast sensorům o nových datech."""
         try:
             # Získáme registry správným způsobem
-            device_registry = dr.async_get(self.hass)
+            dr.async_get(self.hass)
             entity_registry = er.async_get(self.hass)
 
             # Najdeme naše zařízení

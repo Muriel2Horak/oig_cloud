@@ -926,11 +926,26 @@ class BalancingManager:
             timeline = self._forecast_sensor._timeline_data
             if timeline:
                 for interval in timeline:
-                    interval_time = datetime.fromisoformat(interval.ts)
-                    if now <= interval_time < window_start:
-                        # Grid consumption in this 15-min interval
-                        grid_kwh = getattr(interval, "grid_consumption_kwh", 0.0)
-                        grid_consumption_kwh += grid_kwh
+                    # OPRAVA: Timeline data jsou slovníky, ne objekty
+                    ts_str = (
+                        interval.get("timestamp")
+                        if isinstance(interval, dict)
+                        else getattr(interval, "ts", None)
+                    )
+                    if not ts_str:
+                        continue
+                    try:
+                        interval_time = datetime.fromisoformat(ts_str)
+                        if now <= interval_time < window_start:
+                            # Grid consumption in this 15-min interval
+                            grid_kwh = (
+                                interval.get("grid_consumption_kwh", 0.0)
+                                if isinstance(interval, dict)
+                                else getattr(interval, "grid_consumption_kwh", 0.0)
+                            )
+                            grid_consumption_kwh += grid_kwh
+                    except (ValueError, TypeError):
+                        continue
 
         # 3. Calculate average spot price during wait
         prices = await self._get_spot_prices_48h()

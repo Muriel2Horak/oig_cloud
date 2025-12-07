@@ -5,13 +5,11 @@ import logging
 import random
 import time
 from datetime import timedelta, datetime
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util.dt import utcnow
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudApiError
 from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
@@ -154,7 +152,7 @@ class OigCloudDataUpdateCoordinator(DataUpdateCoordinator):
                     time_since_last is not None
                     and time_since_last >= self._extended_update_interval
                 ):
-                    _LOGGER.info(f"Fetching extended data")
+                    _LOGGER.info("Fetching extended data")
                     try:
                         extended_data: Dict[str, Any] = (
                             await self._fetch_extended_data()

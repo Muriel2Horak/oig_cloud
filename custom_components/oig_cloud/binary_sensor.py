@@ -6,7 +6,7 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from .const import DOMAIN, DEFAULT_NAME, CONF_STANDARD_SCAN_INTERVAL
+from .const import DOMAIN, DEFAULT_NAME
 from .binary_sensor_types import BINARY_SENSOR_TYPES
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 

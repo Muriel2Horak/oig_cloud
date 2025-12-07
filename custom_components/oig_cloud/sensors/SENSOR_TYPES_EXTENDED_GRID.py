@@ -1,7 +1,6 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfElectricPotential, UnitOfPower, UnitOfEnergy
 from typing import Dict, Any
-from homeassistant.helpers.entity import EntityCategory
 
 SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
     "extended_grid_voltage": {

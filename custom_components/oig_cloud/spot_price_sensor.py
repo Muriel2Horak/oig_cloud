@@ -100,6 +100,26 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             except Exception as e:
                 _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Sync spot data z coordinatoru, pokud je k dispozici."""
+        try:
+            if self.coordinator.data and "spot_prices" in self.coordinator.data:
+                spot_data = self.coordinator.data["spot_prices"]
+                if spot_data:
+                    self._spot_data_15min = spot_data
+                    self._last_update = dt_now()
+                    intervals = len(spot_data.get("prices15m_czk_kwh", {}))
+                    _LOGGER.debug(
+                        f"[{self.entity_id}] Synced 15min export prices from coordinator ({intervals} intervals)"
+                    )
+        except Exception as err:
+            _LOGGER.debug(
+                f"[{self.entity_id}] Failed to sync export prices from coordinator: {err}"
+            )
+
+        super()._handle_coordinator_update()
+
     def _setup_daily_tracking(self) -> None:
         """Nastavení denního stahování dat ve 13:00 s retry."""
         now = dt_now()
@@ -481,6 +501,26 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 _LOGGER.info(f"[{self.entity_id}] Restored 15min spot price data")
             except Exception as e:
                 _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Sync 15min spot data z coordinatoru."""
+        try:
+            if self.coordinator.data and "spot_prices" in self.coordinator.data:
+                spot_data = self.coordinator.data["spot_prices"]
+                if spot_data:
+                    self._spot_data_15min = spot_data
+                    self._last_update = dt_now()
+                    intervals = len(spot_data.get("prices15m_czk_kwh", {}))
+                    _LOGGER.debug(
+                        f"[{self.entity_id}] Synced 15min spot prices from coordinator ({intervals} intervals)"
+                    )
+        except Exception as err:
+            _LOGGER.debug(
+                f"[{self.entity_id}] Failed to sync spot prices from coordinator: {err}"
+            )
+
+        super()._handle_coordinator_update()
 
     def _setup_daily_tracking(self) -> None:
         """Nastavení denního stahování dat ve 13:00 s retry."""

@@ -13,10 +13,9 @@ Nová architektura s lepším UX:
 
 import voluptuous as vol
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 from homeassistant import config_entries
 from homeassistant.config_entries import FlowResult
-from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD

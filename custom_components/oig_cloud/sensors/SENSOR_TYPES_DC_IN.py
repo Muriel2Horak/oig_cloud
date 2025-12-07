@@ -1,5 +1,4 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.const import UnitOfEnergy, UnitOfPower, PERCENTAGE
 from typing import Dict, Any
 

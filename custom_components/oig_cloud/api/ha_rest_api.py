@@ -124,10 +124,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
-        mode = request.query.get("mode", "hybrid").lower()
+        request.query.get("mode", "hybrid").lower()
         timeline_type = request.query.get("type", "both")
         plan = request.query.get("plan", "hybrid").lower()
-        plan_key = "autonomy" if plan in ("autonomy", "auto") else "hybrid"
 
         try:
             # Find sensor entity

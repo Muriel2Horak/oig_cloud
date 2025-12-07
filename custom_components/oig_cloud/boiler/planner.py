@@ -7,7 +7,7 @@ from typing import Optional
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import BATTERY_SOC_OVERFLOW_THRESHOLD, MIN_SLOT_DURATION
+from .const import BATTERY_SOC_OVERFLOW_THRESHOLD
 from .models import BoilerPlan, BoilerProfile, BoilerSlot, EnergySource
 
 _LOGGER = logging.getLogger(__name__)

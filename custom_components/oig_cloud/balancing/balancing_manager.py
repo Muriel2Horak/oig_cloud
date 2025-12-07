@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import logging
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import Entity
 
 from ..const import HOME_III
 from .plan_manager import PlanManager
@@ -314,7 +313,7 @@ class BalancingManager:
         # Find export window (continuous high prices)
         # Simple heuristic: find 4+ hour window above average price
 
-        timestamps = list(prices.keys())
+        list(prices.keys())
         price_values = list(prices.values())
         avg_price = sum(price_values) / len(price_values)
 

@@ -1,7 +1,7 @@
 """Platform pro OIG Cloud senzory."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -413,12 +413,6 @@ async def async_setup_entry(
         inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
 
     # Main OIG Device
-    main_device_info: Dict[str, Any] = {
-        "identifiers": {(DOMAIN, inverter_sn)},
-        "name": f"OIG Cloud {inverter_sn}",
-        "manufacturer": "OIG",
-        "model": "Cloud Inverter",
-    }
 
     # Analytics & Predictions Device
     analytics_device_info: Dict[str, Any] = {
@@ -431,14 +425,6 @@ async def async_setup_entry(
     }
 
     # ServiceShield Device
-    shield_device_info: Dict[str, Any] = {
-        "identifiers": {("oig_cloud_shield", inverter_sn)},
-        "name": f"ServiceShield {inverter_sn}",
-        "manufacturer": "OIG",
-        "model": "Shield Monitor",
-        "via_device": (DOMAIN, inverter_sn),
-        "entry_type": "service",
-    }
 
     _LOGGER.debug(f"Created device_info objects for box_id: {inverter_sn}")
 
@@ -702,7 +688,7 @@ async def async_setup_entry(
                 hass.data[DOMAIN][entry.entry_id][
                     "solar_forecast_sensors"
                 ] = solar_sensors
-                _LOGGER.debug(f"Solar forecast sensors stored for service access")
+                _LOGGER.debug("Solar forecast sensors stored for service access")
             else:
                 _LOGGER.debug(
                     "No solar forecast sensors found - this is normal if not configured"
@@ -895,9 +881,9 @@ async def async_setup_entry(
 
                 # Přidat Battery Health sensor (SoH monitoring)
                 try:
-                    from .oig_cloud_battery_health import OigCloudBatteryHealthSensor
+                    from .oig_cloud_battery_health import BatteryHealthSensor
 
-                    health_sensor = OigCloudBatteryHealthSensor(
+                    health_sensor = BatteryHealthSensor(
                         coordinator,
                         "battery_health",
                         entry,

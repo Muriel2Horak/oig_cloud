@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import hashlib
 import re
@@ -10,8 +9,8 @@ from typing import Any, Dict
 
 from homeassistant import config_entries, core
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
@@ -20,7 +19,6 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     DOMAIN,
-    DEFAULT_NAME,
     CONF_STANDARD_SCAN_INTERVAL,
     CONF_EXTENDED_SCAN_INTERVAL,
     CONF_AUTO_MODE_SWITCH,
@@ -77,9 +75,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
     }
 
     options = dict(entry.options)
-    missing_keys = [
-        key for key in defaults.keys() if entry.options.get(key) is None
-    ]
+    missing_keys = [key for key in defaults.keys() if entry.options.get(key) is None]
     updated = False
 
     for key, default in defaults.items():
@@ -196,13 +192,16 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             register_func = getattr(frontend, "async_register_built_in_panel")
             if callable(register_func):
                 try:
+                    # OPRAVA: Použít keyword argumenty pro správné volání
+                    # Signature: (hass, component_name, sidebar_title, sidebar_icon,
+                    #             sidebar_default_visible, frontend_url_path, config, require_admin)
                     result = register_func(
                         hass,
-                        "iframe",
-                        panel_title,
-                        "mdi:solar-power",
-                        panel_id,
-                        {"url": dashboard_url},
+                        "iframe",  # component_name
+                        sidebar_title=panel_title,
+                        sidebar_icon="mdi:solar-power",
+                        frontend_url_path=panel_id,
+                        config={"url": dashboard_url},
                         require_admin=False,
                     )
 
@@ -382,7 +381,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                             f"🔄 Renamed entity: {entity_id} -> {base_entity_id}"
                         )
                         entity_id = base_entity_id  # Aktualizujeme pro další kontroly
-                    except Exception as e:
+                    except Exception:
                         _LOGGER.warning("⚠️ Failed to rename %s: {e}", entity_id)
 
             # Pokud je disabled, enable ji
@@ -391,7 +390,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                     entity_registry.async_update_entity(entity_id, disabled_by=None)
                     enabled_count += 1
                     _LOGGER.info("✅ Re-enabled correct entity: %s", entity_id)
-                except Exception as e:
+                except Exception:
                     _LOGGER.warning("⚠️ Failed to enable %s: {e}", entity_id)
 
             skipped_count += 1
@@ -415,7 +414,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
                         f"(unique_id={old_unique_id} doesn't match entity_id suffix)"
                     )
                     continue
-                except Exception as e:
+                except Exception:
                     _LOGGER.warning("⚠️ Failed to remove %s: {e}", entity_id)
                     continue
 
@@ -435,7 +434,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             _LOGGER.info(
                 f"✅ Migrated entity {entity_id}: {old_unique_id} -> {new_unique_id}"
             )
-        except Exception as e:
+        except Exception:
             _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
 
         # Přeskočíme entity, které už mají správný formát
@@ -461,7 +460,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             _LOGGER.info(
                 f"✅ Migrated entity {entity.entity_id}: {old_unique_id} -> {new_unique_id}"
             )
-        except Exception as e:
+        except Exception:
             _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
 
     # Summary
@@ -498,13 +497,13 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             )
 
         message_parts.append(
-            f"**Co se stalo:**\n"
-            f"- Staré entity se přeregistrovaly s novým unique_id\n"
-            f"- Duplicity byly odstraněny\n"
-            f"- Všechny entity by měly fungovat normálně\n\n"
-            f"**Pokud něco nefunguje:**\n"
-            f"Reload integrace v Nastavení → Zařízení & Služby → OIG Cloud\n\n"
-            f"Toto je jednorázová migrace po aktualizaci integrace."
+            "**Co se stalo:**\n"
+            "- Staré entity se přeregistrovaly s novým unique_id\n"
+            "- Duplicity byly odstraněny\n"
+            "- Všechny entity by měly fungovat normálně\n\n"
+            "**Pokud něco nefunguje:**\n"
+            "Reload integrace v Nastavení → Zařízení & Služby → OIG Cloud\n\n"
+            "Toto je jednorázová migrace po aktualizaci integrace."
         )
 
         await hass.services.async_call(
@@ -1107,7 +1106,7 @@ async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
                 _LOGGER.error(f"Error in telemetry setup executor: {e}", exc_info=True)
                 raise
 
-        handler = await hass.async_add_executor_job(_import_and_setup_telemetry)
+        await hass.async_add_executor_job(_import_and_setup_telemetry)
         _LOGGER.debug("REST telemetry setup completed via executor")
 
         # Test log pro ověření funkčnosti
@@ -1230,10 +1229,6 @@ async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> No
                     break
             else:
                 # Pokud neodpovídá keep patterns, zkontrolujeme remove patterns
-                remove_patterns = [
-                    "OIG Cloud Shield",  # Staré duplicity
-                    "OIG.*Statistics",  # Staré statistiky (regex pattern)
-                ]
 
                 # Zkontrolujeme, jestli zařízení odpovídá keep patterns
                 for pattern in keep_patterns:

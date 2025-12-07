@@ -10,7 +10,6 @@ import hashlib
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
-from collections import defaultdict
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -31,7 +30,6 @@ try:  # HA 2025.1 removed async_track_time_interval
 except ImportError:  # pragma: no cover - fallback for newer HA
     async_track_time_interval = None
 
-from .oig_cloud_data_sensor import OigCloudDataSensor
 from .const import (
     DOMAIN,
     CONF_AUTO_MODE_SWITCH,
@@ -189,7 +187,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_icon = "mdi:battery-charging-60"
         self._attr_native_unit_of_measurement = "kWh"
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        # OPRAVA: MEASUREMENT místo TOTAL_INCREASING - forecast hodnota může klesat
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_entity_category = None
 
         # Načíst název ze sensor types
@@ -880,12 +879,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             balancing_plan = self._get_balancing_plan()
 
             if current_capacity is None:
-                _LOGGER.warning(f"Missing battery capacity data - cannot run forecast")
+                _LOGGER.warning("Missing battery capacity data - cannot run forecast")
                 return
 
             if not spot_prices:
                 _LOGGER.warning(
-                    f"No spot prices available - forecast will use fallback prices"
+                    "No spot prices available - forecast will use fallback prices"
                 )
                 # Continue anyway - forecast can run with fallback prices
 
@@ -1823,6 +1822,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         # OPRAVA: Načíst současný režim místo fixed HOME I
         current_mode = self._get_current_mode()
+        efficiency = self._get_battery_efficiency()
 
         _LOGGER.debug(
             f"[DO NOTHING] Calculating cost for current mode: {current_mode} "
@@ -2530,8 +2530,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         battery = current_capacity
         forward_soc_before: List[Optional[float]] = [None] * n
         forward_soc_after: List[Optional[float]] = [None] * n
-        total_transition_cost = 0.0  # Track transition costs
-        prev_mode_name = "Home I"  # Start mode
 
         # In balancing mode, skip to holding_end and start with 100%
         start_index = 0
@@ -2611,7 +2609,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 min_reached = min(battery_trajectory)
                 _LOGGER.warning(
-                    f"⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
+                    "⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
                 )
         else:
             min_reached = min(battery_trajectory)
@@ -5589,7 +5587,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             Dict s actual hodnotami nebo None pokud data nejsou k dispozici
         """
         if not self._hass:
-            _LOGGER.debug(f"[fetch_interval_from_history] No _hass instance")
+            _LOGGER.debug("[fetch_interval_from_history] No _hass instance")
             return None
 
         _LOGGER.debug(
@@ -6000,7 +5998,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Load entire storage
             data = await self._plans_store.async_load()
             if not data:
-                _LOGGER.debug(f"No storage data found")
+                _LOGGER.debug("No storage data found")
                 # Fallback: Check in-memory cache
                 if hasattr(self, "_in_memory_plan_cache"):
                     cached = self._in_memory_plan_cache.get(date_str)
@@ -6244,7 +6242,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # 2. Determine date range for baseline (00:00 - 23:45)
-            now = dt_util.now()
+            dt_util.now()
             date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
             day_start = datetime.combine(date_obj, datetime.min.time())
             day_start = dt_util.as_local(day_start)  # Make timezone-aware
@@ -8042,13 +8040,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if self._autonomy_switch_retry_unsub:
             return
 
-        def _retry(now: datetime) -> None:
+        async def _retry_async(now: datetime) -> None:
+            """Async retry callback for autonomy switch."""
             self._autonomy_switch_retry_unsub = None
             if self._hass:
-                self._hass.async_create_task(self._update_autonomy_switch_schedule())
+                await self._update_autonomy_switch_schedule()
 
         self._autonomy_switch_retry_unsub = async_call_later(
-            self._hass, delay_seconds, _retry
+            self._hass, delay_seconds, _retry_async
         )
         _LOGGER.debug(
             "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds", delay_seconds
@@ -9019,8 +9018,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         build_start = dt_util.now()
 
         today = now.date()
-        yesterday = today - timedelta(days=1)
-        tomorrow = today + timedelta(days=1)
+        today - timedelta(days=1)
+        today + timedelta(days=1)
 
         # Build data for each day
         try:
@@ -9086,7 +9085,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         now = dt_util.now()
         today = now.date()
         tomorrow = today + timedelta(days=1)
-        yesterday = today - timedelta(days=1)
+        today - timedelta(days=1)
 
         preview = self._autonomy_preview or {}
         timeline = preview.get("timeline", [])
@@ -9309,7 +9308,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             summary = {
-                "active_plan": self._get_active_plan_key(),
+                "active_plan": (
+                    self._get_active_plan_key()
+                    if hasattr(self, "_get_active_plan_key")
+                    else "hybrid"
+                ),
                 "actual_spent": actual_spent,
                 "plans": {
                     "standard": standard_summary,
@@ -9584,10 +9587,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             i.get("actual", {}).get("load_kwh", 0) for i in completed
         )
 
-        total_plan_cost = sum(
+        sum(
             i.get("planned", {}).get("net_cost", 0) for i in completed
         )
-        total_actual_cost = sum(
+        sum(
             i.get("actual", {}).get("net_cost", 0) for i in completed
         )
 
@@ -9749,7 +9752,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )  # assuming 10 kWh capacity
 
         # Average spot price
-        avg_price = (
+        (
             sum(
                 safe_nested_get(i, "planned", "spot_price", default=0)
                 for i in intervals
@@ -9987,9 +9990,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # ZMĚNA: Používáme plán pro budoucí intervaly, ne drift ratio
         # (drift ratio platí jen pro již proběhlé intervaly)
         if plan_completed > 0:
-            drift_ratio = actual_completed / plan_completed
+            actual_completed / plan_completed
         else:
-            drift_ratio = 1.0
+            pass
 
         # EOD = actual (dosud) + plánované budoucí náklady
         eod_predicted = actual_completed + plan_future
@@ -10143,7 +10146,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             },
             # FÁZE 1 - Nové metriky
             "remaining_to_eod": round(remaining_to_eod, 2),
-            "future_plan_cost": round(plan_future, 2),
             "future_plan_savings": round(plan_savings_future, 2),
             "vs_plan_pct": round(vs_plan_pct, 1),
             "performance_class": performance_class,
@@ -10201,7 +10203,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 return
 
             now = dt_util.now()
-            today_str = now.date().strftime("%Y-%m-%d")
+            now.date().strftime("%Y-%m-%d")
 
             # Backfill posledních 7 dní (kromě dneška)
             backfilled_count = 0
@@ -10707,7 +10709,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Expand to all 15-min intervals in the day
                 # Fill forward: each interval gets the mode that was active at that time
                 interval_time = day_start
-                current_mode_idx = 0
 
                 while interval_time <= fetch_end:
                     # Find the mode that was active at interval_time
@@ -10716,7 +10717,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     for i, change in enumerate(mode_changes):
                         if change["time"] <= interval_time:
                             active_mode = change
-                            current_mode_idx = i
                         else:
                             break
 
@@ -11903,7 +11903,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         distribution_fee_vt_kwh = config.get("distribution_fee_vt_kwh", 1.50)
         distribution_fee_nt_kwh = config.get("distribution_fee_nt_kwh", 1.20)
         vat_rate = config.get("vat_rate", 21.0)
-        dual_tariff_enabled = config.get("dual_tariff_enabled", True)
+        config.get("dual_tariff_enabled", True)
 
         # 1. Obchodní cena (spot + přirážka)
         if pricing_model == "percentage":
@@ -12151,7 +12151,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🌞 SOLAR DEBUG: Today sample: {dict(zip(sample_keys, sample_values))}"
             )
         else:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
+            _LOGGER.warning("🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
 
         if tomorrow:
             sample_keys = list(tomorrow.keys())[:3]
@@ -12160,7 +12160,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🌞 SOLAR DEBUG: Tomorrow sample: {dict(zip(sample_keys, sample_values))}"
             )
         else:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
+            _LOGGER.warning("🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
 
         return {"today": today, "tomorrow": tomorrow}
 
@@ -12519,6 +12519,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         # 500W = 0.5 kWh/h = 0.125 kWh/15min
         return 0.125
+
+    def _get_load_avg_for_hour(self, hour: int) -> float:
+        """
+        Získat load average pro danou hodinu dnešního dne (kWh za hodinu).
+
+        Používá load_avg senzory pro získání průměrné spotřeby.
+
+        Args:
+            hour: Hodina dne (0-23)
+
+        Returns:
+            Load average v kWh za hodinu
+        """
+        load_avg_sensors = self._get_load_avg_sensors()
+        if not load_avg_sensors:
+            return 0.5  # 500W default
+
+        now = dt_util.now()
+        ts = now.replace(hour=hour, minute=30, second=0, microsecond=0)
+
+        # _get_load_avg_for_timestamp vrací kWh/15min, chceme kWh/h
+        kwh_15min = self._get_load_avg_for_timestamp(ts, load_avg_sensors)
+        return kwh_15min * 4  # 4 intervaly = 1 hodina
 
     # ========================================================================
     # GRID CHARGING OPTIMIZATION METHODS
@@ -13012,9 +13035,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 efficiency=efficiency,
             )
             cost_charge = result_charge["total_charging_cost"]
-            min_soc_charge = result_charge["min_soc"]
-            final_soc_charge = result_charge["final_soc"]
-            death_valley_charge = result_charge["death_valley_reached"]
+            result_charge["min_soc"]
+            result_charge["final_soc"]
+            result_charge["death_valley_reached"]
 
             # Scénář 2: Počkat (nenabíjet tady)
             result_wait = self._simulate_forward(
@@ -13028,7 +13051,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             cost_wait = result_wait["total_charging_cost"]
             min_soc_wait = result_wait["min_soc"]
-            final_soc_wait = result_wait["final_soc"]
+            result_wait["final_soc"]
             death_valley_wait = result_wait["death_valley_reached"]
 
             # ROZHODNUTÍ 1: Death valley prevence
@@ -13263,7 +13286,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci (v levných hodinách)
         max_iterations = 100
         iteration = 0
-        used_intervals = set()  # Sledovat použité intervaly
 
         # Vypočítat effective_target (pro 100% target použít 99%)
         effective_target = target_capacity
@@ -13977,10 +13999,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             List hodinových spotřeb v kWh (např. [0.5, 0.4, 0.3, ..., 1.2])
         """
         try:
+            # OPRAVA: Kontrola že hass je dostupný
+            if not self.hass:
+                _LOGGER.debug("_get_today_hourly_consumption: hass not available yet")
+                return []
+
             consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
 
             # Načíst ze statistics (hodinové průměry)
-            from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.statistics import (
                 statistics_during_period,
             )
@@ -14020,14 +14046,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     async def _calculate_recent_consumption_ratio(
         self, adaptive_profiles: Optional[Dict[str, Any]], hours: int = 3
     ) -> Optional[float]:
-        """Porovná reálnou spotřebu vs plán za posledních N hodin."""
-        if (
-            not adaptive_profiles
-            or not isinstance(adaptive_profiles, dict)
-            or "today_profile" not in adaptive_profiles
-        ):
-            return None
+        """Porovná reálnou spotřebu vs plán za posledních N hodin.
 
+        OPRAVA: Používá původní plán z _daily_plan_state (persistentní),
+        ne dynamicky se měnící adaptive_profiles (ty mají start_hour
+        posunutý během dne a indexování pak nefunguje).
+        """
         actual_hourly = await self._get_today_hourly_consumption()
         if not actual_hourly:
             return None
@@ -14039,56 +14063,172 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         lookback = min(hours, total_hours)
         actual_total = sum(actual_hourly[-lookback:])
 
-        today_profile = adaptive_profiles.get("today_profile") or {}
-        hourly_plan = today_profile.get("hourly_consumption")
-        if not isinstance(hourly_plan, list):
-            return None
-
-        start_hour = today_profile.get("start_hour", 0)
+        # OPRAVA: Použít původní plán z _daily_plan_state místo adaptive_profiles
+        # _daily_plan_state obsahuje "plan" s consumption_kwh pro každý 15-min interval
+        # a vytváří se jednou denně, takže je stabilní
         planned_total = 0.0
-        start_index = total_hours - lookback
-        avg_fallback = today_profile.get("avg_kwh_h", 0.5)
+        plan_source = "none"
 
-        for idx in range(lookback):
-            hour = start_index + idx
-            plan_idx = hour - start_hour
-            if 0 <= plan_idx < len(hourly_plan):
-                planned_total += hourly_plan[plan_idx]
-            else:
-                planned_total += avg_fallback
+        # Preferovat persistentní plán z půlnoci (musí mít alespoň nějaké intervaly)
+        plan_intervals = []
+        if (
+            hasattr(self, "_daily_plan_state")
+            and self._daily_plan_state
+            and self._daily_plan_state.get("plan")
+            and len(self._daily_plan_state.get("plan", [])) > 0
+        ):
+            plan_intervals = self._daily_plan_state.get("plan", [])
+
+            # Spočítat, kolik intervalů odpovídá lookback hodinám
+            # total_hours = počet hodinových dat (od 0:00), lookback = 3h
+            # start_hour = total_hours - lookback (např. 18-3=15)
+            start_hour = total_hours - lookback
+
+            # Plan intervals jsou po 15 minutách, takže pro hodinu H potřebujeme
+            # intervaly H*4 až H*4+3 (4 intervaly = 1 hodina)
+            for hour_idx in range(lookback):
+                hour = start_hour + hour_idx
+                # Sečíst 4 intervaly (15min * 4 = 1h)
+                for quarter in range(4):
+                    interval_idx = hour * 4 + quarter
+                    if 0 <= interval_idx < len(plan_intervals):
+                        planned_total += plan_intervals[interval_idx].get(
+                            "consumption_kwh", 0
+                        )
+
+            if planned_total > 0:
+                plan_source = "daily_plan_state"
+
+        # Fallback #1: Adaptive profiles (pokud daily_plan_state nemá data)
+        if planned_total <= 0 and (
+            adaptive_profiles
+            and isinstance(adaptive_profiles, dict)
+            and "today_profile" in adaptive_profiles
+        ):
+            # Fallback na adaptive profiles (ale se správným výpočtem)
+            today_profile = adaptive_profiles.get("today_profile") or {}
+            hourly_plan = today_profile.get("hourly_consumption", [])
+            start_hour_profile = today_profile.get("start_hour", 0)
+            avg_fallback = today_profile.get("avg_kwh_h", 0.5)
+
+            start_hour = total_hours - lookback
+
+            for idx in range(lookback):
+                hour = start_hour + idx
+                plan_idx = hour - start_hour_profile
+                if 0 <= plan_idx < len(hourly_plan):
+                    planned_total += hourly_plan[plan_idx]
+                else:
+                    # Pokud nemáme data pro tuto hodinu, použij load_avg senzory
+                    load_avg = self._get_load_avg_for_hour(hour)
+                    if load_avg > 0:
+                        planned_total += load_avg
+                    else:
+                        planned_total += avg_fallback
+
+            plan_source = "adaptive_profiles"
+
+        # Fallback #2: Load_avg senzory (pokud ani adaptive profiles nemají data)
+        if planned_total <= 0:
+            load_avg_sensors = self._get_load_avg_sensors()
+            start_hour = total_hours - lookback
+
+            for hour_idx in range(lookback):
+                hour = start_hour + hour_idx
+                # Vytvořit timestamp pro tuto hodinu
+                now = dt_util.now()
+                ts = now.replace(hour=hour, minute=30, second=0, microsecond=0)
+                load_kwh = self._get_load_avg_for_timestamp(ts, load_avg_sensors)
+                planned_total += load_kwh * 4  # 4 intervaly = 1 hodina
+
+            plan_source = "load_avg_sensors"
 
         if planned_total <= 0:
+            _LOGGER.warning(
+                f"[LoadForecast] Cannot calculate ratio: planned_total=0 (source={plan_source})"
+            )
             return None
 
         ratio = actual_total / planned_total
         _LOGGER.debug(
-            "[LoadForecast] Recent consumption ratio (last %dh): actual=%.2f kWh, planned=%.2f kWh → %.2fx",
+            "[LoadForecast] Recent consumption ratio (last %dh): actual=%.2f kWh, planned=%.2f kWh → %.2fx (source=%s)",
             lookback,
             actual_total,
             planned_total,
             ratio,
+            plan_source,
         )
         return ratio
 
     def _apply_consumption_boost_to_forecast(
         self, load_forecast: List[float], ratio: float, hours: int = 3
     ) -> None:
-        """Navýší krátkodobý load forecast podle zjištěné odchylky."""
+        """Navýší load forecast podle zjištěné odchylky mezi skutečnou a plánovanou spotřebou.
+
+        OPRAVA: Aplikuje boost na CELÝ forecast, ne jen na prvních pár hodin.
+        Důvod: Pokud spotřeba je stabilně vyšší (např. 1.7x), bude pravděpodobně
+        vyšší i zbytek dne. Původní omezení na ~6h způsobovalo, že baterie
+        klesla na minimum bez reakce.
+
+        Strategie boostu:
+        - ratio < 1.1: Žádný boost (v rámci tolerance)
+        - ratio 1.1-1.5: Plný boost na prvních 4h, pak postupný fade (50%, 25%)
+        - ratio > 1.5: Plný boost na celý zbytek dneška (do půlnoci)
+
+        Args:
+            load_forecast: List spotřeby v kWh/15min (in-place modifikace)
+            ratio: Poměr skutečné/plánované spotřeby
+            hours: Lookback window (nepoužito v nové verzi)
+        """
         if not load_forecast:
             return
 
+        # Cap ratio na 3.0 (300%) - víc by bylo nerealistické
         capped_ratio = min(ratio, 3.0)
-        intervals = min(
-            len(load_forecast),
-            max(4, int(math.ceil(hours * 4 * min(capped_ratio, 2.5)))),
-        )
 
-        for idx in range(intervals):
-            load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
+        # Kolik intervalů zbývá do půlnoci?
+        now = dt_util.now()
+        current_minute = now.hour * 60 + now.minute
+        minutes_until_midnight = 24 * 60 - current_minute
+        intervals_until_midnight = minutes_until_midnight // 15
+
+        # Určit strategii podle severity driftu
+        if capped_ratio >= 1.5:
+            # Vysoký drift (50%+): boost na celý zbytek dneška
+            full_boost_intervals = min(len(load_forecast), intervals_until_midnight)
+            fade_start = full_boost_intervals  # Žádný fade
+            _LOGGER.info(
+                f"[LoadForecast] HIGH drift detected (ratio={ratio:.2f}x): "
+                f"boosting ALL {full_boost_intervals} intervals until midnight"
+            )
+        elif capped_ratio >= 1.3:
+            # Střední drift (30-50%): boost na 6h, pak fade
+            full_boost_intervals = min(6 * 4, len(load_forecast))  # 6 hodin
+            fade_start = full_boost_intervals
+        else:
+            # Nízký drift (10-30%): boost na 3h, pak fade
+            full_boost_intervals = min(3 * 4, len(load_forecast))  # 3 hodiny
+            fade_start = full_boost_intervals
+
+        boosted_count = 0
+        for idx in range(len(load_forecast)):
+            if idx < full_boost_intervals:
+                # Plný boost
+                load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
+                boosted_count += 1
+            elif idx < fade_start + 8:  # Fade zone (2h)
+                # Postupný fade: 75% → 50% → 25% boostu
+                fade_progress = (idx - fade_start) / 8.0
+                fade_ratio = 1.0 + (capped_ratio - 1.0) * (1.0 - fade_progress * 0.75)
+                load_forecast[idx] = round(load_forecast[idx] * fade_ratio, 4)
+                boosted_count += 1
+            # Za fade zone: žádná změna (zítra může být jinak)
 
         _LOGGER.info(
-            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high consumption drift (ratio %.2fx, capped %.2fx)",
-            intervals,
+            "[LoadForecast] Boosted %d intervals: %d full (%.0f%%), rest fading. "
+            "Drift ratio %.2fx (capped %.2fx)",
+            boosted_count,
+            full_boost_intervals,
             (capped_ratio - 1) * 100,
             ratio,
             capped_ratio,
@@ -14691,7 +14831,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             True pokud úspěšně zrušeno
         """
         if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
-            _LOGGER.debug(f"[Planner] No active plan to cancel")
+            _LOGGER.debug("[Planner] No active plan to cancel")
             return False
 
         if self._active_charging_plan["requester"] != requester:
@@ -14824,7 +14964,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         max_capacity_kwh = self._get_max_battery_capacity()
         target_soc_kwh = (target_soc_percent / 100.0) * max_capacity_kwh
-        charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
+        config.get("home_charge_rate", 2.8) / 4.0
 
         # Najít charging intervaly pomocí plan_charging_to_target
         # která používá baseline forecast pro určení aktuální kapacity
@@ -15646,7 +15786,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         # Získat aktuální čas
         now = dt_util.now()
-        current_time = now.time()
+        now.time()
 
         # Získat aktuální režim z coordinator
         current_mode = self._get_current_mode()
@@ -15989,6 +16129,58 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
         # Initial update
         await self._daily_update()
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator update - refresh current month data."""
+        # Aktualizovat atributy při každém coordinator update (každých 30s)
+        # Ale nelogovat a nedělat full daily update - jen refresh dat
+        if self._battery_kwh_month_start is not None and self._hass:
+            charge_month_wh = self._get_sensor("computed_batt_charge_energy_month") or 0
+            discharge_month_wh = (
+                self._get_sensor("computed_batt_discharge_energy_month") or 0
+            )
+            battery_now = self._get_sensor("remaining_usable_capacity") or 0
+
+            charge_month = charge_month_wh / 1000
+            discharge_month = discharge_month_wh / 1000
+
+            # Update partial data
+            self._current_month_partial = {
+                "charge": round(charge_month, 2),
+                "discharge": round(discharge_month, 2),
+                "battery_start": round(self._battery_kwh_month_start, 2),
+                "battery_end": round(battery_now, 2),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            # Vypočítat průběžnou efficiency
+            if charge_month >= 1.0 and discharge_month >= 1.0:
+                delta = battery_now - self._battery_kwh_month_start
+                effective_discharge = discharge_month - delta
+
+                if (
+                    effective_discharge > 0
+                    and effective_discharge <= charge_month * 1.2
+                ):
+                    efficiency_current = (effective_discharge / charge_month) * 100
+                    self._current_month_partial["efficiency"] = round(
+                        efficiency_current, 1
+                    )
+                    self._current_month_partial["delta"] = round(delta, 2)
+                    self._current_month_partial["effective_discharge"] = round(
+                        effective_discharge, 2
+                    )
+
+            # Update attributes
+            self._update_extra_state_attributes()
+
+            # Update state value - fallback to current month if no last month
+            if self._efficiency_last_month is not None:
+                self._attr_native_value = self._efficiency_last_month
+            else:
+                self._attr_native_value = self._current_month_partial.get("efficiency")
+
+        super()._handle_coordinator_update()
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
@@ -16743,7 +16935,7 @@ class OigCloudBatteryForecastPerformanceSensor(
                 f"total_so_far={self._today_plan['actual_cost_so_far']:.2f} Kč"
             )
         else:
-            _LOGGER.debug(f"📊 Skipping interval tracking - missing data")
+            _LOGGER.debug("📊 Skipping interval tracking - missing data")
 
     async def _get_actual_grid_import(self) -> Optional[float]:
         """

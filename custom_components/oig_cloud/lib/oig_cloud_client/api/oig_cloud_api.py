@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import ssl
 import time
 from typing import Any, Dict, Optional, Union, cast
 import re
@@ -12,7 +13,9 @@ from aiohttp import (
     ClientConnectorError,
     ClientResponseError,
     ServerTimeoutError,
+    TCPConnector,
 )
+import certifi
 
 # Conditional import of opentelemetry
 _logger = logging.getLogger(__name__)
@@ -93,51 +96,169 @@ class OigCloudApi:
         # Structure: {endpoint: {"etag": str|None, "data": Any|None, "ts": float}}
         self._cache: Dict[str, Dict[str, Any]] = {}
 
+        # SSL handling modes:
+        # 0 = normal SSL (default)
+        # 1 = SSL with cached intermediate cert (for broken chain)
+        # 2 = SSL disabled (last resort)
+        self._ssl_mode: int = 0
+        self._ssl_context_with_intermediate: Optional[ssl.SSLContext] = None
+
         self._logger.debug(
             "OigCloudApi initialized (ETag support enabled, timing controlled by coordinator)"
         )
+
+    # Certum DV TLS G2 R39 CA - intermediate certificate for oigpower.cz
+    # Downloaded from: http://certumdvtlsg2r39ca.repository.certum.pl/certumdvtlsg2r39ca.cer
+    # This is needed because OIG server doesn't send the intermediate cert in TLS handshake
+    _CERTUM_INTERMEDIATE_CERT: str = """-----BEGIN CERTIFICATE-----
+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
+8FpPkganuCwy++7umTkM7+Q=
+-----END CERTIFICATE-----"""
+
+    def _get_ssl_context_with_intermediate(self) -> ssl.SSLContext:
+        """Create SSL context with cached intermediate certificate."""
+        if self._ssl_context_with_intermediate is None:
+            self._logger.info(
+                "🔐 Creating SSL context with Certum intermediate certificate"
+            )
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            # Add the intermediate certificate
+            ctx.load_verify_locations(cadata=self._CERTUM_INTERMEDIATE_CERT)
+            self._ssl_context_with_intermediate = ctx
+        return self._ssl_context_with_intermediate
+
+    def _get_connector(self) -> TCPConnector:
+        """Get TCP connector based on current SSL mode.
+
+        SSL modes:
+        0 = normal SSL (default)
+        1 = SSL with cached intermediate cert (for broken chain)
+        2 = SSL disabled (last resort)
+        """
+        if self._ssl_mode == 0:
+            # Normal SSL verification
+            return TCPConnector()
+        elif self._ssl_mode == 1:
+            # SSL with intermediate cert
+            return TCPConnector(ssl=self._get_ssl_context_with_intermediate())
+        else:
+            # SSL disabled
+            return TCPConnector(ssl=False)
 
     async def authenticate(self) -> bool:
         """Authenticate with the OIG Cloud API."""
         return await self._authenticate_internal()
 
     async def _authenticate_internal(self) -> bool:
-        """Internal authentication method with proper error handling."""
-        try:
-            login_command: Dict[str, str] = {
-                "email": self._username,
-                "password": self._password,
-            }
-            self._logger.debug("Authenticating with OIG Cloud")
+        """Internal authentication method with SSL fallback.
 
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                url: str = self._base_url + self._login_url
-                data: str = json.dumps(login_command)
-                headers: Dict[str, str] = {"Content-Type": "application/json"}
+        Tries 3 SSL modes in order:
+        1. Normal SSL verification
+        2. SSL with cached intermediate certificate (fixes broken chain)
+        3. SSL disabled (last resort)
+        """
+        login_command: Dict[str, str] = {
+            "email": self._username,
+            "password": self._password,
+        }
+        self._logger.debug("Authenticating with OIG Cloud")
 
-                async with session.post(url, data=data, headers=headers) as response:
-                    responsecontent: str = await response.text()
-                    if response.status == 200:
-                        if responsecontent == '[[2,"",false]]':
-                            self._phpsessid = (
-                                session.cookie_jar.filter_cookies(self._base_url)
-                                .get("PHPSESSID")
-                                .value
-                            )
-                            return True
-                    raise OigCloudAuthError("Authentication failed")
+        # Try up to 3 SSL modes
+        max_ssl_mode = 2
+        start_mode = self._ssl_mode
 
-        except (asyncio.TimeoutError, ServerTimeoutError) as e:
-            self._logger.error(f"Authentication timeout: {e}")
-            raise OigCloudTimeoutError(f"Authentication timeout: {e}") from e
-        except ClientConnectorError as e:
-            self._logger.error(f"Connection error during authentication: {e}")
-            raise OigCloudConnectionError(f"Connection error: {e}") from e
-        except OigCloudAuthError:
-            raise
-        except Exception as e:
-            self._logger.error(f"Unexpected error during authentication: {e}")
-            raise OigCloudAuthError(f"Authentication failed: {e}") from e
+        for mode in range(start_mode, max_ssl_mode + 1):
+            self._ssl_mode = mode
+            try:
+                connector = self._get_connector()
+                async with aiohttp.ClientSession(
+                    timeout=self._timeout, connector=connector
+                ) as session:
+                    url: str = self._base_url + self._login_url
+                    data: str = json.dumps(login_command)
+                    headers: Dict[str, str] = {"Content-Type": "application/json"}
+
+                    async with session.post(
+                        url, data=data, headers=headers
+                    ) as response:
+                        responsecontent: str = await response.text()
+                        if response.status == 200:
+                            if responsecontent == '[[2,"",false]]':
+                                self._phpsessid = (
+                                    session.cookie_jar.filter_cookies(self._base_url)
+                                    .get("PHPSESSID")
+                                    .value
+                                )
+                                if mode > 0:
+                                    mode_names = [
+                                        "normal",
+                                        "intermediate cert",
+                                        "disabled",
+                                    ]
+                                    self._logger.info(
+                                        f"✅ Authentication successful with SSL mode: {mode_names[mode]}"
+                                    )
+                                return True
+                        raise OigCloudAuthError("Authentication failed")
+
+            except (asyncio.TimeoutError, ServerTimeoutError) as e:
+                self._logger.error(f"Authentication timeout: {e}")
+                raise OigCloudTimeoutError(f"Authentication timeout: {e}") from e
+            except ClientConnectorError as e:
+                # Check if this is an SSL certificate error
+                error_str = str(e)
+                if "SSL" in error_str or "certificate" in error_str.lower():
+                    if mode < max_ssl_mode:
+                        mode_names = ["normal", "intermediate cert", "disabled"]
+                        self._logger.warning(
+                            f"🔓 SSL error with mode '{mode_names[mode]}', "
+                            f"trying '{mode_names[mode + 1]}'"
+                        )
+                        continue  # Try next SSL mode
+                self._logger.error(f"Connection error during authentication: {e}")
+                raise OigCloudConnectionError(f"Connection error: {e}") from e
+            except OigCloudAuthError:
+                raise
+            except Exception as e:
+                self._logger.error(f"Unexpected error during authentication: {e}")
+                raise OigCloudAuthError(f"Authentication failed: {e}") from e
+
+        # Should not reach here, but just in case
+        raise OigCloudAuthError("Authentication failed after all SSL fallbacks")
 
     def get_session(self) -> aiohttp.ClientSession:
         """Get a session with authentication cookies and browser-like headers."""
@@ -166,7 +287,11 @@ class OigCloudApi:
             "Sec-Fetch-Site": "same-origin",
         }
 
-        return aiohttp.ClientSession(headers=headers, timeout=self._timeout)
+        # Use SSL mode determined during authentication
+        connector = self._get_connector()
+        return aiohttp.ClientSession(
+            headers=headers, timeout=self._timeout, connector=connector
+        )
 
     def _update_cache(
         self, endpoint: str, response: aiohttp.ClientResponse, data: Any

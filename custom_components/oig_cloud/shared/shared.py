@@ -29,7 +29,6 @@ def setup_non_blocking_telemetry(enabled: bool = False) -> None:
 
 def get_resource(resource_name: str) -> str:
     """Získá cestu k resource souboru pro ServiceShield."""
-    import os
     from pathlib import Path
 
     # Získáme cestu k current modulu

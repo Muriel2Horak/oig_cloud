@@ -1,7 +1,7 @@
 """Definice typů senzorů pro spotové ceny elektřiny z OTE a ČNB."""
 
 from typing import Dict, Any
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass
 
 # Typy senzorů pro spotové ceny elektřiny
 SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {

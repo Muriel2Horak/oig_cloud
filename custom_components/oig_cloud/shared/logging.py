@@ -1,13 +1,11 @@
 """Shared logging utilities for OIG Cloud."""
 
-import asyncio
 import json
 import logging
 import time
 from typing import Dict, Any, Optional
 
 import aiohttp
-from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 

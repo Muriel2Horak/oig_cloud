@@ -2,7 +2,7 @@
 
 import logging
 from typing import Any, Dict, Optional, Union
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition
 from .const import DOMAIN

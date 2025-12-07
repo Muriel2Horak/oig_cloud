@@ -5,7 +5,6 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
 )
 from typing import Dict, Any
-from homeassistant.helpers.entity import EntityCategory
 
 SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
     "extended_fve_voltage_1": {

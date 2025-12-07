@@ -8,7 +8,6 @@ from .const import (
     JOULES_TO_KWH,
     SENSOR_POSITION_MAP,
     TEMP_GRADIENT_PER_10CM,
-    WATER_DENSITY,
     WATER_SPECIFIC_HEAT,
 )
 

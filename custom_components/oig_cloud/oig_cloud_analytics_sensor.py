@@ -4,17 +4,9 @@ import logging
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, Optional, List, Tuple, Union  # PŘIDÁNO: Union
 
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
-    SensorStateClass,
-)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .oig_cloud_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)

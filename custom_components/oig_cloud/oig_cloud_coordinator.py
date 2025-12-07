@@ -1,12 +1,11 @@
 import logging
 import asyncio
 import random
-from datetime import timedelta, datetime, time
+from datetime import timedelta, datetime
 from typing import Dict, Any, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import now as dt_now, utcnow as dt_utcnow
-from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.event import async_track_point_in_time
 
@@ -62,7 +61,17 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Pricing enabled - initializing OTE API")
                 from .api.ote_api import OteApi
 
-                self.ote_api = OteApi()
+                # OPRAVA: Předat cache_path pro načtení uložených spotových cen
+                cache_path = hass.config.path(".storage", "oig_ote_spot_prices.json")
+                self.ote_api = OteApi(cache_path=cache_path)
+
+                # OPRAVA: Načíst spot ceny z cache do koordinátoru ihned po inicializaci
+                if self.ote_api._last_data:
+                    self._spot_prices_cache = self.ote_api._last_data
+                    _LOGGER.info(
+                        "Loaded %d hours of cached spot prices from disk",
+                        self.ote_api._last_data.get("hours_count", 0),
+                    )
 
                 # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
                 # OPRAVA: Použít zoneinfo místo pytz
@@ -170,7 +179,6 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _schedule_hourly_fallback(self) -> None:
         """Naplánuje hodinové fallback stahování OTE dat."""
-        from homeassistant.helpers.event import async_track_time_interval
 
         # Spustit každou hodinu
         self.hass.loop.call_later(
@@ -304,7 +312,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         if self._spot_retry_count < 3 and is_important_time:  # Snížit max retries
             # Zkusíme znovu za 30 minut místo 15
-            retry_time = dt_now() + timedelta(minutes=30)
+            dt_now() + timedelta(minutes=30)
             _LOGGER.info(
                 f"Retrying spot price update in 30 minutes (attempt {self._spot_retry_count + 1}/3)"
             )
@@ -321,7 +329,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
             else:
                 _LOGGER.error(
-                    f"Failed to update spot prices after 3 attempts, giving up until tomorrow"
+                    "Failed to update spot prices after 3 attempts, giving up until tomorrow"
                 )
 
             self._spot_retry_count = 0
@@ -392,7 +400,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 extended_enabled = config_entry.options.get(
                     "enable_extended_sensors", False
                 )
-                _LOGGER.debug(f"Config entry found: True")
+                _LOGGER.debug("Config entry found: True")
                 _LOGGER.debug(f"Config entry options: {config_entry.options}")
                 _LOGGER.debug(
                     f"Extended sensors enabled from options: {extended_enabled}"

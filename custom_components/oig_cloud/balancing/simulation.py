@@ -541,7 +541,7 @@ class BatterySimulation:
             # Check if this interval would cause deficit
             if sim.battery_after_kwh < self.context.min_capacity_kwh:
                 # Calculate deficit
-                deficit = self.context.min_capacity_kwh - sim.battery_after_kwh
+                self.context.min_capacity_kwh - sim.battery_after_kwh
 
                 # Add UPS charging before this interval
                 # For simplicity, use current interval timestamp

@@ -1,7 +1,6 @@
 """Senzory pro bojlerový modul."""
 
 import logging
-from datetime import datetime
 from typing import Any, Optional
 
 from homeassistant.components.sensor import (
@@ -12,11 +11,9 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfEnergy,
-    UnitOfPower,
     UnitOfTemperature,
     EntityCategory,
 )
-from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 

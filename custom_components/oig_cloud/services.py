@@ -8,7 +8,6 @@ from opentelemetry import trace
 from homeassistant.core import HomeAssistant, ServiceCall, Context, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN

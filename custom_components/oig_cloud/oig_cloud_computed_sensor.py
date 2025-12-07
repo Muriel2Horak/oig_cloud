@@ -6,10 +6,18 @@ from typing import Any, Dict, Optional, Union
 
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from .oig_cloud_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
+
+# Shared storage for all energy sensors per box
+# Key: oig_cloud.energy_data_{box_id}
+# Structure: {"energy": {...}, "last_save": "ISO timestamp", "version": 1}
+ENERGY_STORAGE_VERSION = 1
+_energy_stores: Dict[str, Store] = {}
+_energy_data_cache: Dict[str, Dict[str, float]] = {}
 
 _LANGS: Dict[str, Dict[str, str]] = {
     "on": {"en": "On", "cs": "Zapnuto"},
@@ -63,6 +71,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         self._last_update_time: Optional[datetime] = None
         self._monitored_sensors: Dict[str, Any] = {}
 
+        # Persistent storage flag - will save periodically
+        self._last_storage_save: Optional[datetime] = None
+        self._storage_save_interval = timedelta(minutes=5)
+
         # Speciální handling pro real_data_update senzor
         if sensor_type == "real_data_update":
             self._is_real_update_sensor = True
@@ -70,20 +82,121 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         else:
             self._is_real_update_sensor = False
 
+    def _get_energy_store(self) -> Optional[Store]:
+        """Get or create the shared energy store for this box."""
+        global _energy_stores
+        if self._box_id not in _energy_stores and hasattr(self, "hass") and self.hass:
+            _energy_stores[self._box_id] = Store(
+                self.hass,
+                version=ENERGY_STORAGE_VERSION,
+                key=f"oig_cloud.energy_data_{self._box_id}",
+            )
+            _LOGGER.debug(
+                f"✅ Initialized Energy Storage: oig_cloud.energy_data_{self._box_id}"
+            )
+        return _energy_stores.get(self._box_id)
+
+    async def _load_energy_from_storage(self) -> bool:
+        """Load energy data from persistent storage. Returns True if data was loaded."""
+        global _energy_data_cache
+
+        # Already loaded for this box?
+        if self._box_id in _energy_data_cache:
+            cached = _energy_data_cache[self._box_id]
+            for key in self._energy:
+                if key in cached:
+                    self._energy[key] = cached[key]
+            _LOGGER.debug(f"[{self.entity_id}] ✅ Loaded energy from cache")
+            return True
+
+        store = self._get_energy_store()
+        if not store:
+            return False
+
+        try:
+            data = await store.async_load()
+            if data and "energy" in data:
+                stored_energy = data["energy"]
+                for key in self._energy:
+                    if key in stored_energy:
+                        self._energy[key] = float(stored_energy[key])
+
+                # Cache for other sensors
+                _energy_data_cache[self._box_id] = stored_energy.copy()
+
+                last_save = data.get("last_save", "unknown")
+                _LOGGER.info(
+                    f"[{self.entity_id}] ✅ Loaded energy from storage (saved: {last_save}): "
+                    f"charge_month={stored_energy.get('charge_month', 0):.0f} Wh"
+                )
+                return True
+        except Exception as e:
+            _LOGGER.error(f"[{self.entity_id}] Error loading energy from storage: {e}")
+        return False
+
+    async def _save_energy_to_storage(self, force: bool = False) -> None:
+        """Save energy data to persistent storage (throttled to every 5 min unless forced)."""
+        now = datetime.utcnow()
+
+        # Throttle saves unless forced
+        if not force and self._last_storage_save:
+            elapsed = now - self._last_storage_save
+            if elapsed < self._storage_save_interval:
+                return
+
+        store = self._get_energy_store()
+        if not store:
+            return
+
+        try:
+            # Update cache
+            global _energy_data_cache
+            _energy_data_cache[self._box_id] = self._energy.copy()
+
+            data = {
+                "version": ENERGY_STORAGE_VERSION,
+                "energy": self._energy.copy(),
+                "last_save": now.isoformat(),
+            }
+            await store.async_save(data)
+            self._last_storage_save = now
+            _LOGGER.debug(
+                f"[{self.entity_id}] 💾 Saved energy to storage: "
+                f"charge_month={self._energy.get('charge_month', 0):.0f} Wh"
+            )
+        except Exception as e:
+            _LOGGER.error(f"[{self.entity_id}] Error saving energy to storage: {e}")
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         async_track_time_change(
             self.hass, self._reset_daily, hour=0, minute=0, second=0
         )
 
-        old_state = await self.async_get_last_state()
-        if old_state and old_state.attributes:
-            _LOGGER.debug(
-                f"[{self.entity_id}] Restoring energy state from previous session"
-            )
-            for key in self._energy:
-                if key in old_state.attributes:
-                    self._energy[key] = float(old_state.attributes[key])
+        # Priority 1: Load from persistent storage (more reliable than restore_state)
+        loaded_from_storage = await self._load_energy_from_storage()
+
+        # Priority 2: Fallback to restore_state if storage was empty
+        if not loaded_from_storage:
+            old_state = await self.async_get_last_state()
+            if old_state and old_state.attributes:
+                # Check if restore_state has valid data (not zeroed)
+                restore_charge_month = old_state.attributes.get("charge_month", 0)
+                if restore_charge_month and float(restore_charge_month) > 1000:
+                    _LOGGER.info(
+                        f"[{self.entity_id}] 📥 Restoring from HA state (storage empty): "
+                        f"charge_month={restore_charge_month}"
+                    )
+                    for key in self._energy:
+                        if key in old_state.attributes:
+                            self._energy[key] = float(old_state.attributes[key])
+                    # Save to storage for future
+                    await self._save_energy_to_storage(force=True)
+                else:
+                    _LOGGER.warning(
+                        f"[{self.entity_id}] ⚠️ Restore state has zeroed/invalid data "
+                        f"(charge_month={restore_charge_month}), keeping defaults"
+                    )
 
     async def _reset_daily(self, *_: Any) -> None:
         now = datetime.utcnow()
@@ -103,6 +216,9 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             for key in self._energy:
                 if key.endswith("year"):
                     self._energy[key] = 0.0
+
+        # Force save after reset
+        await self._save_energy_to_storage(force=True)
 
     @property
     def state(self) -> Optional[Union[float, str]]:
@@ -309,6 +425,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             self._attr_extra_state_attributes = {
                 k: round(v, 3) for k, v in self._energy.items()
             }
+
+            # Periodic save to persistent storage (throttled)
+            if hasattr(self, "hass") and self.hass:
+                self.hass.async_create_task(self._save_energy_to_storage())
 
             return self._get_energy_value()
 

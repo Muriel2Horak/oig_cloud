@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 import re
 import json
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Tuple
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+
+if TYPE_CHECKING:
+    from .oig_cloud_api import OigCloudApi
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 

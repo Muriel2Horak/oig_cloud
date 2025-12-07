@@ -309,7 +309,7 @@ function updateBatteryHealthUI(container, data) {
             ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
         </div>
         <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: -5px;">
-            (průměr 30 dní)
+            (z ${measurementCount || 0} měření)
         </div>
         ` : `
         <div style="text-align: center; padding: 20px 0; font-size: 0.9em; color: var(--text-secondary);">
@@ -330,7 +330,7 @@ function updateBatteryHealthUI(container, data) {
         <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px;">
             ${capacity !== null ? `
             <div style="display: flex; justify-content: space-between;">
-                <span>📊 Kapacita (30d):</span>
+                <span>📊 Aktuální kapacita:</span>
                 <span style="color: var(--text-primary); font-weight: 600;">${capacity.toFixed(2)} kWh</span>
             </div>
             ${minCapacity !== null && maxCapacity !== null ? `

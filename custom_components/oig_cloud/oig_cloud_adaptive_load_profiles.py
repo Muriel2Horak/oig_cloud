@@ -3,10 +3,8 @@
 import logging
 import asyncio
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
-from collections import defaultdict
-import statistics
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -14,8 +12,6 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
-from homeassistant.components import recorder
-from homeassistant.components.recorder import history
 
 _LOGGER = logging.getLogger(__name__)
 

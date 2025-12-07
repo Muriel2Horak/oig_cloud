@@ -1,7 +1,6 @@
 """API views pro bojlerový modul."""
 
 import logging
-from typing import Any
 
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
