@@ -94,12 +94,17 @@ class ModeSelector:
         if needs_charging and spot_price < avg_price * 0.8:
             return CBB_MODE_HOME_UPS, f"Cheap charging at {spot_price:.2f} CZK"
 
-        # Priority 4: No solar - use grid mode
+        # Priority 4: No solar - decide between battery discharge or grid
         if solar_kwh < 0.01:
-            # Check if there's expensive period coming
-            if future_prices and max(future_prices) > spot_price * 1.4:
-                return CBB_MODE_HOME_I, "Grid priority - expensive hours ahead"
-            return CBB_MODE_HOME_I, "Grid priority - no solar"
+            # EXPENSIVE electricity + have battery → discharge battery (HOME III)
+            if spot_price > avg_price * 1.1 and battery_kwh > self.min_capacity + 0.5:
+                return (
+                    CBB_MODE_HOME_III,
+                    f"Discharge battery - expensive {spot_price:.2f} CZK",
+                )
+
+            # CHEAP electricity → preserve battery, use grid (HOME I)
+            return CBB_MODE_HOME_I, "Grid priority - cheap/moderate electricity"
 
         # Priority 5: Good solar production
         if solar_kwh > 0.3:

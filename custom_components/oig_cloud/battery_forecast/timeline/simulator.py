@@ -155,9 +155,11 @@ class SoCSimulator:
                     battery_charge = charge_amount * self.ac_dc_efficiency
 
         elif mode == CBB_MODE_HOME_I:
-            # HOME I: Grid priority, battery preserved
-            # Solar → load first, excess → battery, overflow → export
-            # Load deficit → grid (not battery!)
+            # HOME I: Battery discharge for load coverage
+            # Per CBB_MODES_DEFINITIVE.md:
+            # - FVE > 0: Solar → load, excess → battery, deficit → BATTERY
+            # - FVE = 0: BATTERY discharges to cover load (down to 20% SoC)
+            # In night (no solar): HOME I/II/III are IDENTICAL - all discharge!
 
             if solar_kwh >= consumption_kwh:
                 # Solar covers load
@@ -175,54 +177,7 @@ class SoCSimulator:
                 if solar_exported > 0:
                     grid_export = solar_exported
             else:
-                # Solar doesn't cover load - grid provides deficit
-                solar_used = solar_kwh
-                grid_import = consumption_kwh - solar_kwh
-
-        elif mode == CBB_MODE_HOME_II:
-            # HOME II: Battery priority, no discharge
-            # Solar → load first, excess → battery, overflow → export
-            # Load deficit → grid (battery NOT used!)
-
-            # Same as HOME I for now (battery preserved)
-            if solar_kwh >= consumption_kwh:
-                solar_used = consumption_kwh
-                excess_solar = solar_kwh - consumption_kwh
-
-                battery_space = self.max_capacity - battery
-                to_battery = min(excess_solar * self.dc_dc_efficiency, battery_space)
-                battery += to_battery
-                solar_to_battery = excess_solar if to_battery > 0 else 0
-
-                solar_exported = excess_solar - solar_to_battery
-                if solar_exported > 0:
-                    grid_export = solar_exported
-            else:
-                solar_used = solar_kwh
-                grid_import = consumption_kwh - solar_kwh
-
-        elif mode == CBB_MODE_HOME_III:
-            # HOME III: Solar priority (default)
-            # Solar → load first, excess → battery, overflow → export
-            # Load deficit → battery first, then grid
-
-            if solar_kwh >= consumption_kwh:
-                # Solar covers load
-                solar_used = consumption_kwh
-                excess_solar = solar_kwh - consumption_kwh
-
-                # Excess goes to battery
-                battery_space = self.max_capacity - battery
-                to_battery = min(excess_solar * self.dc_dc_efficiency, battery_space)
-                battery += to_battery
-                solar_to_battery = excess_solar if to_battery > 0 else 0
-
-                # Any remaining is exported
-                solar_exported = excess_solar - solar_to_battery
-                if solar_exported > 0:
-                    grid_export = solar_exported
-            else:
-                # Solar doesn't cover load - use battery
+                # Solar doesn't cover load - use BATTERY first (same as HOME III!)
                 solar_used = solar_kwh
                 load_deficit = consumption_kwh - solar_kwh
 
@@ -233,12 +188,93 @@ class SoCSimulator:
                 from_battery = min(load_deficit, max(0, available_from_battery))
 
                 if from_battery > 0:
-                    # Actual battery drain is higher due to efficiency
                     actual_drain = from_battery / self.dc_ac_efficiency
                     battery -= actual_drain
                     battery_discharge = actual_drain
 
-                # Remaining from grid
+                # Remaining from grid (when battery empty)
+                remaining_deficit = load_deficit - from_battery
+                if remaining_deficit > 0.001:
+                    grid_import = remaining_deficit
+
+        elif mode == CBB_MODE_HOME_II:
+            # HOME II: Battery priority during day, discharge at night
+            # Per CBB_MODES_DEFINITIVE.md:
+            # - FVE > 0, FVE >= load: Solar covers, excess → battery
+            # - FVE > 0, FVE < load: Grid supplements, battery UNTOUCHED
+            # - FVE = 0: Battery DISCHARGES (same as HOME I/III in night!)
+
+            if solar_kwh >= consumption_kwh:
+                # Solar covers load completely
+                solar_used = consumption_kwh
+                excess_solar = solar_kwh - consumption_kwh
+
+                battery_space = self.max_capacity - battery
+                to_battery = min(excess_solar * self.dc_dc_efficiency, battery_space)
+                battery += to_battery
+                solar_to_battery = excess_solar if to_battery > 0 else 0
+
+                solar_exported = excess_solar - solar_to_battery
+                if solar_exported > 0:
+                    grid_export = solar_exported
+            elif solar_kwh > 0.01:
+                # Day with some solar but FVE < load
+                # Grid supplements, battery NOT USED (special HOME II behavior)
+                solar_used = solar_kwh
+                grid_import = consumption_kwh - solar_kwh
+            else:
+                # Night (FVE = 0): Battery DISCHARGES (same as HOME I/III)
+                load_deficit = consumption_kwh
+
+                available_from_battery = (
+                    battery - self.min_capacity
+                ) * self.dc_ac_efficiency
+                from_battery = min(load_deficit, max(0, available_from_battery))
+
+                if from_battery > 0:
+                    actual_drain = from_battery / self.dc_ac_efficiency
+                    battery -= actual_drain
+                    battery_discharge = actual_drain
+
+                remaining_deficit = load_deficit - from_battery
+                if remaining_deficit > 0.001:
+                    grid_import = remaining_deficit
+
+        elif mode == CBB_MODE_HOME_III:
+            # HOME III: Maximum battery charging from solar
+            # Per CBB_MODES_DEFINITIVE.md:
+            # - FVE > 0: ALL solar → battery (unlimited), load → GRID
+            # - FVE = 0: Battery DISCHARGES (same as HOME I/II)
+
+            if solar_kwh > 0.01:
+                # Day: ALL solar goes to battery, consumption from GRID
+                battery_space = self.max_capacity - battery
+                to_battery = min(solar_kwh * self.dc_dc_efficiency, battery_space)
+                battery += to_battery
+                solar_to_battery = solar_kwh if to_battery > 0 else 0
+                battery_charge = to_battery
+
+                # Export any solar that doesn't fit in battery
+                solar_exported = max(0, solar_kwh - solar_to_battery)
+                if solar_exported > 0:
+                    grid_export = solar_exported
+
+                # ALL consumption from grid
+                grid_import = consumption_kwh
+            else:
+                # Night (FVE = 0): Battery DISCHARGES (same as HOME I/II)
+                load_deficit = consumption_kwh
+
+                available_from_battery = (
+                    battery - self.min_capacity
+                ) * self.dc_ac_efficiency
+                from_battery = min(load_deficit, max(0, available_from_battery))
+
+                if from_battery > 0:
+                    actual_drain = from_battery / self.dc_ac_efficiency
+                    battery -= actual_drain
+                    battery_discharge = actual_drain
+
                 remaining_deficit = load_deficit - from_battery
                 if remaining_deficit > 0.001:
                     grid_import = remaining_deficit

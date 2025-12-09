@@ -286,6 +286,7 @@ class OptimizationResult(TypedDict, total=False):
         modes: List of mode values for each interval (0-3)
         modes_distribution: Count of each mode type
         total_cost_czk: Total estimated cost
+        baseline_cost_czk: Cost without optimization (HOME I only)
         total_grid_import_kwh: Total expected grid import
         total_grid_export_kwh: Total expected grid export
         total_solar_kwh: Total expected solar production
@@ -302,6 +303,7 @@ class OptimizationResult(TypedDict, total=False):
     modes: List[int]
     modes_distribution: Dict[str, int]
     total_cost_czk: float
+    baseline_cost_czk: float
     total_grid_import_kwh: float
     total_grid_export_kwh: float
     total_solar_kwh: float
