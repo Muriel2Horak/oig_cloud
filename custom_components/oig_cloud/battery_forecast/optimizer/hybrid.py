@@ -218,28 +218,38 @@ class HybridOptimizer:
 
         _LOGGER.info(f"⚡ Found {len(charge_opportunities)} charging opportunities")
 
-        # PHASE 4: Select modes based on solar and prices
-        # Key insight from CBB_MODES_DEFINITIVE.md:
+        # PHASE 4: Select modes based on solar, prices, and efficiency
+        # Key insights from CBB_MODES_DEFINITIVE.md:
         # - At NIGHT (FVE=0): HOME I/II/III are IDENTICAL - all DISCHARGE battery
         # - At NIGHT: HOME UPS is the ONLY mode that CHARGES from grid
-        # - Strategy: CHEAP hours → UPS (charge), EXPENSIVE hours → HOME I (discharge)
+        # - HOME II: Preserves battery during day (grid supplements when solar<load)
+        # - HOME III: ALL solar → battery, load from grid (max charging)
+        #
+        # Economic strategy:
+        # - Consider round-trip efficiency (typ. 80-85%) when deciding arbitrage
+        # - Export solar when export price is high (HOME I with excess solar)
+        # - HOME III when we need max battery charge AND grid is cheap
 
-        # Calculate price thresholds - need to be CONSISTENT with _find_charge_opportunities
+        # Calculate price thresholds - CONSISTENT with _find_charge_opportunities
         prices_sorted = sorted([sp.get("price", 0) for sp in spot_prices])
         avg_price = sum(prices_sorted) / n
         min_price = prices_sorted[0]
         max_price = prices_sorted[-1]
 
-        # Use FIXED THRESHOLDS relative to average (same as _find_charge_opportunities)
         cheap_threshold = avg_price * 0.75  # Below 75% of average = cheap
         expensive_threshold = avg_price * 1.25  # Above 125% of average = expensive
 
+        # Round-trip efficiency for arbitrage decisions
+        # Battery: charge (95% AC/DC) * discharge (88% DC/AC) = ~84%
+        round_trip_eff = self.efficiency * 0.95
+
         _LOGGER.info(
             f"📊 Price analysis: min={min_price:.2f}, cheap<{cheap_threshold:.2f}, "
-            f"avg={avg_price:.2f}, expensive>{expensive_threshold:.2f}, max={max_price:.2f}"
+            f"avg={avg_price:.2f}, expensive>{expensive_threshold:.2f}, max={max_price:.2f}, "
+            f"efficiency={round_trip_eff:.0%}"
         )
 
-        # First pass: determine base modes
+        # First pass: determine base modes considering all factors
         for i in range(n):
             solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
             load = load_forecast[i] if i < len(load_forecast) else 0.0
@@ -249,35 +259,83 @@ class HybridOptimizer:
                 if i < len(forward_trajectory)
                 else self.min_capacity
             )
+            battery_space = self.max_capacity - battery_level
 
-            if solar >= load + 0.1:
-                # EXCESS SOLAR - battery charges from solar FOR FREE
-                # Use HOME I: solar covers load, excess charges battery
-                modes[i] = CBB_MODE_HOME_I
-            elif solar > 0.1:
-                # SOLAR DEFICIT (solar < load)
-                if price >= expensive_threshold and battery_level > self.min_capacity + 1.0:
-                    # EXPENSIVE + have battery → discharge (HOME I)
-                    modes[i] = CBB_MODE_HOME_I
-                elif price <= cheap_threshold:
-                    # CHEAP → preserve battery, use grid (HOME II)
-                    modes[i] = CBB_MODE_HOME_II
-                else:
-                    # Normal price → use battery if available (HOME I)
-                    modes[i] = CBB_MODE_HOME_I
-            else:
-                # NIGHT (no solar)
-                # Per CBB_MODES_DEFINITIVE.md: HOME I/II/III identical (discharge)
+            if solar < 0.05:
+                # ═══ NIGHT (no solar) ═══
+                # HOME I/II/III identical - all discharge to 20%
                 # Only HOME UPS charges from grid
-                if price >= expensive_threshold and battery_level > self.min_capacity + 1.0:
-                    # EXPENSIVE → definitely discharge (HOME I)
+                if (
+                    price >= expensive_threshold
+                    and battery_level > self.min_capacity + 1.0
+                ):
+                    # EXPENSIVE night → discharge battery (HOME I)
                     modes[i] = CBB_MODE_HOME_I
                 else:
-                    # Normal/cheap → HOME I for now, PHASE 5 may upgrade to UPS
+                    # Normal/cheap night → HOME I (PHASE 5 may upgrade to UPS)
                     modes[i] = CBB_MODE_HOME_I
+
+            elif solar >= load + 0.1:
+                # ═══ DAY with EXCESS SOLAR (solar > load) ═══
+                # Options:
+                # - HOME I: solar→load, excess→battery (free charging!)
+                # - HOME III: ALL solar→battery, load→grid (if want max charge)
+                #
+                # Decision: Is it worth storing solar for later?
+                # breakeven: price_now < price_later * round_trip_eff
+
+                if battery_space > 0.5:
+                    # Room in battery - charge from solar (HOME I)
+                    # This is FREE energy, always worth it
+                    modes[i] = CBB_MODE_HOME_I
+                else:
+                    # Battery full - export excess (HOME I still works)
+                    modes[i] = CBB_MODE_HOME_I
+
+            else:
+                # ═══ DAY with SOLAR DEFICIT (0 < solar < load) ═══
+                # Options:
+                # - HOME I: solar→load, deficit→BATTERY (uses stored energy)
+                # - HOME II: solar→load, deficit→GRID (preserves battery)
+                # - HOME III: ALL solar→battery, ALL load→GRID (max charging)
+                #
+                # Key decision: Use battery now or save for later?
+
+                # Calculate if arbitrage is profitable
+                # If we use battery now, we lose efficiency
+                # breakeven: current_price > avg_future_expensive_price * efficiency
+
+                if price >= expensive_threshold:
+                    # EXPENSIVE hour - use battery! (HOME I)
+                    if battery_level > self.min_capacity + 1.0:
+                        modes[i] = CBB_MODE_HOME_I
+                    else:
+                        # Low battery - must use grid (HOME II)
+                        modes[i] = CBB_MODE_HOME_II
+
+                elif price <= cheap_threshold:
+                    # CHEAP hour - preserve battery for expensive hours
+                    if battery_space > 1.0:
+                        # Room in battery - charge maximally (HOME III)
+                        # ALL solar→battery, consumption from cheap grid
+                        modes[i] = CBB_MODE_HOME_III
+                    else:
+                        # Battery nearly full - preserve it (HOME II)
+                        modes[i] = CBB_MODE_HOME_II
+
+                else:
+                    # NORMAL price hour
+                    # Decision based on expected future prices
+                    # If we expect expensive hours later, preserve battery
+                    if battery_level > self.min_capacity + 2.0:
+                        # Have some battery - use it moderately (HOME I)
+                        modes[i] = CBB_MODE_HOME_I
+                    else:
+                        # Low battery - supplement from grid (HOME II)
+                        modes[i] = CBB_MODE_HOME_II
 
         # Note: PHASE 5 (_apply_charging) will upgrade some intervals to HOME UPS
-        # for charging during cheap hours based on arbitrage calculation
+        # for grid charging during cheap hours based on arbitrage calculation
 
         # PHASE 5: Apply charging (HOME UPS) based on opportunities
         ups_count = self._apply_charging(
@@ -583,26 +641,28 @@ class HybridOptimizer:
             load = load_forecast[i] if i < len(load_forecast) else 0
 
             if price <= cheap_threshold:
-                cheap_intervals.append({
-                    "index": i,
-                    "time": spot_prices[i].get("time", ""),
-                    "price": price,
-                    "solar": solar,
-                    "load": load,
-                })
+                cheap_intervals.append(
+                    {
+                        "index": i,
+                        "time": spot_prices[i].get("time", ""),
+                        "price": price,
+                        "solar": solar,
+                        "load": load,
+                    }
+                )
             elif price >= expensive_threshold and solar < 0.1:
                 # Expensive AND no solar = good for discharge
-                expensive_intervals.append({
-                    "index": i,
-                    "price": price,
-                    "load": load,
-                })
+                expensive_intervals.append(
+                    {
+                        "index": i,
+                        "price": price,
+                        "load": load,
+                    }
+                )
                 last_expensive_idx = i
 
         if not cheap_intervals:
-            _LOGGER.debug(
-                f"No cheap intervals found (threshold={cheap_threshold:.2f})"
-            )
+            _LOGGER.debug(f"No cheap intervals found (threshold={cheap_threshold:.2f})")
             return []
 
         # Split cheap intervals into BEFORE and AFTER expensive hours
@@ -628,21 +688,43 @@ class HybridOptimizer:
 
         # PHASE A: Morning charging for arbitrage (before expensive hours)
         energy_for_morning = energy_for_expensive / round_trip_efficiency
-        battery_space = self.max_capacity - (forward_trajectory[0] if forward_trajectory else 0)
+        battery_space = self.max_capacity - (
+            forward_trajectory[0] if forward_trajectory else 0
+        )
         energy_for_morning = min(energy_for_morning, battery_space)
         intervals_morning = int(energy_for_morning / charge_per_interval) + 1
         selected_morning = cheap_before[:intervals_morning]
 
         # PHASE B: Evening charging for target (after expensive hours)
+        # For target achievement, we may need to charge even at non-cheap prices
+        # So we use ALL intervals after expensive hours, sorted by price
+        all_after = []
+        for i in range(n):
+            if i > last_expensive_idx:
+                price = prices[i]
+                solar = solar_forecast[i] if i < len(solar_forecast) else 0
+                all_after.append(
+                    {
+                        "index": i,
+                        "time": spot_prices[i].get("time", ""),
+                        "price": price,
+                        "solar": solar,
+                    }
+                )
+        all_after.sort(key=lambda x: x["price"])
+
         # Calculate how much we need to charge in the evening
         energy_for_evening = energy_deficit / self.efficiency
         intervals_evening = int(energy_for_evening / charge_per_interval) + 1
-        selected_evening = cheap_after[:intervals_evening]
+        # Select cheapest available intervals (not just cheap_threshold)
+        selected_evening = all_after[:intervals_evening]
 
         # Check if arbitrage is profitable
         if expensive_intervals and cheap_before:
             avg_cheap = sum(c["price"] for c in cheap_before) / len(cheap_before)
-            avg_expensive = sum(e["price"] for e in expensive_intervals) / len(expensive_intervals)
+            avg_expensive = sum(e["price"] for e in expensive_intervals) / len(
+                expensive_intervals
+            )
 
             breakeven_price = avg_cheap / round_trip_efficiency
             if breakeven_price < avg_expensive:
