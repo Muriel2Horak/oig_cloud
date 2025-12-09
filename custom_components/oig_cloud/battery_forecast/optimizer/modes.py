@@ -276,8 +276,11 @@ class ModeSelector:
             ):
                 # Extend forward if possible
                 extension_needed = min_duration_intervals - run_length
-                for j in range(i, min(i + extension_needed, len(result))):
+                end_extend = min(i + extension_needed, len(result))
+                for j in range(i, end_extend):
                     result[j] = current_mode
+                # Skip past the extension to avoid cascade
+                i = end_extend
 
         return result
 
