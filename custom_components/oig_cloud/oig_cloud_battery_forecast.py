@@ -1213,7 +1213,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
 
-
     def _simulate_interval(
         self,
         mode: int,
@@ -1231,12 +1230,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     ) -> dict:
         """
         Simulate single 15-min interval with specific CBB mode.
-        
+
         REFACTORED: Delegates to battery_forecast.bridge module.
         Legacy implementation removed (~287 lines).
         """
         from .battery_forecast.bridge import simulate_interval_with_new_module
-        
+
         return simulate_interval_with_new_module(
             mode=mode,
             solar_kwh=solar_kwh,
@@ -1267,24 +1266,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     ) -> List[Dict[str, Any]]:
         """
         Calculate battery timeline using new modular architecture.
-        
+
         REFACTORED: This method now delegates to battery_forecast.bridge module.
         Legacy implementation removed (~570 lines).
         """
         from .battery_forecast.bridge import calculate_timeline_with_new_module
-        
+
         # Get load forecast from sensors or use default
         load_forecast = self._build_load_forecast(load_avg_sensors, len(spot_prices))
-        
+
         # Get modes from optimization result if available
         modes = None
-        if hasattr(self, '_mode_optimization_result') and self._mode_optimization_result:
-            modes = self._mode_optimization_result.get('modes')
-        
+        if (
+            hasattr(self, "_mode_optimization_result")
+            and self._mode_optimization_result
+        ):
+            modes = self._mode_optimization_result.get("modes")
+
         # If single mode specified, use it for all intervals
         if mode is not None:
             modes = [mode] * len(spot_prices)
-        
+
         return calculate_timeline_with_new_module(
             current_capacity=current_capacity,
             max_capacity=max_capacity,
@@ -1295,19 +1297,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast=load_forecast,
             modes=modes,
             efficiency=self._get_battery_efficiency(),
-            charge_rate_kw=self._config_entry.options.get("home_charge_rate", 2.8) if self._config_entry else 2.8,
+            charge_rate_kw=(
+                self._config_entry.options.get("home_charge_rate", 2.8)
+                if self._config_entry
+                else 2.8
+            ),
         )
 
-    def _build_load_forecast(self, load_avg_sensors: Dict[str, Any], n_intervals: int) -> List[float]:
+    def _build_load_forecast(
+        self, load_avg_sensors: Dict[str, Any], n_intervals: int
+    ) -> List[float]:
         """Build load forecast from sensors data."""
         load_forecast = []
-        
+
         # Try to get from sensors
         for i in range(n_intervals):
             hour = (i * 15 // 60) % 24
-            load = self._get_load_avg_for_hour(hour) if hasattr(self, '_get_load_avg_for_hour') else 0.3
+            load = (
+                self._get_load_avg_for_hour(hour)
+                if hasattr(self, "_get_load_avg_for_hour")
+                else 0.3
+            )
             load_forecast.append(load / 4)  # Convert hourly to 15min
-        
+
         return load_forecast if load_forecast else [0.3] * n_intervals
 
     def _get_total_battery_capacity(self) -> float:

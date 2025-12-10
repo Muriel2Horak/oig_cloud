@@ -347,7 +347,8 @@ class BatteryForecastOrchestrator:
         return {
             "total_ups_intervals": result.ups_intervals,
             "balancing_ups_intervals": result.balancing_ups_count,
-            "optimization_ups_intervals": result.ups_intervals - result.balancing_ups_count,
+            "optimization_ups_intervals": result.ups_intervals
+            - result.balancing_ups_count,
             "charging_intervals": charging_intervals[:10],
         }
 

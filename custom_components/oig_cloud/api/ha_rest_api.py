@@ -861,7 +861,9 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             # Fallback: Build detail tabs on-demand (old behavior)
             if hasattr(entity_obj, "build_detail_tabs"):
                 try:
-                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab, plan=plan_key)
+                    detail_tabs = await entity_obj.build_detail_tabs(
+                        tab=tab, plan=plan_key
+                    )
                 except Exception as build_error:
                     _LOGGER.error(
                         f"API: Error in build_detail_tabs() for {box_id}: {build_error}",
