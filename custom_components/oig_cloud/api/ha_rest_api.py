@@ -164,52 +164,11 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     )
 
             if plan == "autonomy":
-                stored_autonomy = (precomputed_data or {}).get("timeline_autonomy")
-                if stored_autonomy:
-                    last_update = (precomputed_data or {}).get("last_update")
-                    response_data = {
-                        "plan": "autonomy",
-                        "timeline": stored_autonomy,
-                        "metadata": {
-                            "box_id": box_id,
-                            "last_update": last_update,
-                            "points_count": len(stored_autonomy),
-                            "size_kb": round(
-                                sys.getsizeof(str(stored_autonomy)) / 1024, 1
-                            ),
-                        },
-                    }
-
-                    return web.json_response(response_data)
-
-                autonomy_timeline = []
-                if hasattr(entity_obj, "get_autonomy_timeline"):
-                    autonomy_timeline = entity_obj.get_autonomy_timeline()
-                if not autonomy_timeline:
-                    return web.json_response(
-                        {"error": "Autonomy preview not available"}, status=404
-                    )
-
-                last_update = (
-                    (entity_obj._autonomy_preview or {})
-                    .get("metadata", {})
-                    .get("generated_at")
+                # Autonomy planner removed - return error
+                return web.json_response(
+                    {"error": "Autonomy planner has been removed. Use 'hybrid' plan."},
+                    status=400,
                 )
-
-                response_data = {
-                    "plan": "autonomy",
-                    "timeline": autonomy_timeline,
-                    "metadata": {
-                        "box_id": box_id,
-                        "last_update": last_update,
-                        "points_count": len(autonomy_timeline),
-                        "size_kb": round(
-                            sys.getsizeof(str(autonomy_timeline)) / 1024, 1
-                        ),
-                    },
-                }
-
-                return web.json_response(response_data)
 
             # Get timeline data from storage or sensor's internal variables
             stored_active = None
@@ -673,8 +632,8 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
-        mode = request.query.get("plan") or request.query.get("mode", "hybrid")
-        mode = (mode or "hybrid").lower()
+        # Always use hybrid mode (autonomy mode removed)
+        mode = "hybrid"
 
         try:
             # Find sensor entity
@@ -710,11 +669,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                         "Failed to read precomputed cost tile: %s", storage_error
                     )
 
-            tile_key = (
-                "unified_cost_tile_autonomy"
-                if mode == "autonomy"
-                else "unified_cost_tile_hybrid"
-            )
+            tile_key = "unified_cost_tile_hybrid"
             comparison_summary = (
                 precomputed_data.get("cost_comparison") if precomputed_data else None
             )
@@ -731,47 +686,28 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                 )
                 return web.json_response(response_payload)
 
-            if mode == "autonomy":
-                if hasattr(entity_obj, "build_autonomy_cost_tile"):
-                    try:
-                        tile_data = await entity_obj.build_autonomy_cost_tile()
-                    except Exception as build_error:
-                        _LOGGER.error(
-                            f"API: Error in build_autonomy_cost_tile() for {box_id}: {build_error}",
-                            exc_info=True,
-                        )
-                        return web.json_response(
-                            {
-                                "error": f"Failed to build autonomy tile: {str(build_error)}"
-                            },
-                            status=500,
-                        )
-                else:
-                    return web.json_response(
-                        {"error": "Autonomy cost tile not supported"}, status=500
+            # Build hybrid cost tile
+            if hasattr(entity_obj, "build_unified_cost_tile"):
+                try:
+                    _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
+                    tile_data = await entity_obj.build_unified_cost_tile()
+                    _LOGGER.info(
+                        f"API: Unified cost tile built successfully: {tile_data.keys()}"
                     )
-            else:
-                if hasattr(entity_obj, "build_unified_cost_tile"):
-                    try:
-                        _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
-                        tile_data = await entity_obj.build_unified_cost_tile()
-                        _LOGGER.info(
-                            f"API: Unified cost tile built successfully: {tile_data.keys()}"
-                        )
-                    except Exception as build_error:
-                        _LOGGER.error(
-                            f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
-                            exc_info=True,
-                        )
-                        return web.json_response(
-                            {"error": f"Failed to build tile: {str(build_error)}"},
-                            status=500,
-                        )
-                else:
+                except Exception as build_error:
+                    _LOGGER.error(
+                        f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
+                        exc_info=True,
+                    )
                     return web.json_response(
-                        {"error": "build_unified_cost_tile method not found"},
+                        {"error": f"Failed to build tile: {str(build_error)}"},
                         status=500,
                     )
+            else:
+                return web.json_response(
+                    {"error": "build_unified_cost_tile method not found"},
+                    status=500,
+                )
 
             if comparison_summary and isinstance(tile_data, dict):
                 tile_data = dict(tile_data)
@@ -850,8 +786,8 @@ class OIGCloudDetailTabsView(HomeAssistantView):
         """
         hass: HomeAssistant = request.app["hass"]
         tab = request.query.get("tab", None)
-        plan = request.query.get("plan", "hybrid").lower()
-        plan_key = "autonomy" if plan in ("autonomy", "auto") else "hybrid"
+        # Always use hybrid plan (autonomy removed)
+        plan_key = "hybrid"
 
         try:
             # Find sensor entity
@@ -877,18 +813,13 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
             # PHASE 3.5: Read from precomputed storage for instant response
             if (
-                plan_key in ("hybrid", "autonomy")
-                and hasattr(entity_obj, "_precomputed_store")
+                hasattr(entity_obj, "_precomputed_store")
                 and entity_obj._precomputed_store
             ):
                 try:
                     precomputed_data = await entity_obj._precomputed_store.async_load()
                     if precomputed_data:
-                        detail_key = (
-                            "detail_tabs_autonomy"
-                            if plan_key == "autonomy"
-                            else "detail_tabs_hybrid"
-                        )
+                        detail_key = "detail_tabs_hybrid"
                         detail_tabs = precomputed_data.get(detail_key)
                         if not detail_tabs:
                             _LOGGER.debug(
@@ -930,7 +861,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
             # Fallback: Build detail tabs on-demand (old behavior)
             if hasattr(entity_obj, "build_detail_tabs"):
                 try:
-                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab, plan=plan)
+                    detail_tabs = await entity_obj.build_detail_tabs(tab=tab, plan=plan_key)
                 except Exception as build_error:
                     _LOGGER.error(
                         f"API: Error in build_detail_tabs() for {box_id}: {build_error}",
@@ -972,13 +903,12 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
             return web.json_response({"error": "Box not found"}, status=404)
 
         value = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
-        plan = entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
-        planner_mode = entry.options.get("battery_planner_mode", "hybrid_autonomy")
+        # Always use hybrid plan (autonomy removed)
         return web.json_response(
             {
                 "auto_mode_switch_enabled": value,
-                "auto_mode_plan": plan,
-                "planner_mode": planner_mode,
+                "auto_mode_plan": "hybrid",
+                "planner_mode": "hybrid",
             }
         )
 
@@ -997,60 +927,38 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
             return web.json_response({"error": "Invalid payload"}, status=400)
 
         current_enabled = entry.options.get(CONF_AUTO_MODE_SWITCH, False)
-        current_plan = entry.options.get(CONF_AUTO_MODE_PLAN, "autonomy")
-        planner_mode = entry.options.get("battery_planner_mode", "hybrid_autonomy")
 
         desired_enabled = current_enabled
-        desired_plan = current_plan
 
         if "auto_mode_switch_enabled" in payload:
             desired_enabled = bool(payload.get("auto_mode_switch_enabled"))
 
-        if "auto_mode_plan" in payload:
-            raw_plan = str(payload.get("auto_mode_plan", "")).lower()
-            if raw_plan not in ("autonomy", "hybrid"):
-                return web.json_response(
-                    {"error": "auto_mode_plan must be 'autonomy' or 'hybrid'"},
-                    status=400,
-                )
-            desired_plan = raw_plan
-
-        if planner_mode == "autonomy_preview":
-            if payload.get("auto_mode_switch_enabled"):
-                return web.json_response(
-                    {
-                        "error": "Autonomy preview mode runs in simulation only – automatic switching is disabled."
-                    },
-                    status=400,
-                )
-            desired_enabled = False
-            desired_plan = "autonomy"
-
-        if desired_enabled == current_enabled and desired_plan == current_plan:
+        # Always use hybrid plan (autonomy removed)
+        if desired_enabled == current_enabled:
             return web.json_response(
                 {
                     "auto_mode_switch_enabled": current_enabled,
-                    "auto_mode_plan": current_plan,
+                    "auto_mode_plan": "hybrid",
+                    "planner_mode": "hybrid",
                     "updated": False,
                 }
             )
 
         new_options = dict(entry.options)
         new_options[CONF_AUTO_MODE_SWITCH] = desired_enabled
-        new_options[CONF_AUTO_MODE_PLAN] = desired_plan
+        new_options[CONF_AUTO_MODE_PLAN] = "hybrid"
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info(
-            "Planner settings updated for %s: auto_mode_switch_enabled=%s, plan=%s",
+            "Planner settings updated for %s: auto_mode_switch_enabled=%s",
             box_id,
             desired_enabled,
-            desired_plan,
         )
 
         return web.json_response(
             {
                 "auto_mode_switch_enabled": desired_enabled,
-                "auto_mode_plan": desired_plan,
-                "planner_mode": planner_mode,
+                "auto_mode_plan": "hybrid",
+                "planner_mode": "hybrid",
                 "updated": True,
             }
         )
