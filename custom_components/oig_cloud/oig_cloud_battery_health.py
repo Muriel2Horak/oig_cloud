@@ -55,7 +55,7 @@ class BatteryHealthTracker:
         self,
         hass: HomeAssistant,
         box_id: str,
-        nominal_capacity_kwh: float = 15.36,
+        nominal_capacity_kwh: float = 15.3,  # kWh - skutečná kapacita baterie
     ) -> None:
         self._hass = hass
         self._box_id = box_id
@@ -300,7 +300,10 @@ class BatteryHealthTracker:
             )
             return None
 
-        # Načíst účinnost baterie ze senzoru
+        # charge_energy z computed_batt_charge_energy_month je měřena na AC straně střídače
+        # Pro výpočet kapacity potřebujeme DC energii uloženou v baterii
+        # Použijeme odmocninu z round-trip účinnosti jako přibližnou nabíjecí účinnost
+        # (round-trip = nabíjecí × vybíjecí, obě jsou podobné)
         efficiency_sensor = f"sensor.oig_{self._box_id}_battery_efficiency"
         efficiency_state = self._hass.states.get(efficiency_sensor)
         if efficiency_state and efficiency_state.state not in [
@@ -308,19 +311,43 @@ class BatteryHealthTracker:
             "unavailable",
         ]:
             try:
-                charging_efficiency = float(efficiency_state.state) / 100.0
+                round_trip_eff = float(efficiency_state.state) / 100.0
+                # Nabíjecí účinnost ≈ √(round_trip) - obě směry mají podobnou účinnost
+                charging_efficiency = round_trip_eff ** 0.5
             except (ValueError, TypeError):
-                charging_efficiency = 0.90  # Fallback
+                charging_efficiency = 0.97  # Fallback (~√0.94)
         else:
-            charging_efficiency = 0.90  # Fallback pokud senzor neexistuje
+            charging_efficiency = 0.97  # Fallback pokud senzor neexistuje
 
-        # Reálně uložená energie = nabíjená energie × účinnost
+        # Reálně uložená energie = nabíjená energie × nabíjecí účinnost
         stored_energy = charge_energy * charging_efficiency
 
-        # Výpočet kapacity z reálně uložené energie
+        # Výpočet kapacity: energie / delta_soc
         delta_soc = end_soc - start_soc
         capacity_kwh = (stored_energy / 1000.0) / (delta_soc / 100.0)
         soh_percent = (capacity_kwh / self._nominal_capacity_kwh) * 100.0
+
+        # Sanity check: odmítnout nereálné hodnoty
+        # Integrální senzor energie může mít chyby (vzorkování, zaokrouhlování, drift)
+        # Proto tolerujeme SoH až do 105% (5% tolerance pro měřicí chyby)
+        # Pod 70% je extrémní degradace - pravděpodobně chyba měření
+        if soh_percent > 105.0:
+            _LOGGER.warning(
+                f"Interval rejected: SoH {soh_percent:.1f}% > 105%% (measurement error), "
+                f"capacity={capacity_kwh:.2f} kWh, ΔSoC={delta_soc:.0f}%, "
+                f"charge={charge_energy:.0f} Wh, eff={charging_efficiency:.1%}"
+            )
+            return None
+        if soh_percent < 70.0:
+            _LOGGER.warning(
+                f"Interval rejected: SoH {soh_percent:.1f}% < 70%% (extreme degradation or error), "
+                f"capacity={capacity_kwh:.2f} kWh, ΔSoC={delta_soc:.0f}%, "
+                f"charge={charge_energy:.0f} Wh, eff={charging_efficiency:.1%}"
+            )
+            return None
+
+        # Omezit SoH na max 100% pro zobrazení (i když měření ukazuje víc kvůli chybám)
+        soh_percent = min(soh_percent, 100.0)
 
         duration = end_time - start_time
         duration_hours = duration.total_seconds() / 3600
@@ -338,7 +365,7 @@ class BatteryHealthTracker:
 
         _LOGGER.info(
             f"✅ Valid interval: {start_soc:.0f}%→{end_soc:.0f}% (Δ{delta_soc:.0f}%), "
-            f"charge={charge_energy:.0f} Wh (stored={stored_energy:.0f} Wh @{charging_efficiency * 100:.0f}%), "
+            f"charge={charge_energy:.0f} Wh (stored={stored_energy:.0f} Wh @{charging_efficiency:.1%}), "
             f"capacity={capacity_kwh:.2f} kWh, SoH={soh_percent:.1f}%"
         )
 
@@ -422,7 +449,7 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Battery Health (SoH)"
 
         # Nominální kapacita
-        self._nominal_capacity_kwh: float = 15.36
+        self._nominal_capacity_kwh: float = 15.3  # kWh - skutečná kapacita baterie
 
         # Tracker - bude inicializován v async_added_to_hass
         self._tracker: Optional[BatteryHealthTracker] = None
