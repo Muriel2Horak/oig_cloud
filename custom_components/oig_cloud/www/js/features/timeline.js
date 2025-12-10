@@ -225,17 +225,16 @@ class TimelineDialog {
         this.activeTab = 'today'; // Default tab - DNES
         this.plan = 'hybrid';
         this.cache = {
-            hybrid: this.createEmptyCache(),
-            autonomy: this.createEmptyCache()
+            hybrid: this.createEmptyCache()
         };
-        this.plannerMode = 'hybrid_autonomy';
-        this.autoModePlan = 'autonomy';
+        this.plannerMode = 'hybrid';  // Always hybrid (autonomy removed)
+        this.autoModePlan = 'hybrid';  // Always hybrid
         this.autoModeSwitchEnabled = null;
         this.autoSettingsLoaded = false;
         this.autoModeToggleBusy = false;
         this.autoModeToggleErrorTimeout = null;
         this.autoPlanSyncEnabled = true;
-        this.activePlannerPlan = null;
+        this.activePlannerPlan = 'hybrid';  // Always hybrid
     }
 
     createEmptyCache() {

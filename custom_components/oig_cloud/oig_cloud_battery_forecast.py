@@ -1047,7 +1047,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Both HYBRID and AUTONOMY are always calculated for comparison
             # ================================================================
             config_options = self._config_entry.options if self._config_entry else {}
-            battery_planner_mode = config_options.get("battery_planner_mode", "hybrid")
+            # Battery planner - always use hybrid (autonomy removed)
 
             has_dp_results = (
                 hasattr(self, "_mode_optimization_result")
@@ -1061,20 +1061,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 self._hybrid_timeline = hybrid_timeline
 
-                # Choose active timeline based on planner mode
-                if battery_planner_mode == "autonomy":
-                    # TODO: Use AUTONOMY timeline when available
-                    # For now, fallback to HYBRID (AUTONOMY implementation follows)
-                    self._timeline_data = hybrid_timeline
-                    _LOGGER.info(
-                        f"⚡ ACTIVE PLANNER: Dynamické plánování (AUTONOMY) - {len(hybrid_timeline)} intervals"
-                    )
-                else:
-                    # Default: HYBRID (Standardní plánování)
-                    self._timeline_data = hybrid_timeline
-                    _LOGGER.info(
-                        f"📊 ACTIVE PLANNER: Standardní plánování (HYBRID) - {len(hybrid_timeline)} intervals"
-                    )
+                # Always use HYBRID (Standardní plánování)
+                self._timeline_data = hybrid_timeline
+                _LOGGER.info(
+                    f"📊 ACTIVE PLANNER: Standardní plánování (HYBRID) - {len(hybrid_timeline)} intervals"
+                )
             else:
                 # Fallback: old format timeline
                 _LOGGER.debug(
@@ -1204,30 +1195,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             self.async_write_ha_state()
 
-            await self._run_autonomy_preview(
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                target_capacity=target_capacity,
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-            )
-
-            # ================================================================
-            # PHASE 2.11: Apply AUTONOMY timeline if selected as active planner
-            # ================================================================
-            if battery_planner_mode == "autonomy" and self._autonomy_preview:
-                autonomy_timeline = self._autonomy_preview.get("timeline", [])
-                if autonomy_timeline:
-                    # Swap: AUTONOMY becomes active, HYBRID becomes comparison
-                    self._timeline_data = autonomy_timeline
-                    # Keep hybrid_timeline for comparison (already set above)
-                    _LOGGER.info(
-                        f"⚡ SWITCHED TO: Dynamické plánování (AUTONOMY) - {len(autonomy_timeline)} intervals, "
-                        f"cost={self._autonomy_preview.get('total_cost', 0):.2f} Kč"
-                    )
+            # NOTE: Autonomy preview disabled - using only hybrid planner
+            # await self._run_autonomy_preview(...)
 
             # PHASE 3.5: Precompute UI data for instant API responses
             # Build timeline_extended + unified_cost_tile and save to storage
