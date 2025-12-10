@@ -26,21 +26,18 @@ class CostComparisonTile {
         }
 
         const plans = this.summary.plans;
-        const activePlanKey = 'standard';  // Always hybrid mode
-        const secondaryPlanKey = 'standard';  // No secondary plan
-        const activePlan = plans[activePlanKey] || {};
-        const secondaryPlan = plans[secondaryPlanKey] || {};
+        const activePlan = plans['standard'] || {};
 
         this.container.classList.add('cost-card', 'cost-card-square', 'cost-card-compact');
         this.container.innerHTML = `
-            ${this.renderHero(activePlan, activePlanKey, secondaryPlan, secondaryPlanKey)}
-            ${this.renderHistoryRows(activePlanKey)}
+            ${this.renderHero(activePlan)}
+            ${this.renderHistoryRows()}
         `;
 
         this.attachEvents();
     }
 
-    renderHero(activePlan, activePlanKey, secondaryPlan, secondaryPlanKey) {
+    renderHero(activePlan) {
         const total = this.formatCost(activePlan.total_cost);
         const actual = this.formatCost(activePlan.actual_cost);
         const future = this.formatCost(activePlan.future_plan_cost);
@@ -61,7 +58,7 @@ class CostComparisonTile {
         `;
     }
 
-    renderHistoryRows(activePlanKey) {
+    renderHistoryRows() {
         const yesterdaySource =
             this.summary.yesterday ||
             this.data?.hybrid?.yesterday ||
@@ -73,13 +70,13 @@ class CostComparisonTile {
             yesterdayPlan ??
             null;
         const yesterdayNote =
-            yesterdayActual != null
+            yesterdayActual !== null
                 ? 'skutečnost'
-                : yesterdayPlan != null
+                : yesterdayPlan !== null
                     ? 'plán'
                     : '';
         const yesterdayPlanNote =
-            yesterdayActual != null && yesterdayPlan != null && Math.round(yesterdayPlan) !== Math.round(yesterdayActual)
+            yesterdayActual !== null && yesterdayPlan !== null && Math.round(yesterdayPlan) !== Math.round(yesterdayActual)
                 ? `plán ${this.formatCost(yesterdayPlan)}`
                 : '';
         const tomorrowCost = (this.summary.tomorrow || {})['standard'] ?? null;
@@ -112,14 +109,14 @@ class CostComparisonTile {
         };
 
         if (heroMain) {
-            heroMain.addEventListener('click', (event) => {
-                event.stopPropagation();
+            heroMain.addEventListener('click', (e) => {
+                e.stopPropagation();
                 handleOpen();
             });
         }
 
         if (!this.boundContainerClick) {
-            this.boundContainerClick = (event) => {
+            this.boundContainerClick = () => {
                 handleOpen();
             };
             this.container.addEventListener('click', this.boundContainerClick);
