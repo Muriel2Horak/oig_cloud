@@ -21,13 +21,13 @@
 
         /* Control panel */
         body.light-theme .control-panel {
-            background: rgba(255, 255, 255, 0.98);
-            border-bottom: 2px solid rgba(66, 165, 245, 0.3);
+            background: rgb(255, 255, 255, 0.98);
+            border-bottom: 2px solid rgb(66, 165, 245, 0.3);
             box-shadow: 0 4px 20px var(--shadow-color);
         }
 
         body.light-theme .panel-header {
-            background: rgba(66, 165, 245, 0.1);
+            background: rgb(66, 165, 245, 0.1);
             border-bottom: 1px solid var(--border-secondary);
         }
 
@@ -36,77 +36,77 @@
         }
 
         body.light-theme .btn-minimize {
-            background: rgba(0, 0, 0, 0.1);
+            background: rgb(0, 0, 0, 0.1);
             color: var(--text-primary);
         }
 
         body.light-theme .btn-minimize:hover {
-            background: rgba(0, 0, 0, 0.2);
+            background: rgb(0, 0, 0, 0.2);
         }
 
         /* Buttons */
         body.light-theme .button-group button {
-            background: rgba(0, 0, 0, 0.05);
-            border: 1px solid rgba(0, 0, 0, 0.15);
+            background: rgb(0, 0, 0, 0.05);
+            border: 1px solid rgb(0, 0, 0, 0.15);
             color: var(--text-primary);
         }
 
         body.light-theme .button-group button:hover:not(:disabled) {
-            background: rgba(0, 0, 0, 0.1);
+            background: rgb(0, 0, 0, 0.1);
         }
 
         body.light-theme .button-group button.active {
-            background: rgba(76, 175, 80, 0.3);
-            border-color: rgba(76, 175, 80, 0.6);
+            background: rgb(76, 175, 80, 0.3);
+            border-color: rgb(76, 175, 80, 0.6);
             color: #2e7d32;
         }
 
         body.light-theme .button-group button:disabled {
-            background: rgba(0, 0, 0, 0.03);
-            border-color: rgba(0, 0, 0, 0.08);
+            background: rgb(0, 0, 0, 0.03);
+            border-color: rgb(0, 0, 0, 0.08);
             color: var(--text-tertiary);
         }
 
         /* Info bubbles */
         body.light-theme .info-bubble {
-            background: rgba(33, 150, 243, 0.15);
-            border: 1px solid rgba(33, 150, 243, 0.3);
+            background: rgb(33, 150, 243, 0.15);
+            border: 1px solid rgb(33, 150, 243, 0.3);
             color: #1976d2;
         }
 
         body.light-theme .info-bubble:hover {
-            background: rgba(33, 150, 243, 0.25);
+            background: rgb(33, 150, 243, 0.25);
         }
 
         body.light-theme .info-bubble-tooltip {
-            background: rgba(30, 30, 30, 0.95);
+            background: rgb(30, 30, 30, 0.95);
             color: white;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3);
         }
 
         /* Shield queue table */
         body.light-theme .shield-queue-table th {
-            background: rgba(0, 0, 0, 0.05);
+            background: rgb(0, 0, 0, 0.05);
             border-bottom: 1px solid var(--border-secondary);
             color: var(--text-primary);
         }
 
         body.light-theme .shield-queue-table td {
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid rgb(0, 0, 0, 0.05);
             color: var(--text-primary);
         }
 
         body.light-theme .shield-queue-table tr:hover {
-            background: rgba(0, 0, 0, 0.03);
+            background: rgb(0, 0, 0, 0.03);
         }
 
         /* Dialogs */
         body.light-theme .charge-dialog,
         body.light-theme .notification-toast,
         body.light-theme .ack-dialog {
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 248, 0.98) 100%);
-            border: 2px solid rgba(66, 165, 245, 0.3);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            background: linear-gradient(135deg, rgb(255, 255, 255, 0.98) 0%, rgb(240, 244, 248, 0.98) 100%);
+            border: 2px solid rgb(66, 165, 245, 0.3);
+            box-shadow: 0 20px 60px rgb(0, 0, 0, 0.15);
             color: var(--text-primary);
         }
 
@@ -121,32 +121,32 @@
         }
 
         body.light-theme .btn-close {
-            background: rgba(0, 0, 0, 0.05);
+            background: rgb(0, 0, 0, 0.05);
             color: var(--text-secondary);
         }
 
         body.light-theme .btn-close:hover {
-            background: rgba(244, 67, 54, 0.2);
+            background: rgb(244, 67, 54, 0.2);
             color: #d32f2f;
         }
 
         /* Form inputs */
         body.light-theme input[type="number"],
         body.light-theme select {
-            background: rgba(0, 0, 0, 0.05);
+            background: rgb(0, 0, 0, 0.05);
             border: 1px solid var(--border-primary);
             color: var(--text-primary);
         }
 
         body.light-theme input[type="number"]:focus,
         body.light-theme select:focus {
-            background: rgba(0, 0, 0, 0.08);
+            background: rgb(0, 0, 0, 0.08);
             border-color: #42a5f5;
         }
 
         /* Info panel */
         body.light-theme .info-panel {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgb(255, 255, 255, 0.1);
             border-top: 1px solid var(--border-secondary);
             color: var(--text-secondary);
         }
@@ -185,14 +185,14 @@
         body.light-theme .battery-current-indicator,
         body.light-theme .battery-voltage-indicator,
         body.light-theme .battery-temp-indicator {
-            background: rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(0, 0, 0, 0.15);
+            background: rgb(0, 0, 0, 0.08);
+            border: 1px solid rgb(0, 0, 0, 0.15);
             color: var(--text-primary);
         }
 
         body.light-theme .grid-mode-indicator {
-            background: rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(0, 0, 0, 0.15);
+            background: rgb(0, 0, 0, 0.08);
+            border: 1px solid rgb(0, 0, 0, 0.15);
             color: var(--text-primary);
         }
 
@@ -204,27 +204,27 @@
 
         /* Specific status colors that need better contrast in light mode */
         body.light-theme .status-charging {
-            background: rgba(33, 150, 243, 0.2);
+            background: rgb(33, 150, 243, 0.2);
             color: #1565c0;
         }
 
         body.light-theme .status-discharging {
-            background: rgba(255, 152, 0, 0.2);
+            background: rgb(255, 152, 0, 0.2);
             color: #e65100;
         }
 
         body.light-theme .status-idle {
-            background: rgba(76, 175, 80, 0.2);
+            background: rgb(76, 175, 80, 0.2);
             color: #2e7d32;
         }
 
         body.light-theme .status-importing {
-            background: rgba(244, 67, 54, 0.2);
+            background: rgb(244, 67, 54, 0.2);
             color: #c62828;
         }
 
         body.light-theme .status-exporting {
-            background: rgba(76, 175, 80, 0.2);
+            background: rgb(76, 175, 80, 0.2);
             color: #2e7d32;
         }
 

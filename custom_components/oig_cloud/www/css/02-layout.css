@@ -40,7 +40,7 @@
 }
 
 /* === RESPONSIVE LAYOUT === */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .container {
         padding: 15px;
         padding-bottom: 30px;
@@ -55,7 +55,7 @@
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .container {
         padding: 10px;
     }
@@ -67,5 +67,5 @@
 
 /* === LIGHT THEME === */
 body.light-theme .header {
-    color: rgba(0, 0, 0, 0.87);
+    color: rgb(0, 0, 0, 0.87);
 }

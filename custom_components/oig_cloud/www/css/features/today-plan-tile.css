@@ -21,12 +21,12 @@
     flex-direction: column;
     background: var(--card-background-color, #fff);
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgb(0, 0, 0, 0.1);
 }
 
 .today-plan-tile:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 8px rgb(0, 0, 0, 0.15);
 }
 
 .today-plan-tile--empty {
@@ -37,7 +37,7 @@
 
 .today-plan-tile--empty:hover {
     transform: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgb(0, 0, 0, 0.1);
 }
 
 /* ========================================================================
@@ -270,7 +270,7 @@
    Responsive adjustments
    ======================================================================== */
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .today-plan-tile {
         height: auto;
         min-height: 200px;
@@ -304,11 +304,11 @@
 @media (prefers-color-scheme: dark) {
     .today-plan-tile {
         background: var(--card-background-color, #1e1e1e);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 2px 4px rgb(0, 0, 0, 0.3);
     }
 
     .today-plan-tile:hover {
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 4px 8px rgb(0, 0, 0, 0.4);
     }
 
     .tile-header {
@@ -340,6 +340,7 @@
     0%, 100% {
         opacity: 0.7;
     }
+
     50% {
         opacity: 1;
     }

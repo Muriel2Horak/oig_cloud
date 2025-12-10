@@ -6,6 +6,7 @@
 /* Container */
 .battery-health-tile {
 /* Nepoužíváme vlastní styly - plně respektujeme .stat-card z cards.css */
+
 /* background, border, padding, atd. se nastavují inline v JS */
 }
 
@@ -17,14 +18,14 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
-    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.1));
+    border-bottom: 1px solid var(--divider-color, rgb(255, 255, 255, 0.1));
     padding-bottom: 12px;
 }
 
 .battery-health-tile .tile-title {
     font-size: 18px;
     font-weight: 600;
-    color: var(--primary-text-color, #ffffff);
+    color: var(--primary-text-color, #fff);
     margin: 0;
     display: flex;
     align-items: center;
@@ -47,27 +48,27 @@
 }
 
 .status-excellent {
-    background: rgba(76, 217, 100, 0.2);
+    background: rgb(76, 217, 100, 0.2);
     color: #4cd964;
 }
 
 .status-good {
-    background: rgba(52, 199, 89, 0.2);
+    background: rgb(52, 199, 89, 0.2);
     color: #34c759;
 }
 
 .status-fair {
-    background: rgba(255, 204, 0, 0.2);
-    color: #ffcc00;
+    background: rgb(255, 204, 0, 0.2);
+    color: #fc0;
 }
 
 .status-poor {
-    background: rgba(255, 69, 58, 0.2);
+    background: rgb(255, 69, 58, 0.2);
     color: #ff453a;
 }
 
 .status-unknown {
-    background: rgba(142, 142, 147, 0.2);
+    background: rgb(142, 142, 147, 0.2);
     color: #8e8e93;
 }
 
@@ -79,7 +80,7 @@
 .battery-health-soh {
     text-align: center;
     padding: 24px 0;
-    background: linear-gradient(135deg, rgba(76, 217, 100, 0.05), rgba(52, 199, 89, 0.05));
+    background: linear-gradient(135deg, rgb(76, 217, 100, 0.05), rgb(52, 199, 89, 0.05));
     border-radius: 12px;
     margin-bottom: 16px;
 }
@@ -89,7 +90,7 @@
     font-weight: 700;
     color: #4cd964;
     line-height: 1;
-    text-shadow: 0 0 20px rgba(76, 217, 100, 0.3);
+    text-shadow: 0 0 20px rgb(76, 217, 100, 0.3);
 }
 
 .soh-unit {
@@ -102,7 +103,7 @@
 .soh-label {
     margin-top: 8px;
     font-size: 14px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.7));
     text-transform: uppercase;
     letter-spacing: 1px;
 }
@@ -111,7 +112,7 @@
 .battery-health-waiting {
     text-align: center;
     padding: 32px 20px;
-    background: rgba(142, 142, 147, 0.1);
+    background: rgb(142, 142, 147, 0.1);
     border-radius: 12px;
     margin-bottom: 16px;
 }
@@ -129,20 +130,20 @@
 
 .waiting-text {
     font-size: 16px;
-    color: var(--primary-text-color, #ffffff);
+    color: var(--primary-text-color, #fff);
     margin-bottom: 8px;
     font-weight: 500;
 }
 
 .waiting-hint {
     font-size: 13px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.6));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.6));
     font-style: italic;
 }
 
 /* Capacity Section */
 .battery-health-capacity {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgb(255, 255, 255, 0.03);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -153,7 +154,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgb(255, 255, 255, 0.05);
 }
 
 .capacity-row:last-child {
@@ -162,19 +163,19 @@
 
 .capacity-label {
     font-size: 14px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.7));
 }
 
 .capacity-value {
     font-size: 15px;
     font-weight: 600;
-    color: var(--primary-text-color, #ffffff);
+    color: var(--primary-text-color, #fff);
 }
 
 .capacity-loss {
     margin-top: 8px;
     padding-top: 12px;
-    border-top: 1px solid rgba(255, 69, 58, 0.2);
+    border-top: 1px solid rgb(255, 69, 58, 0.2);
 }
 
 .capacity-loss .capacity-label {
@@ -187,7 +188,7 @@
 
 /* Cycle Progress */
 .battery-health-cycle-progress {
-    background: linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(10, 132, 255, 0.05));
+    background: linear-gradient(135deg, rgb(0, 122, 255, 0.1), rgb(10, 132, 255, 0.05));
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -222,7 +223,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 14px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.8));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.8));
 }
 
 .cycle-duration {
@@ -232,7 +233,7 @@
 
 /* Quality Metrics */
 .battery-health-quality {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgb(255, 255, 255, 0.03);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -243,7 +244,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgb(255, 255, 255, 0.05);
 }
 
 .quality-row:last-child {
@@ -252,7 +253,7 @@
 
 .quality-label {
     font-size: 14px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.7));
     display: flex;
     align-items: center;
     gap: 6px;
@@ -261,12 +262,12 @@
 .quality-value {
     font-size: 14px;
     font-weight: 600;
-    color: var(--primary-text-color, #ffffff);
+    color: var(--primary-text-color, #fff);
 }
 
 /* Trend Section */
 .battery-health-trend {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgb(255, 255, 255, 0.03);
     border-radius: 8px;
     padding: 16px;
     display: flex;
@@ -280,7 +281,7 @@
 
 .trend-label {
     font-size: 14px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.7));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.7));
 }
 
 .trend-value {
@@ -290,12 +291,12 @@
 
 .trend-confidence {
     font-size: 12px;
-    color: var(--secondary-text-color, rgba(255, 255, 255, 0.5));
+    color: var(--secondary-text-color, rgb(255, 255, 255, 0.5));
     margin-left: auto;
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .battery-health-tile {
         padding: 16px;
     }
@@ -328,30 +329,30 @@
 /* Light Mode Support */
 @media (prefers-color-scheme: light) {
     .battery-health-tile {
-        background: var(--card-background-color, #ffffff);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        background: var(--card-background-color, #fff);
+        box-shadow: 0 2px 8px rgb(0, 0, 0, 0.1);
     }
 
     .battery-health-tile:hover {
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 16px rgb(0, 0, 0, 0.15);
     }
 
     .capacity-row,
     .quality-row {
-        border-bottom-color: rgba(0, 0, 0, 0.08);
+        border-bottom-color: rgb(0, 0, 0, 0.08);
     }
 
     .battery-health-capacity,
     .battery-health-quality,
     .battery-health-trend {
-        background: rgba(0, 0, 0, 0.02);
+        background: rgb(0, 0, 0, 0.02);
     }
 
     .battery-health-soh {
-        background: linear-gradient(135deg, rgba(76, 217, 100, 0.08), rgba(52, 199, 89, 0.08));
+        background: linear-gradient(135deg, rgb(76, 217, 100, 0.08), rgb(52, 199, 89, 0.08));
     }
 
     .battery-health-waiting {
-        background: rgba(142, 142, 147, 0.08);
+        background: rgb(142, 142, 147, 0.08);
     }
 }

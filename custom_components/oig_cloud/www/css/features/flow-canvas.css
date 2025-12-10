@@ -1,15 +1,16 @@
         /* === EDIT MODE STYLES === */
+
         /* Edit mode активní - nodes jsou draggable */
         .flow-canvas.edit-mode .node {
             cursor: move;
-            border: 2px dashed rgba(255, 193, 7, 0.6);
-            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+            border: 2px dashed rgb(255, 193, 7, 0.6);
+            box-shadow: 0 0 20px rgb(255, 193, 7, 0.3);
             transition: all 0.2s ease;
         }
 
         .flow-canvas.edit-mode .node:hover {
-            border-color: rgba(255, 193, 7, 0.9);
-            box-shadow: 0 0 30px rgba(255, 193, 7, 0.5);
+            border-color: rgb(255, 193, 7, 0.9);
+            box-shadow: 0 0 30px rgb(255, 193, 7, 0.5);
         }
 
         /* Během dragování */
@@ -17,12 +18,12 @@
             opacity: 0.8;
             z-index: 1000;
             cursor: grabbing !important;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 10px 40px rgb(0, 0, 0, 0.5);
             transform: scale(1.05) !important;
         }
 
         /* Touch-friendly hit area pro mobily */
-        @media (max-width: 768px) {
+        @media (width <= 768px) {
             .flow-canvas.edit-mode .node {
                 min-width: 44px;
                 min-height: 44px;
@@ -33,15 +34,18 @@
         /* Node Content - VELMI KOMPAKTNÍ! */
         .node-icon {
             font-size: 28px;
+
             /* Ještě menší */
             margin-bottom: 4px;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            filter: drop-shadow(0 2px 4px rgb(0, 0, 0, 0.3));
             position: relative;
+
             /* Pro absolutní pozici emoji ikony */
         }
 
         .node-label {
             font-size: 10px;
+
             /* Zvětšeno z 9px */
             text-transform: uppercase;
             letter-spacing: 0.4px;
@@ -52,6 +56,7 @@
 
         .node-value {
             font-size: 22px;
+
             /* Zvětšeno z 20px */
             font-weight: 700;
             line-height: 1;
@@ -60,6 +65,7 @@
 
         .node-subvalue {
             font-size: 10px;
+
             /* Zvětšeno z 9px */
             opacity: 0.6;
         }
@@ -68,10 +74,12 @@
         .node-phases {
             margin-top: 4px;
             font-size: 10px;
+
             /* Zvětšeno z 9px */
             opacity: 0.8;
             display: flex;
             flex-direction: row;
+
             /* Výchozí pro Spotřebu - 1 řádek */
             gap: 4px;
             align-items: center;
@@ -97,6 +105,7 @@
 
         .phase-value {
             font-size: 10px;
+
             /* Zvětšeno z 9px */
             opacity: 0.9;
         }
@@ -215,16 +224,16 @@
             gap: 4px;
             padding: 3px 6px;
             border-radius: 8px;
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.25) 0%, rgba(255, 152, 0, 0.15) 100%);
-            border: 1px solid rgba(255, 193, 7, 0.4);
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.25) 0%, rgb(255, 152, 0, 0.15) 100%);
+            border: 1px solid rgb(255, 193, 7, 0.4);
             transition: all 0.3s ease;
             animation: pulse-balancing 2s ease-in-out infinite;
         }
 
         .battery-balancing-indicator:hover {
             transform: scale(1.05);
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.35) 0%, rgba(255, 152, 0, 0.25) 100%);
-            box-shadow: 0 0 10px rgba(255, 193, 7, 0.4);
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.35) 0%, rgb(255, 152, 0, 0.25) 100%);
+            box-shadow: 0 0 10px rgb(255, 193, 7, 0.4);
         }
 
         .balancing-icon {
@@ -241,13 +250,13 @@
 
         /* Balancing states - různé barvy podle fáze */
         .battery-balancing-indicator.charging {
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.3) 0%, rgba(255, 152, 0, 0.2) 100%);
-            border-color: rgba(255, 193, 7, 0.5);
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.3) 0%, rgb(255, 152, 0, 0.2) 100%);
+            border-color: rgb(255, 193, 7, 0.5);
         }
 
         .battery-balancing-indicator.holding {
-            background: linear-gradient(135deg, rgba(66, 165, 245, 0.25) 0%, rgba(33, 150, 243, 0.15) 100%);
-            border-color: rgba(66, 165, 245, 0.4);
+            background: linear-gradient(135deg, rgb(66, 165, 245, 0.25) 0%, rgb(33, 150, 243, 0.15) 100%);
+            border-color: rgb(66, 165, 245, 0.4);
         }
 
         .battery-balancing-indicator.holding .balancing-text {
@@ -255,8 +264,8 @@
         }
 
         .battery-balancing-indicator.completed {
-            background: linear-gradient(135deg, rgba(76, 175, 80, 0.25) 0%, rgba(56, 142, 60, 0.15) 100%);
-            border-color: rgba(76, 175, 80, 0.4);
+            background: linear-gradient(135deg, rgb(76, 175, 80, 0.25) 0%, rgb(56, 142, 60, 0.15) 100%);
+            border-color: rgb(76, 175, 80, 0.4);
             animation: none;
         }
 
@@ -269,6 +278,7 @@
                 opacity: 1;
                 transform: scale(1);
             }
+
             50% {
                 opacity: 0.85;
                 transform: scale(1.02);
@@ -317,6 +327,7 @@
             flex-direction: column;
             align-items: flex-end;
             gap: 2px;
+
             /* Default OFF state - šedá, průhledná */
             opacity: 0.4;
         }
@@ -331,7 +342,6 @@
         }
 
         @keyframes pulse-charging {
-
             0%,
             100% {
                 opacity: 0.7;
@@ -354,7 +364,6 @@
 
         /* Temperature animations */
         @keyframes pulse-hot {
-
             0%,
             100% {
                 transform: scale(1);
@@ -366,7 +375,6 @@
         }
 
         @keyframes pulse-cold {
-
             0%,
             100% {
                 transform: scale(1);
@@ -379,7 +387,6 @@
 
         /* Pending mode change animation */
         @keyframes pulse-pending {
-
             0%,
             100% {
                 opacity: 0.6;
@@ -394,7 +401,6 @@
 
         /* Mode change in flow diagram */
         @keyframes pulse-mode-changing {
-
             0%,
             100% {
                 opacity: 0.7;
@@ -541,7 +547,7 @@
 
         .temp-hot {
             /* Container má jen červený stín */
-            filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.8));
+            filter: drop-shadow(0 0 3px rgb(244, 67, 54, 0.8));
         }
 
         /* Ikona uvnitř temp-hot bliká - použij ID pro vyšší specificitu */
@@ -555,7 +561,7 @@
 
         .temp-cold {
             /* Container má jen modrý stín */
-            filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.8));
+            filter: drop-shadow(0 0 3px rgb(33, 150, 243, 0.8));
         }
 
         /* Ikona uvnitř temp-cold bliká */
@@ -623,7 +629,6 @@
 
         /* Warning border animation for inverter */
         @keyframes warning-border {
-
             0%,
             100% {
                 border-color: var(--shadow-error-weak);
@@ -642,7 +647,6 @@
         }
 
         @keyframes pulse-warning {
-
             0%,
             100% {
                 transform: scale(1);
@@ -674,11 +678,10 @@
         /* Měsíc v noci - zvětšený a výraznější */
         .solar-icon-moon {
             font-size: 36px !important;
-            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+            filter: drop-shadow(0 0 8px rgb(255, 255, 255, 0.8));
         }
 
         @keyframes solar-pulse {
-
             0%,
             100% {
                 transform: scale(1);
@@ -690,14 +693,13 @@
         }
 
         @keyframes solar-glow {
-
             0%,
             100% {
-                filter: drop-shadow(0 0 5px rgba(255, 213, 79, 0.6));
+                filter: drop-shadow(0 0 5px rgb(255, 213, 79, 0.6));
             }
 
             50% {
-                filter: drop-shadow(0 0 15px rgba(255, 213, 79, 1));
+                filter: drop-shadow(0 0 15px rgb(255, 213, 79, 1));
             }
         }
 
@@ -786,7 +788,7 @@
             font-size: 11px;
             font-weight: 600;
             color: var(--error-text);
-            background: rgba(220, 53, 69, 0.15);
+            background: rgb(220, 53, 69, 0.15);
             padding: 2px 6px;
             border-radius: 4px;
             z-index: 11;
@@ -943,6 +945,7 @@
 
         .grid-node.price-normal {
             border: 2px solid var(--border-primary);
+
             /* Žádná animace - neutrální stav */
         }
 
@@ -962,28 +965,30 @@
         /* Ikony pro cenové stavy - barevné stíny kolem zásuvky */
         .price-icon-cheap {
             animation: icon-savings 2s ease-in-out infinite;
+
             /* Zelený světelný efekt */
             text-shadow:
-                0 0 10px rgba(76, 175, 80, 1),
-                0 0 20px rgba(76, 175, 80, 0.8),
-                0 0 30px rgba(76, 175, 80, 0.6);
+                0 0 10px rgb(76, 175, 80, 1),
+                0 0 20px rgb(76, 175, 80, 0.8),
+                0 0 30px rgb(76, 175, 80, 0.6);
         }
 
         .price-icon-normal {
             /* Žlutý/oranžový světelný efekt */
             text-shadow:
-                0 0 10px rgba(255, 193, 7, 1),
-                0 0 20px rgba(255, 193, 7, 0.8),
-                0 0 30px rgba(255, 193, 7, 0.6);
+                0 0 10px rgb(255, 193, 7, 1),
+                0 0 20px rgb(255, 193, 7, 0.8),
+                0 0 30px rgb(255, 193, 7, 0.6);
         }
 
         .price-icon-expensive {
             animation: icon-expensive 1.5s ease-in-out infinite;
+
             /* Červený světelný efekt */
             text-shadow:
-                0 0 10px rgba(244, 67, 54, 1),
-                0 0 20px rgba(244, 67, 54, 0.8),
-                0 0 30px rgba(244, 67, 54, 0.6);
+                0 0 10px rgb(244, 67, 54, 1),
+                0 0 20px rgb(244, 67, 54, 0.8),
+                0 0 30px rgb(244, 67, 54, 0.6);
         }
 
         /* Node Details - Čitelné písmo */
@@ -992,6 +997,7 @@
             padding-top: 6px;
             border-top: 1px solid var(--border-secondary);
             font-size: 11px;
+
             /* Zvětšeno z 8px */
             line-height: 1.4;
         }
@@ -1007,6 +1013,7 @@
         .detail-label {
             opacity: 0.6;
             font-size: 10px;
+
             /* Zvětšeno z 8px */
             text-transform: uppercase;
             letter-spacing: 0.3px;
@@ -1019,6 +1026,7 @@
             letter-spacing: 0.1px;
             font-weight: 500;
         }
+
         .node.battery .detail-row {
             gap: 3px;
         }
@@ -1026,11 +1034,13 @@
         .detail-value {
             font-weight: 600;
             font-size: 11px;
+
             /* Zvětšeno z 9px */
         }
 
         .detail-extra {
             font-size: 10px;
+
             /* Zvětšeno z 8px */
             opacity: 0.7;
             margin-left: 4px;
@@ -1071,15 +1081,15 @@
 }
 
 .grid-charging-popup tbody tr:not(:last-child) {
-    border-bottom: 1px dashed rgba(255,255,255,0.15);
+    border-bottom: 1px dashed rgb(255,255,255,0.15);
 }
 
 .grid-charging-popup tbody tr:nth-child(odd) {
-    background-color: rgba(255,255,255,0.02);
+    background-color: rgb(255,255,255,0.02);
 }
 
 .grid-charging-popup tbody tr:hover {
-    background: rgba(255, 215, 64, 0.15);
+    background: rgb(255, 215, 64, 0.15);
     transition: background 0.2s ease-in-out;
 }
 
@@ -1104,6 +1114,7 @@
 
         .detail-subheader {
             font-size: 10px;
+
             /* Zvětšeno z 8px */
             text-transform: uppercase;
             opacity: 0.5;
@@ -1129,7 +1140,7 @@
         }
 
         /* Mobile: Expand/Collapse indicator */
-        @media (max-width: 768px) {
+        @media (width <= 768px) {
             .node::after {
                 content: '▼';
                 position: absolute;
@@ -1173,7 +1184,7 @@
             white-space: normal;
             max-width: min(250px, calc(100vw - 20px));
             width: max-content;
-            word-wrap: break-word;
+            overflow-wrap: break-word;
             text-align: center;
             opacity: 0;
             pointer-events: none;
@@ -1196,7 +1207,7 @@
             #global-tooltip {
                 background: var(--tooltip-bg-secondary);
                 color: var(--text-primary);
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3);
             }
         }
 
@@ -1377,13 +1388,12 @@
             border-radius: 50%;
             pointer-events: none;
             z-index: 10;
-            box-shadow: 0 0 10px currentColor;
+            box-shadow: 0 0 10px currentcolor;
             will-change: transform, opacity;
         }
 
         /* Animations */
         @keyframes pulse {
-
             0%,
             100% {
                 opacity: 1;
@@ -1402,7 +1412,6 @@
 
         /* Price indicator animations - jemné pulzování */
         @keyframes price-cheap-pulse {
-
             0%,
             100% {
                 box-shadow: 0 0 15px var(--shadow-success);
@@ -1416,7 +1425,6 @@
         }
 
         @keyframes price-expensive-pulse {
-
             0%,
             100% {
                 box-shadow: 0 0 15px var(--status-discharging-shadow);
@@ -1431,7 +1439,6 @@
 
         /* Export animation - silnější zelené pulzování (prodáváme!) */
         @keyframes export-pulse {
-
             0%,
             100% {
                 box-shadow: 0 0 20px var(--shadow-success);
@@ -1439,13 +1446,12 @@
             }
 
             50% {
-                box-shadow: 0 0 35px rgba(76, 175, 80, 0.9);
+                box-shadow: 0 0 35px rgb(76, 175, 80, 0.9);
                 border-color: var(--button-active-border);
             }
         }
 
         @keyframes icon-savings {
-
             0%,
             100% {
                 transform: scale(1) rotate(0deg);
@@ -1461,7 +1467,6 @@
         }
 
         @keyframes icon-expensive {
-
             0%,
             100% {
                 transform: scale(1);
@@ -1519,6 +1524,7 @@
             width: 100%;
             display: grid;
             grid-template-columns: 1fr 1fr;
+
             /* 2 sloupce */
             gap: 4px 10px;
         }
@@ -1532,6 +1538,7 @@
 
         .battery .detail-group {
             grid-column: span 2;
+
             /* Celá šířka */
             margin-top: 4px;
             padding-top: 4px;
@@ -1560,7 +1567,7 @@
         .battery-icon-svg {
             display: block;
             margin: 0 auto;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+            filter: drop-shadow(0 2px 4px rgb(0, 0, 0, 0.2));
         }
 
         .battery-outline {
@@ -1583,7 +1590,6 @@
         }
 
         @keyframes battery-pulse {
-
             0%,
             100% {
                 opacity: 1;
@@ -1608,7 +1614,6 @@
         }
 
         @keyframes lightning-blink {
-
             0%,
             100% {
                 opacity: 1;
@@ -1641,7 +1646,6 @@
         }
 
         @keyframes pulse-warning {
-
             0%,
             100% {
                 opacity: 1;
@@ -1688,16 +1692,18 @@
         }
 
         /* Responsive */
+
         /* Desktop - wider screens, avoid overlap */
-        @media (min-width: 1400px) {
+        @media (width >= 1400px) {
             .flow-canvas {
                 margin-top: 0;
+
                 /* Top bar doesn't need margin */
             }
         }
 
         /* Mobile - small screens */
-        @media (max-width: 768px) {
+        @media (width <= 768px) {
             .container {
                 padding: 5px;
                 padding-bottom: 10px;
@@ -1707,6 +1713,7 @@
 
             .header {
                 margin-bottom: 5px;
+
                 /* Menší margin */
                 flex-wrap: wrap;
                 padding: 5px;
@@ -1714,6 +1721,7 @@
 
             .header h1 {
                 font-size: 14px;
+
                 /* Menší font */
                 width: 100%;
                 margin-bottom: 2px;
@@ -1721,11 +1729,13 @@
 
             .time {
                 font-size: 11px;
+
                 /* Menší font */
             }
 
             .last-update {
                 font-size: 8px;
+
                 /* Menší font */
                 width: 100%;
                 text-align: left;
@@ -1734,10 +1744,12 @@
 
             .flow-canvas {
                 height: 750px;
+
                 /* Zvětšeno z 650px pro více prostoru */
                 max-width: 100%;
                 margin-top: 0;
                 transform: scale(0.92);
+
                 /* Zvětšeno z 0.82 pro lepší čitelnost */
                 transform-origin: top center;
                 overflow: visible;
@@ -1789,7 +1801,9 @@
             /* Overflow protection - detaily nesmí vytékat */
             .node {
                 overflow: visible;
+
                 /* Změněno z hidden aby fungovaly indikátory */
+
                 /* position zůstává absolute z výchozího CSS! */
             }
 
@@ -1835,28 +1849,34 @@
             }
 
             /* POUŽITÍ DESKTOP LAYOUTU s větším rozestupem pro mobil */
+
             /* Zmenšení střídače aby se nevěkrýval */
             .inverter {
                 min-width: 110px;
                 max-width: 140px;
                 padding: 8px 10px;
                 top: 55%;
+
                 /* Posunuto níž aby se nepřekrýval se sítí/spotřebou */
             }
 
             /* Síť více vlevo a nahoru */
             .grid-node {
                 left: 5px;
+
                 /* Ještě blíž ke kraji */
                 top: 40%;
+
                 /* Výš než střídač */
             }
 
             /* Spotřeba více vpravo a nahoru */
             .house {
                 right: 5px;
+
                 /* Ještě blíž ke kraji */
                 top: 40%;
+
                 /* Výš než střídač */
             }
 
@@ -1977,6 +1997,7 @@
             /* Shield queue - hide on mobile nebo zmenšit */
             #shield-queue-section {
                 display: none;
+
                 /* Skrýt na mobilu kvůli prostoru */
             }
 
@@ -2052,7 +2073,7 @@
         }
 
         /* Extra small phones */
-        @media (max-width: 380px) {
+        @media (width <= 380px) {
             .flow-canvas {
                 transform: scale(0.78);
                 height: 650px;
@@ -2064,11 +2085,12 @@
             }
 
             /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
             /* Žádné custom pozice */
         }
 
         /* Tablet portrait mode (iPad: 768x1024px) */
-        @media (min-width: 769px) and (max-width: 1024px) and (orientation: portrait) {
+        @media (width >= 769px) and (width <= 1024px) and (orientation: portrait) {
             .flow-canvas {
                 height: 650px;
                 transform: scale(0.95);
@@ -2117,6 +2139,7 @@
             }
 
             /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
             /* Žádné custom pozice - vše zůstává z výchozího CSS */
 
             /* Větší indikátory pro tablet */
@@ -2143,7 +2166,7 @@
         }
 
         /* Tablet landscape mode (Nest Hub: 1024x600px, iPad Mini: 1024x768px) */
-        @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+        @media (width >= 769px) and (width <= 1200px) and (orientation: landscape) {
             .flow-canvas {
                 height: 600px;
                 transform: scale(0.75);
@@ -2198,6 +2221,7 @@
             }
 
             /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
             /* Žádné custom pozice - vše zůstává z výchozího CSS */
 
             /* Indikátory */
@@ -2235,6 +2259,7 @@
             right: 0;
             width: 100%;
             max-height: auto;
+
             /* Auto - přizpůsobí se obsahu */
             background: var(--control-panel-bg);
             border-bottom: 2px solid var(--control-panel-border);
@@ -2247,6 +2272,7 @@
 
         .control-panel.minimized {
             max-height: 32px;
+
             /* Minimalizovaný stav */
         }
 
@@ -2259,6 +2285,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 4px 12px;
+
             /* Ještě menší */
             background: var(--info-bg);
             border-bottom: 1px solid var(--border-secondary);
@@ -2268,6 +2295,7 @@
         .panel-header h3 {
             margin: 0;
             font-size: 12px;
+
             /* Velmi malé */
             font-weight: 600;
         }
@@ -2277,11 +2305,13 @@
             border: none;
             color: var(--text-primary);
             width: 20px;
+
             /* Velmi malé */
             height: 20px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
+
             /* Menší */
             display: flex;
             align-items: center;
@@ -2295,15 +2325,16 @@
 
         .panel-content {
             max-height: none;
+
             /* Není omezení - přizpůsobí se obsahu */
-            overflow-y: visible;
-            overflow-x: hidden;
+            overflow: hidden visible;
             padding: 4px 12px;
+
             /* Velmi malý padding */
         }
 
         /* Desktop - horizontal layout with sections */
-        @media (min-width: 1200px) {
+        @media (width >= 1200px) {
             .panel-content {
                 display: flex;
                 flex-wrap: wrap;
@@ -2389,7 +2420,7 @@
         .control-section h4 {
             font-size: 10px;
             font-weight: 600;
-            margin: 0 0 4px 0;
+            margin: 0 0 4px;
             color: var(--text-label);
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -2501,6 +2532,7 @@
 
         .input-group {
             display: none;
+
             /* Skryté - šetříme místo */
         }
 
@@ -2613,7 +2645,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 24px 16px 24px;
+            padding: 20px 24px 16px;
             border-bottom: 1px solid var(--border-secondary);
         }
 
@@ -2643,7 +2675,7 @@
         }
 
         .toast-body {
-            padding: 16px 24px 20px 24px;
+            padding: 16px 24px 20px;
             font-size: 14px;
             line-height: 1.6;
             color: var(--toast-body-text);
@@ -2679,10 +2711,7 @@
         /* Custom Acknowledgement Dialog */
         .ack-dialog-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             background: var(--modal-backdrop);
             display: flex;
             align-items: center;

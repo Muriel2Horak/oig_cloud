@@ -58,7 +58,7 @@
     text-align: center;
 }
 
-@media (max-width: 960px) {
+@media (width <= 960px) {
     .detail-summary-tiles {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
@@ -144,27 +144,28 @@
 
 .metric-context--positive {
     color: #4CAF50;
-    background: rgba(76, 175, 80, 0.12);
-    border-color: rgba(76, 175, 80, 0.4);
+    background: rgb(76, 175, 80, 0.12);
+    border-color: rgb(76, 175, 80, 0.4);
 }
 
 .metric-context--negative {
     color: #F44336;
-    background: rgba(244, 67, 54, 0.12);
-    border-color: rgba(244, 67, 54, 0.4);
+    background: rgb(244, 67, 54, 0.12);
+    border-color: rgb(244, 67, 54, 0.4);
 }
 
 .metric-context--neutral {
     color: #FFC107;
-    background: rgba(255, 193, 7, 0.12);
-    border-color: rgba(255, 193, 7, 0.4);
+    background: rgb(255, 193, 7, 0.12);
+    border-color: rgb(255, 193, 7, 0.4);
 }
+
 .metric-delta {
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 0.8rem;
     font-weight: 600;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgb(255, 255, 255, 0.08);
 }
 
 .metric-delta.delta-positive {
@@ -212,7 +213,7 @@
 }
 
 .mode-block:hover {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgb(255, 255, 255, 0.02);
 }
 
 /* Match Indicators - pouze border-left barva */
@@ -341,17 +342,17 @@
 }
 
 .cost-delta.cost-higher {
-    background: rgba(244, 67, 54, 0.15);
+    background: rgb(244, 67, 54, 0.15);
     color: #F44336;
 }
 
 .cost-delta.cost-lower {
-    background: rgba(76, 175, 80, 0.15);
+    background: rgb(76, 175, 80, 0.15);
     color: #4CAF50;
 }
 
 .cost-delta.cost-equal {
-    background: rgba(158, 158, 158, 0.15);
+    background: rgb(158, 158, 158, 0.15);
     color: var(--text-secondary, #999);
 }
 
@@ -367,17 +368,17 @@
 }
 
 .block-match.match-yes {
-    background: rgba(76, 175, 80, 0.15);
+    background: rgb(76, 175, 80, 0.15);
     color: #4CAF50;
 }
 
 .block-match.match-no {
-    background: rgba(244, 67, 54, 0.15);
+    background: rgb(244, 67, 54, 0.15);
     color: #F44336;
 }
 
 .block-match.match-neutral {
-    background: rgba(255, 193, 7, 0.15);
+    background: rgb(255, 193, 7, 0.15);
     color: #FFC107;
 }
 
@@ -446,7 +447,7 @@
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .detail-summary-tiles {
         grid-template-columns: 1fr 1fr;
     }
@@ -460,7 +461,7 @@
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .detail-tab-content {
         padding: 12px;
     }
@@ -517,6 +518,7 @@
    ================================================================ */
 
 /* These styles are for the timeline dialog popup, not for detail-tabs */
+
 /* Keep these minimal and separate from detail-tabs styles above */
 
 /* ================================================================
@@ -531,15 +533,15 @@
 }
 
 .summary-tile-smart {
-    background: rgba(12, 17, 30, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(12, 17, 30, 0.6);
+    border: 1px solid rgb(255, 255, 255, 0.08);
     border-radius: 10px;
     padding: 18px;
     transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .summary-tile-smart:hover {
-    border-color: rgba(33, 150, 243, 0.4);
+    border-color: rgb(33, 150, 243, 0.4);
     transform: translateY(-2px);
 }
 
@@ -557,7 +559,7 @@
     text-transform: uppercase;
     font-size: 12px;
     letter-spacing: 0.5px;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgb(255, 255, 255, 0.65);
     font-weight: 600;
 }
 
@@ -569,7 +571,7 @@
     font-size: 10px;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+    color: rgb(255, 255, 255, 0.45);
 }
 
 .summary-tile-smart .tile-value-big {
@@ -592,7 +594,7 @@
     justify-content: space-between;
     margin-top: 6px;
     font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(255, 255, 255, 0.7);
 }
 
 .summary-tile-smart .tile-sub-row.hint-row {
@@ -609,9 +611,9 @@
     align-items: center;
     justify-content: space-between;
     font-size: 0.85rem;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgb(255, 255, 255, 0.08);
+    background: rgb(255, 255, 255, 0.03);
+    color: rgb(255, 255, 255, 0.8);
 }
 
 .tile-delta span:last-child {
@@ -620,19 +622,19 @@
 
 .tile-delta.delta-better {
     color: #9ccc65;
-    border-color: rgba(156, 204, 101, 0.5);
-    background: rgba(156, 204, 101, 0.12);
+    border-color: rgb(156, 204, 101, 0.5);
+    background: rgb(156, 204, 101, 0.12);
 }
 
 .tile-delta.delta-worse {
     color: #ff8a80;
-    border-color: rgba(255, 138, 128, 0.5);
-    background: rgba(255, 138, 128, 0.12);
+    border-color: rgb(255, 138, 128, 0.5);
+    background: rgb(255, 138, 128, 0.12);
 }
 
 .tile-delta.delta-neutral {
-    color: rgba(255, 255, 255, 0.75);
-    border-color: rgba(255, 255, 255, 0.08);
+    color: rgb(255, 255, 255, 0.75);
+    border-color: rgb(255, 255, 255, 0.08);
 }
 
 /* Kompaktní meta info pod kartami */
@@ -642,10 +644,10 @@
     justify-content: center;
     gap: 12px;
     padding: 8px 16px;
-    background: rgba(255, 255, 255, 0.02);
+    background: rgb(255, 255, 255, 0.02);
     border-radius: 6px;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(255, 255, 255, 0.7);
     margin-bottom: 16px;
 }
 
@@ -656,11 +658,11 @@
 }
 
 .summary-meta-compact .meta-separator {
-    color: rgba(255, 255, 255, 0.3);
+    color: rgb(255, 255, 255, 0.3);
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .summary-tiles-smart {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -670,11 +672,12 @@
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .summary-tiles-smart {
         grid-template-columns: 1fr;
     }
 }
+
 .plan-status-banner {
     display: flex;
     align-items: center;
@@ -684,8 +687,8 @@
     margin: 10px 0 18px;
     font-weight: 600;
     font-size: 0.9rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(255, 255, 255, 0.05);
+    border: 1px solid rgb(255, 255, 255, 0.08);
 }
 
 .plan-status-banner span {
@@ -694,13 +697,13 @@
 }
 
 .plan-status-banner.plan-hybrid {
-    border-color: rgba(0, 188, 212, 0.4);
-    background: rgba(0, 188, 212, 0.08);
+    border-color: rgb(0, 188, 212, 0.4);
+    background: rgb(0, 188, 212, 0.08);
 }
 
 .plan-status-banner.plan-autonomy {
-    border-color: rgba(255, 193, 7, 0.5);
-    background: rgba(255, 193, 7, 0.12);
+    border-color: rgb(255, 193, 7, 0.5);
+    background: rgb(255, 193, 7, 0.12);
 }
 
 .plan-status-banner .plan-hint {
