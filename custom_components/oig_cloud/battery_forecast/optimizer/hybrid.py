@@ -398,6 +398,7 @@ class HybridOptimizer:
             charge_opportunities=charge_opportunities,
             spot_prices=spot_prices,
             balancing=balancing,
+            current_capacity=current_capacity,
         )
 
         _LOGGER.info(f"⚡ Applied {ups_count} UPS intervals from arbitrage analysis")
@@ -850,6 +851,7 @@ class HybridOptimizer:
         charge_opportunities: List[Dict[str, Any]],
         spot_prices: List[Dict[str, Any]],
         balancing: BalancingConfig,
+        current_capacity: float = 0.0,
     ) -> int:
         """Apply HOME UPS to charging opportunities.
 
@@ -864,6 +866,7 @@ class HybridOptimizer:
                 spot_prices=spot_prices,
                 charge_opportunities=charge_opportunities,
                 balancing=balancing,
+                current_capacity=current_capacity,
             )
         else:
             # Normal mode: Apply UPS to all selected opportunities
@@ -889,10 +892,25 @@ class HybridOptimizer:
         spot_prices: List[Dict[str, Any]],
         charge_opportunities: List[Dict[str, Any]],
         balancing: BalancingConfig,
+        current_capacity: float = 0.0,
     ) -> int:
-        """Apply charging for balancing mode with priorities."""
+        """Apply charging for balancing mode with priorities.
+
+        MUST charge battery to 100% before deadline!
+        """
         n = len(modes)
         ups_added = 0
+
+        # Calculate how many intervals we need to reach 100%
+        required_kwh = self.max_capacity - current_capacity
+        charge_per_interval = self.charge_rate_kw * (self.interval_minutes / 60) * 0.95
+        intervals_needed = int(required_kwh / charge_per_interval) + 2  # +2 for safety
+
+        _LOGGER.info(
+            f"🔋 Balancing: need {required_kwh:.2f} kWh, "
+            f"~{charge_per_interval:.2f} kWh/interval, "
+            f"need {intervals_needed} intervals"
+        )
 
         # Find deadline index
         deadline_idx = n
@@ -929,6 +947,9 @@ class HybridOptimizer:
                 continue
 
         # Priority 2: Cheapest intervals before deadline
+        # Calculate remaining intervals needed after preferred
+        remaining_needed = max(0, intervals_needed - preferred_used)
+
         opportunities_before_deadline = [
             opp
             for opp in charge_opportunities
@@ -937,11 +958,22 @@ class HybridOptimizer:
         opportunities_before_deadline.sort(key=lambda x: x["price"])
 
         additional_added = 0
-        for opp in opportunities_before_deadline[:20]:
+        # Use remaining_needed instead of hardcoded 20!
+        for opp in opportunities_before_deadline[:remaining_needed]:
             idx = opp["index"]
             modes[idx] = CBB_MODE_HOME_UPS
             additional_added += 1
             ups_added += 1
+
+        # If still not enough, add ALL available intervals before deadline
+        if ups_added < intervals_needed:
+            for i in range(deadline_idx):
+                if modes[i] != CBB_MODE_HOME_UPS:
+                    modes[i] = CBB_MODE_HOME_UPS
+                    additional_added += 1
+                    ups_added += 1
+                    if ups_added >= intervals_needed:
+                        break
 
         # Priority 3: Holding period (deadline to holding_end)
         holding_added = 0

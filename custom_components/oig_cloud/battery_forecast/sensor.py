@@ -23,7 +23,6 @@ from .types import (
 from .timeline.builder import TimelineBuilder
 from .timeline.simulator import SoCSimulator
 from .optimizer.hybrid import HybridOptimizer
-from .balancing.executor import BalancingExecutor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,8 +107,7 @@ class BatteryForecastOrchestrator:
     Main orchestrator for battery forecast calculation.
 
     Coordinates:
-    - HybridOptimizer for mode optimization
-    - BalancingExecutor for balancing plan application
+    - HybridOptimizer for mode optimization (includes balancing logic)
     - SoCSimulator for timeline simulation
     - TimelineBuilder for output generation
     """
@@ -118,18 +116,13 @@ class BatteryForecastOrchestrator:
         """Initialize orchestrator with configuration."""
         self.config = config or ForecastConfig()
 
-        # Initialize optimizer
+        # Initialize optimizer (handles balancing internally)
         self._optimizer = HybridOptimizer(
             max_capacity=self.config.max_capacity,
             min_capacity=self.config.min_capacity,
             target_capacity=self.config.target_capacity,
             charge_rate_kw=self.config.charge_rate_kw,
             efficiency=self.config.efficiency,
-        )
-
-        self._balancing = BalancingExecutor(
-            max_capacity=self.config.max_capacity,
-            charge_rate_kw=self.config.charge_rate_kw,
         )
 
         self._simulator = SoCSimulator(
@@ -206,7 +199,8 @@ class BatteryForecastOrchestrator:
                 balancing_plan is not None,
             )
 
-            # Step 1: Run optimization
+            # Step 1: Run optimization (includes balancing if plan provided)
+            # Note: HybridOptimizer handles balancing internally via _apply_balancing_charging()
             opt_result = self._optimizer.optimize(
                 current_capacity=current_capacity,
                 spot_prices=spot_prices,
@@ -218,24 +212,22 @@ class BatteryForecastOrchestrator:
             modes = opt_result["modes"]
             result.baseline_cost_czk = opt_result.get("baseline_cost_czk", 0.0)
 
-            # Step 2: Apply balancing plan if provided
-            if balancing_plan and self.config.use_balancing:
-                bal_result = self._balancing.apply_balancing(
-                    modes=modes,
-                    spot_prices=spot_prices,
-                    current_battery=current_capacity,
-                    balancing_plan=balancing_plan,
+            # Step 2: Extract balancing info from optimizer result
+            # (balancing already applied in optimizer, just extract metadata)
+            if opt_result.get("is_balancing_mode"):
+                result.balancing_applied = True
+                result.balancing_ups_count = opt_result.get("ups_intervals_count", 0)
+                result.balancing_reason = (
+                    balancing_plan.get("reason", "balancing")
+                    if balancing_plan
+                    else "unknown"
                 )
-
-                if bal_result.total_ups_added > 0:
-                    result.balancing_applied = True
-                    result.balancing_ups_count = bal_result.total_ups_added
-                    result.balancing_reason = balancing_plan.get("reason", "balancing")
-
-                    _LOGGER.info(
-                        "Balancing applied: +%d UPS intervals",
-                        bal_result.total_ups_added,
-                    )
+                _LOGGER.info(
+                    "Balancing mode active: deadline=%s, holding=%s-%s",
+                    opt_result.get("balancing_deadline"),
+                    opt_result.get("balancing_holding_start"),
+                    opt_result.get("balancing_holding_end"),
+                )
 
             # Step 3: Simulate final timeline
             battery_trajectory, grid_imports, grid_exports = (
