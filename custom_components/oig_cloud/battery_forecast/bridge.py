@@ -25,6 +25,7 @@ from .sensor import (
     BatteryForecastOrchestrator,
     ForecastConfig,
     ForecastResult,
+    OptimizerStrategy,
 )
 from .types import (
     CBB_MODE_HOME_I,
@@ -45,12 +46,13 @@ def calculate_hybrid_with_new_module(
     min_capacity: float,
     target_capacity: float,
     spot_prices: List[Dict[str, Any]],
-    export_prices: List[Dict[str, Any]],  # Not used in new module yet
+    export_prices: List[Dict[str, Any]],
     solar_forecast: Dict[str, Any],
     load_forecast: List[float],
     balancing_plan: Optional[Dict[str, Any]] = None,
     efficiency: float = DEFAULT_EFFICIENCY,
     charge_rate_kw: float = DEFAULT_CHARGE_RATE_KW,
+    use_v2_strategy: bool = True,  # NEW: Use V2 strategy by default
 ) -> Dict[str, Any]:
     """
     Bridge function that calls new modular battery_forecast and returns
@@ -98,6 +100,9 @@ def calculate_hybrid_with_new_module(
     solar_list = _convert_solar_forecast(solar_forecast, spot_prices)
 
     # Create orchestrator with configuration
+    # Select strategy based on use_v2_strategy parameter
+    strategy = OptimizerStrategy.V2 if use_v2_strategy else OptimizerStrategy.LEGACY
+    
     config = ForecastConfig(
         max_capacity=max_capacity,
         min_capacity=min_capacity,
@@ -105,6 +110,7 @@ def calculate_hybrid_with_new_module(
         charge_rate_kw=charge_rate_kw,
         efficiency=efficiency,
         use_balancing=balancing_plan is not None,
+        optimizer_strategy=strategy,
     )
 
     orchestrator = BatteryForecastOrchestrator(config)

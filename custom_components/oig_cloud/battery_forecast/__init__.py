@@ -71,6 +71,7 @@ from .sensor import (
     ForecastConfig,
     ForecastResult,
     calculate_battery_forecast,
+    OptimizerStrategy,  # Strategy selection enum
 )
 
 from .bridge import (
@@ -140,11 +141,12 @@ __all__ = [
     # Helper functions
     "get_mode_name",
     "is_charging_mode",
-    # Legacy Orchestrator
+    # Orchestrator
     "BatteryForecastOrchestrator",
     "ForecastConfig",
     "ForecastResult",
     "calculate_battery_forecast",
+    "OptimizerStrategy",  # Strategy selection: LEGACY or V2
     # Bridge (legacy compatibility)
     "calculate_hybrid_with_new_module",
     "calculate_timeline_with_new_module",
