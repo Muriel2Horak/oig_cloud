@@ -4,7 +4,6 @@ class CostComparisonTile {
         this.data = payload || {};
         this.summary = this.data.comparison || {};
         this.onOpenHybrid = options.onOpenHybrid;
-        this.onOpenAutonomy = options.onOpenAutonomy;
         this.boundContainerClick = null;
         this.render();
     }
@@ -27,8 +26,8 @@ class CostComparisonTile {
         }
 
         const plans = this.summary.plans;
-        const activePlanKey = this.summary.active_plan === 'autonomy' ? 'dynamic' : 'standard';
-        const secondaryPlanKey = activePlanKey === 'standard' ? 'dynamic' : 'standard';
+        const activePlanKey = 'standard';  // Always hybrid mode
+        const secondaryPlanKey = 'standard';  // No secondary plan
         const activePlan = plans[activePlanKey] || {};
         const secondaryPlan = plans[secondaryPlanKey] || {};
 
@@ -45,11 +44,8 @@ class CostComparisonTile {
         const total = this.formatCost(activePlan.total_cost);
         const actual = this.formatCost(activePlan.actual_cost);
         const future = this.formatCost(activePlan.future_plan_cost);
-        const activePlanKeyForEvents = activePlan.plan_key || (activePlanKey === 'dynamic' ? 'autonomy' : 'hybrid');
-        const secondaryPlanKeyForEvents = secondaryPlan.plan_key || (secondaryPlanKey === 'dynamic' ? 'autonomy' : 'hybrid');
+        const activePlanKeyForEvents = activePlan.plan_key || 'hybrid';
         const activeLabel = this.getPlanLabel(activePlanKeyForEvents);
-        const secondaryLabel = this.getPlanLabel(secondaryPlanKeyForEvents);
-        const secondaryTotal = this.formatCost(secondaryPlan.total_cost);
 
         return `
             <div class="cost-hero-lite">
@@ -61,11 +57,6 @@ class CostComparisonTile {
                         <span>Plán ${future}</span>
                     </div>
                 </div>
-                <div class="cost-hero-alt" data-plan="${secondaryPlanKeyForEvents}">
-                    <div class="cost-hero-alt-label">${secondaryLabel}</div>
-                    <div class="cost-hero-alt-value">${secondaryTotal}</div>
-                    <div class="cost-hero-alt-note">Alternativní režim</div>
-                </div>
             </div>
         `;
     }
@@ -74,7 +65,6 @@ class CostComparisonTile {
         const yesterdaySource =
             this.summary.yesterday ||
             this.data?.hybrid?.yesterday ||
-            this.data?.autonomy?.yesterday ||
             null;
         const yesterdayActual = this.asNumber(yesterdaySource?.actual_total_cost);
         const yesterdayPlan = this.asNumber(yesterdaySource?.plan_total_cost);
@@ -92,9 +82,8 @@ class CostComparisonTile {
             yesterdayActual != null && yesterdayPlan != null && Math.round(yesterdayPlan) !== Math.round(yesterdayActual)
                 ? `plán ${this.formatCost(yesterdayPlan)}`
                 : '';
-        const tomorrowKey = activePlanKey === 'dynamic' ? 'dynamic' : 'standard';
-        const tomorrowCost = (this.summary.tomorrow || {})[tomorrowKey] ?? null;
-        const tomorrowLabel = this.getPlanLabel(tomorrowKey === 'dynamic' ? 'autonomy' : 'hybrid');
+        const tomorrowCost = (this.summary.tomorrow || {})['standard'] ?? null;
+        const tomorrowLabel = this.getPlanLabel('hybrid');
         const blocks = [
             this.renderHistoryCard('Včera', this.formatCost(yesterdayCost), yesterdayNote, yesterdayPlanNote),
             this.renderHistoryCard('Zítra', this.formatCost(tomorrowCost), tomorrowLabel)
@@ -115,15 +104,9 @@ class CostComparisonTile {
 
     attachEvents() {
         const heroMain = this.container.querySelector('.cost-hero-main[data-plan]');
-        const heroSecondary = this.container.querySelector('.cost-hero-alt[data-plan]');
 
-        const handleOpen = (planKey) => {
-            if (!planKey) {
-                return;
-            }
-            if (planKey === 'autonomy' && typeof this.onOpenAutonomy === 'function') {
-                this.onOpenAutonomy();
-            } else if (typeof this.onOpenHybrid === 'function') {
+        const handleOpen = () => {
+            if (typeof this.onOpenHybrid === 'function') {
                 this.onOpenHybrid();
             }
         };
@@ -131,31 +114,20 @@ class CostComparisonTile {
         if (heroMain) {
             heroMain.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleOpen(heroMain.dataset.plan);
-            });
-        }
-
-        if (heroSecondary) {
-            heroSecondary.addEventListener('click', (event) => {
-                event.stopPropagation();
-                handleOpen(heroSecondary.dataset.plan);
+                handleOpen();
             });
         }
 
         if (!this.boundContainerClick) {
             this.boundContainerClick = (event) => {
-                if (event.target.closest('.cost-hero-alt')) {
-                    return;
-                }
-                const targetPlan = heroMain?.dataset?.plan || 'hybrid';
-                handleOpen(targetPlan);
+                handleOpen();
             };
             this.container.addEventListener('click', this.boundContainerClick);
         }
     }
 
     getPlanLabel(planKey) {
-        const fallback = planKey === 'autonomy' ? 'Dynamický' : 'Standardní';
+        const fallback = 'Standardní';  // Always hybrid
         const labels = window.PLAN_LABELS && window.PLAN_LABELS[planKey];
         if (!labels) {
             return fallback;
