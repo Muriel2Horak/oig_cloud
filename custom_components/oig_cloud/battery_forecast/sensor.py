@@ -1,46 +1,31 @@
 """
 Battery Forecast Sensor Orchestrator.
 
-This module orchestrates all battery_forecast components and provides
-the main interface for Home Assistant integration.
+Simplified version with single optimization algorithm (HybridOptimizer).
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-
-from enum import Enum
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from .types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
-    CBB_MODE_NAMES,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_EFFICIENCY,
     get_mode_name,
-    is_charging_mode,
 )
 from .timeline.builder import TimelineBuilder
 from .timeline.simulator import SoCSimulator
 from .optimizer.hybrid import HybridOptimizer
-from .optimizer.modes import ModeSelector
 from .balancing.executor import BalancingExecutor
-from .strategy.hybrid_v2 import HybridStrategy, DEFAULT_BATTERY_EFFICIENCY
-from .config import SimulatorConfig, HybridConfig
-from .physics.interval_simulator import IntervalSimulator
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class OptimizerStrategy(Enum):
-    """Available optimizer strategies."""
-
-    LEGACY = "legacy"  # Original HybridOptimizer
-    V2 = "v2"  # New HybridStrategy (hybrid_v2)
 
 
 @dataclass
@@ -55,14 +40,6 @@ class ForecastConfig:
 
     # Algorithm settings
     use_balancing: bool = True
-    use_hybrid: bool = True
-
-    # Strategy selection: "legacy" or "v2"
-    optimizer_strategy: OptimizerStrategy = OptimizerStrategy.V2
-
-    # Planning parameters (for v2 strategy)
-    planning_min_percent: float = 22.0  # Planning minimum SoC
-    target_percent: float = 80.0  # Target SoC at end of horizon
 
     # Safety margins
     min_soc_percent: float = 20.0
@@ -72,9 +49,6 @@ class ForecastConfig:
         """Calculate derived values."""
         self.min_capacity = self.max_capacity * (self.min_soc_percent / 100.0)
         self.safe_max_capacity = self.max_capacity * (self.max_soc_percent / 100.0)
-        # Convert target_capacity to percent if not already aligned
-        if self.target_capacity > 1:
-            self.target_percent = (self.target_capacity / self.max_capacity) * 100.0
 
 
 @dataclass
@@ -134,35 +108,24 @@ class BatteryForecastOrchestrator:
     Main orchestrator for battery forecast calculation.
 
     Coordinates:
-    - HybridOptimizer (legacy) or HybridStrategy (v2) for mode optimization
+    - HybridOptimizer for mode optimization
     - BalancingExecutor for balancing plan application
     - SoCSimulator for timeline simulation
     - TimelineBuilder for output generation
-
-    Strategy selection via config.optimizer_strategy:
-    - OptimizerStrategy.LEGACY: Original HybridOptimizer (backward compatible)
-    - OptimizerStrategy.V2: New HybridStrategy with improved economics
     """
 
     def __init__(self, config: Optional[ForecastConfig] = None) -> None:
         """Initialize orchestrator with configuration."""
         self.config = config or ForecastConfig()
 
-        # Initialize legacy optimizer (always available for fallback)
-        self._legacy_optimizer = HybridOptimizer(
+        # Initialize optimizer
+        self._optimizer = HybridOptimizer(
             max_capacity=self.config.max_capacity,
             min_capacity=self.config.min_capacity,
             target_capacity=self.config.target_capacity,
             charge_rate_kw=self.config.charge_rate_kw,
             efficiency=self.config.efficiency,
         )
-
-        # Initialize v2 strategy if selected
-        self._v2_strategy: Optional[HybridStrategy] = None
-        self._v2_simulator: Optional[IntervalSimulator] = None
-
-        if self.config.optimizer_strategy == OptimizerStrategy.V2:
-            self._init_v2_strategy()
 
         self._balancing = BalancingExecutor(
             max_capacity=self.config.max_capacity,
@@ -181,48 +144,12 @@ class BatteryForecastOrchestrator:
             min_capacity=self.config.min_capacity,
         )
 
-        strategy_name = self.config.optimizer_strategy.value
         _LOGGER.info(
-            "BatteryForecastOrchestrator initialized: strategy=%s, max=%.2f, min=%.2f, target=%.2f%%",
-            strategy_name,
+            "BatteryForecastOrchestrator initialized: max=%.2f, min=%.2f, target=%.2f",
             self.config.max_capacity,
             self.config.min_capacity,
-            self.config.target_percent,
+            self.config.target_capacity,
         )
-
-    def _init_v2_strategy(self) -> None:
-        """Initialize v2 strategy components."""
-        # Create shared config for both strategy and simulator
-        sim_config = SimulatorConfig(
-            max_capacity_kwh=self.config.max_capacity,
-            min_capacity_kwh=self.config.min_capacity,
-            charge_rate_kw=self.config.charge_rate_kw,
-            # Note: SimulatorConfig uses separate efficiency factors
-            # dc_ac_efficiency for discharge defaults to 0.882
-        )
-        hybrid_config = HybridConfig(
-            planning_min_percent=self.config.planning_min_percent,
-            target_percent=self.config.target_percent,
-        )
-
-        self._v2_strategy = HybridStrategy(hybrid_config, sim_config)
-        self._v2_simulator = IntervalSimulator(sim_config)
-
-    def set_strategy(self, strategy: OptimizerStrategy) -> None:
-        """Change optimizer strategy at runtime.
-
-        Args:
-            strategy: OptimizerStrategy.LEGACY or OptimizerStrategy.V2
-        """
-        if strategy == self.config.optimizer_strategy:
-            return
-
-        self.config.optimizer_strategy = strategy
-
-        if strategy == OptimizerStrategy.V2 and self._v2_strategy is None:
-            self._init_v2_strategy()
-
-        _LOGGER.info("Optimizer strategy changed to: %s", strategy.value)
 
     def calculate_forecast(
         self,
@@ -249,18 +176,15 @@ class BatteryForecastOrchestrator:
             load_forecast: Consumption per interval in kWh
             balancing_plan: Optional balancing plan from balancing module
             export_prices: List of {time, price} dictionaries (sell prices)
-                          Used for negative price detection.
 
         Returns:
             ForecastResult with modes, timeline, and statistics
         """
-        import time
-
         start_time = time.time()
 
         result = ForecastResult(
             timestamp=datetime.now().isoformat(),
-            algorithm="HYBRID" if self.config.use_hybrid else "SIMPLE",
+            algorithm="HYBRID",
         )
 
         try:
@@ -282,41 +206,17 @@ class BatteryForecastOrchestrator:
                 balancing_plan is not None,
             )
 
-            # Step 1: Run optimization based on selected strategy
-            if self.config.optimizer_strategy == OptimizerStrategy.V2 and self._v2_strategy:
-                # Use new V2 strategy
-                modes, opt_info, baseline_cost = self._run_v2_optimization(
-                    current_capacity=current_capacity,
-                    spot_prices=spot_prices,
-                    solar_forecast=solar_forecast,
-                    load_forecast=load_forecast,
-                    export_prices=export_prices,
-                )
-                result.baseline_cost_czk = baseline_cost
-                result.algorithm = "HYBRID_V2"
-                _LOGGER.debug(
-                    "V2 strategy returned %d modes, baseline cost: %.2f CZK",
-                    len(modes),
-                    result.baseline_cost_czk,
-                )
-            else:
-                # Use legacy optimizer
-                opt_result = self._legacy_optimizer.optimize(
-                    current_capacity=current_capacity,
-                    spot_prices=spot_prices,
-                    solar_forecast=solar_forecast,
-                    load_forecast=load_forecast,
-                    balancing_plan=balancing_plan,
-                    export_prices=export_prices,
-                )
-                modes = opt_result["modes"]
-                result.baseline_cost_czk = opt_result.get("baseline_cost_czk", 0.0)
-                result.algorithm = "HYBRID_LEGACY"
-                _LOGGER.debug(
-                    "Legacy optimizer returned %d modes, baseline cost: %.2f CZK",
-                    len(modes),
-                    result.baseline_cost_czk,
-                )
+            # Step 1: Run optimization
+            opt_result = self._optimizer.optimize(
+                current_capacity=current_capacity,
+                spot_prices=spot_prices,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+                balancing_plan=balancing_plan,
+                export_prices=export_prices,
+            )
+            modes = opt_result["modes"]
+            result.baseline_cost_czk = opt_result.get("baseline_cost_czk", 0.0)
 
             # Step 2: Apply balancing plan if provided
             if balancing_plan and self.config.use_balancing:
@@ -333,10 +233,8 @@ class BatteryForecastOrchestrator:
                     result.balancing_reason = balancing_plan.get("reason", "balancing")
 
                     _LOGGER.info(
-                        "Balancing applied: +%d UPS intervals (charging=%d, holding=%d)",
+                        "Balancing applied: +%d UPS intervals",
                         bal_result.total_ups_added,
-                        len(bal_result.charging_intervals),
-                        len(bal_result.holding_intervals),
                     )
 
             # Step 3: Simulate final timeline
@@ -349,9 +247,7 @@ class BatteryForecastOrchestrator:
                 )
             )
 
-            # Step 4: Calculate costs using BOTH buy and sell prices
-            # Net cost = import cost - export revenue
-            # NOTE: When export_price < 0, export becomes a COST!
+            # Step 4: Calculate costs
             total_import_cost = 0.0
             total_export_revenue = 0.0
             effective_export_prices = export_prices if export_prices else spot_prices
@@ -369,7 +265,7 @@ class BatteryForecastOrchestrator:
             result.total_cost_czk = total_cost
             result.savings_czk = result.baseline_cost_czk - total_cost
 
-            # Step 5: Build timeline output with export prices
+            # Step 5: Build timeline output
             result.timeline = self._builder.build_timeline(
                 spot_prices=spot_prices,
                 modes=modes,
@@ -386,23 +282,20 @@ class BatteryForecastOrchestrator:
             result.battery_trajectory = battery_trajectory
             result.ups_intervals = sum(1 for m in modes if m == CBB_MODE_HOME_UPS)
             result.home_i_intervals = sum(1 for m in modes if m == CBB_MODE_HOME_I)
-            result.home_ii_intervals = sum(1 for m in modes if m == 1)  # HOME II
+            result.home_ii_intervals = sum(1 for m in modes if m == 1)
             result.home_iii_intervals = sum(1 for m in modes if m == CBB_MODE_HOME_III)
 
             _LOGGER.info(
-                "Forecast complete: modes distribution - I:%d, II:%d, III:%d, UPS:%d | "
-                "Cost: %.2f CZK (savings: %.2f CZK)",
+                "Forecast complete: I:%d, II:%d, III:%d, UPS:%d | Cost: %.2f CZK",
                 result.home_i_intervals,
                 result.home_ii_intervals,
                 result.home_iii_intervals,
                 result.ups_intervals,
                 result.total_cost_czk,
-                result.savings_czk,
             )
 
         except Exception as e:
             _LOGGER.exception("Error in calculate_forecast: %s", e)
-            # Return partial result with error info
             result.algorithm = f"ERROR: {str(e)}"
 
         finally:
@@ -414,15 +307,7 @@ class BatteryForecastOrchestrator:
         self,
         result: ForecastResult,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Get information about the next mode change.
-
-        Returns dict with:
-        - current_mode: current mode number and name
-        - next_mode: next different mode
-        - time_until: timedelta until change
-        - timestamp: datetime of change
-        """
+        """Get information about the next mode change."""
         if not result.timeline or len(result.timeline) < 2:
             return None
 
@@ -449,15 +334,7 @@ class BatteryForecastOrchestrator:
         self,
         result: ForecastResult,
     ) -> Dict[str, Any]:
-        """
-        Get summary of charging intervals.
-
-        Returns breakdown of:
-        - Total charging intervals (UPS mode)
-        - Charging in cheap hours
-        - Charging for balancing
-        - Energy to be charged
-        """
+        """Get summary of charging intervals."""
         if not result.modes:
             return {"error": "No forecast data"}
 
@@ -470,123 +347,47 @@ class BatteryForecastOrchestrator:
         return {
             "total_ups_intervals": result.ups_intervals,
             "balancing_ups_intervals": result.balancing_ups_count,
-            "optimization_ups_intervals": result.ups_intervals
-            - result.balancing_ups_count,
-            "charging_intervals": charging_intervals[:10],  # First 10 for display
+            "optimization_ups_intervals": result.ups_intervals - result.balancing_ups_count,
+            "charging_intervals": charging_intervals[:10],
         }
-
-    def _run_v2_optimization(
-        self,
-        current_capacity: float,
-        spot_prices: List[Dict[str, Any]],
-        solar_forecast: List[float],
-        load_forecast: List[float],
-        export_prices: Optional[List[Dict[str, Any]]] = None,
-    ) -> Tuple[List[int], Dict[str, Any], float]:
-        """Run V2 strategy optimization.
-
-        Args:
-            current_capacity: Current battery level in kWh
-            spot_prices: List of {time, price} dicts (buy prices)
-            solar_forecast: Solar kWh per interval
-            load_forecast: Load kWh per interval
-            export_prices: Optional export prices (not used in v2 yet)
-
-        Returns:
-            Tuple of (modes, info_dict, baseline_cost)
-        """
-        if self._v2_strategy is None:
-            raise RuntimeError("V2 strategy not initialized")
-
-        # Extract prices from spot_prices dicts
-        prices = [sp.get("price", 0.0) for sp in spot_prices]
-
-        # V2 strategy expects export_prices list
-        export_price_values = None
-        if export_prices:
-            export_price_values = [ep.get("price", 0.0) for ep in export_prices]
-
-        # Run optimization
-        result = self._v2_strategy.optimize(
-            initial_battery_kwh=current_capacity,
-            spot_prices=spot_prices,
-            solar_forecast=solar_forecast,
-            consumption_forecast=load_forecast,
-            export_prices=export_price_values,
-        )
-
-        # Create info dict from result
-        opt_info = {
-            "total_cost_czk": result.total_cost_czk,
-            "savings_czk": result.savings_czk,
-            "final_battery_kwh": result.final_battery_kwh,
-            "ups_intervals": result.ups_intervals,
-            "mode_counts": result.mode_counts,
-        }
-
-        # Calculate baseline cost (HOME I for all intervals)
-        baseline_cost = 0.0
-        if self._v2_simulator:
-            # Simulate HOME I baseline manually
-            battery = current_capacity
-            for i in range(len(prices)):
-                solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
-                load = load_forecast[i] if i < len(load_forecast) else 0.0
-                interval_result = self._v2_simulator.simulate(
-                    battery_start=battery,
-                    mode=CBB_MODE_HOME_I,
-                    solar_kwh=solar,
-                    load_kwh=load,
-                )
-                battery = interval_result.battery_end
-                baseline_cost += interval_result.grid_import * prices[i]
-
-        return result.modes, opt_info, baseline_cost
 
     def _pad_or_trim(
         self,
         data: List[float],
-        target_length: int,
+        target_len: int,
+        default: float = 0.125,
     ) -> List[float]:
         """Pad or trim list to target length."""
-        if len(data) >= target_length:
-            return data[:target_length]
-
-        # Pad with last value or 0
-        pad_value = data[-1] if data else 0.0
-        return data + [pad_value] * (target_length - len(data))
+        if len(data) >= target_len:
+            return data[:target_len]
+        return data + [default] * (target_len - len(data))
 
 
-# Convenience function for simple usage
 def calculate_battery_forecast(
     current_capacity: float,
     max_capacity: float,
+    min_capacity: float,
+    target_capacity: float,
     spot_prices: List[Dict[str, Any]],
     solar_forecast: List[float],
     load_forecast: List[float],
     balancing_plan: Optional[Dict[str, Any]] = None,
-    target_capacity: Optional[float] = None,
+    efficiency: float = DEFAULT_EFFICIENCY,
+    charge_rate_kw: float = DEFAULT_CHARGE_RATE_KW,
+    export_prices: Optional[List[Dict[str, Any]]] = None,
 ) -> ForecastResult:
     """
     Convenience function to calculate battery forecast.
 
-    This is the simplest way to use the battery forecast module.
-
-    Args:
-        current_capacity: Current battery level in kWh
-        max_capacity: Maximum battery capacity in kWh
-        spot_prices: List of {time, price} dictionaries
-        solar_forecast: Solar production per interval in kWh
-        load_forecast: Consumption per interval in kWh
-        balancing_plan: Optional balancing plan
-        target_capacity: Optional target capacity (default: 80% of max)
-
-    Returns:
-        ForecastResult with all forecast data
+    Creates an orchestrator with standard configuration and runs forecast.
     """
     config = ForecastConfig(
         max_capacity=max_capacity,
-        target_capacity=target_capacity or (max_capacity * 0.8),
+        min_capacity=min_capacity,
+        target_capacity=target_capacity,
+        charge_rate_kw=charge_rate_kw,
+        efficiency=efficiency,
+        use_balancing=balancing_plan is not None,
     )
 
     orchestrator = BatteryForecastOrchestrator(config)
@@ -597,4 +398,5 @@ def calculate_battery_forecast(
         solar_forecast=solar_forecast,
         load_forecast=load_forecast,
         balancing_plan=balancing_plan,
+        export_prices=export_prices,
     )

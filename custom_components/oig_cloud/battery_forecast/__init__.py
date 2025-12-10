@@ -71,7 +71,6 @@ from .sensor import (
     ForecastConfig,
     ForecastResult,
     calculate_battery_forecast,
-    OptimizerStrategy,  # Strategy selection enum
 )
 
 from .bridge import (
@@ -146,7 +145,6 @@ __all__ = [
     "ForecastConfig",
     "ForecastResult",
     "calculate_battery_forecast",
-    "OptimizerStrategy",  # Strategy selection: LEGACY or V2
     # Bridge (legacy compatibility)
     "calculate_hybrid_with_new_module",
     "calculate_timeline_with_new_module",
