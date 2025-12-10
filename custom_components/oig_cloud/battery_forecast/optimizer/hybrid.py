@@ -8,6 +8,7 @@ Key features:
 - Backward pass: Calculate required battery for target
 - Price-aware UPS: Charge in cheapest intervals
 - Balancing support: Override for 100% target with deadline
+- Negative price protection: Prepare battery for solar absorption
 """
 
 import logging
@@ -44,12 +45,42 @@ class BalancingConfig:
     deadline: Optional[datetime] = None
     holding_start: Optional[datetime] = None
     holding_end: Optional[datetime] = None
-    preferred_intervals: Set[datetime] = None
+    preferred_intervals: Optional[Set[datetime]] = None
     reason: str = "unknown"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.preferred_intervals is None:
             self.preferred_intervals = set()
+
+
+@dataclass
+class NegativePriceStrategy:
+    """Strategy for handling negative price periods.
+
+    When negative prices are detected in the forecast, the algorithm
+    prepares by:
+    1. Draining battery before negative prices start
+    2. Absorbing solar into empty battery during negative prices
+    3. Selling stored energy during evening peak
+
+    This maximizes profit and minimizes curtailment.
+    """
+
+    is_active: bool = False
+    negative_start_idx: int = 0
+    negative_end_idx: int = 0
+    expected_solar_kwh: float = 0.0  # Solar during negative prices
+    expected_load_kwh: float = 0.0  # Load during negative prices
+    excess_solar_kwh: float = 0.0  # Solar - load during negative
+    battery_space_needed_kwh: float = 0.0  # How much to drain
+    target_soc_before_negative: float = 0.0  # Target SoC at start of negative
+    drain_value_czk: float = 0.0  # Value of pre-draining
+    curtailment_if_full_kwh: float = 0.0  # Solar we'd lose if battery full
+    recommended_actions: Optional[List[str]] = None  # Actions to take
+
+    def __post_init__(self) -> None:
+        if self.recommended_actions is None:
+            self.recommended_actions = []
 
 
 class HybridOptimizer:
@@ -145,15 +176,19 @@ class HybridOptimizer:
         solar_forecast: List[float],
         load_forecast: List[float],
         balancing_plan: Optional[Dict[str, Any]] = None,
+        export_prices: Optional[List[Dict[str, Any]]] = None,
     ) -> OptimizationResult:
         """Run HYBRID optimization.
 
         Args:
             current_capacity: Current battery level (kWh)
-            spot_prices: List of spot price dicts with 'time' and 'price'
+            spot_prices: List of spot price dicts with 'time' and 'price' (buy prices)
             solar_forecast: Solar kWh for each interval
             load_forecast: Load kWh for each interval
             balancing_plan: Optional balancing plan dict
+            export_prices: List of export price dicts with 'time' and 'price' (sell prices)
+                          Used for negative price detection. If not provided,
+                          spot_prices are used as fallback.
 
         Returns:
             OptimizationResult with modes and metrics
@@ -163,6 +198,9 @@ class HybridOptimizer:
 
         if n == 0:
             return self._empty_result()
+
+        # Use export_prices for negative price detection, fallback to spot_prices
+        effective_export_prices = export_prices if export_prices else spot_prices
 
         # Parse balancing configuration
         balancing = self._parse_balancing(balancing_plan)
@@ -178,6 +216,23 @@ class HybridOptimizer:
             f"max={self.max_capacity:.2f}, intervals={n}, "
             f"balancing={balancing.is_active}"
         )
+
+        # PHASE 0: Detect negative prices and prepare strategy
+        # Use export_prices for detection (actual sell prices), not spot_prices
+        negative_strategy = self._detect_negative_prices(
+            export_prices=effective_export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            current_capacity=current_capacity,
+        )
+
+        if negative_strategy.is_active:
+            _LOGGER.warning(
+                f"⚠️ NEGATIVE EXPORT PRICES DETECTED! Intervals {negative_strategy.negative_start_idx}-"
+                f"{negative_strategy.negative_end_idx}, excess solar={negative_strategy.excess_solar_kwh:.1f} kWh"
+            )
+            for action in negative_strategy.recommended_actions or []:
+                _LOGGER.warning(f"   {action}")
 
         # PHASE 1: Forward pass - simulate HOME I to find violations
         modes = [CBB_MODE_HOME_I] * n
@@ -347,6 +402,19 @@ class HybridOptimizer:
 
         _LOGGER.info(f"⚡ Applied {ups_count} UPS intervals from arbitrage analysis")
 
+        # PHASE 5.5: Apply negative price strategy if detected
+        if negative_strategy.is_active:
+            neg_changes = self._apply_negative_price_strategy(
+                modes=modes,
+                spot_prices=spot_prices,
+                strategy=negative_strategy,
+                solar_forecast=solar_forecast,
+                load_forecast=load_forecast,
+            )
+            _LOGGER.info(
+                f"⚡ Applied negative price strategy: {neg_changes} intervals adjusted"
+            )
+
         # PHASE 6: Post-processing
         modes = self.mode_selector.enforce_min_mode_duration(
             modes, min_duration_intervals=2
@@ -362,12 +430,20 @@ class HybridOptimizer:
             balancing_indices=self._get_balancing_indices(spot_prices, balancing),
         )
 
-        # Calculate metrics
-        total_cost = sum(
+        # Calculate metrics using BOTH buy (spot) and sell (export) prices
+        # Net cost = import cost - export revenue
+        # NOTE: When export_price < 0, export_revenue is negative → ADDS to cost!
+        import_cost = sum(
             grid_imports[i] * spot_prices[i].get("price", 0)
             for i in range(n)
             if i < len(grid_imports)
         )
+        export_revenue = sum(
+            grid_exports[i] * effective_export_prices[i].get("price", 0)
+            for i in range(n)
+            if i < len(grid_exports)
+        )
+        total_cost = import_cost - export_revenue
 
         # Calculate baseline cost:
         # What would it cost to achieve the SAME final battery level
@@ -376,17 +452,25 @@ class HybridOptimizer:
         # Two components:
         # 1. HOME III baseline (normal usage with battery discharge)
         # 2. Value of extra energy stored vs baseline
-        baseline_trajectory, baseline_imports, _ = self.simulator.simulate_timeline(
-            initial_battery=current_capacity,
-            modes=[CBB_MODE_HOME_III] * n,  # HOME III = normal battery usage
-            solar_forecast=solar_forecast,
-            consumption_forecast=load_forecast,
+        baseline_trajectory, baseline_imports, baseline_exports = (
+            self.simulator.simulate_timeline(
+                initial_battery=current_capacity,
+                modes=[CBB_MODE_HOME_III] * n,  # HOME III = normal battery usage
+                solar_forecast=solar_forecast,
+                consumption_forecast=load_forecast,
+            )
         )
-        baseline_consumption_cost = sum(
+        baseline_import_cost = sum(
             baseline_imports[i] * spot_prices[i].get("price", 0)
             for i in range(n)
             if i < len(baseline_imports)
         )
+        baseline_export_revenue = sum(
+            baseline_exports[i] * effective_export_prices[i].get("price", 0)
+            for i in range(n)
+            if i < len(baseline_exports)
+        )
+        baseline_consumption_cost = baseline_import_cost - baseline_export_revenue
 
         # Calculate energy stored above baseline
         final_battery = final_trajectory[-1] if final_trajectory else current_capacity
@@ -457,6 +541,17 @@ class HybridOptimizer:
                 balancing.holding_end.isoformat() if balancing.holding_end else None
             ),
             calculation_time_ms=round(calc_time, 1),
+            # Negative price strategy fields
+            negative_price_detected=negative_strategy.is_active,
+            negative_price_start_idx=negative_strategy.negative_start_idx,
+            negative_price_end_idx=negative_strategy.negative_end_idx,
+            negative_price_excess_solar_kwh=round(
+                negative_strategy.excess_solar_kwh, 2
+            ),
+            negative_price_curtailment_kwh=round(
+                negative_strategy.curtailment_if_full_kwh, 2
+            ),
+            negative_price_actions=negative_strategy.recommended_actions or [],
         )
 
     def _parse_balancing(
@@ -822,7 +917,10 @@ class HybridOptimizer:
                 ts = datetime.fromisoformat(sp["time"])
                 if ts.tzinfo is None:
                     ts = dt_util.as_local(ts)
-                if ts in balancing.preferred_intervals:
+                if (
+                    balancing.preferred_intervals is not None
+                    and ts in balancing.preferred_intervals
+                ):
                     if modes[i] != CBB_MODE_HOME_UPS:
                         modes[i] = CBB_MODE_HOME_UPS
                         preferred_used += 1
@@ -903,6 +1001,219 @@ class HybridOptimizer:
 
         return indices
 
+    def _detect_negative_prices(
+        self,
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: List[float],
+        load_forecast: List[float],
+        current_capacity: float,
+    ) -> NegativePriceStrategy:
+        """Detect negative EXPORT price periods and calculate preparation strategy.
+
+        Scans the EXPORT price forecast for negative prices and calculates how much
+        battery space is needed to absorb solar during those periods.
+
+        IMPORTANT: We use export_prices (sell prices), NOT spot_prices (buy prices)!
+        The export price is what we actually get/pay when exporting to grid.
+        Export price can be negative even when spot price is positive (due to fees).
+
+        Strategy:
+        - Find all negative EXPORT price intervals
+        - Calculate expected solar excess during negative prices
+        - Determine how much battery space we need
+        - Calculate value of pre-draining vs curtailment
+
+        Args:
+            export_prices: List of EXPORT price dicts with 'time' and 'price'
+                          These are the SELL prices, not buy prices!
+            solar_forecast: Solar kWh for each interval
+            load_forecast: Load kWh for each interval
+            current_capacity: Current battery level (kWh)
+
+        Returns:
+            NegativePriceStrategy with detection results and recommendations
+        """
+        # Find negative EXPORT price intervals
+        negative_indices = [
+            i for i, sp in enumerate(export_prices) if sp.get("price", 0) < 0
+        ]
+
+        if not negative_indices:
+            return NegativePriceStrategy(is_active=False)
+
+        neg_start = negative_indices[0]
+        neg_end = negative_indices[-1] + 1
+
+        # Calculate solar and load during negative prices
+        solar_during_neg = sum(
+            solar_forecast[i] for i in negative_indices if i < len(solar_forecast)
+        )
+        load_during_neg = sum(
+            load_forecast[i] for i in negative_indices if i < len(load_forecast)
+        )
+        excess_solar = max(0, solar_during_neg - load_during_neg)
+
+        # How much battery space do we need?
+        usable_capacity = self.max_capacity - self.min_capacity
+        space_needed = min(excess_solar, usable_capacity)
+
+        # Target SoC before negative prices (lower = more room for solar)
+        target_soc = self.min_capacity + max(0, usable_capacity - excess_solar)
+        target_soc = max(target_soc, self.min_capacity)  # Never below min
+
+        # Calculate value
+        # - If we drain battery evening before, we can sell at high prices
+        # - During negative, we absorb solar instead of paying to export
+        avg_neg_price = sum(
+            export_prices[i].get("price", 0) for i in negative_indices
+        ) / len(negative_indices)
+
+        # Potential savings: excess_solar × |negative_price|
+        curtailment_avoided_value = excess_solar * abs(avg_neg_price)
+
+        # Find evening peak prices before negative period (for drain value)
+        # Use export prices to calculate what we'd get for selling
+        evening_indices = [
+            i for i in range(neg_start) if export_prices[i].get("price", 0) > 0
+        ]
+        if evening_indices:
+            prices = [export_prices[i].get("price", 0) for i in evening_indices]
+            avg_evening_price = sum(prices) / len(prices)
+        else:
+            avg_evening_price = 0
+
+        # Energy we need to drain
+        drain_needed = max(0, current_capacity - target_soc)
+
+        # Value of draining: sell at evening export prices
+        drain_value = drain_needed * avg_evening_price
+
+        # Recommended actions
+        actions: List[str] = []
+
+        if drain_needed > 0:
+            actions.append(
+                f"DRAIN: Vybít {drain_needed:.1f} kWh před {neg_start}. interval"
+            )
+
+            # Suggest methods
+            hours_to_negative = neg_start * (self.interval_minutes / 60)
+            if hours_to_negative > 4:
+                actions.append("  - Bojler: zapnout ohřev (2 kW = 8 kWh/4h)")
+            if hours_to_negative > 2:
+                actions.append("  - Spotřeba: zvýšit odběr domácnosti")
+            actions.append(
+                f"  - Cílový SoC: {target_soc / self.max_capacity * 100:.0f}% před zápornými"
+            )
+
+        actions.append(
+            f"ABSORB: Během záporných cen baterie pohltí {min(space_needed, usable_capacity):.1f} kWh"
+        )
+
+        if excess_solar > usable_capacity:
+            curtailment = excess_solar - usable_capacity
+            actions.append(
+                f"⚠️ CURTAILMENT: {curtailment:.1f} kWh se nevejde - nutné omezit export"
+            )
+            actions.append("  - Nastavit p_max_feed_grid = 0 pro záporné hodiny")
+
+        _LOGGER.warning(
+            f"⚡ NEGATIVE PRICE DETECTED: intervals {neg_start}-{neg_end}, "
+            f"solar={solar_during_neg:.1f}kWh, excess={excess_solar:.1f}kWh, "
+            f"space_needed={space_needed:.1f}kWh, drain={drain_needed:.1f}kWh, "
+            f"value={curtailment_avoided_value:.1f}Kč"
+        )
+
+        return NegativePriceStrategy(
+            is_active=True,
+            negative_start_idx=neg_start,
+            negative_end_idx=neg_end,
+            expected_solar_kwh=solar_during_neg,
+            expected_load_kwh=load_during_neg,
+            excess_solar_kwh=excess_solar,
+            battery_space_needed_kwh=space_needed,
+            target_soc_before_negative=target_soc,
+            drain_value_czk=drain_value,
+            curtailment_if_full_kwh=max(0, excess_solar - usable_capacity),
+            recommended_actions=actions,
+        )
+
+    def _apply_negative_price_strategy(
+        self,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        strategy: NegativePriceStrategy,
+        solar_forecast: List[float],
+        load_forecast: List[float],
+    ) -> int:
+        """Apply mode changes for negative price strategy.
+
+        During negative prices:
+        - Use HOME I to absorb solar into battery
+        - Battery fills from solar excess instead of exporting
+
+        Before negative prices:
+        - HOME II to preserve battery (grid supplements consumption)
+        - Let morning solar export at low-but-positive prices
+
+        Args:
+            modes: List of modes to modify (in place)
+            spot_prices: Price data
+            strategy: Negative price strategy from detection
+            solar_forecast: Solar kWh per interval
+            load_forecast: Load kWh per interval
+
+        Returns:
+            Number of modes changed
+        """
+        if not strategy.is_active:
+            return 0
+
+        changes = 0
+        n = len(modes)
+
+        # Strategy for hours BEFORE negative prices
+        # Goal: Keep battery as empty as possible to absorb solar later
+        for i in range(min(strategy.negative_start_idx, n)):
+            price = spot_prices[i].get("price", 0)
+            solar = solar_forecast[i] if i < len(solar_forecast) else 0
+
+            if solar > 0.1:
+                # Daytime before negative: Let solar export, preserve battery
+                # HOME II: Solar covers load, excess exports, battery untouched
+                # (Actually HOME I also works - excess goes to battery first)
+                #
+                # Key insight: We CANNOT prevent solar from charging battery!
+                # Best we can do: encourage discharge by using HOME I
+                # and hoping consumption drains battery
+                if price > 0:
+                    # Positive price - let battery discharge if needed
+                    modes[i] = CBB_MODE_HOME_I
+                    changes += 1
+            else:
+                # Night before negative: discharge battery!
+                # HOME I will use battery for consumption
+                modes[i] = CBB_MODE_HOME_I
+                changes += 1
+
+        # During negative prices: HOME I to absorb solar
+        for i in range(strategy.negative_start_idx, min(strategy.negative_end_idx, n)):
+            # HOME I: Solar excess → battery → grid
+            # Since battery has room (we drained it), solar fills battery
+            modes[i] = CBB_MODE_HOME_I
+            changes += 1
+
+        # After negative prices: normal operation
+        # (handled by main algorithm)
+
+        _LOGGER.info(
+            f"⚡ Applied negative price strategy: {changes} intervals modified, "
+            f"target SoC before negative: {strategy.target_soc_before_negative:.1f} kWh "
+            f"({strategy.target_soc_before_negative / self.max_capacity * 100:.0f}%)"
+        )
+
+        return changes
+
     def _empty_result(self) -> OptimizationResult:
         """Return empty result for edge cases."""
         return OptimizationResult(
@@ -925,4 +1236,11 @@ class HybridOptimizer:
             balancing_holding_start=None,
             balancing_holding_end=None,
             calculation_time_ms=0,
+            # Negative price strategy defaults
+            negative_price_detected=False,
+            negative_price_start_idx=0,
+            negative_price_end_idx=0,
+            negative_price_excess_solar_kwh=0,
+            negative_price_curtailment_kwh=0,
+            negative_price_actions=[],
         )

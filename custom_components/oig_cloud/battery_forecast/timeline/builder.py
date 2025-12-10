@@ -60,6 +60,7 @@ class TimelineBuilder:
         spot_price: float,
         grid_import_kwh: float = 0.0,
         grid_export_kwh: float = 0.0,
+        export_price: Optional[float] = None,
         reason: str = "",
         is_mode_change: bool = False,
         is_balancing: bool = False,
@@ -73,9 +74,12 @@ class TimelineBuilder:
             mode: Recommended mode (0-3)
             solar_kwh: Expected solar production
             consumption_kwh: Expected consumption
-            spot_price: Spot price for this interval
+            spot_price: Spot price (buy price) for this interval
             grid_import_kwh: Expected grid import
             grid_export_kwh: Expected grid export
+            export_price: Export price (sell price) for this interval.
+                         If None, spot_price is used for backward compatibility.
+                         NOTE: Can be negative!
             reason: Reason for mode selection
             is_mode_change: True if mode changed from previous
             is_balancing: True if part of balancing plan
@@ -94,8 +98,15 @@ class TimelineBuilder:
             solar_kwh > consumption_kwh and battery_kwh < self.max_capacity
         )
 
-        # Calculate interval cost
-        cost_czk = grid_import_kwh * spot_price
+        # Calculate interval cost using BOTH buy and sell prices
+        # Net cost = import cost - export revenue
+        # NOTE: When export_price < 0, export_revenue becomes negative → ADDS to cost!
+        effective_export_price = (
+            export_price if export_price is not None else spot_price
+        )
+        import_cost = grid_import_kwh * spot_price
+        export_revenue = grid_export_kwh * effective_export_price
+        cost_czk = import_cost - export_revenue
 
         # Get mode name
         mode_name = CBB_MODE_NAMES.get(mode, f"MODE_{mode}")
@@ -132,19 +143,23 @@ class TimelineBuilder:
         consumption_forecast: List[float],
         grid_imports: Optional[List[float]] = None,
         grid_exports: Optional[List[float]] = None,
+        export_prices: Optional[List[Dict[str, Any]]] = None,
         balancing_indices: Optional[set] = None,
         holding_indices: Optional[set] = None,
     ) -> List[TimelineInterval]:
         """Build complete timeline from optimization results.
 
         Args:
-            spot_prices: List of spot price dicts with 'time' and 'price'
+            spot_prices: List of spot price dicts with 'time' and 'price' (buy prices)
             modes: List of mode values for each interval
             battery_trajectory: Battery SoC for each interval START
             solar_forecast: Solar kWh for each interval
             consumption_forecast: Consumption kWh for each interval
             grid_imports: Grid import kWh for each interval
             grid_exports: Grid export kWh for each interval
+            export_prices: List of export price dicts with 'time' and 'price' (sell prices)
+                          If None, spot_prices used for backward compatibility.
+                          NOTE: Export prices can be negative!
             balancing_indices: Set of indices that are balancing
             holding_indices: Set of indices in holding period
 
@@ -164,6 +179,9 @@ class TimelineBuilder:
         if grid_exports is None:
             grid_exports = [0.0] * n
 
+        # Use export_prices if provided, otherwise None (build_interval will fall back)
+        effective_export_prices = export_prices
+
         prev_mode: Optional[int] = None
 
         for i in range(n):
@@ -182,6 +200,11 @@ class TimelineBuilder:
             price = spot_prices[i].get("price", 0.0)
             grid_in = grid_imports[i] if i < len(grid_imports) else 0.0
             grid_out = grid_exports[i] if i < len(grid_exports) else 0.0
+
+            # Get export price for this interval (can be negative!)
+            export_price_value: Optional[float] = None
+            if effective_export_prices and i < len(effective_export_prices):
+                export_price_value = effective_export_prices[i].get("price")
 
             # Detect mode change
             is_mode_change = prev_mode is not None and mode != prev_mode
@@ -206,6 +229,7 @@ class TimelineBuilder:
                 spot_price=price,
                 grid_import_kwh=grid_in,
                 grid_export_kwh=grid_out,
+                export_price=export_price_value,
                 reason=reason,
                 is_mode_change=is_mode_change,
                 is_balancing=i in balancing_indices,

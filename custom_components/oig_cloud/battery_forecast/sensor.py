@@ -162,6 +162,7 @@ class BatteryForecastOrchestrator:
         solar_forecast: List[float],
         load_forecast: List[float],
         balancing_plan: Optional[Dict[str, Any]] = None,
+        export_prices: Optional[List[Dict[str, Any]]] = None,
     ) -> ForecastResult:
         """
         Calculate battery forecast.
@@ -174,10 +175,12 @@ class BatteryForecastOrchestrator:
 
         Args:
             current_capacity: Current battery capacity in kWh
-            spot_prices: List of {time, price} dictionaries
+            spot_prices: List of {time, price} dictionaries (buy prices)
             solar_forecast: Solar production per interval in kWh
             load_forecast: Consumption per interval in kWh
             balancing_plan: Optional balancing plan from balancing module
+            export_prices: List of {time, price} dictionaries (sell prices)
+                          Used for negative price detection.
 
         Returns:
             ForecastResult with modes, timeline, and statistics
@@ -211,11 +214,14 @@ class BatteryForecastOrchestrator:
             )
 
             # Step 1: Run HYBRID optimization
+            # Pass export_prices for negative price detection
             opt_result = self._optimizer.optimize(
                 current_capacity=current_capacity,
                 spot_prices=spot_prices,
                 solar_forecast=solar_forecast,
                 load_forecast=load_forecast,
+                balancing_plan=balancing_plan,
+                export_prices=export_prices,
             )
 
             modes = opt_result["modes"]
@@ -258,23 +264,36 @@ class BatteryForecastOrchestrator:
                 )
             )
 
-            # Step 4: Calculate costs
-            total_cost = 0.0
-            for i, (imp, price_data) in enumerate(zip(grid_imports, spot_prices)):
-                price = price_data.get("price", 0.0)
-                if price is not None and imp > 0:
-                    total_cost += imp * price
+            # Step 4: Calculate costs using BOTH buy and sell prices
+            # Net cost = import cost - export revenue
+            # NOTE: When export_price < 0, export becomes a COST!
+            total_import_cost = 0.0
+            total_export_revenue = 0.0
+            effective_export_prices = export_prices if export_prices else spot_prices
 
+            for i in range(len(grid_imports)):
+                if i < len(spot_prices):
+                    buy_price = spot_prices[i].get("price", 0.0) or 0.0
+                    total_import_cost += grid_imports[i] * buy_price
+
+                if i < len(grid_exports) and i < len(effective_export_prices):
+                    sell_price = effective_export_prices[i].get("price", 0.0) or 0.0
+                    total_export_revenue += grid_exports[i] * sell_price
+
+            total_cost = total_import_cost - total_export_revenue
             result.total_cost_czk = total_cost
             result.savings_czk = result.baseline_cost_czk - total_cost
 
-            # Step 5: Build timeline output
+            # Step 5: Build timeline output with export prices
             result.timeline = self._builder.build_timeline(
                 spot_prices=spot_prices,
                 modes=modes,
                 battery_trajectory=battery_trajectory,
                 solar_forecast=solar_forecast,
                 consumption_forecast=load_forecast,
+                grid_imports=grid_imports,
+                grid_exports=grid_exports,
+                export_prices=export_prices,
             )
 
             # Step 6: Calculate statistics

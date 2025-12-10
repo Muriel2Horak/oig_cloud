@@ -109,13 +109,14 @@ def calculate_hybrid_with_new_module(
 
     orchestrator = BatteryForecastOrchestrator(config)
 
-    # Call new module
+    # Call new module with export_prices for negative price detection
     result = orchestrator.calculate_forecast(
         current_capacity=current_capacity,
         spot_prices=spot_prices,
         solar_forecast=solar_list,
         load_forecast=load_forecast,
         balancing_plan=balancing_plan,
+        export_prices=export_prices,
     )
 
     # Convert to legacy format

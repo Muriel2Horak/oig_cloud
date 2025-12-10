@@ -6,28 +6,37 @@ This module provides:
 - Balancing plan execution
 - Mode management (HOME I/II/III/UPS)
 
-Architecture:
+Architecture (NEW 3-layer design):
     battery_forecast/
     ├── __init__.py          # This file - exports
     ├── types.py             # TypedDicts, Enums, Constants
-    ├── optimizer/
+    ├── config.py            # Configuration dataclasses (NEW)
+    ├── service.py           # Top-level orchestrator (NEW)
+    ├── physics/             # Layer 1: Physics simulation (NEW)
     │   ├── __init__.py
-    │   ├── base.py          # Abstract optimizer interface
-    │   ├── hybrid.py        # HYBRID algorithm
-    │   └── modes.py         # Mode selection logic
+    │   └── interval_simulator.py
+    ├── strategy/            # Layer 2: Optimization strategies (NEW)
+    │   ├── __init__.py
+    │   ├── balancing.py     # Balancing cycle planning
+    │   └── hybrid.py        # Mode optimization
+    ├── optimizer/           # Legacy optimizer (deprecated)
+    │   ├── __init__.py
+    │   ├── base.py
+    │   ├── hybrid.py
+    │   └── modes.py
     ├── timeline/
     │   ├── __init__.py
-    │   ├── builder.py       # Timeline structure building
-    │   └── simulator.py     # SoC simulation
+    │   ├── builder.py
+    │   └── simulator.py
     ├── balancing/
     │   ├── __init__.py
-    │   ├── executor.py      # Apply balancing plan to modes
-    │   └── constraints.py   # Deadline, holding period
+    │   ├── executor.py
+    │   └── constraints.py
     └── utils/
         ├── __init__.py
-        ├── solar.py         # Solar forecast helpers
-        ├── prices.py        # Spot price helpers
-        └── consumption.py   # Load forecast helpers
+        ├── solar.py
+        ├── prices.py
+        └── consumption.py
 """
 
 from .types import (
@@ -71,6 +80,41 @@ from .bridge import (
     validate_bridge_compatibility,
 )
 
+# NEW: 3-layer architecture exports
+from .config import (
+    SimulatorConfig,
+    HybridConfig,
+    BalancingConfig,
+    ForecastServiceConfig,
+    NegativePriceStrategy,
+    ChargingStrategy,
+    default_config,
+    aggressive_charging_config,
+    battery_preservation_config,
+    maximum_self_consumption_config,
+)
+
+from .physics import (
+    IntervalSimulator,
+    IntervalResult,
+)
+
+from .strategy import (
+    BalancingStrategy,
+    BalancingPlan as BalancingPlanNew,  # Avoid conflict with types.BalancingPlan
+    BalancingResult,
+    HybridStrategy,
+    HybridResult,
+)
+
+from .service import (
+    BatteryForecastService,
+    ForecastInput,
+    ForecastOutput,
+    create_service,
+    create_service_from_ha,
+)
+
 __all__ = [
     # Mode constants
     "CBBMode",
@@ -96,7 +140,7 @@ __all__ = [
     # Helper functions
     "get_mode_name",
     "is_charging_mode",
-    # Orchestrator
+    # Legacy Orchestrator
     "BatteryForecastOrchestrator",
     "ForecastConfig",
     "ForecastResult",
@@ -106,4 +150,30 @@ __all__ = [
     "calculate_timeline_with_new_module",
     "simulate_interval_with_new_module",
     "validate_bridge_compatibility",
+    # NEW: Configuration
+    "SimulatorConfig",
+    "HybridConfig",
+    "BalancingConfig",
+    "ForecastServiceConfig",
+    "NegativePriceStrategy",
+    "ChargingStrategy",
+    "default_config",
+    "aggressive_charging_config",
+    "battery_preservation_config",
+    "maximum_self_consumption_config",
+    # NEW: Physics layer
+    "IntervalSimulator",
+    "IntervalResult",
+    # NEW: Strategy layer
+    "BalancingStrategy",
+    "BalancingPlanNew",
+    "BalancingResult",
+    "HybridStrategy",
+    "HybridResult",
+    # NEW: Service layer
+    "BatteryForecastService",
+    "ForecastInput",
+    "ForecastOutput",
+    "create_service",
+    "create_service_from_ha",
 ]

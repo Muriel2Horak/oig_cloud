@@ -298,6 +298,12 @@ class OptimizationResult(TypedDict, total=False):
         balancing_holding_start: ISO timestamp of holding start
         balancing_holding_end: ISO timestamp of holding end
         calculation_time_ms: Time taken for optimization
+        negative_price_detected: True if negative prices were detected
+        negative_price_start_idx: Index of first negative price interval
+        negative_price_end_idx: Index of last negative price interval
+        negative_price_excess_solar_kwh: Solar excess during negative prices
+        negative_price_curtailment_kwh: Expected curtailment during negative prices
+        negative_price_actions: List of recommended actions for negative prices
     """
 
     modes: List[int]
@@ -315,6 +321,13 @@ class OptimizationResult(TypedDict, total=False):
     balancing_holding_start: Optional[str]
     balancing_holding_end: Optional[str]
     calculation_time_ms: float
+    # Negative price strategy fields
+    negative_price_detected: bool
+    negative_price_start_idx: int
+    negative_price_end_idx: int
+    negative_price_excess_solar_kwh: float
+    negative_price_curtailment_kwh: float
+    negative_price_actions: List[str]
 
 
 class BatteryConfig(TypedDict, total=False):
