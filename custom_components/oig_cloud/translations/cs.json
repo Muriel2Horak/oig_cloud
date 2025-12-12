@@ -67,11 +67,21 @@
         "data": {
           "standard_scan_interval": "Z\u00e1kladn\u00ed data (sekund)",
           "extended_scan_interval": "Roz\u0161\u00ed\u0159en\u00e1 data (sekund)",
+          "enable_cloud_notifications": "Cloud notifikace",
+          "notifications_scan_interval": "Notifikace interval (sekund)",
+          "data_source_mode": "Zdroj telemetrie",
+          "local_stale_after_seconds": "Prefer local: stale po (sekund)",
+          "local_sync_debounce_ms": "Local sync debounce (ms)",
           "go_back": "\u2b05\ufe0f Chci se vr\u00e1tit zp\u011bt (za\u0161krtnout + kliknout Odeslat)"
         },
         "data_description": {
           "standard_scan_interval": "Jak \u010dasto na\u010d\u00edtat spot\u0159ebu, v\u00fdrobu, stav baterie a dal\u0161\u00ed z\u00e1kladn\u00ed \u00fadaje (minim\u00e1ln\u011b 30 sekund, doporu\u010deno 30-60 sekund)",
           "extended_scan_interval": "Jak \u010dasto na\u010d\u00edtat nap\u011bt\u00ed \u010dl\u00e1nk\u016f, teploty, proudy a dal\u0161\u00ed detailn\u00ed \u00fadaje (minim\u00e1ln\u011b 300 sekund, doporu\u010deno 300-600 sekund)",
+          "enable_cloud_notifications": "Povolit stahov\u00e1n\u00ed cloud notifikac\u00ed (typicky sta\u010d\u00ed 1\u00d7 za n\u011bkolik minut)",
+          "notifications_scan_interval": "Jak \u010dasto kontrolovat cloud notifikace (doporu\u010deno 300-900 sekund)",
+          "data_source_mode": "Cloud only = v\u0161e z cloudu; Prefer local = lok\u00e1ln\u00ed mapping pokud je \u010derstv\u00fd, jinak cloud; Local only = jen lok\u00e1ln\u00ed mapping",
+          "local_stale_after_seconds": "Pouze pro Prefer local: po kolika sekund\u00e1ch je lok\u00e1ln\u00ed hodnota pova\u017eovan\u00e1 za zastaralou (fallback na cloud)",
+          "local_sync_debounce_ms": "Debounce pro event-driven sync z local entit (ni\u017e\u0161\u00ed = rychlej\u0161\u00ed reakce, vy\u0161\u0161\u00ed = m\u00e9n\u011b aktualizac\u00ed)",
           "go_back": "Za\u0161krtn\u011bte toto pol\u00ed\u010dko a stiskn\u011bte tla\u010d\u00edtko 'Odeslat' - vr\u00e1t\u00edte se o krok zp\u011bt"
         }
       },
@@ -401,11 +411,21 @@
         "data": {
           "standard_scan_interval": "Z\u00e1kladn\u00ed data (sekund)",
           "extended_scan_interval": "Roz\u0161\u00ed\u0159en\u00e1 data (sekund)",
+          "enable_cloud_notifications": "Cloud notifikace",
+          "notifications_scan_interval": "Notifikace interval (sekund)",
+          "data_source_mode": "Zdroj telemetrie",
+          "local_stale_after_seconds": "Prefer local: stale po (sekund)",
+          "local_sync_debounce_ms": "Local sync debounce (ms)",
           "go_back": "\u2b05\ufe0f Chci se vr\u00e1tit zp\u011bt (za\u0161krtnout + kliknout Odeslat)"
         },
         "data_description": {
           "standard_scan_interval": "Jak \u010dasto na\u010d\u00edtat spot\u0159ebu, v\u00fdrobu, stav baterie a dal\u0161\u00ed z\u00e1kladn\u00ed \u00fadaje (minim\u00e1ln\u011b 30 sekund, doporu\u010deno 30-60 sekund)",
           "extended_scan_interval": "Jak \u010dasto na\u010d\u00edtat nap\u011bt\u00ed \u010dl\u00e1nk\u016f, teploty, proudy a dal\u0161\u00ed detailn\u00ed \u00fadaje (minim\u00e1ln\u011b 300 sekund, doporu\u010deno 300-600 sekund)",
+          "enable_cloud_notifications": "Povolit stahov\u00e1n\u00ed cloud notifikac\u00ed (typicky sta\u010d\u00ed 1\u00d7 za n\u011bkolik minut)",
+          "notifications_scan_interval": "Jak \u010dasto kontrolovat cloud notifikace (doporu\u010deno 300-900 sekund)",
+          "data_source_mode": "Cloud only = v\u0161e z cloudu; Prefer local = lok\u00e1ln\u00ed mapping pokud je \u010derstv\u00fd, jinak cloud; Local only = jen lok\u00e1ln\u00ed mapping",
+          "local_stale_after_seconds": "Pouze pro Prefer local: po kolika sekund\u00e1ch je lok\u00e1ln\u00ed hodnota pova\u017eovan\u00e1 za zastaralou (fallback na cloud)",
+          "local_sync_debounce_ms": "Debounce pro event-driven sync z local entit (ni\u017e\u0161\u00ed = rychlej\u0161\u00ed reakce, vy\u0161\u0161\u00ed = m\u00e9n\u011b aktualizac\u00ed)",
           "go_back": "Za\u0161krtn\u011bte toto pol\u00ed\u010dko a stiskn\u011bte tla\u010d\u00edtko 'Odeslat' - vr\u00e1t\u00edte se o krok zp\u011bt"
         }
       },

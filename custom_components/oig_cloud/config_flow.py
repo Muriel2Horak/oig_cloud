@@ -697,20 +697,9 @@ class WizardMixin:
 
         if self._wizard_data.get("enable_extended_sensors", True):
             summary_parts.append("   ✅ Rozšířené senzory")
-            sensors = []
-            if self._wizard_data.get("enable_extended_battery_sensors", True):
-                sensors.append("Baterie")
-            if self._wizard_data.get("enable_extended_fve_sensors", True):
-                sensors.append("FVE")
-            if self._wizard_data.get("enable_extended_grid_sensors", True):
-                sensors.append("Síť")
-            if sensors:
-                summary_parts.append(f"      → Aktivní: {', '.join(sensors)}")
 
         if self._wizard_data.get("enable_dashboard", False):
             summary_parts.append("   ✅ Interaktivní dashboard")
-            refresh = self._wizard_data.get("dashboard_refresh_interval", 30)
-            summary_parts.append(f"      → Obnovení: {refresh}s")
 
         summary_parts.append("")
         summary_parts.append(
@@ -957,8 +946,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             total += 2  # wizard_battery + wizard_planner
         if self._wizard_data.get("enable_pricing", False):
             total += 3  # wizard_pricing (3 kroky: import, export, distribution)
-        if self._wizard_data.get("enable_extended_sensors", False):
-            total += 1  # wizard_extended
         if self._wizard_data.get("enable_boiler", False):
             total += 1  # wizard_boiler
 
@@ -1031,12 +1018,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_pricing", False):
             current += 3
 
-        # Extended
-        if step_id == "wizard_extended":
-            return current
-        if self._wizard_data.get("enable_extended_sensors", False):
-            current += 1
-
         # Boiler
         if step_id == "wizard_boiler":
             return current
@@ -1088,7 +1069,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
-            "wizard_extended",
             "wizard_boiler",
             "wizard_summary",
         ]
@@ -1120,10 +1100,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 "wizard_pricing_export",
                 "wizard_pricing_distribution",
             ] and not self._wizard_data.get("enable_pricing"):
-                continue
-            if step == "wizard_extended" and not self._wizard_data.get(
-                "enable_extended_sensors"
-            ):
                 continue
             if step == "wizard_boiler" and not self._wizard_data.get("enable_boiler"):
                 continue
@@ -1968,34 +1944,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return vol.Schema(schema_fields)
 
-    async def async_step_wizard_extended(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 7: Extended sensors configuration."""
-        if user_input is not None:
-            # Kontrola tlačítka "Zpět"
-            if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_extended")
-
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_extended")
-
-            next_step = self._get_next_step("wizard_extended")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_extended",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("enable_extended_battery_sensors", default=True): bool,
-                    vol.Optional("enable_extended_fve_sensors", default=True): bool,
-                    vol.Optional("enable_extended_grid_sensors", default=True): bool,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            ),
-            description_placeholders=self._get_step_placeholders("wizard_extended"),
-        )
-
     async def async_step_wizard_boiler(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -2357,14 +2305,15 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 options={
                     "standard_scan_interval": 30,
                     "extended_scan_interval": 300,
+                    "enable_cloud_notifications": True,
+                    "notifications_scan_interval": 300,
+                    "data_source_mode": "cloud_only",
+                    "local_stale_after_seconds": 30,
+                    "local_sync_debounce_ms": 300,
                     "enable_solar_forecast": False,
                     "enable_statistics": True,
                     "enable_extended_sensors": True,
                     "enable_pricing": False,
-                    "enable_extended_battery_sensors": True,
-                    "enable_extended_fve_sensors": True,
-                    "enable_extended_grid_sensors": True,
-                    "disable_extended_stats_api": False,
                     "enable_battery_prediction": False,
                     "enable_dashboard": False,
                 },
@@ -2441,17 +2390,8 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "enable_dashboard": self._wizard_data.get(
                         "enable_dashboard", False
                     ),
-                    # Extended sensors detail
-                    "enable_extended_battery_sensors": self._wizard_data.get(
-                        "enable_extended_battery_sensors", True
-                    ),
-                    "enable_extended_fve_sensors": self._wizard_data.get(
-                        "enable_extended_fve_sensors", True
-                    ),
-                    "enable_extended_grid_sensors": self._wizard_data.get(
-                        "enable_extended_grid_sensors", True
-                    ),
-                    "disable_extended_stats_api": False,
+                    # Extended sensors (single toggle)
+                    # (Per-category sub-toggles were removed; they were unused in runtime.)
                     # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
                     "solar_forecast_mode": self._wizard_data.get(
                         "solar_forecast_mode", "daily_optimized"
@@ -2559,10 +2499,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
-                    # Dashboard
-                    "dashboard_refresh_interval": self._wizard_data.get(
-                        "dashboard_refresh_interval", 5
-                    ),
                     # Boiler module
                     "enable_boiler": self._wizard_data.get("enable_boiler", False),
                     "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
@@ -2742,16 +2678,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 "enable_dashboard": self._wizard_data.get("enable_dashboard", False),
                 # Extended sensors detail
-                "enable_extended_battery_sensors": self._wizard_data.get(
-                    "enable_extended_battery_sensors", True
-                ),
-                "enable_extended_fve_sensors": self._wizard_data.get(
-                    "enable_extended_fve_sensors", True
-                ),
-                "enable_extended_grid_sensors": self._wizard_data.get(
-                    "enable_extended_grid_sensors", True
-                ),
-                "disable_extended_stats_api": False,
+                # Extended sensors (single toggle)
+                # (Per-category sub-toggles were removed; they were unused in runtime.)
                 # Solar forecast - použít všechny parametry stejně jako v ConfigFlow
                 "solar_forecast_mode": self._wizard_data.get(
                     "solar_forecast_mode", "daily_optimized"
@@ -2828,10 +2756,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 # Pricing - použít mapované backend atributy
                 **pricing_backend,
-                # Dashboard
-                "dashboard_refresh_interval": self._wizard_data.get(
-                    "dashboard_refresh_interval", 5
-                ),
                 # Boiler module
                 "enable_boiler": self._wizard_data.get("enable_boiler", False),
                 "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
@@ -3094,46 +3018,8 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
         if user_input is not None:
             new_options = {**self.config_entry.options, **user_input}
 
-            # Logika pro automatické zapnutí/vypnutí sub-modulů
-            extended_enabled = user_input.get("enable_extended_sensors", False)
-            current_extended_enabled = self.config_entry.options.get(
-                "enable_extended_sensors", False
-            )
-
-            _LOGGER.info(
-                f"Extended sensors: current={current_extended_enabled}, new={extended_enabled}"
-            )
-            _LOGGER.info(f"User input: {user_input}")
-
-            if extended_enabled:
-                if not current_extended_enabled:
-                    # Pokud se main modul právě zapnul, zapneme všechny sub-moduly
-                    new_options["enable_extended_battery_sensors"] = True
-                    new_options["enable_extended_fve_sensors"] = True
-                    new_options["enable_extended_grid_sensors"] = True
-                    _LOGGER.info("Main modul zapnut - zapínám všechny sub-moduly")
-                else:
-                    # Pokud je main modul už zapnutý, kontrolujeme sub-moduly
-                    battery_enabled = user_input.get(
-                        "enable_extended_battery_sensors", True
-                    )
-                    fve_enabled = user_input.get("enable_extended_fve_sensors", True)
-                    grid_enabled = user_input.get("enable_extended_grid_sensors", True)
-
-                    # Pokud není žádný zapnutý, zapneme všechny
-                    if not (battery_enabled or fve_enabled or grid_enabled):
-                        new_options["enable_extended_battery_sensors"] = True
-                        new_options["enable_extended_fve_sensors"] = True
-                        new_options["enable_extended_grid_sensors"] = True
-                        _LOGGER.info("Žádný sub-modul nebyl zapnutý - zapínám všechny")
-            else:
-                # DŮLEŽITÉ: Když je main modul vypnutý, VŽDY vypneme všechny sub-moduly
-                new_options["enable_extended_battery_sensors"] = False
-                new_options["enable_extended_fve_sensors"] = False
-                new_options["enable_extended_grid_sensors"] = False
-                _LOGGER.info("Main modul vypnut - FORCE vypínám všechny sub-moduly")
-
-            _LOGGER.info(f"New options after: {new_options}")
+            # Per-category extended toggles were removed (unused in runtime).
+            # Keep only the main enable + scan interval.
 
             # Uložíme změny PŘED reloadem
             self.hass.config_entries.async_update_entry(
@@ -3149,7 +3035,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
         current_options = self.config_entry.options
         extended_enabled = current_options.get("enable_extended_sensors", False)
 
-        # Zobrazujeme VŠECHNY parametry vždy (i sub-moduly), ale s různými popisky
+        # Keep the legacy screen minimal for maintainability.
         schema_fields = {
             vol.Optional(
                 "enable_extended_sensors",
@@ -3161,21 +3047,6 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
                 default=current_options.get("extended_scan_interval", 300),
                 description=f"{'✅ Jak často načítat rozšířená data (sekund)' if extended_enabled else '⏸️ Interval načítání (aktivní po zapnutí hlavního přepínače)'}",
             ): vol.All(int, vol.Range(min=300, max=3600)),
-            vol.Optional(
-                "enable_extended_battery_sensors",
-                default=current_options.get("enable_extended_battery_sensors", True),
-                description=f"{'✅ Napětí článků, proudy, teplota baterie' if extended_enabled else '⏸️ Senzory baterie (aktivní po zapnutí hlavního přepínače)'}",
-            ): bool,
-            vol.Optional(
-                "enable_extended_fve_sensors",
-                default=current_options.get("enable_extended_fve_sensors", True),
-                description=f"{'✅ Výkon a proudy stringů fotovoltaiky' if extended_enabled else '⏸️ Senzory FVE (aktivní po zapnutí hlavního přepínače)'}",
-            ): bool,
-            vol.Optional(
-                "enable_extended_grid_sensors",
-                default=current_options.get("enable_extended_grid_sensors", True),
-                description=f"{'✅ Napětí L1/L2/L3, frekvence sítě' if extended_enabled else '⏸️ Senzory sítě (aktivní po zapnutí hlavního přepínače)'}",
-            ): bool,
         }
 
         return self.async_show_form(
@@ -3184,9 +3055,9 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             description_placeholders={
                 "current_state": "Zapnuty" if extended_enabled else "Vypnuty",
                 "info": (
-                    "⚠️ Rozšířené senzory jsou vypnuté - všechny sub-moduly se automaticky aktivují po zapnutí hlavního přepínače"
+                    "⚠️ Rozšířené senzory jsou vypnuté"
                     if not extended_enabled
-                    else "✅ Rozšířené senzory jsou zapnuté - můžete si vybrat, které konkrétní typy chcete sledovat"
+                    else "✅ Rozšířené senzory jsou zapnuté"
                 ),
             },
         )

@@ -63,11 +63,21 @@
         "data": {
           "standard_scan_interval": "Základní data (sekund)",
           "extended_scan_interval": "Rozšířená data (sekund)",
+          "enable_cloud_notifications": "🔔 Cloud notifikace",
+          "notifications_scan_interval": "Notifikace interval (sekund)",
+          "data_source_mode": "Zdroj telemetrie",
+          "local_stale_after_seconds": "Prefer local: stale po (sekund)",
+          "local_sync_debounce_ms": "Local sync debounce (ms)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
           "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)",
+          "enable_cloud_notifications": "Povolit stahování cloud notifikací (typicky stačí 1× za několik minut)",
+          "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
+          "data_source_mode": "Cloud only = vše z cloudu; Prefer local = lokální mapping pokud je čerstvý, jinak cloud; Local only = jen lokální mapping",
+          "local_stale_after_seconds": "Pouze pro Prefer local: po kolika sekundách je lokální hodnota považovaná za zastaralou (fallback na cloud)",
+          "local_sync_debounce_ms": "Debounce pro event-driven sync z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -325,11 +335,21 @@
         "data": {
           "standard_scan_interval": "Základní data (sekund)",
           "extended_scan_interval": "Rozšířená data (sekund)",
+          "enable_cloud_notifications": "🔔 Cloud notifikace",
+          "notifications_scan_interval": "Notifikace interval (sekund)",
+          "data_source_mode": "Zdroj telemetrie",
+          "local_stale_after_seconds": "Prefer local: stale po (sekund)",
+          "local_sync_debounce_ms": "Local sync debounce (ms)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
           "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)",
+          "enable_cloud_notifications": "Povolit stahování cloud notifikací (typicky stačí 1× za několik minut)",
+          "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
+          "data_source_mode": "Cloud only = vše z cloudu; Prefer local = lokální mapping pokud je čerstvý, jinak cloud; Local only = jen lokální mapping",
+          "local_stale_after_seconds": "Pouze pro Prefer local: po kolika sekundách je lokální hodnota považovaná za zastaralou (fallback na cloud)",
+          "local_sync_debounce_ms": "Debounce pro event-driven sync z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },

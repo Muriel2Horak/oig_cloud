@@ -206,7 +206,13 @@ class ForecastServiceConfig:
         # Extract balancing parameters
         balancing_enabled = ha_config.get("balancing_enabled", True)
         balancing_interval = int(ha_config.get("balancing_interval_days", 7))
-        balancing_holding = int(ha_config.get("balancing_holding_hours", 3))
+        # Backward/forward compatibility: historically we used multiple option keys.
+        balancing_holding = int(
+            ha_config.get(
+                "balancing_hold_hours",
+                ha_config.get("balancing_holding_hours", ha_config.get("balancing_holding_time", 3)),
+            )
+        )
 
         # Build configs
         simulator_config = SimulatorConfig(
