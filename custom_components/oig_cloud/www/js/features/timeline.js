@@ -3254,8 +3254,10 @@ async function buildExtendedTimeline() {
         }
 
         const data = await response.json();
-        const todayTileSummary = data.summary;
-        const modeBlocks = data.mode_blocks;
+        // API returns data in data.today object
+        const todayData = data.today || data;
+        const todayTileSummary = todayData.summary;
+        const modeBlocks = todayData.mode_blocks;
 
         if (!modeBlocks || modeBlocks.length === 0) {
             console.warn('[Extended Timeline] No today data available');
