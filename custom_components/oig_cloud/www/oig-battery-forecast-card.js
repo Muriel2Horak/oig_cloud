@@ -634,9 +634,12 @@ class OigBatteryForecastCard extends HTMLElement {
             if (!point.timestamp) return;
 
             const timestamp = new Date(point.timestamp).getTime();
-            const batteryKwh = point.battery_capacity_kwh || 0;
-            const solarChargeKwh = point.solar_charge_kwh || 0;
-            const gridChargeKwh = point.grid_charge_kwh || 0;
+            // HYBRID API uses battery_start, legacy uses battery_capacity_kwh
+            const batteryKwh = point.battery_start || point.battery_capacity_kwh || 0;
+            // HYBRID API uses solar_kwh, legacy uses solar_charge_kwh
+            const solarChargeKwh = point.solar_kwh || point.solar_charge_kwh || 0;
+            // HYBRID API uses grid_import_kwh, legacy uses grid_charge_kwh
+            const gridChargeKwh = point.grid_import_kwh || point.grid_charge_kwh || 0;
 
             // Kapacita baterie - levá Y osa
             batteryLineData.push({

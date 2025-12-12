@@ -1194,7 +1194,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # NOTE: For temp sensors in coordinator, self.hass is None but self._hass is set
             # We only want to write state for REGISTERED sensors (self.hass is set by HA)
             if not self.hass:
-                _LOGGER.debug("Temp sensor (not registered in HA), skipping state write")
+                _LOGGER.debug(
+                    "Temp sensor (not registered in HA), skipping state write"
+                )
                 return
 
             _LOGGER.info(
