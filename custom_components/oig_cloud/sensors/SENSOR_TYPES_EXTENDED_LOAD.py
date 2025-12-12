@@ -13,6 +13,7 @@ SENSOR_TYPES_EXTENDED_LOAD: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_ac_out_aco_pr",
     },
     "extended_load_l2_power": {
         "name": "Extended Load L2 Power",
@@ -24,6 +25,7 @@ SENSOR_TYPES_EXTENDED_LOAD: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_ac_out_aco_ps",
     },
     "extended_load_l3_power": {
         "name": "Extended Load L3 Power",
@@ -35,5 +37,6 @@ SENSOR_TYPES_EXTENDED_LOAD: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_ac_out_aco_pt",
     },
 }

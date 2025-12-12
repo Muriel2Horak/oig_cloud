@@ -13,6 +13,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_aci_wr",
     },
     "actual_aci_ws": {
         "name": "Grid Load Line 2 (live)",
@@ -24,6 +25,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_aci_ws",
     },
     "actual_aci_wt": {
         "name": "Grid Load Line 3 (live)",
@@ -35,6 +37,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_aci_wt",
     },
     "actual_aci_wtotal": {
         "name": "Grid Load Total (live)",
@@ -57,6 +60,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_aco_p",
     },
     "actual_fv_p1": {
         "name": "Panels Output String 1 (live)",
@@ -68,6 +72,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_fv_p1",
     },
     "actual_fv_p2": {
         "name": "Panels Output String 2 (live)",
@@ -79,6 +84,7 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_fv_p2",
     },
     "actual_fv_total": {
         "name": "Panels Output Total (live)",
@@ -101,5 +107,6 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_actual_viz",
     },
 }

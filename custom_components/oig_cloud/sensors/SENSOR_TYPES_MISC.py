@@ -15,6 +15,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_device_lastcall",
     },
     "real_data_update": {
         "name": "Real Data Update",
@@ -25,6 +26,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_id": "sensor.oig_local_oig_proxy_proxy_status_last_data",
     },
     "invertor_prm1_p_max_feed_grid": {
         "name": "Max Feed to Grid",
@@ -37,6 +39,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_invertor_prm1_p_max_feed_grid",
     },
     "invertor_prms_to_grid": {
         "name": "Grid Delivery",
@@ -50,6 +53,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "options": ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"],
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_invertor_prms_to_grid",
     },
     "installed_battery_capacity_kwh": {
         "name": "Installed Battery Capacity",
@@ -62,6 +66,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_box_prms_p_bat",
     },
     "installed_fve_power_wp": {
         "name": "Installed FVE Power",
@@ -74,6 +79,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_box_prms_p_fve",
     },
     "box_prms_crct": {
         "name": "Distribution Emergency Control",
@@ -87,6 +93,7 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "options": ["Vypnuto / Off", "Zapnuto / On"],
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_box_prms_crct",
     },
     # Notification sensors - nová kategorie
     "latest_notification": {

@@ -35,6 +35,7 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_ac_in_ac_ad",
     },
     "extended_grid_delivery": {
         "name": "Extended Grid Delivery",
@@ -46,5 +47,6 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_ac_in_ac_pd",
     },
 }

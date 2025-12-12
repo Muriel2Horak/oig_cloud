@@ -17,6 +17,7 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_v1",
     },
     "extended_fve_voltage_2": {
         "name": "Extended FVE Voltage 2",
@@ -28,6 +29,7 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_v2",
     },
     "extended_fve_power_1": {
         "name": "Extended FVE Power 1",
@@ -39,6 +41,7 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_p1",
     },
     "extended_fve_power_2": {
         "name": "Extended FVE Power 2",
@@ -50,6 +53,7 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_p2",
     },
     "extended_fve_current_1": {
         "name": "Extended FVE Curren FV 1",
@@ -61,6 +65,7 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_i1",
     },
     "extended_fve_current_2": {
         "name": "Extended FVE Curren FV 2",
@@ -72,5 +77,6 @@ SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_dc_in_fv_i2",
     },
 }

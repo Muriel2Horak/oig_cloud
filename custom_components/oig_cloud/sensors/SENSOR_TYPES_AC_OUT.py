@@ -11,6 +11,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "unit_of_measurement": UnitOfPower.WATT,  # Konstanta místo stringu
         "node_id": "ac_out",
         "node_key": "aco_p",
+        "local_entity_suffix": "tbl_ac_out_aco_p",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -22,6 +23,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "unit_of_measurement": UnitOfPower.WATT,  # Konstanta místo stringu
         "node_id": "ac_out",
         "node_key": "aco_pr",
+        "local_entity_suffix": "tbl_ac_out_aco_pr",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -33,6 +35,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "unit_of_measurement": UnitOfPower.WATT,  # Konstanta místo stringu
         "node_id": "ac_out",
         "node_key": "aco_ps",
+        "local_entity_suffix": "tbl_ac_out_aco_ps",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -44,6 +47,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "unit_of_measurement": UnitOfPower.WATT,  # Konstanta místo stringu
         "node_id": "ac_out",
         "node_key": "aco_pt",
+        "local_entity_suffix": "tbl_ac_out_aco_pt",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -55,6 +59,7 @@ SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union t
         "unit_of_measurement": UnitOfEnergy.WATT_HOUR,
         "node_id": "ac_out",
         "node_key": "en_day",
+        "local_entity_suffix": "tbl_ac_out_en_day",
         "state_class": SensorStateClass.TOTAL_INCREASING,
         "sensor_type_category": "data",
         "device_mapping": "main",

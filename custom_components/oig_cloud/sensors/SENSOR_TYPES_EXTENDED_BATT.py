@@ -20,6 +20,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_v",
     },
     "extended_battery_current": {
         "name": "Extended Battery Current",
@@ -31,6 +32,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_i",
     },
     "extended_battery_capacity": {
         "name": "Extended Battery Capacity",
@@ -42,6 +44,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "node_key": None,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_c",
     },
     "extended_battery_temperature": {
         "name": "Extended Battery Temperature",
@@ -54,6 +57,7 @@ SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "extended",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_t",
     },
     "usable_battery_capacity": {
         "name": "Usable Battery Capacity",

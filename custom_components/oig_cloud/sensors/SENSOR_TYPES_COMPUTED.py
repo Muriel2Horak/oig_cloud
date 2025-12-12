@@ -11,6 +11,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "unit_of_measurement": PERCENTAGE,
         "node_id": "actual",
         "node_key": "bat_c",
+        "local_entity_suffix": "tbl_actual_bat_c",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -22,6 +23,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "unit_of_measurement": UnitOfPower.WATT,
         "node_id": "actual",
         "node_key": "bat_p",
+        "local_entity_suffix": "tbl_actual_bat_p",
         "state_class": SensorStateClass.MEASUREMENT,
         "sensor_type_category": "data",
         "device_mapping": "main",
@@ -60,6 +62,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_apd",
     },
     "computed_batt_discharge_energy_today": {
         "name": "Battery Discharge Energy Today",
@@ -71,6 +74,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_and",
     },
     "computed_batt_charge_energy_month": {
         "name": "Battery Charge Energy This Month",
@@ -82,6 +86,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_discharge_energy_month": {
         "name": "Battery Discharge Energy This Month",
@@ -93,6 +98,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_charge_energy_year": {
         "name": "Battery Charge Energy This Year",
@@ -104,6 +110,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_discharge_energy_year": {
         "name": "Battery Discharge Energy This Year",
@@ -115,6 +122,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     # Energie nabíjení Z FVE
     "computed_batt_charge_fve_energy_today": {
@@ -127,6 +135,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_charge_fve_energy_month": {
         "name": "Battery Charge Energy from Solar This Month",
@@ -138,6 +147,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_charge_fve_energy_year": {
         "name": "Battery Charge Energy from Solar This Year",
@@ -149,6 +159,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     # Energie nabíjení ZE SÍTĚ
     "computed_batt_charge_grid_energy_today": {
@@ -161,6 +172,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ad",
     },
     "computed_batt_charge_grid_energy_month": {
         "name": "Battery Charge Energy from Grid This Month",
@@ -172,6 +184,7 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_am",
     },
     "computed_batt_charge_grid_energy_year": {
         "name": "Battery Charge Energy from Grid This Year",
@@ -183,5 +196,6 @@ SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
         "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "local_entity_suffix": "tbl_batt_bat_ay",
     },
 }
