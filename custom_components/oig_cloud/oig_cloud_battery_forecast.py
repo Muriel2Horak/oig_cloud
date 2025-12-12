@@ -589,12 +589,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             Current battery capacity (kWh) or 0 if no data
         """
         if self._timeline_data and len(self._timeline_data) > 0:
-            # Try new format first (battery_soc from HYBRID)
-            capacity = self._timeline_data[0].get("battery_soc")
+            # HYBRID format uses battery_start, legacy uses battery_soc/battery_capacity_kwh
+            capacity = self._timeline_data[0].get("battery_start")
             if capacity is None:
-                # Fallback: old format (battery_capacity_kwh)
+                capacity = self._timeline_data[0].get("battery_soc")
+            if capacity is None:
                 capacity = self._timeline_data[0].get("battery_capacity_kwh", 0)
-            return round(capacity, 2)
+            return round(capacity, 2) if capacity else 0
         return 0
 
     @property
@@ -629,12 +630,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._last_update.isoformat() if self._last_update else None
             ),
             "data_source": "simplified_calculation",
-            # Current state
+            # Current state - HYBRID uses battery_start, legacy uses battery_soc
             "current_battery_kwh": (
                 round(
                     self._timeline_data[0].get(
-                        "battery_soc",
-                        self._timeline_data[0].get("battery_capacity_kwh", 0),
+                        "battery_start",
+                        self._timeline_data[0].get(
+                            "battery_soc",
+                            self._timeline_data[0].get("battery_capacity_kwh", 0),
+                        ),
                     ),
                     2,
                 )
@@ -1187,8 +1191,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # CRITICAL FIX: Write state after every update to publish consumption_summary
             # Check if sensor is already added to HA (self.hass is set by framework)
+            # NOTE: For temp sensors in coordinator, self.hass is None but self._hass is set
+            # We only want to write state for REGISTERED sensors (self.hass is set by HA)
             if not self.hass:
-                _LOGGER.debug("Sensor not yet added to HA, skipping state write")
+                _LOGGER.debug("Temp sensor (not registered in HA), skipping state write")
                 return
 
             _LOGGER.info(
