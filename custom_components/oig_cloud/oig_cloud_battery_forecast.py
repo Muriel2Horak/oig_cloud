@@ -702,6 +702,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             and self._mode_optimization_result
         ):
             mo = self._mode_optimization_result
+            optimal_modes = mo.get("optimal_modes", [])
             attrs["mode_optimization"] = {
                 # Phase 2.8: Use 48h cost for frontend tile (DNES+ZÍTRA only)
                 "total_cost_czk": round(mo.get("total_cost_48h", 0), 2),
@@ -710,16 +711,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     mo.get("total_cost", 0), 2
                 ),  # For reference
                 "modes_distribution": {
-                    "HOME_I": mo["optimal_modes"].count(0),
-                    "HOME_II": mo["optimal_modes"].count(1),
-                    "HOME_III": mo["optimal_modes"].count(2),
-                    "HOME_UPS": mo["optimal_modes"].count(3),
+                    "HOME_I": optimal_modes.count(0),
+                    "HOME_II": optimal_modes.count(1),
+                    "HOME_III": optimal_modes.count(2),
+                    "HOME_UPS": optimal_modes.count(3),
                 },
                 # Backwards compatibility: lowercase keys for old dashboard
-                "home_i_intervals": mo["optimal_modes"].count(0),
-                "home_ii_intervals": mo["optimal_modes"].count(1),
-                "home_iii_intervals": mo["optimal_modes"].count(2),
-                "home_ups_intervals": mo["optimal_modes"].count(3),
+                "home_i_intervals": optimal_modes.count(0),
+                "home_ii_intervals": optimal_modes.count(1),
+                "home_iii_intervals": optimal_modes.count(2),
+                "home_ups_intervals": optimal_modes.count(3),
                 "timeline_length": len(mo.get("optimal_timeline", [])),
             }
 

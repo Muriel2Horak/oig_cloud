@@ -313,7 +313,7 @@ class BatteryHealthTracker:
             try:
                 round_trip_eff = float(efficiency_state.state) / 100.0
                 # Nabíjecí účinnost ≈ √(round_trip) - obě směry mají podobnou účinnost
-                charging_efficiency = round_trip_eff ** 0.5
+                charging_efficiency = round_trip_eff**0.5
             except (ValueError, TypeError):
                 charging_efficiency = 0.97  # Fallback (~√0.94)
         else:
