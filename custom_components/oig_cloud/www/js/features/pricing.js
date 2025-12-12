@@ -1460,12 +1460,14 @@ async function loadPricingData() {
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
-                    const targetCapacity = timelineEntry.battery_capacity_kwh || 0;
-                    const solarCharge = timelineEntry.solar_charge_kwh || 0;
-                    const gridCharge = timelineEntry.grid_charge_kwh || 0;
+                    // HYBRID API uses battery_start, solar_kwh, grid_import_kwh
+                    // Legacy uses battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh
+                    const targetCapacity = timelineEntry.battery_start || timelineEntry.battery_capacity_kwh || 0;
+                    const solarCharge = timelineEntry.solar_kwh || timelineEntry.solar_charge_kwh || 0;
+                    const gridCharge = timelineEntry.grid_import_kwh || timelineEntry.grid_charge_kwh || 0;
                     const gridNet = typeof timelineEntry.grid_net === 'number'
                         ? timelineEntry.grid_net
-                        : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
+                        : (timelineEntry.grid_import_kwh || timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
 
                     // Baseline = odkud vyšli (cílová - přírůstky)
                     const baseline = targetCapacity - solarCharge - gridCharge;

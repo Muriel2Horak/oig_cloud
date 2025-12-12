@@ -8,7 +8,8 @@ function getDayLabel(day) {
 
 function getBlockEnergyKwh(block) {
     if (!block) return 0;
-    const energy = Number(block.grid_charge_kwh);
+    // HYBRID API uses grid_import_kwh, legacy uses grid_charge_kwh
+    const energy = Number(block.grid_import_kwh || block.grid_charge_kwh);
     if (Number.isFinite(energy) && energy > 0) {
         return energy;
     }

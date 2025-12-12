@@ -240,9 +240,10 @@ export class PricingChartModule {
                     const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                     if (timelineEntry) {
-                        const batteryCapacity = timelineEntry.battery_capacity_kwh || 0;
-                        const solarCharge = timelineEntry.solar_charge_kwh || 0;
-                        const gridCharge = timelineEntry.grid_charge_kwh || 0;
+                        // HYBRID API uses battery_start, solar_kwh, grid_import_kwh
+                        const batteryCapacity = timelineEntry.battery_start || timelineEntry.battery_capacity_kwh || 0;
+                        const solarCharge = timelineEntry.solar_kwh || timelineEntry.solar_charge_kwh || 0;
+                        const gridCharge = timelineEntry.grid_import_kwh || timelineEntry.grid_charge_kwh || 0;
 
                         batteryCapacityData.push(batteryCapacity);
                         solarAddData.push(solarCharge > 0.01 ? -solarCharge : null);

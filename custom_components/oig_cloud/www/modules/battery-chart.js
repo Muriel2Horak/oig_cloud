@@ -63,11 +63,12 @@ export class BatteryChartModule {
             const timestamp = new Date(entry.timestamp);
             labels.push(timestamp);
 
-            batteryCapacityData.push(entry.battery_capacity_kwh || 0);
+            // HYBRID API uses battery_start, solar_kwh, grid_import_kwh
+            batteryCapacityData.push(entry.battery_start || entry.battery_capacity_kwh || 0);
 
-            // NOVÁ DATA: solar_charge_kwh a grid_charge_kwh z backendu
-            const solarCharge = entry.solar_charge_kwh || 0;
-            const gridCharge = entry.grid_charge_kwh || 0;
+            // NOVÁ DATA: solar_kwh a grid_import_kwh z backendu (HYBRID)
+            const solarCharge = entry.solar_kwh || entry.solar_charge_kwh || 0;
+            const gridCharge = entry.grid_import_kwh || entry.grid_charge_kwh || 0;
 
             solarChargeData.push(solarCharge);
             gridChargeData.push(gridCharge);
