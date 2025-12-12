@@ -2654,8 +2654,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        super().__init__()
-        self.config_entry = config_entry
+        # IMPORTANT:
+        # - OptionsFlow has read-only `config_entry` property.
+        # - WizardMixin.__init__ takes no args, so we must call both bases explicitly.
+        config_entries.OptionsFlow.__init__(self, config_entry)
+        WizardMixin.__init__(self)
 
         # Předvyplnit wizard_data z existující konfigurace
         # Nejdříve zkopírovat všechna existující data
