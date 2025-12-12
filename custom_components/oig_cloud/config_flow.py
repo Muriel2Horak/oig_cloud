@@ -2654,11 +2654,12 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        # IMPORTANT:
-        # - OptionsFlow has read-only `config_entry` property.
-        # - WizardMixin.__init__ takes no args, so we must call both bases explicitly.
-        config_entries.OptionsFlow.__init__(self, config_entry)
-        WizardMixin.__init__(self)
+        # IMPORTANT (HA 2025.12+):
+        # - `config_entries.OptionsFlow` does NOT implement `__init__`.
+        # - `config_entry` property is read-only and only available after HA sets `hass`.
+        # - We must store `_config_entry_id` so `self.config_entry` can resolve later.
+        super().__init__()
+        self._config_entry_id = config_entry.entry_id
 
         # Předvyplnit wizard_data z existující konfigurace
         # Nejdříve zkopírovat všechna existující data
