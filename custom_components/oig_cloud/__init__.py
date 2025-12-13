@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import hashlib
 import re
+import asyncio
 from typing import Any, Dict
 
 from homeassistant import config_entries, core
@@ -27,9 +28,14 @@ from .const import (
 from .oig_cloud_coordinator import OigCloudCoordinator
 from .data_source import (
     DataSourceController,
+    DATA_SOURCE_CLOUD_ONLY,
     DEFAULT_DATA_SOURCE_MODE,
     DEFAULT_PROXY_STALE_MINUTES,
     DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+    PROXY_LAST_DATA_ENTITY_ID,
+    get_configured_mode,
+    get_data_source_state,
+    init_data_source_state,
 )
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
@@ -78,6 +84,28 @@ def _ensure_data_source_option_defaults(hass: HomeAssistant, entry: ConfigEntry)
 
     if updated:
         hass.config_entries.async_update_entry(entry, options=options)
+
+
+def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
+    """Best-effort inference of box_id from existing oig_local entity_ids.
+
+    Expected local entity_id pattern: sensor.oig_local_<box_id>_<suffix>
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        reg = er.async_get(hass)
+        ids: set[str] = set()
+        pat = re.compile(r"^sensor\\.oig_local_(\\d+)_")
+        for ent in reg.entities.values():
+            m = pat.match(ent.entity_id)
+            if m:
+                ids.add(m.group(1))
+        if len(ids) == 1:
+            return next(iter(ids))
+        return None
+    except Exception:
+        return None
 
 
 def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -594,6 +622,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
 
+    # Initialize data source state early so coordinator setup can respect local/hybrid modes.
+    # Also try to infer box_id from local entities so local mapping works without cloud.
+    init_data_source_state(hass, entry)
+    try:
+        options = dict(entry.options)
+        if not options.get("box_id"):
+            inferred = _infer_box_id_from_local_entities(hass)
+            if inferred:
+                options["box_id"] = inferred
+                hass.config_entries.async_update_entry(entry, options=options)
+                _LOGGER.info("Inferred box_id=%s from local entities", inferred)
+    except Exception as err:
+        _LOGGER.debug("Inferring box_id from local entities failed (non-critical): %s", err)
+
     # OPRAVA: Inicializujeme service_shield jako None před try blokem
     service_shield = None
 
@@ -661,42 +703,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         session_manager = OigCloudSessionManager(oig_api)
 
-        _LOGGER.debug("Initial authentication via session manager")
-        # Session manager zavolá authenticate() při prvním požadavku,
-        # ale provedeme to i zde pro kontrolu přihlašovacích údajů
-        await session_manager._ensure_auth()
+        # Respect local/hybrid mode: if local proxy is healthy, do not hit cloud during setup.
+        # Session manager will authenticate on-demand if we later fall back to cloud.
+        state = get_data_source_state(hass, entry.entry_id)
+        should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
-        # CRITICAL: Check if live data is enabled (actual element present in API response)
-        # Stats structure: { "box_id": { "actual": {...}, "settings": {...} } }
-        _LOGGER.debug("Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'...")
-        try:
-            test_stats = await oig_api.get_stats()
-            if test_stats:
-                # Get first device data
-                first_device = next(iter(test_stats.values())) if test_stats else None
-                if not first_device or "actual" not in first_device:
-                    _LOGGER.error(
-                        "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
-                        "API odpověď neobsahuje element 'actual'. "
-                        "Uživatel musí v mobilní aplikaci zapnout: Nastavení → Přístup k datům → Živá data"
+        if should_check_cloud_now:
+            _LOGGER.debug("Initial authentication via session manager")
+            # Session manager zavolá authenticate() při prvním požadavku,
+            # ale provedeme to i zde pro kontrolu přihlašovacích údajů
+            await session_manager._ensure_auth()
+
+            # CRITICAL: Check if live data is enabled (actual element present in API response)
+            # Stats structure: { "box_id": { "actual": {...}, "settings": {...} } }
+            _LOGGER.debug("Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'...")
+            try:
+                test_stats = await oig_api.get_stats()
+                if test_stats:
+                    # Get first device data
+                    first_device = next(iter(test_stats.values())) if test_stats else None
+                    if not first_device or "actual" not in first_device:
+                        _LOGGER.error(
+                            "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
+                            "API odpověď neobsahuje element 'actual'. "
+                            "Uživatel musí v mobilní aplikaci zapnout: Nastavení → Přístup k datům → Živá data"
+                        )
+                        raise ConfigEntryNotReady(
+                            "V aplikaci OIG Cloud nejsou zapnutá 'Živá data'. "
+                            "Zapněte je v mobilní aplikaci OIG Cloud (Nastavení → Přístup k datům → Živá data) "
+                            "a restartujte Home Assistant."
+                        )
+                    _LOGGER.info(
+                        "✅ Kontrola živých dat úspěšná - element 'actual' nalezen v API odpovědi"
                     )
-                    raise ConfigEntryNotReady(
-                        "V aplikaci OIG Cloud nejsou zapnutá 'Živá data'. "
-                        "Zapněte je v mobilní aplikaci OIG Cloud (Nastavení → Přístup k datům → Živá data) "
-                        "a restartujte Home Assistant."
+                else:
+                    _LOGGER.warning(
+                        "API vrátilo prázdnou odpověď, přeskakuji kontrolu živých dat"
                     )
-                _LOGGER.info(
-                    "✅ Kontrola živých dat úspěšná - element 'actual' nalezen v API odpovědi"
-                )
-            else:
-                _LOGGER.warning(
-                    "API vrátilo prázdnou odpověď, přeskakuji kontrolu živých dat"
-                )
-        except ConfigEntryNotReady:
-            raise
-        except Exception as e:
-            _LOGGER.warning("Nelze ověřit stav živých dat: %s", e)
-            # Pokračujeme i tak - může jít o dočasný problém s API
+            except ConfigEntryNotReady:
+                raise
+            except Exception as e:
+                _LOGGER.warning("Nelze ověřit stav živých dat: %s", e)
+                # Pokračujeme i tak - může jít o dočasný problém s API
+        else:
+            _LOGGER.info(
+                "Local telemetry mode active (configured=%s, local_ok=%s) – skipping initial cloud authentication and live-data check",
+                state.configured_mode,
+                state.local_available,
+            )
 
         # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
         coordinator = OigCloudCoordinator(
@@ -730,74 +784,84 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # OPRAVA: Inicializace notification manageru se správným error handling
         notification_manager = None
-        try:
-            _LOGGER.debug("Initializing notification manager...")
-            from .oig_cloud_notification import OigNotificationManager
+        enable_cloud_notifications = entry.options.get("enable_cloud_notifications", True)
+        cloud_active_for_setup = (
+            get_data_source_state(hass, entry.entry_id).effective_mode
+            == DATA_SOURCE_CLOUD_ONLY
+        )
+        if enable_cloud_notifications and cloud_active_for_setup:
+            try:
+                _LOGGER.debug("Initializing notification manager...")
+                from .oig_cloud_notification import OigNotificationManager
 
-            # PROBLÉM: Ověříme, že používáme správný objekt
-            _LOGGER.debug(f"Using API object: {type(oig_api)}")
-            _LOGGER.debug(
-                f"API has get_notifications: {hasattr(oig_api, 'get_notifications')}"
-            )
+                # PROBLÉM: Ověříme, že používáme správný objekt
+                _LOGGER.debug(f"Using API object: {type(oig_api)}")
+                _LOGGER.debug(
+                    f"API has get_notifications: {hasattr(oig_api, 'get_notifications')}"
+                )
 
-            # OPRAVA: Použít oig_api objekt (OigCloudApi) místo jakéhokoliv jiného
-            # NOVÉ: Použít session_manager.api pro přístup k underlying API
-            notification_manager = OigNotificationManager(
-                hass, session_manager.api, "https://www.oigpower.cz/cez/"
-            )
+                # OPRAVA: Použít oig_api objekt (OigCloudApi) místo jakéhokoliv jiného
+                # NOVÉ: Použít session_manager.api pro přístup k underlying API
+                notification_manager = OigNotificationManager(
+                    hass, session_manager.api, "https://www.oigpower.cz/cez/"
+                )
 
-            # Nastavíme device_id z prvního dostupného zařízení v coordinator.data
-            if coordinator.data:
-                device_id = next(iter(coordinator.data.keys()))
-                notification_manager.set_device_id(device_id)
-                _LOGGER.debug("Set notification manager device_id to: %s", device_id)
+                # Nastavíme device_id z prvního dostupného zařízení v coordinator.data
+                if coordinator.data:
+                    device_id = next(iter(coordinator.data.keys()))
+                    notification_manager.set_device_id(device_id)
+                    _LOGGER.debug("Set notification manager device_id to: %s", device_id)
 
-                # Inicializace Mode Transition Tracker
-                if service_shield:
+                    # Inicializace Mode Transition Tracker
+                    if service_shield:
+                        try:
+                            from .service_shield import ModeTransitionTracker
+
+                            service_shield.mode_tracker = ModeTransitionTracker(
+                                hass, device_id
+                            )
+                            await service_shield.mode_tracker.async_setup()
+                            _LOGGER.info(
+                                f"Mode Transition Tracker inicializován pro box {device_id}"
+                            )
+                        except Exception as tracker_error:
+                            _LOGGER.warning(
+                                f"Failed to initialize Mode Transition Tracker: {tracker_error}"
+                            )
+                            # Pokračujeme bez trackeru
+
+                    # OPRAVA: Použít nový API přístup místo fetch_notifications_and_status
                     try:
-                        from .service_shield import ModeTransitionTracker
-
-                        service_shield.mode_tracker = ModeTransitionTracker(
-                            hass, device_id
-                        )
-                        await service_shield.mode_tracker.async_setup()
-                        _LOGGER.info(
-                            f"Mode Transition Tracker inicializován pro box {device_id}"
-                        )
-                    except Exception as tracker_error:
+                        await notification_manager.update_from_api()
+                        _LOGGER.debug("Initial notification data loaded successfully")
+                    except Exception as fetch_error:
                         _LOGGER.warning(
-                            f"Failed to initialize Mode Transition Tracker: {tracker_error}"
+                            f"Failed to fetch initial notifications (API endpoint may not exist): {fetch_error}"
                         )
-                        # Pokračujeme bez trackeru
+                        # Pokračujeme bez počátečních notifikací - API endpoint možná neexistuje
 
-                # OPRAVA: Použít nový API přístup místo fetch_notifications_and_status
-                try:
-                    await notification_manager.update_from_api()
-                    _LOGGER.debug("Initial notification data loaded successfully")
-                except Exception as fetch_error:
-                    _LOGGER.warning(
-                        f"Failed to fetch initial notifications (API endpoint may not exist): {fetch_error}"
+                    # Připoj notification manager ke koordinátoru i když fetch selhal
+                    # Manager může fungovat později pokud se API opraví
+                    coordinator.notification_manager = notification_manager
+                    _LOGGER.info(
+                        "Notification manager created and attached to coordinator (may not have data yet)"
                     )
-                    # Pokračujeme bez počátečních notifikací - API endpoint možná neexistuje
+                else:
+                    _LOGGER.warning(
+                        "No device data available, notification manager not initialized"
+                    )
+                    notification_manager = None
 
-                # Připoj notification manager ke koordinátoru i když fetch selhal
-                # Manager může fungovat později pokud se API opraví
-                coordinator.notification_manager = notification_manager
-                _LOGGER.info(
-                    "Notification manager created and attached to coordinator (may not have data yet)"
-                )
-            else:
+            except Exception as e:
                 _LOGGER.warning(
-                    "No device data available, notification manager not initialized"
+                    f"Failed to setup notification manager (API may not be available): {e}"
                 )
+                # Pokračujeme bez notification manageru - API endpoint možná neexistuje nebo je nedostupný
                 notification_manager = None
-
-        except Exception as e:
-            _LOGGER.warning(
-                f"Failed to setup notification manager (API may not be available): {e}"
+        else:
+            _LOGGER.debug(
+                "Cloud notifications disabled or cloud not active - skipping notification manager"
             )
-            # Pokračujeme bez notification manageru - API endpoint možná neexistuje nebo je nedostupný
-            notification_manager = None
 
         # Inicializace solar forecast (pokud je povolená)
         solar_forecast = None
@@ -956,7 +1020,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
             "data_source_controller": None,
-            "data_source_state": None,
+            "data_source_state": get_data_source_state(hass, entry.entry_id),
             "solar_forecast": solar_forecast,
             "statistics_enabled": statistics_enabled,
             "analytics_device_info": analytics_device_info,

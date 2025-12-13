@@ -364,24 +364,31 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             stats = await self._try_get_stats() if use_cloud else (self.data or {})
 
-            # NOVÉ: Inicializovat notification manager pokud ještě není
-            if use_cloud and (
-                not hasattr(self, "notification_manager")
-                or self.notification_manager is None
-            ):
-                _LOGGER.debug("Initializing notification manager")
-                try:
-                    from .oig_cloud_notification import OigNotificationManager
+            # Cloud notifications are optional and should never run in local/hybrid effective mode.
+            cloud_notifications_enabled = bool(
+                self.config_entry
+                and self.config_entry.options.get("enable_cloud_notifications", True)
+            )
 
-                    # NOVÉ: Použít get_session() z API pro sdílení autentifikace
-                    self.notification_manager = OigNotificationManager(
-                        self.hass, self.api, "https://www.oigpower.cz"
-                    )
-                    _LOGGER.debug("Notification manager initialized with API session")
-                except Exception as e:
-                    _LOGGER.error(f"Failed to initialize notification manager: {e}")
-                    self.notification_manager = None
-            elif not use_cloud:
+            # NOVÉ: Inicializovat notification manager pokud ještě není
+            if use_cloud and cloud_notifications_enabled:
+                if (
+                    not hasattr(self, "notification_manager")
+                    or self.notification_manager is None
+                ):
+                    _LOGGER.debug("Initializing notification manager")
+                    try:
+                        from .oig_cloud_notification import OigNotificationManager
+
+                        # NOVÉ: Použít get_session() z API pro sdílení autentifikace
+                        self.notification_manager = OigNotificationManager(
+                            self.hass, self.api, "https://www.oigpower.cz"
+                        )
+                        _LOGGER.debug("Notification manager initialized with API session")
+                    except Exception as e:
+                        _LOGGER.error(f"Failed to initialize notification manager: {e}")
+                        self.notification_manager = None
+            else:
                 self.notification_manager = None
 
             # NOVÉ: Debug notification manager status
@@ -472,7 +479,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Extended stats updated successfully")
 
                     # NOVÉ: Aktualizovat notifikace současně s extended daty
-                    if (
+                    if cloud_notifications_enabled and (
                         hasattr(self, "notification_manager")
                         and self.notification_manager
                         and hasattr(self.notification_manager, "_device_id")
@@ -487,7 +494,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                             _LOGGER.debug("Notification data updated successfully")
                         except Exception as e:
                             _LOGGER.debug(f"Notification data fetch failed: {e}")
-                    else:
+                    elif cloud_notifications_enabled:
                         _LOGGER.debug(
                             "Notification manager not ready for extended data refresh - device_id not set yet"
                         )
@@ -500,7 +507,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Extended sensors disabled in configuration")
 
                 # NOVÉ: I když extended nejsou povoleny, aktualizovat notifikace samostatně
-                if (
+                if cloud_notifications_enabled and (
                     hasattr(self, "notification_manager")
                     and self.notification_manager
                     and hasattr(self.notification_manager, "_device_id")
@@ -535,7 +542,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                             _LOGGER.debug(
                                 f"Standalone notification data fetch failed: {e}"
                             )
-                else:
+                elif cloud_notifications_enabled:
                     _LOGGER.debug(
                         "Notification manager not available for standalone refresh - device_id not set yet"
                     )

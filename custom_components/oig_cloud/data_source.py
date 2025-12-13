@@ -88,6 +88,46 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     return None
 
 
+def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourceState:
+    """Initialize (or refresh) data source state early during setup.
+
+    This allows coordinators to respect local/hybrid mode before the controller is started.
+    """
+    configured = get_configured_mode(entry)
+    stale_minutes = get_proxy_stale_minutes(entry)
+
+    proxy_state = hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+    last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+    now = dt_util.utcnow()
+
+    local_available = False
+    reason = "local_missing"
+    if last_dt:
+        age = (now - last_dt).total_seconds()
+        if age <= stale_minutes * 60:
+            local_available = True
+            reason = "local_ok"
+        else:
+            reason = f"local_stale_{int(age)}s"
+
+    if configured == DATA_SOURCE_CLOUD_ONLY:
+        effective = DATA_SOURCE_CLOUD_ONLY
+    else:
+        effective = configured if local_available else DATA_SOURCE_CLOUD_ONLY
+
+    state = DataSourceState(
+        configured_mode=configured,
+        effective_mode=effective,
+        local_available=local_available,
+        last_local_data=last_dt,
+        reason=reason,
+    )
+    hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["data_source_state"] = (
+        state
+    )
+    return state
+
+
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
