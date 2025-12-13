@@ -141,14 +141,14 @@ class DataSourceController:
 
     @callback
     def _on_proxy_change(self, _event: Any) -> None:
-        changed = self._update_state()
-        if changed:
+        _, mode_changed = self._update_state()
+        if mode_changed:
             self._on_effective_mode_changed()
 
     @callback
     def _on_periodic(self, _now: Any) -> None:
-        changed = self._update_state()
-        if changed:
+        _, mode_changed = self._update_state()
+        if mode_changed:
             self._on_effective_mode_changed()
 
     @callback
@@ -169,7 +169,7 @@ class DataSourceController:
         self._debouncer.async_call()
 
     @callback
-    def _update_state(self, force: bool = False) -> bool:
+    def _update_state(self, force: bool = False) -> tuple[bool, bool]:
         entry_id = self.entry.entry_id
         configured = get_configured_mode(self.entry)
         stale_minutes = get_proxy_stale_minutes(self.entry)
@@ -200,6 +200,11 @@ class DataSourceController:
             or prev.local_available != local_available
             or prev.last_local_data != last_dt
         )
+        mode_changed = force or (
+            prev.configured_mode != configured
+            or prev.effective_mode != effective
+            or prev.local_available != local_available
+        )
 
         if changed:
             new_state = DataSourceState(
@@ -212,7 +217,7 @@ class DataSourceController:
             self.hass.data.setdefault(DOMAIN, {}).setdefault(entry_id, {})[
                 "data_source_state"
             ] = new_state
-        return changed
+        return changed, mode_changed
 
     @callback
     def _on_effective_mode_changed(self) -> None:
