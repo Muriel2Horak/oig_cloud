@@ -77,14 +77,17 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     if value in (None, "", "unknown", "unavailable"):
         return None
     if isinstance(value, dt_util.dt.datetime):
-        return value
+        return dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
     if isinstance(value, str):
         dt = dt_util.parse_datetime(value)
         if dt is None:
-            return None
+            try:
+                dt = dt_util.dt.datetime.fromisoformat(value)
+            except Exception:
+                return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=dt_util.UTC)
-        return dt
+        return dt_util.as_utc(dt)
     return None
 
 
@@ -222,7 +225,15 @@ class DataSourceController:
         stale_minutes = get_proxy_stale_minutes(self.entry)
 
         proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+        if proxy_state is None:
+            _LOGGER.debug("Proxy health entity not found")
         last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+        if proxy_state and last_dt is None:
+            _LOGGER.debug(
+                "Proxy health parse failed for value=%s, attributes=%s",
+                proxy_state.state,
+                proxy_state.attributes,
+            )
         now = dt_util.utcnow()
 
         local_available = False
