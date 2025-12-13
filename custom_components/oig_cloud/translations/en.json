@@ -70,8 +70,8 @@
           "enable_cloud_notifications": "Cloud notifications",
           "notifications_scan_interval": "Notifications interval (seconds)",
           "data_source_mode": "Telemetry data source",
-          "local_stale_after_seconds": "Prefer local: stale after (seconds)",
-          "local_sync_debounce_ms": "Local sync debounce (ms)",
+          "local_proxy_stale_minutes": "Fallback to cloud after (minutes)",
+          "local_event_debounce_ms": "Local event debounce (ms)",
           "go_back": "\u2b05\ufe0f I want to go back (check + click Submit)"
         },
         "data_description": {
@@ -79,9 +79,9 @@
           "extended_scan_interval": "How often to load cell voltages, temperatures, currents and other detailed data (minimum 300 seconds, recommended 300-600 seconds)",
           "enable_cloud_notifications": "Enable fetching cloud notifications (typically enough once every few minutes)",
           "notifications_scan_interval": "How often to poll cloud notifications (recommended 300-900 seconds)",
-          "data_source_mode": "Cloud only = always cloud; Prefer local = use mapped local entities when fresh, otherwise cloud; Local only = only mapped local entities",
-          "local_stale_after_seconds": "Prefer local only: after how many seconds local data is considered stale (fallback to cloud)",
-          "local_sync_debounce_ms": "Debounce for event-driven sync from local entities (lower = faster updates, higher = fewer updates)",
+          "data_source_mode": "Cloud only = always cloud; Hybrid = use mapped local entities when proxy is fresh, otherwise cloud; Local only = only mapped local entities",
+          "local_proxy_stale_minutes": "Fallback to cloud if the local proxy has not sent any data for longer than this limit",
+          "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster updates, higher = fewer updates)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
@@ -677,8 +677,8 @@
           "enable_cloud_notifications": "Cloud notifications",
           "notifications_scan_interval": "Notifications interval (seconds)",
           "data_source_mode": "Telemetry data source",
-          "local_stale_after_seconds": "Prefer local: stale after (seconds)",
-          "local_sync_debounce_ms": "Local sync debounce (ms)",
+          "local_proxy_stale_minutes": "Fallback to cloud after (minutes)",
+          "local_event_debounce_ms": "Local event debounce (ms)",
           "go_back": "\u2b05\ufe0f I want to go back (check + click Submit)"
         },
         "data_description": {
@@ -686,9 +686,9 @@
           "extended_scan_interval": "How often to load cell voltages, temperatures, currents and other detailed data (minimum 300 seconds, recommended 300-600 seconds)",
           "enable_cloud_notifications": "Enable fetching cloud notifications (typically enough once every few minutes)",
           "notifications_scan_interval": "How often to poll cloud notifications (recommended 300-900 seconds)",
-          "data_source_mode": "Cloud only = always cloud; Prefer local = use mapped local entities when fresh, otherwise cloud; Local only = only mapped local entities",
-          "local_stale_after_seconds": "Prefer local only: after how many seconds local data is considered stale (fallback to cloud)",
-          "local_sync_debounce_ms": "Debounce for event-driven sync from local entities (lower = faster updates, higher = fewer updates)",
+          "data_source_mode": "Cloud only = always cloud; Hybrid = use mapped local entities when proxy is fresh, otherwise cloud; Local only = only mapped local entities",
+          "local_proxy_stale_minutes": "Fallback to cloud if the local proxy has not sent any data for longer than this limit",
+          "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster updates, higher = fewer updates)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
