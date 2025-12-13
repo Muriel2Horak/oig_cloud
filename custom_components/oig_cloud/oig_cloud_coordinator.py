@@ -358,6 +358,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             try:
                 if self.config_entry:
                     state = get_data_source_state(self.hass, self.config_entry.entry_id)
+                    _LOGGER.debug(
+                        "Data source state: configured=%s effective=%s local_ok=%s reason=%s",
+                        state.configured_mode,
+                        state.effective_mode,
+                        state.local_available,
+                        state.reason,
+                    )
                     use_cloud = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
             except Exception:
                 use_cloud = True
