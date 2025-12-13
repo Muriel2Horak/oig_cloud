@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -82,6 +82,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         else:
             self._is_real_update_sensor = False
 
+        # State-change listeners for HA entity dependencies
+        self._local_dependencies: list[str] = []
+        self._dep_unsub = None
+
     def _get_local_number(self, entity_id: str) -> Optional[float]:
         """Read numeric value from HA state, returning None if missing/invalid."""
         if not getattr(self, "hass", None):
@@ -115,6 +119,66 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return self._get_local_number(entity_id)
         except Exception:
             return None
+
+    def _build_local_dependencies(self) -> list[str]:
+        """Return list of entity_ids this computed sensor depends on."""
+        deps: list[str] = []
+        if not self._box_id or self._box_id == "unknown":
+            return deps
+
+        box = self._box_id
+        st = self._sensor_type
+
+        # If sensor has direct local_entity_suffix/id, watch it
+        direct = self._get_local_value_for_sensor_type(st)
+        if direct is not None:
+            cfg_entity = None
+            try:
+                from .sensor_types import SENSOR_TYPES
+
+                cfg = SENSOR_TYPES.get(st, {})
+                cfg_entity = cfg.get("local_entity_id")
+                if not cfg_entity:
+                    suffix = cfg.get("local_entity_suffix")
+                    if suffix:
+                        cfg_entity = f"sensor.oig_local_{box}_{suffix}"
+            except Exception:
+                cfg_entity = None
+            if cfg_entity:
+                deps.append(cfg_entity)
+
+        # Special sums
+        if st == "ac_in_aci_wtotal":
+            base = f"sensor.oig_local_{box}_tbl_ac_in_aci_w"
+            deps += [f"{base}r", f"{base}s", f"{base}t"]
+        if st == "actual_aci_wtotal":
+            base = f"sensor.oig_local_{box}_tbl_actual_aci_w"
+            deps += [f"{base}r", f"{base}s", f"{base}t"]
+        if st == "actual_fv_total":
+            deps += [
+                f"sensor.oig_local_{box}_tbl_actual_fv_p1",
+                f"sensor.oig_local_{box}_tbl_actual_fv_p2",
+            ]
+        if st == "dc_in_fv_total":
+            deps += [
+                f"sensor.oig_local_{box}_tbl_dc_in_fv_p1",
+                f"sensor.oig_local_{box}_tbl_dc_in_fv_p2",
+            ]
+        if st in ("batt_batt_comp_p_charge", "batt_batt_comp_p_discharge"):
+            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
+
+        # Battery capacity helpers
+        if st in ("usable_battery_capacity", "missing_battery_kwh", "remaining_usable_capacity"):
+            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_prms_bat_min")
+
+        # Time to full/empty uses bat_p and bat_c
+        if st in ("time_to_full", "time_to_empty"):
+            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
+            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
+
+        # Deduplicate
+        return sorted(set(d for d in deps if d))
 
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
@@ -231,6 +295,20 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                         f"[{self.entity_id}] ⚠️ Restore state has zeroed/invalid data "
                         f"(charge_month={restore_charge_month}), keeping defaults"
                     )
+
+        # Nastavit listener na změny lokálních entit, které ovlivňují computed senzor
+        if not self._local_dependencies:
+            self._local_dependencies = self._build_local_dependencies()
+        if self._local_dependencies:
+            deps = self._local_dependencies
+
+            async def _on_dep_change(event):
+                # Přepočítat stav ihned po změně závislosti
+                self.async_write_ha_state()
+
+            self._dep_unsub = async_track_state_change_event(
+                self.hass, deps, _on_dep_change
+            )
 
     async def _reset_daily(self, *_: Any) -> None:
         now = datetime.utcnow()
@@ -711,3 +789,12 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except Exception as e:
             _LOGGER.error(f"[{self.entity_id}] Error checking data changes: {e}")
             return False
+
+    async def async_will_remove_from_hass(self) -> None:
+        await super().async_will_remove_from_hass()
+        self._cancel_reset()
+        if self._dep_unsub:
+            try:
+                self._dep_unsub()
+            except Exception:
+                pass
