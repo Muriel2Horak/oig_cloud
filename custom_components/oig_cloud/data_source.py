@@ -140,7 +140,7 @@ class DataSourceController:
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
-            cooldown=timedelta(milliseconds=get_local_event_debounce_ms(entry)),
+            cooldown=get_local_event_debounce_ms(entry) / 1000,
             immediate=False,
             function=self._poke_coordinator,
         )
