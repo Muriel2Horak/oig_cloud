@@ -82,6 +82,18 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         else:
             self._is_real_update_sensor = False
 
+    def _get_local_number(self, entity_id: str) -> Optional[float]:
+        """Read numeric value from HA state, returning None if missing/invalid."""
+        if not getattr(self, "hass", None):
+            return None
+        st = self.hass.states.get(entity_id)
+        if not st or st.state in (None, "unknown", "unavailable", ""):
+            return None
+        try:
+            return float(st.state)
+        except (ValueError, TypeError):
+            return None
+
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
         global _energy_stores
@@ -266,7 +278,16 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 + pv_data["ac_in"]["aci_wt"]
             )
         if self._sensor_type == "actual_aci_wtotal":
-            # OPRAVA: Pouze zde kontrola actual
+            # Nejprve zkusíme poskládat hodnotu přímo z HA entit (lokální senzory)
+            if self._box_id and self._box_id != "unknown":
+                base = f"sensor.oig_local_{self._box_id}_tbl_actual_aci_w"
+                wr = self._get_local_number(f"{base}r")
+                ws = self._get_local_number(f"{base}s")
+                wt = self._get_local_number(f"{base}t")
+                if wr is not None and ws is not None and wt is not None:
+                    return float(wr + ws + wt)
+
+            # Fallback na data v koordinatoru
             if "actual" not in pv_data:
                 return 0.0
             return float(
@@ -277,7 +298,16 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if self._sensor_type == "dc_in_fv_total":
             return float(pv_data["dc_in"]["fv_p1"] + pv_data["dc_in"]["fv_p2"])
         if self._sensor_type == "actual_fv_total":
-            # OPRAVA: Pouze zde kontrola actual
+            if self._box_id and self._box_id != "unknown":
+                p1 = self._get_local_number(
+                    f"sensor.oig_local_{self._box_id}_tbl_actual_fv_p1"
+                )
+                p2 = self._get_local_number(
+                    f"sensor.oig_local_{self._box_id}_tbl_actual_fv_p2"
+                )
+                if p1 is not None and p2 is not None:
+                    return float(p1 + p2)
+
             if "actual" not in pv_data:
                 return 0.0
             return float(pv_data["actual"]["fv_p1"] + pv_data["actual"]["fv_p2"])
