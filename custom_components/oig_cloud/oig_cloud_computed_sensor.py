@@ -129,23 +129,20 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         box = self._box_id
         st = self._sensor_type
 
-        # If sensor has direct local_entity_suffix/id, watch it
-        direct = self._get_local_value_for_sensor_type(st)
-        if direct is not None:
-            cfg_entity = None
-            try:
-                from .sensor_types import SENSOR_TYPES
+        # Direct mapping from SENSOR_TYPES (local_entity_id/suffix)
+        try:
+            from .sensor_types import SENSOR_TYPES
 
-                cfg = SENSOR_TYPES.get(st, {})
-                cfg_entity = cfg.get("local_entity_id")
-                if not cfg_entity:
-                    suffix = cfg.get("local_entity_suffix")
-                    if suffix:
-                        cfg_entity = f"sensor.oig_local_{box}_{suffix}"
-            except Exception:
-                cfg_entity = None
-            if cfg_entity:
-                deps.append(cfg_entity)
+            cfg = SENSOR_TYPES.get(st, {})
+            ent = cfg.get("local_entity_id")
+            if not ent:
+                suffix = cfg.get("local_entity_suffix")
+                if suffix:
+                    ent = f"sensor.oig_local_{box}_{suffix}"
+            if ent:
+                deps.append(ent)
+        except Exception:
+            pass
 
         # Special sums
         if st == "ac_in_aci_wtotal":
@@ -309,6 +306,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             self._dep_unsub = async_track_state_change_event(
                 self.hass, deps, _on_dep_change
             )
+            # Po registraci listenerů hned přepiš stav, aby byl čerstvý
+            self.async_write_ha_state()
 
     async def _reset_daily(self, *_: Any) -> None:
         now = datetime.utcnow()
