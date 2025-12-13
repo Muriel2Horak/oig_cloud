@@ -7337,12 +7337,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 baselines=None,
                 physical_min_capacity=physical_min_capacity,
                 effective_floor_capacity=effective_floor,
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity,
-                efficiency=efficiency,
-                baselines=None,
-                physical_min_capacity=physical_min_capacity,
             )
             timeline = result.get("optimal_timeline", [])
             total_cost = result.get("total_cost", 0.0)
