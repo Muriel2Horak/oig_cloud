@@ -94,6 +94,28 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except (ValueError, TypeError):
             return None
 
+    def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[float]:
+        """Get value from HA based on sensor definition (uses local_entity_id/suffix)."""
+        try:
+            from .sensor_types import SENSOR_TYPES
+
+            cfg = SENSOR_TYPES.get(sensor_type)
+            if not cfg:
+                return None
+
+            entity_id = cfg.get("local_entity_id")
+            if not entity_id:
+                suffix = cfg.get("local_entity_suffix")
+                if suffix and self._box_id and self._box_id != "unknown":
+                    entity_id = f"sensor.oig_local_{self._box_id}_{suffix}"
+
+            if not entity_id:
+                return None
+
+            return self._get_local_number(entity_id)
+        except Exception:
+            return None
+
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
         global _energy_stores
@@ -271,7 +293,20 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 self._last_update_time.isoformat() if self._last_update_time else None
             )
 
+        # Obecný fallback: pokud máme lokální entitu pro computed senzor, vezmeme její hodnotu
+        local_direct = self._get_local_value_for_sensor_type(self._sensor_type)
+        if local_direct is not None:
+            return local_direct
+
         if self._sensor_type == "ac_in_aci_wtotal":
+            # Preferuj lokální fáze AC_IN
+            if self._box_id and self._box_id != "unknown":
+                base = f"sensor.oig_local_{self._box_id}_tbl_ac_in_aci_w"
+                wr = self._get_local_number(f"{base}r")
+                ws = self._get_local_number(f"{base}s")
+                wt = self._get_local_number(f"{base}t")
+                if wr is not None and ws is not None and wt is not None:
+                    return float(wr + ws + wt)
             return float(
                 pv_data["ac_in"]["aci_wr"]
                 + pv_data["ac_in"]["aci_ws"]
@@ -296,6 +331,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 + pv_data["actual"]["aci_wt"]
             )
         if self._sensor_type == "dc_in_fv_total":
+            if self._box_id and self._box_id != "unknown":
+                p1 = self._get_local_number(
+                    f"sensor.oig_local_{self._box_id}_tbl_dc_in_fv_p1"
+                )
+                p2 = self._get_local_number(
+                    f"sensor.oig_local_{self._box_id}_tbl_dc_in_fv_p2"
+                )
+                if p1 is not None and p2 is not None:
+                    return float(p1 + p2)
             return float(pv_data["dc_in"]["fv_p1"] + pv_data["dc_in"]["fv_p2"])
         if self._sensor_type == "actual_fv_total":
             if self._box_id and self._box_id != "unknown":
@@ -316,8 +360,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return self._get_boiler_consumption(pv_data)
 
         if self._sensor_type == "batt_batt_comp_p_charge":
+            # Preferuj lokální hodnotu bat_p
+            p_bat = self._get_local_value_for_sensor_type("batt_batt_comp_p")
+            if p_bat is not None:
+                return self._get_batt_power_charge({"actual": {"bat_p": p_bat}})
             return self._get_batt_power_charge(pv_data)
         if self._sensor_type == "batt_batt_comp_p_discharge":
+            p_bat = self._get_local_value_for_sensor_type("batt_batt_comp_p")
+            if p_bat is not None:
+                return self._get_batt_power_discharge({"actual": {"bat_p": p_bat}})
             return self._get_batt_power_discharge(pv_data)
 
         if self._sensor_type.startswith("computed_batt_"):
@@ -398,6 +449,11 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         return None
 
     def _accumulate_energy(self, pv_data: Dict[str, Any]) -> Optional[float]:
+        # Pokud existuje lokální entita pro konkrétní computed energii, použij ji přímo
+        direct_local = self._get_local_value_for_sensor_type(self._sensor_type)
+        if direct_local is not None:
+            return direct_local
+
         try:
             # OPRAVA: Kontrola existence "actual" dat
             if "actual" not in pv_data:
