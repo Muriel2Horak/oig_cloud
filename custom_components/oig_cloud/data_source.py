@@ -206,7 +206,14 @@ class DataSourceController:
             return
 
         # Poke coordinator listeners; sensors will re-evaluate state from local entities.
-        self._debouncer.async_call()
+        self._schedule_debounced_poke()
+
+    @callback
+    def _schedule_debounced_poke(self) -> None:
+        try:
+            self.hass.async_create_task(self._debouncer.async_call())
+        except Exception:
+            pass
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:
@@ -277,7 +284,7 @@ class DataSourceController:
                 pass
         else:
             # Re-evaluate sensors immediately when returning to local mode
-            self._debouncer.async_call()
+            self._schedule_debounced_poke()
 
     async def _poke_coordinator(self) -> None:
         try:
