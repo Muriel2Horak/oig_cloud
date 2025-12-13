@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.helpers.event import async_track_point_in_time
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+from .data_source import DATA_SOURCE_CLOUD_ONLY, get_data_source_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -351,11 +352,20 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
 
         try:
-            # Standardní OIG data
-            stats = await self._try_get_stats()
+            # Standardní OIG data (cloud telemetry) – může být vypnuto v hybrid/local režimu,
+            # pokud lokální proxy běží (viz DataSourceController).
+            use_cloud = True
+            try:
+                if self.config_entry:
+                    state = get_data_source_state(self.hass, self.config_entry.entry_id)
+                    use_cloud = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
+            except Exception:
+                use_cloud = True
+
+            stats = await self._try_get_stats() if use_cloud else (self.data or {})
 
             # NOVÉ: Inicializovat notification manager pokud ještě není
-            if (
+            if use_cloud and (
                 not hasattr(self, "notification_manager")
                 or self.notification_manager is None
             ):
@@ -371,6 +381,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 except Exception as e:
                     _LOGGER.error(f"Failed to initialize notification manager: {e}")
                     self.notification_manager = None
+            elif not use_cloud:
+                self.notification_manager = None
 
             # NOVÉ: Debug notification manager status
             _LOGGER.debug(
@@ -427,7 +439,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"Last extended update: {self._last_extended_update}")
             _LOGGER.debug(f"Extended interval: {self.extended_interval}s")
 
-            if extended_enabled and should_update_extended:
+            if use_cloud and extended_enabled and should_update_extended:
                 _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
                 try:
                     today_from, today_to = self._today_range()

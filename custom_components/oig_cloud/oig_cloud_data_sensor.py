@@ -6,6 +6,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 
+from .data_source import (
+    DATA_SOURCE_CLOUD_ONLY,
+    DATA_SOURCE_HYBRID,
+    DATA_SOURCE_LOCAL_ONLY,
+    get_data_source_state,
+)
+
 
 # Importujeme pouze GridMode bez zbytku shared modulu
 class GridMode:
@@ -72,10 +79,28 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         self._attr_entity_category = self._sensor_config.get("entity_category")
 
         # Entity ID - KLÍČOVÉ: Tady se vytváří entity ID z sensor_type!
-        if coordinator.data:
-            self._box_id = list(coordinator.data.keys())[0]
-            # DŮLEŽITÉ: Entity ID používá sensor_type (anglický klíč)
-            self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+        self._box_id = self._resolve_box_id(coordinator)
+        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+
+    def _resolve_box_id(self, coordinator: Any) -> str:
+        try:
+            entry = getattr(coordinator, "config_entry", None)
+            if entry:
+                box_id = entry.options.get("box_id")
+                if isinstance(box_id, str) and box_id.isdigit():
+                    return box_id
+            data = getattr(coordinator, "data", None)
+            if isinstance(data, dict):
+                numeric = next((str(k) for k in data.keys() if str(k).isdigit()), None)
+                if numeric:
+                    return numeric
+                # last resort: preserve previous behavior
+                first = next(iter(data.keys()), None)
+                if first is not None:
+                    return str(first)
+        except Exception:
+            pass
+        return "unknown"
 
     @property
     def unique_id(self) -> str:
@@ -88,11 +113,9 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         from homeassistant.helpers.entity import DeviceInfo
         from .const import DOMAIN, DEFAULT_NAME
 
-        if not self.coordinator.data:
+        box_id = self._box_id
+        if not box_id or box_id == "unknown":
             return None
-
-        data = self.coordinator.data
-        box_id = list(data.keys())[0]
 
         return DeviceInfo(
             identifiers={(DOMAIN, box_id)},
@@ -165,6 +188,30 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                     return None
                 return notification_manager.get_unread_count()
 
+            # Hybrid/Local mode: federate values from oig_local sensors (no state writing)
+            entry = getattr(self.coordinator, "config_entry", None)
+            entry_id = getattr(entry, "entry_id", None)
+            if entry_id:
+                ds = get_data_source_state(self.hass, entry_id)
+                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY) and ds.local_available:
+                    local_value = self._get_local_value()
+                    if local_value is not None:
+                        # Apply the same per-sensor transforms as cloud path
+                        if self._sensor_type == "box_prms_mode":
+                            return self._get_mode_name(int(local_value), "cs")
+                        if self._sensor_type == "invertor_prms_to_grid":
+                            return self._get_local_grid_mode(local_value, "cs")
+                        if "ssr" in self._sensor_type:
+                            return self._get_ssrmode_name(local_value, "cs")
+                        if self._sensor_type == "boiler_manual_mode":
+                            return self._get_boiler_mode_name(local_value, "cs")
+                        if self._sensor_type in ("boiler_is_use", "box_prms_crct"):
+                            return self._get_on_off_name(local_value, "cs")
+                        return local_value
+
+                    if ds.effective_mode == DATA_SOURCE_LOCAL_ONLY:
+                        return None
+
             if self.coordinator.data is None:
                 return None
 
@@ -172,8 +219,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             if not data:
                 return None
 
-            box_id = list(data.keys())[0]
-            pv_data = data[box_id]
+            pv_data = data.get(self._box_id, {})
 
             # Extended logika
             try:
@@ -473,6 +519,62 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             return _LANGS["on"][language]
         return _LANGS["unknown"][language]
 
+    def _get_local_entity_id_for_config(self, sensor_config: Dict[str, Any]) -> Optional[str]:
+        entity_id = sensor_config.get("local_entity_id")
+        if entity_id:
+            return entity_id
+
+        suffix = sensor_config.get("local_entity_suffix")
+        if suffix and self._box_id and self._box_id != "unknown":
+            return f"sensor.oig_local_{self._box_id}_{suffix}"
+        return None
+
+    def _coerce_number(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        try:
+            return float(value) if "." in value else int(value)
+        except ValueError:
+            return value
+
+    def _get_local_value(self) -> Optional[Any]:
+        local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
+        if not local_entity_id:
+            return None
+        st = self.hass.states.get(local_entity_id)
+        if not st or st.state in (None, "unknown", "unavailable"):
+            return None
+        return self._coerce_number(st.state)
+
+    def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[Any]:
+        try:
+            from .sensor_types import SENSOR_TYPES
+
+            cfg = SENSOR_TYPES.get(sensor_type)
+            if not cfg:
+                return None
+            local_entity_id = self._get_local_entity_id_for_config(cfg)
+            if not local_entity_id:
+                return None
+            st = self.hass.states.get(local_entity_id)
+            if not st or st.state in (None, "unknown", "unavailable"):
+                return None
+            return self._coerce_number(st.state)
+        except Exception:
+            return None
+
+    def _get_local_grid_mode(self, node_value: Any, language: str) -> str:
+        try:
+            to_grid = int(node_value) if node_value is not None else 0
+            grid_enabled = int(self._get_local_value_for_sensor_type("box_prms_crct") or 0)
+            max_grid_feed = int(
+                self._get_local_value_for_sensor_type("invertor_prm1_p_max_feed_grid") or 0
+            )
+            # Queen mode not reliably available locally; default to king logic.
+            return self._grid_mode_king(grid_enabled, to_grid, max_grid_feed, language)
+        except Exception:
+            return _LANGS["unknown"][language]
+
     def get_node_value(self) -> Optional[Any]:
         """Get value from coordinator data using node_id and node_key."""
         try:
@@ -480,7 +582,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                 return None
 
             data = self.coordinator.data
-            box_data = list(data.values())[0] if data else None
+            box_data = data.get(self._box_id) if isinstance(data, dict) else None
 
             if not box_data:
                 return None

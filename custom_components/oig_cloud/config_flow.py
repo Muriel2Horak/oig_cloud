@@ -1122,6 +1122,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
             # Validace intervalů s českými zprávami
             standard = user_input.get("standard_scan_interval", 30)
             extended = user_input.get("extended_scan_interval", 300)
+            data_source_mode = user_input.get(
+                "data_source_mode", self._wizard_data.get("data_source_mode", "cloud_only")
+            )
+            proxy_stale = user_input.get(
+                "local_proxy_stale_minutes",
+                self._wizard_data.get("local_proxy_stale_minutes", 10),
+            )
+            debounce_ms = user_input.get(
+                "local_event_debounce_ms",
+                self._wizard_data.get("local_event_debounce_ms", 300),
+            )
 
             if standard < 30:
                 errors["standard_scan_interval"] = "interval_too_short"
@@ -1133,6 +1144,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
             elif extended > 3600:
                 errors["extended_scan_interval"] = "extended_interval_too_long"
 
+            if proxy_stale < 1:
+                errors["local_proxy_stale_minutes"] = "interval_too_short"
+            elif proxy_stale > 120:
+                errors["local_proxy_stale_minutes"] = "interval_too_long"
+
+            if debounce_ms < 0:
+                errors["local_event_debounce_ms"] = "interval_too_short"
+            elif debounce_ms > 5000:
+                errors["local_event_debounce_ms"] = "interval_too_long"
+
             if errors:
                 return self.async_show_form(
                     step_id="wizard_intervals",
@@ -1143,6 +1164,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             ): int,
                             vol.Optional(
                                 "extended_scan_interval", default=extended
+                            ): int,
+                            vol.Optional(
+                                "data_source_mode",
+                                default=data_source_mode,
+                            ): vol.In(["cloud_only", "hybrid", "local_only"]),
+                            vol.Optional(
+                                "local_proxy_stale_minutes",
+                                default=proxy_stale,
+                            ): int,
+                            vol.Optional(
+                                "local_event_debounce_ms",
+                                default=debounce_ms,
                             ): int,
                             vol.Optional("go_back", default=False): bool,
                         }
@@ -1165,6 +1198,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 {
                     vol.Optional("standard_scan_interval", default=30): int,
                     vol.Optional("extended_scan_interval", default=300): int,
+                    vol.Optional(
+                        "data_source_mode",
+                        default=self._wizard_data.get("data_source_mode", "cloud_only"),
+                    ): vol.In(["cloud_only", "hybrid", "local_only"]),
+                    vol.Optional(
+                        "local_proxy_stale_minutes",
+                        default=self._wizard_data.get("local_proxy_stale_minutes", 10),
+                    ): int,
+                    vol.Optional(
+                        "local_event_debounce_ms",
+                        default=self._wizard_data.get("local_event_debounce_ms", 300),
+                    ): int,
                     vol.Optional("go_back", default=False): bool,
                 }
             ),

@@ -228,7 +228,20 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data or not self._node_id or not self._node_key:
             return None
 
-        box_id = list(self.coordinator.data.keys())[0]
+        data = self.coordinator.data
+        box_id = None
+        try:
+            entry = getattr(self.coordinator, "config_entry", None)
+            if entry:
+                box_id = entry.options.get("box_id")
+            if not box_id and isinstance(data, dict):
+                box_id = next((str(k) for k in data.keys() if str(k).isdigit()), None)
+            if not box_id and isinstance(data, dict):
+                box_id = next(iter(data.keys()), None)
+        except Exception:
+            box_id = None
+        if box_id is None:
+            return None
         try:
             return self.coordinator.data[box_id][self._node_id][self._node_key]
         except (KeyError, TypeError):

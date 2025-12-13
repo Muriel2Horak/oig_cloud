@@ -25,6 +25,12 @@ from .const import (
     CONF_AUTO_MODE_PLAN,
 )
 from .oig_cloud_coordinator import OigCloudCoordinator
+from .data_source import (
+    DataSourceController,
+    DEFAULT_DATA_SOURCE_MODE,
+    DEFAULT_PROXY_STALE_MINUTES,
+    DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+)
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
 try:
@@ -54,6 +60,24 @@ analytics_device_info: Dict[str, Any] = {
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
+
+
+def _ensure_data_source_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    defaults = {
+        "data_source_mode": DEFAULT_DATA_SOURCE_MODE,
+        "local_proxy_stale_minutes": DEFAULT_PROXY_STALE_MINUTES,
+        "local_event_debounce_ms": DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+    }
+
+    options = dict(entry.options)
+    updated = False
+    for key, default in defaults.items():
+        if options.get(key) is None:
+            options[key] = default
+            updated = True
+
+    if updated:
+        hass.config_entries.async_update_entry(entry, options=options)
 
 
 def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -539,6 +563,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     _ensure_planner_option_defaults(hass, entry)
+    _ensure_data_source_option_defaults(hass, entry)
 
     # MIGRACE 1: enable_spot_prices -> enable_pricing
     if "enable_spot_prices" in entry.options:
@@ -687,6 +712,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raise ConfigEntryNotReady("No data received from OIG Cloud API")
 
         _LOGGER.debug(f"Coordinator data received: {len(coordinator.data)} devices")
+
+        # Persist box_id once so sensors can be initialized without relying on coordinator.data order
+        try:
+            options = dict(entry.options)
+            if not options.get("box_id") and coordinator.data:
+                box_id = next(
+                    (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
+                    None,
+                )
+                if box_id:
+                    options["box_id"] = box_id
+                    hass.config_entries.async_update_entry(entry, options=options)
+                    _LOGGER.info("Persisted box_id=%s into config entry options", box_id)
+        except Exception as err:
+            _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
 
         # OPRAVA: Inicializace notification manageru se správným error handling
         notification_manager = None
@@ -915,6 +955,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "coordinator": coordinator,
             "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
+            "data_source_controller": None,
+            "data_source_state": None,
             "solar_forecast": solar_forecast,
             "statistics_enabled": statistics_enabled,
             "analytics_device_info": analytics_device_info,
@@ -930,6 +972,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "enable_dashboard": dashboard_enabled,  # NOVÉ
             },
         }
+
+        # Data source controller (cloud/hybrid/local with proxy health fallback)
+        try:
+            data_source_controller = DataSourceController(hass, entry, coordinator)
+            await data_source_controller.async_start()
+            hass.data[DOMAIN][entry.entry_id]["data_source_controller"] = (
+                data_source_controller
+            )
+        except Exception as err:
+            _LOGGER.warning("DataSourceController start failed (non-critical): %s", err)
 
         # OPRAVA: Přidání ServiceShield dat do globálního úložiště pro senzory
         if service_shield:
@@ -1128,6 +1180,15 @@ async def async_unload_entry(
 
     # NOVÉ: Cleanup session manageru
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+        data_source_controller = hass.data[DOMAIN][entry.entry_id].get(
+            "data_source_controller"
+        )
+        if data_source_controller:
+            try:
+                await data_source_controller.async_stop()
+            except Exception as err:
+                _LOGGER.debug("DataSourceController stop failed: %s", err)
+
         session_manager = hass.data[DOMAIN][entry.entry_id].get("session_manager")
         if session_manager:
             _LOGGER.debug("Closing session manager")
