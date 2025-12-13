@@ -198,7 +198,13 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                     if local_value is not None:
                         # Apply the same per-sensor transforms as cloud path
                         if self._sensor_type == "box_prms_mode":
-                            return self._get_mode_name(int(local_value), "cs")
+                            try:
+                                # Local sensor can already expose human-readable text ("Home 1"/"Home UPS")
+                                if isinstance(local_value, str) and local_value.lower().startswith("home"):
+                                    return local_value
+                                return self._get_mode_name(int(local_value), "cs")
+                            except (ValueError, TypeError):
+                                return str(local_value)
                         if self._sensor_type == "invertor_prms_to_grid":
                             return self._get_local_grid_mode(local_value, "cs")
                         if "ssr" in self._sensor_type:
