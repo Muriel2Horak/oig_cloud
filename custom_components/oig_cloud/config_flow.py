@@ -2782,6 +2782,15 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "extended_scan_interval": self._wizard_data.get(
                     "extended_scan_interval", 300
                 ),
+                "data_source_mode": self._sanitize_data_source_mode(
+                    self._wizard_data.get("data_source_mode", "cloud_only")
+                ),
+                "local_proxy_stale_minutes": self._wizard_data.get(
+                    "local_proxy_stale_minutes", 10
+                ),
+                "local_event_debounce_ms": self._wizard_data.get(
+                    "local_event_debounce_ms", 300
+                ),
                 # Moduly
                 "enable_statistics": self._wizard_data.get("enable_statistics", True),
                 "enable_solar_forecast": self._wizard_data.get(
