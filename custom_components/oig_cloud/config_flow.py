@@ -336,6 +336,13 @@ class WizardMixin:
     """
 
     @staticmethod
+    def _sanitize_data_source_mode(mode: Optional[str]) -> str:
+        """Map legacy/alias values to supported ones."""
+        if mode == "hybrid":
+            return "local_only"
+        return mode or "cloud_only"
+
+    @staticmethod
     def _migrate_old_pricing_data(data: Dict[str, Any]) -> Dict[str, Any]:
         """Migrate old pricing configuration to new format.
 
