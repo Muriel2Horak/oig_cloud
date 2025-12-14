@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, Optional, Union
 from datetime import datetime
 
-from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition
+from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,21 +76,11 @@ class OigCloudShieldSensor(OigCloudSensor):
         self._attr_state_class = sensor_def.get("state_class")
 
         # OPRAVA: Bezpečné získání box_id s fallback (stejně jako v OigCloudSensor)
-        try:
-            if (
-                coordinator.data
-                and isinstance(coordinator.data, dict)
-                and coordinator.data
-            ):
-                self._box_id: str = list(coordinator.data.keys())[0]
-            else:
-                _LOGGER.warning(
-                    f"No coordinator data available for {sensor_type}, using fallback box_id"
-                )
-                self._box_id = "unknown"
-        except (TypeError, IndexError, KeyError) as e:
-            _LOGGER.error(f"Error getting box_id for {sensor_type}: {e}")
-            self._box_id = "unknown"
+        self._box_id: str = resolve_box_id(coordinator)
+        if self._box_id == "unknown":
+            _LOGGER.warning(
+                f"No coordinator data available for {sensor_type}, using fallback box_id"
+            )
 
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 

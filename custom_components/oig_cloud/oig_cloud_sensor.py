@@ -14,6 +14,36 @@ from .coordinator import OigCloudDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+def resolve_box_id(coordinator: Any) -> str:
+    """Resolve the real box_id/inverter_sn and ignore helper keys."""
+    try:
+        entry = getattr(coordinator, "config_entry", None)
+        candidates = []
+
+        if entry:
+            if hasattr(entry, "options"):
+                candidates.append(entry.options.get("box_id"))
+            if hasattr(entry, "data"):
+                candidates.append(entry.data.get("inverter_sn"))
+                candidates.append(entry.data.get("box_id"))
+
+        data = getattr(coordinator, "data", None)
+        if isinstance(data, dict):
+            numeric = next(
+                (str(k) for k in data.keys() if str(k).isdigit()), None
+            )
+            if numeric:
+                candidates.append(numeric)
+
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.isdigit():
+                return candidate
+    except Exception:
+        pass
+
+    return "unknown"
+
+
 def _get_sensor_definition(sensor_type: str) -> Dict[str, Any]:
     """Získání definice senzoru ze správného zdroje."""
     # Pouze hlavní SENSOR_TYPES - žádné výjimky
@@ -62,24 +92,11 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
             self._sensor_config = {}
 
         # OPRAVA: Bezpečné získání box_id s fallback
-        try:
-            if (
-                coordinator.data
-                and isinstance(coordinator.data, dict)
-                and coordinator.data
-            ):
-                self._box_id: str = list(coordinator.data.keys())[0]
-            else:
-                # Fallback - zkusíme získat box_id z konfigurace nebo použijeme placeholder
-                _LOGGER.warning(
-                    f"No coordinator data available for {sensor_type}, using fallback box_id"
-                )
-                self._box_id = "unknown"
-        except (TypeError, IndexError, KeyError) as e:
+        self._box_id: str = resolve_box_id(coordinator)
+        if self._box_id == "unknown":
             _LOGGER.warning(
-                f"Error getting box_id for {sensor_type}: {e}, using fallback"
+                f"No valid box_id found for {sensor_type}, using fallback 'unknown'"
             )
-            self._box_id = "unknown"
 
         _LOGGER.debug(f"Initialized sensor {sensor_type} with box_id: {self._box_id}")
 
@@ -99,21 +116,6 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = sensor_def.get("state_class")
         self._node_id: Optional[str] = sensor_def.get("node_id")
         self._node_key: Optional[str] = sensor_def.get("node_key")
-
-        # OPRAVA: Kontrola jestli coordinator.data není None
-        if self.coordinator.data and len(self.coordinator.data.keys()) > 0:
-            self._box_id: str = list(self.coordinator.data.keys())[0]
-        else:
-            # Fallback: zkusit získat z config_entry
-            if (
-                hasattr(self.coordinator, "config_entry")
-                and self.coordinator.config_entry
-            ):
-                self._box_id = self.coordinator.config_entry.data.get(
-                    "inverter_sn", "unknown"
-                )
-            else:
-                self._box_id = "unknown"
 
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         _LOGGER.debug(f"Created sensor {self.entity_id}")
@@ -148,8 +150,11 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return information about the device."""
         data: Dict[str, Any] = self.coordinator.data
-        box_id = list(data.keys())[0]
-        pv_data: Dict[str, Any] = data[box_id]
+        box_id = resolve_box_id(self.coordinator)
+        if box_id not in data and data:
+            # Fallback to first key if something is inconsistent
+            box_id = list(data.keys())[0]
+        pv_data: Dict[str, Any] = data.get(box_id, {})
 
         # Check if this is a Queen model
         is_queen: bool = bool(pv_data.get("queen", False))

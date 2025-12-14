@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, List, Tuple, Union  # PŘIDÁNO: Union
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 
-from .oig_cloud_sensor import OigCloudSensor
+from .oig_cloud_sensor import OigCloudSensor, resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,20 +30,8 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         # Debug logování při inicializaci
         _LOGGER.debug(f"💰 Initializing analytics sensor: {sensor_type}")
 
-        # OPRAVA: Získáme inverter_sn ze správného místa (stejně jako solar forecast)
-        inverter_sn = "unknown"
-
-        # Zkusíme získat z coordinator.config_entry.data
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
-            inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-
-        # Pokud stále unknown, zkusíme z coordinator.data
-        if inverter_sn == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            inverter_sn = first_device_key
-
         # OPRAVA: Nastavit _box_id a entity_id podle vzoru z computed sensors
-        self._box_id = inverter_sn
+        self._box_id = resolve_box_id(coordinator)
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
         # OPRAVA: Přímý import SENSOR_TYPES_SPOT (ale používáme SENSOR_TYPES pattern)

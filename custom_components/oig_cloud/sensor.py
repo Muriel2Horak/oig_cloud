@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .oig_cloud_sensor import resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -406,11 +407,7 @@ async def async_setup_entry(
 
     # === DEVICE INFO OBJEKTY ===
     # Vytvoříme device_info objekty jednou pro všechny senzory
-    inverter_sn = "unknown"
-    if coordinator.data:
-        inverter_sn = list(coordinator.data.keys())[0]
-    elif hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
-        inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
+    inverter_sn = resolve_box_id(coordinator)
 
     # Main OIG Device
 
