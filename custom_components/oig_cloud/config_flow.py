@@ -2689,6 +2689,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         # - `config_entry` property is read-only and only available after HA sets `hass`.
         # - In HA 2025.12, the config entry id is derived from `self.handler` (set by HA).
         super().__init__()
+        self._config_entry_id = config_entry.entry_id
 
         # Předvyplnit wizard_data z existující konfigurace – robustně proti chybějícím/poškozeným datům
         try:
