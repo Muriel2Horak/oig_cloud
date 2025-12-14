@@ -145,38 +145,49 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
             if precomputed_data:
                 last_update: Optional[str] = (precomputed_data or {}).get("last_update")
+
                 if plan == "autonomy":
                     stored_autonomy: Optional[list[Any]] = (precomputed_data or {}).get("timeline_autonomy")  # type: ignore[assignment]
                     if stored_autonomy:
-                        response_data = {
-                            "plan": "autonomy",
-                            "timeline": stored_autonomy,
-                            "metadata": {
-                                "box_id": box_id,
-                                "last_update": last_update,
-                                "points_count": len(stored_autonomy),
-                                "size_kb": round(
-                                    sys.getsizeof(str(stored_autonomy)) / 1024, 1
-                                ),
-                            },
+                        metadata = {
+                            "box_id": box_id,
+                            "last_update": last_update,
+                            "points_count": len(stored_autonomy),
+                            "size_kb": round(
+                                sys.getsizeof(str(stored_autonomy)) / 1024, 1
+                            ),
                         }
-                        return web.json_response(response_data)
-                else:
-                    stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline_hybrid")  # type: ignore[assignment]
-                    if stored_hybrid:
-                        response_data = {
-                            "plan": "hybrid",
-                            "timeline": stored_hybrid,
-                            "metadata": {
-                                "box_id": box_id,
-                                "last_update": last_update,
-                                "points_count": len(stored_hybrid),
-                                "size_kb": round(
-                                    sys.getsizeof(str(stored_hybrid)) / 1024, 1
-                                ),
-                            },
-                        }
-                        return web.json_response(response_data)
+                        # Keep legacy "timeline" for autonomy while also mirroring into "active"
+                        return web.json_response(
+                            {
+                                "plan": "autonomy",
+                                "timeline": stored_autonomy,
+                                "active": stored_autonomy,
+                                "metadata": metadata,
+                            }
+                        )
+
+                stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline_hybrid")  # type: ignore[assignment]
+                if stored_hybrid:
+                    metadata = {
+                        "box_id": box_id,
+                        "last_update": last_update,
+                        "points_count": len(stored_hybrid),
+                        "size_kb": round(
+                            sys.getsizeof(str(stored_hybrid)) / 1024, 1
+                        ),
+                    }
+                    # Return in the same shape as the live path so the dashboard
+                    # can always consume `active` (and keep `timeline` for backward compatibility).
+                    response_data = {
+                        "plan": "hybrid",
+                        "active": stored_hybrid,
+                        "timeline": stored_hybrid,
+                        "metadata": metadata,
+                    }
+                    if timeline_type in ("baseline", "both"):
+                        response_data["baseline"] = []  # baseline is only available from live entity
+                    return web.json_response(response_data)
 
             # FALLBACK: Find sensor entity and attempt to serve from its data
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"

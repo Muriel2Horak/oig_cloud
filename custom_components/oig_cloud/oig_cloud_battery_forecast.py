@@ -6934,12 +6934,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             await self._precomputed_store.async_save(precomputed_data)
 
             duration = (dt_util.now() - start_time).total_seconds()
+            hybrid_cost = (
+                unified_cost_tile_hybrid.get("today", {}).get("plan_total_cost") or 0.0
+            )
+            autonomy_cost = (
+                unified_cost_tile_autonomy.get("today", {}).get("plan_total_cost") or 0.0
+            )
             _LOGGER.info(
                 f"✅ Precomputed UI data saved to storage in {duration:.2f}s "
                 f"(hybrid: {len(detail_tabs_hybrid.get('today', {}).get('mode_blocks', []))} blocks, "
                 f"autonomy: {len(detail_tabs_autonomy.get('today', {}).get('mode_blocks', []))} blocks, "
-                f"hybrid_cost: {unified_cost_tile_hybrid.get('today', {}).get('plan_total_cost', 0):.2f} Kč, "
-                f"autonomy_cost: {unified_cost_tile_autonomy.get('today', {}).get('plan_total_cost', 0):.2f} Kč)"
+                f"hybrid_cost: {hybrid_cost:.2f} Kč, "
+                f"autonomy_cost: {autonomy_cost:.2f} Kč)"
             )
 
         except Exception as e:
@@ -9416,6 +9422,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 dynamic_summary["total_cost"] - standard_summary["total_cost"], 2
             )
 
+            active_plan_getter = getattr(self, "_get_active_plan_key", None)
+            active_plan = (
+                active_plan_getter() if callable(active_plan_getter) else "hybrid"
+            )
+            if active_plan not in ("hybrid", "autonomy"):
+                active_plan = "hybrid"
+
             tomorrow_std = ((hybrid_tile or {}).get("tomorrow", {}) or {}).get(
                 "plan_total_cost"
             )
@@ -9424,7 +9437,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             summary = {
-                "active_plan": self._get_active_plan_key(),
+                "active_plan": active_plan,
                 "actual_spent": actual_spent,
                 "plans": {
                     "standard": standard_summary,
