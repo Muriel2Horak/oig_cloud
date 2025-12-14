@@ -56,7 +56,11 @@ def get_effective_mode(hass: HomeAssistant, entry_id: str) -> str:
 
 
 def get_configured_mode(entry: ConfigEntry) -> str:
-    return entry.options.get("data_source_mode", DEFAULT_DATA_SOURCE_MODE)
+    mode = entry.options.get("data_source_mode", DEFAULT_DATA_SOURCE_MODE)
+    if mode == DATA_SOURCE_HYBRID:
+        _LOGGER.debug("Data source mode 'hybrid' mapped to 'local_only' for compatibility")
+        return DATA_SOURCE_LOCAL_ONLY
+    return mode
 
 
 def get_proxy_stale_minutes(entry: ConfigEntry) -> int:

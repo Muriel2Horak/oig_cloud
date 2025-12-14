@@ -65,7 +65,7 @@
           "extended_scan_interval": "Rozšířená data (sekund)",
           "enable_cloud_notifications": "🔔 Cloud notifikace",
           "notifications_scan_interval": "Notifikace interval (sekund)",
-          "data_source_mode": "Zdroj telemetrie",
+          "data_source_mode": "Zdroj telemetrie (cloud vs. lokální)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "local_event_debounce_ms": "Local event debounce (ms)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -75,8 +75,8 @@
           "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)",
           "enable_cloud_notifications": "Povolit stahování cloud notifikací (typicky stačí 1× za několik minut)",
           "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
-          "data_source_mode": "Cloud only = vše z cloudu; Hybrid = lokální mapping pokud je proxy čerstvá, jinak cloud; Local only = jen lokální mapping",
-          "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit",
+          "data_source_mode": "☁️ Cloud only = jen OIG Cloud; 🏠 Local only = lokální senzory, při výpadku proxy automaticky fallback na cloud a po obnovení se vrátí",
+          "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit (platí pro Local only)",
           "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
@@ -338,7 +338,7 @@
           "extended_scan_interval": "Rozšířená data (sekund)",
           "enable_cloud_notifications": "🔔 Cloud notifikace",
           "notifications_scan_interval": "Notifikace interval (sekund)",
-          "data_source_mode": "Zdroj telemetrie",
+          "data_source_mode": "Zdroj telemetrie (cloud vs. lokální)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "local_event_debounce_ms": "Local event debounce (ms)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -348,8 +348,8 @@
           "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)",
           "enable_cloud_notifications": "Povolit stahování cloud notifikací (typicky stačí 1× za několik minut)",
           "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
-          "data_source_mode": "Cloud only = vše z cloudu; Hybrid = lokální mapping pokud je proxy čerstvá, jinak cloud; Local only = jen lokální mapping",
-          "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit",
+          "data_source_mode": "☁️ Cloud only = jen OIG Cloud; 🏠 Local only = lokální senzory, při výpadku proxy automaticky fallback na cloud a po obnovení se vrátí",
+          "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit (platí pro Local only)",
           "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
@@ -498,6 +498,9 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       }
+    },
+    "abort": {
+      "reconfigure_successful": "Nastavení bylo úspěšně uloženo"
     }
   }
 }

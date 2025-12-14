@@ -1124,8 +1124,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
             # Validace intervalů s českými zprávami
             standard = user_input.get("standard_scan_interval", 30)
             extended = user_input.get("extended_scan_interval", 300)
-            data_source_mode = user_input.get(
-                "data_source_mode", self._wizard_data.get("data_source_mode", "cloud_only")
+            data_source_mode = self._sanitize_data_source_mode(
+                user_input.get(
+                    "data_source_mode", self._wizard_data.get("data_source_mode", "cloud_only")
+                )
             )
             proxy_stale = user_input.get(
                 "local_proxy_stale_minutes",
@@ -1156,7 +1158,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             elif debounce_ms > 5000:
                 errors["local_event_debounce_ms"] = "interval_too_long"
 
-            if data_source_mode in ("hybrid", "local_only"):
+            if data_source_mode == "local_only":
                 proxy_state = (
                     self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
                     if self.hass
@@ -1179,10 +1181,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             vol.Optional(
                                 "extended_scan_interval", default=extended
                             ): int,
-                            vol.Optional(
-                                "data_source_mode",
-                                default=data_source_mode,
-                            ): vol.In(["cloud_only", "hybrid", "local_only"]),
+                            vol.Optional("data_source_mode", default=data_source_mode): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=[
+                                        {"value": "cloud_only", "label": "☁️ Cloud only"},
+                                        {
+                                            "value": "local_only",
+                                            "label": "🏠 Local only (fallback na cloud při výpadku)",
+                                        },
+                                    ],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                )
+                            ),
                             vol.Optional(
                                 "local_proxy_stale_minutes",
                                 default=proxy_stale,
@@ -1206,16 +1216,28 @@ Kliknutím na "Odeslat" spustíte průvodce.
             next_step = self._get_next_step("wizard_intervals")
             return await getattr(self, f"async_step_{next_step}")()
 
+        data_source_mode = self._sanitize_data_source_mode(
+            self._wizard_data.get("data_source_mode", "cloud_only")
+        )
+
         return self.async_show_form(
             step_id="wizard_intervals",
             data_schema=vol.Schema(
                 {
                     vol.Optional("standard_scan_interval", default=30): int,
                     vol.Optional("extended_scan_interval", default=300): int,
-                    vol.Optional(
-                        "data_source_mode",
-                        default=self._wizard_data.get("data_source_mode", "cloud_only"),
-                    ): vol.In(["cloud_only", "hybrid", "local_only"]),
+                    vol.Optional("data_source_mode", default=data_source_mode): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": "cloud_only", "label": "☁️ Cloud only"},
+                                {
+                                    "value": "local_only",
+                                    "label": "🏠 Local only (fallback na cloud při výpadku)",
+                                },
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Optional(
                         "local_proxy_stale_minutes",
                         default=self._wizard_data.get("local_proxy_stale_minutes", 10),
@@ -2265,6 +2287,13 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         super().__init__()
+
+    @staticmethod
+    def _sanitize_data_source_mode(mode: Optional[str]) -> str:
+        """Map legacy values to supported ones."""
+        if mode == "hybrid":
+            return "local_only"
+        return mode or "cloud_only"
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
