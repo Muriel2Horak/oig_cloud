@@ -2676,7 +2676,8 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception(
                 "❌ Failed to start options flow, falling back to legacy handler"
             )
-            return _OigCloudOptionsFlowHandlerLegacy(config_entry)
+        # Hard fallback: always provide functional handler to avoid 500
+        return _OigCloudOptionsFlowHandlerLegacy(config_entry)
 
 
 class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
