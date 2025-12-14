@@ -888,4 +888,23 @@
       }
     }
   }
+  ,
+  "entity": {
+    "sensor": {
+      "data_source": {
+        "name": "Data source",
+        "state": {
+          "local": "Local",
+          "cloud": "Cloud"
+        },
+        "attributes": {
+          "configured_mode": { "name": "Configured mode" },
+          "effective_mode": { "name": "Effective mode" },
+          "local_available": { "name": "Local available" },
+          "last_local_data": { "name": "Last local data" },
+          "reason": { "name": "Reason" }
+        }
+      }
+    }
+  }
 }

@@ -30,6 +30,7 @@ class OigCloudDataSourceSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = None
     _attr_icon = "mdi:database-sync"
+    _attr_translation_key = "data_source"
 
     def __init__(self, hass: HomeAssistant, coordinator: Any, entry: Any) -> None:
         self.hass = hass

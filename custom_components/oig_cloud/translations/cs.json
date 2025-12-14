@@ -694,4 +694,23 @@
       "description": "Zru\u0161\u00ed aktivn\u00ed pl\u00e1n oh\u0159evu bojleru a odstran\u00ed napl\u00e1novan\u00e9 automatizace."
     }
   }
+,
+  "entity": {
+    "sensor": {
+      "data_source": {
+        "name": "Zdroj dat",
+        "state": {
+          "local": "Lokální",
+          "cloud": "Cloud"
+        },
+        "attributes": {
+          "configured_mode": { "name": "Nastavený režim" },
+          "effective_mode": { "name": "Používaný režim" },
+          "local_available": { "name": "Lokální dostupné" },
+          "last_local_data": { "name": "Poslední lokální data" },
+          "reason": { "name": "Důvod" }
+        }
+      }
+    }
+  }
 }
