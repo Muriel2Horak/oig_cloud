@@ -2670,7 +2670,13 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> "OigCloudOptionsFlowHandler":
         """Get options flow handler."""
-        return OigCloudOptionsFlowHandler(config_entry)
+        try:
+            return OigCloudOptionsFlowHandler(config_entry)
+        except Exception:  # pragma: no cover - nechceme spadnout na 500
+            _LOGGER.exception(
+                "❌ Failed to start options flow, falling back to legacy handler"
+            )
+            return _OigCloudOptionsFlowHandlerLegacy(config_entry)
 
 
 class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
