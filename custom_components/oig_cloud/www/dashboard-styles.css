@@ -6690,6 +6690,37 @@
     color: rgb(255, 255, 255, 0.7);
 }
 
+/* --- Value micro-animations to make changes feel alive --- */
+.stat-value,
+.day-stat-value,
+.card .value,
+.tile-value,
+.price-value {
+    transition: color 0.25s ease, transform 0.25s ease, text-shadow 0.35s ease;
+    will-change: transform, color;
+}
+
+.stat-item.positive .stat-value,
+.stat-item.negative .stat-value,
+.price-card .price-value {
+    animation: value-pop 0.7s ease;
+}
+
+@keyframes value-pop {
+    0% {
+        transform: scale(0.98);
+        text-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+    45% {
+        transform: scale(1.04);
+        text-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+    100% {
+        transform: scale(1);
+        text-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+}
+
 /* Responsive */
 @media (width <= 1024px) {
     .interval-group-stats {

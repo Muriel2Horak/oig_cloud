@@ -2684,26 +2684,35 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         # - In HA 2025.12, the config entry id is derived from `self.handler` (set by HA).
         super().__init__()
 
-        # Předvyplnit wizard_data z existující konfigurace
-        # Nejdříve zkopírovat všechna existující data
-        self._wizard_data = dict(config_entry.options)
+        # Předvyplnit wizard_data z existující konfigurace – robustně proti chybějícím/poškozeným datům
+        try:
+            backend_options = dict(config_entry.options)
+        except Exception:  # pragma: no cover - defensivní logika
+            _LOGGER.exception(
+                "OptionsFlow init: failed to read existing options, using empty defaults"
+            )
+            backend_options = {}
 
-        # Převést backend atributy zpět na frontend atributy pro UI
-        frontend_pricing = self._map_backend_to_frontend(config_entry.options)
-        self._wizard_data.update(frontend_pricing)
+        frontend_pricing = {}
+        try:
+            frontend_pricing = self._map_backend_to_frontend(backend_options)
+        except Exception:  # pragma: no cover - defensivní logika
+            _LOGGER.exception("OptionsFlow init: pricing mapping failed, keeping raw")
 
-        # Přidat přihlašovací údaje z data
+        self._wizard_data = backend_options | frontend_pricing
+
+        # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
-        # Password nečteme z bezpečnostních důvodů
 
-        # Debug log
         _LOGGER.info(
-            f"🔧 OptionsFlow: Initialized with {len(self._wizard_data)} existing options"
+            "🔧 OptionsFlow: Initialized with %s existing options",
+            len(self._wizard_data),
         )
         _LOGGER.debug(
-            f"🔧 OptionsFlow: Existing options keys: {list(self._wizard_data.keys())}"
+            "🔧 OptionsFlow: Existing options keys: %s",
+            list(self._wizard_data.keys()),
         )
-        _LOGGER.debug(f"🔧 OptionsFlow: Frontend pricing data: {frontend_pricing}")
+        _LOGGER.debug("🔧 OptionsFlow: Frontend pricing data: %s", frontend_pricing)
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
