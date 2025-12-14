@@ -207,6 +207,7 @@ backups/
 
 # Development documentation (local only)
 .dev_docs/
+local_dev/
 
 # Docker volumes
 config/
