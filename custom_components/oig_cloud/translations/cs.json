@@ -341,6 +341,7 @@
       "interval_too_long": "\u26a0\ufe0f Standardn\u00ed interval je p\u0159\u00edli\u0161 dlouh\u00fd (maxim\u00e1ln\u011b 300 sekund = 5 minut)",
       "extended_interval_too_short": "\u26a0\ufe0f Roz\u0161\u00ed\u0159en\u00fd interval je p\u0159\u00edli\u0161 kr\u00e1tk\u00fd (minim\u00e1ln\u011b 300 sekund = 5 minut)",
       "extended_interval_too_long": "\u26a0\ufe0f Roz\u0161\u00ed\u0159en\u00fd interval je p\u0159\u00edli\u0161 dlouh\u00fd (maxim\u00e1ln\u011b 3600 sekund = 60 minut)",
+      "local_proxy_missing": "\u26a0\ufe0f Pro re\u017eim 'Lok\u00e1ln\u00ed' nebo 'Hybrid' je pot\u0159eba entita sensor.oig_local_oig_proxy_proxy_status_last_data z integrace OIG Local",
       "requires_solar_forecast": "\u26a0\ufe0f Predikce baterie vy\u017eaduje zapnutou sol\u00e1rn\u00ed p\u0159edpov\u011b\u010f",
       "required_for_battery": "\u26a0\ufe0f Predikce baterie vy\u017eaduje zapnut\u00e9 roz\u0161\u00ed\u0159en\u00e9 senzory",
       "dashboard_requires_all": "\u26a0\ufe0f Dashboard vy\u017eaduje v\u0161echny ostatn\u00ed moduly (Statistiky, Sol\u00e1rn\u00ed p\u0159edpov\u011b\u010f, Predikce baterie, Cenov\u00e9 senzory, Spotov\u00e9 ceny, Roz\u0161\u00ed\u0159en\u00e9 senzory)",

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.core import callback
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
@@ -18,6 +19,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_AUTO_MODE_SWITCH,
 )
+from .data_source import PROXY_LAST_DATA_ENTITY_ID
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -1153,6 +1155,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 errors["local_event_debounce_ms"] = "interval_too_short"
             elif debounce_ms > 5000:
                 errors["local_event_debounce_ms"] = "interval_too_long"
+
+            if data_source_mode in ("hybrid", "local_only"):
+                proxy_state = (
+                    self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+                    if self.hass
+                    else None
+                )
+                if proxy_state is None or proxy_state.state in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+                ):
+                    errors["data_source_mode"] = "local_proxy_missing"
 
             if errors:
                 return self.async_show_form(

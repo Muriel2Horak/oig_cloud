@@ -269,6 +269,7 @@
       "interval_too_long": "⚠️ Standardní interval je příliš dlouhý (maximálně 300 sekund = 5 minut)",
       "extended_interval_too_short": "⚠️ Rozšířený interval je příliš krátký (minimálně 300 sekund = 5 minut)",
       "extended_interval_too_long": "⚠️ Rozšířený interval je příliš dlouhý (maximálně 3600 sekund = 60 minut)",
+      "local_proxy_missing": "⚠️ Pro režim 'Lokální' nebo 'Hybrid' je potřeba entita sensor.oig_local_oig_proxy_proxy_status_last_data z integrace OIG Local",
       "requires_solar_forecast": "⚠️ Predikce baterie vyžaduje zapnutou solární předpověď",
       "required_for_battery": "⚠️ Predikce baterie vyžaduje zapnuté rozšířené senzory",
       "dashboard_requires_all": "⚠️ Dashboard vyžaduje všechny ostatní moduly (Statistiky, Solární předpověď, Predikce baterie, Cenové senzory, Spotové ceny, Rozšířené senzory)",

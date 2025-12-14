@@ -341,6 +341,7 @@
       "interval_too_long": "\u26a0\ufe0f Standard interval is too long (maximum 300 seconds = 5 minutes)",
       "extended_interval_too_short": "\u26a0\ufe0f Extended interval is too short (minimum 300 seconds = 5 minutes)",
       "extended_interval_too_long": "\u26a0\ufe0f Extended interval is too long (maximum 3600 seconds = 60 minutes)",
+      "local_proxy_missing": "\u26a0\ufe0f For 'Local' or 'Hybrid' mode you need entity sensor.oig_local_oig_proxy_proxy_status_last_data from OIG Local integration",
       "requires_solar_forecast": "\u26a0\ufe0f Battery prediction requires solar forecast to be enabled",
       "required_for_battery": "\u26a0\ufe0f Battery prediction requires extended sensors to be enabled",
       "dashboard_requires_all": "\u26a0\ufe0f Dashboard requires all other modules (Statistics, Solar forecast, Battery prediction, Price sensors, Spot prices, Extended sensors)",
