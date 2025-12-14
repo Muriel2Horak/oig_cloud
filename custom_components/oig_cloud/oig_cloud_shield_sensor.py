@@ -440,30 +440,38 @@ class OigCloudShieldSensor(OigCloudSensor):
     @property
     def unique_id(self) -> str:
         """Jedinečné ID senzoru."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            # Přidáme verzi do unique_id pro vyřešení unit problému
-            return f"oig_cloud_shield_{box_id}_{self._sensor_type}_v2"
-        return f"oig_cloud_shield_{self._sensor_type}_v2"
+        box_id = self._resolve_box_id()
+        # Přidáme verzi do unique_id pro vyřešení unit problému
+        return f"oig_cloud_shield_{box_id}_{self._sensor_type}_v2"
 
     @property
     def device_info(self) -> Dict[str, Any]:
         """Informace o zařízení - ServiceShield bude v separátním Shield zařízení."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return {
-                "identifiers": {(DOMAIN, f"{box_id}_shield")},
-                "name": f"ServiceShield {box_id}",
-                "manufacturer": "OIG",
-                "model": "Shield",
-                "via_device": (DOMAIN, box_id),
-            }
+        box_id = self._resolve_box_id()
         return {
-            "identifiers": {(DOMAIN, "shield")},
-            "name": "ServiceShield",
+            "identifiers": {(DOMAIN, f"{box_id}_shield")},
+            "name": f"ServiceShield {box_id}",
             "manufacturer": "OIG",
             "model": "Shield",
+            "via_device": (DOMAIN, box_id),
         }
+
+    def _resolve_box_id(self) -> str:
+        """Return stable box_id/inverter_sn (avoid spot_prices/unknown)."""
+        from .oig_cloud_sensor import resolve_box_id
+
+        box_id = resolve_box_id(self.coordinator)
+        if not box_id or box_id == "unknown":
+            try:
+                import re
+
+                title = getattr(getattr(self.coordinator, "config_entry", None), "title", "") or ""
+                m = re.search(r"(\\d{6,})", title)
+                if m:
+                    box_id = m.group(1)
+            except Exception:
+                box_id = None
+        return box_id or "unknown"
 
     @property
     def available(self) -> bool:

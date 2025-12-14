@@ -15,29 +15,82 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def resolve_box_id(coordinator: Any) -> str:
-    """Resolve the real box_id/inverter_sn and ignore helper keys."""
+    """Resolve the real box_id/inverter_sn and ignore helper keys.
+
+    Prefer values persisted in the config entry, but keep backward-compatible
+    autodetekci:
+    1) forced_box_id (pokud jsme už jednou zjistili)
+    2) options/data box_id nebo inverter_sn
+    3) číslo v title
+    4) hodnoty z lokálních entit (oig_local)
+    5) numerické klíče v coordinator.data
+    """
+    def _extract_digits(text: Any) -> Optional[str]:
+        if not isinstance(text, str):
+            return None
+        import re
+
+        m = re.search(r"(\\d{6,})", text)
+        return m.group(1) if m else None
+
+    def _is_valid(val: Any) -> bool:
+        return isinstance(val, str) and val.isdigit()
+
     try:
+        forced = getattr(coordinator, "forced_box_id", None)
+        if _is_valid(forced):
+            return forced
+
         entry = getattr(coordinator, "config_entry", None)
-        candidates = []
-
         if entry:
-            if hasattr(entry, "options"):
-                candidates.append(entry.options.get("box_id"))
-            if hasattr(entry, "data"):
-                candidates.append(entry.data.get("inverter_sn"))
-                candidates.append(entry.data.get("box_id"))
+            # Použij nejdřív hodnoty uložené v config entry
+            for key in ("box_id", "inverter_sn"):
+                if hasattr(entry, "options"):
+                    val = entry.options.get(key)
+                    if _is_valid(val):
+                        return val
+                if hasattr(entry, "data"):
+                    val = entry.data.get(key)
+                    if _is_valid(val):
+                        return val
+            # Další pokus: číslo vyčtené z title (např. "ČEZ Battery Box Home 2206237016")
+            from_title = _extract_digits(getattr(entry, "title", ""))
+            if _is_valid(from_title):
+                return from_title
 
+        # Pokus z lokálních entit (oig_local proxy)
+        hass = getattr(coordinator, "hass", None)
+        if hass:
+            try:
+                # Přímý senzor s box_id
+                state = hass.states.get("sensor.oig_local_oig_proxy_proxy_status_box_device_id")
+                if state and _is_valid(state.state):
+                    return state.state
+            except Exception:
+                pass
+            try:
+                import re
+                from homeassistant.helpers import entity_registry as er
+
+                reg = er.async_get(hass)
+                ids: set[str] = set()
+                pat = re.compile(r"^sensor\\.oig_local_(\\d+)_")
+                for ent in reg.entities.values():
+                    m = pat.match(ent.entity_id)
+                    if m:
+                        ids.add(m.group(1))
+                if len(ids) == 1:
+                    return next(iter(ids))
+            except Exception:
+                pass
+
+        # Fallback – zkusíme zjistit box_id z klíčů dat koordinátoru
         data = getattr(coordinator, "data", None)
-        if isinstance(data, dict):
-            numeric = next(
-                (str(k) for k in data.keys() if str(k).isdigit()), None
-            )
+        if isinstance(data, dict) and data:
+            # Preferujeme numerické klíče (reálné box ID)
+            numeric = next((str(k) for k in data.keys() if str(k).isdigit()), None)
             if numeric:
-                candidates.append(numeric)
-
-        for candidate in candidates:
-            if isinstance(candidate, str) and candidate.isdigit():
-                return candidate
+                return numeric
     except Exception:
         pass
 
@@ -130,8 +183,15 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         # For sensors that need to access nodes
         if self._node_id is not None:
             # Check if the node exists in the data
-            box_id = list(self.coordinator.data.keys())[0]
-            if self._node_id not in self.coordinator.data[box_id]:
+            box_id = self._box_id
+            if not box_id or box_id == "unknown":
+                return False
+            box_data = (
+                self.coordinator.data.get(box_id, {})
+                if isinstance(self.coordinator.data, dict)
+                else {}
+            )
+            if self._node_id not in box_data:
                 return False
 
         return True
@@ -149,12 +209,9 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return information about the device."""
-        data: Dict[str, Any] = self.coordinator.data
-        box_id = resolve_box_id(self.coordinator)
-        if box_id not in data and data:
-            # Fallback to first key if something is inconsistent
-            box_id = list(data.keys())[0]
-        pv_data: Dict[str, Any] = data.get(box_id, {})
+        box_id = self._box_id
+        data: Dict[str, Any] = self.coordinator.data or {}
+        pv_data: Dict[str, Any] = data.get(box_id, {}) if isinstance(data, dict) else {}
 
         # Check if this is a Queen model
         is_queen: bool = bool(pv_data.get("queen", False))
@@ -233,22 +290,12 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data or not self._node_id or not self._node_key:
             return None
 
-        data = self.coordinator.data
-        box_id = None
-        try:
-            entry = getattr(self.coordinator, "config_entry", None)
-            if entry:
-                box_id = entry.options.get("box_id")
-            if not box_id and isinstance(data, dict):
-                box_id = next((str(k) for k in data.keys() if str(k).isdigit()), None)
-            if not box_id and isinstance(data, dict):
-                box_id = next(iter(data.keys()), None)
-        except Exception:
-            box_id = None
-        if box_id is None:
+        box_id = self._box_id
+        if not box_id or box_id == "unknown":
             return None
         try:
-            return self.coordinator.data[box_id][self._node_id][self._node_key]
+            data: Dict[str, Any] = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+            return data[box_id][self._node_id][self._node_key]
         except (KeyError, TypeError):
             _LOGGER.debug(
                 f"Could not find {self._node_id}.{self._node_key} in data for sensor {self.entity_id}"

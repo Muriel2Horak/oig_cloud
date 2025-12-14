@@ -162,26 +162,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání box_id z coordinator.data (stejně jako v sensor.py řádek 377)
-        # Coordinator vždy má data po async_config_entry_first_refresh()
-        self._data_key = "unknown"
-        if (
-            coordinator
-            and coordinator.data
-            and isinstance(coordinator.data, dict)
-            and coordinator.data
-        ):
-            self._data_key = list(coordinator.data.keys())[0]
-            _LOGGER.debug(f"Got box_id from coordinator.data: {self._data_key}")
-        else:
+        # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
+            self._box_id = "unknown"
+
+        if self._box_id == "unknown":
             _LOGGER.warning(
-                "Battery forecast sensor: coordinator has no data, using box_id='unknown'"
+                "Battery forecast sensor: unable to resolve box_id, using 'unknown' (sensor will be unstable)"
             )
 
         # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
-        self._box_id = self._data_key
         # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
-        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
+        self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         self._attr_icon = "mdi:battery-charging-60"
         self._attr_native_unit_of_measurement = "kWh"
@@ -15421,9 +15417,12 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._config = SENSOR_TYPES.get(sensor_type, {})
 
         # Entity info
-        self._box_id = (
-            list(coordinator.data.keys())[0] if coordinator.data else "unknown"
-        )
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
+            self._box_id = "unknown"
         # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
         self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
@@ -15959,10 +15958,12 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         self._config_entry = config_entry
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Získání box_id z coordinator.data
-        if coordinator and coordinator.data and isinstance(coordinator.data, dict):
-            self._box_id = list(coordinator.data.keys())[0]
-        else:
+        # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
             self._box_id = "unknown"
 
         # Set device info early - type: ignore because DeviceInfo is a TypedDict
@@ -16545,18 +16546,15 @@ class OigCloudBatteryForecastPerformanceSensor(
         self._device_info = device_info
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
-        # Box ID
-        self._data_key = "unknown"
-        if (
-            coordinator
-            and coordinator.data
-            and isinstance(coordinator.data, dict)
-            and coordinator.data
-        ):
-            self._data_key = list(coordinator.data.keys())[0]
+        # Box ID (stabilní: config entry → proxy → coordinator numeric keys)
+        try:
+            from .oig_cloud_sensor import resolve_box_id
 
-        self._box_id = self._data_key
-        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
+            self._box_id = "unknown"
+
+        self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         self._attr_icon = "mdi:chart-line"
         self._attr_native_unit_of_measurement = "%"

@@ -35,6 +35,7 @@ class OigCloudDataSourceSensor(SensorEntity):
         self.hass = hass
         self.coordinator = coordinator
         self.entry = entry
+        # Použij stejnou autodetekci jako ostatní senzory
         self._box_id = resolve_box_id(coordinator)
         self._attr_name = "Data source"
         self.entity_id = f"sensor.oig_{self._box_id}_data_source"

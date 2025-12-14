@@ -657,9 +657,27 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             # Importujeme battery forecast třídu
             from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
 
-            # Získat inverter_sn z coordinator.data (stejně jako v sensor.py)
-            inverter_sn: str = list(self.data.keys())[0]
-            _LOGGER.debug(f"🔍 Inverter SN from coordinator.data: {inverter_sn}")
+            # Získat inverter_sn deterministicky (config entry → numerické klíče v self.data)
+            inverter_sn: Optional[str] = None
+            try:
+                if self.config_entry:
+                    opt_box = self.config_entry.options.get("box_id")
+                    if isinstance(opt_box, str) and opt_box.isdigit():
+                        inverter_sn = opt_box
+            except Exception:
+                inverter_sn = None
+
+            if inverter_sn is None and isinstance(self.data, dict) and self.data:
+                inverter_sn = next(
+                    (str(k) for k in self.data.keys() if str(k).isdigit()),
+                    None,
+                )
+
+            if not inverter_sn:
+                _LOGGER.debug("🔋 No numeric inverter_sn available, skipping forecast update")
+                return
+
+            _LOGGER.debug("🔍 Inverter SN resolved for forecast: %s", inverter_sn)
 
             # Vytvořit device_info pro Analytics Module
             from .const import DOMAIN
@@ -725,8 +743,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Základní data z koordinátoru
         if self.data:
-            device_id = next(iter(self.data.keys()))
-            device_data = self.data.get(device_id, {})
+            device_id = next((str(k) for k in self.data.keys() if str(k).isdigit()), None)
+            device_data = self.data.get(device_id, {}) if device_id else {}
             battery_level = device_data.get("batt_bat_c", 0)
         else:
             battery_level = 0

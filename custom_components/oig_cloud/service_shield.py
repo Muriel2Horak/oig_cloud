@@ -843,8 +843,13 @@ class ServiceShield:
                 for entry_id, entry_data in self.hass.data["oig_cloud"].items():
                     if entry_data.get("service_shield") == self:
                         coordinator = entry_data.get("coordinator")
-                        if coordinator and coordinator.data:
-                            box_id = list(coordinator.data.keys())[0]
+                        if coordinator:
+                            try:
+                                from .oig_cloud_sensor import resolve_box_id
+
+                                box_id = resolve_box_id(coordinator)
+                            except Exception:
+                                box_id = None
                             break
 
             if not box_id:

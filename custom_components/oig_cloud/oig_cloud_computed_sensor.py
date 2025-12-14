@@ -31,14 +31,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
         super().__init__(coordinator, sensor_type)
 
-        # OPRAVA: Nastavit _box_id a entity_id podle vzoru z OigCloudDataSensor
-        if coordinator.data:
-            self._box_id = list(coordinator.data.keys())[0]
-            self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-        else:
-            self._box_id = "unknown"
-            self.entity_id = f"sensor.oig_{sensor_type}"
-
         # OPRAVA: Přímý import SENSOR_TYPES místo neexistující funkce
         from .sensor_types import SENSOR_TYPES
 

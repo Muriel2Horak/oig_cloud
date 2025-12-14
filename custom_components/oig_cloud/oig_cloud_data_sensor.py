@@ -82,24 +82,13 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
     def _resolve_box_id(self, coordinator: Any) -> str:
+        # Centralized resolution (config entry → proxy sensor → coordinator numeric keys)
         try:
-            entry = getattr(coordinator, "config_entry", None)
-            if entry:
-                box_id = entry.options.get("box_id")
-                if isinstance(box_id, str) and box_id.isdigit():
-                    return box_id
-            data = getattr(coordinator, "data", None)
-            if isinstance(data, dict):
-                numeric = next((str(k) for k in data.keys() if str(k).isdigit()), None)
-                if numeric:
-                    return numeric
-                # last resort: preserve previous behavior
-                first = next(iter(data.keys()), None)
-                if first is not None:
-                    return str(first)
+            from .oig_cloud_sensor import resolve_box_id
+
+            return resolve_box_id(coordinator)
         except Exception:
-            pass
-        return "unknown"
+            return "unknown"
 
     @property
     def unique_id(self) -> str:

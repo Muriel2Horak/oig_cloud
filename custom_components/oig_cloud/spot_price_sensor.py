@@ -23,6 +23,16 @@ def _ote_cache_path(hass) -> str:
     return hass.config.path(".storage", OTE_SPOT_PRICE_CACHE_FILE)
 
 
+def _resolve_box_id_from_coordinator(coordinator: Any) -> str:
+    """Resolve numeric box_id (never use helper keys like 'spot_prices')."""
+    try:
+        from .oig_cloud_sensor import resolve_box_id
+
+        return resolve_box_id(coordinator)
+    except Exception:
+        return "unknown"
+
+
 # Retry plán: 5, 10, 15, 30 minut a pak každou hodinu
 RETRY_DELAYS_SECONDS = [300, 600, 900, 1800]
 HOURLY_RETRY_SECONDS = 3600
@@ -57,6 +67,9 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._track_15min_remove: Optional[Any] = None
         self._retry_remove: Optional[Any] = None
         self._retry_attempt: int = 0
+
+    def _resolve_box_id(self) -> str:
+        return _resolve_box_id_from_coordinator(self.coordinator)
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
@@ -400,9 +413,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 "currency": "CZK/kWh",
                 # API endpoint hint
                 "api_endpoint": (
-                    f"/api/oig_cloud/spot_prices/{list(self.coordinator.data.keys())[0]}/intervals?type=export"
-                    if self.coordinator.data
-                    else "/api/oig_cloud/spot_prices/{box_id}/intervals?type=export"
+                    f"/api/oig_cloud/spot_prices/{self._resolve_box_id()}/intervals?type=export"
                 ),
                 "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
             }
@@ -415,10 +426,8 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
     @property
     def unique_id(self) -> str:
         """Jedinečné ID senzoru."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return f"oig_cloud_{box_id}_{self._sensor_type}"
-        return f"oig_cloud_export_price_{self._sensor_type}"
+        box_id = self._resolve_box_id()
+        return f"oig_cloud_{box_id}_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:
@@ -868,9 +877,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 "currency": "CZK/kWh",
                 # API endpoint hint
                 "api_endpoint": (
-                    f"/api/oig_cloud/spot_prices/{list(self.coordinator.data.keys())[0]}/intervals?type=spot"
-                    if self.coordinator.data
-                    else "/api/oig_cloud/spot_prices/{box_id}/intervals?type=spot"
+                    f"/api/oig_cloud/spot_prices/{_resolve_box_id_from_coordinator(self.coordinator)}/intervals?type=spot"
                 ),
                 "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
             }
@@ -883,10 +890,8 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
     @property
     def unique_id(self) -> str:
         """Jedinečné ID senzoru."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return f"oig_cloud_{box_id}_{self._sensor_type}"
-        return f"oig_cloud_spot_price_{self._sensor_type}"
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        return f"oig_cloud_{box_id}_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:
@@ -1121,10 +1126,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
     @property
     def name(self) -> str:
         """Jméno senzoru."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return f"OIG {box_id} {self._sensor_config.get('name', self._sensor_type)}"
-        return f"OIG {self._sensor_config.get('name', self._sensor_type)}"
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        base = self._sensor_config.get("name", self._sensor_type)
+        return f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
 
     @property
     def icon(self) -> str:
@@ -1336,26 +1340,16 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
     @property
     def unique_id(self) -> str:
         """Jedinečné ID senzoru."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return f"oig_cloud_{box_id}_{self._sensor_type}"
-        return f"oig_cloud_spot_price_{self._sensor_type}"
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        return f"oig_cloud_{box_id}_{self._sensor_type}"
 
     @property
     def device_info(self) -> Dict[str, Any]:
         """Informace o zařízení."""
-        if self.coordinator.data:
-            box_id = list(self.coordinator.data.keys())[0]
-            return {
-                "identifiers": {("oig_cloud", f"{box_id}_spot_prices")},
-                "name": f"OIG {box_id} Spot Prices",
-                "manufacturer": "OIG",
-                "model": "Spot Price Analytics",
-                "via_device": ("oig_cloud", box_id),
-            }
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
         return {
-            "identifiers": {("oig_cloud", "spot_prices")},
-            "name": "OIG Spot Prices",
+            "identifiers": {("oig_cloud", box_id)},
+            "name": f"ČEZ Battery Box {box_id}",
             "manufacturer": "OIG",
             "model": "Spot Price Analytics",
         }

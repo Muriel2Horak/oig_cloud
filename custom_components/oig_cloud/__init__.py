@@ -52,15 +52,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
-# **OPRAVA: Globální analytics_device_info pro statistické senzory**
-analytics_device_info: Dict[str, Any] = {
-    "identifiers": {(DOMAIN, "analytics")},
-    "name": "Analytics & Predictions",
-    "manufacturer": "OIG Cloud",
-    "model": "Analytics Module",
-    "sw_version": "1.0",
-}
-
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 
@@ -194,14 +185,33 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         # Unikátní ID panelu pro tuto instanci
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
-        # OPRAVA: Získání inverter_sn přímo z coordinator.data
-        inverter_sn = "unknown"
-        coordinator_data = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-        if coordinator_data and coordinator_data.data:
-            inverter_sn = next(iter(coordinator_data.data.keys()), "unknown")
-            _LOGGER.info("Dashboard setup: Found inverter_sn = %s", inverter_sn)
+        # OPRAVA: inverter_sn musí být numerické box_id (nikdy ne helper klíče jako "spot_prices")
+        inverter_sn = None
+        try:
+            opt_box = entry.options.get("box_id")
+            if isinstance(opt_box, str) and opt_box.isdigit():
+                inverter_sn = opt_box
+        except Exception:
+            inverter_sn = None
+
+        coordinator_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+        if inverter_sn is None and coordinator_data:
+            try:
+                from .oig_cloud_sensor import resolve_box_id
+
+                resolved = resolve_box_id(coordinator_data)
+                if isinstance(resolved, str) and resolved.isdigit():
+                    inverter_sn = resolved
+            except Exception:
+                inverter_sn = None
+
+        if inverter_sn is None:
+            inverter_sn = "unknown"
+            _LOGGER.warning(
+                "Dashboard setup: Unable to resolve numeric inverter_sn/box_id, using 'unknown'"
+            )
         else:
-            _LOGGER.warning("Dashboard setup: No coordinator data available")
+            _LOGGER.info("Dashboard setup: Using inverter_sn = %s", inverter_sn)
 
         panel_title = (
             f"OIG Dashboard ({inverter_sn})"
@@ -607,13 +617,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
 
-    # MIGRACE 2: Unique ID formát pro všechny entity
-    _LOGGER.info("🔄 Starting entity unique_id migration...")
-    try:
-        await _migrate_entity_unique_ids(hass, entry)
-        _LOGGER.info("✅ Entity unique_id migration completed")
-    except Exception as e:
-        _LOGGER.error(f"❌ Entity unique_id migration failed: {e}", exc_info=True)
+    # POZN: Automatická migrace entity/device registry při startu je riziková (může mazat/rozbíjet entity).
+    # Pokud je potřeba cleanup/migrace, dělejme ji explicitně (script / servis), ne automaticky v setupu.
 
     # Inicializace hass.data struktury pro tento entry PŘED použitím
     hass.data.setdefault(DOMAIN, {})
@@ -625,11 +630,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     try:
         options = dict(entry.options)
         if not options.get("box_id"):
-            inferred = _infer_box_id_from_local_entities(hass)
-            if inferred:
-                options["box_id"] = inferred
+            # Prefer explicit proxy box id sensor (most reliable)
+            proxy_box = hass.states.get(
+                "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
+            )
+            if proxy_box and isinstance(proxy_box.state, str) and proxy_box.state.isdigit():
+                options["box_id"] = proxy_box.state
                 hass.config_entries.async_update_entry(entry, options=options)
-                _LOGGER.info("Inferred box_id=%s from local entities", inferred)
+                _LOGGER.info("Inferred box_id=%s from proxy sensor", proxy_box.state)
+            else:
+                inferred = _infer_box_id_from_local_entities(hass)
+                if inferred:
+                    options["box_id"] = inferred
+                    hass.config_entries.async_update_entry(entry, options=options)
+                    _LOGGER.info("Inferred box_id=%s from local entities", inferred)
     except Exception as err:
         _LOGGER.debug("Inferring box_id from local entities failed (non-critical): %s", err)
 
@@ -803,9 +817,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                     hass, session_manager.api, "https://www.oigpower.cz/cez/"
                 )
 
-                # Nastavíme device_id z prvního dostupného zařízení v coordinator.data
-                if coordinator.data:
-                    device_id = next(iter(coordinator.data.keys()))
+                # Nastavíme device_id deterministicky (numerický box_id)
+                device_id = None
+                try:
+                    opt_box = entry.options.get("box_id")
+                    if isinstance(opt_box, str) and opt_box.isdigit():
+                        device_id = opt_box
+                except Exception:
+                    device_id = None
+                if device_id is None and coordinator.data and isinstance(coordinator.data, dict):
+                    device_id = next(
+                        (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
+                        None,
+                    )
+                if device_id:
                     notification_manager.set_device_id(device_id)
                     _LOGGER.debug("Set notification manager device_id to: %s", device_id)
 
@@ -875,13 +900,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         statistics_enabled = entry.options.get("enable_statistics", True)
         _LOGGER.debug("Statistics enabled: %s", statistics_enabled)
 
-        # **OPRAVA: Přidání analytics_device_info pro statistické senzory**
+        # Analytics device info (service device linked to the main box device)
+        # NOTE: box_id musí být numerické a stabilní i v local_only režimu (bez cloud dat).
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            box_id_for_devices = resolve_box_id(coordinator)
+        except Exception:
+            box_id_for_devices = entry.options.get("box_id")
+        if not (isinstance(box_id_for_devices, str) and box_id_for_devices.isdigit()):
+            box_id_for_devices = "unknown"
+
         analytics_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_analytics")},
-            "name": "Analytics & Predictions",
-            "manufacturer": "OIG Cloud",
+            "identifiers": {(DOMAIN, f"{box_id_for_devices}_analytics")},
+            "name": f"Analytics & Predictions {box_id_for_devices}",
+            "manufacturer": "OIG",
             "model": "Analytics Module",
-            "sw_version": "1.0",
+            "via_device": (DOMAIN, box_id_for_devices),
+            "entry_type": "service",
         }
 
         # NOVÉ: Podpora pro OTE API a spotové ceny
@@ -938,14 +974,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         if balancing_enabled and BalancingManager is not None:
             try:
                 _LOGGER.info("oig_cloud: Initializing BalancingManager")
-                # Get box_id from coordinator data (not from entry.data)
-                if coordinator.data:
-                    box_id = next(iter(coordinator.data.keys()))
-                else:
+                # Get box_id deterministicky (entry.options → coordinator numeric keys)
+                box_id = None
+                try:
+                    opt_box = entry.options.get("box_id")
+                    if isinstance(opt_box, str) and opt_box.isdigit():
+                        box_id = opt_box
+                except Exception:
                     box_id = None
-                    _LOGGER.warning(
-                        "oig_cloud: No coordinator data available for box_id"
+
+                if box_id is None and coordinator.data and isinstance(coordinator.data, dict):
+                    box_id = next(
+                        (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
+                        None,
                     )
+
+                if not box_id:
+                    _LOGGER.warning("oig_cloud: No box_id available for BalancingManager")
 
                 storage_path = hass.config.path(".storage")
 
@@ -1049,13 +1094,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             # Vytvoříme globální odkaz na ServiceShield pro senzory
             hass.data[DOMAIN]["shield"] = service_shield
 
-            # Vytvoříme device info pro ServiceShield
+            # Vytvoříme device info pro ServiceShield (per-box service device)
+            try:
+                from .oig_cloud_sensor import resolve_box_id
+
+                shield_box_id = resolve_box_id(coordinator)
+            except Exception:
+                shield_box_id = entry.options.get("box_id")
+            if not (isinstance(shield_box_id, str) and shield_box_id.isdigit()):
+                shield_box_id = "unknown"
             shield_device_info = {
-                "identifiers": {(DOMAIN, f"{entry.entry_id}_shield")},
-                "name": "ServiceShield",
-                "manufacturer": "OIG Cloud",
-                "model": "Service Protection",
-                "sw_version": "2.0",
+                "identifiers": {(DOMAIN, f"{shield_box_id}_shield")},
+                "name": f"ServiceShield {shield_box_id}",
+                "manufacturer": "OIG",
+                "model": "Shield",
+                "via_device": (DOMAIN, shield_box_id),
+                "entry_type": "service",
             }
             hass.data[DOMAIN][entry.entry_id]["shield_device_info"] = shield_device_info
 
@@ -1065,8 +1119,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _LOGGER.info(f"ServiceShield status: {service_shield.get_shield_status()}")
             _LOGGER.info(f"ServiceShield queue info: {service_shield.get_queue_info()}")
 
-        # Vyčištění starých/nepoužívaných zařízení před registrací nových
-        await _cleanup_unused_devices(hass, entry)
+        # POZN: Automatické mazání zařízení z device registry v runtime je rizikové (může přesunout/rozbít entity).
+        # Cleanup duplicit (unknown/spot_prices) řešíme explicitně mimo setup (script / manuálně).
 
         # Vždy registrovat sensor platform
         await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])

@@ -410,17 +410,57 @@ async def async_setup_entry(  # noqa: C901
     # Vytvoříme device_info objekty jednou pro všechny senzory
     inverter_sn = resolve_box_id(coordinator)
 
+    # Pokud resolve_box_id selže, zkusíme číslo z title a uložíme ho
+    if inverter_sn == "unknown":
+        from_title = None
+        try:
+            import re
+
+            m = re.search(r"(\\d{6,})", entry.title or "")
+            if m:
+                from_title = m.group(1)
+        except Exception:
+            from_title = None
+
+        if from_title:
+            inverter_sn = from_title
+            new_opts = dict(entry.options)
+            if new_opts.get("box_id") != inverter_sn:
+                new_opts["box_id"] = inverter_sn
+                hass.config_entries.async_update_entry(entry, options=new_opts)
+                _LOGGER.info("Stored box_id=%s from title into entry options", inverter_sn)
+
+    if inverter_sn == "unknown":
+        _LOGGER.error("No valid box_id/inverter_sn resolved, skipping sensor setup")
+        return
+
+    # Ulož box_id do options, ať je dostupné i bez dat z koordinátoru
+    if entry.options.get("box_id") != inverter_sn:
+        new_opts = dict(entry.options)
+        new_opts["box_id"] = inverter_sn
+        hass.config_entries.async_update_entry(entry, options=new_opts)
+        _LOGGER.info("Stored box_id=%s into entry options", inverter_sn)
+
+    # Propaguj box_id přímo do koordinátoru, aby všechny senzory měly stabilní ID
+    try:
+        setattr(coordinator, "forced_box_id", inverter_sn)
+    except Exception:
+        _LOGGER.debug("Could not set forced_box_id on coordinator")
+
     # Main OIG Device
 
-    # Analytics & Predictions Device
-    analytics_device_info: Dict[str, Any] = {
-        "identifiers": {("oig_cloud_analytics", inverter_sn)},
-        "name": f"Analytics & Predictions {inverter_sn}",
-        "manufacturer": "OIG",
-        "model": "Analytics Module",
-        "via_device": (DOMAIN, inverter_sn),
-        "entry_type": "service",
-    }
+    # Analytics & Predictions Device (prefer definition from __init__.py for consistency)
+    analytics_device_info: Dict[str, Any] = (
+        hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("analytics_device_info")
+        or {
+            "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
+            "name": f"Analytics & Predictions {inverter_sn}",
+            "manufacturer": "OIG",
+            "model": "Analytics Module",
+            "via_device": (DOMAIN, inverter_sn),
+            "entry_type": "service",
+        }
+    )
 
     # ServiceShield Device
 

@@ -23,11 +23,13 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        if self.coordinator.data:
-            self._box_id = list(self.coordinator.data.keys())[0]
-            _LOGGER.debug(
-                f"Created binary sensor {self.name} with box_id {self._box_id}"
-            )
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            self._box_id = resolve_box_id(self.coordinator)
+            _LOGGER.debug("Created binary sensor %s with box_id %s", self.name, self._box_id)
+        except Exception:
+            return
 
     @property
     def name(self):

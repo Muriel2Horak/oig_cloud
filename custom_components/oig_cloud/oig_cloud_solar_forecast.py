@@ -36,22 +36,6 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         self._config_entry = config_entry
         self._device_info = device_info  # OPRAVA: použijeme předané device_info
 
-        # Získáme inverter_sn ze správného místa
-        inverter_sn = "unknown"
-
-        # Zkusíme získat z coordinator.config_entry.data
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
-            inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-
-        # Pokud stále unknown, zkusíme z coordinator.data
-        if inverter_sn == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            inverter_sn = first_device_key
-
-        # OPRAVA: Nastavit _box_id a entity_id podle vzoru z OigCloudDataSensor
-        self._box_id = inverter_sn
-        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-
         # OPRAVA: Přepsat název podle name_cs logiky (pokud OigCloudSensor nemá správnou logiku)
         from .sensors.SENSOR_TYPES_SOLAR_FORECAST import SENSOR_TYPES_SOLAR_FORECAST
 
@@ -70,7 +54,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         self._update_interval_remover: Optional[Any] = None
 
         # Storage key pro persistentní uložení posledního API volání a dat
-        self._storage_key = f"oig_solar_forecast_{inverter_sn}"
+        self._storage_key = f"oig_solar_forecast_{self._box_id}"
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit periodické aktualizace podle konfigurace."""

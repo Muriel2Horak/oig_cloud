@@ -25,6 +25,7 @@ DEFAULT_PROXY_STALE_MINUTES = 10
 DEFAULT_LOCAL_EVENT_DEBOUNCE_MS = 300
 
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
+PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
 
 
 @dataclass(slots=True)
@@ -90,7 +91,8 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
             except Exception:
                 return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=dt_util.UTC)
+            # Proxy často posílá lokální čas bez timezone → interpretuj jako lokální TZ HA, ne UTC.
+            dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
         return dt_util.as_utc(dt)
     return None
 
@@ -116,6 +118,25 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
             reason = "local_ok"
         else:
             reason = f"local_stale_{int(age)}s"
+
+    # Extra safety: if we know which box we're configured for, ensure local proxy reports the same box id.
+    expected_box_id: Optional[str] = None
+    try:
+        opt_box = entry.options.get("box_id")
+        if isinstance(opt_box, str) and opt_box.isdigit():
+            expected_box_id = opt_box
+    except Exception:
+        expected_box_id = None
+
+    if local_available and expected_box_id:
+        proxy_box = hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+        proxy_box_id = proxy_box.state if proxy_box else None
+        if not (isinstance(proxy_box_id, str) and proxy_box_id.isdigit()):
+            local_available = False
+            reason = "proxy_box_id_missing"
+        elif proxy_box_id != expected_box_id:
+            local_available = False
+            reason = "proxy_box_id_mismatch"
 
     if configured == DATA_SOURCE_CLOUD_ONLY:
         effective = DATA_SOURCE_CLOUD_ONLY
@@ -249,6 +270,25 @@ class DataSourceController:
                 reason = "local_ok"
             else:
                 reason = f"local_stale_{int(age)}s"
+
+        # Require proxy box id to match configured box id (prevents cross-device wiring).
+        expected_box_id: Optional[str] = None
+        try:
+            opt_box = self.entry.options.get("box_id")
+            if isinstance(opt_box, str) and opt_box.isdigit():
+                expected_box_id = opt_box
+        except Exception:
+            expected_box_id = None
+
+        if local_available and expected_box_id:
+            proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+            proxy_box_id = proxy_box.state if proxy_box else None
+            if not (isinstance(proxy_box_id, str) and proxy_box_id.isdigit()):
+                local_available = False
+                reason = "proxy_box_id_missing"
+            elif proxy_box_id != expected_box_id:
+                local_available = False
+                reason = "proxy_box_id_mismatch"
 
         if configured == DATA_SOURCE_CLOUD_ONLY:
             effective = DATA_SOURCE_CLOUD_ONLY

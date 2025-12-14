@@ -433,18 +433,15 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
             coordinator, "hass", None
         )
 
-        # Get box_id from coordinator
-        self._data_key = "unknown"
-        if (
-            coordinator
-            and coordinator.data
-            and isinstance(coordinator.data, dict)
-            and coordinator.data
-        ):
-            self._data_key = list(coordinator.data.keys())[0]
+        # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
+        try:
+            from .oig_cloud_sensor import resolve_box_id
 
-        self._box_id = self._data_key
-        self._attr_unique_id = f"oig_cloud_{self._data_key}_{sensor_type}"
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
+            self._box_id = "unknown"
+
+        self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
         self._attr_name = "Battery Health (SoH)"
 

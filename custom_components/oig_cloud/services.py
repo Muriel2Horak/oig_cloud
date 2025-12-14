@@ -32,16 +32,41 @@ def get_box_id_from_device(
     """
     coordinator = hass.data[DOMAIN][entry_id]["coordinator"]
 
+    def _box_id_from_entry() -> Optional[str]:
+        try:
+            entry = getattr(coordinator, "config_entry", None) or hass.config_entries.async_get_entry(
+                entry_id
+            )
+            if entry:
+                val = entry.options.get("box_id") or entry.data.get("box_id") or entry.data.get(
+                    "inverter_sn"
+                )
+                if isinstance(val, str) and val.isdigit():
+                    return val
+        except Exception:
+            return None
+        return None
+
+    def _box_id_from_coordinator() -> Optional[str]:
+        try:
+            data = getattr(coordinator, "data", None)
+            if isinstance(data, dict) and data:
+                return next((str(k) for k in data.keys() if str(k).isdigit()), None)
+        except Exception:
+            return None
+        return None
+
     # Pokud není device_id, použij první dostupný box_id
     if not device_id:
-        if coordinator.data and len(coordinator.data) > 0:
-            available_boxes = list(coordinator.data.keys())
-            _LOGGER.debug(
-                f"No device_id provided, available boxes: {available_boxes}, "
-                f"using first: {available_boxes[0]}"
-            )
-            return available_boxes[0]
-        _LOGGER.warning("No device_id provided and no coordinator data available")
+        # Preferovat persistované box_id z config entry (funguje i v local_only režimu)
+        if entry_box_id := _box_id_from_entry():
+            return entry_box_id
+
+        # Fallback: numerický klíč v coordinator.data (cloud režim)
+        if coord_box_id := _box_id_from_coordinator():
+            return coord_box_id
+
+        _LOGGER.warning("No device_id provided and no box_id could be resolved")
         return None
 
     # Máme device_id, najdi odpovídající box_id
@@ -50,10 +75,7 @@ def get_box_id_from_device(
 
     if not device:
         _LOGGER.warning(f"Device {device_id} not found in registry")
-        # Fallback na první dostupný
-        if coordinator.data and len(coordinator.data) > 0:
-            return list(coordinator.data.keys())[0]
-        return None
+        return _box_id_from_entry() or _box_id_from_coordinator()
 
     # Extrahuj box_id z device identifiers
     # Identifiers mají formát: {(DOMAIN, identifier_value), ...}
@@ -68,25 +90,17 @@ def get_box_id_from_device(
             # Odstraň suffix _shield nebo _analytics pokud existuje
             box_id = identifier_value.replace("_shield", "").replace("_analytics", "")
 
-            # Ověř, že tento box_id existuje v coordinator.data
-            if coordinator.data and box_id in coordinator.data:
+            if isinstance(box_id, str) and box_id.isdigit():
                 _LOGGER.debug(
-                    f"Found box_id {box_id} from device {device_id} (identifier: {identifier_value})"
+                    "Found box_id %s from device %s (identifier: %s)",
+                    box_id,
+                    device_id,
+                    identifier_value,
                 )
                 return box_id
-            else:
-                _LOGGER.warning(
-                    f"box_id {box_id} from device not found in coordinator data. "
-                    f"Available: {list(coordinator.data.keys()) if coordinator.data else 'None'}"
-                )
 
     _LOGGER.warning(f"Could not extract box_id from device {device_id}")
-    # Fallback na první dostupný
-    if coordinator.data and len(coordinator.data) > 0:
-        fallback_box = list(coordinator.data.keys())[0]
-        _LOGGER.info(f"Using fallback box_id: {fallback_box}")
-        return fallback_box
-    return None
+    return _box_id_from_entry() or _box_id_from_coordinator()
 
 
 # Schema pro update solární předpovědi

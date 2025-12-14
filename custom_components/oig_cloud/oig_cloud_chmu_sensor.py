@@ -29,20 +29,6 @@ class OigCloudChmuSensor(OigCloudSensor):
         self._config_entry = config_entry
         self._device_info = device_info
 
-        # Získáme inverter_sn ze správného místa
-        inverter_sn = "unknown"
-
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry.data:
-            inverter_sn = coordinator.config_entry.data.get("inverter_sn", "unknown")
-
-        if inverter_sn == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            inverter_sn = first_device_key
-
-        # Nastavit _box_id a entity_id
-        self._box_id = inverter_sn
-        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-
         # Nastavit název podle name_cs
         from .sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
 
@@ -57,7 +43,7 @@ class OigCloudChmuSensor(OigCloudSensor):
         self._update_interval_remover: Optional[Any] = None
 
         # Storage key pro persistentní uložení
-        self._storage_key = f"oig_chmu_warnings_{inverter_sn}"
+        self._storage_key = f"oig_chmu_warnings_{self._box_id}"
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit periodické aktualizace."""

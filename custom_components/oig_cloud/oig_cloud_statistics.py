@@ -44,21 +44,13 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         sensor_config = SENSOR_TYPES.get(sensor_type, {})
         self._sensor_config = sensor_config
 
-        # Získání data_key z coordinator config
-        self._data_key = "unknown"
-        if hasattr(coordinator, "config_entry") and coordinator.config_entry:
-            if (
-                hasattr(coordinator.config_entry, "data")
-                and coordinator.config_entry.data
-            ):
-                self._data_key = coordinator.config_entry.data.get(
-                    "inverter_sn", "unknown"
-                )
+        # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
+        try:
+            from .oig_cloud_sensor import resolve_box_id
 
-        # Fallback - zkusit získat z coordinator.data
-        if self._data_key == "unknown" and coordinator.data:
-            first_device_key = list(coordinator.data.keys())[0]
-            self._data_key = first_device_key
+            self._data_key = resolve_box_id(coordinator)
+        except Exception:
+            self._data_key = "unknown"
 
         # OPRAVA: Konzistentní logika pro názvy jako u ostatních senzorů
         name_cs = sensor_config.get("name_cs")
