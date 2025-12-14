@@ -79,9 +79,9 @@
           "extended_scan_interval": "Jak \u010dasto na\u010d\u00edtat nap\u011bt\u00ed \u010dl\u00e1nk\u016f, teploty, proudy a dal\u0161\u00ed detailn\u00ed \u00fadaje (minim\u00e1ln\u011b 300 sekund, doporu\u010deno 300-600 sekund)",
           "enable_cloud_notifications": "Povolit stahov\u00e1n\u00ed cloud notifikac\u00ed (typicky sta\u010d\u00ed 1\u00d7 za n\u011bkolik minut)",
           "notifications_scan_interval": "Jak \u010dasto kontrolovat cloud notifikace (doporu\u010deno 300-900 sekund)",
-          "data_source_mode": "Cloud only = v\u0161e z cloudu; Hybrid = lok\u00e1ln\u00ed mapping pokud je proxy \u010derstv\u00e1, jinak cloud; Local only = jen lok\u00e1ln\u00ed mapping",
-          "local_proxy_stale_minutes": "Fallback na cloud, pokud lok\u00e1ln\u00ed proxy neposlala data d\u00e9le ne\u017e tento limit",
-          "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (ni\u017e\u0161\u00ed = rychlej\u0161\u00ed reakce, vy\u0161\u0161\u00ed = m\u00e9n\u011b aktualizac\u00ed)",
+          "data_source_mode": "Cloud only = v\u0161echny senzory \u010tou z cloudu; Local only = \u010dete z lok\u00e1ln\u00edch entit (p\u0159i v\u00fdpadku proxy > limit minut se do\u010dasn\u011b vr\u00e1t\u00ed na cloud)",
+          "local_proxy_stale_minutes": "Po kolika minut\u00e1ch bez lok\u00e1ln\u00edch dat se p\u0159epnout do cloudu. Jakmile proxy znovu odpov\u00ed, vr\u00e1t\u00ed se zp\u011bt na local.",
+          "local_event_debounce_ms": "Debounce pro event-driven refresh z lok\u00e1ln\u00edch entit (ni\u017e\u0161\u00ed = rychlej\u0161\u00ed reakce, vy\u0161\u0161\u00ed = m\u00e9n\u011b aktualizac\u00ed)",
           "go_back": "Za\u0161krtn\u011bte toto pol\u00ed\u010dko a stiskn\u011bte tla\u010d\u00edtko 'Odeslat' - vr\u00e1t\u00edte se o krok zp\u011bt"
         }
       },

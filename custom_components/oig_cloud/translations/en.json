@@ -79,9 +79,9 @@
           "extended_scan_interval": "How often to load cell voltages, temperatures, currents and other detailed data (minimum 300 seconds, recommended 300-600 seconds)",
           "enable_cloud_notifications": "Enable fetching cloud notifications (typically enough once every few minutes)",
           "notifications_scan_interval": "How often to poll cloud notifications (recommended 300-900 seconds)",
-          "data_source_mode": "Cloud only = always cloud; Hybrid = use mapped local entities when proxy is fresh, otherwise cloud; Local only = only mapped local entities",
-          "local_proxy_stale_minutes": "Fallback to cloud if the local proxy has not sent any data for longer than this limit",
-          "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster updates, higher = fewer updates)",
+          "data_source_mode": "Cloud only = always read from cloud; Local only = read mapped local entities (if proxy is stale > this limit, temporarily fall back to cloud until it recovers)",
+          "local_proxy_stale_minutes": "Switch back to cloud after this many minutes without local data; switch back to local automatically when proxy resumes",
+          "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster response, higher = fewer updates)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         }
       },
