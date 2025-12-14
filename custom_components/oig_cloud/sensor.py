@@ -8,6 +8,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .oig_cloud_data_source_sensor import OigCloudDataSourceSensor
+from .oig_cloud_sensor import resolve_box_id
 from .oig_cloud_sensor import resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -424,6 +426,16 @@ async def async_setup_entry(
     # ServiceShield Device
 
     _LOGGER.debug(f"Created device_info objects for box_id: {inverter_sn}")
+
+    # ================================================================
+    # SECTION 0: DATA SOURCE STATE SENSOR (always on)
+    # ================================================================
+    try:
+        data_source_sensor = OigCloudDataSourceSensor(hass, coordinator, entry)
+        all_sensors.append(data_source_sensor)
+        _LOGGER.info("Registered data source state sensor")
+    except Exception as e:
+        _LOGGER.error(f"Error creating data source sensor: {e}", exc_info=True)
 
     # ================================================================
     # SECTION 1: BASIC DATA SENSORS (kategorie: "data")
