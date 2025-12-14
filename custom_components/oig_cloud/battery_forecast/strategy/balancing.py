@@ -10,7 +10,7 @@ that the hybrid optimizer must respect.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple, Set
 import logging
 

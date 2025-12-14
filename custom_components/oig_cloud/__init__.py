@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import hashlib
 import re
-import asyncio
 from typing import Any, Dict
 
 from homeassistant import config_entries, core
@@ -32,8 +31,6 @@ from .data_source import (
     DEFAULT_DATA_SOURCE_MODE,
     DEFAULT_PROXY_STALE_MINUTES,
     DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
-    PROXY_LAST_DATA_ENTITY_ID,
-    get_configured_mode,
     get_data_source_state,
     init_data_source_state,
 )

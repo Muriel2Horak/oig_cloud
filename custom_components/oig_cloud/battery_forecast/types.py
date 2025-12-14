@@ -10,8 +10,7 @@ All types are designed for static type checking with mypy/pyright.
 """
 
 from enum import IntEnum
-from typing import Any, Dict, List, Optional, Set, TypedDict
-from datetime import datetime
+from typing import Any, Dict, List, Optional, TypedDict
 
 
 # =============================================================================

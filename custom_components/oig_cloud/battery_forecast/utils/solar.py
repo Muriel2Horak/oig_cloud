@@ -6,7 +6,7 @@ from the solar forecast sensor.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 _LOGGER = logging.getLogger(__name__)
 

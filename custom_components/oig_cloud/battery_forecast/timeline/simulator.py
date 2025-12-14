@@ -9,15 +9,13 @@ This module provides battery simulation with mode-aware physics:
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ..types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
-    CBB_MODE_NAMES,
     DEFAULT_EFFICIENCY,
     DEFAULT_CHARGE_RATE_KW,
     INTERVAL_MINUTES,

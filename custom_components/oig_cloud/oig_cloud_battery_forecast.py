@@ -10,7 +10,6 @@ import hashlib
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
-from collections import defaultdict
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -30,7 +29,6 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 
-from .oig_cloud_data_sensor import OigCloudDataSensor
 from .const import (
     DOMAIN,
     CONF_AUTO_MODE_SWITCH,
@@ -879,12 +877,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             balancing_plan = self._get_balancing_plan()
 
             if current_capacity is None:
-                _LOGGER.warning(f"Missing battery capacity data - cannot run forecast")
+                _LOGGER.warning("Missing battery capacity data - cannot run forecast")
                 return
 
             if not spot_prices:
                 _LOGGER.warning(
-                    f"No spot prices available - forecast will use fallback prices"
+                    "No spot prices available - forecast will use fallback prices"
                 )
                 # Continue anyway - forecast can run with fallback prices
 
@@ -1635,7 +1633,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             # Simulovat s fixed režimem - NOVÁ centrální funkce!
@@ -1749,7 +1747,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         _LOGGER.info(
             f"🔍 Calculating 4 baselines: physical_min={physical_min_capacity:.2f} kWh "
-            f"({physical_min_capacity/max_capacity*100:.0f}%)"
+            f"({physical_min_capacity / max_capacity * 100:.0f}%)"
         )
 
         for mode_id, mode_name in mode_mapping:
@@ -1822,6 +1820,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         # OPRAVA: Načíst současný režim místo fixed HOME I
         current_mode = self._get_current_mode()
+        efficiency = self._get_battery_efficiency()
 
         _LOGGER.debug(
             f"[DO NOTHING] Calculating cost for current mode: {current_mode} "
@@ -1844,7 +1843,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             # OPRAVA: Použít současný režim místo HOME I
@@ -1939,7 +1938,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Noční hodiny: 22-23, 0-5
                 if 22 <= hour or hour < 6:
                     night_intervals.append((t, price_data.get("price", 0.0)))
-            except:
+            except Exception:
                 continue
 
         # 5. Seřadit podle ceny a vybrat N nejlevnějších
@@ -1973,7 +1972,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             # OPRAVA: Nabíjet pouze v nejlevnějších nočních intervalech
@@ -2095,7 +2094,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             last_dt = datetime.fromisoformat(last_interval_time)
                             end_dt = last_dt + timedelta(minutes=15)
                             current_block["to_time"] = end_dt.isoformat()
-                        except:
+                        except Exception:
                             current_block["to_time"] = last_interval_time
 
                     self._add_block_details(current_block, block_intervals)
@@ -2121,7 +2120,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     last_dt = datetime.fromisoformat(last_interval_time)
                     end_dt = last_dt + timedelta(minutes=15)
                     current_block["to_time"] = end_dt.isoformat()
-                except:
+                except Exception:
                     current_block["to_time"] = last_interval_time
 
                 self._add_block_details(current_block, block_intervals)
@@ -2223,7 +2222,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 to_dt - from_dt
             ).total_seconds() / 3600 + 0.25  # +15min last interval
             block["duration_hours"] = round(duration, 2)
-        except:
+        except Exception:
             block["duration_hours"] = block["intervals_count"] * 0.25
 
         # Calculate average metrics across intervals
@@ -2271,7 +2270,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         from_dt = None
         try:
             from_dt = datetime.fromisoformat(block["from_time"])
-        except:
+        except Exception:
             pass
 
         # HOME I - Battery Priority
@@ -2394,7 +2393,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if expensive_start:
                 hour = expensive_start.hour
                 # Return range like "19-21h" (2h window)
-                return f"{hour:02d}-{(hour+2)%24:02d}h"
+                return f"{hour:02d}-{(hour + 2) % 24:02d}h"
 
             return None
 
@@ -2529,8 +2528,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         battery = current_capacity
         forward_soc_before: List[Optional[float]] = [None] * n
         forward_soc_after: List[Optional[float]] = [None] * n
-        total_transition_cost = 0.0  # Track transition costs
-        prev_mode_name = "Home I"  # Start mode
 
         # In balancing mode, skip to holding_end and start with 100%
         start_index = 0
@@ -2550,7 +2547,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             f"({holding_end.strftime('%H:%M')}) with battery=100%"
                         )
                         break
-                except:
+                except Exception:
                     pass
 
         for i in range(start_index, n):
@@ -2560,7 +2557,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -2594,7 +2591,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if interval_ts >= holding_end:
                         holding_end_index = i
                         break
-                except:
+                except Exception:
                     pass
             holding_end_index_for_validation = holding_end_index
 
@@ -2610,7 +2607,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 min_reached = min(battery_trajectory)
                 _LOGGER.warning(
-                    f"⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
+                    "⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
                 )
         else:
             min_reached = min(battery_trajectory)
@@ -2777,7 +2774,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 try:
                     timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                     solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except:
+                except Exception:
                     solar_kwh = 0.0
 
                 load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -2813,7 +2810,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 try:
                     timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                     solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except:
+                except Exception:
                     solar_kwh = 0.0
 
                 load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -2846,7 +2843,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -2917,7 +2914,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(spot_prices[i]["time"])
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -3111,7 +3108,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if gap_cost < transition_cost_czk:
                     modes[i + 1] = CBB_MODE_HOME_UPS  # Merge gap
                     _LOGGER.debug(
-                        f"🔀 Merged gap at interval {i+1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}"
+                        f"🔀 Merged gap at interval {i + 1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}"
                     )
             i += 1
 
@@ -3398,7 +3395,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 charge_before_index = violation_index
 
             _LOGGER.info(
-                f"[PLANNING_MIN iter {iteration+1}] Violation @ interval {violation_index}: "
+                f"[PLANNING_MIN iter {iteration + 1}] Violation @ interval {violation_index}: "
                 f"SoC={soc_at_violation:.2f} kWh < planning_min={min_capacity:.2f} kWh, "
                 f"deficit={deficit_kwh:.2f} kWh (target={target_soc:.2f} kWh), "
                 f"recovery={recovery_idx}, charge_before={charge_before_index}"

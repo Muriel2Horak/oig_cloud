@@ -15,7 +15,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from homeassistant.util import dt as dt_util
 
@@ -24,8 +24,6 @@ from ..types import (
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
-    CBB_MODE_NAMES,
-    BalancingPlan,
     OptimizationResult,
     DEFAULT_EFFICIENCY,
     DEFAULT_CHARGE_RATE_KW,
