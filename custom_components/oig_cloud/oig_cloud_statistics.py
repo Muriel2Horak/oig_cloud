@@ -591,7 +591,9 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         return True
 
-    async def _calculate_interval_statistics_from_history(self) -> Optional[float]:
+    async def _calculate_interval_statistics_from_history(  # noqa: C901
+        self,
+    ) -> Optional[float]:
         """
         Vypočítá statistiku intervalu z historických dat recorder.
 

@@ -302,7 +302,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "⚠️ Autonomy storage will be initialized in async_added_to_hass()"
             )
 
-    async def async_added_to_hass(self) -> None:
+    async def async_added_to_hass(self) -> None:  # noqa: C901
         """Při přidání do HA - restore persistent data."""
         await super().async_added_to_hass()
         self._hass = self.hass
@@ -805,7 +805,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Calculate SHA-256 hash (secure for integrity checking)
         return hashlib.sha256(data_str.encode()).hexdigest()
 
-    async def async_update(self) -> None:
+    async def async_update(self) -> None:  # noqa: C901
         """Update sensor data."""
         await super().async_update()
 
@@ -2401,7 +2401,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(f"Failed to find next expensive period: {e}")
             return None
 
-    def _calculate_optimal_modes_hybrid(
+    def _calculate_optimal_modes_hybrid(  # noqa: C901
         self,
         current_capacity: float,
         max_capacity: float,
@@ -3980,7 +3980,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Vrátit index nejlevnějšího
         return night_intervals[0][0]
 
-    def _build_result(
+    def _build_result(  # noqa: C901
         self,
         modes: List[int],
         spot_prices: List[Dict[str, Any]],
@@ -4238,7 +4238,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     interval_time = dt_util.as_local(interval_time)
                 if today_start <= interval_time < tomorrow_end:
                     total_cost_48h += interval.get("net_cost", 0)
-            except:
+            except Exception:
                 continue
 
         # Calculate HOME I baseline cost for 48h (pro výpočet úspory)
@@ -4254,7 +4254,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     interval_time = dt_util.as_local(interval_time)
                 if not (today_start <= interval_time < tomorrow_end):
                     continue
-            except:
+            except Exception:
                 continue
 
             # HOME I simulation
@@ -4360,7 +4360,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return result
 
-    def _generate_alternatives(
+    def _generate_alternatives(  # noqa: C901
         self,
         spot_prices: List[Dict[str, Any]],
         solar_forecast: Dict[str, Any],
@@ -4404,13 +4404,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         timestamp = dt_util.as_local(timestamp)
                     if not (today_start <= timestamp < tomorrow_end):
                         continue
-                except:
+                except Exception:
                     continue
 
                 # Get input data from forecasts
                 try:
                     solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except:
+                except Exception:
                     solar_kwh = 0.0
 
                 load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
@@ -4708,7 +4708,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             ):
                 self._active_charging_plan = None
 
-    def _calculate_timeline(
+    def _calculate_timeline(  # noqa: C901
         self,
         current_capacity: float,
         max_capacity: float,
@@ -5425,7 +5425,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     # PHASE 2.9: DAILY PLAN TRACKING - Historie vs Plán
     # =========================================================================
 
-    async def _maybe_fix_daily_plan(self) -> None:
+    async def _maybe_fix_daily_plan(self) -> None:  # noqa: C901
         """
         Fixovat denní plán při prvním výpočtu po půlnoci.
 
@@ -5568,7 +5568,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             interval_time = dt_util.as_local(interval_time)
                         if today_start <= interval_time <= today_end:
                             today_timeline.append(interval)
-                    except:
+                    except Exception:
                         continue
 
                 today_blocks = []
@@ -5581,7 +5581,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             block_time = dt_util.as_local(block_time)
                         if today_start <= block_time <= today_end:
                             today_blocks.append(block)
-                    except:
+                    except Exception:
                         continue
 
                 expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
@@ -5653,7 +5653,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "actual": [],
                 }
 
-    async def _fetch_interval_from_history(
+    async def _fetch_interval_from_history(  # noqa: C901
         self, start_time: datetime, end_time: datetime
     ) -> Optional[Dict[str, Any]]:
         """
@@ -5667,7 +5667,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             Dict s actual hodnotami nebo None pokud data nejsou k dispozici
         """
         if not self._hass:
-            _LOGGER.debug(f"[fetch_interval_from_history] No _hass instance")
+            _LOGGER.debug("[fetch_interval_from_history] No _hass instance")
             return None
 
         _LOGGER.debug(
@@ -6078,7 +6078,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Load entire storage
             data = await self._plans_store.async_load()
             if not data:
-                _LOGGER.debug(f"No storage data found")
+                _LOGGER.debug("No storage data found")
                 # Fallback: Check in-memory cache
                 if hasattr(self, "_in_memory_plan_cache"):
                     cached = self._in_memory_plan_cache.get(date_str)
@@ -6322,7 +6322,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # 2. Determine date range for baseline (00:00 - 23:45)
-            now = dt_util.now()
             date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
             day_start = datetime.combine(date_obj, datetime.min.time())
             day_start = dt_util.as_local(day_start)  # Make timezone-aware
@@ -6344,24 +6343,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         continue
 
                     # Parse time (can be HH:MM or ISO format)
-                    try:
-                        if "T" in hi_time_str:
-                            # ISO format
-                            hi_dt = datetime.fromisoformat(hi_time_str)
-                            if hi_dt.tzinfo is None:
-                                hi_dt = dt_util.as_local(hi_dt)
-                            hi_time_only = hi_dt.strftime("%H:%M")
-                        else:
-                            # Just time HH:MM
-                            hi_time_only = hi_time_str
+                try:
+                    if "T" in hi_time_str:
+                        # ISO format
+                        hi_dt = datetime.fromisoformat(hi_time_str)
+                        if hi_dt.tzinfo is None:
+                            hi_dt = dt_util.as_local(hi_dt)
+                        hi_time_only = hi_dt.strftime("%H:%M")
+                    else:
+                        # Just time HH:MM
+                        hi_time_only = hi_time_str
 
-                        if hi_time_only == interval_time_str:
-                            hybrid_interval = hi
-                            if first_hybrid_time is None:
-                                first_hybrid_time = interval_time_str
-                            break
-                    except:
-                        continue
+                    if hi_time_only == interval_time_str:
+                        hybrid_interval = hi
+                        if first_hybrid_time is None:
+                            first_hybrid_time = interval_time_str
+                        break
+                except Exception:
+                    continue
 
                 # Build interval
                 if hybrid_interval:
@@ -6825,7 +6824,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         year == cutoff_year and week < cutoff_week_number
                     ):
                         weekly_to_delete.append(week_key)
-                except:
+                except Exception:
                     continue
 
             if weekly_to_delete:
@@ -7371,7 +7370,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return preview
 
-    def _optimize_autonomy_modes(
+    def _optimize_autonomy_modes(  # noqa: C901
         self,
         *,
         current_capacity: float,
@@ -7480,7 +7479,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
             for s_idx, soc in enumerate(soc_levels):
-                best_cost = INF
                 best_choice = None
                 # Prefer grid-protecting mode (HOME II) when hovering at planning minimum
                 # Real inverters discharge down to HW minimum if left in HOME I at the floor.
@@ -7568,7 +7566,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         )
                     ):
                         dp[i][s_idx] = total_tuple
-                        best_cost = total_tuple[0]
                         best_choice = (mode, next_idx)
 
                 if best_choice:
@@ -7579,6 +7576,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.warning(
                 "Autonomy DP infeasible with current parameters, enforcing minimum SOC via greedy fallback"
             )
+            now = datetime.now()
             fallback_modes = []
             soc = current_capacity
             for i in range(n):
@@ -8449,7 +8447,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
         self._start_autonomy_watchdog()
 
-    def _build_mode_blocks_for_tab(
+    def _build_mode_blocks_for_tab(  # noqa: C901
         self, intervals: List[Dict[str, Any]], tab_name: str
     ) -> List[Dict[str, Any]]:
         """
@@ -9136,10 +9134,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         _LOGGER.info("Unified Cost Tile: Building fresh data...")
         build_start = dt_util.now()
 
-        today = now.date()
-        yesterday = today - timedelta(days=1)
-        tomorrow = today + timedelta(days=1)
-
         # Build data for each day
         try:
             today_data = await self._build_today_cost_data()
@@ -9198,13 +9192,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return result
 
-    async def build_autonomy_cost_tile(self) -> Dict[str, Any]:
+    async def build_autonomy_cost_tile(self) -> Dict[str, Any]:  # noqa: C901
         """Build cost tile data for autonomous preview with blended totals."""
 
         now = dt_util.now()
         today = now.date()
         tomorrow = today + timedelta(days=1)
-        yesterday = today - timedelta(days=1)
 
         preview = self._autonomy_preview or {}
         timeline = preview.get("timeline", [])
@@ -9593,7 +9586,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 try:
                     start_dt = datetime.fromisoformat(group["start_time"])
                     group["start_time"] = start_dt.strftime("%H:%M")
-                except:
+                except Exception:
                     pass
 
             if group["end_time"]:
@@ -9602,7 +9595,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # Přidat 15 minut pro konec intervalu
                     end_dt = end_dt + timedelta(minutes=15)
                     group["end_time"] = end_dt.strftime("%H:%M")
-                except:
+                except Exception:
                     pass
 
             # PHASE 3.0: KEEP intervals for Detail Tabs API
@@ -9707,13 +9700,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         total_actual_load = sum(
             i.get("actual", {}).get("load_kwh", 0) for i in completed
-        )
-
-        total_plan_cost = sum(
-            i.get("planned", {}).get("net_cost", 0) for i in completed
-        )
-        total_actual_cost = sum(
-            i.get("actual", {}).get("net_cost", 0) for i in completed
         )
 
         # Calculate variances
@@ -9873,17 +9859,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             (final_battery / 10.0 * 100) if final_battery else 0
         )  # assuming 10 kWh capacity
 
-        # Average spot price
-        avg_price = (
-            sum(
-                safe_nested_get(i, "planned", "spot_price", default=0)
-                for i in intervals
-            )
-            / len(intervals)
-            if intervals
-            else 0
-        )
-
         # Build text
         text = f"Zítra plánujeme {total_cost:.0f} Kč.\n"
         text += f"Očekávaná solární výroba: {total_solar:.1f} kWh"
@@ -9912,7 +9887,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return text
 
-    async def _build_today_cost_data(self) -> Dict[str, Any]:
+    async def _build_today_cost_data(self) -> Dict[str, Any]:  # noqa: C901
         """
         Build today's cost data with actual vs plan tracking.
 
@@ -10108,14 +10083,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         total_intervals = len(intervals)
         completed_count = len(completed)
 
-        # EOD prediction
-        # ZMĚNA: Používáme plán pro budoucí intervaly, ne drift ratio
-        # (drift ratio platí jen pro již proběhlé intervaly)
-        if plan_completed > 0:
-            drift_ratio = actual_completed / plan_completed
-        else:
-            drift_ratio = 1.0
-
         # EOD = actual (dosud) + plánované budoucí náklady
         eod_predicted = actual_completed + plan_future
         eod_vs_plan = eod_predicted - plan_total
@@ -10254,7 +10221,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "delta": round(delta, 2),
             "blended_total_cost": round(actual_completed + plan_future, 2),
             "actual_cost_so_far": round(actual_completed, 2),
-            "future_plan_cost": round(plan_future, 2),
             "performance": performance,
             "completed_intervals": completed_count,
             "total_intervals": total_intervals,
@@ -10326,7 +10292,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 return
 
             now = dt_util.now()
-            today_str = now.date().strftime("%Y-%m-%d")
 
             # Backfill posledních 7 dní (kromě dneška)
             backfilled_count = 0
@@ -10750,7 +10715,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return mode_id
 
-    async def _build_day_timeline(
+    async def _build_day_timeline(  # noqa: C901
         self, date: date, storage_plans: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -10823,7 +10788,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                     "mode_name": mode_entry.get("mode_name"),
                                 }
                             )
-                        except:
+                        except Exception:
                             continue
 
                 # Sort by time
@@ -10832,7 +10797,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Expand to all 15-min intervals in the day
                 # Fill forward: each interval gets the mode that was active at that time
                 interval_time = day_start
-                current_mode_idx = 0
 
                 while interval_time <= fetch_end:
                     # Find the mode that was active at interval_time
@@ -10841,7 +10805,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     for i, change in enumerate(mode_changes):
                         if change["time"] <= interval_time:
                             active_mode = change
-                            current_mode_idx = i
                         else:
                             break
 
@@ -10896,7 +10859,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             planned_dt = dt_util.as_local(planned_dt)
                             time_str = planned_dt.strftime("%Y-%m-%dT%H:%M:%S")
                             planned_intervals_map[time_str] = planned_entry
-                        except:
+                        except Exception:
                             continue
 
                 _LOGGER.debug(
@@ -11240,7 +11203,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Make timezone-aware if naive
                         if interval_time.tzinfo is None:
                             interval_time = dt_util.as_local(interval_time)
-                    except:
+                    except Exception:
                         continue
 
                     if day_start <= interval_time <= day_end:
@@ -11395,7 +11358,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     historical.append(interval)
                 else:
                     future.append(interval)
-            except:
+            except Exception:
                 continue
 
         # PHASE 3.0 FIX: Safe cost getter (reuse from _build_today_cost_data)
@@ -11470,7 +11433,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "is_current": is_current,
                     }
                 )
-            except:
+            except Exception:
                 continue
 
         return {
@@ -11553,7 +11516,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 interval_time = datetime.fromisoformat(
                     timestamp_str.replace("Z", "+00:00")
                 )
-            except:
+            except Exception:
                 continue
 
             # Filtry
@@ -11786,7 +11749,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     if current_time < point_time <= autonomy_end:
                         autonomy_consumption += point.get("consumption_kwh", 0)
-                except:
+                except Exception:
                     continue
 
             blackout_soc = max(
@@ -12028,7 +11991,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         distribution_fee_vt_kwh = config.get("distribution_fee_vt_kwh", 1.50)
         distribution_fee_nt_kwh = config.get("distribution_fee_nt_kwh", 1.20)
         vat_rate = config.get("vat_rate", 21.0)
-        dual_tariff_enabled = config.get("dual_tariff_enabled", True)
 
         # 1. Obchodní cena (spot + přirážka)
         if pricing_model == "percentage":
@@ -12276,7 +12238,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🌞 SOLAR DEBUG: Today sample: {dict(zip(sample_keys, sample_values))}"
             )
         else:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
+            _LOGGER.warning("🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
 
         if tomorrow:
             sample_keys = list(tomorrow.keys())[:3]
@@ -12285,7 +12247,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 f"🌞 SOLAR DEBUG: Tomorrow sample: {dict(zip(sample_keys, sample_values))}"
             )
         else:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
+            _LOGGER.warning("🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
 
         return {"today": today, "tomorrow": tomorrow}
 
@@ -12550,7 +12512,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if timestamp.hour in [14, 15, 16]:
             _LOGGER.debug(
                 f"Solar for {timestamp.strftime('%H:%M')}: "
-                f"key={hour_key}, kW={hourly_kw}, 15min_kWh={hourly_kw/4.0:.3f}"
+                f"key={hour_key}, kW={hourly_kw}, 15min_kWh={hourly_kw / 4.0:.3f}"
             )
 
         # Převést na 15min interval
@@ -13137,9 +13099,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 efficiency=efficiency,
             )
             cost_charge = result_charge["total_charging_cost"]
-            min_soc_charge = result_charge["min_soc"]
-            final_soc_charge = result_charge["final_soc"]
-            death_valley_charge = result_charge["death_valley_reached"]
 
             # Scénář 2: Počkat (nenabíjet tady)
             result_wait = self._simulate_forward(
@@ -13153,7 +13112,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             cost_wait = result_wait["total_charging_cost"]
             min_soc_wait = result_wait["min_soc"]
-            final_soc_wait = result_wait["final_soc"]
             death_valley_wait = result_wait["death_valley_reached"]
 
             # ROZHODNUTÍ 1: Death valley prevence
@@ -13388,7 +13346,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # KROK 4: PRIORITA 2 - Dosáhnout cílové kapacity na konci (v levných hodinách)
         max_iterations = 100
         iteration = 0
-        used_intervals = set()  # Sledovat použité intervaly
 
         # Vypočítat effective_target (pro 100% target použít 99%)
         effective_target = target_capacity
@@ -14105,7 +14062,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
 
             # Načíst ze statistics (hodinové průměry)
-            from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.statistics import (
                 statistics_during_period,
             )
@@ -14560,7 +14516,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 current_battery_kwh = point.get("battery_capacity_kwh")
                 _LOGGER.info(
                     f"[Planner] Baseline forecast at {point_time.strftime('%H:%M')}: "
-                    f"{current_battery_kwh:.2f} kWh ({current_battery_kwh/max_capacity*100:.1f}%)"
+                    f"{current_battery_kwh:.2f} kWh ({current_battery_kwh / max_capacity * 100:.1f}%)"
                 )
                 break
 
@@ -14816,7 +14772,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             True pokud úspěšně zrušeno
         """
         if not hasattr(self, "_active_charging_plan") or not self._active_charging_plan:
-            _LOGGER.debug(f"[Planner] No active plan to cancel")
+            _LOGGER.debug("[Planner] No active plan to cancel")
             return False
 
         if self._active_charging_plan["requester"] != requester:
@@ -14941,15 +14897,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         original_timeline = baseline_timeline  # Use BASELINE for simulation!
 
         # 2. Najít charging intervaly (nejlevnější v okně)
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
-
         max_capacity_kwh = self._get_max_battery_capacity()
         target_soc_kwh = (target_soc_percent / 100.0) * max_capacity_kwh
-        charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
 
         # Najít charging intervaly pomocí plan_charging_to_target
         # která používá baseline forecast pro určení aktuální kapacity
@@ -15771,7 +15720,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         # Získat aktuální čas
         now = dt_util.now()
-        current_time = now.time()
 
         # Získat aktuální režim z coordinator
         current_mode = self._get_current_mode()
@@ -16340,13 +16288,12 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
             "_last_month_data": self._last_month_data,
         }
 
-    async def _try_load_last_month_from_history(self) -> None:
+    async def _try_load_last_month_from_history(self) -> None:  # noqa: C901
         """
         Pokus o načtení dat za minulý měsíc z historie HA.
         Použije monthly sensors k vypočtení efficiency za minulý měsíc.
         """
         try:
-            from homeassistant.components import recorder
             from homeassistant.components.recorder.history import get_significant_states
         except ImportError:
             _LOGGER.warning("🔋 Recorder component not available")
@@ -16756,7 +16703,7 @@ class OigCloudBatteryForecastPerformanceSensor(
         except Exception as e:
             _LOGGER.error(f"Error updating performance sensor: {e}", exc_info=True)
 
-    async def _maybe_fix_daily_plan(self, now: datetime, today_str: str) -> None:
+    async def _maybe_fix_daily_plan(self, now: datetime, today_str: str) -> None:  # noqa: C901
         """
         Fixovat denní plán při prvním DP výpočtu dne.
 
@@ -16868,7 +16815,7 @@ class OigCloudBatteryForecastPerformanceSensor(
                 f"total_so_far={self._today_plan['actual_cost_so_far']:.2f} Kč"
             )
         else:
-            _LOGGER.debug(f"📊 Skipping interval tracking - missing data")
+            _LOGGER.debug("📊 Skipping interval tracking - missing data")
 
     async def _get_actual_grid_import(self) -> Optional[float]:
         """

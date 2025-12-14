@@ -1231,7 +1231,7 @@ class BatteryCapacityTracker:
                 if len(data["cycles"]) > MAX_CYCLES * 0.9:
                     _LOGGER.info(
                         f"Storage usage: {len(data['cycles'])}/{MAX_CYCLES} measurements "
-                        f"({len(data['cycles'])*100/MAX_CYCLES:.0f}%) - "
+                        f"({len(data['cycles']) * 100 / MAX_CYCLES:.0f}%) - "
                         f"~{len(data['cycles']) / 50:.0f} years of data at typical rate"
                     )
 

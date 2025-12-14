@@ -3429,7 +3429,7 @@ class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
             },
         )
 
-    async def async_step_solar_forecast(
+    async def async_step_solar_forecast(  # noqa: C901
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Konfigurace solární předpovědi."""

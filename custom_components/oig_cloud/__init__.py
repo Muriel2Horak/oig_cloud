@@ -379,7 +379,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         _LOGGER.debug("Panel removal handled gracefully: %s", e)
 
 
-async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:  # noqa: C901
     """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
     _LOGGER.info("🔍 Starting _migrate_entity_unique_ids function...")
     from homeassistant.helpers import entity_registry as er
@@ -579,7 +579,7 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         )
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
     _LOGGER.info(f"Setting up OIG Cloud entry: {entry.title}")

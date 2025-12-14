@@ -118,7 +118,7 @@ tracer = trace.get_tracer(__name__)
 STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
 
 
-async def async_setup_services(hass: HomeAssistant) -> None:
+async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
     """Nastavení základních služeb pro OIG Cloud."""
 
     async def handle_update_solar_forecast(call: ServiceCall) -> None:

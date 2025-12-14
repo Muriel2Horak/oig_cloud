@@ -10,7 +10,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .oig_cloud_data_source_sensor import OigCloudDataSourceSensor
 from .oig_cloud_sensor import resolve_box_id
-from .oig_cloud_sensor import resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -375,7 +374,7 @@ def get_device_info_for_sensor(
         return main_device_info
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up OIG Cloud sensors from a config entry."""

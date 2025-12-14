@@ -6,10 +6,9 @@ import time
 from typing import Dict, Any, Optional
 
 import aiohttp
+from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
 
 _LOGGER = logging.getLogger(__name__)
-
-from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
 
 
 class SimpleTelemetry:

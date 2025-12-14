@@ -1,6 +1,9 @@
 import logging
 from typing import Any
 
+from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
+from .shared import get_resource
+
 _LOGGER = logging.getLogger(__name__)
 
 try:
@@ -24,9 +27,6 @@ except ImportError:
     BatchSpanProcessor = None  # type: ignore
     OTLPSpanExporter = None  # type: ignore
     Compression = None  # type: ignore
-
-from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
-from .shared import get_resource
 
 
 def setup_tracer(module_name: str) -> Any:

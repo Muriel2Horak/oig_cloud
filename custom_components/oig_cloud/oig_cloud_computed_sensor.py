@@ -179,7 +179,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
-        global _energy_stores
         if self._box_id not in _energy_stores and hasattr(self, "hass") and self.hass:
             _energy_stores[self._box_id] = Store(
                 self.hass,
@@ -193,8 +192,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     async def _load_energy_from_storage(self) -> bool:
         """Load energy data from persistent storage. Returns True if data was loaded."""
-        global _energy_data_cache
-
         # Already loaded for this box?
         if self._box_id in _energy_data_cache:
             cached = _energy_data_cache[self._box_id]
@@ -245,7 +242,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         try:
             # Update cache
-            global _energy_data_cache
             _energy_data_cache[self._box_id] = self._energy.copy()
 
             data = {
@@ -332,7 +328,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         await self._save_energy_to_storage(force=True)
 
     @property
-    def state(self) -> Optional[Union[float, str]]:
+    def state(self) -> Optional[Union[float, str]]:  # noqa: C901
         if self.coordinator.data is None:
             return None
 

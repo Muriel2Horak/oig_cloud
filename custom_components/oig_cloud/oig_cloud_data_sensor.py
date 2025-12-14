@@ -7,7 +7,6 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 
 from .data_source import (
-    DATA_SOURCE_CLOUD_ONLY,
     DATA_SOURCE_HYBRID,
     DATA_SOURCE_LOCAL_ONLY,
     get_data_source_state,
@@ -135,7 +134,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         pass
 
     @property
-    def state(self) -> Any:
+    def state(self) -> Any:  # noqa: C901
         """Return the state of the sensor."""
         try:
             # Notification sensors - OPRAVA: Debug logování + lepší diagnostika

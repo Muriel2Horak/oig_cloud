@@ -15,7 +15,6 @@ from homeassistant.helpers.event import (
 
 from .const import DEFAULT_NAME, DOMAIN
 from .data_source import (
-    DATA_SOURCE_CLOUD_ONLY,
     DATA_SOURCE_HYBRID,
     DATA_SOURCE_LOCAL_ONLY,
     PROXY_LAST_DATA_ENTITY_ID,

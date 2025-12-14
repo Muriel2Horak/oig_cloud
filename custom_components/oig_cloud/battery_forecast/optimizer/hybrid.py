@@ -884,7 +884,7 @@ class HybridOptimizer:
 
         return ups_added
 
-    def _apply_balancing_charging(
+    def _apply_balancing_charging(  # noqa: C901
         self,
         modes: List[int],
         spot_prices: List[Dict[str, Any]],

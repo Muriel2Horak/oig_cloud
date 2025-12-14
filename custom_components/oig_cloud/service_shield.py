@@ -974,7 +974,7 @@ class ServiceShield:
         self._setup_state_listener()
 
     @callback
-    async def _check_loop(self, _now: datetime) -> None:
+    async def _check_loop(self, _now: datetime) -> None:  # noqa: C901
         # Lock mechanismus - prevence concurrent execution
         if self._is_checking:
             _LOGGER.debug("[OIG Shield] Check loop již běží, přeskakuji")
@@ -1158,7 +1158,7 @@ class ServiceShield:
                     if entity_id.startswith("fake_formating_mode_"):
                         all_ok = False
                         _LOGGER.debug(
-                            f"[OIG Shield] Formating mode - čekám na timeout (zbývá {timeout_minutes - (datetime.now() - info['called_at']).total_seconds()/60:.1f} min)"
+                            f"[OIG Shield] Formating mode - čekám na timeout (zbývá {timeout_minutes - (datetime.now() - info['called_at']).total_seconds() / 60:.1f} min)"
                         )
                         break
 
@@ -1422,7 +1422,7 @@ class ServiceShield:
                 reason or "-",
             )
 
-    def extract_expected_entities(
+    def extract_expected_entities(  # noqa: C901
         self, service_name: str, data: Dict[str, Any]
     ) -> Dict[str, str]:
         """Extrahuje očekávané entity a jejich cílové hodnoty z parametrů služby.

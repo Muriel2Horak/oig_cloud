@@ -337,7 +337,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             # Naplánujeme další pokus na zítra
             self._schedule_spot_price_update()
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> Dict[str, Any]:  # noqa: C901
         """Aktualizace základních dat."""
         _LOGGER.debug("🔄 _async_update_data called - starting update cycle")
 

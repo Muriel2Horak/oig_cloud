@@ -248,7 +248,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         # Kontrola rate limiting - nikdy neaktualizujeme častěji než každých 5 minut
         if current_time - self._last_api_call < self._min_api_interval:
             _LOGGER.debug(
-                f"🌞 Rate limiting: {(current_time - self._last_api_call)/60:.1f} minutes since last call"
+                f"🌞 Rate limiting: {(current_time - self._last_api_call) / 60:.1f} minutes since last call"
             )
             return
 
@@ -266,7 +266,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                     time_since_last = current_time - self._last_api_call
                     if time_since_last < 10800:  # 3 hodiny
                         _LOGGER.debug(
-                            f"🌞 Skipping update - last call was {time_since_last/60:.1f} minutes ago"
+                            f"🌞 Skipping update - last call was {time_since_last / 60:.1f} minutes ago"
                         )
                         return
 
@@ -785,7 +785,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         return None
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> Dict[str, Any]:  # noqa: C901
         """Dodatečné atributy s hodinovými výkony a aktuální hodinovou prognózou."""
         if not self._last_forecast_data:
             return {}
@@ -854,7 +854,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                         elif hour_dt.date() == tomorrow:
                             tomorrow_total[hour_str] = power_kw
                             tomorrow_total_sum += power_kw
-                    except:
+                    except Exception:
                         continue
 
                 for hour_str, power in string1_hourly.items():
@@ -868,7 +868,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                         elif hour_dt.date() == tomorrow:
                             tomorrow_string1[hour_str] = power_kw
                             tomorrow_string1_sum += power_kw
-                    except:
+                    except Exception:
                         continue
 
                 for hour_str, power in string2_hourly.items():
@@ -882,7 +882,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                         elif hour_dt.date() == tomorrow:
                             tomorrow_string2[hour_str] = power_kw
                             tomorrow_string2_sum += power_kw
-                    except:
+                    except Exception:
                         continue
 
                 attrs.update(
@@ -935,7 +935,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                         elif hour_dt.date() == tomorrow:
                             tomorrow_hours[hour_str] = power_kw
                             tomorrow_sum += power_kw
-                    except:
+                    except Exception:
                         continue
 
                 attrs.update(
@@ -979,7 +979,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                         elif hour_dt.date() == tomorrow:
                             tomorrow_hours[hour_str] = power_kw
                             tomorrow_sum += power_kw
-                    except:
+                    except Exception:
                         continue
 
                 attrs.update(
