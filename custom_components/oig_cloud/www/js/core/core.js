@@ -117,7 +117,7 @@ function detectAndApplyTheme() {
             }
         }
 
-        // Aplikovat třídu na body
+// Aplikovat třídu na body
         if (isLightTheme) {
             bodyElement.classList.add('light-theme');
             bodyElement.classList.remove('dark-theme');
@@ -134,6 +134,49 @@ function detectAndApplyTheme() {
         document.body.classList.add('dark-theme');
         document.body.classList.remove('light-theme');
     }
+}
+
+// === NUMBER ROLLING EFFECT ===
+// Přidá animaci podobnou split-flap při změně textContent u vybraných prvků
+function initRollingNumbers() {
+    const selectors = [
+        '.stat-value',
+        '.day-stat-value',
+        '.card .value',
+        '.tile-value',
+        '.price-value',
+    ];
+
+    const targets = Array.from(document.querySelectorAll(selectors.join(',')));
+    if (!targets.length) {
+        return;
+    }
+
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'characterData') {
+                const el = mutation.target.parentElement;
+                if (!el) return;
+                el.classList.remove('rolling-change');
+                // force reflow to restart animation
+                void el.offsetWidth;
+                el.classList.add('rolling-change');
+            } else if (mutation.type === 'childList' && mutation.target) {
+                const el = /** @type {HTMLElement} */ (mutation.target);
+                el.classList.remove('rolling-change');
+                void el.offsetWidth;
+                el.classList.add('rolling-change');
+            }
+        });
+    });
+
+    targets.forEach((el) => {
+        observer.observe(el, {
+            characterData: true,
+            subtree: true,
+            childList: true,
+        });
+    });
 }
 
 // === TOOLTIP SYSTEM ===
@@ -284,6 +327,9 @@ function init() {
 
     // Initialize tooltip system
     initTooltips();
+
+    // Start number rolling animation observer
+    initRollingNumbers();
 
     // Phase 2.7: Initialize performance tracking chart
     initPerformanceChart();

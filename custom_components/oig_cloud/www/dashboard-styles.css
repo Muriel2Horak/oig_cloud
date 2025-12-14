@@ -6698,6 +6698,7 @@
 .price-value {
     transition: color 0.25s ease, transform 0.25s ease, text-shadow 0.35s ease;
     will-change: transform, color;
+    font-variant-numeric: tabular-nums;
 }
 
 .stat-item.positive .stat-value,
@@ -6718,6 +6719,28 @@
     100% {
         transform: scale(1);
         text-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+}
+
+/* Split-flap inspired roll when number changes */
+.rolling-change {
+    animation: value-roll 0.55s ease;
+    transform-origin: center;
+    display: inline-block;
+}
+
+@keyframes value-roll {
+    0% {
+        transform: translateY(-40%) rotateX(36deg);
+        opacity: 0.35;
+    }
+    45% {
+        transform: translateY(12%) rotateX(-10deg);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(0) rotateX(0deg);
+        opacity: 1;
     }
 }
 
