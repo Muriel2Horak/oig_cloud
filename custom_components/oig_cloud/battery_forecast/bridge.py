@@ -16,10 +16,7 @@ Usage in oig_cloud_battery_forecast.py:
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
-
-from homeassistant.util import dt as dt_util
 
 from .sensor import (
     BatteryForecastOrchestrator,
@@ -28,8 +25,6 @@ from .sensor import (
 )
 from .types import (
     CBB_MODE_HOME_I,
-    CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
     DEFAULT_CHARGE_RATE_KW,
@@ -201,8 +196,6 @@ def _convert_to_legacy_format(
 
     The legacy code expects specific keys in the result dict.
     """
-    n_intervals = len(result.modes) if result.modes else 0
-
     # Build optimal_timeline in legacy format
     optimal_timeline: List[Dict[str, Any]] = []
 
@@ -318,7 +311,9 @@ def validate_bridge_compatibility(
             f"Mode count differs: legacy={len(legacy_modes)}, new={len(new_modes)}"
         )
     else:
-        mode_diff_count = sum(1 for l, n in zip(legacy_modes, new_modes) if l != n)
+        mode_diff_count = sum(
+            1 for legacy_mode, new_mode in zip(legacy_modes, new_modes) if legacy_mode != new_mode
+        )
         if mode_diff_count > 0:
             differences.append(
                 f"Mode differences in {mode_diff_count}/{len(legacy_modes)} intervals"
@@ -453,8 +448,6 @@ def calculate_timeline_with_new_module(
         Timeline in legacy format
     """
     from .timeline.simulator import SoCSimulator
-    from .timeline.builder import TimelineBuilder
-
     n_intervals = len(spot_prices)
 
     # Convert solar forecast
@@ -474,11 +467,6 @@ def calculate_timeline_with_new_module(
         min_capacity=min_capacity,
         charge_rate_kw=charge_rate_kw,
         efficiency=efficiency,
-    )
-
-    builder = TimelineBuilder(
-        max_capacity=max_capacity,
-        min_capacity=min_capacity,
     )
 
     # Simulate timeline
