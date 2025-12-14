@@ -2699,7 +2699,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         # - `config_entry` property is read-only and only available after HA sets `hass`.
         # - In HA 2025.12, the config entry id is derived from `self.handler` (set by HA).
         super().__init__()
-        self._config_entry_id = config_entry.entry_id
         self._config_entry_cache = config_entry
 
         # Předvyplnit wizard_data z existující konfigurace – robustně proti chybějícím/poškozeným datům
@@ -3007,10 +3006,18 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 class _OigCloudOptionsFlowHandlerLegacy(config_entries.OptionsFlow):
     """Legacy options flow handler - kept for reference."""
 
+    @property
+    def config_entry(self) -> config_entries.ConfigEntry:
+        """Return config entry, even if hass isn't attached yet."""
+        try:
+            return super().config_entry  # type: ignore[attr-defined]
+        except Exception:
+            return getattr(self, "_config_entry_cache", None)
+
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         super().__init__()
-        self.config_entry = config_entry
+        self._config_entry_cache = config_entry
 
     async def async_step_init_legacy(
         self, user_input: Optional[Dict[str, Any]] = None
