@@ -564,15 +564,42 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         self, spot_data: Dict[str, Any]
     ) -> Optional[float]:
         """Původní logika pro spotové ceny."""
-        # Načíst konfiguraci cenového modelu
+        if self._sensor_type in ("spot_price_hourly_all", "spot_price_current_czk_kwh"):
+            return self._get_current_spot_price_czk(spot_data)
+
+        if self._sensor_type == "spot_price_current_eur_mwh":
+            return self._get_current_spot_price_eur(spot_data)
+
+        if self._sensor_type == "spot_price_today_avg":
+            return self._get_today_average_price(spot_data)
+
+        if self._sensor_type == "spot_price_today_min":
+            return self._get_today_extreme_price(spot_data, find_min=True)
+
+        if self._sensor_type == "spot_price_today_max":
+            return self._get_today_extreme_price(spot_data, find_min=False)
+
+        if self._sensor_type == "spot_price_tomorrow_avg":
+            return self._get_tomorrow_average_price(spot_data)
+
+        if self._sensor_type == "eur_czk_exchange_rate":
+            exchange_rate = spot_data.get("eur_czk_rate")
+            return round(exchange_rate, 4) if exchange_rate is not None else None
+
+        return None
+
+    # Helpers to keep complexity low
+    def _final_price_with_fees(
+        self, spot_price_czk: Optional[float], target_datetime: Optional[datetime] = None
+    ) -> Optional[float]:
+        """Vypočítat finální cenu včetně obchodních a distribučních poplatků a DPH."""
+        if spot_price_czk is None:
+            return None
+
         pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
-        positive_fee_percent = self._entry.options.get(
-            "spot_positive_fee_percent", 15.0
-        )
+        positive_fee_percent = self._entry.options.get("spot_positive_fee_percent", 15.0)
         negative_fee_percent = self._entry.options.get("spot_negative_fee_percent", 9.0)
         fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
-
-        # OPRAVA: Použít správné názvy polí pro distribuční poplatky
         distribution_fee_vt_kwh = self._entry.options.get(
             "distribution_fee_vt_kwh", 1.35
         )
@@ -582,132 +609,80 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
         vat_rate = self._entry.options.get("vat_rate", 21.0)
 
-        def calculate_final_price(
-            spot_price_czk: float, target_datetime: datetime = None
-        ) -> float:
-            """Vypočítat finální cenu včetně obchodních a distribučních poplatků a DPH."""
-            if pricing_model == "percentage":
-                if spot_price_czk >= 0:
-                    commercial_price = spot_price_czk * (
-                        1 + positive_fee_percent / 100.0
-                    )
-                else:
-                    commercial_price = spot_price_czk * (
-                        1 - negative_fee_percent / 100.0
-                    )
-            else:  # fixed
-                fixed_fee_kwh = fixed_fee_mwh / 1000.0  # MWh -> kWh
-                commercial_price = spot_price_czk + fixed_fee_kwh
-
-            # Pro výpočet použijeme tarif pro konkrétní datum/čas nebo aktuální
-            if target_datetime:
-                current_tariff = self._get_tariff_for_datetime(target_datetime)
-            elif dual_tariff_enabled:
-                current_tariff = self._calculate_current_tariff()
+        if pricing_model == "percentage":
+            if spot_price_czk >= 0:
+                commercial_price = spot_price_czk * (1 + positive_fee_percent / 100.0)
             else:
-                current_tariff = "VT"
+                commercial_price = spot_price_czk * (1 - negative_fee_percent / 100.0)
+        else:  # fixed
+            fixed_fee_kwh = fixed_fee_mwh / 1000.0  # MWh -> kWh
+            commercial_price = spot_price_czk + fixed_fee_kwh
 
-            distribution_fee = (
-                distribution_fee_vt_kwh
-                if current_tariff == "VT"
-                else distribution_fee_nt_kwh
-            )
+        if target_datetime:
+            current_tariff = self._get_tariff_for_datetime(target_datetime)
+        elif dual_tariff_enabled:
+            current_tariff = self._calculate_current_tariff()
+        else:
+            current_tariff = "VT"
 
-            # Cena bez DPH
-            price_without_vat = commercial_price + distribution_fee
+        distribution_fee = (
+            distribution_fee_vt_kwh if current_tariff == "VT" else distribution_fee_nt_kwh
+        )
 
-            # Finální cena včetně DPH zaokrouhlená na 2 desetinná místa
-            return round(price_without_vat * (1 + vat_rate / 100.0), 2)
+        price_without_vat = commercial_price + distribution_fee
+        return round(price_without_vat * (1 + vat_rate / 100.0), 2)
 
-        # PŘIDÁNO: Pro spot_price_hourly_all vrátit aktuální spotovou cenu s finálním přepočtem
-        if self._sensor_type == "spot_price_hourly_all":
-            now = datetime.now()
-            current_hour_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
-            prices_czk = spot_data.get("prices_czk_kwh", {})
-            spot_price = prices_czk.get(current_hour_key)
-            if spot_price is not None:
-                return calculate_final_price(spot_price, now)
-            return None
+    def _get_current_spot_price_czk(self, spot_data: Dict[str, Any]) -> Optional[float]:
+        now = datetime.now()
+        current_hour_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
+        prices_czk = spot_data.get("prices_czk_kwh", {})
+        spot_price = prices_czk.get(current_hour_key)
+        return self._final_price_with_fees(spot_price, now)
 
-        # OPRAVA: Přizpůsobit klíče podle struktury OTE API dat s finálním přepočtem
-        if self._sensor_type == "spot_price_current_czk_kwh":
-            now = datetime.now()
-            current_hour_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
-            prices_czk = spot_data.get("prices_czk_kwh", {})
-            spot_price = prices_czk.get(current_hour_key)
-            if spot_price is not None:
-                return calculate_final_price(spot_price, now)
-            return None
+    def _get_current_spot_price_eur(self, spot_data: Dict[str, Any]) -> Optional[float]:
+        now = datetime.now()
+        current_hour_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
+        prices_eur = spot_data.get("prices_eur_mwh", {})
+        eur_price = prices_eur.get(current_hour_key)
+        return round(eur_price, 2) if eur_price is not None else None
 
-        elif self._sensor_type == "spot_price_current_eur_mwh":
-            # EUR/MWh ponechat hrubé (referenční ceny) - také zaokrouhlit
-            now = datetime.now()
-            current_hour_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
-            prices_eur = spot_data.get("prices_eur_mwh", {})
-            eur_price = prices_eur.get(current_hour_key)
-            return round(eur_price, 2) if eur_price is not None else None
+    def _get_today_average_price(self, spot_data: Dict[str, Any]) -> Optional[float]:
+        today_stats = spot_data.get("today_stats", {})
+        spot_avg = today_stats.get("avg_czk")
+        return self._final_price_with_fees(spot_avg) if spot_avg is not None else None
 
-        elif self._sensor_type == "spot_price_today_avg":
-            # Pro průměry používáme aktuální tarif jako aproximaci
-            today_stats = spot_data.get("today_stats", {})
-            spot_avg = today_stats.get("avg_czk")
-            return calculate_final_price(spot_avg) if spot_avg is not None else None
+    def _get_today_extreme_price(
+        self, spot_data: Dict[str, Any], find_min: bool
+    ) -> Optional[float]:
+        prices_czk = spot_data.get("prices_czk_kwh", {})
+        today = datetime.now().date()
+        best_final_price: Optional[float] = None
 
-        elif self._sensor_type == "spot_price_today_min":
-            # Pro minimum najdeme nejlevnější hodinu včetně distribuce
-            prices_czk = spot_data.get("prices_czk_kwh", {})
-            today = datetime.now().date()
-            min_final_price = None
-
-            for time_key, spot_price in prices_czk.items():
-                try:
-                    price_datetime = datetime.fromisoformat(
-                        time_key.replace("Z", "+00:00")
-                    )
-                    if price_datetime.date() == today:
-                        final_price = calculate_final_price(spot_price, price_datetime)
-                        if min_final_price is None or final_price < min_final_price:
-                            min_final_price = final_price
-                except (ValueError, AttributeError):
+        for time_key, spot_price in prices_czk.items():
+            try:
+                price_datetime = datetime.fromisoformat(time_key.replace("Z", "+00:00"))
+                if price_datetime.date() != today:
                     continue
-
-            return min_final_price
-
-        elif self._sensor_type == "spot_price_today_max":
-            # Pro maximum najdeme nejdražší hodinu včetně distribuce
-            prices_czk = spot_data.get("prices_czk_kwh", {})
-            today = datetime.now().date()
-            max_final_price = None
-
-            for time_key, spot_price in prices_czk.items():
-                try:
-                    price_datetime = datetime.fromisoformat(
-                        time_key.replace("Z", "+00:00")
-                    )
-                    if price_datetime.date() == today:
-                        final_price = calculate_final_price(spot_price, price_datetime)
-                        if max_final_price is None or final_price > max_final_price:
-                            max_final_price = final_price
-                except (ValueError, AttributeError):
+                final_price = self._final_price_with_fees(spot_price, price_datetime)
+                if final_price is None:
                     continue
+                if best_final_price is None:
+                    best_final_price = final_price
+                elif find_min and final_price < best_final_price:
+                    best_final_price = final_price
+                elif not find_min and final_price > best_final_price:
+                    best_final_price = final_price
+            except (ValueError, AttributeError):
+                continue
 
-            return max_final_price
+        return best_final_price
 
-        elif self._sensor_type == "spot_price_tomorrow_avg":
-            # Pro zítřejší průměr používáme aproximaci s aktuálním tarifem
-            tomorrow_stats = spot_data.get("tomorrow_stats")
-            if tomorrow_stats:
-                spot_avg = tomorrow_stats.get("avg_czk")
-                return calculate_final_price(spot_avg) if spot_avg is not None else None
+    def _get_tomorrow_average_price(self, spot_data: Dict[str, Any]) -> Optional[float]:
+        tomorrow_stats = spot_data.get("tomorrow_stats")
+        if not tomorrow_stats:
             return None
-
-        elif self._sensor_type == "eur_czk_exchange_rate":
-            exchange_rate = spot_data.get("eur_czk_rate")
-            return (
-                round(exchange_rate, 4) if exchange_rate is not None else None
-            )  # Kurz na 4 desetinná místa
-
-        return None
+        spot_avg = tomorrow_stats.get("avg_czk")
+        return self._final_price_with_fees(spot_avg) if spot_avg is not None else None
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

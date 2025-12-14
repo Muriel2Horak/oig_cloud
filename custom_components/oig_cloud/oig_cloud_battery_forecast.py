@@ -4044,7 +4044,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except:
+            except Exception:
                 solar_kwh = 0.0
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
