@@ -193,6 +193,7 @@ analyze_*.sh
 debug_*.sh
 quick_*.sh
 test_*.py
+scripts/cleanup_oig_cloud_devices.py
 backups/
 *.tar.gz
 *.zip
