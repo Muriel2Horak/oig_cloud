@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timeline dialog** – plan toggle lets you switch between live Hybrid control and the new Autonomy preview dataset directly in the modal and from the autonomy cost tile.
 - **Analytics tile action** – the “Autonomní plán” card now opens the timeline dialog pre-filtered to the Autonomy plan instead of the unfinished detail dialog.
 
+## [2.0.6-pre.1] - 2025-12-16
+
+### ✨ Added
+
+- **Local datasource mode** – option to mirror values from local HA entities into cloud OIG sensors (event-driven) with UI/dashboard support.
+- **Local SonarQube tooling** – `docker-compose.sonarqube.yml`, `scripts/sonar_local.sh`, and coverage config to run scans locally.
+
+### 🔧 Changed
+
+- **Dashboard value updates** – split-flap / flip-style animations + alignment fixes for tiles and configurable side tiles.
+- **Hybrid optimizer refactor** – extracted helper functions to reduce cognitive complexity (no behavior change intended).
+
+### 🐛 Fixed
+
+- **Options flow (HA 2025.12)** – hardening around handler-based entry id / protected attrs and initialization issues.
+- **Frontend HYBRID key mapping** – consistent key mapping across dashboard JS modules.
+
 ## [2.0.5] - 2025-10-29
 
 ### ✨ Added
