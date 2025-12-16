@@ -2669,6 +2669,114 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return cheap_price_threshold, False
 
+    def _find_first_index_at_or_after(
+        self, *, spot_prices: List[Dict[str, Any]], target: datetime
+    ) -> Optional[int]:
+        """Return the first interval index whose timestamp is >= target."""
+        for i, sp in enumerate(spot_prices):
+            try:
+                ts = datetime.fromisoformat(sp["time"])
+                if ts.tzinfo is None:
+                    ts = dt_util.as_local(ts)
+                if ts >= target:
+                    return i
+            except (ValueError, TypeError):
+                continue
+        return None
+
+    def _compute_required_battery(
+        self,
+        *,
+        n: int,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        target_capacity: float,
+        spot_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        efficiency: float,
+        is_balancing_mode: bool,
+        charging_deadline: Optional[datetime],
+    ) -> tuple[List[float], Optional[int]]:
+        """Backward pass: compute required battery at start of each interval."""
+        required_battery = [0.0] * (n + 1)
+
+        if is_balancing_mode and charging_deadline:
+            deadline_index = self._find_first_index_at_or_after(
+                spot_prices=spot_prices, target=charging_deadline
+            )
+
+            if deadline_index is None:
+                _LOGGER.warning(
+                    f"⚠️  Charging deadline {charging_deadline.strftime('%H:%M')} "
+                    f"not found in spot_prices range. Using last interval."
+                )
+                deadline_index = n
+
+            _LOGGER.info(
+                f"🎯 Balancing deadline: index={deadline_index}/{n}, "
+                f"time={charging_deadline.strftime('%H:%M')}"
+            )
+
+            required_battery[deadline_index] = max_capacity
+
+            for i in range(deadline_index - 1, -1, -1):
+                try:
+                    timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+                except Exception:
+                    solar_kwh = 0.0
+
+                load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+                if solar_kwh >= load_kwh:
+                    net_energy = solar_kwh - load_kwh
+                    required_battery[i] = required_battery[i + 1] - net_energy
+                else:
+                    drain = (load_kwh - solar_kwh) / efficiency
+                    required_battery[i] = required_battery[i + 1] + drain
+
+                required_battery[i] = min(required_battery[i], max_capacity)
+
+            for i in range(deadline_index, n + 1):
+                required_battery[i] = max_capacity
+
+            _LOGGER.info(
+                f"📈 Balancing backward pass: required_start={required_battery[0]:.2f} kWh, "
+                f"required_at_deadline={required_battery[deadline_index]:.2f} kWh (target=100%), "
+                f"current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f}"
+            )
+
+            return required_battery, deadline_index
+
+        required_battery[n] = max(target_capacity, min_capacity)
+
+        for i in range(n - 1, -1, -1):
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except Exception:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            if solar_kwh >= load_kwh:
+                net_energy = solar_kwh - load_kwh
+                required_battery[i] = required_battery[i + 1] - net_energy
+            else:
+                drain = (load_kwh - solar_kwh) / efficiency
+                required_battery[i] = required_battery[i + 1] + drain
+
+            required_battery[i] = min(required_battery[i], max_capacity)
+
+        _LOGGER.info(
+            f"📈 Backward pass: required_start={required_battery[0]:.2f} kWh "
+            f"(current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f})"
+        )
+
+        return required_battery, None
+
     def _calculate_optimal_modes_hybrid(  # noqa: C901
         self,
         current_capacity: float,
@@ -2847,100 +2955,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
-        required_battery = [0.0] * (n + 1)
-
-        # === BALANCING MODE: Backward pass s deadline ===
-        if is_balancing_mode and charging_deadline:
-            # Najít index charging_deadline v spot_prices
-            deadline_index = None
-            for i, sp in enumerate(spot_prices):
-                try:
-                    ts = datetime.fromisoformat(sp["time"])
-                    if ts.tzinfo is None:
-                        ts = dt_util.as_local(ts)
-                    if ts >= charging_deadline:
-                        deadline_index = i
-                        break
-                except (ValueError, TypeError):
-                    continue
-
-            if deadline_index is None:
-                _LOGGER.warning(
-                    f"⚠️  Charging deadline {charging_deadline.strftime('%H:%M')} "
-                    f"not found in spot_prices range. Using last interval."
-                )
-                deadline_index = n
-
-            _LOGGER.info(
-                f"🎯 Balancing deadline: index={deadline_index}/{n}, "
-                f"time={charging_deadline.strftime('%H:%M')}"
-            )
-
-            # Backward pass JEN DO DEADLINE - musíme být na 100%
-            required_battery[deadline_index] = max_capacity  # MUSÍ být 100% na deadline
-
-            for i in range(deadline_index - 1, -1, -1):
-                try:
-                    timestamp = datetime.fromisoformat(spot_prices[i]["time"])
-                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except Exception:
-                    solar_kwh = 0.0
-
-                load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-
-                # Co musí být NA ZAČÁTKU intervalu aby NA KONCI bylo required_battery[i+1]?
-                if solar_kwh >= load_kwh:
-                    net_energy = solar_kwh - load_kwh
-                    required_battery[i] = required_battery[i + 1] - net_energy
-                else:
-                    drain = (load_kwh - solar_kwh) / efficiency
-                    required_battery[i] = required_battery[i + 1] + drain
-
-                # Jen clamp na max kapacitu
-                required_battery[i] = min(required_battery[i], max_capacity)
-
-            # OD DEADLINE DO KONCE: holding na 100% (HOME UPS celou dobu)
-            for i in range(deadline_index, n + 1):
-                required_battery[i] = max_capacity  # Držet 100%
-
-            _LOGGER.info(
-                f"📈 Balancing backward pass: required_start={required_battery[0]:.2f} kWh, "
-                f"required_at_deadline={required_battery[deadline_index]:.2f} kWh (target=100%), "
-                f"current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f}"
-            )
-
-        else:
-            # === NORMÁLNÍ HYBRID: Backward pass do konce ===
-            required_battery[n] = max(
-                target_capacity, min_capacity
-            )  # Na konci chceme alespoň target
-
-            for i in range(n - 1, -1, -1):
-                try:
-                    timestamp = datetime.fromisoformat(spot_prices[i]["time"])
-                    solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-                except Exception:
-                    solar_kwh = 0.0
-
-                load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-
-                # Co musí být NA ZAČÁTKU intervalu aby NA KONCI bylo required_battery[i+1]?
-                if solar_kwh >= load_kwh:
-                    net_energy = solar_kwh - load_kwh
-                    required_battery[i] = required_battery[i + 1] - net_energy
-                else:
-                    drain = (load_kwh - solar_kwh) / efficiency
-                    required_battery[i] = required_battery[i + 1] + drain
-
-                # KRITICKÉ: NEPOUŽÍVAT min clamp! Pokud baterie klesá pod minimum,
-                # required_battery MUSÍ být VYŠŠÍ než min_capacity aby trigger nabíjení!
-                # Jen clamp na max kapacitu
-                required_battery[i] = min(required_battery[i], max_capacity)
-
-            _LOGGER.info(
-                f"📈 Backward pass: required_start={required_battery[0]:.2f} kWh "
-                f"(current={current_capacity:.2f}, deficit={max(0, required_battery[0] - current_capacity):.2f})"
-            )
+        required_battery, _deadline_index = self._compute_required_battery(
+            n=n,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            target_capacity=target_capacity,
+            spot_prices=spot_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            efficiency=efficiency,
+            is_balancing_mode=is_balancing_mode,
+            charging_deadline=charging_deadline,
+        )
 
         # PHASE 4: Inteligentní výběr režimu (HOME I/II/III) podle FVE a cen
         # Pravidlo: HOME II/III jen když FVE > 0, jinak HOME I
