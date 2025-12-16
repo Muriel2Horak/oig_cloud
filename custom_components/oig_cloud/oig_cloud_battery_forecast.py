@@ -2420,6 +2420,255 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(f"Failed to find next expensive period: {e}")
             return None
 
+    def _parse_balancing_context(
+        self,
+        balancing_plan: Optional[Dict[str, Any]],
+        max_capacity: float,
+        target_capacity: float,
+    ) -> tuple[
+        bool,
+        Optional[datetime],
+        Optional[datetime],
+        Optional[datetime],
+        set[datetime],
+        str,
+        float,
+    ]:
+        """Parse balancing plan into a normalized runtime context.
+
+        Returns:
+            (is_balancing_mode, charging_deadline, holding_start, holding_end,
+             preferred_charging_intervals, balancing_reason, effective_target_capacity)
+        """
+        if not balancing_plan:
+            return False, None, None, None, set(), "unknown", target_capacity
+
+        try:
+            holding_start_raw = balancing_plan["holding_start"]
+            holding_end_raw = balancing_plan["holding_end"]
+
+            holding_start = (
+                datetime.fromisoformat(holding_start_raw)
+                if isinstance(holding_start_raw, str)
+                else holding_start_raw
+            )
+            holding_end = (
+                datetime.fromisoformat(holding_end_raw)
+                if isinstance(holding_end_raw, str)
+                else holding_end_raw
+            )
+
+            if holding_start.tzinfo is None:
+                holding_start = dt_util.as_local(holding_start)
+            if holding_end.tzinfo is None:
+                holding_end = dt_util.as_local(holding_end)
+
+            preferred_charging_intervals: set[datetime] = set()
+            for iv_str in balancing_plan.get("charging_intervals", []):
+                ts = datetime.fromisoformat(iv_str)
+                if ts.tzinfo is None:
+                    ts = dt_util.as_local(ts)
+                preferred_charging_intervals.add(ts)
+
+            charging_deadline = holding_start
+            balancing_reason = balancing_plan.get("reason", "unknown")
+            effective_target_capacity = max_capacity
+
+            _LOGGER.warning(
+                f"🔋 BALANCING MODE ACTIVE: reason={balancing_reason}, "
+                f"target=100%, deadline={charging_deadline.strftime('%H:%M')}, "
+                f"holding until {holding_end.strftime('%H:%M')}, "
+                f"preferred_intervals={len(preferred_charging_intervals)}"
+            )
+
+            return (
+                True,
+                charging_deadline,
+                holding_start,
+                holding_end,
+                preferred_charging_intervals,
+                balancing_reason,
+                effective_target_capacity,
+            )
+        except (ValueError, TypeError, KeyError) as e:
+            _LOGGER.error(f"Failed to parse balancing_plan: {e}", exc_info=True)
+            return False, None, None, None, set(), "unknown", target_capacity
+
+    def _forward_pass_home_i(
+        self,
+        *,
+        current_capacity: float,
+        max_capacity: float,
+        physical_min_capacity: float,
+        efficiency: float,
+        spot_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        is_balancing_mode: bool,
+        holding_end: Optional[datetime],
+    ) -> tuple[
+        List[float],
+        List[Optional[float]],
+        List[Optional[float]],
+        float,
+        float,
+        Optional[int],
+    ]:
+        """Simulate HOME I trajectory (forward pass) and compute min/final SoC."""
+        n = len(spot_prices)
+        battery_trajectory = [current_capacity]
+        battery = current_capacity
+        forward_soc_before: List[Optional[float]] = [None] * n
+        forward_soc_after: List[Optional[float]] = [None] * n
+
+        start_index = 0
+        if is_balancing_mode and holding_end:
+            battery = max_capacity
+            for i in range(n):
+                try:
+                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
+                    if interval_ts.tzinfo is None:
+                        interval_ts = dt_util.as_local(interval_ts)
+                    if interval_ts >= holding_end:
+                        start_index = i
+                        battery_trajectory = [max_capacity]
+                        _LOGGER.info(
+                            f"📊 Balancing forward pass: starting from holding_end index {start_index} "
+                            f"({holding_end.strftime('%H:%M')}) with battery=100%"
+                        )
+                        break
+                except Exception:
+                    continue
+
+        for i in range(start_index, n):
+            forward_soc_before[i] = battery
+            try:
+                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
+                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
+            except Exception:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            if solar_kwh >= load_kwh:
+                net_energy = solar_kwh - load_kwh
+            else:
+                net_energy = -(load_kwh - solar_kwh) / efficiency
+
+            battery += net_energy
+            battery = max(physical_min_capacity, min(max_capacity, battery))
+            battery_trajectory.append(battery)
+            forward_soc_after[i] = battery
+
+        holding_end_index_for_validation: Optional[int] = None
+        if is_balancing_mode and holding_end:
+            holding_end_index = None
+            for i in range(n):
+                try:
+                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
+                    if interval_ts.tzinfo is None:
+                        interval_ts = dt_util.as_local(interval_ts)
+                    if interval_ts >= holding_end:
+                        holding_end_index = i
+                        break
+                except Exception:
+                    continue
+
+            holding_end_index_for_validation = holding_end_index
+            if holding_end_index is not None and holding_end_index < len(
+                battery_trajectory
+            ):
+                min_reached = min(battery_trajectory[holding_end_index:])
+                _LOGGER.info(
+                    f"📊 Balancing: checking min from index {holding_end_index}/{len(battery_trajectory)} "
+                    f"(after holding_end {holding_end.strftime('%H:%M')}): min={min_reached:.2f} kWh"
+                )
+            else:
+                min_reached = min(battery_trajectory)
+                _LOGGER.warning(
+                    "⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
+                )
+        else:
+            min_reached = min(battery_trajectory)
+
+        final_capacity = battery_trajectory[-1]
+        return (
+            battery_trajectory,
+            forward_soc_before,
+            forward_soc_after,
+            min_reached,
+            final_capacity,
+            holding_end_index_for_validation,
+        )
+
+    def _evaluate_target_charging_economics(
+        self,
+        *,
+        spot_prices: List[Dict[str, Any]],
+        charging_power_kw: float,
+        target_capacity: float,
+        final_capacity: float,
+        needs_charging_for_minimum: bool,
+        needs_charging_for_target: bool,
+        is_balancing_mode: bool,
+    ) -> tuple[Optional[float], bool]:
+        """Compute cheap-price threshold and decide if target charging is feasible.
+
+        Returns:
+            (cheap_price_threshold, should_skip_target_charging)
+        """
+        if is_balancing_mode:
+            _LOGGER.info(
+                "🔋 Balancing mode - skipping economic checks (MUST charge to 100%)"
+            )
+            return None, False
+
+        cheap_percentile = self._config_entry.options.get("cheap_window_percentile", 30)
+        sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
+        percentile_index = int(len(sorted_prices) * cheap_percentile / 100)
+        cheap_price_threshold = sorted_prices[percentile_index] if sorted_prices else 999
+
+        avg_price = sum(sorted_prices) / len(sorted_prices) if sorted_prices else 0
+        if sorted_prices:
+            min_price = min(sorted_prices)
+            max_price = max(sorted_prices)
+        else:
+            min_price = 0
+            max_price = 0
+
+        _LOGGER.info(
+            f"💰 Price analysis: avg={avg_price:.2f} Kč/kWh, "
+            f"cheap_threshold (P{cheap_percentile})={cheap_price_threshold:.2f} Kč/kWh, "
+            f"min={min_price:.2f}, max={max_price:.2f}"
+        )
+
+        if not needs_charging_for_minimum and needs_charging_for_target:
+            cheap_intervals = [
+                i
+                for i, sp in enumerate(spot_prices)
+                if sp.get("price", 999) <= cheap_price_threshold
+            ]
+
+            deficit_kwh = target_capacity - final_capacity
+            max_charge_per_interval = charging_power_kw / 4.0
+            required_cheap_intervals = int(deficit_kwh / max_charge_per_interval) + 1
+
+            if len(cheap_intervals) < required_cheap_intervals:
+                _LOGGER.info(
+                    f"⚠️  Skipping target charging - not enough cheap hours: "
+                    f"need {required_cheap_intervals} intervals, have {len(cheap_intervals)} cheap intervals, "
+                    f"deficit={deficit_kwh:.2f} kWh"
+                )
+                return cheap_price_threshold, True
+
+            _LOGGER.info(
+                f"✅ Target charging feasible in cheap hours: "
+                f"{len(cheap_intervals)} cheap intervals available, "
+                f"need {required_cheap_intervals} for {deficit_kwh:.2f} kWh"
+            )
+
+        return cheap_price_threshold, False
+
     def _calculate_optimal_modes_hybrid(  # noqa: C901
         self,
         current_capacity: float,
@@ -2463,58 +2712,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
 
-        # === BALANCING MODE INITIALIZATION ===
-        is_balancing_mode = balancing_plan is not None
-        charging_deadline: Optional[datetime] = None
-        holding_start: Optional[datetime] = None
-        holding_end: Optional[datetime] = None
-        preferred_charging_intervals: set = set()
-        balancing_reason: str = "unknown"
+        (
+            is_balancing_mode,
+            charging_deadline,
+            holding_start,
+            holding_end,
+            preferred_charging_intervals,
+            balancing_reason,
+            target_capacity,
+        ) = self._parse_balancing_context(balancing_plan, max_capacity, target_capacity)
+
         holding_end_index_for_validation: Optional[int] = None
-
-        if is_balancing_mode:
-            try:
-                # Parse balancing plan (handle both string and datetime objects)
-                holding_start_raw = balancing_plan["holding_start"]
-                holding_end_raw = balancing_plan["holding_end"]
-
-                # Convert to datetime if needed
-                if isinstance(holding_start_raw, str):
-                    holding_start = datetime.fromisoformat(holding_start_raw)
-                else:
-                    holding_start = holding_start_raw
-
-                if isinstance(holding_end_raw, str):
-                    holding_end = datetime.fromisoformat(holding_end_raw)
-                else:
-                    holding_end = holding_end_raw
-
-                # Normalize timezone
-                if holding_start.tzinfo is None:
-                    holding_start = dt_util.as_local(holding_start)
-                if holding_end.tzinfo is None:
-                    holding_end = dt_util.as_local(holding_end)
-
-                charging_deadline = holding_start  # MUSÍME být na 100% do tohoto času
-                target_capacity = max_capacity  # Balancing VŽDY 100%
-                balancing_reason = balancing_plan.get("reason", "unknown")
-
-                # Preferované charging intervaly (ISO strings)
-                for iv_str in balancing_plan.get("charging_intervals", []):
-                    ts = datetime.fromisoformat(iv_str)
-                    if ts.tzinfo is None:
-                        ts = dt_util.as_local(ts)
-                    preferred_charging_intervals.add(ts)
-
-                _LOGGER.warning(
-                    f"🔋 BALANCING MODE ACTIVE: reason={balancing_reason}, "
-                    f"target=100%, deadline={charging_deadline.strftime('%H:%M')}, "
-                    f"holding until {holding_end.strftime('%H:%M')}, "
-                    f"preferred_intervals={len(preferred_charging_intervals)}"
-                )
-            except (ValueError, TypeError, KeyError) as e:
-                _LOGGER.error(f"Failed to parse balancing_plan: {e}", exc_info=True)
-                is_balancing_mode = False  # Fallback to normal HYBRID
 
         _LOGGER.info(
             f"🔄 HYBRID algorithm: current={current_capacity:.2f}, min={min_capacity:.2f}, "
@@ -2536,103 +2744,29 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_forecast=load_forecast,
         )
 
-        # PHASE 1: Forward pass - simulace s HOME I, zjistit minimum dosažené kapacity
-        # CRITICAL: Respect holding period if in balancing mode
-        # In balancing mode, start simulation from holding_end with 100% battery
-        battery_trajectory = [current_capacity]
-        battery = current_capacity
-        forward_soc_before: List[Optional[float]] = [None] * n
-        forward_soc_after: List[Optional[float]] = [None] * n
-
-        # In balancing mode, skip to holding_end and start with 100%
-        start_index = 0
-        if is_balancing_mode and holding_end:
-            battery = max_capacity  # Start with 100% after balancing
-            # Find index for holding_end
-            for i in range(n):
-                try:
-                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
-                    if interval_ts.tzinfo is None:
-                        interval_ts = dt_util.as_local(interval_ts)
-                    if interval_ts >= holding_end:
-                        start_index = i
-                        battery_trajectory = [max_capacity]  # Reset trajectory
-                        _LOGGER.info(
-                            f"📊 Balancing forward pass: starting from holding_end index {start_index} "
-                            f"({holding_end.strftime('%H:%M')}) with battery=100%"
-                        )
-                        break
-                except Exception:
-                    pass
-
-        for i in range(start_index, n):
-            forward_soc_before[i] = battery
-            solar_kwh = load_forecast[i] if i < len(load_forecast) else 0.0
-            # Oprava: solar z forecast, load z load_forecast
-            try:
-                timestamp = datetime.fromisoformat(spot_prices[i]["time"])
-                solar_kwh = self._get_solar_for_timestamp(timestamp, solar_forecast)
-            except Exception:
-                solar_kwh = 0.0
-
-            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-
-            # In balancing mode, this entire block is skipped (we start from holding_end)
-            # So no need for holding period check here anymore
-
-            # HOME I logika: solar → baterie nebo baterie → load
-            if solar_kwh >= load_kwh:
-                net_energy = solar_kwh - load_kwh  # Přebytek nabíjí baterii
-            else:
-                net_energy = -(load_kwh - solar_kwh) / efficiency  # Vybíjení s losses
-
-            battery += net_energy
-
-            # CRITICAL: Clamp to hardware limits (inverter won't go below/above)
-            # This ensures forward pass matches real-world physics
-            battery = max(physical_min_capacity, min(max_capacity, battery))
-
-            battery_trajectory.append(battery)
-            forward_soc_after[i] = battery
-        # In balancing mode, check minimum AFTER holding_end, not before
-        if is_balancing_mode and holding_end:
-            # Find index where holding ends
-            holding_end_index = None
-            for i in range(n):
-                try:
-                    interval_ts = datetime.fromisoformat(spot_prices[i]["time"])
-                    if interval_ts.tzinfo is None:
-                        interval_ts = dt_util.as_local(interval_ts)
-                    if interval_ts >= holding_end:
-                        holding_end_index = i
-                        break
-                except Exception:
-                    pass
-            holding_end_index_for_validation = holding_end_index
-
-            # Check minimum only AFTER holding period
-            if holding_end_index is not None and holding_end_index < len(
-                battery_trajectory
-            ):
-                min_reached = min(battery_trajectory[holding_end_index:])
-                _LOGGER.info(
-                    f"📊 Balancing: checking min from index {holding_end_index}/{len(battery_trajectory)} "
-                    f"(after holding_end {holding_end.strftime('%H:%M')}): min={min_reached:.2f} kWh"
-                )
-            else:
-                min_reached = min(battery_trajectory)
-                _LOGGER.warning(
-                    "⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
-                )
-        else:
-            min_reached = min(battery_trajectory)
-
-        final_capacity = battery_trajectory[-1]
+        (
+            battery_trajectory,
+            forward_soc_before,
+            forward_soc_after,
+            min_reached,
+            final_capacity,
+            holding_end_index_for_validation,
+        ) = self._forward_pass_home_i(
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            physical_min_capacity=physical_min_capacity,
+            efficiency=efficiency,
+            spot_prices=spot_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            is_balancing_mode=is_balancing_mode,
+            holding_end=holding_end,
+        )
 
         _LOGGER.info(
             f"📊 Forward pass: min_reached={min_reached:.2f} kWh, "
             f"final={final_capacity:.2f} kWh (target={target_capacity:.2f})"
-        )
+            )
 
         # PHASE 2: Rozhodnout zda potřebujeme nabíjet
         needs_charging_for_minimum = min_reached < min_capacity
@@ -2679,72 +2813,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 min_capacity,
                 efficiency,
                 baselines=baselines,  # Pass baselines even on early return
-            )
+	            )
 
-        # ECONOMIC CHECK: Calculate cheap price threshold for smart charging
-        # SKIP pro balancing mode - balancing MUSÍ proběhnout bez ohledu na cenu
-        if is_balancing_mode:
-            _LOGGER.info(
-                "🔋 Balancing mode - skipping economic checks (MUST charge to 100%)"
+        cheap_price_threshold, skip_target_charging = (
+            self._evaluate_target_charging_economics(
+                spot_prices=spot_prices,
+                charging_power_kw=charging_power_kw,
+                target_capacity=target_capacity,
+                final_capacity=final_capacity,
+                needs_charging_for_minimum=needs_charging_for_minimum,
+                needs_charging_for_target=needs_charging_for_target,
+                is_balancing_mode=is_balancing_mode,
             )
-        else:
-            # Cheap hours = bottom X percentile (default 30% = cheapest 30% of hours)
-            CHEAP_PRICE_PERCENTILE = self._config_entry.options.get(
-                "cheap_window_percentile", 30
+        )
+        if skip_target_charging:
+            return self._build_result(
+                modes,
+                spot_prices,
+                export_prices,
+                solar_forecast,
+                load_forecast,
+                current_capacity,
+                max_capacity,
+                min_capacity,
+                efficiency,
+                baselines=baselines,
             )
-            sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
-            percentile_index = int(len(sorted_prices) * CHEAP_PRICE_PERCENTILE / 100)
-            cheap_price_threshold = (
-                sorted_prices[percentile_index] if sorted_prices else 999
-            )
-
-            avg_price = sum(sorted_prices) / len(sorted_prices) if sorted_prices else 0
-            _LOGGER.info(
-                f"💰 Price analysis: avg={avg_price:.2f} Kč/kWh, "
-                f"cheap_threshold (P{CHEAP_PRICE_PERCENTILE})={cheap_price_threshold:.2f} Kč/kWh, "
-                f"min={min(sorted_prices):.2f}, max={max(sorted_prices):.2f}"
-            )
-
-            # If charging is ONLY for target (not minimum violation), charge ONLY in cheap hours
-            if not needs_charging_for_minimum and needs_charging_for_target:
-                # Count how many cheap hours we have
-                cheap_intervals = [
-                    i
-                    for i, sp in enumerate(spot_prices)
-                    if sp.get("price", 999) <= cheap_price_threshold
-                ]
-
-                deficit_kwh = target_capacity - final_capacity
-                max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
-                required_cheap_intervals = (
-                    int(deficit_kwh / max_charge_per_interval) + 1
-                )
-
-                if len(cheap_intervals) < required_cheap_intervals:
-                    _LOGGER.info(
-                        f"⚠️  Skipping target charging - not enough cheap hours: "
-                        f"need {required_cheap_intervals} intervals, have {len(cheap_intervals)} cheap intervals, "
-                        f"deficit={deficit_kwh:.2f} kWh"
-                    )
-                    # Return HOME I baseline (no charging for target)
-                    return self._build_result(
-                        modes,
-                        spot_prices,
-                        export_prices,
-                        solar_forecast,
-                        load_forecast,
-                        current_capacity,
-                        max_capacity,
-                        min_capacity,
-                        efficiency,
-                        baselines=baselines,  # Pass baselines even on early return
-                    )
-                else:
-                    _LOGGER.info(
-                        f"✅ Target charging feasible in cheap hours: "
-                        f"{len(cheap_intervals)} cheap intervals available, "
-                        f"need {required_cheap_intervals} for {deficit_kwh:.2f} kWh"
-                    )
 
         _LOGGER.info(
             f"🔋 Charging decision: "
@@ -10702,6 +10796,67 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return mode_id
 
+    async def _build_historical_modes_lookup(
+        self,
+        *,
+        day_start: datetime,
+        fetch_end: datetime,
+        date_str: str,
+        source: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Load historical mode changes from Recorder and expand to 15-min intervals."""
+        if not self._hass:
+            return {}
+
+        mode_history = await self._fetch_mode_history_from_recorder(day_start, fetch_end)
+
+        mode_changes: list[dict[str, Any]] = []
+        for mode_entry in mode_history:
+            time_key = mode_entry.get("time", "")
+            if not time_key:
+                continue
+            try:
+                dt = datetime.fromisoformat(time_key)
+                if dt.tzinfo is None:
+                    dt = dt_util.as_local(dt)
+                mode_changes.append(
+                    {
+                        "time": dt,
+                        "mode": mode_entry.get("mode"),
+                        "mode_name": mode_entry.get("mode_name"),
+                    }
+                )
+            except Exception:
+                continue
+
+        mode_changes.sort(key=lambda x: x["time"])
+
+        historical_modes_lookup: Dict[str, Dict[str, Any]] = {}
+        interval_time = day_start
+        while interval_time <= fetch_end:
+            active_mode = None
+            for change in mode_changes:
+                if change["time"] <= interval_time:
+                    active_mode = change
+                else:
+                    break
+
+            if active_mode:
+                interval_time_str = interval_time.strftime(DATETIME_FMT)
+                historical_modes_lookup[interval_time_str] = {
+                    "time": interval_time_str,
+                    "mode": active_mode["mode"],
+                    "mode_name": active_mode["mode_name"],
+                }
+
+            interval_time += timedelta(minutes=15)
+
+        _LOGGER.debug(
+            f"📊 Loaded {len(historical_modes_lookup)} historical mode intervals "
+            f"from Recorder for {date_str} ({source}) (expanded from {len(mode_changes)} changes)"
+        )
+        return historical_modes_lookup
+
     async def _build_day_timeline(  # noqa: C901
         self, date: date, storage_plans: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -10745,69 +10900,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if source in ["historical_only", "mixed"] and self._hass:
             try:
                 # Determine fetch end time
-                if source == "historical_only":
-                    # Celý včerejšek
-                    fetch_end = day_end
-                else:  # mixed (today)
-                    # Pouze do TEĎKA (ne budoucnost)
-                    fetch_end = now
-
-                # Await async method directly (we're in async context now!)
-                mode_history = await self._fetch_mode_history_from_recorder(
-                    day_start, fetch_end
-                )
-
-                # Build lookup table: time -> mode_data
-                # First, build map of mode changes
-                mode_changes = []
-                for mode_entry in mode_history:
-                    time_key = mode_entry.get("time", "")
-                    if time_key:
-                        try:
-                            dt = datetime.fromisoformat(time_key)
-                            # Make timezone-aware if needed
-                            if dt.tzinfo is None:
-                                dt = dt_util.as_local(dt)
-                            mode_changes.append(
-                                {
-                                    "time": dt,
-                                    "mode": mode_entry.get("mode"),
-                                    "mode_name": mode_entry.get("mode_name"),
-                                }
-                            )
-                        except Exception:
-                            continue
-
-                # Sort by time
-                mode_changes.sort(key=lambda x: x["time"])
-
-                # Expand to all 15-min intervals in the day
-                # Fill forward: each interval gets the mode that was active at that time
-                interval_time = day_start
-
-                while interval_time <= fetch_end:
-                    # Find the mode that was active at interval_time
-                    # Use the last mode change that happened before or at interval_time
-                    active_mode = None
-                    for i, change in enumerate(mode_changes):
-                        if change["time"] <= interval_time:
-                            active_mode = change
-                        else:
-                            break
-
-                    if active_mode:
-                        interval_time_str = interval_time.strftime(DATETIME_FMT)
-                        historical_modes_lookup[interval_time_str] = {
-                            "time": interval_time_str,
-                            "mode": active_mode["mode"],
-                            "mode_name": active_mode["mode_name"],
-                        }
-
-                    interval_time += timedelta(minutes=15)
-
-                _LOGGER.debug(
-                    f"📊 Loaded {len(historical_modes_lookup)} historical mode intervals "
-                    f"from Recorder for {date_str} ({source}) (expanded from {len(mode_changes)} changes)"
+                fetch_end = day_end if source == "historical_only" else now
+                historical_modes_lookup = await self._build_historical_modes_lookup(
+                    day_start=day_start,
+                    fetch_end=fetch_end,
+                    date_str=date_str,
+                    source=source,
                 )
 
             except Exception as e:
