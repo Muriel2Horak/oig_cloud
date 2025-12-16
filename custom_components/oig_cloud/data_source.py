@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from typing import Any, Optional
+import re
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -23,6 +24,10 @@ DATA_SOURCE_LOCAL_ONLY = "local_only"
 DEFAULT_DATA_SOURCE_MODE = DATA_SOURCE_CLOUD_ONLY
 DEFAULT_PROXY_STALE_MINUTES = 10
 DEFAULT_LOCAL_EVENT_DEBOUNCE_MS = 300
+
+# Fired on hass.bus when effective data source changes for a config entry.
+# Payload: {"entry_id": str, "configured_mode": str, "effective_mode": str, "local_available": bool, "reason": str}
+EVENT_DATA_SOURCE_CHANGED = "oig_cloud_data_source_changed"
 
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
@@ -81,9 +86,26 @@ def get_local_event_debounce_ms(entry: ConfigEntry) -> int:
 def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     if value in (None, "", "unknown", "unavailable"):
         return None
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 1_000_000_000_000:  # ms epoch
+            ts = ts / 1000.0
+        try:
+            return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+        except Exception:
+            return None
     if isinstance(value, dt_util.dt.datetime):
         return dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
     if isinstance(value, str):
+        value = value.strip()
+        if value.isdigit():
+            try:
+                ts = float(value)
+                if ts > 1_000_000_000_000:  # ms epoch
+                    ts = ts / 1000.0
+                return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+            except Exception:
+                pass
         dt = dt_util.parse_datetime(value)
         if dt is None:
             try:
@@ -97,6 +119,53 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     return None
 
 
+def _coerce_box_id(value: Any) -> Optional[str]:
+    if value in (None, "", "unknown", "unavailable"):
+        return None
+    if isinstance(value, int):
+        return str(value) if value > 0 else None
+    if isinstance(value, float):
+        try:
+            as_int = int(value)
+            return str(as_int) if as_int > 0 else None
+        except Exception:
+            return None
+    if isinstance(value, str):
+        s = value.strip()
+        if s.isdigit():
+            return s
+        try:
+            m = re.search(r"(\d{6,})", s)
+            return m.group(1) if m else None
+        except Exception:
+            return None
+    return None
+
+
+def _get_latest_local_entity_update(
+    hass: HomeAssistant, box_id: str
+) -> Optional[dt_util.dt.datetime]:
+    """Return the most recent update timestamp among local telemetry entities for a box."""
+    if not (isinstance(box_id, str) and box_id.isdigit()):
+        return None
+    prefix = f"sensor.oig_local_{box_id}_"
+    try:
+        latest: Optional[dt_util.dt.datetime] = None
+        for st in hass.states.async_all("sensor"):
+            if not st.entity_id.startswith(prefix):
+                continue
+            if st.state in (None, "", "unknown", "unavailable"):
+                continue
+            dt = st.last_updated or st.last_changed
+            if dt is None:
+                continue
+            dt_utc = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+            latest = dt_utc if latest is None else max(latest, dt_utc)
+        return latest
+    except Exception:
+        return None
+
+
 def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourceState:
     """Initialize (or refresh) data source state early during setup.
 
@@ -105,8 +174,43 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
     configured = get_configured_mode(entry)
     stale_minutes = get_proxy_stale_minutes(entry)
 
+    expected_box_id: Optional[str] = None
+    try:
+        expected_box_id = _coerce_box_id(entry.options.get("box_id"))
+    except Exception:
+        expected_box_id = None
+
     proxy_state = hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
-    last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+    proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+    proxy_entity_dt: Optional[dt_util.dt.datetime] = None
+    if proxy_state is not None:
+        try:
+            dt = proxy_state.last_updated or proxy_state.last_changed
+            if dt is not None:
+                proxy_entity_dt = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+        except Exception:
+            proxy_entity_dt = None
+
+    proxy_box_state = hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+    proxy_box_id = _coerce_box_id(proxy_box_state.state if proxy_box_state else None)
+
+    box_id_for_scan = expected_box_id or proxy_box_id
+    local_entities_dt = (
+        _get_latest_local_entity_update(hass, box_id_for_scan) if box_id_for_scan else None
+    )
+
+    candidates: list[tuple[str, dt_util.dt.datetime]] = []
+    if proxy_last_dt:
+        candidates.append(("proxy_last_data", proxy_last_dt))
+    if proxy_entity_dt:
+        candidates.append(("proxy_entity_updated", proxy_entity_dt))
+    if local_entities_dt:
+        candidates.append(("local_entities", local_entities_dt))
+
+    source = "none"
+    last_dt: Optional[dt_util.dt.datetime] = None
+    if candidates:
+        source, last_dt = max(candidates, key=lambda item: item[1])
     now = dt_util.utcnow()
 
     local_available = False
@@ -115,25 +219,18 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
         age = (now - last_dt).total_seconds()
         if age <= stale_minutes * 60:
             local_available = True
-            reason = "local_ok"
+            reason = f"local_ok_{source}"
         else:
-            reason = f"local_stale_{int(age)}s"
-
-    # Extra safety: if we know which box we're configured for, ensure local proxy reports the same box id.
-    expected_box_id: Optional[str] = None
-    try:
-        opt_box = entry.options.get("box_id")
-        if isinstance(opt_box, str) and opt_box.isdigit():
-            expected_box_id = opt_box
-    except Exception:
-        expected_box_id = None
+            reason = f"local_stale_{int(age)}s_{source}"
 
     if local_available and expected_box_id:
-        proxy_box = hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-        proxy_box_id = proxy_box.state if proxy_box else None
-        if not (isinstance(proxy_box_id, str) and proxy_box_id.isdigit()):
-            local_available = False
-            reason = "proxy_box_id_missing"
+        # Extra safety: if proxy reports a box_id, it must match the configured one.
+        if proxy_box_id is None:
+            # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
+            # exist for the configured box id.
+            if local_entities_dt is None:
+                local_available = False
+                reason = "proxy_box_id_missing"
         elif proxy_box_id != expected_box_id:
             local_available = False
             reason = "proxy_box_id_mismatch"
@@ -159,18 +256,21 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
+    _LOCAL_ENTITY_RE = re.compile(r"^sensor\.oig_local_(\d+)_")
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, coordinator: Any) -> None:
         self.hass = hass
         self.entry = entry
         self.coordinator = coordinator
 
         self._unsubs: list[callable] = []
+        self._last_local_entity_update: Optional[dt_util.dt.datetime] = None
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
             cooldown=get_local_event_debounce_ms(entry) / 1000,
             immediate=False,
-            function=self._poke_coordinator,
+            function=self._handle_local_event,
         )
 
     async def async_start(self) -> None:
@@ -221,10 +321,8 @@ class DataSourceController:
 
     @callback
     def _on_any_state_change(self, event: Any) -> None:
-        # Only relevant while using local data
-        entry_id = self.entry.entry_id
-        state = get_data_source_state(self.hass, entry_id)
-        if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
+        # Ignore local events unless user configured local/hybrid mode.
+        if get_configured_mode(self.entry) == DATA_SOURCE_CLOUD_ONLY:
             return
 
         entity_id = event.data.get("entity_id")
@@ -233,13 +331,54 @@ class DataSourceController:
         if not entity_id.startswith("sensor.oig_local_"):
             return
 
-        # Poke coordinator listeners; sensors will re-evaluate state from local entities.
+        # Ensure the local update belongs to this entry's box_id (prevents cross-device wiring).
+        m = self._LOCAL_ENTITY_RE.match(entity_id)
+        if not m:
+            return
+        event_box_id = m.group(1)
+
+        expected_box_id: Optional[str] = None
+        try:
+            expected_box_id = _coerce_box_id(self.entry.options.get("box_id"))
+        except Exception:
+            expected_box_id = None
+
+        if expected_box_id and event_box_id != expected_box_id:
+            return
+
+        # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
+        if expected_box_id is None:
+            proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+            proxy_box_id = _coerce_box_id(proxy_box.state if proxy_box else None)
+            if proxy_box_id and event_box_id != proxy_box_id:
+                return
+
+        # Remember the latest local telemetry activity timestamp.
+        try:
+            self._last_local_entity_update = dt_util.as_utc(event.time_fired)
+        except Exception:
+            self._last_local_entity_update = dt_util.utcnow()
+
+        # Re-evaluate effective mode and refresh sensors (debounced).
         self._schedule_debounced_poke()
 
     @callback
     def _schedule_debounced_poke(self) -> None:
         try:
             self.hass.async_create_task(self._debouncer.async_call())
+        except Exception:
+            pass
+
+    async def _handle_local_event(self) -> None:
+        """Debounced handler for local telemetry changes.
+
+        - Updates DataSourceState (may switch effective mode)
+        - Does not poke coordinator; entities refresh per-entity
+        """
+        try:
+            _, mode_changed = self._update_state()
+            if mode_changed:
+                self._on_effective_mode_changed()
         except Exception:
             pass
 
@@ -252,14 +391,52 @@ class DataSourceController:
         proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
         if proxy_state is None:
             _LOGGER.debug("Proxy health entity not found")
-        last_dt = _parse_dt(proxy_state.state if proxy_state else None)
-        if proxy_state and last_dt is None:
+        proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+        if proxy_state and proxy_last_dt is None:
             _LOGGER.debug(
                 "Proxy health parse failed for value=%s, attributes=%s",
                 proxy_state.state,
                 proxy_state.attributes,
             )
+        proxy_entity_dt: Optional[dt_util.dt.datetime] = None
+        if proxy_state is not None:
+            try:
+                dt = proxy_state.last_updated or proxy_state.last_changed
+                if dt is not None:
+                    proxy_entity_dt = (
+                        dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                    )
+            except Exception:
+                proxy_entity_dt = None
         now = dt_util.utcnow()
+
+        expected_box_id: Optional[str] = None
+        try:
+            expected_box_id = _coerce_box_id(self.entry.options.get("box_id"))
+        except Exception:
+            expected_box_id = None
+
+        proxy_box_state = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+        proxy_box_id = _coerce_box_id(proxy_box_state.state if proxy_box_state else None)
+
+        box_id_for_scan = expected_box_id or proxy_box_id
+        local_entities_dt = self._last_local_entity_update
+        if local_entities_dt is None and box_id_for_scan:
+            # Startup fallback when we haven't seen any local state_changed yet.
+            local_entities_dt = _get_latest_local_entity_update(self.hass, box_id_for_scan)
+
+        candidates: list[tuple[str, dt_util.dt.datetime]] = []
+        if proxy_last_dt:
+            candidates.append(("proxy_last_data", proxy_last_dt))
+        if proxy_entity_dt:
+            candidates.append(("proxy_entity_updated", proxy_entity_dt))
+        if local_entities_dt:
+            candidates.append(("local_entities", local_entities_dt))
+
+        source = "none"
+        last_dt: Optional[dt_util.dt.datetime] = None
+        if candidates:
+            source, last_dt = max(candidates, key=lambda item: item[1])
 
         local_available = False
         reason = "local_missing"
@@ -267,25 +444,19 @@ class DataSourceController:
             age = (now - last_dt).total_seconds()
             if age <= stale_minutes * 60:
                 local_available = True
-                reason = "local_ok"
+                reason = f"local_ok_{source}"
             else:
-                reason = f"local_stale_{int(age)}s"
+                reason = f"local_stale_{int(age)}s_{source}"
 
         # Require proxy box id to match configured box id (prevents cross-device wiring).
-        expected_box_id: Optional[str] = None
-        try:
-            opt_box = self.entry.options.get("box_id")
-            if isinstance(opt_box, str) and opt_box.isdigit():
-                expected_box_id = opt_box
-        except Exception:
-            expected_box_id = None
-
         if local_available and expected_box_id:
-            proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-            proxy_box_id = proxy_box.state if proxy_box else None
-            if not (isinstance(proxy_box_id, str) and proxy_box_id.isdigit()):
-                local_available = False
-                reason = "proxy_box_id_missing"
+            # Extra safety: if proxy reports a box_id, it must match the configured one.
+            if proxy_box_id is None:
+                # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
+                # exist for the configured box id.
+                if local_entities_dt is None:
+                    local_available = False
+                    reason = "proxy_box_id_missing"
             elif proxy_box_id != expected_box_id:
                 local_available = False
                 reason = "proxy_box_id_mismatch"
@@ -331,15 +502,28 @@ class DataSourceController:
             state.local_available,
             state.reason,
         )
+
+        # Notify entities so UI can re-render immediately (per-entity listeners).
+        try:
+            self.hass.bus.async_fire(
+                EVENT_DATA_SOURCE_CHANGED,
+                {
+                    "entry_id": self.entry.entry_id,
+                    "configured_mode": state.configured_mode,
+                    "effective_mode": state.effective_mode,
+                    "local_available": state.local_available,
+                    "reason": state.reason,
+                },
+            )
+        except Exception:
+            pass
+
         if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
             # Ensure cloud data is fresh when falling back
             try:
                 self.hass.async_create_task(self.coordinator.async_request_refresh())
             except Exception:
                 pass
-        else:
-            # Re-evaluate sensors immediately when returning to local mode
-            self._schedule_debounced_poke()
 
     async def _poke_coordinator(self) -> None:
         try:

@@ -196,6 +196,161 @@ function throttle(func, limit) {
 
 // Cache pro previousValues (detekce změn)
 const previousValues = {};
+const _flipPadLengths = {};
+const _flipElementTokens = new WeakMap();
+let _flipTokenCounter = 0;
+const _transientClassTimeouts = new WeakMap();
+
+function _triggerTransientClass(element, className, durationMs) {
+    if (!element || !className) return;
+
+    let timeouts = _transientClassTimeouts.get(element);
+    if (!timeouts) {
+        timeouts = new Map();
+        _transientClassTimeouts.set(element, timeouts);
+    }
+
+    const existing = timeouts.get(className);
+    if (existing) {
+        clearTimeout(existing);
+    }
+
+    // Restart animation reliably by removing + forcing reflow + adding back.
+    element.classList.remove(className);
+    // eslint-disable-next-line no-unused-expressions
+    element.offsetWidth;
+    element.classList.add(className);
+
+    const timeoutId = setTimeout(() => {
+        element.classList.remove(className);
+        timeouts.delete(className);
+    }, durationMs);
+    timeouts.set(className, timeoutId);
+}
+
+function _splitGraphemes(value) {
+    const str = value === null || value === undefined ? '' : String(value);
+    try {
+        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+            const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+            return Array.from(segmenter.segment(str), (s) => s.segment);
+        }
+    } catch (e) {
+        // Ignore and fall back
+    }
+    return Array.from(str);
+}
+
+function _renderChar(char) {
+    return char === '' || char === ' ' ? '\u00A0' : char;
+}
+
+function _prefersReducedMotion() {
+    try {
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+        return false;
+    }
+}
+
+function _animateFlipCell(cell, fromChar, toChar, token, hostElement) {
+    const staticTop = cell.querySelector('.oig-flip-static-top');
+    const staticBottom = cell.querySelector('.oig-flip-static-bottom');
+    const size = cell.querySelector('.oig-flip-size');
+    if (!staticTop || !staticBottom || !size) return;
+
+    // Ensure width matches the final character (prevents jitter)
+    size.textContent = _renderChar(toChar);
+
+    const animTop = document.createElement('span');
+    animTop.className = 'oig-flip-face oig-flip-anim-top';
+    animTop.textContent = _renderChar(fromChar);
+
+    const animBottom = document.createElement('span');
+    animBottom.className = 'oig-flip-face oig-flip-anim-bottom';
+    animBottom.textContent = _renderChar(toChar);
+
+    cell.appendChild(animTop);
+    cell.appendChild(animBottom);
+
+    animTop.addEventListener('animationend', () => {
+        if (_flipElementTokens.get(hostElement) !== token) return;
+        staticTop.textContent = _renderChar(toChar);
+        animTop.remove();
+    }, { once: true });
+
+    animBottom.addEventListener('animationend', () => {
+        if (_flipElementTokens.get(hostElement) !== token) return;
+        staticBottom.textContent = _renderChar(toChar);
+        animBottom.remove();
+    }, { once: true });
+}
+
+function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = false) {
+    if (!element) return;
+    if (_prefersReducedMotion()) {
+        element.textContent = newValue;
+        return;
+    }
+
+    const disablePad = element.dataset?.flipPad === 'none';
+
+    const oldChars = _splitGraphemes(oldValue);
+    const newChars = _splitGraphemes(newValue);
+
+    const targetLen = disablePad
+        ? Math.max(oldChars.length, newChars.length)
+        : Math.max(_flipPadLengths[cacheKey] || 0, oldChars.length, newChars.length);
+    if (!disablePad) {
+        _flipPadLengths[cacheKey] = targetLen;
+    }
+
+    while (oldChars.length < targetLen) oldChars.push(' ');
+    while (newChars.length < targetLen) newChars.push(' ');
+
+    const token = ++_flipTokenCounter;
+    _flipElementTokens.set(element, token);
+
+    const board = document.createElement('span');
+    board.className = 'oig-flipboard';
+
+    for (let i = 0; i < targetLen; i++) {
+        const fromChar = oldChars[i];
+        const toChar = newChars[i];
+
+        const cell = document.createElement('span');
+        cell.className = 'oig-flip-cell';
+
+        // Hidden sizing span keeps layout stable and copy-paste friendly
+        const size = document.createElement('span');
+        size.className = 'oig-flip-size';
+        size.textContent = _renderChar(toChar);
+
+        const staticTop = document.createElement('span');
+        staticTop.className = 'oig-flip-face oig-flip-static-top';
+        staticTop.textContent = _renderChar(fromChar);
+
+        const staticBottom = document.createElement('span');
+        staticBottom.className = 'oig-flip-face oig-flip-static-bottom';
+        staticBottom.textContent = _renderChar(fromChar);
+
+        cell.appendChild(size);
+        cell.appendChild(staticTop);
+        cell.appendChild(staticBottom);
+        board.appendChild(cell);
+
+        if (forceFlip || fromChar !== toChar) {
+            _animateFlipCell(cell, fromChar, toChar, token, element);
+        } else {
+            // No animation needed; ensure final character is shown
+            staticTop.textContent = _renderChar(toChar);
+            staticBottom.textContent = _renderChar(toChar);
+        }
+    }
+
+    element.textContent = '';
+    element.appendChild(board);
+}
 
 /**
  * Aktualizuje element jen pokud se hodnota změnila
@@ -203,12 +358,15 @@ const previousValues = {};
  * @param {string} newValue - Nová hodnota
  * @param {string} cacheKey - Klíč pro cache (optional)
  * @param {boolean} isFallback - True pokud je hodnota fallback (např. '--')
+ * @param {boolean} animate - True = krátká vizuální animace při změně
  * @returns {boolean} True pokud se změnilo
  */
-function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false) {
+function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false, animate = true) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
+
+    const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
 
     // Update fallback visualization
     if (isFallback) {
@@ -220,9 +378,22 @@ function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = fals
     }
 
     // Update value if changed
-    if (previousValues[cacheKey] === undefined || previousValues[cacheKey] !== newValue) {
-        element.textContent = newValue;
-        previousValues[cacheKey] = newValue;
+    const hasPrev = previousValues[cacheKey] !== undefined;
+    const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
+    if (!hasPrev || prevValue !== nextValue) {
+        // Remember new value first (so rapid updates don't fight)
+        previousValues[cacheKey] = nextValue;
+
+        if (animate && !isFallback) {
+            let fromValue = hasPrev ? prevValue : (element.textContent || '');
+            // First load: still flip even if the element already contains the same text (tiles render directly).
+            if (!hasPrev && fromValue === nextValue) {
+                fromValue = '';
+            }
+            _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
+        } else {
+            element.textContent = nextValue;
+        }
         return true;
     }
     return false;

@@ -589,6 +589,68 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         )
 
 
+async def _cleanup_invalid_empty_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove clearly-invalid devices (e.g., 'spot_prices', 'unknown') with no entities.
+
+    This is a targeted/safe cleanup to get rid of stale registry entries created by
+    older versions when box_id resolution was unstable.
+    """
+    try:
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
+
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+
+        def _strip_known_suffixes(value: str) -> str:
+            for suffix in ("_analytics", "_shield"):
+                if value.endswith(suffix):
+                    return value[: -len(suffix)]
+            return value
+
+        # Non-numeric identifiers used by this integration that are still valid.
+        allowlisted_bases = {"oig_bojler"}
+
+        devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+        removed: list[str] = []
+
+        for device in devices:
+            # Never remove devices that still have entities.
+            if er.async_entries_for_device(entity_registry, device.id):
+                continue
+
+            id_values = [
+                identifier[1]
+                for identifier in device.identifiers
+                if identifier and identifier[0] == DOMAIN and len(identifier) > 1
+            ]
+            if not id_values:
+                continue
+
+            bases = {_strip_known_suffixes(v) for v in id_values if isinstance(v, str)}
+            if not bases:
+                continue
+
+            if any(base in allowlisted_bases for base in bases):
+                continue
+
+            # If every base is numeric, the device id is valid.
+            if all(isinstance(base, str) and base.isdigit() for base in bases):
+                continue
+
+            device_registry.async_remove_device(device.id)
+            removed.append(device.name or device.id)
+
+        if removed:
+            _LOGGER.info(
+                "Removed %d stale OIG devices without entities: %s",
+                len(removed),
+                ", ".join(removed),
+            )
+    except Exception as err:
+        _LOGGER.debug("Device registry cleanup failed (non-critical): %s", err)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
@@ -1119,11 +1181,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _LOGGER.info(f"ServiceShield status: {service_shield.get_shield_status()}")
             _LOGGER.info(f"ServiceShield queue info: {service_shield.get_queue_info()}")
 
-        # POZN: Automatické mazání zařízení z device registry v runtime je rizikové (může přesunout/rozbít entity).
-        # Cleanup duplicit (unknown/spot_prices) řešíme explicitně mimo setup (script / manuálně).
+        # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
+        # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
 
         # Vždy registrovat sensor platform
         await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+
+        # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
+        # that can be left behind after unique_id/device_id stabilization.
+        hass.async_create_task(_cleanup_invalid_empty_devices(hass, entry))
 
         # OPRAVA: Dashboard registrujeme až TERAZ - po vytvoření všech senzorů A POUZE pokud je enabled
         if dashboard_enabled:
@@ -1313,6 +1379,30 @@ async def async_unload_entry(
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: Any
+) -> bool:
+    """Allow removing stale devices created by this integration.
+
+    Home Assistant calls this when the user tries to delete a device from the UI.
+    We only allow removing devices that have no entities.
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        entity_registry = er.async_get(hass)
+        if er.async_entries_for_device(entity_registry, device_entry.id):
+            return False
+        # Allow removal for both current and legacy identifier domains.
+        # Legacy versions used separate identifier domains:
+        # - "oig_cloud_analytics"
+        # - "oig_cloud_shield"
+        allowed_domains = {DOMAIN, f"{DOMAIN}_analytics", f"{DOMAIN}_shield"}
+        return any(identifier[0] in allowed_domains for identifier in device_entry.identifiers)
+    except Exception:
+        return False
 
 
 async def async_reload_entry(config_entry: config_entries.ConfigEntry) -> None:

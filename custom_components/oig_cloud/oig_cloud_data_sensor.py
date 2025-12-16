@@ -1,14 +1,16 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .data_source import (
     DATA_SOURCE_HYBRID,
     DATA_SOURCE_LOCAL_ONLY,
+    EVENT_DATA_SOURCE_CHANGED,
     get_data_source_state,
 )
 
@@ -50,6 +52,9 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         self._extended = extended
         self._notification = notification
         self._last_state: Optional[Union[float, str]] = None  # Uložíme si poslední stav
+        self._local_state_unsub: Optional[Callable[[], None]] = None
+        self._data_source_unsub: Optional[Callable[[], None]] = None
+        self._entry_id: Optional[str] = None
 
         # Načteme sensor config
         try:
@@ -81,6 +86,63 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         self._box_id = self._resolve_box_id(coordinator)
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
+    async def async_added_to_hass(self) -> None:
+        """Register per-entity listener for local telemetry."""
+        await super().async_added_to_hass()
+
+        # Only useful when local mode is configured.
+        entry = getattr(self.coordinator, "config_entry", None)
+        self._entry_id = getattr(entry, "entry_id", None)
+        if entry and entry.options.get("data_source_mode", "cloud_only") == "cloud_only":
+            return
+
+        local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
+        if not local_entity_id:
+            return
+
+        # Refresh when effective data source changes (cloud <-> local fallback).
+        @callback
+        def _on_data_source_changed(event: Any) -> None:
+            if not self._entry_id:
+                return
+            if event.data.get("entry_id") != self._entry_id:
+                return
+            self.async_write_ha_state()
+
+        self._data_source_unsub = self.hass.bus.async_listen(
+            EVENT_DATA_SOURCE_CHANGED, _on_data_source_changed
+        )
+
+        @callback
+        def _on_local_change(_event: Any) -> None:
+            # Re-evaluate state immediately when the mapped local entity updates.
+            self.async_write_ha_state()
+
+        self._local_state_unsub = async_track_state_change_event(
+            self.hass, [local_entity_id], _on_local_change
+        )
+
+        # Populate state right away if local value already exists.
+        try:
+            self.async_write_ha_state()
+        except Exception:
+            pass
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._local_state_unsub:
+            try:
+                self._local_state_unsub()
+            except Exception:
+                pass
+            self._local_state_unsub = None
+        if self._data_source_unsub:
+            try:
+                self._data_source_unsub()
+            except Exception:
+                pass
+            self._data_source_unsub = None
+        await super().async_will_remove_from_hass()
+
     def _resolve_box_id(self, coordinator: Any) -> str:
         # Centralized resolution (config entry → proxy sensor → coordinator numeric keys)
         try:
@@ -111,6 +173,26 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             manufacturer="OIG",
             model=DEFAULT_NAME,
         )
+
+    @property
+    def available(self) -> bool:
+        """Prefer local entity availability in local/hybrid mode."""
+        try:
+            entry = getattr(self.coordinator, "config_entry", None)
+            entry_id = getattr(entry, "entry_id", None)
+            if entry_id:
+                ds = get_data_source_state(self.hass, entry_id)
+                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY):
+                    local_entity_id = self._get_local_entity_id_for_config(
+                        self._sensor_config
+                    )
+                    if local_entity_id:
+                        st = self.hass.states.get(local_entity_id)
+                        if st and st.state not in (None, "", "unknown", "unavailable"):
+                            return True
+        except Exception:
+            pass
+        return super().available
 
     @property
     def should_poll(self) -> bool:
@@ -602,6 +684,19 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Local-only / hybrid mode is event-driven per-entity: ignore coordinator refreshes
+        # for sensors that have a mapped local entity.
+        try:
+            entry = getattr(self.coordinator, "config_entry", None)
+            entry_id = getattr(entry, "entry_id", None)
+            local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
+            if entry_id and local_entity_id:
+                ds = get_data_source_state(self.hass, entry_id)
+                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY):
+                    return
+        except Exception:
+            pass
+
         if self.coordinator.data:
             # Uložíme si starou hodnotu PŘED aktualizací
             old_value = self._last_state

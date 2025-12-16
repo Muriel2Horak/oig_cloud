@@ -167,16 +167,178 @@ async function updateTargetWarningIndicator() {
     warningIndicator.style.animation = 'pulse-warning 2s ease-in-out infinite';
 }
 
+function parseHmToMinutes(hm) {
+    if (!hm || typeof hm !== 'string') return null;
+    const m = hm.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+    return h * 60 + min;
+}
+
+function formatDurationMinutes(totalMinutes) {
+    if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return '0 h';
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.round(totalMinutes % 60);
+    if (hours <= 0) return `${minutes} min`;
+    if (minutes <= 0) return `${hours} h`;
+    return `${hours} h ${minutes} min`;
+}
+
+function getLocalDateKey(dateObj) {
+    if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return null;
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function buildChargingBlocksFromTimeline(rawTimeline) {
+    const timeline = Array.isArray(rawTimeline?.timeline) ? rawTimeline.timeline : rawTimeline;
+    if (!Array.isArray(timeline) || timeline.length === 0) return [];
+
+    const todayKey = getLocalDateKey(new Date());
+    const sorted = [...timeline]
+        .filter(p => p && typeof p.timestamp === 'string')
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    const blocks = [];
+    let current = null;
+
+    const flush = () => {
+        if (!current) return;
+        if (current.interval_count <= 0) {
+            current = null;
+            return;
+        }
+        const avg = current.grid_import_kwh > 0 ? (current.total_cost_czk / current.grid_import_kwh) : 0;
+        blocks.push({
+            day: current.day,
+            time_from: current.time_from,
+            time_to: current.time_to,
+            interval_count: current.interval_count,
+            grid_import_kwh: current.grid_import_kwh,
+            total_cost_czk: current.total_cost_czk,
+            avg_spot_price_czk: avg
+        });
+        current = null;
+    };
+
+    for (let i = 0; i < sorted.length; i++) {
+        const point = sorted[i];
+        const gridKwh = Number(point.grid_import_kwh ?? point.grid_charge_kwh ?? 0);
+        if (!Number.isFinite(gridKwh) || gridKwh <= 0) {
+            flush();
+            continue;
+        }
+
+        const ts = point.timestamp;
+        const [datePart, timePart] = ts.split('T');
+        const hm = timePart ? timePart.slice(0, 5) : null;
+        if (!datePart || !hm) {
+            flush();
+            continue;
+        }
+
+        const day = datePart === todayKey ? 'today' : 'tomorrow';
+        const spot = Number(point.spot_price_czk ?? 0);
+        const cost = Number.isFinite(spot) && spot > 0 ? gridKwh * spot : 0;
+
+        if (!current) {
+            current = {
+                day,
+                datePart,
+                time_from: hm,
+                time_to: hm,
+                interval_count: 0,
+                grid_import_kwh: 0,
+                total_cost_czk: 0,
+                last_ts: ts
+            };
+        } else {
+            const sameDay = current.datePart === datePart;
+            const contiguous = sameDay && current.last_ts && typeof current.last_ts === 'string'
+                ? true
+                : false;
+            if (!sameDay || !contiguous) {
+                flush();
+                current = {
+                    day,
+                    datePart,
+                    time_from: hm,
+                    time_to: hm,
+                    interval_count: 0,
+                    grid_import_kwh: 0,
+                    total_cost_czk: 0,
+                    last_ts: ts
+                };
+            }
+        }
+
+        current.interval_count += 1;
+        current.grid_import_kwh += gridKwh;
+        current.total_cost_czk += cost;
+        current.last_ts = ts;
+        current.time_to = hm;
+    }
+
+    flush();
+
+    // Adjust time_to: add one interval (assume 15min) for nicer display
+    blocks.forEach((b) => {
+        const fromMin = parseHmToMinutes(b.time_from);
+        const toMin = parseHmToMinutes(b.time_to);
+        if (fromMin === null || toMin === null) return;
+        const intervalMinutes = 15;
+        const end = toMin + intervalMinutes;
+        const endH = Math.floor(end / 60) % 24;
+        const endM = end % 60;
+        b.time_to = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    });
+
+    return blocks;
+}
+
+function computeBlocksDurationMinutes(blocks) {
+    if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+    let total = 0;
+    blocks.forEach((b) => {
+        const a = parseHmToMinutes(b.time_from);
+        const z = parseHmToMinutes(b.time_to);
+        if (a === null || z === null) return;
+        const delta = z - a;
+        if (delta > 0) total += delta;
+    });
+    return total;
+}
+
 async function updateGridChargingPlan() {
     const gridChargingData = await getSensorString(getSensorId('grid_charging_planned'));
     const isPlanned = gridChargingData.value === 'on';
 
-    const rawBlocks = gridChargingData.attributes?.charging_blocks || [];
-    const chargingBlocks = sortChargingBlocks(rawBlocks);
-    const hasBlocks = chargingBlocks.length > 0;
-    const totalEnergy = Number(gridChargingData.attributes?.total_energy_kwh) || 0;
-    const totalCost = Number(gridChargingData.attributes?.total_cost_czk) || 0;
+    let rawBlocks = gridChargingData.attributes?.charging_blocks || [];
+    let chargingBlocks = sortChargingBlocks(rawBlocks);
+    let hasBlocks = chargingBlocks.length > 0;
+
+    // Fallback: pokud sensor nemá charging_blocks, zkus vytvořit bloky z timeline API
+    if (!hasBlocks && typeof loadBatteryTimeline === 'function') {
+        try {
+            const timeline = await loadBatteryTimeline(typeof INVERTER_SN === 'string' ? INVERTER_SN : undefined);
+            rawBlocks = buildChargingBlocksFromTimeline(timeline);
+            chargingBlocks = sortChargingBlocks(rawBlocks);
+            hasBlocks = chargingBlocks.length > 0;
+        } catch (e) {
+            console.warn('[GridCharging] Timeline fallback failed:', e);
+        }
+    }
+
+    const totalEnergy = Number(gridChargingData.attributes?.total_energy_kwh)
+        || chargingBlocks.reduce((sum, b) => sum + Number(b.grid_import_kwh || b.grid_charge_kwh || 0), 0);
+    const totalCost = Number(gridChargingData.attributes?.total_cost_czk)
+        || chargingBlocks.reduce((sum, b) => sum + Number(b.total_cost_czk || 0), 0);
     const planWindow = formatPlanWindow(chargingBlocks);
+    const durationMinutes = computeBlocksDurationMinutes(chargingBlocks);
     const runningBlock = chargingBlocks.find(block => {
         const status = (block.status || '').toLowerCase();
         return status === 'running' || status === 'active';
@@ -248,6 +410,21 @@ async function updateGridChargingPlan() {
     const section = document.getElementById('grid-charging-plan-section');
     if (section) {
         section.style.display = hasBlocks ? 'block' : 'none';
+    }
+
+    const windowElement = document.getElementById('grid-charging-window');
+    const durationElement = document.getElementById('grid-charging-duration');
+    const windowRow = document.getElementById('grid-charging-window-row');
+    const durationRow = document.getElementById('grid-charging-duration-row');
+    if (windowElement && windowRow) {
+        windowRow.style.display = hasBlocks ? 'flex' : 'none';
+        windowElement.textContent = hasBlocks
+            ? (planWindow || gridChargingData.attributes?.next_charging_time_range || '--')
+            : '--';
+    }
+    if (durationElement && durationRow) {
+        durationRow.style.display = hasBlocks ? 'flex' : 'none';
+        durationElement.textContent = hasBlocks ? formatDurationMinutes(durationMinutes) : '--';
     }
 
     const energyElement = document.getElementById('grid-charging-energy');

@@ -575,6 +575,24 @@ function renderAllTiles() {
     renderTilesBlock('right');
 }
 
+function _applyFlipToTileValues(side, index) {
+    if (typeof updateElementIfChanged !== 'function') return;
+
+    const ids = [
+        `tile-${side}-${index}-value`,
+        `tile-${side}-${index}-unit`,
+        `tile-${side}-${index}-support-top`,
+        `tile-${side}-${index}-support-bottom`,
+        `tile-${side}-${index}-button-state`
+    ];
+
+    ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        updateElementIfChanged(id, el.textContent, id, false, true);
+    });
+}
+
 /**
  * Render one tiles block
  * @param {string} side - 'left' or 'right'
@@ -615,6 +633,7 @@ function renderTilesBlock(side) {
         const tileConfig = tiles[i];
         const tileElement = renderTile(side, i, tileConfig);
         gridElement.appendChild(tileElement);
+        _applyFlipToTileValues(side, i);
     }
 
     // console.log(`[Tiles] Rendered ${side} block with ${tileCount} slots (${tiles.filter(t => t !== null).length} configured)`);

@@ -108,7 +108,7 @@
     }
 }
 
-@keyframes pulse-warning {@keyframes pulse-pending {
+@keyframes pulse-pending {
     0%, 100% {
         box-shadow: 0 0 0 0 rgb(255, 152, 0, 0.6);
         border-color: rgb(255, 152, 0, 0.4);
@@ -139,6 +139,121 @@
 
     50% {
         border-color: rgb(255, 152, 0, 0.8);
+    }
+}
+
+/* === VALUE UPDATE HIGHLIGHT (FE only) === */
+@keyframes value-update-flash {
+    0% {
+        text-shadow: none;
+        filter: none;
+    }
+
+    35% {
+        text-shadow: 0 0 12px var(--info-text, #42a5f5);
+        filter: brightness(1.15);
+    }
+
+    100% {
+        text-shadow: none;
+        filter: none;
+    }
+}
+
+@keyframes tile-update-glow {
+    0% {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+
+    25% {
+        opacity: 0.85;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1.02);
+    }
+}
+
+/* === SPLIT-FLAP (TRAIN BOARD) VALUE CHANGE === */
+@keyframes oig-flip-top {
+    to {
+        transform: rotateX(-90deg);
+    }
+}
+
+@keyframes oig-flip-bottom {
+    to {
+        transform: rotateX(0deg);
+    }
+}
+
+.oig-flipboard {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    vertical-align: baseline;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.oig-flip-cell {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: baseline;
+    perspective: 900px;
+}
+
+.oig-flip-size {
+    display: inline-block;
+    opacity: 0;
+    user-select: none;
+    pointer-events: none;
+}
+
+.oig-flip-face {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: inherit;
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+    will-change: transform;
+}
+
+.oig-flip-static-top {
+    clip-path: inset(0 0 50% 0);
+}
+
+.oig-flip-static-bottom {
+    clip-path: inset(50% 0 0 0);
+}
+
+.oig-flip-anim-top {
+    clip-path: inset(0 0 50% 0);
+    transform-origin: bottom;
+    animation: oig-flip-top 180ms ease-in forwards;
+    filter: brightness(1.08);
+}
+
+.oig-flip-anim-bottom {
+    clip-path: inset(50% 0 0 0);
+    transform-origin: top;
+    transform: rotateX(90deg);
+    animation: oig-flip-bottom 200ms ease-out 180ms forwards;
+    filter: brightness(0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .oig-flip-anim-top,
+    .oig-flip-anim-bottom {
+        animation: none !important;
+        transform: none !important;
     }
 }
 
@@ -181,4 +296,21 @@
 .animate-pulse-charging {
     animation: pulse-charging 2s ease-in-out infinite;
 }
+
+.animate-value-update {
+    animation: value-update-flash 450ms ease-out;
+}
+
+/* Highlight the whole tile when any child value changes */
+.dashboard-tile.animate-tile-update::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow:
+        0 0 0 2px var(--info-text, #42a5f5),
+        0 0 20px 0 var(--info-bg, rgb(33, 150, 243, 0.2));
+    animation: tile-update-glow 650ms ease-out;
 }

@@ -8,7 +8,7 @@
 @import url('css/03-typography.css');
 
 /* Import animations */
-@import url('css/utils/animations.css');
+@import url('css/utils/animations.css?v=20251215-013');
 
 /* Import button components */
 @import url('css/components/buttons.css');
@@ -603,7 +603,7 @@
         }
 
         /* Touch-friendly hit area pro mobily */
-        @media (width <= 768px) {
+	        @media (width <= 768px) {
             .flow-canvas.edit-mode .node {
                 min-width: 44px;
                 min-height: 44px;
@@ -1481,13 +1481,29 @@
             line-height: 1.4;
         }
 
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 3px;
-            gap: 5px;
-        }
+	        .detail-row {
+	            display: flex;
+	            justify-content: space-between;
+	            align-items: center;
+	            margin-bottom: 3px;
+	            gap: 5px;
+	        }
+
+	        .detail-row.detail-row-quad {
+	            display: grid;
+	            grid-template-columns: 18px minmax(0, 1fr) 18px minmax(0, 1fr);
+	            column-gap: 6px;
+	            align-items: center;
+	        }
+
+	        .detail-row.detail-row-quad .detail-icon {
+	            justify-self: center;
+	        }
+
+	        .detail-row.detail-row-quad .detail-value {
+	            justify-self: start;
+	            text-align: left;
+	        }
 
         .detail-label {
             opacity: 0.6;
@@ -1839,42 +1855,35 @@
             animation: pulse 3s ease-in-out infinite;
         }
 
-        /* Battery - Kompaktnější layout - ŠIROKÝ */
-        .battery {
-            min-width: 260px !important;
-            max-width: 340px !important;
-        }
+        /* Battery - sjednoceno s ostatními boxy (nepřebíjí typografii) */
+	        .battery {
+	            min-width: 250px !important;
+	            max-width: 330px !important;
+	        }
 
-        .battery .node-details {
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+	        .battery .node-details {
+	            width: 100%;
+	            min-width: 0;
+	            box-sizing: border-box;
+	        }
 
-            /* 2 sloupce */
-            gap: 4px 10px;
-        }            /* 2 sloupce */
+	        .battery .node-details .detail-group {
+	            width: 100%;
+	            min-width: 0;
+	        }
 
-            gap: 4px 8px;
+	        .battery .node-details .detail-group > div {
+	            width: 100%;
+	            min-width: 0;
+	        }
 
-        .battery .detail-row {
-            grid-column: span 1;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-        }
+	        .battery .node-details .detail-group > div > div {
+	            min-width: 0;
+	        }
 
-        .battery .detail-group {
-            grid-column: span 2;
-
-            /* Celá šířka */
-            margin-top: 4px;
-            padding-top: 4px;
-            border-top: 1px solid var(--border-tertiary);
-        }
-
-        .battery .detail-group .detail-row {
-            grid-column: span 1;
-        }
+	        .battery .node-details .detail-group > div[style*="grid-template-columns"] {
+	            gap: 10px !important;
+	        }
 
         .battery .detail-group>div[style*="grid"] {
             background: transparent;
@@ -1884,17 +1893,37 @@
             background: transparent;
         }
 
-        .battery .detail-subheader {
-            grid-column: span 2;
-            margin-bottom: 2px;
-            font-size: 9px;
-        }
+	        .battery .detail-subheader {
+	            margin-bottom: 2px;
+	            font-size: 10px;
+	        }
+	
+	        /* Battery details: nepoužívat ALL CAPS jako jinde */
+	        .battery .detail-subheader,
+	        .battery .detail-label {
+	            text-transform: none;
+	            letter-spacing: 0;
+	        }
+
+	        .battery .detail-label {
+	            font-size: 10px;
+	            opacity: 0.78;
+	            flex: 0 0 auto;
+	            margin-right: 8px;
+	        }
+
+	        .battery .detail-value {
+	            font-size: 10px;
+	            margin-left: auto;
+	        }
 
         /* Battery SVG Icon */
         .battery-icon-svg {
             display: block;
             margin: 0 auto;
             filter: drop-shadow(0 2px 4px rgb(0, 0, 0, 0.2));
+            width: 28px !important;
+            height: 44px !important;
         }
 
         .battery-outline {
@@ -2047,12 +2076,21 @@
                 overflow: visible;
             }
 
-            /* Zmenšení všech boxů pro mobil */
-            .node {
-                min-width: 130px;
-                max-width: 180px;
-                padding: 10px 12px;
-            }
+	            /* Zmenšení všech boxů pro mobil */
+	            .node {
+	                min-width: 130px;
+	                max-width: 180px;
+	                padding: 10px 12px;
+	            }
+	
+	            .battery {
+	                min-width: 130px !important;
+	                max-width: 180px !important;
+	            }
+
+	            #battery-power {
+	                font-size: 12px;
+	            }
 
             .node-icon {
                 font-size: 24px;
@@ -7822,4 +7860,109 @@
     .cost-plan-chips {
         grid-template-columns: 1fr;
     }
+}
+
+/* === SPLIT-FLAP OVERFLOW SAFEGUARDS === */
+.node-label,
+.node-value,
+.node-subvalue {
+    align-self: stretch;
+    text-align: center;
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#solar-today,
+#house-today,
+#battery-soc {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+}
+
+#solar-today .oig-flipboard,
+#house-today .oig-flipboard,
+#battery-soc .oig-flipboard {
+    display: inline-flex;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+#battery-power {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.75;
+}
+
+.node-phases,
+.node-details {
+    align-self: stretch;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.phase-row-group,
+.detail-row {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.node-tariff,
+.node-frequency {
+    max-width: calc(50% - 14px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inverter-temp-indicator {
+    max-width: calc(50% - 14px);
+    overflow: hidden;
+}
+
+.inverter-temp-indicator > * {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.node-status {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.node-phases {
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.phase-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.detail-row {
+    min-width: 0;
+}
+
+.detail-label,
+.detail-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

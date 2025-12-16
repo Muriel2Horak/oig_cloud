@@ -154,6 +154,7 @@
             align-items: flex-end;
             gap: 8px;
             flex: 1;
+            min-width: 0; /* allow value to shrink instead of overflowing */
         }
 
         /* Velká ikona vlevo */
@@ -172,6 +173,12 @@
             color: var(--text-primary);
             cursor: pointer;
             transition: transform 0.2s;
+            min-width: 0;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1;
         }
 
         .tile-value-large:hover {
@@ -266,6 +273,11 @@
         .tile-support .support-value {
             font-weight: 600;
             font-size: 9px;
+            display: inline-block;
+            max-width: 10ch;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .tile-icon {
@@ -1035,4 +1047,3 @@
                 grid-template-columns: repeat(2, 1fr);
             }
         }
-

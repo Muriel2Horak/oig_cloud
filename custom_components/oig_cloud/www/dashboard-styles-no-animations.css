@@ -8,7 +8,7 @@
 @import url('css/03-typography.css');
 
 /* Import animations */
-@import url('css/utils/animations.css');
+@import url('css/utils/animations.css?v=20251215-003');
 
 /* Import button components */
 @import url('css/components/buttons.css');
@@ -7049,4 +7049,3 @@
     color: var(--text-secondary);
     font-size: 0.9rem;
 }
-

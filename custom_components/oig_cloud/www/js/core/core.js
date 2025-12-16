@@ -854,7 +854,7 @@ function renderEntityTile(config, side, index) {
                 supportHtml += `
                     <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
                         <span class="support-icon">${topRightIcon}</span>
-                        <span class="support-value">${topRightValue}${topRightUnit}</span>
+                        <span class="support-value" id="tile-${side}-${index}-support-top">${topRightValue}${topRightUnit}</span>
                     </div>
                 `;
             }
@@ -884,7 +884,7 @@ function renderEntityTile(config, side, index) {
                 supportHtml += `
                     <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
                         <span class="support-icon">${bottomRightIcon}</span>
-                        <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
+                        <span class="support-value" id="tile-${side}-${index}-support-bottom">${bottomRightValue}${bottomRightUnit}</span>
                     </div>
                 `;
             }
@@ -900,7 +900,7 @@ function renderEntityTile(config, side, index) {
         <div class="tile-content tile-content-horizontal${inactiveClass}" style="border-left: 3px solid ${color};">
             <div class="tile-main-content">
                 <div class="tile-icon-large" style="color: ${color};">${renderIcon(icon, color)}</div>
-                <div class="tile-value-large" onclick="openEntityDialog('${config.entity_id}')" style="cursor: pointer;">${value}<span class="tile-unit">${unit}</span></div>
+                <div class="tile-value-large" onclick="openEntityDialog('${config.entity_id}')" style="cursor: pointer;"><span id="tile-${side}-${index}-value">${value}</span><span class="tile-unit" id="tile-${side}-${index}-unit">${unit}</span></div>
             </div>
             ${supportHtml}
             <div class="tile-label-hover">${label}</div>
@@ -970,7 +970,7 @@ function renderButtonTile(config, side, index) {
                 supportHtml += `
                     <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
                         <span class="support-icon">${topRightIcon}</span>
-                        <span class="support-value">${topRightValue}${topRightUnit}</span>
+                        <span class="support-value" id="tile-${side}-${index}-support-top">${topRightValue}${topRightUnit}</span>
                     </div>
                 `;
             }
@@ -1000,7 +1000,7 @@ function renderButtonTile(config, side, index) {
                 supportHtml += `
                     <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
                         <span class="support-icon">${bottomRightIcon}</span>
-                        <span class="support-value">${bottomRightValue}${bottomRightUnit}</span>
+                        <span class="support-value" id="tile-${side}-${index}-support-bottom">${bottomRightValue}${bottomRightUnit}</span>
                     </div>
                 `;
             }
@@ -1013,7 +1013,7 @@ function renderButtonTile(config, side, index) {
              onclick="executeTileButtonAction('${config.entity_id}', '${action}')">
             <div class="tile-main-content">
                 <div class="tile-icon-large" style="color: ${color};">${renderIcon(icon, color)}</div>
-                <div class="tile-button-state">${isOn ? 'ON' : 'OFF'}</div>
+                <div class="tile-button-state" id="tile-${side}-${index}-button-state">${isOn ? 'ON' : 'OFF'}</div>
             </div>
             ${supportHtml}
             <div class="tile-label-hover">${label} • ${actionLabel}</div>
