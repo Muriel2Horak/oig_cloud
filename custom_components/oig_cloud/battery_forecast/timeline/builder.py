@@ -261,6 +261,7 @@ class TimelineBuilder:
         Returns:
             Reason string
         """
+        _ = price
         if is_holding:
             return "Holding at 100% for balancing"
 

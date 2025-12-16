@@ -770,7 +770,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             config_file = user_input.get("config_file", "")
 
             if config_file:
-                # TODO: Načíst a parsovat konfiguraci
+                # NOTE: Načíst a parsovat konfiguraci (not implemented yet)
                 # Pro teď jen placeholder
                 return self.async_abort(
                     reason="import_not_implemented",

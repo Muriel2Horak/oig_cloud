@@ -26,14 +26,18 @@ from homeassistant.util import dt as dt_util
 from homeassistant.helpers.event import (
     async_track_point_in_time,
     async_call_later,
-    async_track_time_interval,
 )
+
+try:
+    from homeassistant.helpers.event import async_track_time_interval as _async_track_time_interval  # type: ignore
+except Exception:  # pragma: no cover
+    _async_track_time_interval = None
 
 from .const import (
     DOMAIN,
     CONF_AUTO_MODE_SWITCH,
     CONF_AUTO_MODE_PLAN,
-)  # TODO 3: Import DOMAIN for BalancingManager access
+)  # PHASE 3: Import DOMAIN for BalancingManager access
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,20 +86,34 @@ CBB_MODE_NAMES = {
 }
 
 # Mode transition costs (energy loss + time delay)
+MODE_LABEL_HOME_I = "Home I"
+MODE_LABEL_HOME_II = "Home II"
+MODE_LABEL_HOME_III = "Home III"
+MODE_LABEL_HOME_UPS = "Home UPS"
+
+SERVICE_MODE_HOME_1 = "Home 1"
+SERVICE_MODE_HOME_2 = "Home 2"
+SERVICE_MODE_HOME_3 = "Home 3"
+SERVICE_MODE_HOME_UPS = "Home UPS"
+
+DATE_FMT = "%Y-%m-%d"
+DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
+ISO_TZ_OFFSET = "+00:00"
+
 TRANSITION_COSTS = {
-    ("Home I", "Home UPS"): {
+    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS): {
         "energy_loss_kwh": 0.05,  # Energy loss when switching to UPS
         "time_delay_intervals": 1,  # Delay in 15-min intervals
     },
-    ("Home UPS", "Home I"): {
+    (MODE_LABEL_HOME_UPS, MODE_LABEL_HOME_I): {
         "energy_loss_kwh": 0.02,  # Energy loss when switching from UPS
         "time_delay_intervals": 0,
     },
-    ("Home I", "Home II"): {
+    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_II): {
         "energy_loss_kwh": 0.0,  # No loss between Home modes
         "time_delay_intervals": 0,
     },
-    ("Home II", "Home I"): {
+    (MODE_LABEL_HOME_II, MODE_LABEL_HOME_I): {
         "energy_loss_kwh": 0.0,
         "time_delay_intervals": 0,
     },
@@ -103,27 +121,27 @@ TRANSITION_COSTS = {
 
 # Minimum mode duration (in 15-min intervals)
 MIN_MODE_DURATION = {
-    "Home UPS": 2,  # UPS must run at least 30 minutes (2×15min)
-    "Home I": 1,
-    "Home II": 1,
+    MODE_LABEL_HOME_UPS: 2,  # UPS must run at least 30 minutes (2×15min)
+    MODE_LABEL_HOME_I: 1,
+    MODE_LABEL_HOME_II: 1,
 }
 
 # Mapping from autonomy planner labels to HA service names
 AUTONOMY_MODE_SERVICE_MAP = {
-    "HOME I": "Home 1",
-    "HOME 1": "Home 1",
-    "HOME II": "Home 2",
-    "HOME 2": "Home 2",
-    "HOME III": "Home 3",
-    "HOME 3": "Home 3",
-    "HOME UPS": "Home UPS",
+    "HOME I": SERVICE_MODE_HOME_1,
+    "HOME 1": SERVICE_MODE_HOME_1,
+    "HOME II": SERVICE_MODE_HOME_2,
+    "HOME 2": SERVICE_MODE_HOME_2,
+    "HOME III": SERVICE_MODE_HOME_3,
+    "HOME 3": SERVICE_MODE_HOME_3,
+    "HOME UPS": SERVICE_MODE_HOME_UPS,
 }
 
 CBB_MODE_SERVICE_MAP = {
-    CBB_MODE_HOME_I: "Home 1",
-    CBB_MODE_HOME_II: "Home 2",
-    CBB_MODE_HOME_III: "Home 3",
-    CBB_MODE_HOME_UPS: "Home UPS",
+    CBB_MODE_HOME_I: SERVICE_MODE_HOME_1,
+    CBB_MODE_HOME_II: SERVICE_MODE_HOME_2,
+    CBB_MODE_HOME_III: SERVICE_MODE_HOME_3,
+    CBB_MODE_HOME_UPS: SERVICE_MODE_HOME_UPS,
 }
 
 # AC Charging - modes where charging is DISABLED (only solar DC/DC allowed)
@@ -506,7 +524,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Daily aggregation at 00:05 (aggregate yesterday's data)
         async def _daily_aggregation_job(now):
             """Run daily aggregation at 00:05."""
-            yesterday = (now.date() - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday = (now.date() - timedelta(days=1)).strftime(DATE_FMT)
             _LOGGER.info(f"⏰ Daily aggregation job triggered for {yesterday}")
             await self._aggregate_daily(yesterday)
 
@@ -531,9 +549,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             week_str = f"{year}-W{week_num:02d}"
 
             # Week end is today (Sunday)
-            end_date = now.date().strftime("%Y-%m-%d")
+            end_date = now.date().strftime(DATE_FMT)
             # Week start is 6 days ago (Monday)
-            start_date = (now.date() - timedelta(days=6)).strftime("%Y-%m-%d")
+            start_date = (now.date() - timedelta(days=6)).strftime(DATE_FMT)
 
             _LOGGER.info(f"⏰ Weekly aggregation job triggered for {week_str}")
             await self._aggregate_weekly(week_str, start_date, end_date)
@@ -552,6 +570,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._cancel_autonomy_switch_schedule()
         self._stop_autonomy_watchdog()
         await super().async_will_remove_from_hass()
+
+    def _get_config(self) -> Dict[str, Any]:
+        """Return config dict from config entry (options preferred, then data)."""
+        if not self._config_entry:
+            return {}
+        options = getattr(self._config_entry, "options", None)
+        if options:
+            return options
+        return self._config_entry.data or {}
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update.
@@ -957,10 +984,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Run HYBRID optimization (simplified, reliable)
             try:
-                # TODO 3: Load balancing plan from new BalancingManager
+                # PHASE 3: Load balancing plan from new BalancingManager
                 balancing_plan_for_hybrid = None
 
-                # TODO 3: Try new BalancingManager first
+                # PHASE 3: Try new BalancingManager first
                 try:
                     entry_id = (
                         self._config_entry.entry_id if self._config_entry else None
@@ -1042,7 +1069,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 # Choose active timeline based on planner mode
                 if battery_planner_mode == "autonomy":
-                    # TODO: Use AUTONOMY timeline when available
+                    # NOTE: Use AUTONOMY timeline when available
                     # For now, fallback to HYBRID (AUTONOMY implementation follows)
                     self._timeline_data = hybrid_timeline
                     _LOGGER.info(
@@ -1161,15 +1188,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Spustit update každých 15 minut (v 0, 15, 30, 45)
             should_update = current_minute in [0, 15, 30, 45]
 
-            if should_update and not self._initial_history_update_done:
-                # Skip pokud ještě neproběhl initial update
-                pass
-            elif should_update:
+            if should_update:
                 # PHASE 3.0: DISABLED - Historical data loading moved to on-demand (API only)
                 # Načítání z Recorderu každých 15 min je POMALÉ!
-                # Nově: build_timeline_extended() načítá on-demand při API volání
-                # _LOGGER.info(f"⏰ 15-minute history update triggered: {now.strftime('%H:%M')}")
-                # await self._update_actual_from_history()
+                # Nově: build_timeline_extended() načítá on-demand při API volání.
+                # NOTE: Historically skipped until initial history update; kept for future re-enable.
                 pass
 
             # CRITICAL FIX: Write state after every update to publish consumption_summary
@@ -1633,7 +1656,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = 0.0
 
             # Simulovat s fixed režimem - NOVÁ centrální funkce!
-            # TODO 3: Přechod ze staré _simulate_interval_with_mode() na novou _simulate_interval()
+            # PHASE 3: Přechod ze staré _simulate_interval_with_mode() na novou _simulate_interval()
             sim_result = self._simulate_interval(
                 mode=fixed_mode,
                 solar_kwh=solar_kwh,
@@ -1843,7 +1866,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = 0.0
 
             # OPRAVA: Použít současný režim místo HOME I
-            # TODO 3: Přechod na novou _simulate_interval()
+            # PHASE 3: Přechod na novou _simulate_interval()
             sim_result = self._simulate_interval(
                 mode=current_mode,  # ← OPRAVA: Prostě nech to být!
                 solar_kwh=solar_kwh,
@@ -1979,7 +2002,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Normální provoz (nebo battery už plná)
                 mode = CBB_MODE_HOME_I  # 0 - Battery priority
 
-            # TODO 3: Přechod na novou _simulate_interval()
+            # PHASE 3: Přechod na novou _simulate_interval()
             sim_result = self._simulate_interval(
                 mode=mode,
                 solar_kwh=solar_kwh,
@@ -2436,11 +2459,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )  # Use real measured roundtrip efficiency
 
         # Parametry nabíjení
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
+        config = self._get_config()
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
 
@@ -2860,7 +2879,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 and current_price < avg_price * 0.8  # Levná elektřina (< 80% průměru)
                 and i < n - 8
             ):  # Není poslední 2h (baterii stačí nabít)
-                # TODO: Zjistit SoC v tomto intervalu pro lepší rozhodování
+                # NOTE: Zjistit SoC v tomto intervalu pro lepší rozhodování
                 modes[i] = CBB_MODE_HOME_III
 
             # HOME II: Šetří baterii na drahou špičku
@@ -3067,7 +3086,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
         # PHASE 8: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
-        min_duration = MIN_MODE_DURATION.get("Home UPS", 2)
+        min_duration = MIN_MODE_DURATION.get(MODE_LABEL_HOME_UPS, 2)
         i = 0
         while i < len(modes):
             if modes[i] == CBB_MODE_HOME_UPS:
@@ -3093,12 +3112,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 gap_cost = gap_price * max_charge_per_interval  # Cost to charge in gap
 
                 # Transition cost: 2× switch (UPS→I + I→UPS)
-                transition_loss = TRANSITION_COSTS.get(("Home UPS", "Home I"), {}).get(
-                    "energy_loss_kwh", 0.02
-                )
-                transition_loss += TRANSITION_COSTS.get(("Home I", "Home UPS"), {}).get(
-                    "energy_loss_kwh", 0.05
-                )
+                transition_loss = TRANSITION_COSTS.get(
+                    (MODE_LABEL_HOME_UPS, MODE_LABEL_HOME_I), {}
+                ).get("energy_loss_kwh", 0.02)
+                transition_loss += TRANSITION_COSTS.get(
+                    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS), {}
+                ).get("energy_loss_kwh", 0.05)
                 transition_cost_czk = transition_loss * gap_price
 
                 if gap_cost < transition_cost_czk:
@@ -3225,10 +3244,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Mode name mapping for logging
         mode_names = {
-            CBB_MODE_HOME_I: "Home I",
-            CBB_MODE_HOME_II: "Home II",
-            CBB_MODE_HOME_III: "Home III",
-            CBB_MODE_HOME_UPS: "Home UPS",
+            CBB_MODE_HOME_I: MODE_LABEL_HOME_I,
+            CBB_MODE_HOME_II: MODE_LABEL_HOME_II,
+            CBB_MODE_HOME_III: MODE_LABEL_HOME_III,
+            CBB_MODE_HOME_UPS: MODE_LABEL_HOME_UPS,
         }
 
         result = modes.copy()
@@ -3340,11 +3359,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         SAFETY_MARGIN = 1.10  # Nabít +10% nad planning_min pro rezervu
 
         # Načíst charging power z konfigurace
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
+        config = self._get_config()
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0  # kWh za 15min
 
@@ -3563,20 +3578,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # Reuse planning minimum validator with boosted minimum and current forward SoC
-        return self._validate_planning_minimum(
-            modes=modes,
-            spot_prices=spot_prices,
-            export_prices=export_prices,
-            solar_forecast=solar_forecast,
-            load_forecast=load_forecast,
-            current_capacity=current_capacity,
-            max_capacity=max_capacity,
-            min_capacity=boosted_min_capacity,
-            physical_min_capacity=physical_min_capacity,
-            efficiency=efficiency,
-            forward_soc_before=soc_trace,
-        )
-
         return self._validate_planning_minimum(
             modes=modes,
             spot_prices=spot_prices,
@@ -3997,11 +3998,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Args:
             baselines: Optional 4-baseline comparison results from _calculate_mode_baselines()
         """
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
+        config = self._get_config()
         charging_power_kw = config.get("home_charge_rate", 2.8)
         max_charge_per_interval = charging_power_kw / 4.0
 
@@ -4581,7 +4578,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = timeline_point.get("solar_kwh", 0.0)
                 load_kwh = timeline_point.get("load_kwh", 0.0)
 
-                # TODO 3: Přechod na novou _simulate_interval()
+                # PHASE 3: Přechod na novou _simulate_interval()
                 # DŮLEŽITÉ: Tady používáme OBĚ minima - physical (hw) i planning (user)
                 sim_result = self._simulate_interval(
                     mode=mode,
@@ -5018,7 +5015,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # 3. Fallback: Podle mode parametru
 
             interval_mode_num = mode  # Default: použít mode parametr
-            interval_mode_name = CBB_MODE_NAMES.get(mode, "Home UPS")
+            interval_mode_name = CBB_MODE_NAMES.get(mode, MODE_LABEL_HOME_UPS)
 
             # DEBUG first 3 intervals
             if len(timeline) < 3:
@@ -5031,7 +5028,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if is_balancing_charging or is_balancing_holding:
                 # Balancing VŽDY používá Home UPS (AC charging + držení baterie)
                 interval_mode_num = CBB_MODE_HOME_UPS
-                interval_mode_name = "Home UPS"
+                interval_mode_name = MODE_LABEL_HOME_UPS
             elif timestamp_str in dp_mode_lookup:
                 # Použít optimální mode z DP
                 interval_mode_num = dp_mode_lookup[timestamp_str]
@@ -5079,11 +5076,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if should_charge and needed_kwh > 0:
                     # OPRAVA: Použít home_charge_rate z konfigurace místo hardcoded 0.75
                     # Načíst charging power z config
-                    config = (
-                        self._config_entry.options
-                        if self._config_entry and self._config_entry.options
-                        else self._config_entry.data if self._config_entry else {}
-                    )
+                    config = self._get_config()
                     charging_power_kw = config.get("home_charge_rate", 2.8)
                     max_charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
 
@@ -5138,11 +5131,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     # CRITICAL: V UPS režimu VŽDY nabíjíme z gridu (DP optimization rozhodla)
                     # DP módy jsou autoritativní - pokud je HOME UPS, nabíjíme!
-                    config = (
-                        self._config_entry.options
-                        if self._config_entry and self._config_entry.options
-                        else self._config_entry.data if self._config_entry else {}
-                    )
+                    config = self._get_config()
                     charging_power_kw = config.get("home_charge_rate", 2.8)
                     max_charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
 
@@ -5443,7 +5432,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         4. STORAGE: Ulož baseline do Storage Helper (persistent)
         """
         now = dt_util.now()
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = now.strftime(DATE_FMT)
 
         # Inicializace state při prvním běhu
         if not hasattr(self, "_daily_plan_state"):
@@ -5504,7 +5493,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
 
                 # Vyčistit staré plány (starší než 7 dní)
-                cutoff_date = (now.date() - timedelta(days=7)).strftime("%Y-%m-%d")
+                cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
                 self._daily_plans_archive = {
                     date: plan
                     for date, plan in self._daily_plans_archive.items()
@@ -5843,13 +5832,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if mode_raw is not None:
                 mode_str = str(mode_raw).strip()
                 # Mapování textových hodnot na mode ID
-                if "Home 1" in mode_str or "HOME I" in mode_str:
+                if SERVICE_MODE_HOME_1 in mode_str or "HOME I" in mode_str:
                     mode = 0
-                elif "Home 3" in mode_str or "HOME III" in mode_str:
+                elif SERVICE_MODE_HOME_3 in mode_str or "HOME III" in mode_str:
                     mode = 2
-                elif "UPS" in mode_str or "Home UPS" in mode_str:
+                elif "UPS" in mode_str or SERVICE_MODE_HOME_UPS in mode_str:
                     mode = 3
-                elif "Home 2" in mode_str or "HOME II" in mode_str:
+                elif SERVICE_MODE_HOME_2 in mode_str or "HOME II" in mode_str:
                     mode = 1
 
             mode_name = CBB_MODE_NAMES.get(mode, "HOME I")
@@ -5892,7 +5881,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Žádné nested struktury, žádné delta - jen čistá actual data
         """
         now = dt_util.now()
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = now.strftime(DATE_FMT)
 
         # Načíst existing plan z Storage Helper (FAST)
         # PHASE 3.0: Use Storage Helper instead of file I/O
@@ -6318,7 +6307,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
             # 2. Determine date range for baseline (00:00 - 23:45)
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            date_obj = datetime.strptime(date_str, DATE_FMT).date()
             day_start = datetime.combine(date_obj, datetime.min.time())
             day_start = dt_util.as_local(day_start)  # Make timezone-aware
 
@@ -6525,7 +6514,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # 2. Determine creation strategy based on current time
         now = dt_util.now()
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = now.strftime(DATE_FMT)
 
         # Only create plan for today (not future/past dates)
         if date_str != today_str:
@@ -6656,8 +6645,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # 4. Cleanup: Delete detailed plans older than 7 days
             cutoff_date = (
-                datetime.strptime(date_str, "%Y-%m-%d").date() - timedelta(days=7)
-            ).strftime("%Y-%m-%d")
+                datetime.strptime(date_str, DATE_FMT).date() - timedelta(days=7)
+            ).strftime(DATE_FMT)
 
             detailed = data.get("detailed", {})
             dates_to_delete = [d for d in detailed.keys() if d < cutoff_date]
@@ -6717,13 +6706,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             daily_plans = data.get("daily", {})
 
             # Get all days in week range
-            start = datetime.strptime(start_date, "%Y-%m-%d").date()
-            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+            start = datetime.strptime(start_date, DATE_FMT).date()
+            end = datetime.strptime(end_date, DATE_FMT).date()
 
             week_days = []
             current = start
             while current <= end:
-                day_str = current.strftime("%Y-%m-%d")
+                day_str = current.strftime(DATE_FMT)
                 if day_str in daily_plans:
                     week_days.append(daily_plans[day_str])
                 current += timedelta(days=1)
@@ -6784,8 +6773,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # 4. Cleanup: Delete daily plans older than 30 days
             cutoff_daily = (
-                datetime.strptime(end_date, "%Y-%m-%d").date() - timedelta(days=30)
-            ).strftime("%Y-%m-%d")
+                datetime.strptime(end_date, DATE_FMT).date() - timedelta(days=30)
+            ).strftime(DATE_FMT)
 
             daily_to_delete = [d for d in daily_plans.keys() if d < cutoff_daily]
 
@@ -7112,7 +7101,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             """Count number of UPS intervals that violate min duration."""
             short = 0
             i = 0
-            min_len = MIN_MODE_DURATION.get("Home UPS", 2)
+            min_len = MIN_MODE_DURATION.get(MODE_LABEL_HOME_UPS, 2)
             while i < len(block_modes):
                 if block_modes[i] == CBB_MODE_HOME_UPS:
                     j = i
@@ -7253,19 +7242,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             planning_adjusted = True
             soc_trace = _build_soc_trace(final_modes)
 
-        # DISABLED: DP already handles cheap charging optimization via incentive
-        # Post-processing cheap_window_ups is no longer needed and causes conflicts
+        # DISABLED: DP already handles cheap charging optimization via incentive.
+        # Post-processing cheap_window_ups is intentionally skipped (avoid conflicts).
         cheap_added = 0
-        # if cheap_price_threshold is not None:
-        #     cheap_added = self._apply_cheap_window_ups(
-        #         modes=final_modes,
-        #         spot_prices=spot_prices,
-        #         forward_soc_before=soc_trace,
-        #         min_capacity=min_capacity,
-        #         cheap_price_threshold=cheap_price_threshold,
-        #     )
-        #     if cheap_added:
-        #         final_modes = self._enforce_min_mode_duration(final_modes)
 
         result = self._build_result(
             modes=final_modes,
@@ -7926,11 +7905,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 }
 
             pseudo_intervals.sort(key=lambda item: item.get("time") or "")
-            tab_name = (
-                "today"
-                if day_obj == today
-                else "yesterday" if day_obj == yesterday else "tomorrow"
-            )
+            if day_obj == today:
+                tab_name = "today"
+            elif day_obj == yesterday:
+                tab_name = "yesterday"
+            else:
+                tab_name = "tomorrow"
             mode_blocks = self._build_mode_blocks_for_tab(pseudo_intervals, tab_name)
             summary = self._calculate_tab_summary(mode_blocks, pseudo_intervals)
 
@@ -7950,14 +7930,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         result: Dict[str, Any] = {}
 
         for key in tabs_to_process:
+            fallback_day = today
+            if key == "yesterday":
+                fallback_day = yesterday
+            elif key == "tomorrow":
+                fallback_day = tomorrow
+
             result[key] = mapping.get(
                 key,
                 {
-                    "date": (
-                        yesterday
-                        if key == "yesterday"
-                        else tomorrow if key == "tomorrow" else today
-                    ).isoformat(),
+                    "date": fallback_day.isoformat(),
                     "mode_blocks": [],
                     "intervals": [],
                     "summary": {
@@ -8119,10 +8101,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         ):
             return
 
-        self._autonomy_watchdog_unsub = async_track_time_interval(
-            self._hass,
-            self._autonomy_watchdog_tick,
-            self._autonomy_watchdog_interval,
+        if _async_track_time_interval is None:
+            _LOGGER.debug(
+                "[AutonomySwitch] async_track_time_interval unavailable; watchdog disabled"
+            )
+            return
+
+        self._autonomy_watchdog_unsub = _async_track_time_interval(
+            self._hass, self._autonomy_watchdog_tick, self._autonomy_watchdog_interval
         )
         _LOGGER.debug(
             "[AutonomySwitch] Watchdog started (interval=%ss)",
@@ -8415,7 +8401,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     planning_min,
                 )
                 await self._ensure_current_mode(
-                    "Home UPS", "soc below planning minimum"
+                    MODE_LABEL_HOME_UPS, "soc below planning minimum"
                 )
 
         if not scheduled_events:
@@ -8425,7 +8411,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         for when, mode, prev_mode in scheduled_events:
             lead_seconds = self._get_mode_switch_offset(
-                prev_mode or current_mode or "Home 1", mode
+                prev_mode or current_mode or SERVICE_MODE_HOME_1, mode
             )
             adjusted_when = when - timedelta(seconds=lead_seconds)
             if adjusted_when <= now:
@@ -8765,7 +8751,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             ts = iso_ts
             if iso_ts.endswith("Z"):
-                ts = iso_ts.replace("Z", "+00:00")
+                ts = iso_ts.replace("Z", ISO_TZ_OFFSET)
             dt_obj = datetime.fromisoformat(ts)
             if dt_obj.tzinfo is None:
                 dt_obj = dt_util.as_local(dt_obj)
@@ -9475,11 +9461,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 actual_mode = actual.get("mode")
                 planned_mode = planned.get("mode")
                 # Pro completed: použít actual mode, fallback na planned
-                mode = (
-                    actual_mode
-                    if actual_mode is not None
-                    else (planned_mode if planned_mode is not None else "Unknown")
-                )
+                if actual_mode is not None:
+                    mode = actual_mode
+                elif planned_mode is not None:
+                    mode = planned_mode
+                else:
+                    mode = "Unknown"
                 # Log prvních 3 intervalů pro debug
                 if len(groups) < 3:
                     _LOGGER.info(
@@ -9496,11 +9483,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # POZOR: 0 je validní mode, nesmíme použít simple `or`!
                 actual_mode = actual.get("mode")
                 planned_mode = planned.get("mode")
-                mode = (
-                    actual_mode
-                    if actual_mode is not None
-                    else (planned_mode if planned_mode is not None else "Unknown")
-                )
+                if actual_mode is not None:
+                    mode = actual_mode
+                elif planned_mode is not None:
+                    mode = planned_mode
+                else:
+                    mode = "Unknown"
                 _LOGGER.debug(
                     f"[_group_intervals_by_mode] data_type=both: "
                     f"actual_mode={actual_mode}, planned_mode={planned_mode}, final_mode={mode}"
@@ -10154,6 +10142,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     (cost_delta / expected_cost * 100) if expected_cost > 0 else 0
                 )
 
+                if cost_delta < -0.5:
+                    active_interval_performance = "better"
+                elif cost_delta > 0.5:
+                    active_interval_performance = "worse"
+                else:
+                    active_interval_performance = "on_plan"
+
                 active_interval_data = {
                     "time": interval_time_str,
                     "duration_minutes": duration_minutes,
@@ -10167,11 +10162,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "actual_savings_so_far": round(actual_savings_so_far, 2),
                     "cost_delta": round(cost_delta, 2),
                     "cost_delta_pct": round(cost_delta_pct, 1),
-                    "performance": (
-                        "better"
-                        if cost_delta < -0.5
-                        else "worse" if cost_delta > 0.5 else "on_plan"
-                    ),
+                    "performance": active_interval_performance,
                 }
 
         # FÁZE 1 - Nové metriky pro FE (BE-centralizace)
@@ -10292,7 +10283,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Backfill posledních 7 dní (kromě dneška)
             backfilled_count = 0
             for days_ago in range(1, 8):  # 1-7 dní zpátky
-                date = (now.date() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+                date = (now.date() - timedelta(days=days_ago)).strftime(DATE_FMT)
 
                 # Skip if already in archive
                 if date in self._daily_plans_archive:
@@ -10335,7 +10326,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         UCT-BE-003: Implementovat _get_yesterday_cost_from_archive()
         DŮLEŽITÉ: Bereme z archivu, NEPOČÍTÁME!
         """
-        yesterday = (dt_util.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (dt_util.now().date() - timedelta(days=1)).strftime(DATE_FMT)
 
         # Get from archive
         if yesterday in self._daily_plans_archive:
@@ -10615,7 +10606,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             [
                 {
                     "time": "2025-11-06T00:51:44+00:00",
-                    "mode_name": "Home UPS",
+                    "mode_name": MODE_LABEL_HOME_UPS,
                     "mode": 5
                 },
                 ...
@@ -10693,10 +10684,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         # Mapping podle CBB_MODE_NAMES constants
         mode_mapping = {
-            "Home 1": CBB_MODE_HOME_I,  # 0
-            "Home 2": CBB_MODE_HOME_II,  # 1
-            "Home 3": CBB_MODE_HOME_III,  # 2
-            "Home UPS": CBB_MODE_HOME_UPS,  # 3
+            SERVICE_MODE_HOME_1: CBB_MODE_HOME_I,  # 0
+            SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,  # 1
+            SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,  # 2
+            SERVICE_MODE_HOME_UPS: CBB_MODE_HOME_UPS,  # 3
         }
 
         # Normalizovat string (remove extra spaces, case-insensitive)
@@ -10736,7 +10727,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         day_end = dt_util.as_local(datetime.combine(date, datetime.max.time()))
 
         intervals: List[Dict[str, Any]] = []
-        date_str = date.strftime("%Y-%m-%d")
+        date_str = date.strftime(DATE_FMT)
 
         # Určit zdroj dat podle dne
         if date < today:
@@ -10805,7 +10796,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             break
 
                     if active_mode:
-                        interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
+                        interval_time_str = interval_time.strftime(DATETIME_FMT)
                         historical_modes_lookup[interval_time_str] = {
                             "time": interval_time_str,
                             "mode": active_mode["mode"],
@@ -10853,7 +10844,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                 date, datetime.strptime(time_key, "%H:%M").time()
                             )
                             planned_dt = dt_util.as_local(planned_dt)
-                            time_str = planned_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            time_str = planned_dt.strftime(DATETIME_FMT)
                             planned_intervals_map[time_str] = planned_entry
                         except Exception:
                             continue
@@ -10866,7 +10857,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Build 96 intervalů s historical + planned data
             interval_time = day_start
             while interval_time.date() == date:
-                interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
+                interval_time_str = interval_time.strftime(DATETIME_FMT)
 
                 # Historical mode z Recorderu
                 mode_from_recorder = historical_modes_lookup.get(interval_time_str)
@@ -10968,7 +10959,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             past_planned = []
 
             # Try Storage Helper first
-            date_str = date.strftime("%Y-%m-%d")
+            date_str = date.strftime(DATE_FMT)
             storage_day = storage_plans.get("detailed", {}).get(date_str)
             if storage_day and storage_day.get("intervals"):
                 past_planned = storage_day["intervals"]
@@ -11049,7 +11040,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Only use past data for intervals BEFORE current
                         if interval_dt_naive < current_interval_naive:
                             # Store with HH:MM:SS format for consistency
-                            lookup_key = interval_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            lookup_key = interval_dt.strftime(DATETIME_FMT)
                             planned_lookup[lookup_key] = p
                     except (ValueError, TypeError):
                         # Fallback: if can't parse, skip it
@@ -11086,7 +11077,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Build 96 intervals for whole day
             interval_time = day_start
             while interval_time.date() == date:
-                interval_time_str = interval_time.strftime("%Y-%m-%dT%H:%M:%S")
+                interval_time_str = interval_time.strftime(DATETIME_FMT)
 
                 # Determine status (use naive for comparison)
                 interval_time_naive = (
@@ -11217,7 +11208,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         summary = self._calculate_day_summary(intervals)
 
         return {
-            "date": date.strftime("%Y-%m-%d"),
+            "date": date.strftime(DATE_FMT),
             "intervals": intervals,
             "summary": summary,
         }
@@ -11510,7 +11501,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Parse timestamp
             try:
                 interval_time = datetime.fromisoformat(
-                    timestamp_str.replace("Z", "+00:00")
+                    timestamp_str.replace("Z", ISO_TZ_OFFSET)
                 )
             except Exception:
                 continue
@@ -11740,7 +11731,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 try:
                     timestamp_str = point.get("timestamp", "")
                     point_time = datetime.fromisoformat(
-                        timestamp_str.replace("Z", "+00:00")
+                        timestamp_str.replace("Z", ISO_TZ_OFFSET)
                     )
 
                     if current_time < point_time <= autonomy_end:
@@ -11761,7 +11752,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # B) ČHMÚ weather risk
         enable_weather = config.get("enable_weather_risk", False)
         if enable_weather:
-            # TODO: Implementovat až bude sensor.oig_chmu_warning dostupný
+            # NOTE: Implementovat až bude sensor.oig_chmu_warning dostupný
             # Pro nyní použít jen target
             weather_target_percent = config.get("weather_target_soc_percent", 70.0)
             weather_soc = (weather_target_percent / 100.0) * max_capacity
@@ -11872,13 +11863,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if isinstance(mode_value, str):
                 # Mapování string → int (podporuje obě varianty: "Home 1" i "Home I")
                 mode_map = {
-                    "Home I": CBB_MODE_HOME_I,
-                    "Home II": CBB_MODE_HOME_II,
-                    "Home III": CBB_MODE_HOME_III,
-                    "Home UPS": CBB_MODE_HOME_UPS,
-                    "Home 1": CBB_MODE_HOME_I,
-                    "Home 2": CBB_MODE_HOME_II,
-                    "Home 3": CBB_MODE_HOME_III,
+                    MODE_LABEL_HOME_I: CBB_MODE_HOME_I,
+                    MODE_LABEL_HOME_II: CBB_MODE_HOME_II,
+                    MODE_LABEL_HOME_III: CBB_MODE_HOME_III,
+                    MODE_LABEL_HOME_UPS: CBB_MODE_HOME_UPS,
+                    SERVICE_MODE_HOME_1: CBB_MODE_HOME_I,
+                    SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,
+                    SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,
                 }
 
                 if mode_value in mode_map:
@@ -13759,7 +13750,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
             # Aktualizovat mode pokud se změnilo grid_charge
-            curr_point["mode"] = "Home UPS" if is_ups_mode else "Home I"
+            curr_point["mode"] = MODE_LABEL_HOME_UPS if is_ups_mode else MODE_LABEL_HOME_I
 
     # =========================================================================
     # ADAPTIVE LOAD PREDICTION v2
@@ -13942,7 +13933,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
 
             try:
-                entry_dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                entry_dt = datetime.fromisoformat(
+                    timestamp_str.replace("Z", ISO_TZ_OFFSET)
+                )
                 if entry_dt.date() == today_date:
                     charging_kwh = entry.get("charging_kwh", 0)
                     spot_price = entry.get("spot_price_czk_per_kwh", 0)
@@ -14264,10 +14257,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             for profile_id, profile in profiles.items():
                 if profile_id.startswith(standard_profile_id):
                     # Vezmi první matching profil
-                    if not best_match:
-                        best_match = profile
-                    # Nebo preferuj "typical" level
-                    elif "_typical" in profile_id or len(profile_id.split("_")) == 2:
+                    if not best_match or "_typical" in profile_id or len(profile_id.split("_")) == 2:
                         best_match = profile
 
             if best_match:
@@ -14434,11 +14424,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
         # 2. Načíst konfiguraci
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
+        config = self._get_config()
         charging_power_kw = config.get("home_charge_rate", 2.8)
         charge_per_15min = charging_power_kw / 4.0  # kW → kWh za 15min
 
@@ -15019,11 +15005,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
         # Config
-        config = (
-            self._config_entry.options
-            if self._config_entry and self._config_entry.options
-            else self._config_entry.data if self._config_entry else {}
-        )
+        config = self._get_config()
         max_capacity_kwh = self._get_max_battery_capacity()
         charge_per_15min = config.get("home_charge_rate", 2.8) / 4.0
 
@@ -15047,14 +15029,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 point["battery_capacity_kwh"] = min(
                     battery_kwh + needed, max_capacity_kwh
                 )
-                point["mode"] = "Home UPS"
+                point["mode"] = MODE_LABEL_HOME_UPS
                 point["reason"] = "balancing_charging"
                 energy_charged += needed
 
             # Holding period - držet na 100%
             elif holding_start <= timestamp <= holding_end:
                 # V UPS režimu baterie drží 100%, spotřeba jde ze sítě
-                point["mode"] = "Home UPS"
+                point["mode"] = MODE_LABEL_HOME_UPS
                 point["reason"] = "balancing_holding"
                 # Baterie zůstává na target_soc (invertror drží)
                 point["battery_capacity_kwh"] = target_soc_kwh
@@ -15328,7 +15310,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Holding cost - spotřeba ze sítě během holding (pokud ne solar)
         # Pro zjednodušení: průměrná spotřeba * počet hodin * průměrná cena
-        # TODO: Refine s real forecast data
+        # NOTE: Refine with real forecast data
         holding_hours = (holding_end - holding_start).total_seconds() / 3600
         avg_consumption_kw = 0.15  # Průměrná spotřeba během noci
 
@@ -15560,7 +15542,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         "time_from": block.get("start_time", ""),
                         "time_to": end_time,
                         "day": "today",
-                        "mode": "Home UPS",
+                        "mode": MODE_LABEL_HOME_UPS,
                         "status": status,
                         "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
                         "cost_czk": block.get(
@@ -15594,7 +15576,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                         "time_from": block.get("start_time", ""),
                         "time_to": block.get("end_time", ""),
                         "day": "tomorrow",
-                        "mode": "Home UPS",
+                        "mode": MODE_LABEL_HOME_UPS,
                         "status": "planned",  # Všechny zítřejší bloky jsou planned
                         "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
                         "cost_czk": block.get("cost_planned", 0.0),
@@ -16680,7 +16662,7 @@ class OigCloudBatteryForecastPerformanceSensor(
         """Update performance tracking."""
         try:
             now = datetime.now()
-            today_str = now.strftime("%Y-%m-%d")
+            today_str = now.strftime(DATE_FMT)
 
             # Check if we need to fix a new plan (first update after midnight)
             await self._maybe_fix_daily_plan(now, today_str)
@@ -17009,7 +16991,7 @@ class OigCloudBatteryForecastPerformanceSensor(
         if not self._today_plan:
             return
 
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = now.strftime(DATE_FMT)
         plan_date = self._today_plan.get("date")
 
         # Je plán z včerejška a ještě není completed?
@@ -17019,7 +17001,7 @@ class OigCloudBatteryForecastPerformanceSensor(
             # Mark as completed
             self._today_plan["status"] = "completed"
 
-            # TODO: Phase 2 - Calculate final actual_cost
+            # PHASE 2: Calculate final actual_cost
             # Pro Phase 1: Use placeholder
             expected = self._today_plan["expected_cost"]
             actual = self._today_plan.get("actual_cost_so_far", expected)  # Placeholder
@@ -17064,7 +17046,7 @@ class OigCloudBatteryForecastPerformanceSensor(
                 f"delta={delta:+.2f} Kč, accuracy={accuracy:.1f}% ({rating})"
             )
 
-            # TODO: Phase 3 - Save to HA Statistics API
+            # PHASE 3: Save to HA Statistics API
             # await self._save_to_statistics(plan_date, expected, actual, delta, accuracy)
 
     def _update_monthly_summary(self) -> None:

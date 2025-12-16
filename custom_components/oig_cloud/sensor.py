@@ -58,56 +58,40 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         "statistics_enabled", False
     )
 
+    always_enabled_categories = {"data", "computed", "shield", "notification"}
+    category_to_option_key: dict[str, str] = {
+        "extended": "enable_extended_sensors",
+        "solar_forecast": "enable_solar_forecast",
+        "pricing": "enable_pricing",
+        "chmu_warnings": "enable_chmu_warnings",
+    }
+
     for sensor_type, config in SENSOR_TYPES.items():
         category = config.get("sensor_type_category")
 
         # Základní kategorie (vždy aktivní)
-        if category in ["data", "computed", "shield", "notification"]:
+        if category in always_enabled_categories:
             expected.add(sensor_type)
-
-        # Extended sensors (volitelné)
-        elif category == "extended" and entry.options.get(
-            "enable_extended_sensors", False
-        ):
-            expected.add(sensor_type)
+            continue
 
         # Statistics sensors (volitelné)
-        elif category == "statistics" and statistics_enabled:
+        if category == "statistics" and statistics_enabled:
             expected.add(sensor_type)
+            continue
 
-        # Solar forecast sensors (volitelné)
-        elif category == "solar_forecast" and entry.options.get(
-            "enable_solar_forecast", False
-        ):
+        # Battery-related sensors (volitelné, společně s battery_prediction)
+        if category in {
+            "battery_prediction",
+            "grid_charging_plan",
+            "battery_efficiency",
+        } and entry.options.get("enable_battery_prediction", False):
             expected.add(sensor_type)
+            continue
 
-        # Battery prediction sensors (volitelné)
-        elif category == "battery_prediction" and entry.options.get(
-            "enable_battery_prediction", False
-        ):
+        option_key = category_to_option_key.get(str(category))
+        if option_key and entry.options.get(option_key, False):
             expected.add(sensor_type)
-
-        # Grid charging plan sensors (volitelné, společně s battery_prediction)
-        elif category == "grid_charging_plan" and entry.options.get(
-            "enable_battery_prediction", False
-        ):
-            expected.add(sensor_type)
-
-        # Battery efficiency sensors (volitelné, společně s battery_prediction)
-        elif category == "battery_efficiency" and entry.options.get(
-            "enable_battery_prediction", False
-        ):
-            expected.add(sensor_type)
-
-        # Pricing sensors (volitelné)
-        elif category == "pricing" and entry.options.get("enable_pricing", False):
-            expected.add(sensor_type)
-
-        # ČHMÚ warnings sensors (volitelné)
-        elif category == "chmu_warnings" and entry.options.get(
-            "enable_chmu_warnings", False
-        ):
-            expected.add(sensor_type)
+            continue
 
     _LOGGER.debug(f"Expected {len(expected)} sensor types based on configuration")
     return expected
@@ -364,6 +348,7 @@ def get_device_info_for_sensor(
     Returns:
         Device info dictionary pro senzor
     """
+    _ = box_id
     device_mapping = sensor_config.get("device_mapping", "main")
 
     if device_mapping == "analytics":
@@ -908,7 +893,7 @@ async def async_setup_entry(  # noqa: C901
                 )
                 all_sensors.extend(battery_forecast_sensors)  # PERFORMANCE: Collect
 
-                # TODO 3: Set forecast sensor reference in BalancingManager
+                # PHASE 3: Set forecast sensor reference in BalancingManager
                 try:
                     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
                         balancing_manager = hass.data[DOMAIN][entry.entry_id].get(

@@ -19,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 TIMEOUT_MINUTES = 15
 CHECK_INTERVAL_SECONDS = 30  # Zvýšeno z 15 na 30 sekund - slouží jen jako backup
+SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
 
 class ServiceShield:
@@ -443,20 +444,20 @@ class ServiceShield:
 
         # Pending (běžící) služby
         for service_name, info in self.pending.items():
-            if service_name == "oig_cloud.set_box_mode" and _matches_target(
+            if service_name == SERVICE_SET_BOX_MODE and _matches_target(
                 info.get("entities", {})
             ):
                 return True
 
         # Queue (čekající) služby
         for service_name, _params, expected_entities, *_ in self.queue:
-            if service_name == "oig_cloud.set_box_mode" and _matches_target(
+            if service_name == SERVICE_SET_BOX_MODE and _matches_target(
                 expected_entities
             ):
                 return True
 
         # Běží, ale pending záznam není? (defenzivní kontrola)
-        if self.running == "oig_cloud.set_box_mode":
+        if self.running == SERVICE_SET_BOX_MODE:
             return True
 
         return False
@@ -495,7 +496,7 @@ class ServiceShield:
                 "api_value": 1 if mode == "Manual" else 0,
                 "api_description": f"Set boiler mode to {mode}",
             }
-        elif service_name == "oig_cloud.set_box_mode":
+        elif service_name == SERVICE_SET_BOX_MODE:
             mode = params.get("mode")
             api_info = {
                 "api_endpoint": "Device.Set.Value.php",
@@ -836,7 +837,7 @@ class ServiceShield:
 
         # Příprava power monitoring pro set_box_mode
         power_monitor = None
-        if service_name == "oig_cloud.set_box_mode":
+        if service_name == SERVICE_SET_BOX_MODE:
             # Získat box_id z konfigurace
             box_id = None
             if self.hass.data.get("oig_cloud"):
@@ -1489,7 +1490,7 @@ class ServiceShield:
             )
             return {fake_entity_id: "completed_after_timeout"}
 
-        if service_name == "oig_cloud.set_box_mode":
+        if service_name == SERVICE_SET_BOX_MODE:
             expected_value = str(data.get("mode") or "").strip()
             if not expected_value or expected_value.lower() == "none":
                 return {}
@@ -1643,24 +1644,16 @@ class ServiceShield:
         # OPRAVA: Mapování pro nové formáty stavů
         if "boiler_manual_mode" in entity_id:
             # Nové mapování: CBB=0, Manuální=1
-            if expected_value == 0 and current_value == "CBB":
-                return True
-            elif expected_value == 1 and current_value == "Manuální":
-                return True
+            return (expected_value == 0 and current_value == "CBB") or (
+                expected_value == 1 and current_value == "Manuální"
+            )
         elif "ssr" in entity_id:
             # SSR relé: Vypnuto/Off=0, Zapnuto/On=1
-            if expected_value == 0 and current_value in [
-                "Vypnuto/Off",
-                "Vypnuto",
-                "Off",
-            ]:
-                return True
-            elif expected_value == 1 and current_value in [
-                "Zapnuto/On",
-                "Zapnuto",
-                "On",
-            ]:
-                return True
+            off_values = {"Vypnuto/Off", "Vypnuto", "Off"}
+            on_values = {"Zapnuto/On", "Zapnuto", "On"}
+            return (expected_value == 0 and current_value in off_values) or (
+                expected_value == 1 and current_value in on_values
+            )
         elif "box_prms_mode" in entity_id:
             # OPRAVA: Přidání nových režimů Home 5 a Home 6
             mode_mapping = {
@@ -1676,19 +1669,17 @@ class ServiceShield:
         elif "invertor_prms_to_grid" in entity_id:
             # Grid delivery mode: expected_value je TEXT ("Vypnuto", "Zapnuto nebo Omezeno")
             # current_value je TEXT ze senzoru ("Vypnuto", "Zapnuto", "Omezeno")
-            if expected_value == "Vypnuto" and current_value == "Vypnuto":
-                return True
-            elif expected_value == "Zapnuto nebo Omezeno" and current_value in [
-                "Zapnuto",
-                "Omezeno",
-            ]:
-                return True
+            if expected_value == "Vypnuto":
+                return current_value == "Vypnuto"
+            if expected_value == "Zapnuto nebo Omezeno":
+                return current_value in {"Zapnuto", "Omezeno"}
             # Fallback na starou logiku (pokud je expected_value číslo)
-            elif isinstance(expected_value, int):
-                if expected_value == 0 and current_value == "Vypnuto":
-                    return True
-                elif expected_value == 1 and current_value in ["Zapnuto", "Omezeno"]:
-                    return True
+            if isinstance(expected_value, int):
+                if expected_value == 0:
+                    return current_value == "Vypnuto"
+                if expected_value == 1:
+                    return current_value in {"Zapnuto", "Omezeno"}
+            return False
         elif "p_max_feed_grid" in entity_id:
             # Grid delivery limit: porovnání čísel (W)
             try:

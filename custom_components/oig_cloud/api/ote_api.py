@@ -400,7 +400,6 @@ class OteApi:
         # Zaokrouhlit dolů na nejbližších 15 min
         quarter: int = minute // 15
 
-        # Index = (hodina * 4) + čtvrthodina
         return (hour * 4) + quarter
 
     @staticmethod

@@ -124,7 +124,7 @@ class OigCloudSessionManager:
                 )
 
             # Log known API endpoints
-            _LOGGER.info("� Known API endpoints:")
+            _LOGGER.info("Known API endpoints:")
             _LOGGER.info(f"   Login: {base_url}/login")
             _LOGGER.info(f"   Stats: {base_url}/api/get_stats")
             _LOGGER.info(f"   Extended: {base_url}/api/get_extended_stats")

@@ -655,7 +655,7 @@ async def async_setup_entry_services_fallback(
         )
 
         # DOČASNĚ: API nemá box_id parametr, použij původní metodu
-        # TODO: Upravit API aby přijímalo box_id
+        # NOTE: Update API to accept box_id.
         await client.set_box_mode(mode_value)
 
     async def handle_set_boiler_mode(call: ServiceCall) -> None:

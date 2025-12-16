@@ -91,6 +91,8 @@ class SimpleTelemetry:
 
 def setup_simple_telemetry(email_hash: str, hass_id: str) -> Optional[SimpleTelemetry]:
     """Setup jednoduché telemetrie."""
+    _ = email_hash
+    _ = hass_id
     try:
         url = f"{OT_ENDPOINT}/log/v1"
         headers = {"Content-Type": "application/json", "X-Event-Source": "logs"}

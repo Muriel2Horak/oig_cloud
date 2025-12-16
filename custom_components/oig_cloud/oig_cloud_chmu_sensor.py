@@ -14,6 +14,8 @@ from .oig_cloud_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+CHMU_CAP_FEED_SOURCE = "ČHMÚ CAP Feed"
+
 
 class OigCloudChmuSensor(OigCloudSensor):
     """Senzor pro ČHMÚ meteorologická varování."""
@@ -279,7 +281,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             return {
                 "warnings_count": 0,
                 "last_update": None,
-                "source": "ČHMÚ CAP Feed",
+                "source": CHMU_CAP_FEED_SOURCE,
             }
 
         # Global sensor - všechna varování pro ČR
@@ -313,7 +315,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 ),
                 "severity_distribution": self._get_severity_distribution(),
                 "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
             }
             return attrs
 
@@ -369,7 +371,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 "all_warnings_details": all_warnings_details,  # Detaily všech výstrah
                 # Meta
                 "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
             }
         else:
             # Žádné lokální varování
@@ -384,7 +386,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 "warnings_count": 0,
                 "all_warnings": [],
                 "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", "ČHMÚ CAP Feed"),
+                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
             }
 
         return attrs

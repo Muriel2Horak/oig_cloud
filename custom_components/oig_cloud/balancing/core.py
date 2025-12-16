@@ -209,9 +209,8 @@ class BalancingManager:
             return None
 
         # 0. Check if balancing just completed
-        completion_result = await self._check_if_balancing_occurred()
-        if completion_result[0]:  # balancing_occurred = True
-            completion_time = completion_result[1]
+        balancing_occurred, completion_time = await self._check_if_balancing_occurred()
+        if balancing_occurred:
             _LOGGER.info(
                 f"✅ Balancing completed at {completion_time.strftime('%Y-%m-%d %H:%M')}! "
                 f"Battery held at ≥99% for {self._get_holding_time_hours()}h"

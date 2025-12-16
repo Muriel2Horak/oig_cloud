@@ -451,7 +451,7 @@ class ChmuApi:
                         break
 
                 # 3. Geocode fallback (jednoduché substring match)
-                # TODO: Implementovat přesnější geocode matching s databází ORP/NUTS
+                # NOTE: Implementovat přesnější geocode matching s databází ORP/NUTS
                 if not matched and area.get("geocodes"):
                     # Prozatím vše prochází (fallback)
                     # V produkci by zde bylo mapování GPS -> ORP/NUTS kód

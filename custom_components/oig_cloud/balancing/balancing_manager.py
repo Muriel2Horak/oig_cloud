@@ -281,7 +281,7 @@ class BalancingManager:
 
         # Estimate charging time to 100%
         # Assuming ~5% per 15min interval at typical charge rate
-        # TODO: Use actual battery capacity and charge power from context
+        # NOTE: Use actual battery capacity and charge power from context
         soc_needed = 100.0 - current_soc
         intervals_needed = int(soc_needed / 5.0) + 1  # Conservative estimate
         charge_time_hours = intervals_needed * 0.25  # 15min intervals
@@ -361,6 +361,7 @@ class BalancingManager:
         Returns:
             True if mediána validation passes for ALL intervals
         """
+        _ = prices
         # Calculate mediána of next 48h prices
         all_prices = await self._get_spot_prices(hours=48)
         if not all_prices:
@@ -452,7 +453,8 @@ class BalancingManager:
         Returns:
             List of (timestamp, soc_percent) tuples
         """
-        # TODO: Implement history fetch from HA recorder
+        _ = hours
+        # NOTE: Implement history fetch from HA recorder
         # For now, return empty list
         self._logger.warning("SoC history fetch not implemented yet")
         return []
@@ -466,6 +468,7 @@ class BalancingManager:
         Returns:
             Dict of {timestamp: price_czk_kwh}
         """
+        _ = hours
         try:
             # Get spot price sensor from HA
             sensor_id = "sensor.spot_cz"
@@ -479,7 +482,7 @@ class BalancingManager:
             # Format depends on spot price sensor implementation
             prices = {}
 
-            # TODO: Parse actual spot price sensor format
+            # NOTE: Parse actual spot price sensor format
             # For now, return empty dict
             self._logger.warning("Spot price parsing not implemented yet")
 

@@ -573,7 +573,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
     def _is_correct_day_type(self, dt: datetime) -> bool:
         """Kontroluje zda je správný typ dne (weekday/weekend)."""
-        is_weekend = dt.weekday() >= 5  # 5=Saturday, 6=Sunday
+        is_weekend = dt.weekday() >= 5
 
         if hasattr(self, "_day_type"):
             if self._day_type == "weekend":
@@ -647,9 +647,9 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
                 # Přeskočit dny které nesedí s day_type
                 if hasattr(self, "_day_type"):
-                    if self._day_type == "weekend" and not is_weekend:
-                        continue
-                    elif self._day_type == "weekday" and is_weekend:
+                    if (self._day_type == "weekend" and not is_weekend) or (
+                        self._day_type == "weekday" and is_weekend
+                    ):
                         continue
 
                 # Vyfiltrovat data pro tento den v daném časovém intervalu

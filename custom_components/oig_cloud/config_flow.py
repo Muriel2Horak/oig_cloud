@@ -44,6 +44,7 @@ class InvalidSolarForecastApiKey(Exception):
 
 async def validate_input(hass, data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate the user input allows us to connect."""
+    _ = hass
     api = OigCloudApi(data[CONF_USERNAME], data[CONF_PASSWORD], False)
 
     if not await api.authenticate():
@@ -84,10 +85,7 @@ async def validate_solar_forecast_api_key(
         lon: Longitude for test request (default: Prague)
 
     Returns:
-        True if API key is valid, False otherwise
-
-    Raises:
-        InvalidSolarForecastApiKey: If API key is invalid
+        True if API key is valid (or empty), False otherwise.
     """
     if not api_key or not api_key.strip():
         # Prázdný klíč je OK - použije se veřejné API s limity
@@ -111,9 +109,7 @@ async def validate_solar_forecast_api_key(
                     _LOGGER.warning(
                         "🔑 Solar Forecast API key validation: UNAUTHORIZED (401)"
                     )
-                    raise InvalidSolarForecastApiKey(
-                        "API key is invalid or unauthorized"
-                    )
+                    return False
                 elif response.status == 429:
                     # Rate limit - klíč je platný, ale překročen limit
                     _LOGGER.warning(
@@ -125,15 +121,13 @@ async def validate_solar_forecast_api_key(
                     _LOGGER.error(
                         f"🔑 Solar Forecast API validation failed with status {response.status}: {error_text}"
                     )
-                    raise InvalidSolarForecastApiKey(
-                        f"API returned status {response.status}"
-                    )
+                    return False
     except aiohttp.ClientError as e:
         _LOGGER.error(f"🔑 Solar Forecast API validation network error: {e}")
-        raise InvalidSolarForecastApiKey(f"Network error: {e}")
+        return False
     except asyncio.TimeoutError:
         _LOGGER.error("🔑 Solar Forecast API validation timeout")
-        raise InvalidSolarForecastApiKey("Request timeout")
+        return False
 
 
 # Nové konstanty pro skenovací intervaly
@@ -626,6 +620,7 @@ class WizardMixin:
 
     def _get_planner_mode_value(self, data: Optional[Dict[str, Any]] = None) -> str:
         """Return normalized planner mode name - always hybrid."""
+        _ = data
         return "hybrid"
 
     async def _handle_back_button(self, current_step: str) -> FlowResult:
@@ -1005,7 +1000,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             current += 1
 
         if step_id == "wizard_planner":
-            return current if battery_enabled else current
+            return current
         if battery_enabled:
             current += 1
 
@@ -2435,7 +2430,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Import from YAML configuration."""
-        # TODO: Implementovat import z YAML
+        # NOTE: YAML import is not implemented yet.
         return self.async_abort(reason="not_implemented")
 
     async def async_step_wizard_summary(

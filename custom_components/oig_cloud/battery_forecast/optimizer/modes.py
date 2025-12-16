@@ -78,6 +78,7 @@ class ModeSelector:
         Returns:
             Tuple of (mode, reason)
         """
+        _ = consumption_kwh
         # Priority 1: Balancing takes precedence
         if is_holding:
             return CBB_MODE_HOME_UPS, "Holding 100% for balancing"

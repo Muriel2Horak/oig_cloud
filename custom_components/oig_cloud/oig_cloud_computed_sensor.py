@@ -750,9 +750,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
             # Získej aktuální hodnoty klíčových senzorů
             for sensor_key in self._key_sensors:
-                if sensor_key.startswith(("bat_", "fv_", "aco_")):
-                    current_values[sensor_key] = pv_data["actual"].get(sensor_key, 0)
-                elif sensor_key.startswith("aci_"):
+                if sensor_key.startswith(("bat_", "fv_", "aco_", "aci_")):
                     current_values[sensor_key] = pv_data["actual"].get(sensor_key, 0)
 
             # Porovnej s předchozími hodnotami

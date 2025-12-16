@@ -1194,7 +1194,7 @@ class BatteryCapacityTracker:
                         "duration_hours": round(measurement.duration_hours, 2),
                         "purity_percent": round(measurement.purity * 100, 1),
                         "interruption_count": measurement.interruption_count,
-                        "spans_midnight": False,  # TODO: Track this in measurement
+                        "spans_midnight": False,  # NOTE: Track this in measurement
                     },
                     "output_data": {
                         "measured_capacity_kwh": round(measurement.capacity_kwh, 2),

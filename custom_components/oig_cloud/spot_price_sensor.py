@@ -368,7 +368,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
 
                     future_prices.append(export_price)
 
-                    # První = current, druhý = next
                     if current_price is None:
                         current_price = export_price
                     elif next_price is None:
@@ -832,7 +831,6 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
 
                     future_prices.append(final_price)
 
-                    # První = current, druhý = next
                     if current_price is None:
                         current_price = final_price
                     elif next_price is None:

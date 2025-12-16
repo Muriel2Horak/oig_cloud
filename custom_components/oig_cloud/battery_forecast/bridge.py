@@ -232,6 +232,13 @@ def _convert_to_legacy_format(
                 end_idx = min(i, len(spot_prices) - 1)
                 end_time = spot_prices[end_idx].get("time", "")
 
+                if current_mode != CBB_MODE_HOME_UPS:
+                    reason = "optimized"
+                elif result.balancing_applied:
+                    reason = "balancing"
+                else:
+                    reason = "charging"
+
                 mode_recommendations.append(
                     {
                         "mode": current_mode,
@@ -243,13 +250,7 @@ def _convert_to_legacy_format(
                         "start_time": start_time,
                         "end_time": end_time,
                         "intervals": i - mode_start_idx,
-                        "reason": (
-                            "optimized"
-                            if current_mode != CBB_MODE_HOME_UPS
-                            else (
-                                "balancing" if result.balancing_applied else "charging"
-                            )
-                        ),
+                        "reason": reason,
                     }
                 )
 

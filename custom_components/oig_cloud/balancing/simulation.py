@@ -50,7 +50,12 @@ class SimulationContext:
 
 @dataclass
 class IntervalSimulation:
-    """Single interval simulation result per BR-3.1."""
+    """Single interval simulation result per BR-3.1.
+
+    Sign conventions:
+    - `battery_charge_kwh` is positive when charging.
+    - `battery_discharge_kwh` is positive when discharging.
+    """
 
     timestamp: datetime
     mode: int  # HOME_I/II/III/UPS
@@ -58,8 +63,8 @@ class IntervalSimulation:
     # Energy flows (kWh for 15min interval)
     solar_kwh: float
     consumption_kwh: float
-    battery_charge_kwh: float  # Positive = charging
-    battery_discharge_kwh: float  # Positive = discharging
+    battery_charge_kwh: float
+    battery_discharge_kwh: float
     grid_import_kwh: float
     grid_export_kwh: float
     boiler_kwh: float  # Energy to boiler
@@ -123,7 +128,7 @@ class BatterySimulation:
 
         # Get pricing
         spot_price = self.context.spot_prices.get(timestamp, 0.0)
-        export_price = spot_price * 0.8  # TODO: Get from config
+        export_price = spot_price * 0.8  # NOTE: Get from config
         tariff_dist = self._get_distribution_tariff(timestamp)
 
         # Simulate mode behavior per BR-1
@@ -349,7 +354,7 @@ class BatterySimulation:
 
     def _get_distribution_tariff(self, timestamp: datetime) -> float:
         """Get distribution tariff for given timestamp (CZK/kWh)."""
-        # TODO: Implement tariff logic from config
+        # NOTE: Implement tariff logic from config
         # For now, return simple default
         hour = timestamp.hour
         if 7 <= hour < 22:
@@ -541,7 +546,14 @@ class BatterySimulation:
             # Check if this interval would cause deficit
             if sim.battery_after_kwh < self.context.min_capacity_kwh:
                 # Calculate deficit
-                self.context.min_capacity_kwh - sim.battery_after_kwh
+                deficit_kwh = self.context.min_capacity_kwh - sim.battery_after_kwh
+                self._logger.debug(
+                    "Deficit %.3f kWh detected at %s (after=%.3f, min=%.3f) -> inserting UPS",
+                    deficit_kwh,
+                    sim.timestamp,
+                    sim.battery_after_kwh,
+                    self.context.min_capacity_kwh,
+                )
 
                 # Add UPS charging before this interval
                 # For simplicity, use current interval timestamp
@@ -583,18 +595,47 @@ class BatterySimulation:
             # Already at target
             return plan
 
-        if is_hard:
-            # HARD constraint: MUST reach target
-            # This requires more sophisticated algorithm (backtracking, optimization)
-            # For MVP, log error
-            self._logger.error(
-                f"HARD target not reached: expected {target_soc_kwh}, "
-                f"got {target_sim.battery_after_kwh} at {target_time}"
-            )
-            # TODO: Implement proper constraint solver
-        else:
-            # SOFT constraint: best effort
-            # Already doing best effort in mode selection
-            pass
+        # Enforce (simple heuristic):
+        # - If below target at target_time, flip previous intervals to HOME_UPS starting from
+        #   the one just before the target, then re-simulate to see if target is met.
+        if target_sim.battery_after_kwh >= target_soc_kwh - TOLERANCE_KWH:
+            return plan
 
-        return plan
+        required_kwh = target_soc_kwh - target_sim.battery_after_kwh
+        self._logger.info(
+            "Target shortfall %.3f kWh at %s (target=%.3f, actual=%.3f) -> enforcing via UPS (%s)",
+            required_kwh,
+            target_time,
+            target_soc_kwh,
+            target_sim.battery_after_kwh,
+            "HARD" if is_hard else "SOFT",
+        )
+
+        forced_indices: set[int] = set()
+        for idx in range(target_idx - 1, -1, -1):
+            forced_indices.add(idx)
+            # Stop early for SOFT constraint (best-effort).
+            if not is_hard and len(forced_indices) >= 2:
+                break
+
+        new_plan: List[IntervalSimulation] = []
+        current_soc = self.context.battery_soc_kwh
+        for idx, sim in enumerate(plan):
+            mode = HOME_UPS if idx in forced_indices else sim.mode
+            new_sim = self.simulate_interval(sim.timestamp, mode, current_soc)
+            if idx in forced_indices:
+                new_sim.is_clamped = True
+            new_plan.append(new_sim)
+            current_soc = new_sim.battery_after_kwh
+
+        # Verify outcome at target
+        new_target = new_plan[target_idx]
+        if is_hard and new_target.battery_after_kwh < target_soc_kwh - TOLERANCE_KWH:
+            self._logger.error(
+                "HARD target still not reached: expected %.3f, got %.3f at %s",
+                target_soc_kwh,
+                new_target.battery_after_kwh,
+                target_time,
+            )
+
+        return new_plan

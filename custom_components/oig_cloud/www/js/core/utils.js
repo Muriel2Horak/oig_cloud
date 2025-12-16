@@ -299,14 +299,18 @@ function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = fal
     const newChars = _splitGraphemes(newValue);
 
     const targetLen = disablePad
-        ? Math.max(oldChars.length, newChars.length)
+        ? newChars.length
         : Math.max(_flipPadLengths[cacheKey] || 0, oldChars.length, newChars.length);
     if (!disablePad) {
         _flipPadLengths[cacheKey] = targetLen;
     }
 
-    while (oldChars.length < targetLen) oldChars.push(' ');
-    while (newChars.length < targetLen) newChars.push(' ');
+    // When padding is disabled, we intentionally do NOT pad with trailing spaces,
+    // so shorter values stay visually centered (no "empty cells" on the right).
+    if (!disablePad) {
+        while (oldChars.length < targetLen) oldChars.push(' ');
+        while (newChars.length < targetLen) newChars.push(' ');
+    }
 
     const token = ++_flipTokenCounter;
     _flipElementTokens.set(element, token);
@@ -315,8 +319,8 @@ function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = fal
     board.className = 'oig-flipboard';
 
     for (let i = 0; i < targetLen; i++) {
-        const fromChar = oldChars[i];
-        const toChar = newChars[i];
+        const fromChar = oldChars[i] ?? ' ';
+        const toChar = newChars[i] ?? ' ';
 
         const cell = document.createElement('span');
         cell.className = 'oig-flip-cell';

@@ -318,15 +318,9 @@ class HybridOptimizer:
                 # ═══ NIGHT (no solar) ═══
                 # HOME I/II/III identical - all discharge to 20%
                 # Only HOME UPS charges from grid
-                if (
-                    price >= expensive_threshold
-                    and battery_level > self.min_capacity + 1.0
-                ):
-                    # EXPENSIVE night → discharge battery (HOME I)
-                    modes[i] = CBB_MODE_HOME_I
-                else:
-                    # Normal/cheap night → HOME I (PHASE 5 may upgrade to UPS)
-                    modes[i] = CBB_MODE_HOME_I
+                # NOTE: Night behaviour is intentionally HOME I here; later passes may
+                # upgrade to HOME UPS based on charging logic/constraints.
+                modes[i] = CBB_MODE_HOME_I
 
             elif solar >= load + 0.1:
                 # ═══ DAY with EXCESS SOLAR (solar > load) ═══
@@ -337,13 +331,8 @@ class HybridOptimizer:
                 # Decision: Is it worth storing solar for later?
                 # breakeven: price_now < price_later * round_trip_eff
 
-                if battery_space > 0.5:
-                    # Room in battery - charge from solar (HOME I)
-                    # This is FREE energy, always worth it
-                    modes[i] = CBB_MODE_HOME_I
-                else:
-                    # Battery full - export excess (HOME I still works)
-                    modes[i] = CBB_MODE_HOME_I
+                # Excess solar: HOME I covers load and stores/export surplus.
+                modes[i] = CBB_MODE_HOME_I
 
             else:
                 # ═══ DAY with SOLAR DEFICIT (0 < solar < load) ═══
@@ -717,6 +706,7 @@ class HybridOptimizer:
            b) EVENING cheap hours (after expensive) - for reaching target
         4. Calculate if arbitrage is profitable (cheap_price * 1/efficiency < expensive_price)
         """
+        _ = balancing
         prices = [sp.get("price", 0) for sp in spot_prices]
         avg_price = sum(prices) / n if n > 0 else 0
 
@@ -1196,6 +1186,7 @@ class HybridOptimizer:
         Returns:
             Number of modes changed
         """
+        _ = load_forecast
         if not strategy.is_active:
             return 0
 

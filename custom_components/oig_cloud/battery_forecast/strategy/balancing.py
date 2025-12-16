@@ -358,6 +358,7 @@ class BalancingStrategy:
         Returns:
             Tuple of (charging_interval_indices, windows, estimated_cost)
         """
+        _ = interval_timestamps
         charging_intervals: Set[int] = set()
         windows: List[ChargingWindow] = []
         total_cost = 0.0

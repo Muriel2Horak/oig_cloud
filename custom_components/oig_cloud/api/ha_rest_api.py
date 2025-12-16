@@ -44,6 +44,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # API routes base
 API_BASE = "/api/oig_cloud"
+SENSOR_COMPONENT_NOT_FOUND = "Sensor component not found"
 
 
 def _transform_timeline_for_api(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -96,7 +97,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
     url = f"{API_BASE}/battery_forecast/{{box_id}}/timeline"
     name = "api:oig_cloud:battery_timeline"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -286,7 +287,7 @@ class OIGCloudSpotPricesView(HomeAssistantView):
 
     url = f"{API_BASE}/spot_prices/{{box_id}}/intervals"
     name = "api:oig_cloud:spot_prices"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -339,7 +340,7 @@ class OIGCloudSpotPricesView(HomeAssistantView):
 
             if not component:
                 return web.json_response(
-                    {"error": "Sensor component not found"}, status=500
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
             # Find entity
@@ -401,7 +402,7 @@ class OIGCloudAnalyticsView(HomeAssistantView):
 
     url = f"{API_BASE}/analytics/{{box_id}}/hourly"
     name = "api:oig_cloud:analytics"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -431,7 +432,7 @@ class OIGCloudAnalyticsView(HomeAssistantView):
 
             if not component:
                 return web.json_response(
-                    {"error": "Sensor component not found"}, status=500
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
             # Find entity
@@ -479,7 +480,7 @@ class OIGCloudConsumptionProfilesView(HomeAssistantView):
 
     url = f"{API_BASE}/consumption_profiles/{{box_id}}"
     name = "api:oig_cloud:consumption_profiles"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -515,7 +516,7 @@ class OIGCloudConsumptionProfilesView(HomeAssistantView):
 
             if not component:
                 return web.json_response(
-                    {"error": "Sensor component not found"}, status=500
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
             # Find entity by entity_id
@@ -561,7 +562,7 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
 
     url = f"{API_BASE}/balancing_decisions/{{box_id}}"
     name = "api:oig_cloud:balancing_decisions"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -595,7 +596,7 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
 
             if not entity_component:
                 return web.json_response(
-                    {"error": "Sensor component not found"}, status=404
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=404
                 )
 
             # Get entity object
@@ -854,7 +855,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
     url = f"{API_BASE}/battery_forecast/{{box_id}}/detail_tabs"
     name = "api:oig_cloud:detail_tabs"
-    requires_auth = False  # TODO: Re-enable after auth method is implemented
+    requires_auth = False  # NOTE: Re-enable once auth method is implemented
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -915,7 +916,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
             if not component:
                 return web.json_response(
-                    {"error": "Sensor component not found"}, status=500
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
             # Find entity by entity_id
@@ -1085,6 +1086,28 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         )
 
 
+class OIGCloudDashboardModulesView(HomeAssistantView):
+    """API endpoint to read enabled dashboard modules for an entry."""
+
+    url = f"{API_BASE}/{{entry_id}}/modules"
+    name = "api:oig_cloud:dashboard_modules"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry or entry.domain != DOMAIN:
+            return web.json_response({"error": "Entry not found"}, status=404)
+
+        opts = entry.options or {}
+        return web.json_response(
+            {
+                "enable_boiler": bool(opts.get("enable_boiler", False)),
+                "enable_auto": bool(opts.get("enable_auto", False)),
+            }
+        )
+
+
 @callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
@@ -1100,6 +1123,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudUnifiedCostTileView())
     hass.http.register_view(OIGCloudDetailTabsView())
     hass.http.register_view(OIGCloudPlannerSettingsView())
+    hass.http.register_view(OIGCloudDashboardModulesView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
@@ -1111,6 +1135,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/battery_forecast/<box_id>/unified_cost_tile\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/detail_tabs\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/planner_settings\n"
+        f"  - {API_BASE}/<entry_id>/modules\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"

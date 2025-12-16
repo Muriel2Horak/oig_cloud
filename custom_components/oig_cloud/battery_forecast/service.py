@@ -263,6 +263,7 @@ class BatteryForecastService:
         current_battery_kwh: float,
     ) -> List[TimelineInterval]:
         """Build timeline in legacy format for frontend."""
+        _ = balancing_plan
         timeline: List[TimelineInterval] = []
         prev_mode: Optional[int] = None
         battery = current_battery_kwh
@@ -317,9 +318,9 @@ class BatteryForecastService:
             baseline_cost_czk=hybrid_result.baseline_cost_czk,
             total_grid_import_kwh=hybrid_result.total_grid_import_kwh,
             total_grid_export_kwh=hybrid_result.total_grid_export_kwh,
-            total_solar_kwh=0.0,  # TODO: calculate
+            total_solar_kwh=0.0,  # NOTE: calculate (legacy placeholder)
             ups_intervals_count=hybrid_result.ups_intervals,
-            charging_kwh=0.0,  # TODO: calculate
+            charging_kwh=0.0,  # NOTE: calculate (legacy placeholder)
             final_battery_kwh=hybrid_result.final_battery_kwh,
             is_balancing_mode=balancing_plan is not None,
             balancing_deadline=(

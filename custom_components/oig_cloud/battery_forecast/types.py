@@ -45,23 +45,33 @@ CBB_MODE_NAMES: Dict[int, str] = {
     CBB_MODE_HOME_UPS: "HOME UPS",
 }
 
+MODE_LABEL_HOME_I = "Home I"
+MODE_LABEL_HOME_II = "Home II"
+MODE_LABEL_HOME_III = "Home III"
+MODE_LABEL_HOME_UPS = "Home UPS"
+
+SERVICE_MODE_HOME_1 = "Home 1"
+SERVICE_MODE_HOME_2 = "Home 2"
+SERVICE_MODE_HOME_3 = "Home 3"
+SERVICE_MODE_HOME_UPS = "Home UPS"
+
 # Mapping to Home Assistant service names
 CBB_MODE_SERVICE_MAP: Dict[int, str] = {
-    CBB_MODE_HOME_I: "Home 1",
-    CBB_MODE_HOME_II: "Home 2",
-    CBB_MODE_HOME_III: "Home 3",
-    CBB_MODE_HOME_UPS: "Home UPS",
+    CBB_MODE_HOME_I: SERVICE_MODE_HOME_1,
+    CBB_MODE_HOME_II: SERVICE_MODE_HOME_2,
+    CBB_MODE_HOME_III: SERVICE_MODE_HOME_3,
+    CBB_MODE_HOME_UPS: SERVICE_MODE_HOME_UPS,
 }
 
 # Mapping from autonomy planner labels to HA service names
 AUTONOMY_MODE_SERVICE_MAP: Dict[str, str] = {
-    "HOME I": "Home 1",
-    "HOME 1": "Home 1",
-    "HOME II": "Home 2",
-    "HOME 2": "Home 2",
-    "HOME III": "Home 3",
-    "HOME 3": "Home 3",
-    "HOME UPS": "Home UPS",
+    "HOME I": SERVICE_MODE_HOME_1,
+    "HOME 1": SERVICE_MODE_HOME_1,
+    "HOME II": SERVICE_MODE_HOME_2,
+    "HOME 2": SERVICE_MODE_HOME_2,
+    "HOME III": SERVICE_MODE_HOME_3,
+    "HOME 3": SERVICE_MODE_HOME_3,
+    "HOME UPS": SERVICE_MODE_HOME_UPS,
 }
 
 # Modes where AC charging is DISABLED (only solar DC/DC charging allowed)
@@ -107,19 +117,19 @@ DEFAULT_TARGET_SOC: float = 0.80
 # Mode transition costs (energy loss + time delay)
 # Key: (from_mode, to_mode) tuple with service names
 TRANSITION_COSTS: Dict[tuple, Dict[str, Any]] = {
-    ("Home I", "Home UPS"): {
+    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS): {
         "energy_loss_kwh": 0.05,  # Energy loss when switching to UPS
         "time_delay_intervals": 1,  # Delay in 15-min intervals
     },
-    ("Home UPS", "Home I"): {
+    (MODE_LABEL_HOME_UPS, MODE_LABEL_HOME_I): {
         "energy_loss_kwh": 0.02,  # Energy loss when switching from UPS
         "time_delay_intervals": 0,
     },
-    ("Home I", "Home II"): {
+    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_II): {
         "energy_loss_kwh": 0.0,  # No loss between Home modes
         "time_delay_intervals": 0,
     },
-    ("Home II", "Home I"): {
+    (MODE_LABEL_HOME_II, MODE_LABEL_HOME_I): {
         "energy_loss_kwh": 0.0,
         "time_delay_intervals": 0,
     },
@@ -128,10 +138,10 @@ TRANSITION_COSTS: Dict[tuple, Dict[str, Any]] = {
 
 # Minimum mode duration (in 15-min intervals)
 MIN_MODE_DURATION: Dict[str, int] = {
-    "Home UPS": 2,  # UPS must run at least 30 minutes (2×15min)
-    "Home I": 1,
-    "Home II": 1,
-    "Home III": 1,
+    MODE_LABEL_HOME_UPS: 2,  # UPS must run at least 30 minutes (2×15min)
+    MODE_LABEL_HOME_I: 1,
+    MODE_LABEL_HOME_II: 1,
+    MODE_LABEL_HOME_III: 1,
 }
 
 

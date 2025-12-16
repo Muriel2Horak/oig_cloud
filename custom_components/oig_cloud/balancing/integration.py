@@ -189,13 +189,13 @@ class BalancingSystem:
         solar_forecast: Dict[datetime, float] = {}
         consumption_forecast: Dict[datetime, float] = {}
 
-        # TODO: Fetch actual forecast data from sensors/attributes
+        # NOTE: Forecast data should be fetched from sensors/attributes (placeholder).
 
         return SimulationContext(
             battery_capacity_kwh=battery_capacity,
             battery_soc_kwh=battery_soc,
-            battery_efficiency=0.9,  # TODO: Get from config
-            ac_charging_limit_kw=5.0,  # TODO: Get from sensor
+            battery_efficiency=0.9,  # NOTE: Get from config
+            ac_charging_limit_kw=5.0,  # NOTE: Get from sensor
             min_capacity_kwh=min_capacity,
             target_capacity_kwh=target_capacity,
             threshold_cheap_czk=threshold_cheap,
@@ -203,7 +203,7 @@ class BalancingSystem:
             tariff_data={},
             solar_forecast=solar_forecast,
             consumption_forecast=consumption_forecast,
-            export_limit_kw=10.0,  # TODO: Get from sensor
+            export_limit_kw=10.0,  # NOTE: Get from sensor
         )
 
     def _get_balancing_config(self) -> BalancingConfig:

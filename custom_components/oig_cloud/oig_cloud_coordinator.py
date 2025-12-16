@@ -1,11 +1,11 @@
 import logging
 import asyncio
 import random
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
 from homeassistant.core import HomeAssistant
-from homeassistant.util.dt import now as dt_now, utcnow as dt_utcnow
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.event import async_track_point_in_time
 
@@ -19,6 +19,14 @@ JITTER_SECONDS = 5.0
 
 
 class OigCloudCoordinator(DataUpdateCoordinator):
+    @staticmethod
+    def _utcnow() -> datetime:
+        """Return utcnow compatible with HA test stubs."""
+        utcnow = getattr(dt_util, "utcnow", None)
+        if callable(utcnow):
+            return utcnow()
+        return datetime.now(timezone.utc)
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -132,7 +140,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         )
 
         # Startup grace period to avoid loading-heavy work during HA bootstrap
-        self._startup_ts: datetime = dt_utcnow()
+        self._startup_ts: datetime = self._utcnow()
         self._startup_grace_seconds: int = (
             int(config_entry.options.get("startup_grace_seconds", 30))
             if config_entry and hasattr(config_entry, "options")
@@ -161,7 +169,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _schedule_spot_price_update(self) -> None:
         """Naplánuje aktualizaci spotových cen."""
-        now = dt_now()
+        now = dt_util.now()
         today_13 = now.replace(hour=13, minute=5, second=0, microsecond=0)
 
         # Pokud je už po 13:05 dnes, naplánujeme na zítra
@@ -192,7 +200,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         if not self.ote_api:
             return
 
-        now = dt_now()
+        now = dt_util.now()
 
         # Kontrola, jestli máme aktuální data
         needs_data = False
@@ -250,7 +258,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     _LOGGER.info(
                         f"Hourly fallback: Successfully updated spot prices: {spot_data.get('hours_count', 0)} hours"
                     )
-                    self._last_spot_fetch = dt_now()
+                    self._last_spot_fetch = dt_util.now()
                     self._hourly_fallback_active = False
                 else:
                     _LOGGER.warning(
@@ -281,7 +289,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     f"Successfully updated spot prices: {spot_data.get('hours_count', 0)} hours"
                 )
                 self._spot_prices_cache = spot_data
-                self._last_spot_fetch = dt_now()
+                self._last_spot_fetch = dt_util.now()
                 self._spot_retry_count = 0
                 self._hourly_fallback_active = (
                     False  # NOVÉ: vypnout fallback po úspěšném stažení
@@ -308,12 +316,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._spot_retry_count += 1
 
         # Omezit retry pouze na důležité časy (kolem 13:05)
-        now = dt_now()
+        now = dt_util.now()
         is_important_time = 12 <= now.hour <= 15  # Retry pouze 12-15h
 
         if self._spot_retry_count < 3 and is_important_time:  # Snížit max retries
             # Zkusíme znovu za 30 minut místo 15
-            dt_now() + timedelta(minutes=30)
             _LOGGER.info(
                 f"Retrying spot price update in 30 minutes (attempt {self._spot_retry_count + 1}/3)"
             )
@@ -435,7 +442,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("No config entry available for this coordinator")
 
             # Startup grace: během prvních X sekund po startu dělej jen lehké operace
-            elapsed = (dt_utcnow() - self._startup_ts).total_seconds()
+            elapsed = (self._utcnow() - self._startup_ts).total_seconds()
             if elapsed < self._startup_grace_seconds:
                 remaining = self._startup_grace_seconds - int(elapsed)
                 _LOGGER.debug(
@@ -482,7 +489,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     }
 
                     # OPRAVA: Používat lokální čas místo UTC
-                    self._last_extended_update = dt_now()
+                    self._last_extended_update = dt_util.now()
                     _LOGGER.debug("Extended stats updated successfully")
 
                     # NOVÉ: Aktualizovat notifikace současně s extended daty
@@ -524,7 +531,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     if not hasattr(self, "_last_notification_update"):
                         self._last_notification_update = None
 
-                    now = dt_now()
+                    now = dt_util.now()
                     should_refresh_notifications = False
 
                     if self._last_notification_update is None:
@@ -616,7 +623,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _today_range(self) -> Tuple[str, str]:
         """Vrátí dnešní datum jako string tuple pro API."""
-        today = dt_now().date()
+        today = dt_util.now().date()
         today_str = today.strftime("%Y-%m-%d")
         return today_str, today_str
 
@@ -625,7 +632,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         if self._last_extended_update is None:
             return True
         # OPRAVA: Používat lokální čas místo UTC pro konzistenci
-        now = dt_now()
+        now = dt_util.now()
         # Pokud _last_extended_update je v UTC, převést na lokální čas
         if self._last_extended_update.tzinfo is not None:
             # Převést UTC na lokální čas
@@ -739,7 +746,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:
         """Vytvoří jednoduchá forecast data když senzor není dostupný."""
-        current_time = dt_now()
+        current_time = dt_util.now()
 
         # Základní data z koordinátoru
         if self.data:

@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
-from .shared import get_resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +57,13 @@ def setup_tracing(email_hash: str, hass_id: str) -> None:
         return
 
     try:
-        resource: Resource = get_resource(email_hash, hass_id)
+        resource: Resource = Resource.create(
+            {
+                "service.name": "oig_cloud",
+                "oig.email_hash": email_hash,
+                "oig.hass_id": hass_id,
+            }
+        )
 
         trace_provider: TracerProvider = TracerProvider(resource=resource)
 

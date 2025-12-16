@@ -59,7 +59,7 @@
         <div class="dashboard-tabs">
             <div class="dashboard-tab active" onclick="switchTab('flow')">⚡ Toky</div>
             <div class="dashboard-tab" onclick="switchTab('pricing')">💰 Predikce a statistiky</div>
-            <div class="dashboard-tab" onclick="switchTab('boiler')">🔥 Bojler & Auto</div>
+            <div class="dashboard-tab" id="dashboard-tab-boiler" onclick="switchTab('boiler')">🔥 Bojler & Auto</div>
             <div class="layout-controls">
                 <button id="edit-layout-btn" class="btn-layout-edit" onclick="toggleEditMode()" data-tooltip="Upravit rozmístění boxů">
                     🔧
@@ -661,15 +661,40 @@
 
         <!-- INCLUDE: Boiler Tab -->
         <script>
-            fetch('boiler-tab.html')
-                .then(response => response.text())
-                .then(html => {
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = html;
-                    const boilerTab = tempDiv.firstElementChild;
-                    document.getElementById('pricing-tab').insertAdjacentElement('beforebegin', boilerTab);
-                })
-                .catch(err => console.error('[Dashboard] Failed to load boiler-tab.html:', err));
+            async function _shouldShowBoilerAutoTab() {
+                const entryId = new URLSearchParams(window.location.search).get('entry_id');
+                if (!entryId) return true; // fallback: keep visible if we can't determine
+                try {
+                    const res = await fetch(`/api/oig_cloud/${entryId}/modules`);
+                    if (!res.ok) return true;
+                    const cfg = await res.json();
+                    return !!(cfg && (cfg.enable_boiler || cfg.enable_auto));
+                } catch (e) {
+                    console.warn('[Dashboard] Failed to read modules config:', e);
+                    return true;
+                }
+            }
+
+            async function _initBoilerAutoTab() {
+                const show = await _shouldShowBoilerAutoTab();
+                const tabButton = document.getElementById('dashboard-tab-boiler');
+                if (!show) {
+                    if (tabButton) tabButton.remove();
+                    return;
+                }
+
+                fetch('boiler-tab.html')
+                    .then(response => response.text())
+                    .then(html => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        const boilerTab = tempDiv.firstElementChild;
+                        document.getElementById('pricing-tab').insertAdjacentElement('beforebegin', boilerTab);
+                    })
+                    .catch(err => console.error('[Dashboard] Failed to load boiler-tab.html:', err));
+            }
+
+            _initBoilerAutoTab();
         </script>
 
         <!-- Tab: Pricing & Forecast -->

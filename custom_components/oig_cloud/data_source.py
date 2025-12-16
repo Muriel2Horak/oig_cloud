@@ -10,7 +10,6 @@ import re
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.debounce import Debouncer
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -31,6 +30,16 @@ EVENT_DATA_SOURCE_CHANGED = "oig_cloud_data_source_changed"
 
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
+
+try:
+    from homeassistant.helpers.event import async_track_state_change_event as _async_track_state_change_event  # type: ignore
+except Exception:  # pragma: no cover
+    _async_track_state_change_event = None
+
+try:
+    from homeassistant.helpers.event import async_track_time_interval as _async_track_time_interval  # type: ignore
+except Exception:  # pragma: no cover
+    _async_track_time_interval = None
 
 
 @dataclass(slots=True)
@@ -277,16 +286,26 @@ class DataSourceController:
         self._update_state(force=True)
 
         # Watch proxy last_data changes
-        self._unsubs.append(
-            async_track_state_change_event(
-                self.hass, [PROXY_LAST_DATA_ENTITY_ID], self._on_proxy_change
+        if _async_track_state_change_event is not None:
+            self._unsubs.append(
+                _async_track_state_change_event(
+                    self.hass, [PROXY_LAST_DATA_ENTITY_ID], self._on_proxy_change
+                )
             )
-        )
+        else:
+            # Compatibility for older/stubbed HA helpers used in unit tests.
+            @callback
+            def _on_state_changed(event: Any) -> None:
+                if event.data.get("entity_id") == PROXY_LAST_DATA_ENTITY_ID:
+                    self._on_proxy_change(event)
+
+            self._unsubs.append(self.hass.bus.async_listen("state_changed", _on_state_changed))
 
         # Periodic HC: detect stale even without state changes
-        self._unsubs.append(
-            async_track_time_interval(self.hass, self._on_periodic, timedelta(minutes=1))
-        )
+        if _async_track_time_interval is not None:
+            self._unsubs.append(
+                _async_track_time_interval(self.hass, self._on_periodic, timedelta(minutes=1))
+            )
 
         # Local telemetry events (5s updates) – just poke coordinator listeners
         self._unsubs.append(

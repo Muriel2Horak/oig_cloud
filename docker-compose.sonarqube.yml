@@ -1,0 +1,20 @@
+services:
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: oig_sonarqube
+    ports:
+      # Use 9001 by default to avoid collisions with other local SonarQube instances.
+      - "${SONAR_PORT:-9001}:9000"
+    environment:
+      # Local/dev convenience; avoids bootstrap checks in Docker Desktop.
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - oig_sonarqube_data:/opt/sonarqube/data
+      - oig_sonarqube_extensions:/opt/sonarqube/extensions
+      - oig_sonarqube_logs:/opt/sonarqube/logs
+
+volumes:
+  oig_sonarqube_data:
+  oig_sonarqube_extensions:
+  oig_sonarqube_logs:
+

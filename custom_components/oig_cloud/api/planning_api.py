@@ -26,6 +26,8 @@ from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
+PLANNING_SYSTEM_NOT_INITIALIZED = "Planning system not initialized"
+
 # API routes base
 API_BASE = "/api/oig_cloud"
 
@@ -51,7 +53,7 @@ class OIGCloudActivePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # Get active plan
@@ -99,7 +101,7 @@ class OIGCloudPlanListView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # List plans
@@ -162,7 +164,7 @@ class OIGCloudPlanDetailView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # Get plan
@@ -217,7 +219,7 @@ class OIGCloudCreateManualPlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # Parse parameters
@@ -269,7 +271,7 @@ class OIGCloudActivatePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # Activate plan
@@ -310,7 +312,7 @@ class OIGCloudDeactivatePlanView(HomeAssistantView):
             planning_system = hass.data.get("oig_cloud", {}).get("planning_system")
             if not planning_system:
                 return web.json_response(
-                    {"error": "Planning system not initialized"}, status=503
+                    {"error": PLANNING_SYSTEM_NOT_INITIALIZED}, status=503
                 )
 
             # Deactivate plan

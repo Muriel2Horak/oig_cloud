@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def _get_profile_category(dt: datetime) -> str:
     """Určí kategorii profilu podle data."""
-    is_weekend = dt.weekday() >= 5  # So=5, Ne=6
+    is_weekend = dt.weekday() >= 5
     season = SEASON_MAP.get(dt.month, "spring")
 
     day_type = "weekend" if is_weekend else "workday"
@@ -99,8 +99,7 @@ class BoilerProfiler:
             _LOGGER.error("Recorder není dostupný")
             return []
 
-        # recorder.history.state_changes_during_period
-        # Vrací: dict[entity_id, list[State]]
+        # Recorder returns dict[entity_id, list[State]].
         history_states = await instance.async_add_executor_job(
             state_changes_during_period,
             self.hass,

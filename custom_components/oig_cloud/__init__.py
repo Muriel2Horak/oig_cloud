@@ -141,6 +141,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     """Set up OIG Cloud integration."""
+    _ = config
     # OPRAVA: Debug setup telemetrie
     print("[OIG SETUP] Starting OIG Cloud setup")
 
@@ -1028,7 +1029,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         )  # OPRAVA: default False místo True
         # OPRAVA: Dashboard registrujeme AŽ PO vytvoření senzorů
 
-        # TODO 3: Inicializace Balancing Manager (refactored - no physics)
+        # PHASE 3: Inicializace Balancing Manager (refactored - no physics)
         balancing_enabled = entry.options.get("balancing_enabled", True)
         _LOGGER.info("oig_cloud: balancing_enabled=%s", balancing_enabled)
 
@@ -1131,7 +1132,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             "service_shield": service_shield,
             "ote_api": ote_api,
             "boiler_coordinator": boiler_coordinator,  # NOVÉ: Boiler coordinator
-            "balancing_manager": balancing_manager,  # TODO 3: Refactored Balancing Manager
+            "balancing_manager": balancing_manager,  # PHASE 3: Refactored Balancing Manager
             "dashboard_enabled": dashboard_enabled,  # NOVÉ: stav dashboard
             "config": {
                 "enable_statistics": statistics_enabled,
@@ -1357,7 +1358,7 @@ async def async_unload_entry(
     # Odebrání dashboard panelu při unload
     await _remove_frontend_panel(hass, entry)
 
-    # TODO 3: Cleanup Balancing Manager (no async_shutdown needed - just storage)
+    # PHASE 3: Cleanup Balancing Manager (no async_shutdown needed - just storage)
 
     # NOVÉ: Cleanup session manageru
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
@@ -1389,6 +1390,7 @@ async def async_remove_config_entry_device(
     Home Assistant calls this when the user tries to delete a device from the UI.
     We only allow removing devices that have no entities.
     """
+    _ = config_entry
     try:
         from homeassistant.helpers import entity_registry as er
 

@@ -11,6 +11,8 @@ from .oig_cloud_sensor import OigCloudSensor, resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 
+ISO_TZ_OFFSET = "+00:00"
+
 
 class OigCloudAnalyticsSensor(OigCloudSensor):
     """Analytics senzor pro spotové ceny a analytické funkce."""
@@ -96,7 +98,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             return "VT"
 
         current_time = dt_util.now()
-        is_weekend = current_time.weekday() >= 5  # sobota=5, neděle=6
+        is_weekend = current_time.weekday() >= 5
         options = self._entry.options
 
         # Získání tarifních časů
@@ -328,7 +330,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         if not dual_tariff_enabled:
             return "VT"
 
-        is_weekend = target_datetime.weekday() >= 5  # sobota=5, neděle=6
+        is_weekend = target_datetime.weekday() >= 5
         options = self._entry.options
 
         # Získání tarifních časů
@@ -660,17 +662,17 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
         for time_key, spot_price in prices_czk.items():
             try:
-                price_datetime = datetime.fromisoformat(time_key.replace("Z", "+00:00"))
+                price_datetime = datetime.fromisoformat(
+                    time_key.replace("Z", ISO_TZ_OFFSET)
+                )
                 if price_datetime.date() != today:
                     continue
                 final_price = self._final_price_with_fees(spot_price, price_datetime)
                 if final_price is None:
                     continue
-                if best_final_price is None:
-                    best_final_price = final_price
-                elif find_min and final_price < best_final_price:
-                    best_final_price = final_price
-                elif not find_min and final_price > best_final_price:
+                if best_final_price is None or (
+                    find_min and final_price < best_final_price
+                ) or (not find_min and final_price > best_final_price):
                     best_final_price = final_price
             except (ValueError, AttributeError):
                 continue
@@ -804,7 +806,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                     for time_key, spot_price in raw_prices.items():
                         try:
                             price_datetime = datetime.fromisoformat(
-                                time_key.replace("Z", "+00:00")
+                                time_key.replace("Z", ISO_TZ_OFFSET)
                             )
                             tariff = self._get_tariff_for_datetime(price_datetime)
 
@@ -873,10 +875,10 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                         timestamps = list(final_prices.keys())
                         timestamps.sort()
                         start_date = datetime.fromisoformat(
-                            timestamps[0].replace("Z", "+00:00")
+                            timestamps[0].replace("Z", ISO_TZ_OFFSET)
                         ).strftime("%Y-%m-%d")
                         end_date = datetime.fromisoformat(
-                            timestamps[-1].replace("Z", "+00:00")
+                            timestamps[-1].replace("Z", ISO_TZ_OFFSET)
                         ).strftime("%Y-%m-%d")
                         attrs["date_range"] = {
                             "start": start_date,

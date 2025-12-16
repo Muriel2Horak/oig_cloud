@@ -527,9 +527,7 @@ class OigCloudComputedSensor(SensorEntity, RestoreEntity):
 
             # Get current values of key sensors
             for sensor_key in self._key_sensors:
-                if sensor_key.startswith(("bat_", "fv_", "aco_")):
-                    current_values[sensor_key] = data["actual"].get(sensor_key, 0)
-                elif sensor_key.startswith("aci_"):
+                if sensor_key.startswith(("bat_", "fv_", "aco_", "aci_")):
                     current_values[sensor_key] = data["actual"].get(sensor_key, 0)
 
             # Compare with previous values

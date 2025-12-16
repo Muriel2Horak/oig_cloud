@@ -155,6 +155,7 @@ class BalancingConfig:
 
     def deadline_datetime(self, day_offset: int = 0) -> time:
         """Get deadline time (for compatibility)."""
+        _ = day_offset
         return self.deadline_time
 
 

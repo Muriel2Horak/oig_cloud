@@ -55,7 +55,7 @@ class BoilerProfileView(HomeAssistantView):
             for category, profile in profiles.items():
                 # Heatmap data: 7 dní × 24 hodin
                 heatmap_data = []
-                for day in range(7):  # 0=Po, 6=Ne
+                for day in range(7):
                     day_data = []
                     for hour in range(24):
                         consumption, confidence = profile.get_consumption(hour)

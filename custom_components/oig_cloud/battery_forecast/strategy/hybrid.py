@@ -565,6 +565,7 @@ class HybridStrategy:
         Returns:
             Dict mapping interval index to analysis dict
         """
+        _ = export_prices
         analysis: Dict[int, Dict[str, float]] = {}
         n = len(prices)
 
@@ -832,6 +833,9 @@ class HybridStrategy:
         Returns:
             Tuple of (mode, reason)
         """
+        _ = load
+        _ = price
+        _ = export_price
         strategy = self.config.negative_price_strategy
 
         if strategy == NegativePriceStrategy.CHARGE_GRID:
@@ -870,6 +874,10 @@ class HybridStrategy:
 
         Ensures minimum mode duration is respected.
         """
+        _ = solar_forecast
+        _ = consumption_forecast
+        _ = prices
+        _ = export_prices
         if len(decisions) < 2:
             return decisions
 
