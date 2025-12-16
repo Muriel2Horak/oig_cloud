@@ -212,6 +212,11 @@ backups/
 .dev_docs/
 local_dev/
 
+# Keep only user docs in git; everything else under docs is local-only
+docs/**
+!docs/user/**
+!docs/images/**
+
 # Docker volumes
 config/
 
@@ -228,5 +233,10 @@ custom_components/oig_cloud/config_flow_legacy.py
 /mode_history*.json
 /timeline*.json
 
-# Developer/internal docs (not for public repo)
-docs/dev/
+# Local scripts and scratch files (must not be committed)
+/check_*.sh
+/check_*.py
+/diagnose_*.py
+/diagnose_*.js
+/draft_*.py
+/fix_logging.py
