@@ -10,7 +10,7 @@
   "issue_tracker": "https://github.com/psimsa/oig_cloud/issues",
   "requirements": ["numpy>=1.24.0"],
   "ssdp": [],
-  "version": "2.0.6-pre.2",
+  "version": "2.0.6-pre.3",
   "zeroconf": [],
   "homeassistant": "2024.1.0"
 }

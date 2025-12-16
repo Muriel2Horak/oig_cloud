@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timeline dialog** – plan toggle lets you switch between live Hybrid control and the new Autonomy preview dataset directly in the modal and from the autonomy cost tile.
 - **Analytics tile action** – the “Autonomní plán” card now opens the timeline dialog pre-filtered to the Autonomy plan instead of the unfinished detail dialog.
 
+## [2.0.6-pre.3] - 2025-12-16
+
+### 🔒 Security
+
+- History rewrite: removed accidentally committed local exports, tokens, and dev-only documentation from Git history; only `docs/user` + `docs/images` remain tracked under `docs/`.
+
 ## [2.0.6-pre.2] - 2025-12-16
 
 ### 🔒 Security
