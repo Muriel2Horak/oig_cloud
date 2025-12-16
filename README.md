@@ -48,13 +48,9 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - Přesné výpočty pomocí Riemannovy integrace
 - Automatické resety statistik
 
-### 🔋 **Battery Health Monitoring** ⭐ NEW!
-- Automatické měření skutečné kapacity baterie
-- Power Integration + Coulomb Counting validace
-- Sledování degradace v čase (kWh/rok, %/rok)
-- Predikce End-of-Life (80% SoH)
-- Real-time SoH% (State of Health)
-- Trend analýza s R² confidence score
+### 🔋 **Battery Health Monitoring**
+- Denní výpočet SoH% z historie v recorderu (na základě čistých nabíjecích intervalů)
+- Ukládání výsledků do HA Storage a zobrazení v dashboardu
 
 ### 🌦️ **ČHMÚ Meteorologická Varování**
 - Integrace s Českým hydrometeorologickým ústavem
@@ -75,7 +71,7 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - **ČEZ Battery Box** s přístupem k OIG Cloud
 - **Aktivní "Živá data"** v mobilní aplikaci OIG Cloud
   - ⚠️ **Bez živých dat integrace nefunguje!**
-  - 📖 [Jak zapnout živá data](./docs/LIVE_DATA_REQUIREMENT.md)
+  - 📖 [Jak zapnout živá data](./docs/user/LIVE_DATA_REQUIREMENT.md)
 
 ### 🔧 Doporučené
 - HACS pro snadnou instalaci a aktualizace
@@ -126,7 +122,7 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 
 ⏱️ **Trvání:** 30 sekund
 
-📖 **Detailní dokumentace:** [Wizard Quick Start](./docs/WIZARD_QUICK_START.md)
+📖 **Detailní dokumentace:** [Konfigurace](./docs/user/CONFIGURATION.md)
 
 ---
 
@@ -141,14 +137,8 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - **[Automatizace](./docs/user/AUTOMATIONS.md)** - Příklady automatizací
 - **[FAQ](./docs/user/FAQ.md)** - Časté dotazy
 - **[Troubleshooting](./docs/user/TROUBLESHOOTING.md)** - Řešení problémů
-
-### 🔧 Pro Vývojáře
-- **[Architecture](./docs/dev/DEVICE_ARCHITECTURE_ANALYSIS.md)** - Architektura integrace
-- **[Multi-Device Support](./docs/dev/MULTI_DEVICE_ANALYSIS.md)** - Podpora více Battery Boxů
-- **[API Communication](./docs/dev/API_COMMUNICATION_REPORT.md)** - Komunikace s OIG Cloud API
-- **[Vendoring Guide](./docs/dev/VENDORING_GUIDE.md)** - Správa závislostí
-- **[Module Dependencies](./docs/dev/MODULE_DEPENDENCIES.md)** - Závislosti mezi moduly
-- **[Development Setup](./docs/dev/VENDORING_IMPLEMENTATION_SUMMARY.md)** - Nastavení vývojového prostředí
+- **[Živá data](./docs/user/LIVE_DATA_REQUIREMENT.md)** - Povinné nastavení v OIG Cloud aplikaci
+- **[ČHMÚ varování](./docs/user/CHMU_WARNINGS.md)** - Meteorologická varování (volitelný modul)
 
 ---
 
@@ -171,7 +161,7 @@ Rozšířené statistiky (denní, měsíční, roční).
 
 ### 🌦️ ČHMÚ Warnings
 Meteorologická varování pro váš region a celou ČR.
-📖 **Dokumentace:** [ČHMÚ Warnings Guide](./docs/CHMU_WARNINGS.md)
+📖 **Dokumentace:** [ČHMÚ Warnings Guide](./docs/user/CHMU_WARNINGS.md)
 
 ---
 
@@ -201,33 +191,23 @@ Formátování baterie (⚠️ Vymaže data!).
 
 ---
 
-## 🆕 Co Je Nového ve Verzi 2.0.0-beta
+## 🆕 Co je nového (aktuálně implementováno)
 
 ### 🔄 **Multi-Device Support**
-- Podpora více Battery Boxů na jednom OIG účtu
-- Device selector ve službách
-- Automatické čištění osiřelých zařízení
+- Podpora více Battery Boxů na jednom OIG účtu (volitelný `device_id` ve službách)
 
-### 📦 **Vendored Dependencies**
-- OIG Cloud Client nyní jako vendored modul
-- Žádné externí Python závislosti
-- Rychlejší instalace
+### 📥 **Telemetry data source (cloud / local)**
+- Volba zdroje telemetrie: cloud-only nebo lokální proxy režim (pro rychlejší aktualizace a fallback)
 
-### 🧙‍♂️ **Wizard Configuration Flow**
-- Moderní průvodce nastavením
-- Progresivní kroky s validací
-- Rychlé nastavení vs. pokročilá konfigurace
+### 🧙‍♂️ **Wizard a planner**
+- Průvodce nastavením s modulárním výběrem funkcí
+- Hybrid/Autonomy preview planner: levná okna + DP tuning parametry pro simulaci
 
-### 🛡️ **ServiceShield™ Vylepšení**
-- Configurable timeout (5-60 minut)
-- Live monitoring změn
-- Lepší detekce externích změn
+### 🛡️ **ServiceShield™**
+- Configurable timeout (5-60 minut) a monitoring externích změn
 
-### 🔧 **Další Vylepšení**
-- ETag caching pro optimalizaci API komunikace
-- Jitter v pollingu pro rozprostření zátěže
-- Lepší error handling a logování
-- Testovací pokrytí
+### 🌦️ **ČHMÚ varování**
+- Volitelný modul s lokálními i celostátními výstrahami a senzory do HA
 
 📖 **Kompletní changelog:** [CHANGELOG.md](./CHANGELOG.md)
 
@@ -297,7 +277,7 @@ Tento projekt je licencován pod [MIT License](./LICENSE).
 
 - **🐛 Bug Reports:** [GitHub Issues](https://github.com/psimsa/oig_cloud/issues)
 - **💡 Feature Requests:** [GitHub Discussions](https://github.com/psimsa/oig_cloud/discussions)
-- **📖 Dokumentace:** [docs/](./docs/)
+- **📖 Dokumentace:** [docs/user/](./docs/user/)
 
 ---
 
