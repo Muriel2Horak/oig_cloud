@@ -242,3 +242,15 @@ custom_components/oig_cloud/config_flow_legacy.py
 /diagnose_*.js
 /draft_*.py
 /fix_logging.py
+
+# Local-only helpers / scratch (do not commit)
+/run_tests_docker.sh
+/temp_header_replacement.js
+/data/
+/tests/data/
+
+# Copilot instructions are user-local
+.github/copilot-instructions.md
+
+# Frontend internal notes (keep repo clean)
+custom_components/oig_cloud/www/**/*.md
