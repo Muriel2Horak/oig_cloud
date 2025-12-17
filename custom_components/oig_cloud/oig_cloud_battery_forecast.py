@@ -2750,7 +2750,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return None, False
 
         cheap_percentile = self._config_entry.options.get("cheap_window_percentile", 30)
-        sorted_prices = sorted([sp.get("price", 0) for sp in spot_prices])
+        sorted_prices = sorted(float(sp.get("price", 0) or 0) for sp in spot_prices)
         percentile_index = int(len(sorted_prices) * cheap_percentile / 100)
         cheap_price_threshold = sorted_prices[percentile_index] if sorted_prices else 999
 
@@ -2772,7 +2772,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             cheap_intervals = [
                 i
                 for i, sp in enumerate(spot_prices)
-                if sp.get("price", 999) <= cheap_price_threshold
+                if float(sp.get("price", 999) or 999) <= cheap_price_threshold
             ]
 
             deficit_kwh = target_capacity - final_capacity
@@ -3134,7 +3134,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 solar_kwh = 0.0
 
             load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-            current_price = spot_prices[i].get("price", 0)
+            current_price = float(spot_prices[i].get("price", 0) or 0)
 
             # Základní pravidlo: Když FVE = 0 → vždy HOME I
             if solar_kwh < 0.01:
@@ -3164,7 +3164,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             ):  # Není poslední hodina
                 # Hledat drahou špičku v budoucnu
                 future_prices = [
-                    spot_prices[j].get("price", 0) for j in range(i + 1, min(i + 12, n))
+                    float(spot_prices[j].get("price", 0) or 0)
+                    for j in range(i + 1, min(i + 12, n))
                 ]
                 if future_prices:
                     max_future_price = max(future_prices)
@@ -3185,7 +3186,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         for i in range(n):
             deficit = required_battery[i] - battery
-            price = spot_prices[i].get("price", 0)
+            price = float(spot_prices[i].get("price", 0) or 0)
 
             if deficit > 0.1:  # Potřebujeme nabít alespoň 100Wh
                 charge_opportunities.append(
@@ -3401,7 +3402,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 and modes[i + 2] == CBB_MODE_HOME_UPS
             ):
                 # Gap of 1 interval - check if worth merging
-                gap_price = spot_prices[i + 1].get("price", 0)
+                gap_price = float(spot_prices[i + 1].get("price", 0) or 0)
                 gap_cost = gap_price * max_charge_per_interval  # Cost to charge in gap
 
                 # Transition cost: 2× switch (UPS→I + I→UPS)
