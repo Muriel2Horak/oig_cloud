@@ -19,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 ENERGY_STORAGE_VERSION = 1
 _energy_stores: Dict[str, Store] = {}
 _energy_data_cache: Dict[str, Dict[str, float]] = {}
+_energy_last_update_cache: Dict[str, datetime] = {}
 
 _LANGS: Dict[str, Dict[str, str]] = {
     "on": {"en": "On", "cs": "Zapnuto"},
@@ -191,6 +192,21 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 return sorted(set(d for d in deps if d))
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
 
+        # Local/hybrid energy breakdown (proxy counters)
+        if st == "computed_batt_charge_fve_energy_today":
+            if not box:
+                return sorted(set(d for d in deps if d))
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
+        if st == "computed_batt_charge_fve_energy_month":
+            if not box:
+                return sorted(set(d for d in deps if d))
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_am")
+        if st == "computed_batt_charge_fve_energy_year":
+            if not box:
+                return sorted(set(d for d in deps if d))
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_ay")
+
         # Battery capacity helpers
         if st in ("usable_battery_capacity", "missing_battery_kwh", "remaining_usable_capacity"):
             if not box:
@@ -226,9 +242,11 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         # Already loaded for this box?
         if self._box_id in _energy_data_cache:
             cached = _energy_data_cache[self._box_id]
+            # Ensure all expected keys exist in cache
             for key in self._energy:
-                if key in cached:
-                    self._energy[key] = cached[key]
+                cached.setdefault(key, 0.0)
+            # Share the cached dict across all computed energy sensors for this box
+            self._energy = cached
             _LOGGER.debug(f"[{self.entity_id}] ✅ Loaded energy from cache")
             return True
 
@@ -239,13 +257,17 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         try:
             data = await store.async_load()
             if data and "energy" in data:
-                stored_energy = data["energy"]
+                raw = data["energy"] or {}
+                stored_energy: Dict[str, float] = {}
                 for key in self._energy:
-                    if key in stored_energy:
-                        self._energy[key] = float(stored_energy[key])
+                    try:
+                        stored_energy[key] = float(raw.get(key, 0.0))
+                    except (TypeError, ValueError):
+                        stored_energy[key] = 0.0
 
-                # Cache for other sensors
-                _energy_data_cache[self._box_id] = stored_energy.copy()
+                # Cache for other sensors (shared dict instance)
+                _energy_data_cache[self._box_id] = stored_energy
+                self._energy = stored_energy
 
                 last_save = data.get("last_save", "unknown")
                 _LOGGER.info(
@@ -272,8 +294,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return
 
         try:
-            # Update cache
-            _energy_data_cache[self._box_id] = self._energy.copy()
+            # Ensure cache points to the current shared dict
+            _energy_data_cache[self._box_id] = self._energy
 
             data = {
                 "version": ENERGY_STORAGE_VERSION,
@@ -414,9 +436,11 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             )
 
         # Obecný fallback: pokud máme lokální entitu pro computed senzor, vezmeme její hodnotu
-        local_direct = self._get_local_value_for_sensor_type(self._sensor_type)
-        if local_direct is not None:
-            return local_direct
+        # (vynecháváme computed_batt_* - ty mají vlastní integrační/odvozenou logiku)
+        if not self._sensor_type.startswith("computed_batt_"):
+            local_direct = self._get_local_value_for_sensor_type(self._sensor_type)
+            if local_direct is not None:
+                return local_direct
 
         if self._sensor_type == "ac_in_aci_wtotal":
             # Preferuj lokální fáze AC_IN
@@ -569,10 +593,13 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         return None
 
     def _accumulate_energy(self, pv_data: Dict[str, Any]) -> Optional[float]:
-        # Pokud existuje lokální entita pro konkrétní computed energii, použij ji přímo
-        direct_local = self._get_local_value_for_sensor_type(self._sensor_type)
-        if direct_local is not None:
-            return direct_local
+        # Use shared per-box cache so multiple computed energy sensors don't double-count.
+        if self._box_id and self._box_id != "unknown":
+            cached = _energy_data_cache.get(self._box_id)
+            if cached is not None:
+                self._energy = cached
+            else:
+                _energy_data_cache[self._box_id] = self._energy
 
         try:
             # OPRAVA: Kontrola existence "actual" dat
@@ -591,8 +618,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 pv_data["actual"]["fv_p2"]
             )
 
-            if self._last_update is not None:
-                delta_seconds = (now - self._last_update).total_seconds()
+            last_update = (
+                _energy_last_update_cache.get(self._box_id)
+                if self._box_id and self._box_id != "unknown"
+                else self._last_update
+            )
+
+            if last_update is not None:
+                delta_seconds = (now - last_update).total_seconds()
                 wh_increment = (abs(bat_power) * delta_seconds) / 3600.0
 
                 if bat_power > 0:
@@ -627,10 +660,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                     f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
                 )
 
+            if self._box_id and self._box_id != "unknown":
+                _energy_last_update_cache[self._box_id] = now
             self._last_update = now
             self._attr_extra_state_attributes = {
                 k: round(v, 3) for k, v in self._energy.items()
             }
+            if self._box_id and self._box_id != "unknown":
+                _energy_data_cache[self._box_id] = self._energy
 
             # Periodic save to persistent storage (throttled)
             if hasattr(self, "hass") and self.hass:
@@ -643,6 +680,63 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return None
 
     def _get_energy_value(self) -> Optional[float]:
+        # Always read from the shared cache when available (multiple sensors per box).
+        energy = (
+            _energy_data_cache.get(self._box_id)
+            if self._box_id and self._box_id != "unknown"
+            else None
+        )
+        if isinstance(energy, dict):
+            self._energy = energy
+
+        # Local datasource overrides (OIG Proxy counters)
+        is_local_mode = False
+        try:
+            from .data_source import DATA_SOURCE_CLOUD_ONLY, get_effective_mode
+
+            entry = getattr(self.coordinator, "config_entry", None)
+            if entry is not None and get_effective_mode(self.hass, entry.entry_id) != DATA_SOURCE_CLOUD_ONLY:
+                is_local_mode = True
+        except Exception:
+            is_local_mode = False
+
+        box = self._box_id if self._box_id and self._box_id != "unknown" else None
+        apd = ad = am = ay = None
+        if is_local_mode and box:
+            apd = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
+            ad = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
+            am = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_am")
+            ay = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ay")
+
+        # Overrides requested for local/hybrid:
+        # - total today stays as integral (cloud logic)
+        # - FVE today uses APD - AD (proxy counters)
+        # - grid month/year should follow proxy counters; FVE month/year = total - grid
+        if self._sensor_type == "computed_batt_charge_energy_today":
+            return round(float(self._energy.get("charge_today", 0.0)), 3)
+
+        if self._sensor_type == "computed_batt_charge_grid_energy_today" and ad is not None:
+            return round(float(ad), 3)
+        if self._sensor_type == "computed_batt_charge_grid_energy_month" and am is not None:
+            return round(float(am), 3)
+        if self._sensor_type == "computed_batt_charge_grid_energy_year" and ay is not None:
+            return round(float(ay), 3)
+
+        if self._sensor_type == "computed_batt_charge_fve_energy_today":
+            if apd is not None and ad is not None:
+                return round(float(max(apd - ad, 0.0)), 3)
+            # Fallback: always compute as total - grid
+            grid_val = float(ad) if ad is not None else float(self._energy.get("charge_grid_today", 0.0))
+            return round(float(max(float(self._energy.get("charge_today", 0.0)) - grid_val, 0.0)), 3)
+
+        if self._sensor_type == "computed_batt_charge_fve_energy_month":
+            grid_val = float(am) if am is not None else float(self._energy.get("charge_grid_month", 0.0))
+            return round(float(max(float(self._energy.get("charge_month", 0.0)) - grid_val, 0.0)), 3)
+
+        if self._sensor_type == "computed_batt_charge_fve_energy_year":
+            grid_val = float(ay) if ay is not None else float(self._energy.get("charge_grid_year", 0.0))
+            return round(float(max(float(self._energy.get("charge_year", 0.0)) - grid_val, 0.0)), 3)
+
         sensor_map = {
             "computed_batt_charge_energy_today": "charge_today",
             "computed_batt_discharge_energy_today": "discharge_today",
