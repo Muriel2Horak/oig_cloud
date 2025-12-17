@@ -20,6 +20,7 @@ ENERGY_STORAGE_VERSION = 1
 _energy_stores: Dict[str, Store] = {}
 _energy_data_cache: Dict[str, Dict[str, float]] = {}
 _energy_last_update_cache: Dict[str, datetime] = {}
+_energy_cache_loaded: Dict[str, bool] = {}
 
 _LANGS: Dict[str, Dict[str, str]] = {
     "on": {"en": "On", "cs": "Zapnuto"},
@@ -240,12 +241,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     async def _load_energy_from_storage(self) -> bool:
         """Load energy data from persistent storage. Returns True if data was loaded."""
         # Already loaded for this box?
-        if self._box_id in _energy_data_cache:
+        if self._box_id in _energy_data_cache and _energy_cache_loaded.get(self._box_id):
             cached = _energy_data_cache[self._box_id]
-            # Ensure all expected keys exist in cache
             for key in self._energy:
                 cached.setdefault(key, 0.0)
-            # Share the cached dict across all computed energy sensors for this box
             self._energy = cached
             _LOGGER.debug(f"[{self.entity_id}] ✅ Loaded energy from cache")
             return True
@@ -268,6 +267,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 # Cache for other sensors (shared dict instance)
                 _energy_data_cache[self._box_id] = stored_energy
                 self._energy = stored_energy
+                _energy_cache_loaded[self._box_id] = True
 
                 last_save = data.get("last_save", "unknown")
                 _LOGGER.info(
@@ -324,22 +324,44 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if not loaded_from_storage:
             old_state = await self.async_get_last_state()
             if old_state and old_state.attributes:
-                # Check if restore_state has valid data (not zeroed)
-                restore_charge_month = old_state.attributes.get("charge_month", 0)
-                if restore_charge_month and float(restore_charge_month) > 1000:
+                # Restore if any of the tracked keys has a non-zero value.
+                max_val = 0.0
+                for key in self._energy:
+                    try:
+                        v = float(old_state.attributes.get(key, 0.0))
+                        if v > max_val:
+                            max_val = v
+                    except (TypeError, ValueError):
+                        continue
+
+                if max_val > 0.0:
                     _LOGGER.info(
-                        f"[{self.entity_id}] 📥 Restoring from HA state (storage empty): "
-                        f"charge_month={restore_charge_month}"
+                        f"[{self.entity_id}] 📥 Restoring from HA state (storage empty): max={max_val}"
                     )
+
+                    # Ensure we're writing into the shared per-box dict (if available).
+                    if self._box_id and self._box_id != "unknown":
+                        energy = _energy_data_cache.get(self._box_id)
+                        if not isinstance(energy, dict):
+                            _energy_data_cache[self._box_id] = self._energy
+                            energy = self._energy
+                        self._energy = energy
+
                     for key in self._energy:
-                        if key in old_state.attributes:
-                            self._energy[key] = float(old_state.attributes[key])
+                        try:
+                            if key in old_state.attributes:
+                                self._energy[key] = float(old_state.attributes[key])
+                        except (TypeError, ValueError):
+                            continue
+
+                    if self._box_id and self._box_id != "unknown":
+                        _energy_cache_loaded[self._box_id] = True
                     # Save to storage for future
                     await self._save_energy_to_storage(force=True)
                 else:
                     _LOGGER.warning(
                         f"[{self.entity_id}] ⚠️ Restore state has zeroed/invalid data "
-                        f"(charge_month={restore_charge_month}), keeping defaults"
+                        f"(max={max_val}), keeping defaults"
                     )
 
         # Nastavit listener na změny lokálních entit, které ovlivňují computed senzor
@@ -355,8 +377,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             self._dep_unsub = async_track_state_change_event(
                 self.hass, deps, _on_dep_change
             )
-            # Po registraci listenerů hned přepiš stav, aby byl čerstvý
-            self.async_write_ha_state()
+
+        # Po inicializaci (load/restore + dependency listeners) hned přepiš stav,
+        # aby se uživatelům neukazovala dočasná nula po restartu.
+        self.async_write_ha_state()
 
     async def _reset_daily(self, *_: Any) -> None:
         now = datetime.utcnow()
