@@ -8,7 +8,7 @@ import copy
 import json
 import hashlib
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
 
 from homeassistant.components.sensor import (
@@ -162,6 +162,9 @@ DEBUG_EXPOSE_BASELINE_TIMELINE = False  # Expose baseline timeline in sensor att
 class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
     """Zjednodušený senzor pro predikci nabití baterie."""
 
+    # Shared log throttling across instances (dashboard/API can trigger multiple computations).
+    _GLOBAL_LOG_LAST_TS: ClassVar[Dict[str, float]] = {}
+
     def __init__(
         self,
         coordinator: Any,
@@ -234,7 +237,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._forecast_retry_unsub: Optional[Callable[[], None]] = None
 
         # Log throttling to prevent HA "logging too frequently" warnings
-        self._log_last_ts: Dict[str, float] = {}
+        self._log_last_ts = self._GLOBAL_LOG_LAST_TS
 
         # Phase 2.5: DP Multi-Mode Optimization result
         self._mode_optimization_result: Optional[Dict[str, Any]] = None
@@ -3710,8 +3713,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if violation_result is None:
                 # Žádné porušení → hotovo!
                 if iteration > 0:
-                    _LOGGER.info(
-                        f"✅ PLANNING_MIN validation: Fixed all violations in {iteration} iterations"
+                    self._log_rate_limited(
+                        "planning_min_fixed",
+                        "debug",
+                        "✅ PLANNING_MIN validation: Fixed all violations in %s iterations",
+                        iteration,
+                        cooldown_s=1800.0,
                     )
                 return modes
 
@@ -3732,11 +3739,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 charge_before_index = violation_index
 
-            _LOGGER.info(
-                f"[PLANNING_MIN iter {iteration + 1}] Violation @ interval {violation_index}: "
-                f"SoC={soc_at_violation:.2f} kWh < planning_min={min_capacity:.2f} kWh, "
-                f"deficit={deficit_kwh:.2f} kWh (target={target_soc:.2f} kWh), "
-                f"recovery={recovery_idx}, charge_before={charge_before_index}"
+            self._log_rate_limited(
+                "planning_min_violation_iter",
+                "debug",
+                "[PLANNING_MIN iter %s] Violation @ interval %s: SoC=%.2f kWh < planning_min=%.2f kWh, deficit=%.2f kWh (target=%.2f), recovery=%s, charge_before=%s",
+                iteration + 1,
+                violation_index,
+                soc_at_violation,
+                min_capacity,
+                deficit_kwh,
+                target_soc,
+                recovery_idx,
+                charge_before_index,
+                cooldown_s=900.0,
             )
 
             # 4. Vyber kandidátní intervaly PŘED charge_before_index (cost-aware)
@@ -3777,9 +3792,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             if not candidate_intervals:
                 # Nelze opravit (žádné dostupné intervaly)
-                _LOGGER.warning(
-                    f"⚠️ PLANNING_MIN violation @ interval {violation_index} "
-                    f"cannot be fixed (no charging intervals available before, deficit={deficit_kwh:.2f} kWh)"
+                self._log_rate_limited(
+                    "planning_min_unfixable",
+                    "warning",
+                    "⚠️ PLANNING_MIN violation @ interval %s cannot be fixed (no charging intervals available before, deficit=%.2f kWh)",
+                    violation_index,
+                    deficit_kwh,
+                    cooldown_s=3600.0,
                 )
                 return modes  # Vrátit co je (lepší než crash)
 
@@ -3789,15 +3808,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 modes[idx] = CBB_MODE_HOME_UPS
 
             expected_charge = len(candidate_intervals) * max_charge_per_interval
-            _LOGGER.info(
-                f"  → Added HOME UPS @ {len(candidate_intervals)} intervals: {candidate_intervals}, "
-                f"expected_charge={expected_charge:.2f} kWh (need {deficit_kwh:.2f} kWh)"
+            self._log_rate_limited(
+                "planning_min_added_ups",
+                "debug",
+                "→ Added HOME UPS @ %s intervals (expected_charge=%.2f kWh need %.2f kWh)",
+                len(candidate_intervals),
+                expected_charge,
+                deficit_kwh,
+                cooldown_s=900.0,
             )
 
         # Max iterace dosaženo
-        _LOGGER.warning(
-            f"⚠️ PLANNING_MIN validation: Reached max iterations ({MAX_ITERATIONS}), "
-            f"some violations may remain"
+        self._log_rate_limited(
+            "planning_min_max_iters",
+            "warning",
+            "⚠️ PLANNING_MIN validation: Reached max iterations (%s), some violations may remain",
+            MAX_ITERATIONS,
+            cooldown_s=3600.0,
         )
         return modes
 
@@ -4674,7 +4701,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     best_baseline_name,
                     best_baseline_adjusted,
                     penalty_info,
-                    cooldown_s=900.0,
+                    cooldown_s=3600.0,
                 )
             else:
                 self._log_rate_limited(
