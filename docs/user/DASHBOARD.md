@@ -41,6 +41,10 @@ Dashboard se aktivuje během konfigurace integrace. Pokud ho nemáte zapnutý:
 4. Zaškrtněte **📊 Webový energetický dashboard**
 5. Uložte a restartujte Home Assistant
 
+### Ukázka: Toky (Flow)
+
+![Toky energie ve flow diagramu](../images/flow.png)
+
 ---
 
 ## 🔄 Flow Diagram
@@ -477,6 +481,8 @@ V sekci „Predikce a statistiky“ se typicky objevují:
 
 Co přesně tyto metriky znamenají a jak se počítají: `./STATISTICS.md`.
 
+![Predikce a statistiky (graf + metriky)](../images/predikce.png)
+
 ---
 
 ## 🧩 Vlastní dlaždice
@@ -496,6 +502,10 @@ Jak je nastavit:
 3. Kliknutím na konkrétní dlaždici otevřete dialog a vyberte entitu / akci.
 
 Technicky dashboard používá služby `oig_cloud.get_dashboard_tiles` a `oig_cloud.save_dashboard_tiles` (viz `./SERVICES.md`).
+
+![Ovládání vlastních dlaždic](../images/nastaveni.png)
+
+![Dialog konfigurace dlaždice](../images/dlazdice.png)
 
 ---
 

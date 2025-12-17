@@ -25,6 +25,10 @@ Dashboard z toho vykresluje časovou osu a dlaždice „Today plan / Grid chargi
 
 Podrobnosti k metrikám a statistikám: `./STATISTICS.md`.
 
+## Ukázka: optimalizovaný plán režimů (72h)
+
+![Optimální plán režimů (72h) + auto přepínání](../images/planovac.png)
+
 ## Automatický režim (auto mode)
 
 Pokud zapnete **Automatické přepínání režimů podle plánu**:
