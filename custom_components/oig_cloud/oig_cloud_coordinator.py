@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.event import async_track_point_in_time
 
@@ -16,6 +17,12 @@ _LOGGER = logging.getLogger(__name__)
 
 # Jitter configuration: ±5 seconds around base interval
 JITTER_SECONDS = 5.0
+
+# HA storage snapshot (retain last-known values across restart)
+COORDINATOR_CACHE_VERSION = 1
+COORDINATOR_CACHE_SAVE_COOLDOWN_S = 30.0
+COORDINATOR_CACHE_MAX_LIST_ITEMS = 1500
+COORDINATOR_CACHE_MAX_STR_LEN = 5000
 
 
 class OigCloudCoordinator(DataUpdateCoordinator):
@@ -153,6 +160,120 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             if config_entry and hasattr(config_entry, "options")
             else 30
         )
+
+        # Retain last-known coordinator payload to avoid "unknown" after HA restart.
+        self._cache_store: Optional[Store] = None
+        self._last_cache_save_ts: Optional[datetime] = None
+        try:
+            if self.config_entry and getattr(self.config_entry, "entry_id", None):
+                self._cache_store = Store(
+                    hass,
+                    COORDINATOR_CACHE_VERSION,
+                    f"oig_cloud.coordinator_cache_{self.config_entry.entry_id}",
+                )
+        except Exception:
+            self._cache_store = None
+
+    async def async_config_entry_first_refresh(self) -> None:
+        """Load cached payload before the first refresh.
+
+        This makes entities render immediately with last-known values (retain-like behavior),
+        while the coordinator is still doing the first network/local refresh.
+        """
+        if self._cache_store is not None:
+            try:
+                cached = await self._cache_store.async_load()
+                cached_data = cached.get("data") if isinstance(cached, dict) else None
+                if isinstance(cached_data, dict) and cached_data:
+                    self.data = cached_data
+                    self.last_update_success = True
+                    _LOGGER.debug(
+                        "Loaded cached coordinator data (%d keys) before first refresh",
+                        len(cached_data),
+                    )
+            except Exception as err:
+                _LOGGER.debug("Failed to load coordinator cache: %s", err)
+
+        try:
+            await super().async_config_entry_first_refresh()
+        except Exception as err:
+            # Keep cached values if refresh fails during startup (e.g. cloud unreachable).
+            if self.data:
+                self.last_update_success = True
+                _LOGGER.warning(
+                    "First refresh failed, continuing with cached coordinator data: %s",
+                    err,
+                )
+                return
+            raise
+
+    def _prune_for_cache(self, value: Any, *, _depth: int = 0) -> Any:
+        """Reduce payload size before saving to HA storage."""
+        if _depth > 6:
+            return None
+
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+
+        if isinstance(value, str):
+            return value if len(value) <= COORDINATOR_CACHE_MAX_STR_LEN else value[:COORDINATOR_CACHE_MAX_STR_LEN]
+
+        if isinstance(value, datetime):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+
+        if isinstance(value, list):
+            trimmed = value[:COORDINATOR_CACHE_MAX_LIST_ITEMS]
+            return [self._prune_for_cache(v, _depth=_depth + 1) for v in trimmed]
+
+        if isinstance(value, tuple):
+            trimmed = list(value)[:COORDINATOR_CACHE_MAX_LIST_ITEMS]
+            return [self._prune_for_cache(v, _depth=_depth + 1) for v in trimmed]
+
+        if isinstance(value, dict):
+            out: Dict[str, Any] = {}
+            for k, v in value.items():
+                # Drop very large/volatile raw blobs by key name
+                key = str(k)
+                if key in {"timeline_data", "timeline", "latest_timeline"}:
+                    continue
+                out[key] = self._prune_for_cache(v, _depth=_depth + 1)
+            return out
+
+        # Fallback: keep a readable representation
+        try:
+            return str(value)
+        except Exception:
+            return None
+
+    def _maybe_schedule_cache_save(self, data: Dict[str, Any]) -> None:
+        if self._cache_store is None:
+            return
+        now = self._utcnow()
+        if self._last_cache_save_ts is not None:
+            age = (now - self._last_cache_save_ts).total_seconds()
+            if age < COORDINATOR_CACHE_SAVE_COOLDOWN_S:
+                return
+
+        self._last_cache_save_ts = now
+
+        snapshot = {
+            "saved_at": now.isoformat(),
+            "data": self._prune_for_cache(data),
+        }
+
+        async def _save() -> None:
+            try:
+                await self._cache_store.async_save(snapshot)
+            except Exception as err:
+                _LOGGER.debug("Failed to save coordinator cache: %s", err)
+
+        try:
+            self.hass.async_create_task(_save())
+        except Exception:
+            pass
 
     def update_intervals(self, standard_interval: int, extended_interval: int) -> None:
         """Dynamicky aktualizuje intervaly coordinatoru."""
@@ -441,7 +562,14 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     "enable_extended_sensors", False
                 )
                 _LOGGER.debug("Config entry found: True")
-                _LOGGER.debug(f"Config entry options: {config_entry.options}")
+                # Do not log full options (may contain secrets)
+                try:
+                    _LOGGER.debug(
+                        "Config entry option keys: %s",
+                        sorted(list(getattr(config_entry, "options", {}).keys())),
+                    )
+                except Exception:
+                    _LOGGER.debug("Config entry option keys: <unavailable>")
                 _LOGGER.debug(
                     f"Extended sensors enabled from options: {extended_enabled}"
                 )
@@ -611,6 +739,10 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             if self.battery_forecast_data:
                 result["battery_forecast"] = self.battery_forecast_data
                 _LOGGER.debug("🔋 Including battery forecast data in coordinator data")
+
+            # Persist last-known payload for retain-like startup behavior.
+            if isinstance(result, dict) and result:
+                self._maybe_schedule_cache_save(result)
 
             return result
 

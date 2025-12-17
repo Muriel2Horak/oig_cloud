@@ -514,7 +514,7 @@ class DataSourceController:
     @callback
     def _on_effective_mode_changed(self) -> None:
         state = get_data_source_state(self.hass, self.entry.entry_id)
-        _LOGGER.warning(
+        _LOGGER.info(
             "Data source mode switch: configured=%s effective=%s local_ok=%s (%s)",
             state.configured_mode,
             state.effective_mode,

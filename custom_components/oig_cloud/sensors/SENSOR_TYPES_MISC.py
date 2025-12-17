@@ -114,10 +114,12 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "unit_of_measurement": None,
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
-        "options": ["Ne", "Ano"],
+        # Dashboard/UI expects "on"/"off" strings (also used by cloud notifications parser)
+        "options": ["off", "on"],
         "sensor_type_category": "notification",
         "device_mapping": "main",
         "icon": "mdi:power-settings",
+        "local_entity_suffix": "tbl_box_prms_bypass",
     },
     "notification_count_error": {
         "name": "Error Notifications Count",

@@ -6,6 +6,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .data_source import (
     DATA_SOURCE_HYBRID,
@@ -36,7 +37,7 @@ _LANGS: Dict[str, Dict[str, str]] = {
 }
 
 
-class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
+class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """Representation of an OIG Cloud sensor."""
 
     def __init__(
@@ -55,6 +56,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
         self._local_state_unsub: Optional[Callable[[], None]] = None
         self._data_source_unsub: Optional[Callable[[], None]] = None
         self._entry_id: Optional[str] = None
+        self._restored_state: Optional[Any] = None
 
         # Načteme sensor config
         try:
@@ -89,6 +91,19 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register per-entity listener for local telemetry."""
         await super().async_added_to_hass()
+
+        # Retain last-known value across HA restarts (acts like "retain" for sensors).
+        try:
+            last_state = await self.async_get_last_state()
+            if last_state and last_state.state not in (
+                None,
+                "",
+                "unknown",
+                "unavailable",
+            ):
+                self._restored_state = self._coerce_number(last_state.state)
+        except Exception:
+            self._restored_state = None
 
         # Only useful when local mode is configured.
         entry = getattr(self.coordinator, "config_entry", None)
@@ -225,6 +240,25 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                 return notification_manager.get_latest_notification_message()
 
             elif self._sensor_type == "bypass_status":
+                # Prefer local value in local/hybrid mode.
+                try:
+                    entry = getattr(self.coordinator, "config_entry", None)
+                    entry_id = getattr(entry, "entry_id", None)
+                    if entry_id:
+                        ds = get_data_source_state(self.hass, entry_id)
+                        if (
+                            ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY)
+                            and ds.local_available
+                        ):
+                            local_value = self._get_local_value()
+                            if local_value is not None:
+                                try:
+                                    return "on" if int(local_value) == 1 else "off"
+                                except Exception:
+                                    return "on" if str(local_value).lower() in ("on", "true", "1") else "off"
+                except Exception:
+                    pass
+
                 notification_manager = getattr(
                     self.coordinator, "notification_manager", None
                 )
@@ -232,7 +266,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                     _LOGGER.debug(
                         f"[{self.entity_id}] Notification manager is None for bypass status"
                     )
-                    return None
+                    return self._fallback_value()
                 return notification_manager.get_bypass_status()
 
             elif self._sensor_type == "notification_count_error":
@@ -287,14 +321,14 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                         return local_value
 
                     if ds.effective_mode == DATA_SOURCE_LOCAL_ONLY:
-                        return None
+                        return self._fallback_value()
 
             if self.coordinator.data is None:
-                return None
+                return self._fallback_value()
 
             data = self.coordinator.data
             if not data:
-                return None
+                return self._fallback_value()
 
             pv_data = data.get(self._box_id, {})
 
@@ -311,7 +345,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             # Získáme raw hodnotu z parent
             raw_value = self.get_node_value()
             if raw_value is None:
-                return None
+                return self._fallback_value()
 
             # SPECIÁLNÍ ZPRACOVÁNÍ pro určité typy senzorů
             if self._sensor_type == "box_prms_mode":
@@ -340,7 +374,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(
                 f"Error getting state for {self.entity_id}: {e}", exc_info=True
             )
-            return None
+            return self._fallback_value()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -613,6 +647,11 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
             return float(value) if "." in value else int(value)
         except ValueError:
             return value
+
+    def _fallback_value(self) -> Optional[Any]:
+        if self._last_state is not None:
+            return self._last_state
+        return self._restored_state
 
     def _get_local_value(self) -> Optional[Any]:
         local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)

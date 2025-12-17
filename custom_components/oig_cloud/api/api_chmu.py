@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Any, Tuple
 from math import radians, cos, sin, asin, sqrt
+import re
 import async_timeout
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,10 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 # --- CAP 1.2 Namespace ---
 CAP_NS = "{urn:oasis:names:tc:emergency:cap:1.2}"
 
-# ČHMÚ CAP XML endpoint
-CHMU_CAP_URL = (
-    "https://www.chmi.cz/files/portal/docs/meteo/om/bulletiny/XOCZ50_OKPR.xml"
-)
+# ČHMÚ CAP XML feed:
+# Původní URL (www.chmi.cz/.../XOCZ50_OKPR.xml) je nově 404; ČHMÚ přesunulo CAP do open data.
+# Autoindex obsahuje historické soubory + timestampy, vybereme nejnovější.
+CHMU_CAP_BASE_URL = "https://opendata.chmi.cz/meteorology/weather/alerts/cap/"
 
 # Severity mapping podle CAP 1.2 standardu
 SEVERITY_MAP: Dict[str, int] = {
@@ -49,6 +50,11 @@ class ChmuApiError(Exception):
 
 class ChmuApi:
     """API klient pro ČHMÚ CAP XML bulletiny."""
+
+    _AUTO_INDEX_RE = re.compile(
+        r'href="(?P<file>alert_cap_(?P<series>\\d+)_\\d+\\.xml)".*?\\s(?P<dt>\\d{2}-[A-Za-z]{3}-\\d{4} \\d{2}:\\d{2})\\s+\\d+',
+        re.IGNORECASE,
+    )
 
     def __init__(self) -> None:
         self._last_data: Dict[str, Any] = {}
@@ -87,10 +93,11 @@ class ChmuApi:
         """
         try:
             async with async_timeout.timeout(30):
-                async with session.get(CHMU_CAP_URL) as response:
+                cap_url = await self._resolve_latest_cap_url(session)
+                async with session.get(cap_url) as response:
                     if response.status != 200:
                         raise ChmuApiError(
-                            f"HTTP {response.status} při stahování CAP XML"
+                            f"HTTP {response.status} při stahování CAP XML ({cap_url})"
                         )
 
                     text = await response.text()
@@ -105,6 +112,38 @@ class ChmuApi:
             raise ChmuApiError("Timeout při stahování CAP XML (30s)")
         except aiohttp.ClientError as e:
             raise ChmuApiError(f"HTTP chyba při stahování CAP XML: {e}")
+
+    async def _resolve_latest_cap_url(self, session: aiohttp.ClientSession) -> str:
+        """Resolve the most recent CAP XML URL from ČHMÚ open data directory listing."""
+        try:
+            async with async_timeout.timeout(15):
+                async with session.get(CHMU_CAP_BASE_URL) as response:
+                    if response.status != 200:
+                        raise ChmuApiError(
+                            f"HTTP {response.status} při načítání indexu CAP ({CHMU_CAP_BASE_URL})"
+                        )
+                    index_html = await response.text()
+
+            items: list[tuple[datetime, str, str]] = []
+            for m in self._AUTO_INDEX_RE.finditer(index_html):
+                try:
+                    dt = datetime.strptime(m.group("dt"), "%d-%b-%Y %H:%M")
+                    items.append((dt, m.group("series"), m.group("file")))
+                except Exception:
+                    continue
+
+            if not items:
+                raise ChmuApiError("CAP index neobsahuje žádné alert_cap_*.xml soubory")
+
+            preferred = [it for it in items if it[1] == "50"]
+            dt, series, fname = max(preferred or items, key=lambda x: x[0])
+            url = f"{CHMU_CAP_BASE_URL}{fname}"
+            _LOGGER.debug("ČHMÚ CAP resolved: series=%s file=%s ts=%s", series, fname, dt.isoformat())
+            return url
+        except ChmuApiError:
+            raise
+        except Exception as e:
+            raise ChmuApiError(f"Chyba při výběru nejnovějšího CAP souboru: {e}")
 
     # ---------- XML parsing ----------
 
