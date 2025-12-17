@@ -120,10 +120,10 @@ class ServiceShield:
         """Log telemetry event using SimpleTelemetry."""
         try:
             _LOGGER.debug(
-                f"[TELEMETRY DEBUG] Starting telemetry log: {event_type} for {service_name}"
+                "Telemetry log start: event_type=%s service=%s", event_type, service_name
             )
             _LOGGER.debug(
-                f"[TELEMETRY DEBUG] Handler available: {self._telemetry_handler is not None}"
+                "Telemetry handler available: %s", self._telemetry_handler is not None
             )
 
             if self._telemetry_handler:
@@ -137,7 +137,8 @@ class ServiceShield:
                     telemetry_data.update(data)
 
                 _LOGGER.debug(
-                    f"[TELEMETRY DEBUG] Telemetry data prepared: {telemetry_data}"
+                    "Telemetry data prepared: %s",
+                    telemetry_data,
                 )
 
                 # Odešleme do SimpleTelemetry
@@ -147,14 +148,12 @@ class ServiceShield:
                     data=telemetry_data,
                 )
 
-                _LOGGER.debug("[TELEMETRY DEBUG] Telemetry sent successfully")
+                _LOGGER.debug("Telemetry sent successfully")
             else:
-                _LOGGER.debug("[TELEMETRY DEBUG] No telemetry handler available!")
+                _LOGGER.debug("Telemetry handler missing; skipping send")
 
         except Exception as e:
-            _LOGGER.error(
-                f"[TELEMETRY DEBUG ERROR] Failed to log telemetry: {e}", exc_info=True
-            )
+            _LOGGER.error("Failed to log telemetry: %s", e, exc_info=True)
 
     def register_state_change_callback(self, callback: Callable[[], None]) -> None:
         """Registruje callback, který se zavolá při změně shield stavu."""
@@ -582,10 +581,10 @@ class ServiceShield:
         expected_entities = self.extract_expected_entities(service_name, params)
         api_info = self._extract_api_info(service_name, params)
 
-        _LOGGER.info(f"[INTERCEPT DEBUG] Service: {service_name}")
-        _LOGGER.info(f"[INTERCEPT DEBUG] Expected entities: {expected_entities}")
-        _LOGGER.info(f"[INTERCEPT DEBUG] Queue length: {len(self.queue)}")
-        _LOGGER.info(f"[INTERCEPT DEBUG] Running: {self.running}")
+        _LOGGER.debug("Intercept service: %s", service_name)
+        _LOGGER.debug("Intercept expected entities: %s", expected_entities)
+        _LOGGER.debug("Intercept queue length: %s", len(self.queue))
+        _LOGGER.debug("Intercept running: %s", self.running)
 
         # OPRAVA: Pouze security event, ne telemetrie na začátku
         self._log_security_event(
@@ -599,7 +598,7 @@ class ServiceShield:
         )
 
         if not expected_entities:
-            _LOGGER.info("[INTERCEPT DEBUG] No expected entities - returning early")
+            _LOGGER.debug("Intercept: no expected entities; returning early")
             await self._log_event(
                 "skipped",
                 service_name,
@@ -612,19 +611,21 @@ class ServiceShield:
         new_expected_set = frozenset(expected_entities.items())
 
         # Debug: Vypsat frontu a pending před kontrolou deduplikace
-        _LOGGER.info("[DEDUP DEBUG] Checking for duplicates:")
-        _LOGGER.info(f"[DEDUP DEBUG]   New service: {service_name}")
-        _LOGGER.info(f"[DEDUP DEBUG]   New params: {params}")
-        _LOGGER.info(f"[DEDUP DEBUG]   New expected: {expected_entities}")
-        _LOGGER.info(f"[DEDUP DEBUG]   Queue length: {len(self.queue)}")
-        _LOGGER.info(f"[DEDUP DEBUG]   Pending length: {len(self.pending)}")
+        _LOGGER.debug("Dedup: checking for duplicates")
+        _LOGGER.debug("Dedup: new service=%s", service_name)
+        _LOGGER.debug("Dedup: new params=%s", params)
+        _LOGGER.debug("Dedup: new expected=%s", expected_entities)
+        _LOGGER.debug("Dedup: queue length=%s", len(self.queue))
+        _LOGGER.debug("Dedup: pending length=%s", len(self.pending))
         for i, q in enumerate(self.queue):
-            _LOGGER.info(
-                f"[DEDUP DEBUG]   Queue[{i}]: service={q[0]}, params={q[1]}, expected={q[2]}"
+            _LOGGER.debug(
+                "Dedup: queue[%s] service=%s params=%s expected=%s", i, q[0], q[1], q[2]
             )
         for service_key, pending_info in self.pending.items():
-            _LOGGER.info(
-                f"[DEDUP DEBUG]   Pending: service={service_key}, entities={pending_info.get('entities', {})}"
+            _LOGGER.debug(
+                "Dedup: pending service=%s entities=%s",
+                service_key,
+                pending_info.get("entities", {}),
             )
 
         # Čeká už ve frontě nebo běží v pending stejná služba se stejným cílem?
@@ -652,9 +653,9 @@ class ServiceShield:
             ):
                 duplicate_found = True
                 duplicate_location = "queue"
-                _LOGGER.info("[DEDUP DEBUG] ✅ DUPLICATE FOUND IN QUEUE!")
-                _LOGGER.info(
-                    f"[DEDUP DEBUG]   Matching: service={q[0]}, params={q[1]}, expected={q[2]}"
+                _LOGGER.debug("Dedup: duplicate found in queue")
+                _LOGGER.debug(
+                    "Dedup: matching service=%s params=%s expected=%s", q[0], q[1], q[2]
                 )
                 break
 
@@ -672,15 +673,17 @@ class ServiceShield:
                 ):
                     duplicate_found = True
                     duplicate_location = "pending"
-                    _LOGGER.info("[DEDUP DEBUG] ✅ DUPLICATE FOUND IN PENDING!")
-                    _LOGGER.info(
-                        f"[DEDUP DEBUG]   Matching: service={pending_service_key}, expected={pending_entities}"
+                    _LOGGER.debug("Dedup: duplicate found in pending")
+                    _LOGGER.debug(
+                        "Dedup: matching service=%s expected=%s",
+                        pending_service_key,
+                        pending_entities,
                     )
                     break
 
         if duplicate_found:
-            _LOGGER.info(
-                f"[INTERCEPT DEBUG] Service already in {duplicate_location} - returning early"
+            _LOGGER.debug(
+                "Intercept: service already in %s; returning early", duplicate_location
             )
             await self._log_event(
                 "ignored",
@@ -706,17 +709,18 @@ class ServiceShield:
             state = self.hass.states.get(entity_id)
             current = self._normalize_value(state.state if state else None)
             expected = self._normalize_value(expected_value)
-            _LOGGER.info(
-                f"[INTERCEPT DEBUG] Entity {entity_id}: current='{current}' expected='{expected}'"
+            _LOGGER.debug(
+                "Intercept: entity=%s current=%r expected=%r",
+                entity_id,
+                current,
+                expected,
             )
             if current != expected:
                 all_ok = False
                 break
 
         if all_ok:
-            _LOGGER.info(
-                "[INTERCEPT DEBUG] All entities already match - returning early"
-            )
+            _LOGGER.debug("Intercept: all entities already match; returning early")
             # OPRAVA: Logujeme telemetrii i pro skipped požadavky
             await self._log_telemetry(
                 "skipped",
@@ -739,7 +743,7 @@ class ServiceShield:
             return
 
         # ߚࠓpustíme hned
-        _LOGGER.info("[INTERCEPT DEBUG] Will execute service - logging telemetry")
+        _LOGGER.debug("Intercept: will execute service; logging telemetry")
         # TELEMETRIE: Zde se odešle telemetrie při skutečném volání služby
         await self._log_telemetry(
             "change_requested",

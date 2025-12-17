@@ -142,17 +142,16 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     """Set up OIG Cloud integration."""
     _ = config
-    # OPRAVA: Debug setup telemetrie
-    print("[OIG SETUP] Starting OIG Cloud setup")
+    _LOGGER.debug("OIG Cloud setup: starting")
 
     # OPRAVA: Odstraníme neexistující import setup_telemetry
     # Initialize telemetry - telemetrie se inicializuje přímo v ServiceShield
-    print("[OIG SETUP] Telemetry will be initialized in ServiceShield")
+    _LOGGER.debug("OIG Cloud setup: telemetry will be initialized in ServiceShield")
 
     # OPRAVA: ServiceShield se inicializuje pouze v async_setup_entry, ne zde
     # V async_setup pouze připravíme globální strukturu
     hass.data.setdefault(DOMAIN, {})
-    print("[OIG SETUP] Global data structure prepared")
+    _LOGGER.debug("OIG Cloud setup: global data structure prepared")
 
     # OPRAVA: Univerzální registrace statických cest pro všechny verze HA
     await _register_static_paths(hass)
@@ -161,7 +160,7 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     # Panel se registruje až v async_setup_entry kde máme přístup k entry
     # await _setup_frontend_panel(hass)  # ODSTRANĚNO
 
-    print("[OIG SETUP] OIG Cloud setup completed")
+    _LOGGER.debug("OIG Cloud setup: completed")
     return True
 
 
@@ -170,7 +169,7 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     static_path = "/oig_cloud_static"
     directory = hass.config.path("custom_components/oig_cloud/www")
 
-    _LOGGER.info("Registering static path: %s -> {directory}", static_path)
+    _LOGGER.info("Registering static path: %s -> %s", static_path, directory)
 
     # OPRAVA: Pouze moderní metoda
     from homeassistant.components.http import StaticPathConfig

@@ -65,4 +65,4 @@ SENSOR_TYPES.update(SENSOR_TYPES_CHMU)
 SENSOR_TYPES.update(SENSOR_TYPES_SHIELD)
 STATISTICS_SENSOR_TYPES = SENSOR_TYPES_STATISTICS
 
-_LOGGER.info(f"Loaded {len(SENSOR_TYPES)} sensor types total")
+_LOGGER.debug("Loaded %s sensor types total", len(SENSOR_TYPES))

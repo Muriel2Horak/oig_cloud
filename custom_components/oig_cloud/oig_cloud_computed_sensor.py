@@ -9,6 +9,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from .oig_cloud_sensor import OigCloudSensor
+from .sensor_types import SENSOR_TYPES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,9 +31,6 @@ _LANGS: Dict[str, Dict[str, str]] = {
 class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
         super().__init__(coordinator, sensor_type)
-
-        # OPRAVA: Přímý import SENSOR_TYPES místo neexistující funkce
-        from .sensor_types import SENSOR_TYPES
 
         sensor_config = SENSOR_TYPES.get(sensor_type, {})
 
@@ -93,8 +91,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[float]:
         """Get value from HA based on sensor definition (uses local_entity_id/suffix)."""
         try:
-            from .sensor_types import SENSOR_TYPES
-
             cfg = SENSOR_TYPES.get(sensor_type)
             if not cfg:
                 return None
