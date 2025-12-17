@@ -343,16 +343,38 @@ class TileConfigDialog {
         // Flag pro rozlišení editace vs nová dlaždice
         this.isEditing = !!existingTile;
 
-        // Naplnit seznamy entit
-        this.populateEntityLists();
+        // Zobrazit dialog co nejdřív (Safari má pomalejší DOM render při velkém seznamu entit)
+        this.dialog.style.display = 'flex';
 
-        // Pre-fill form pokud editujeme existující dlaždici
-        if (existingTile) {
-            this.loadTileConfig(existingTile);
+        // Rychlé placeholdery aby bylo jasné, že se načítá
+        try {
+            const lists = [
+                'entity-list',
+                'button-entity-list',
+                'support-entity-1-list',
+                'support-entity-2-list',
+                'support-button-entity-1-list',
+                'support-button-entity-2-list'
+            ];
+            lists.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = '<div class="entity-item" style="opacity:0.7;padding:8px;">Načítání…</div>';
+            });
+        } catch (e) {
+            // ignore
         }
 
-        // Zobrazit dialog
-        this.dialog.style.display = 'flex';
+        // Naplnit seznamy entit až po prvním paintu (aby otevření dialogu nebylo blokované)
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this.populateEntityLists();
+
+                // Pre-fill form pokud editujeme existující dlaždici
+                if (existingTile) {
+                    this.loadTileConfig(existingTile);
+                }
+            });
+        });
 
         // Focus na search input
         setTimeout(() => {

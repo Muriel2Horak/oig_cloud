@@ -67,7 +67,7 @@
         <div class="dashboard-tabs">
             <div class="dashboard-tab active" onclick="switchTab('flow')">⚡ Toky</div>
             <div class="dashboard-tab" onclick="switchTab('pricing')">💰 Predikce a statistiky</div>
-            <div class="dashboard-tab" id="dashboard-tab-boiler" onclick="switchTab('boiler')">🔥 Bojler & Auto</div>
+            <div class="dashboard-tab" id="dashboard-tab-boiler" style="display:none" onclick="switchTab('boiler')">🔥 Bojler & Auto</div>
             <div class="layout-controls">
                 <button id="edit-layout-btn" class="btn-layout-edit" onclick="toggleEditMode()" data-tooltip="Upravit rozmístění boxů">
                     🔧
@@ -671,15 +671,15 @@
         <script>
             async function _shouldShowBoilerAutoTab() {
                 const entryId = new URLSearchParams(window.location.search).get('entry_id');
-                if (!entryId) return true; // fallback: keep visible if we can't determine
+                if (!entryId) return false; // safer default: keep hidden if we can't determine
                 try {
                     const res = await fetch(`/api/oig_cloud/${entryId}/modules`);
-                    if (!res.ok) return true;
+                    if (!res.ok) return false;
                     const cfg = await res.json();
                     return !!(cfg && (cfg.enable_boiler || cfg.enable_auto));
                 } catch (e) {
                     console.warn('[Dashboard] Failed to read modules config:', e);
-                    return true;
+                    return false;
                 }
             }
 
@@ -687,9 +687,15 @@
                 const show = await _shouldShowBoilerAutoTab();
                 const tabButton = document.getElementById('dashboard-tab-boiler');
                 if (!show) {
-                    if (tabButton) tabButton.remove();
+                    if (tabButton) tabButton.style.display = 'none';
+                    const boilerControlSection = document.getElementById('boiler-control-section');
+                    if (boilerControlSection) boilerControlSection.style.display = 'none';
+                    const boilerDetailSection = document.getElementById('boiler-detail-section');
+                    if (boilerDetailSection) boilerDetailSection.style.display = 'none';
                     return;
                 }
+
+                if (tabButton) tabButton.style.display = '';
 
                 fetch('boiler-tab.html')
                     .then(response => response.text())
