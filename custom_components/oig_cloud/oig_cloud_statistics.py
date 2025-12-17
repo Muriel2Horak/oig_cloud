@@ -170,8 +170,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             _LOGGER.debug(
                 f"[{self.entity_id}] Set up daily statistics calculation at 2:00 for time range: {self._time_range}"
             )
-            # První výpočet po startu
-            await self._daily_statistics_update(None)
+            # První výpočet po startu (neblokuj setup – může to trvat dlouho kvůli recorder historii)
+            self.hass.async_create_task(self._daily_statistics_update(None))
 
     async def _load_statistics_data(self) -> None:
         """Načte statistická data z persistentního úložiště."""
@@ -262,7 +262,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 if self._sampling_data and self._sensor_type == "battery_load_median":
                     initial_state = self._calculate_statistics_value()
                     if initial_state is not None:
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[{self.entity_id}] Restored median state: {initial_state}W"
                         )
                         self.async_write_ha_state()
@@ -271,7 +271,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                     self._sensor_type.startswith("hourly_")
                     and self._current_hourly_value is not None
                 ):
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[{self.entity_id}] Restored hourly state: {self._current_hourly_value} kWh"
                     )
                     self.async_write_ha_state()
@@ -514,7 +514,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                         # Aktualizace stavu senzoru
                         self.async_write_ha_state()
 
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[{self.entity_id}] Hourly update: {hourly_value:.3f} kWh for hour ending at {previous_hour_naive.strftime('%H:%M')}"
                         )
 
@@ -527,7 +527,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             return
 
         try:
-            _LOGGER.info(f"[{self.entity_id}] Starting daily statistics calculation")
+            _LOGGER.debug(f"[{self.entity_id}] Starting daily statistics calculation")
 
             # Spočítat medián z posledních 30 dní
             new_value = await self._calculate_interval_statistics_from_history()
@@ -556,7 +556,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 # Aktualizovat stav senzoru
                 self.async_write_ha_state()
 
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[{self.entity_id}] Daily statistics updated: {new_value:.1f}W "
                     f"for interval {self._time_range}"
                 )
@@ -694,7 +694,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             # Spočítat celkový medián z denních mediánů
             if daily_medians:
                 result = median(daily_medians)
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[{self.entity_id}] Calculated interval median: {result:.1f}W "
                     f"from {len(daily_medians)} days (out of {max_days})"
                 )
