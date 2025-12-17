@@ -5485,12 +5485,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             interval_mode_num = mode  # Default: použít mode parametr
             interval_mode_name = CBB_MODE_NAMES.get(mode, MODE_LABEL_HOME_UPS)
 
-            # DEBUG first 3 intervals
-            if len(timeline) < 3:
-                _LOGGER.debug(
-                    f"Mode selection [{len(timeline)}]: timestamp_str={timestamp_str}, "
-                    f"in_dp_lookup={timestamp_str in dp_mode_lookup}, "
-                    f"dp_lookup_size={len(dp_mode_lookup)}"
+            # Keep timeline selection logging extremely low-volume (HA can warn about frequent logging).
+            if len(timeline) == 0:
+                self._log_rate_limited(
+                    "mode_selection_sample",
+                    "debug",
+                    "Mode selection sample: ts=%s in_dp=%s dp_lookup_size=%d",
+                    timestamp_str,
+                    timestamp_str in dp_mode_lookup,
+                    len(dp_mode_lookup),
+                    cooldown_s=900.0,
                 )
 
             if is_balancing_charging or is_balancing_holding:
@@ -5664,17 +5668,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         cooldown_s=900.0,
                     )
 
-        # Avoid per-interval logging (can trigger HA "logging too frequently").
-        if len(timeline) < 3:
-            _LOGGER.debug(
-                "TIMELINE[%s]: battery=%.2f kWh, mode=%s, solar=%.3f, load=%.3f, grid_kwh=%.3f, net=%.3f",
-                len(timeline),
+        if len(timeline) == 0:
+            self._log_rate_limited(
+                "timeline_debug_sample",
+                "debug",
+                "TIMELINE sample: battery=%.2f kWh mode=%s solar=%.3f load=%.3f grid_kwh=%.3f net=%.3f",
                 battery_kwh,
                 interval_mode_name,
                 solar_kwh,
                 load_kwh,
                 grid_kwh,
                 net_energy,
+                cooldown_s=900.0,
             )
 
         # Určit reason pro tento interval
@@ -6165,8 +6170,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug("[fetch_interval_from_history] No _hass instance")
             return None
 
-        _LOGGER.debug(
-            f"[fetch_interval_from_history] Fetching {start_time} - {end_time}"
+        # Avoid per-interval spam in HA logs (even at DEBUG).
+        self._log_rate_limited(
+            "fetch_interval_range",
+            "debug",
+            "[fetch_interval_from_history] Fetching sample interval %s - %s",
+            start_time,
+            end_time,
+            cooldown_s=900.0,
         )
 
         try:
