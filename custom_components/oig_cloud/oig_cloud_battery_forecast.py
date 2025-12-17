@@ -8753,8 +8753,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if timeline:
                 return timeline, "autonomy"
             # FIXED: Don't fall back to hybrid if autonomy is preferred but missing
-            _LOGGER.warning(
-                "[AutonomySwitch] Autonomy plan preferred but timeline not available - no fallback to hybrid"
+            self._log_rate_limited(
+                "autonomy_switch_missing_autonomy_timeline",
+                "debug",
+                "[AutonomySwitch] Autonomy plan preferred but timeline not available - no fallback to hybrid",
+                cooldown_s=3600.0,
             )
             return [], "none"
 
@@ -8766,8 +8769,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Fall back to autonomy only if hybrid was preferred but missing
         timeline = self.get_autonomy_timeline()
         if timeline:
-            _LOGGER.warning(
-                "[AutonomySwitch] Hybrid plan preferred but not available - falling back to autonomy"
+            self._log_rate_limited(
+                "autonomy_switch_missing_hybrid_timeline",
+                "debug",
+                "[AutonomySwitch] Hybrid plan preferred but not available - falling back to autonomy",
+                cooldown_s=3600.0,
             )
             return timeline, "autonomy"
 
@@ -12989,11 +12995,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             return 0.0
 
-        # Debug prvních pár hodnot
-        if timestamp.hour in [14, 15, 16]:
-            _LOGGER.debug(
-                f"Solar for {timestamp.strftime('%H:%M')}: "
-                f"key={hour_key}, kW={hourly_kw}, 15min_kWh={hourly_kw / 4.0:.3f}"
+        # Avoid per-interval debug spam (dashboard/API can call this a lot).
+        if timestamp.hour in (14, 15, 16):
+            self._log_rate_limited(
+                "solar_values_debug",
+                "debug",
+                "Solar sample for %s: key=%s kW=%.3f 15min_kWh=%.3f",
+                timestamp.strftime("%H:%M"),
+                hour_key,
+                hourly_kw,
+                hourly_kw / 4.0,
+                cooldown_s=3600.0,
             )
 
         # Převést na 15min interval
