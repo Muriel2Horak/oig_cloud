@@ -2577,8 +2577,32 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 holding_end = dt_util.as_local(holding_end)
 
             preferred_charging_intervals: set[datetime] = set()
-            for iv_str in balancing_plan.get("charging_intervals", []):
-                ts = datetime.fromisoformat(iv_str)
+
+            raw_preferred = balancing_plan.get("charging_intervals")
+            # Some producers store the planned UPS schedule under `intervals` as a list
+            # of objects like {"ts": "...", "mode": 3}.
+            if not raw_preferred:
+                raw_preferred = balancing_plan.get("intervals", [])
+
+            for iv in raw_preferred or []:
+                iv_ts: str | None
+                if isinstance(iv, str):
+                    iv_ts = iv
+                elif isinstance(iv, dict):
+                    iv_ts = (
+                        iv.get("ts")
+                        or iv.get("time")
+                        or iv.get("start")
+                        or iv.get("from")
+                        or iv.get("from_time")
+                    )
+                else:
+                    iv_ts = None
+
+                if not iv_ts:
+                    continue
+
+                ts = datetime.fromisoformat(iv_ts)
                 if ts.tzinfo is None:
                     ts = dt_util.as_local(ts)
                 preferred_charging_intervals.add(ts)
