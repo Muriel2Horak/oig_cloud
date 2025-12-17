@@ -116,6 +116,16 @@ class BalancingManager:
         """Get SoC threshold for opportunistic balancing from config (default 80%)."""
         return self._config_entry.options.get("balancing_soc_threshold", 80)
 
+    def _get_cheap_window_percentile(self) -> int:
+        """Percentile threshold for 'cheap' windows (default 30%).
+
+        Reuses the general cheap-window option so balancing aligns with planner behavior.
+        """
+        try:
+            return int(self._config_entry.options.get("cheap_window_percentile", 30))
+        except Exception:
+            return 30
+
     async def async_setup(self) -> None:
         """Load balancing state from storage - MUST be fast and safe."""
         _LOGGER.info("BalancingManager: async_setup() start")
@@ -617,6 +627,17 @@ class BalancingManager:
             holding_time_hours = self._get_holding_time_hours()
             intervals_needed = holding_time_hours * 4  # 15min intervals
 
+            # Restrict balancing to "cheap" windows. This prevents opportunistic balancing
+            # from selecting expensive evening windows just because waiting has a modeled cost.
+            # Users expect balancing to happen primarily in the cheapest part of the day (night).
+            all_price_values = [float(p) for p in prices.values()]
+            all_price_values.sort()
+            cheap_pct = self._get_cheap_window_percentile()
+            cheap_idx = int(len(all_price_values) * cheap_pct / 100)
+            cheap_price_threshold = (
+                all_price_values[cheap_idx] if all_price_values else float("inf")
+            )
+
             min_cost = immediate_cost
             best_window_start = None  # None means immediate is best
 
@@ -625,6 +646,14 @@ class BalancingManager:
 
                 # Skip if window starts in past
                 if window_start <= datetime.now():
+                    continue
+
+                # Skip windows that are not in the cheap price band.
+                window_prices = [
+                    float(prices[timestamps[j]]) for j in range(i, i + intervals_needed)
+                ]
+                window_avg_price = sum(window_prices) / len(window_prices)
+                if window_avg_price > cheap_price_threshold:
                     continue
 
                 # Calculate total cost for this window
