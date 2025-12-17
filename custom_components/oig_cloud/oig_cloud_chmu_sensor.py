@@ -59,11 +59,11 @@ class OigCloudChmuSensor(OigCloudSensor):
         self._update_interval_remover = async_track_time_interval(
             self.hass, self._periodic_update, interval
         )
-        _LOGGER.info("🌦️ ČHMÚ warnings periodic updates enabled (60 min)")
+        _LOGGER.debug("🌦️ ČHMÚ warnings periodic updates enabled (60 min)")
 
         # Okamžitá inicializace dat při startu - pouze pro hlavní senzor
         if self._sensor_type == "chmu_warning_level" and self._should_fetch_data():
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"🌦️ Data is outdated (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S') if self._last_api_call else 'never'}), triggering immediate fetch"
             )
             # Spustíme úlohu na pozadí s malým zpožděním
@@ -79,9 +79,9 @@ class OigCloudChmuSensor(OigCloudSensor):
                         "chmu_warning_data",
                         self._last_warning_data,
                     )
-                _LOGGER.info(
-                    f"🌦️ Loaded warning data from storage (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}), skipping immediate fetch"
-                )
+            _LOGGER.debug(
+                f"🌦️ Loaded warning data from storage (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}), skipping immediate fetch"
+            )
 
     async def _load_persistent_data(self) -> None:
         """Načte data z persistentního úložiště."""
@@ -203,7 +203,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             # Označit jako dostupný
             self._attr_available = True
 
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"🌦️ ČHMÚ warnings updated: "
                 f"{warning_data['all_warnings_count']} total, "
                 f"{warning_data['local_warnings_count']} local, "
@@ -260,37 +260,57 @@ class OigCloudChmuSensor(OigCloudSensor):
         _LOGGER.warning("🌦️ No GPS configured, using Praha default")
         return (50.0875, 14.4213)
 
-    @property
-    def state(self) -> int:
-        """Vrátí severity level (0-4)."""
-        if not self._last_warning_data:
-            # Pokud nemáme data z úložiště, zkusíme z coordinatoru
-            if hasattr(self.coordinator, "chmu_warning_data"):
-                self._last_warning_data = self.coordinator.chmu_warning_data
+    def _get_warning_data(self) -> Optional[Dict[str, Any]]:
+        if self._last_warning_data:
+            return self._last_warning_data
+        if hasattr(self.coordinator, "chmu_warning_data"):
+            data = getattr(self.coordinator, "chmu_warning_data", None)
+            if isinstance(data, dict):
+                self._last_warning_data = data
+                return data
+        return None
 
-        if not self._last_warning_data:
+    @property
+    def available(self) -> bool:
+        """ČHMÚ warnings are available when we have cached data (even if coordinator isn't ready yet)."""
+        if self._get_warning_data():
+            return True
+        return super().available
+
+    def _compute_severity(self) -> int:
+        """Compute severity level (0-4)."""
+        data = self._get_warning_data()
+        if not data:
             return 0
 
-        # Global sensor - nejvyšší severity v ČR
         if self._sensor_type == "chmu_warning_level_global":
-            return self._last_warning_data.get("highest_severity_cz", 0)
+            return int(data.get("highest_severity_cz", 0) or 0)
 
-        # Local sensor - severity pro lokalitu
-        return self._last_warning_data.get("severity_level", 0)
+        # Local sensor - only treat as warning if there is at least 1 real alert
+        top = data.get("top_local_warning") or {}
+        event = (top.get("event") or "").strip()
+        if not event or event.startswith("Žádná") or event.startswith("Žádný"):
+            return 0
+        return int(data.get("severity_level", 0) or 0)
+
+    @property
+    def native_value(self) -> int:
+        return self._compute_severity()
+
+    # Backward-compat for older dashboards/HA versions
+    @property
+    def state(self) -> int:  # pragma: no cover - HA compatibility
+        return self._compute_severity()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Vrátí atributy senzoru."""
-        if not self._last_warning_data:
-            # Pokud nemáme data z úložiště, zkusíme z coordinatoru
-            if hasattr(self.coordinator, "chmu_warning_data"):
-                self._last_warning_data = self.coordinator.chmu_warning_data
-
-        if not self._last_warning_data:
+        if not self._get_warning_data():
             return {
                 "warnings_count": 0,
                 "last_update": None,
                 "source": CHMU_CAP_FEED_SOURCE,
+                "all_warnings_details": [],
             }
 
         # Global sensor - všechna varování pro ČR
@@ -317,6 +337,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             attrs = {
                 "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
                 "all_warnings": all_warnings_limited,
+                "all_warnings_details": all_warnings_limited,
                 "warnings_truncated": len(all_warnings_raw) > 5,
                 "highest_severity": self._last_warning_data.get(
                     "highest_severity_cz", 0
@@ -420,6 +441,7 @@ class OigCloudChmuSensor(OigCloudSensor):
                 "instruction": "",
                 "warnings_count": 0,
                 "all_warnings": [],
+                "all_warnings_details": [],
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
             }

@@ -1880,7 +1880,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             (CBB_MODE_HOME_UPS, "HOME_UPS"),
         ]
 
-        _LOGGER.info(
+        _LOGGER.debug(
             f"🔍 Calculating 4 baselines: physical_min={physical_min_capacity:.2f} kWh "
             f"({physical_min_capacity / max_capacity * 100:.0f}%)"
         )
@@ -1908,7 +1908,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     f"({result['planning_violations']} violations)"
                 )
 
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"  {mode_name}: cost={result['total_cost']:.2f} Kč{penalty_info}, "
                 f"grid_import={result['grid_import_kwh']:.2f} kWh, "
                 f"final_battery={result['final_battery_kwh']:.2f} kWh, "
@@ -2771,8 +2771,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             (cheap_price_threshold, should_skip_target_charging)
         """
         if is_balancing_mode:
-            _LOGGER.info(
-                "🔋 Balancing mode - skipping economic checks (MUST charge to 100%)"
+            self._log_rate_limited(
+                "balancing_skip_economics",
+                "debug",
+                "🔋 Balancing mode - skipping economic checks (MUST charge to 100%)",
+                cooldown_s=3600.0,
             )
             return None, False
 
@@ -2789,10 +2792,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_price = 0
             max_price = 0
 
-        _LOGGER.info(
-            f"💰 Price analysis: avg={avg_price:.2f} Kč/kWh, "
-            f"cheap_threshold (P{cheap_percentile})={cheap_price_threshold:.2f} Kč/kWh, "
-            f"min={min_price:.2f}, max={max_price:.2f}"
+        self._log_rate_limited(
+            "price_analysis",
+            "debug",
+            "💰 Price analysis: avg=%.2f Kč/kWh, cheap_threshold (P%d)=%.2f Kč/kWh, min=%.2f, max=%.2f",
+            avg_price,
+            cheap_percentile,
+            cheap_price_threshold,
+            min_price,
+            max_price,
+            cooldown_s=3600.0,
         )
 
         if not needs_charging_for_minimum and needs_charging_for_target:
@@ -2807,17 +2816,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             required_cheap_intervals = int(deficit_kwh / max_charge_per_interval) + 1
 
             if len(cheap_intervals) < required_cheap_intervals:
-                _LOGGER.info(
-                    f"⚠️  Skipping target charging - not enough cheap hours: "
-                    f"need {required_cheap_intervals} intervals, have {len(cheap_intervals)} cheap intervals, "
-                    f"deficit={deficit_kwh:.2f} kWh"
+                self._log_rate_limited(
+                    "skip_target_not_enough_cheap",
+                    "debug",
+                    "Skipping target charging - not enough cheap hours: need=%d, have=%d, deficit=%.2f kWh",
+                    required_cheap_intervals,
+                    len(cheap_intervals),
+                    deficit_kwh,
+                    cooldown_s=900.0,
                 )
                 return cheap_price_threshold, True
 
-            _LOGGER.info(
-                f"✅ Target charging feasible in cheap hours: "
-                f"{len(cheap_intervals)} cheap intervals available, "
-                f"need {required_cheap_intervals} for {deficit_kwh:.2f} kWh"
+            self._log_rate_limited(
+                "target_feasible",
+                "debug",
+                "Target charging feasible in cheap hours: have=%d, need=%d, deficit=%.2f kWh",
+                len(cheap_intervals),
+                required_cheap_intervals,
+                deficit_kwh,
+                cooldown_s=900.0,
             )
 
         return cheap_price_threshold, False
@@ -3124,10 +3141,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 baselines=baselines,
             )
 
-        _LOGGER.info(
-            f"🔋 Charging decision: "
-            f"for_minimum={needs_charging_for_minimum}, "
-            f"for_target={needs_charging_for_target}"
+        self._log_rate_limited(
+            "charging_decision",
+            "debug",
+            "🔋 Charging decision: for_minimum=%s, for_target=%s",
+            needs_charging_for_minimum,
+            needs_charging_for_target,
+            cooldown_s=900.0,
         )
 
         # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
@@ -3329,15 +3349,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             opportunities_before_deadline.sort(key=lambda x: x["price"])
 
             additional_added = 0
-            for opp in opportunities_before_deadline[
-                :20
-            ]:  # Max 20 dodatečných intervalů
+            selected_additional = opportunities_before_deadline[:20]  # Max 20 dodatečných intervalů
+            for opp in selected_additional:
                 idx = opp["index"]
                 modes[idx] = CBB_MODE_HOME_UPS
                 additional_added += 1
-                _LOGGER.debug(
-                    f"  → [BALANCING-CHEAPEST] Interval {idx}, "
-                    f"price={opp['price']:.2f}, deficit={opp['deficit']:.2f} kWh"
+            if selected_additional:
+                prices = [float(o.get("price", 0) or 0) for o in selected_additional]
+                indices = [int(o.get("index", -1)) for o in selected_additional[:6]]
+                self._log_rate_limited(
+                    "balancing_additional_cheapest",
+                    "debug",
+                    "  → [BALANCING-CHEAPEST] added=%d price_range=%.2f..%.2f sample_idx=%s",
+                    additional_added,
+                    min(prices),
+                    max(prices),
+                    indices,
+                    cooldown_s=900.0,
                 )
 
             # Priorita 3: HOLDING period - HOME UPS po celou dobu držení
@@ -3359,10 +3387,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             ups_intervals_added = preferred_used + additional_added + holding_intervals
 
-            _LOGGER.warning(
-                f"⚡ BALANCING charging plan: preferred={preferred_used}, "
-                f"additional_cheapest={additional_added}, holding={holding_intervals}, "
-                f"total_UPS={ups_intervals_added}"
+            self._log_rate_limited(
+                "balancing_plan_summary",
+                "info",
+                "⚡ BALANCING charging plan: preferred=%d, additional_cheapest=%d, holding=%d, total_UPS=%d",
+                preferred_used,
+                additional_added,
+                holding_intervals,
+                ups_intervals_added,
+                cooldown_s=900.0,
             )
 
             # Feasibility check: Máme dost času na nabití?
@@ -3372,15 +3405,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             required_kwh = max(0, max_capacity - current_capacity)
 
             if total_charging_kwh < required_kwh * 0.95:  # Safety margin 5%
-                _LOGGER.error(
-                    f"⚠️  BALANCING WARNING: May NOT reach 100% by deadline! "
-                    f"Can charge {total_charging_kwh:.2f} kWh, need {required_kwh:.2f} kWh. "
-                    f"Consider adding more intervals or starting earlier."
+                self._log_rate_limited(
+                    "balancing_feasibility_fail",
+                    "warning",
+                    "BALANCING may NOT reach 100%% by deadline: can_charge=%.2f kWh need=%.2f kWh",
+                    total_charging_kwh,
+                    required_kwh,
+                    cooldown_s=1800.0,
                 )
             else:
-                _LOGGER.info(
-                    f"✅ Balancing feasibility OK: can charge {total_charging_kwh:.2f} kWh, "
-                    f"need {required_kwh:.2f} kWh"
+                self._log_rate_limited(
+                    "balancing_feasibility_ok",
+                    "debug",
+                    "✅ Balancing feasibility OK: can_charge=%.2f kWh need=%.2f kWh",
+                    total_charging_kwh,
+                    required_kwh,
+                    cooldown_s=1800.0,
                 )
 
         else:
@@ -3401,19 +3441,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if float(opp.get("price", 999) or 999) <= cheap_price_threshold
                 ]
 
-            for opp in filtered_opps[:20]:  # Max 20 nabíjecích intervalů (5h)
+            selected_opps = filtered_opps[:20]  # Max 20 nabíjecích intervalů (5h)
+            for opp in selected_opps:
                 idx = opp["index"]
                 price = opp["price"]
 
                 modes[idx] = CBB_MODE_HOME_UPS
                 ups_intervals_added += 1
-                _LOGGER.debug(
-                    f"  → [{charging_reason}] Interval {idx}: price={price:.2f}, deficit={opp['deficit']:.2f} kWh"
+            if selected_opps:
+                prices = [float(o.get("price", 0) or 0) for o in selected_opps]
+                indices = [int(o.get("index", -1)) for o in selected_opps[:6]]
+                self._log_rate_limited(
+                    "ups_plan_selected",
+                    "debug",
+                    "✅ Added %d HOME UPS intervals for %s; price_range=%.2f..%.2f sample_idx=%s",
+                    ups_intervals_added,
+                    charging_reason,
+                    min(prices),
+                    max(prices),
+                    indices,
+                    cooldown_s=900.0,
                 )
-
-            _LOGGER.info(
-                f"✅ Added {ups_intervals_added} HOME UPS intervals for {charging_reason} (charging enabled)"
-            )
 
         # PHASE 8: Enforce minimum mode duration (HOME UPS musí běžet min 30 min)
         min_duration = MIN_MODE_DURATION.get(MODE_LABEL_HOME_UPS, 2)
@@ -3429,6 +3477,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # PHASE 9: Transition optimization - merge blízké UPS intervaly
         # Pokud je gap jen 1 interval a cena gap < transition cost → merge
+        merged_gaps = 0
         i = 0
         while i < len(modes) - 2:
             if (
@@ -3452,10 +3501,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 if gap_cost < transition_cost_czk:
                     modes[i + 1] = CBB_MODE_HOME_UPS  # Merge gap
-                    _LOGGER.debug(
-                        f"🔀 Merged gap at interval {i + 1}: gap_cost={gap_cost:.2f} < transition_cost={transition_cost_czk:.2f}"
-                    )
+                    merged_gaps += 1
             i += 1
+        if merged_gaps:
+            self._log_rate_limited(
+                "merged_gaps",
+                "debug",
+                "🔀 Merged %d single-interval gaps between UPS blocks",
+                merged_gaps,
+                cooldown_s=900.0,
+            )
 
         # Count modes
         mode_counts = {
@@ -3464,10 +3519,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "HOME III": modes.count(CBB_MODE_HOME_III),
             "HOME UPS": modes.count(CBB_MODE_HOME_UPS),
         }
-        _LOGGER.info(
-            f"✅ Hybrid result: HOME I={mode_counts['HOME I']}, "
-            f"HOME II={mode_counts['HOME II']}, HOME III={mode_counts['HOME III']}, "
-            f"HOME UPS={mode_counts['HOME UPS']}"
+        self._log_rate_limited(
+            "hybrid_result_counts",
+            "debug",
+            "✅ Hybrid result: HOME I=%d, HOME II=%d, HOME III=%d, HOME UPS=%d",
+            mode_counts["HOME I"],
+            mode_counts["HOME II"],
+            mode_counts["HOME III"],
+            mode_counts["HOME UPS"],
+            cooldown_s=900.0,
         )
 
         # PHASE 2.10: Baselines already calculated at function start
@@ -4977,16 +5037,26 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Zkontroluj porušení
                 if battery_soc < min_capacity:
                     violation_index = i
-                    _LOGGER.info(
-                        f"⚠️ Iteration {iteration}: Violation at interval {i} "
-                        f"(battery={battery_soc:.2f} < min={min_capacity:.2f})"
+                    self._log_rate_limited(
+                        "postproc_violation",
+                        "debug",
+                        "⚠️ Post-proc violation at interval %d (battery=%.2f < min=%.2f), iteration=%d",
+                        i,
+                        battery_soc,
+                        min_capacity,
+                        iteration,
+                        cooldown_s=900.0,
                     )
                     break
 
             # 2. Pokud žádné porušení, hotovo!
             if violation_index is None:
-                _LOGGER.info(
-                    f"✅ Min capacity constraint satisfied after {iteration} iteration(s)"
+                self._log_rate_limited(
+                    "postproc_ok",
+                    "debug",
+                    "✅ Post-proc min capacity satisfied after %d iteration(s)",
+                    iteration,
+                    cooldown_s=900.0,
                 )
                 break
 
@@ -5021,8 +5091,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             charge_per_interval = 0.7  # kWh
             intervals_needed = int(np.ceil(deficit_kwh / charge_per_interval))
 
-            _LOGGER.info(
-                f"  Need {deficit_kwh:.2f} kWh → {intervals_needed} intervals of HOME UPS charging"
+            self._log_rate_limited(
+                "postproc_need_charge",
+                "debug",
+                "Post-proc needs %.2f kWh → %d HOME UPS intervals",
+                deficit_kwh,
+                intervals_needed,
+                cooldown_s=900.0,
             )
 
             # Změň módy v nejlevnějších intervalech
@@ -5034,8 +5109,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 optimal_timeline[idx]["mode_name"] = "HOME UPS"
                 changed_count += 1
 
-            _LOGGER.info(
-                f"  Changed {changed_count} intervals to HOME UPS (cheapest before violation)"
+            self._log_rate_limited(
+                "postproc_changed",
+                "debug",
+                "Post-proc changed %d intervals to HOME UPS (cheapest before violation)",
+                changed_count,
+                cooldown_s=900.0,
             )
 
         if iteration >= MAX_ITERATIONS:
