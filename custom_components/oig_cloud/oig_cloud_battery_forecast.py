@@ -12936,13 +12936,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         hourly_kw = data.get(hour_key, 0.0)
 
-        # 🔍 DEBUG: Log každý lookup během DP optimalizace
-        if timestamp.hour in [7, 8, 9, 10]:  # Ráno kdy by měl být solar
-            _LOGGER.info(
-                f"🔍 SOLAR LOOKUP: timestamp={timestamp.isoformat()}, "
-                f"hour_key={hour_key}, "
-                f"data_keys={list(data.keys())[:5]}, "
-                f"found_value={hourly_kw}"
+        # Keep solar lookup diagnostics strictly rate-limited to avoid log spam.
+        if timestamp.hour in (7, 8, 9, 10):
+            try:
+                keys_count = len(data)
+            except Exception:
+                keys_count = -1
+            self._log_rate_limited(
+                "solar_lookup_debug",
+                "debug",
+                "🔍 SOLAR LOOKUP: ts=%s hour_key=%s keys=%s value=%s",
+                timestamp.isoformat(),
+                hour_key,
+                keys_count,
+                hourly_kw,
+                cooldown_s=3600.0,
             )
 
         try:
@@ -14509,6 +14517,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             consumption_sensor = f"sensor.oig_{self._box_id}_actual_aco_p"
 
+            hass = self.hass or self._hass
+            if hass is None:
+                return []
+
             # Načíst ze statistics (hodinové průměry)
             from homeassistant.components.recorder.statistics import (
                 statistics_during_period,
@@ -14519,9 +14531,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
             end_time = dt_util.now()
 
-            stats = await self.hass.async_add_executor_job(
+            stats = await hass.async_add_executor_job(
                 statistics_during_period,
-                self.hass,
+                hass,
                 start_time,
                 end_time,
                 {consumption_sensor},
@@ -16098,45 +16110,76 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         try:
             # OPRAVA: Použít self.hass z CoordinatorEntity
             if not self.hass:
-                _LOGGER.warning(
-                    f"[GridChargingPlan] hass not available for offset {from_mode}→{to_mode}, using fallback 300s"
+                self._log_rate_limited(
+                    f"grid_offset_missing_hass_{from_mode}_{to_mode}",
+                    "debug",
+                    "[GridChargingPlan] hass not available for offset %s→%s, using fallback 300s",
+                    from_mode,
+                    to_mode,
+                    cooldown_s=3600.0,
                 )
                 return 300.0  # Fallback 5 minut
 
             # Získat config_entry přes coordinator
             config_entry = self.coordinator.config_entry
             if not config_entry:
-                _LOGGER.warning(
-                    f"[GridChargingPlan] No config_entry for offset {from_mode}→{to_mode}, using fallback 300s"
+                self._log_rate_limited(
+                    f"grid_offset_missing_entry_{from_mode}_{to_mode}",
+                    "debug",
+                    "[GridChargingPlan] No config_entry for offset %s→%s, using fallback 300s",
+                    from_mode,
+                    to_mode,
+                    cooldown_s=3600.0,
                 )
                 return 300.0
 
             entry_data = self.hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
             if not entry_data:
-                _LOGGER.warning(
-                    f"[GridChargingPlan] No entry data for offset {from_mode}→{to_mode}, using fallback 300s"
+                self._log_rate_limited(
+                    f"grid_offset_missing_entry_data_{from_mode}_{to_mode}",
+                    "debug",
+                    "[GridChargingPlan] No entry data for offset %s→%s, using fallback 300s",
+                    from_mode,
+                    to_mode,
+                    cooldown_s=3600.0,
                 )
                 return 300.0
 
             service_shield = entry_data.get("service_shield")
             if not service_shield or not hasattr(service_shield, "mode_tracker"):
-                _LOGGER.warning(
-                    f"[GridChargingPlan] ServiceShield or mode_tracker not available for offset {from_mode}→{to_mode}, using fallback 300s"
+                self._log_rate_limited(
+                    f"grid_offset_missing_tracker_{from_mode}_{to_mode}",
+                    "debug",
+                    "[GridChargingPlan] ServiceShield/mode_tracker not available for offset %s→%s, using fallback 300s",
+                    from_mode,
+                    to_mode,
+                    cooldown_s=3600.0,
                 )
                 return 300.0
 
             mode_tracker = service_shield.mode_tracker
             if not mode_tracker:
-                _LOGGER.warning(
-                    f"[GridChargingPlan] Mode tracker not initialized for offset {from_mode}→{to_mode}, using fallback 300s"
+                self._log_rate_limited(
+                    f"grid_offset_tracker_uninit_{from_mode}_{to_mode}",
+                    "debug",
+                    "[GridChargingPlan] Mode tracker not initialized for offset %s→%s, using fallback 300s",
+                    from_mode,
+                    to_mode,
+                    cooldown_s=3600.0,
                 )
                 return 300.0
 
             # Získat doporučený offset
             offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
 
-            _LOGGER.info(
-                f"[GridChargingPlan] ✅ Dynamic offset {from_mode}→{to_mode}: {offset_seconds}s (from tracker)"
+            self._log_rate_limited(
+                f"grid_offset_ok_{from_mode}_{to_mode}",
+                "debug",
+                "[GridChargingPlan] Dynamic offset %s→%s: %ss (from tracker)",
+                from_mode,
+                to_mode,
+                offset_seconds,
+                cooldown_s=3600.0,
             )
 
             return offset_seconds

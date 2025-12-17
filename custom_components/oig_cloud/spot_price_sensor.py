@@ -166,8 +166,10 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Aktualizace stavu senzoru při změně 15min intervalu."""
         _LOGGER.debug(f"[{self.entity_id}] Updating current 15min interval")
         self.async_write_ha_state()
-        # Trigger coordinator refresh aby se aktualizovaly všechny závislé senzory
-        await self.coordinator.async_request_refresh()
+        # Trigger coordinator refresh in background to avoid blocking the event loop
+        # and hitting HA warnings about slow state updates.
+        if self.hass and self.coordinator:
+            self.hass.async_create_task(self.coordinator.async_request_refresh())
 
     async def async_will_remove_from_hass(self) -> None:
         """Cleanup při odstranění senzoru."""
@@ -569,8 +571,10 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Aktualizace stavu senzoru při změně 15min intervalu."""
         _LOGGER.debug(f"[{self.entity_id}] Updating current 15min interval")
         self.async_write_ha_state()
-        # Trigger coordinator refresh aby se aktualizovaly všechny závislé senzory
-        await self.coordinator.async_request_refresh()
+        # Trigger coordinator refresh in background to avoid blocking the event loop
+        # and hitting HA warnings about slow state updates.
+        if self.hass and self.coordinator:
+            self.hass.async_create_task(self.coordinator.async_request_refresh())
 
     async def async_will_remove_from_hass(self) -> None:
         """Cleanup při odstranění senzoru."""
