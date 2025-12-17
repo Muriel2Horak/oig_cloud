@@ -3104,12 +3104,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # PHASE 3: Backward pass - kolik baterie potřebujeme na začátku každého intervalu
+        #
+        # IMPORTANT:
+        # - When we MUST charge to avoid hitting the HW minimum (physical_min),
+        #   the end requirement should be the HW minimum, not the user target.
+        #   Otherwise the algorithm effectively "sneaks" target charging into
+        #   MINIMUM charging and can schedule UPS in expensive hours.
+        required_end_capacity = (
+            physical_min_capacity if needs_charging_for_minimum else target_capacity
+        )
         required_battery, _deadline_index = self._compute_required_battery(
             n=n,
             current_capacity=current_capacity,
             max_capacity=max_capacity,
             min_capacity=physical_min_capacity,
-            target_capacity=target_capacity,
+            target_capacity=required_end_capacity,
             spot_prices=spot_prices,
             solar_forecast=solar_forecast,
             load_forecast=load_forecast,
