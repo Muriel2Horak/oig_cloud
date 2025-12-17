@@ -94,11 +94,19 @@ class BalancingManager:
     # Configuration parameter helpers
     def _get_holding_time_hours(self) -> int:
         """Get balancing holding time from config (default 3 hours)."""
-        return self._config_entry.options.get("balancing_holding_time", 3)
+        opts = self._config_entry.options
+        # Wizard/options key used in config_flow.py
+        if "balancing_hold_hours" in opts:
+            return int(opts.get("balancing_hold_hours") or 3)
+        # Legacy/internal key
+        return int(opts.get("balancing_holding_time") or 3)
 
     def _get_cycle_days(self) -> int:
         """Get balancing cycle days from config (default 7 days)."""
-        return self._config_entry.options.get("balancing_cycle_days", 7)
+        opts = self._config_entry.options
+        if "balancing_interval_days" in opts:
+            return int(opts.get("balancing_interval_days") or 7)
+        return int(opts.get("balancing_cycle_days") or 7)
 
     def _get_cooldown_hours(self) -> int:
         """Get balancing cooldown hours from config (default 24 hours)."""

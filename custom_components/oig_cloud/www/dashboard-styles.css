@@ -1,27 +1,3 @@
-/* Import CSS variables */
-@import url('css/variables.css');
-
-/* Import layout */
-@import url('css/02-layout.css');
-
-/* Import typography */
-@import url('css/03-typography.css');
-
-/* Import animations */
-@import url('css/utils/animations.css?v=20251215-013');
-
-/* Import button components */
-@import url('css/components/buttons.css');
-
-/* Import card components */
-@import url('css/components/cards.css');
-
-/* Import tiles components */
-@import url('css/components/tiles.css');
-
-/* Import modals & dialogs */
-@import url('css/components/modals.css');
-
 /* === DASHBOARD SPECIFIC STYLES === */
 
         /* Header */
@@ -542,6 +518,7 @@
             transform: var(--battery-transform);
             border-color: var(--battery-border);
             background: var(--battery-bg);
+            z-index: 3;
         }
 
         .battery:hover {

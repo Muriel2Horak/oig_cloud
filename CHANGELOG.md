@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: test workflow runs on `temp` and Sonar workflow validation fixed.
 - Hassfest: manifest/services/translations adjusted to pass validation.
 - Logging: reduced noisy debug output in runtime.
+- Dashboard: mobile load/render stabilized (non-blocking chart scripts, CSS loaded without chained `@import`).
+- Balancing: `battery_balancing` sensor state/attributes normalized (no `unknown` during planned balancing).
 
 ### Documentation
 
