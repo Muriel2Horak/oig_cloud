@@ -451,22 +451,36 @@ async function updateBatteryBalancingCard() {
         }
 
         const attrs = balancingData.attributes;
-        const status = balancingData.state || attrs.status || 'ok'; // ok, natural, opportunistic, forced, overdue
+        const rawState = balancingData.state;
+        const status =
+            rawState && rawState !== 'unknown' && rawState !== 'unavailable'
+                ? rawState
+                : (attrs.status || 'ok'); // ok, due_soon, critical, overdue, disabled
         const daysSince = attrs.days_since_last ?? null;
         const intervalDays = attrs.cycle_days ?? 7;
         const holdingHours = attrs.holding_hours ?? 3;
         const socThreshold = attrs.soc_threshold ?? 80;
         const lastBalancing = attrs.last_balancing ? new Date(attrs.last_balancing) : null;
         const planned = attrs.planned;
-        const currentState = attrs.current_state ?? 'standby'; // charging/balancing/planned/standby
+        const currentStateRaw = attrs.current_state ?? 'standby'; // charging/balancing/planned/standby
+        const currentState =
+            currentStateRaw && currentStateRaw !== 'unknown' && currentStateRaw !== 'unavailable'
+                ? currentStateRaw
+                : 'standby';
         const timeRemaining = attrs.time_remaining; // HH:MM
 
         // Získat cost tracking data
-        const costImmediate = attrs.cost_immediate_czk;
-        const costSelected = attrs.cost_selected_czk;
-        const costSavings = attrs.cost_savings_czk;
+        const costImmediate = Number.isFinite(Number(attrs.cost_immediate_czk))
+            ? Number(attrs.cost_immediate_czk)
+            : null;
+        const costSelected = Number.isFinite(Number(attrs.cost_selected_czk))
+            ? Number(attrs.cost_selected_czk)
+            : null;
+        const costSavings = Number.isFinite(Number(attrs.cost_savings_czk))
+            ? Number(attrs.cost_savings_czk)
+            : null;
 
-        console.log('[Balancing] Sensor data:', {
+        console.debug('[Balancing] Sensor data:', {
             state: status,
             daysSince,
             intervalDays,
@@ -658,12 +672,12 @@ async function updateBatteryBalancingCard() {
                 tooltipHTML += '</tr></thead>';
                 tooltipHTML += '<tbody>';
                 tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Vybraný plán:</td>';
-                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costSelected.toFixed(2)} Kč</td></tr>`;
-                if (costImmediate !== null && costImmediate !== undefined) {
+                tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costSelected !== null ? costSelected.toFixed(2) : '--'} Kč</td></tr>`;
+                if (costImmediate !== null) {
                     tooltipHTML += '<tr><td style="padding: 2px 4px; color: rgba(255,255,255,0.7);">Okamžitě:</td>';
                     tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costImmediate.toFixed(2)} Kč</td></tr>`;
                 }
-                if (costSavings && costSavings > 0) {
+                if (costSavings !== null && costSavings > 0) {
                     tooltipHTML += '<tr style="color: #4CAF50;"><td style="padding: 2px 4px;">Úspora:</td>';
                     tooltipHTML += `<td style="padding: 2px 4px; text-align: right;">${costSavings.toFixed(2)} Kč</td></tr>`;
                 }
@@ -677,10 +691,10 @@ async function updateBatteryBalancingCard() {
             plannedTimeShort.setAttribute('data-tooltip-html', tooltipHTML);
 
             // Zobrazení nákladů
-            if (costSelected !== null && costSelected !== undefined) {
+            if (costSelected !== null) {
                 // Použít cost tracking data z balancing senzoru
                 costValueShort.textContent = `${costSelected.toFixed(1)} Kč`;
-                if (costSavings && costSavings > 0) {
+                if (costSavings !== null && costSavings > 0) {
                     costValueShort.textContent += ` (-${costSavings.toFixed(1)} Kč)`;
                     costValueShort.title = `Vybraná cena: ${costSelected.toFixed(2)} Kč\nÚspora oproti okamžitému: ${costSavings.toFixed(2)} Kč`;
                     costValueShort.style.color = '#4CAF50'; // Zelená = úspora
