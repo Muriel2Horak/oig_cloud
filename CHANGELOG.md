@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
 - Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
 
+## [2.0.6-pre.4] - 2025-12-17
+
+### Changed
+
+- CI: test workflow runs on `temp` and Sonar workflow validation fixed.
+- Hassfest: manifest/services/translations adjusted to pass validation.
+- Logging: reduced noisy debug output in runtime.
+
+### Documentation
+
+- User docs expanded (data source, planner, statistics) and README updated (Cloud/Local data sources + screenshots).
+
 ## [2.0.6-pre.3] - 2025-12-16
 
 ### Changed
