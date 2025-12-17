@@ -370,18 +370,19 @@ async def async_setup_entry(  # noqa: C901
     # PERFORMANCE FIX: Collect all sensors in one list instead of calling async_add_entities 17 times
     all_sensors: List[Any] = []
 
-    # OPRAVA: Kontrola dostupnosti dat před vytvořením senzorů
+    # Do not block platform setup waiting for coordinator refresh.
+    # HA will warn if setup exceeds 10s; sensors can be registered immediately and will
+    # populate when coordinator/local entities become available.
     if coordinator.data is None:
-        _LOGGER.warning("Coordinator data is None during sensor setup, retrying...")
-        await coordinator.async_request_refresh()
-
-        if coordinator.data is None:
-            _LOGGER.error("Still no data from coordinator after refresh")
-            return
-
-    _LOGGER.debug(
-        f"Setting up sensors with coordinator data: {len(coordinator.data)} devices"
-    )
+        _LOGGER.debug("Coordinator data not ready during sensor setup; registering entities anyway")
+    else:
+        try:
+            _LOGGER.debug(
+                "Setting up sensors with coordinator data: %s devices",
+                len(coordinator.data),
+            )
+        except Exception:
+            _LOGGER.debug("Setting up sensors with coordinator data (device count unavailable)")
 
     # === CLEANUP PŘED REGISTRACÍ ===
     # POZN: Cleanup je vypnutý kvůli pomalému setupu (>10s)
@@ -1279,7 +1280,9 @@ async def async_setup_entry(  # noqa: C901
         _LOGGER.info(
             f"🚀 Registering {len(all_sensors)} sensors in one batch (PERFORMANCE OPTIMIZATION)"
         )
-        async_add_entities(all_sensors, True)
+        # Avoid update_before_add=True – it can trigger expensive first updates for hundreds
+        # of entities and cause HA "setup taking over 10 seconds" warnings.
+        async_add_entities(all_sensors, False)
         _LOGGER.info(f"✅ All {len(all_sensors)} sensors registered successfully")
     else:
         _LOGGER.warning("⚠️ No sensors were created during setup")
