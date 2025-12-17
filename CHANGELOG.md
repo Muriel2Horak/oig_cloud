@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local mode: discharge-today uses proxy counter (`tbl_batt_bat_and`) to match OIG Proxy totals.
 - Energy sensors: restore fallback uses entity state if attributes are missing (prevents `computed_batt_charge_energy_today` showing `0` after restart).
 
+## [2.0.6-pre.6] - 2025-12-17
+
+### Fixed
+
+- Local mode: charge-today maps 1:1 to proxy counter (`tbl_batt_bat_apd`) to match OIG Proxy totals.
+
 ## [2.0.6-pre.4] - 2025-12-17
 
 ### Changed
