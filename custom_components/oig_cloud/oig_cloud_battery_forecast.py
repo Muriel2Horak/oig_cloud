@@ -378,6 +378,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if self._auto_mode_switch_enabled():
             self._start_autonomy_watchdog()
 
+        # Restore last successful forecast output (so dashboard doesn't show 0 after restart)
+        # Source of truth is the precomputed storage which also includes timeline snapshot.
+        if self._precomputed_store:
+            try:
+                precomputed = await self._precomputed_store.async_load() or {}
+                timeline = precomputed.get("timeline_hybrid")
+                last_update = precomputed.get("last_update")
+                if isinstance(timeline, list) and timeline:
+                    self._timeline_data = timeline
+                    # Keep a copy as hybrid timeline if other code references it.
+                    setattr(self, "_hybrid_timeline", copy.deepcopy(timeline))
+                    if isinstance(last_update, str) and last_update:
+                        try:
+                            self._last_update = dt_util.parse_datetime(last_update) or dt_util.dt.datetime.fromisoformat(last_update)
+                        except Exception:
+                            self._last_update = dt_util.now()
+                    self._data_hash = self._calculate_data_hash(self._timeline_data)
+                    self.async_write_ha_state()
+                    _LOGGER.debug(
+                        "[BatteryForecast] Restored timeline from storage (%d points)",
+                        len(self._timeline_data),
+                    )
+            except Exception as err:
+                _LOGGER.debug("[BatteryForecast] Failed to restore precomputed data: %s", err)
+
         # Restore data z předchozí instance
         if last_state := await self.async_get_last_state():
             if last_state.attributes:
@@ -12469,7 +12494,34 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         state = self._hass.states.get(sensor_id)
 
         if not state:
-            # Entity may not be registered yet during startup; avoid spamming warnings.
+            # Entity may not be registered yet during startup.
+            # Fallback: use coordinator cached solar_forecast_data restored from storage.
+            cached = getattr(self.coordinator, "solar_forecast_data", None)
+            total_hourly = cached.get("total_hourly") if isinstance(cached, dict) else None
+            if isinstance(total_hourly, dict) and total_hourly:
+                today = dt_util.now().date()
+                tomorrow = today + timedelta(days=1)
+                today_total: Dict[str, float] = {}
+                tomorrow_total: Dict[str, float] = {}
+                for hour_str, watts in total_hourly.items():
+                    try:
+                        hour_dt = datetime.fromisoformat(hour_str)
+                        kw = round(float(watts) / 1000.0, 2)
+                        if hour_dt.date() == today:
+                            today_total[hour_str] = kw
+                        elif hour_dt.date() == tomorrow:
+                            tomorrow_total[hour_str] = kw
+                    except Exception:
+                        continue
+                self._log_rate_limited(
+                    "solar_forecast_fallback",
+                    "debug",
+                    "Solar forecast entity missing; using coordinator cached data (%s)",
+                    sensor_id,
+                    cooldown_s=900.0,
+                )
+                return {"today": today_total, "tomorrow": tomorrow_total}
+
             self._log_rate_limited(
                 "solar_forecast_missing",
                 "debug",
