@@ -194,6 +194,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
 
         # Local/hybrid energy breakdown (proxy counters)
+        if st == "computed_batt_charge_energy_today":
+            if not box:
+                return sorted(set(d for d in deps if d))
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
         if st == "computed_batt_charge_fve_energy_today":
             if not box:
                 return sorted(set(d for d in deps if d))
@@ -766,11 +770,13 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 f"sensor.oig_local_{box}_tbl_batt_bat_and"
             )
 
-        # Overrides requested for local/hybrid:
-        # - total today stays as integral (cloud logic)
+        # Overrides for local/hybrid:
+        # - total today maps 1:1 to proxy counter (tbl_batt_bat_apd)
         # - FVE today uses APD - AD (proxy counters)
         # - grid month/year should follow proxy counters; FVE month/year = total - grid
         if self._sensor_type == "computed_batt_charge_energy_today":
+            if apd is not None:
+                return round(float(apd), 3)
             return round(float(self._energy.get("charge_today", 0.0)), 3)
 
         # Discharge today: in local/hybrid use the proxy counter if present (integral can drift vs. counters).
