@@ -15907,6 +15907,26 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         # Cache pro UPS bloky z precomputed storage
         self._cached_ups_blocks: List[Dict[str, Any]] = []
 
+        # Local rate-limit cache for log messages (keeps HA logs clean)
+        self._log_rl_last: Dict[str, float] = {}
+
+    def _log_rate_limited(
+        self,
+        key: str,
+        level: str,
+        msg: str,
+        *args: Any,
+        cooldown_s: float = 3600.0,
+    ) -> None:
+        """Log at most once per cooldown for the given key."""
+        now = time.monotonic()
+        last = self._log_rl_last.get(key, 0.0)
+        if now - last < cooldown_s:
+            return
+        self._log_rl_last[key] = now
+        log_fn = getattr(_LOGGER, level, _LOGGER.debug)
+        log_fn(msg, *args)
+
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
