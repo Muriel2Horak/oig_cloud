@@ -8599,8 +8599,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._autonomy_switch_retry_unsub = async_call_later(
             self._hass, delay_seconds, _retry
         )
-        _LOGGER.debug(
-            "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds", delay_seconds
+        self._log_rate_limited(
+            "autonomy_switch_delay_sync",
+            "debug",
+            "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds",
+            delay_seconds,
+            cooldown_s=60.0,
         )
 
     def _schedule_forecast_retry(self, delay_seconds: float) -> None:
@@ -8793,9 +8797,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if self._auto_switch_ready_at:
             if now < self._auto_switch_ready_at:
                 wait_seconds = (self._auto_switch_ready_at - now).total_seconds()
-                _LOGGER.debug(
+                self._log_rate_limited(
+                    "autonomy_switch_startup_delay",
+                    "debug",
                     "[AutonomySwitch] Startup delay active (%.0fs remaining)",
                     wait_seconds,
+                    cooldown_s=60.0,
                 )
                 self._schedule_autonomy_switch_retry(wait_seconds)
                 return
