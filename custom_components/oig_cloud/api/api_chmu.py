@@ -52,7 +52,7 @@ class ChmuApi:
     """API klient pro ČHMÚ CAP XML bulletiny."""
 
     _AUTO_INDEX_RE = re.compile(
-        r'href="(?P<file>alert_cap_(?P<series>\\d+)_\\d+\\.xml)".*?\\s(?P<dt>\\d{2}-[A-Za-z]{3}-\\d{4} \\d{2}:\\d{2})\\s+\\d+',
+        r'href="(?P<file>alert_cap_(?P<series>\d+)_\d+\.xml)".*?\s(?P<dt>\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2})\s+\d+',
         re.IGNORECASE,
     )
 
