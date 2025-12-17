@@ -348,6 +348,36 @@ data:
 
 ---
 
+## 🧰 Další služby (dashboard / diagnostika)
+
+### 🌞 update_solar_forecast
+
+Manuálně aktualizuje data solární předpovědi (forecast.solar), bez ohledu na interval.
+
+```yaml
+service: oig_cloud.update_solar_forecast
+data: {}
+```
+
+### 🔁 check_balancing
+
+Spustí manuální kontrolu balancování (diagnostika) a vrátí výsledek v odpovědi služby.
+
+```yaml
+service: oig_cloud.check_balancing
+data:
+  box_id: "2206237016"   # volitelné
+  force: false          # volitelné
+```
+
+### 💾 save_dashboard_tiles / 📥 get_dashboard_tiles
+
+Používá OIG Dashboard pro synchronizaci „Vlastních dlaždic“ mezi zařízeními/prohlížeči.
+
+Poznámka: Běžný uživatel to typicky nemusí volat ručně – řeší to dashboard.
+
+---
+
 ## 🛡️ ServiceShield
 
 **Co je ServiceShield?**

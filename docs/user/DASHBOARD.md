@@ -10,9 +10,11 @@ Kompletní průvodce webovým energetickým dashboardem pro monitorování a ovl
 2. [Flow diagram](#flow-diagram)
 3. [Ovládací panel](#ovládací-panel)
 4. [ServiceShield fronta](#serviceshield-fronta)
-5. [Statistiky](#statistiky)
-6. [Mobilní zobrazení](#mobilní-zobrazení)
-7. [Tipy a triky](#tipy-a-triky)
+5. [Plánovač a automatický režim](#plánovač-a-automatický-režim)
+6. [Statistiky](#statistiky)
+7. [Vlastní dlaždice](#vlastní-dlaždice)
+8. [Mobilní zobrazení](#mobilní-zobrazení)
+9. [Tipy a triky](#tipy-a-triky)
 
 ---
 
@@ -427,6 +429,17 @@ Po rozbalení:
 
 ---
 
+## 🧠 Plánovač a automatický režim
+
+Pokud máte zapnutý plánovač (Battery forecast), dashboard navíc zobrazuje:
+
+- **timeline/plán** (kdy se očekává nabíjení ze sítě, kdy se šetří baterie na drahé hodiny apod.)
+- **toggle „Automatický režim“** – zapnutí/vypnutí automatického přepínání režimů podle plánu
+
+Detailní popis chování, zapnutí/vypnutí a technické pozadí: `./PLANNER.md`.
+
+---
+
 ## 📊 Statistiky
 
 Dole v dashboardu najdete klíčové statistiky:
@@ -452,6 +465,37 @@ Dole v dashboardu najdete klíčové statistiky:
 │ 🔔 Notifikace: 2 nepřečtené (1 chyba)   │
 └──────────────────────────────────────────┘
 ```
+
+### Predikce a metriky (pokud máte zapnuto)
+
+V sekci „Predikce a statistiky“ se typicky objevují:
+
+- **Efektivita baterie** (`sensor.oig_XXXXX_battery_efficiency`)
+- **Kvalita baterie / SoH** (`sensor.oig_XXXXX_battery_health`)
+- **Profiling spotřeby (72h)** (`sensor.oig_XXXXX_adaptive_load_profiles`)
+- **Balancování baterie** (`sensor.oig_XXXXX_battery_balancing`)
+
+Co přesně tyto metriky znamenají a jak se počítají: `./STATISTICS.md`.
+
+---
+
+## 🧩 Vlastní dlaždice
+
+Dashboard umí zobrazit „Vlastní dlaždice“ přímo ve flow diagramu (vlevo a vpravo).
+
+Co umí:
+
+- dlaždice mohou zobrazovat libovolné entity (stav + ikona + název),
+- můžete přidat i „tlačítkové“ dlaždice (volání služby / přepnutí entity),
+- konfigurace se ukládá do Home Assistant (aby se synchronizovala mezi prohlížeči) a zároveň do localStorage jako cache.
+
+Jak je nastavit:
+
+1. V ovládacím panelu otevřete sekci **📊 Vlastní dlaždice**.
+2. Nastavte počet dlaždic vlevo/vpravo (0–4) a případně sekci skryjte/zobrazte.
+3. Kliknutím na konkrétní dlaždici otevřete dialog a vyberte entitu / akci.
+
+Technicky dashboard používá služby `oig_cloud.get_dashboard_tiles` a `oig_cloud.save_dashboard_tiles` (viz `./SERVICES.md`).
 
 ---
 
@@ -528,6 +572,8 @@ Dashboard respektuje Home Assistant theme:
 - 🌙 Tmavý režim
 - ☀️ Světlý režim
 - 🎨 Vlastní barvy z vašeho theme
+
+Navíc můžete přizpůsobit i „Vlastní dlaždice“ (viz sekce `#vlastní-dlaždice`).
 
 ### 6. Sdílení
 

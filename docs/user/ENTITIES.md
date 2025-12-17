@@ -318,7 +318,17 @@ Výkupní cena: 1.50 Kč/kWh
 
 | Entity ID                           | Název            | Jednotka | Popis                   |
 | ----------------------------------- | ---------------- | -------- | ----------------------- |
-| `sensor.oig_XXXXX_battery_forecast` | Predikce baterie | -        | Předpověď stavu baterie |
+| `sensor.oig_XXXXX_battery_forecast` | Predikce baterie | -        | Předpověď stavu baterie (timeline v attributes) |
+
+**Související entity (plánovač / statistiky):**
+
+| Entity ID                                 | Název                         | Jednotka | Popis |
+| ----------------------------------------- | ----------------------------- | -------- | ----- |
+| `sensor.oig_XXXXX_grid_charging_planned`  | Plánované nabíjení ze sítě    | -        | Indikace + intervaly a cena v attributes |
+| `sensor.oig_XXXXX_battery_efficiency`     | Efektivita baterie (měsíc)    | %        | Round‑trip účinnost baterie |
+| `sensor.oig_XXXXX_battery_health`         | Kvalita baterie / SoH         | %        | Odhad kapacity/SoH z historie |
+| `sensor.oig_XXXXX_adaptive_load_profiles` | Adaptivní profily spotřeby    | -        | Profiling spotřeby a 72h predikce |
+| `sensor.oig_XXXXX_battery_balancing`      | Stav balancování baterie      | -        | Diagnostika balancování |
 
 **📊 Příklad hodnot:**
 
@@ -332,6 +342,9 @@ Předpověď zítra: 32.1 kWh
 - Plánování spotřeby
 - Automatizace nabíjení
 - Optimalizace podle předpovědi
+- Vysvětlení chování plánovače v dashboardu
+
+Podrobnosti: `./PLANNER.md` a `./STATISTICS.md`.
 
 ---
 

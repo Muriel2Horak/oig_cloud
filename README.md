@@ -130,9 +130,12 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 
 ### 👤 Pro Uživatele
 - **[Konfigurace](./docs/user/CONFIGURATION.md)** - Detailní nastavení integrace
+- **[Zdroj telemetrie](./docs/user/DATA_SOURCE.md)** - Cloud vs. lokální data (fallback, proxy)
 - **[Dashboard](./docs/user/DASHBOARD.md)** - Použití energetického dashboardu
+- **[Plánovač nabíjení](./docs/user/PLANNER.md)** - Battery forecast + automatický režim
 - **[Entity](./docs/user/ENTITIES.md)** - Seznam všech senzorů a ovladačů
 - **[Služby](./docs/user/SERVICES.md)** - Volání služeb pro řízení Battery Boxu
+- **[Statistiky a metriky](./docs/user/STATISTICS.md)** - Efektivita, SoH, profiling, balancování
 - **[ServiceShield™](./docs/user/SHIELD.md)** - Ochrana před nechtěnými změnami
 - **[Automatizace](./docs/user/AUTOMATIONS.md)** - Příklady automatizací
 - **[FAQ](./docs/user/FAQ.md)** - Časté dotazy

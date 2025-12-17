@@ -361,6 +361,34 @@ data:
   entry_id: "..."
 ```
 
+### ❌ Zdroj dat je pořád `cloud` (Local režim nefunguje)
+
+Pokud používáte `Local only` a přesto vidíte `sensor.oig_XXXXX_data_source = cloud`:
+
+1. Ověřte, že existují proxy status entity:
+   - `sensor.oig_local_oig_proxy_proxy_status_last_data`
+   - `sensor.oig_local_oig_proxy_proxy_status_box_device_id`
+2. Ověřte, že existují lokální telemetrické entity:
+   - `sensor.oig_local_<box_id>_*`
+3. Otevřete `sensor.oig_XXXXX_data_source` a zkontrolujte attributes:
+   - `reason` typicky řekne, jestli je problém „proxy missing/stale/mismatch“
+4. V konfiguraci integrace zkontrolujte:
+   - `Zdroj telemetrie` (cloud vs local)
+   - `Fallback na cloud po (minut)` (příliš nízká hodnota může způsobit časté fallbacky)
+
+Detailní vysvětlení režimů a fallback logiky: `./DATA_SOURCE.md`.
+
+### ❌ Automatický režim (plánovač) nic nepřepíná
+
+Pokud máte zapnutý plánovač, ale režimy se samy nemění:
+
+1. Zkontrolujte v dashboardu, že je **Automatický režim** opravdu zapnutý.
+2. Ověřte, že existuje `sensor.oig_XXXXX_battery_forecast` a má smysluplné attributes (timeline).
+3. Pokud používáte ServiceShield, podívejte se, jestli se ve frontě objevují volání `set_box_mode`.
+4. Pokud ServiceShield není zapnutý, zkontrolujte logy `custom_components.oig_cloud`.
+
+Podrobnosti: `./PLANNER.md`.
+
 ### ❌ Špatné hodnoty entit
 
 **Příčina:** Chyba v API nebo parsing.

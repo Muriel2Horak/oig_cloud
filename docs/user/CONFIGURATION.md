@@ -123,6 +123,17 @@ Integrace ověří, že se může připojit k vašemu OIG Cloud účtu. Pokud se
 
 ---
 
+### Zdroj telemetrie (cloud vs. lokální)
+
+V rekonfiguraci integrace můžete zvolit, odkud se má brát telemetrie:
+
+- **☁️ Cloud only** – vše se čte z OIG Cloud API.
+- **🏠 Local only (fallback na cloud při výpadku)** – primárně lokální entity, při výpadku lokální proxy dočasně cloud a po obnovení zpět.
+
+Podrobnosti (jaké entity jsou potřeba, jak funguje fallback a jak ověřit aktuální stav): `./DATA_SOURCE.md`.
+
+---
+
 ## ✨ Krok 5: Výběr funkcí
 
 Zde si vyberte, které pokročilé funkce chcete použít. Všechny můžete později změnit v nastavení integrace.
@@ -215,6 +226,16 @@ Zde si vyberte, které pokročilé funkce chcete použít. Všechny můžete poz
 - ❌ Nezajímají vás burz ovní ceny
 
 **💡 Doporučení:** Zapnuto pokud máte dynamickou cenu nebo chcete optimalizovat spotřebu
+
+---
+
+### 🔋 Plánovač nabíjení (Battery forecast) a automatický režim
+
+Pokud tuto část zapnete, integrace začne počítat plán/timeline a doplní související diagnostické entity (např. plánované nabíjení ze sítě, efektivita baterie, profily spotřeby).
+
+Volitelně můžete zapnout i **Automatické přepínání režimů podle plánu** – integrace pak bude sama volat `oig_cloud.set_box_mode` podle vypočteného plánu (doporučeno používat spolu se ServiceShield).
+
+Podrobnosti k chování plánovače, zapnutí/vypnutí auto režimu a vysvětlení metrik: `./PLANNER.md` a `./STATISTICS.md`.
 
 ---
 

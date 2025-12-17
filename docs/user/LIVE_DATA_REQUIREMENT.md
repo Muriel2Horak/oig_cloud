@@ -17,4 +17,4 @@ Integrace `oig_cloud` potřebuje v OIG Cloud mobilní aplikaci zapnutá **Živá
 ## Další kroky
 
 - Po zapnutí živých dat restartujte Home Assistant nebo reloadněte integraci.
-- Pokud problém přetrvává, viz `docs/user/TROUBLESHOOTING.md`.
+- Pokud problém přetrvává, viz `./TROUBLESHOOTING.md`.
