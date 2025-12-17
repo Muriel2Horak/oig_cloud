@@ -1317,8 +1317,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 _LOGGER.debug("Sensor not yet added to HA, skipping state write")
                 return
 
-            _LOGGER.info(
-                f"🔄 Writing HA state with consumption_summary: {self._consumption_summary}"
+            self._log_rate_limited(
+                "write_state_consumption_summary",
+                "debug",
+                "🔄 Writing HA state with consumption_summary: %s",
+                self._consumption_summary,
+                cooldown_s=900.0,
             )
             self.async_write_ha_state()
 
@@ -5195,9 +5199,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if optimal_timeline and len(optimal_timeline) > 0:
                 # Use DP's discretized initial SoC
                 battery_kwh = optimal_timeline[0].get("battery_soc", current_capacity)
-                _LOGGER.info(
-                    f"Timeline using DP discretized start: {battery_kwh:.2f} kWh "
-                    f"(vs parameter {current_capacity:.2f} kWh, delta={battery_kwh - current_capacity:+.2f} kWh)"
+                self._log_rate_limited(
+                    "dp_discretized_start",
+                    "debug",
+                    "Timeline using DP discretized start: %.2f kWh (vs %.2f kWh, delta=%+.2f kWh)",
+                    battery_kwh,
+                    current_capacity,
+                    battery_kwh - current_capacity,
+                    cooldown_s=900.0,
                 )
             else:
                 battery_kwh = current_capacity
@@ -5231,9 +5240,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 if balancing_manager:
                     balancing_plan_obj = balancing_manager.get_active_plan()
-                    _LOGGER.info(
-                        f"BalancingManager plan: exists={balancing_plan_obj is not None}, "
-                        f"active={balancing_plan_obj.active if balancing_plan_obj else 'N/A'}"
+                    self._log_rate_limited(
+                        "balancing_manager_plan_presence",
+                        "debug",
+                        "BalancingManager plan: exists=%s active=%s",
+                        balancing_plan_obj is not None,
+                        bool(getattr(balancing_plan_obj, "active", False))
+                        if balancing_plan_obj
+                        else False,
+                        cooldown_s=900.0,
                     )
 
                     if balancing_plan_obj and balancing_plan_obj.active:
@@ -5493,13 +5508,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Grid charging - normální logika (může být přepsána balancingem)
             grid_kwh = 0.0
 
-            # Debug první pár bodů A holding intervaly
-            if len(timeline) < 3 or (is_balancing_holding and len(timeline) < 30):
-                _LOGGER.info(
-                    f"Timeline point {len(timeline)}: {timestamp_str}, mode={interval_mode_name}, "
-                    f"battery_before={battery_kwh:.3f}, solar={solar_kwh:.3f}, "
-                    f"load={load_kwh:.3f}, grid={grid_kwh:.3f}, "
-                    f"balancing_charging={is_balancing_charging}, balancing_holding={is_balancing_holding}"
+            # Avoid per-interval INFO logging (can trigger HA "logging too frequently").
+            if len(timeline) < 2:
+                self._log_rate_limited(
+                    "timeline_point_sample",
+                    "debug",
+                    "Timeline sample[%d]: %s mode=%s battery=%.3f solar=%.3f load=%.3f balancing_chg=%s balancing_hold=%s",
+                    len(timeline),
+                    timestamp_str,
+                    interval_mode_name,
+                    battery_kwh,
+                    solar_kwh,
+                    load_kwh,
+                    is_balancing_charging,
+                    is_balancing_holding,
+                    cooldown_s=900.0,
                 )
 
             # BATTERY BALANCING: Nabíjení v levných hodinách + držení na 100%
@@ -5689,27 +5712,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
         )
 
-        # Optimalizace nabíjení ze sítě
-        # DŮLEŽITÉ: Pokud máme aktivní charging plan, NEVOLAT optimalizaci!
-        # Charging plan má prioritu před grid charging optimalizací
-        # DŮLEŽITÉ: Pokud máme DP optimalizaci, NEVOLAT grid charging optimalizaci!
-        # DP už určila optimální režimy včetně HOME UPS nabíjení
-        # MODE-AWARE: Grid charging optimalizace pouze v HOME_UPS režimu
-        has_dp_optimization = bool(dp_mode_lookup)
-        _LOGGER.debug(
-            f"Timeline before optimization: {len(timeline)} points, has_dp={has_dp_optimization}"
-        )
+        # End for price_point
 
+        # === Post-processing after timeline is built ===
+
+        # Optimalizace nabíjení ze sítě (apply once, after timeline is built)
+        has_dp_optimization = bool(dp_mode_lookup)
         if not active_plan and not has_dp_optimization:
             timeline = self._optimize_grid_charging(timeline, mode)
-            _LOGGER.debug(f"Timeline after optimization: {len(timeline)} points")
-        elif has_dp_optimization:
-            _LOGGER.info(
-                f"Skipping grid charging optimization - using DP optimal modes ({len(dp_mode_lookup)} intervals)"
-            )
         else:
-            _LOGGER.info(
-                f"Skipping grid charging optimization - active charging plan from {plan_requester}"
+            self._log_rate_limited(
+                "timeline_skip_grid_opt",
+                "debug",
+                "Skipping grid charging optimization (dp=%s active_plan=%s requester=%s)",
+                has_dp_optimization,
+                bool(active_plan),
+                plan_requester or "none",
+                cooldown_s=900.0,
             )
 
         # Uložit balancing cost info pro atributy
@@ -6350,10 +6369,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 "net_cost": round(net_cost, 2),
             }
 
-            _LOGGER.info(
-                f"[fetch_interval_from_history] {start_time.strftime('%Y-%m-%d %H:%M')} -> "
-                f"battery_soc={battery_soc}, battery_kwh={battery_kwh:.2f}, "
-                f"consumption={result['consumption_kwh']:.3f}, net_cost={result['net_cost']:.2f}"
+            self._log_rate_limited(
+                "fetch_interval_sample",
+                "debug",
+                "[fetch_interval_from_history] sample %s -> soc=%s kwh=%.2f cons=%.3f net=%.2f",
+                start_time.strftime("%Y-%m-%d %H:%M"),
+                battery_soc,
+                battery_kwh,
+                result["consumption_kwh"],
+                result["net_cost"],
+                cooldown_s=900.0,
             )
 
             return result
