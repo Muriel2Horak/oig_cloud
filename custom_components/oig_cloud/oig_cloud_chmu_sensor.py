@@ -332,8 +332,34 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Základní atributy z top_local_warning pro snadný přístup
         if top_warning:
+            def _regions_from_warning(w: Dict[str, Any]) -> list[str]:
+                regions: list[str] = []
+                try:
+                    for area in (w.get("areas") or []):
+                        desc = (area or {}).get("description")
+                        if isinstance(desc, str) and desc.strip():
+                            regions.append(desc.strip())
+                except Exception:
+                    regions = []
+                # unique + limit
+                out: list[str] = []
+                for r in regions:
+                    if r not in out:
+                        out.append(r)
+                    if len(out) >= 8:
+                        break
+                return out
+
+            def _trim_text(value: Any, limit: int = 220) -> str:
+                s = value if isinstance(value, str) else ""
+                s = s.strip()
+                if len(s) > limit:
+                    return s[: limit - 3] + "..."
+                return s
+
             # Seznam všech reálných varování (bez "Žádná..." a "Žádný výhled")
             all_local_events = []
+            all_warnings_details: list[dict[str, Any]] = []
 
             for w in self._last_warning_data.get("local_warnings", []):
                 event = w.get("event", "")
@@ -342,6 +368,19 @@ class OigCloudChmuSensor(OigCloudSensor):
                     continue
 
                 all_local_events.append(event)
+                # Provide compact details for the dashboard modal (limited to avoid 16KB attribute cap).
+                if len(all_warnings_details) < 5:
+                    all_warnings_details.append(
+                        {
+                            "event": event,
+                            "severity": w.get("severity", ""),
+                            "onset": w.get("onset"),
+                            "expires": w.get("expires"),
+                            "regions": _regions_from_warning(w),
+                            "description": _trim_text(w.get("description", "")),
+                            "instruction": _trim_text(w.get("instruction", "")),
+                        }
+                    )
 
             # Trim potentially large fields to stay below HA recorder attribute limits.
             desc = top_warning.get("description", "") or ""
@@ -363,6 +402,8 @@ class OigCloudChmuSensor(OigCloudSensor):
                 # Počty a přehled všech aktivních varování
                 "warnings_count": len(all_local_events),  # Jen reálné výstrahy
                 "all_warnings": all_local_events[:5],  # Max 5 názvů výstrah
+                # Structured detail list for dashboard modal
+                "all_warnings_details": all_warnings_details,
                 # Meta
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),

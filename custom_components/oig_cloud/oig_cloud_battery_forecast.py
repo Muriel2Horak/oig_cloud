@@ -5168,6 +5168,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Získat battery efficiency pro výpočty
         efficiency = self._get_battery_efficiency()
+        # Physical/HW minimum (invertor limit). Planning minimum is a soft/user floor.
+        physical_min_capacity = max_capacity * 0.20
 
         _LOGGER.debug(
             f"Starting calculation with capacity={battery_kwh:.2f} kWh, efficiency={efficiency:.3f}"
@@ -5422,6 +5424,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # UPS režim: spotřeba ze sítě (100% účinnost)
                     # Baterie roste jen díky solar + grid nabíjení
 
+                    grid_kwh = 0.0
                     # CRITICAL: V UPS režimu VŽDY nabíjíme z gridu (DP optimization rozhodla)
                     # DP módy jsou autoritativní - pokud je HOME UPS, nabíjíme!
                     config = self._get_config()
@@ -5436,47 +5439,48 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     net_energy = solar_kwh + grid_kwh
                     # load_kwh se NEODEČÍTÁ (jde ze sítě!)
+                    solar_to_battery = solar_kwh
                 else:
                     # Home I/II/III režim: spotřeba z baterie (s DC/AC losses)
                     # Solar nejprve pokrývá spotřebu (bez losses), pak nabíjí baterii
+                    grid_kwh = 0.0
                     if solar_kwh >= load_kwh:
                         # Solar pokrývá spotřebu + nabíjí baterii
                         solar_to_battery = solar_kwh - load_kwh
-                        net_energy = solar_to_battery + grid_kwh
+                        net_energy = solar_to_battery
                     else:
-                        # Solar nepokrývá spotřebu → vybíjíme z baterie (s losses!)
+                        # Solar nepokrývá spotřebu → vybíjíme z baterie (s losses) až do HW minima,
+                        # zbytek spotřeby jde ze sítě.
                         load_from_battery = load_kwh - solar_kwh
-                        battery_drain = (
-                            load_from_battery / efficiency
-                        )  # 0.882 → 12% více!
-                        net_energy = -battery_drain + grid_kwh
-
-                # Pro zobrazení v timeline: kolik soláru čistě přispělo (po pokrytí spotřeby)
-                solar_to_battery = max(0, solar_kwh - load_kwh)
+                        available_soc = max(0.0, battery_kwh - physical_min_capacity)
+                        usable_kwh = available_soc * efficiency
+                        discharge_kwh = min(load_from_battery, usable_kwh)
+                        try:
+                            soc_drop = discharge_kwh / efficiency if efficiency else discharge_kwh
+                        except Exception:
+                            soc_drop = discharge_kwh
+                        net_energy = -soc_drop
+                        grid_kwh = max(0.0, load_from_battery - discharge_kwh)
+                        solar_to_battery = 0.0
 
                 # Výpočet nové kapacity baterie
                 battery_kwh = battery_kwh + net_energy
 
-                # Clamp na rozsah [min_capacity..max_capacity]
-                # Planning minimum reprezentuje chování střídače: pod floor už spotřebu pokrývá síť.
                 if battery_kwh > max_capacity:
                     battery_kwh = max_capacity
-                elif battery_kwh < min_capacity:
-                    # Došlo by k podkročení floor → přičti deficit do grid_import a drž SoC na min.
-                    # battery_kwh deficit (SoC kWh) odpovídá cca deficit*efficiency energie do zátěže.
-                    shortfall_soc_kwh = min_capacity - battery_kwh
-                    try:
-                        grid_kwh += shortfall_soc_kwh * efficiency
-                    except Exception:
-                        pass
-                    battery_kwh = min_capacity
+                if battery_kwh < physical_min_capacity:
+                    battery_kwh = physical_min_capacity
+
+                # Soft warning: timeline dipped below planning floor (expected in some real-world cases).
+                if battery_kwh < min_capacity:
                     self._log_rate_limited(
-                        "timeline_floor_enforced",
+                        "timeline_below_planning_min",
                         "debug",
-                        "Timeline floor enforced (SoC %.2f kWh) at %s",
+                        "Timeline below planning floor: soc=%.2f < floor=%.2f at %s",
+                        battery_kwh,
                         min_capacity,
                         timestamp_str,
-                        cooldown_s=300.0,
+                        cooldown_s=900.0,
                     )
 
         # Avoid per-interval logging (can trigger HA "logging too frequently").
@@ -5492,40 +5496,40 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 net_energy,
             )
 
-            # Určit reason pro tento interval
-            reason = "normal"
-            if is_balancing_window:
-                if is_balancing_charging:
-                    reason = f"balancing_charging_{balancing_reason}"
-                elif is_balancing_holding:
-                    reason = f"balancing_holding_{balancing_reason}"
-                else:
-                    reason = f"balancing_{balancing_reason}"
+        # Určit reason pro tento interval
+        reason = "normal"
+        if is_balancing_window:
+            if is_balancing_charging:
+                reason = f"balancing_charging_{balancing_reason}"
+            elif is_balancing_holding:
+                reason = f"balancing_holding_{balancing_reason}"
+            else:
+                reason = f"balancing_{balancing_reason}"
 
-            # NOTE: interval_mode_num už je nastaven výše (před výpočtem baterie)
+        # NOTE: interval_mode_num už je nastaven výše (před výpočtem baterie)
 
-            # Přidat bod do timeline
-            # Phase 1.5: Lookup export price for this timestamp
-            export_price_czk = export_price_lookup.get(timestamp_str, 0)
+        # Přidat bod do timeline
+        # Phase 1.5: Lookup export price for this timestamp
+        export_price_czk = export_price_lookup.get(timestamp_str, 0)
 
-            timeline.append(
-                {
-                    "timestamp": timestamp_str,
-                    "spot_price_czk": price_point.get("price", 0),
-                    "export_price_czk": export_price_czk,  # Phase 1.5: Export (sell) price
-                    "battery_capacity_kwh": round(battery_kwh, 2),
-                    "solar_production_kwh": round(
-                        solar_kwh, 2
-                    ),  # CELKOVÝ solar (ne jen přebytek!)
-                    "solar_charge_kwh": round(
-                        solar_to_battery, 2
-                    ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
-                    "consumption_kwh": round(load_kwh, 2),
-                    "grid_charge_kwh": round(grid_kwh, 2),
-                    "mode": interval_mode_name,  # Použít optimální mode (ne jen UPS/HOME I)
-                    "reason": reason,
-                }
-            )
+        timeline.append(
+            {
+                "timestamp": timestamp_str,
+                "spot_price_czk": price_point.get("price", 0),
+                "export_price_czk": export_price_czk,  # Phase 1.5: Export (sell) price
+                "battery_capacity_kwh": round(battery_kwh, 2),
+                "solar_production_kwh": round(
+                    solar_kwh, 2
+                ),  # CELKOVÝ solar (ne jen přebytek!)
+                "solar_charge_kwh": round(
+                    solar_to_battery, 2
+                ),  # Přebytek do baterie (pro zpětnou kompatibilitu)
+                "consumption_kwh": round(load_kwh, 2),
+                "grid_charge_kwh": round(grid_kwh, 2),
+                "mode": interval_mode_name,  # Použít optimální mode (ne jen UPS/HOME I)
+                "reason": reason,
+            }
+        )
 
         # Optimalizace nabíjení ze sítě
         # DŮLEŽITÉ: Pokud máme aktivní charging plan, NEVOLAT optimalizaci!
