@@ -1,9 +1,10 @@
 {
   "domain": "oig_cloud",
   "name": "OIG Cloud (Čez Battery Box)",
-  "codeowners": ["@psimsa", "Muriel2Horak"],
+  "after_dependencies": ["recorder", "history"],
+  "codeowners": ["@psimsa", "@Muriel2Horak"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["http"],
   "documentation": "https://github.com/psimsa/oig_cloud",
   "homekit": {},
   "iot_class": "cloud_polling",
@@ -11,6 +12,5 @@
   "requirements": ["numpy>=1.24.0"],
   "ssdp": [],
   "version": "2.0.6-pre.3",
-  "zeroconf": [],
-  "homeassistant": "2024.1.0"
+  "zeroconf": []
 }
