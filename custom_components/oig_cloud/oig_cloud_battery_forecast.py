@@ -3025,7 +3025,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # PHASE 2: Rozhodnout zda potřebujeme nabíjet
-        needs_charging_for_minimum = min_reached < min_capacity
+        # Hard constraint is inverter HW minimum (~20% SoC), not planning/user minimum.
+        needs_charging_for_minimum = min_reached < physical_min_capacity + 0.01
         needs_charging_for_target = final_capacity < target_capacity
 
         # CRITICAL: Hard constraint vs soft constraint
@@ -3050,11 +3051,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         cheap_price_threshold = None
 
         # ECONOMIC CHECK: Target charging makes sense ONLY if it prevents future grid imports
-        # If battery doesn't drop below minimum with HOME I → NO economic benefit
+        # If battery doesn't drop below HW minimum with HOME I → NO economic benefit
         if needs_charging_for_target and not needs_charging_for_minimum:
             _LOGGER.info(
                 f"⊘ Skipping target charging - battery stays above minimum with HOME I "
-                f"(min_reached={min_reached:.2f} kWh >= min={min_capacity:.2f} kWh). "
+                f"(min_reached={min_reached:.2f} kWh >= hw_min={physical_min_capacity:.2f} kWh). "
                 f"Target charging would cost money with NO benefit (no grid imports prevented)."
             )
             # Return HOME I baseline (no charging)
@@ -3107,7 +3108,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             n=n,
             current_capacity=current_capacity,
             max_capacity=max_capacity,
-            min_capacity=min_capacity,
+            min_capacity=physical_min_capacity,
             target_capacity=target_capacity,
             spot_prices=spot_prices,
             solar_forecast=solar_forecast,
@@ -3121,7 +3122,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Pravidlo: HOME II/III jen když FVE > 0, jinak HOME I
 
         # Najít průměrnou cenu pro porovnání
-        avg_price = sum(sp.get("price", 0) for sp in spot_prices) / len(spot_prices)
+        avg_price = sum(float(sp.get("price", 0) or 0) for sp in spot_prices) / len(
+            spot_prices
+        )
 
         for i in range(n):
             try:
@@ -3219,7 +3222,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 battery += solar_kwh  # Vše do baterie
                 # Spotřeba je ze gridu, baterie se netýká
 
-            battery = max(0, min(battery, max_capacity))
+            # Clamp to realistic HW minimum (inverter limit).
+            battery = max(physical_min_capacity, min(battery, max_capacity))
 
         # PHASE 6: Seřadit charging opportunities podle ceny (vzestupně)
         charge_opportunities.sort(key=lambda x: x["price"])
@@ -3346,7 +3350,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # === NORMAL HYBRID MODE: Nejlevnější intervaly ===
             charging_reason = "MINIMUM" if needs_charging_for_minimum else "TARGET"
 
-            for opp in charge_opportunities[:20]:  # Max 20 nabíjecích intervalů (5h)
+            filtered_opps = charge_opportunities
+            # Target charging should happen only in cheap windows (e.g. night),
+            # otherwise it can charge during expensive peaks.
+            if (
+                charging_reason == "TARGET"
+                and cheap_price_threshold is not None
+                and not is_balancing_mode
+            ):
+                filtered_opps = [
+                    opp
+                    for opp in charge_opportunities
+                    if float(opp.get("price", 999) or 999) <= cheap_price_threshold
+                ]
+
+            for opp in filtered_opps[:20]:  # Max 20 nabíjecích intervalů (5h)
                 idx = opp["index"]
                 price = opp["price"]
 
