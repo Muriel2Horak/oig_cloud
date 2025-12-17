@@ -74,13 +74,20 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 cache_path = hass.config.path(".storage", "oig_ote_spot_prices.json")
                 self.ote_api = OteApi(cache_path=cache_path)
 
-                # OPRAVA: Načíst spot ceny z cache do koordinátoru ihned po inicializaci
-                if self.ote_api._last_data:
-                    self._spot_prices_cache = self.ote_api._last_data
-                    _LOGGER.info(
-                        "Loaded %d hours of cached spot prices from disk",
-                        self.ote_api._last_data.get("hours_count", 0),
-                    )
+                # Load cached spot prices asynchronously (avoid blocking file I/O in event loop)
+                async def _async_load_ote_cache() -> None:
+                    try:
+                        await self.ote_api.async_load_cached_spot_prices()
+                        if self.ote_api._last_data:
+                            self._spot_prices_cache = self.ote_api._last_data
+                            _LOGGER.info(
+                                "Loaded %d hours of cached spot prices from disk",
+                                self.ote_api._last_data.get("hours_count", 0),
+                            )
+                    except Exception as err:
+                        _LOGGER.debug("Failed to load OTE cache asynchronously: %s", err)
+
+                self.hass.async_create_task(_async_load_ote_cache())
 
                 # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
                 # OPRAVA: Použít zoneinfo místo pytz

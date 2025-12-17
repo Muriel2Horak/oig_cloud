@@ -5,6 +5,7 @@
 import json
 import logging
 import os
+import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, date, time, timezone
@@ -143,9 +144,8 @@ class OteApi:
         self.utc = ZoneInfo("UTC")
         self._cnb_rate = CnbRate()
         self._cache_path: Optional[str] = cache_path
-        self._load_cached_spot_prices()
 
-    def _load_cached_spot_prices(self) -> None:
+    def _load_cached_spot_prices_sync(self) -> None:
         if not self._cache_path:
             return
         try:
@@ -163,7 +163,14 @@ class OteApi:
         except Exception as err:
             _LOGGER.warning("Failed to load cached OTE spot prices: %s", err)
 
-    def _persist_cache(self) -> None:
+    async def async_load_cached_spot_prices(self) -> None:
+        """Load cache from disk without blocking the event loop."""
+        try:
+            await asyncio.to_thread(self._load_cached_spot_prices_sync)
+        except Exception as err:
+            _LOGGER.debug("Async cache load failed: %s", err)
+
+    def _persist_cache_sync(self) -> None:
         if not self._cache_path or not self._last_data:
             return
         try:
@@ -180,6 +187,13 @@ class OteApi:
                 json.dump(payload, cache_file)
         except Exception as err:
             _LOGGER.warning("Failed to persist OTE cache: %s", err)
+
+    async def async_persist_cache(self) -> None:
+        """Persist cache to disk without blocking the event loop."""
+        try:
+            await asyncio.to_thread(self._persist_cache_sync)
+        except Exception as err:
+            _LOGGER.debug("Async cache persist failed: %s", err)
 
     # ---------- interní utilitky ----------
 
@@ -505,7 +519,7 @@ class OteApi:
             if data:
                 self._last_data = data
                 self._cache_time = datetime.now(self.timezone)
-                self._persist_cache()
+                await self.async_persist_cache()
                 return data
 
         except Exception as e:

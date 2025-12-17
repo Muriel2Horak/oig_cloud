@@ -75,6 +75,9 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Při přidání do HA - nastavit tracking a stáhnout data."""
         await super().async_added_to_hass()
 
+        # Load cached OTE spot prices without blocking the event loop
+        await self._ote_api.async_load_cached_spot_prices()
+
         _LOGGER.info(
             f"[{self.entity_id}] 15min export price sensor added to HA - starting data fetch"
         )
@@ -471,6 +474,9 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
         await super().async_added_to_hass()
+
+        # Load cached OTE spot prices without blocking the event loop
+        await self._ote_api.async_load_cached_spot_prices()
 
         _LOGGER.info(
             f"[{self.entity_id}] 15min spot price sensor added to HA - starting data fetch"
@@ -935,6 +941,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
         await super().async_added_to_hass()
+
+        # Load cached OTE spot prices without blocking the event loop
+        await self._ote_api.async_load_cached_spot_prices()
 
         _LOGGER.info(
             f"[{self.entity_id}] Spot price sensor {self._sensor_type} added to HA - starting data fetch"

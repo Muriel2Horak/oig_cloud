@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Local mode: charge-today maps 1:1 to proxy counter (`tbl_batt_bat_apd`) to match OIG Proxy totals.
 
+## [2.0.6-pre.7] - 2025-12-17
+
+### Fixed
+
+- OTE cache: load/persist moved off the event loop (prevents HA warning “Detected blocking call to open … oig_cloud/api/ote_api.py”).
+
 ## [2.0.6-pre.4] - 2025-12-17
 
 ### Changed
