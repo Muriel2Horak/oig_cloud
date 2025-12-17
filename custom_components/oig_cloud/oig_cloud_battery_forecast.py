@@ -3794,7 +3794,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Nelze opravit (žádné dostupné intervaly)
                 self._log_rate_limited(
                     "planning_min_unfixable",
-                    "warning",
+                    "debug",
                     "⚠️ PLANNING_MIN violation @ interval %s cannot be fixed (no charging intervals available before, deficit=%.2f kWh)",
                     violation_index,
                     deficit_kwh,
@@ -3821,7 +3821,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Max iterace dosaženo
         self._log_rate_limited(
             "planning_min_max_iters",
-            "warning",
+            "debug",
             "⚠️ PLANNING_MIN validation: Reached max iterations (%s), some violations may remain",
             MAX_ITERATIONS,
             cooldown_s=3600.0,
@@ -4695,7 +4695,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             if total_cost > best_baseline_adjusted + 0.01:  # 0.01 Kč tolerance
                 self._log_rate_limited(
                     "hybrid_validation_bug",
-                    "warning",
+                    "debug",
                     "HYBRID validation failed: hybrid=%.2f Kč > best %s (%.2f Kč adjusted)%s",
                     total_cost,
                     best_baseline_name,
