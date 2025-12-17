@@ -213,13 +213,14 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity):
                 notification_manager = getattr(
                     self.coordinator, "notification_manager", None
                 )
-                _LOGGER.debug(
-                    f"[{self.entity_id}] Notification manager check: {notification_manager is not None}"
-                )
                 if notification_manager is None:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] Notification manager is None - notifications not initialized"
-                    )
+                    # Notifications are optional; avoid noisy warnings on startup.
+                    if not getattr(self, "_warned_notification_manager_missing", False):
+                        self._warned_notification_manager_missing = True
+                        _LOGGER.debug(
+                            "[%s] Notification manager not initialized yet",
+                            self.entity_id,
+                        )
                     return None
                 return notification_manager.get_latest_notification_message()
 

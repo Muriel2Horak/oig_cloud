@@ -231,6 +231,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._autonomy_switch_retry_unsub: Optional[Callable[[], None]] = None
         self._autonomy_watchdog_unsub: Optional[Callable[[], None]] = None
         self._autonomy_watchdog_interval: timedelta = timedelta(seconds=30)
+        self._forecast_retry_unsub: Optional[Callable[[], None]] = None
+
+        # Log throttling to prevent HA "logging too frequently" warnings
+        self._log_last_ts: Dict[str, float] = {}
 
         # Phase 2.5: DP Multi-Mode Optimization result
         self._mode_optimization_result: Optional[Dict[str, Any]] = None
@@ -315,6 +319,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.debug(
                 "⚠️ Autonomy storage will be initialized in async_added_to_hass()"
             )
+
+    def _log_rate_limited(
+        self,
+        key: str,
+        level: str,
+        message: str,
+        *args: Any,
+        cooldown_s: float = 300.0,
+    ) -> None:
+        """Log at most once per cooldown_s for a given key."""
+        now_ts = time.time()
+        last = self._log_last_ts.get(key, 0.0)
+        if now_ts - last < cooldown_s:
+            return
+        self._log_last_ts[key] = now_ts
+        logger = getattr(_LOGGER, level, None)
+        if callable(logger):
+            logger(message, *args)
 
     async def async_added_to_hass(self) -> None:  # noqa: C901
         """Při přidání do HA - restore persistent data."""
@@ -839,9 +861,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             max_capacity = self._get_max_battery_capacity()
             min_capacity = self._get_min_battery_capacity()
 
-            _LOGGER.info(
-                f"Battery capacities: current={current_capacity} kWh, "
-                f"max={max_capacity} kWh, min={min_capacity} kWh"
+            if current_capacity is None or max_capacity is None or min_capacity is None:
+                # During startup, sensors may not be ready yet. Retry shortly without spamming logs.
+                self._log_rate_limited(
+                    "forecast_missing_capacity",
+                    "debug",
+                    "Forecast prerequisites not ready (current=%s max=%s min=%s); retrying shortly",
+                    current_capacity,
+                    max_capacity,
+                    min_capacity,
+                    cooldown_s=120.0,
+                )
+                self._schedule_forecast_retry(10.0)
+                return
+
+            _LOGGER.debug(
+                "Battery capacities: current=%.2f kWh, max=%.2f kWh, min=%.2f kWh",
+                current_capacity,
+                max_capacity,
+                min_capacity,
             )
 
             _LOGGER.info("Calling _get_spot_price_timeline()...")
@@ -899,10 +937,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # NOVÉ: Získat balancing plán
             balancing_plan = self._get_balancing_plan()
 
-            if current_capacity is None:
-                _LOGGER.warning("Missing battery capacity data - cannot run forecast")
-                return
-
             if not spot_prices:
                 _LOGGER.warning(
                     "No spot prices available - forecast will use fallback prices"
@@ -917,9 +951,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             target_capacity = self._get_target_battery_capacity()
             current_soc_percent = self._get_current_battery_soc_percent()
 
-            _LOGGER.info(
-                f"🔋 Battery state: current={current_capacity:.2f} kWh ({current_soc_percent:.1f}%), "
-                f"total={max_capacity:.2f} kWh, min={min_capacity:.2f} kWh, target={target_capacity:.2f} kWh"
+            if target_capacity is None:
+                target_capacity = max_capacity
+            if current_soc_percent is None and max_capacity > 0:
+                current_soc_percent = (current_capacity / max_capacity) * 100.0
+
+            self._log_rate_limited(
+                "battery_state_summary",
+                "debug",
+                "Battery state: current=%.2f kWh (%.1f%%), total=%.2f kWh, min=%.2f kWh, target=%.2f kWh",
+                current_capacity,
+                float(current_soc_percent or 0.0),
+                max_capacity,
+                min_capacity,
+                target_capacity,
+                cooldown_s=600.0,
             )
 
             # Build load forecast list (kWh/15min for each interval)
@@ -2474,11 +2520,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             balancing_reason = balancing_plan.get("reason", "unknown")
             effective_target_capacity = max_capacity
 
-            _LOGGER.warning(
-                f"🔋 BALANCING MODE ACTIVE: reason={balancing_reason}, "
-                f"target=100%, deadline={charging_deadline.strftime('%H:%M')}, "
-                f"holding until {holding_end.strftime('%H:%M')}, "
-                f"preferred_intervals={len(preferred_charging_intervals)}"
+            self._log_rate_limited(
+                "balancing_mode_active",
+                "debug",
+                "🔋 BALANCING MODE ACTIVE: reason=%s, target=100%%, deadline=%s, holding until %s, preferred_intervals=%d",
+                balancing_reason,
+                charging_deadline.strftime("%H:%M"),
+                holding_end.strftime("%H:%M"),
+                len(preferred_charging_intervals),
+                cooldown_s=600.0,
             )
 
             return (
@@ -2579,14 +2629,23 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 battery_trajectory
             ):
                 min_reached = min(battery_trajectory[holding_end_index:])
-                _LOGGER.info(
-                    f"📊 Balancing: checking min from index {holding_end_index}/{len(battery_trajectory)} "
-                    f"(after holding_end {holding_end.strftime('%H:%M')}): min={min_reached:.2f} kWh"
+                self._log_rate_limited(
+                    "balancing_min_check",
+                    "debug",
+                    "📊 Balancing: checking min from index %d/%d (after holding_end %s): min=%.2f kWh",
+                    holding_end_index,
+                    len(battery_trajectory),
+                    holding_end.strftime("%H:%M"),
+                    min_reached,
+                    cooldown_s=600.0,
                 )
             else:
                 min_reached = min(battery_trajectory)
-                _LOGGER.warning(
-                    "⚠️ Balancing: holding_end_index not found or invalid, using full trajectory min"
+                self._log_rate_limited(
+                    "balancing_holding_end_index_missing",
+                    "debug",
+                    "Balancing: holding_end_index not found/invalid; using full trajectory min",
+                    cooldown_s=600.0,
                 )
         else:
             min_reached = min(battery_trajectory)
@@ -4460,16 +4519,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # VALIDATION: HYBRID must be <= best baseline (adjusted cost)
             if total_cost > best_baseline_adjusted + 0.01:  # 0.01 Kč tolerance
-                _LOGGER.warning(
-                    f"⚠️  HYBRID OPTIMIZATION BUG! HYBRID cost ({total_cost:.2f} Kč) > "
-                    f"best baseline {best_baseline_name} ({best_baseline_adjusted:.2f} Kč adjusted){penalty_info}. "
-                    f"This should NEVER happen!"
+                self._log_rate_limited(
+                    "hybrid_validation_bug",
+                    "warning",
+                    "HYBRID validation failed: hybrid=%.2f Kč > best %s (%.2f Kč adjusted)%s",
+                    total_cost,
+                    best_baseline_name,
+                    best_baseline_adjusted,
+                    penalty_info,
+                    cooldown_s=900.0,
                 )
             else:
-                _LOGGER.info(
-                    f"✅ HYBRID validation passed: {total_cost:.2f} Kč <= "
-                    f"{best_baseline_name} {best_baseline_adjusted:.2f} Kč adjusted{penalty_info} "
-                    f"(saves {savings_vs_best:.2f} Kč, {savings_percentage:.1f}%)"
+                self._log_rate_limited(
+                    "hybrid_validation_ok",
+                    "debug",
+                    "HYBRID validation ok: hybrid=%.2f Kč <= best %s (%.2f Kč adjusted)%s (saves %.2f Kč, %.1f%%)",
+                    total_cost,
+                    best_baseline_name,
+                    best_baseline_adjusted,
+                    penalty_info,
+                    savings_vs_best,
+                    savings_percentage,
+                    cooldown_s=900.0,
                 )
 
         return result
@@ -5384,13 +5455,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return timeline
 
-    def _get_total_battery_capacity(self) -> float:
+    def _get_total_battery_capacity(self) -> Optional[float]:
         """Získat CELKOVOU kapacitu baterie z API (box_prms.p_bat → kWh).
 
         Toto je FYZICKÁ celková kapacita baterie (0-100%).
         """
         if not self._hass:
-            return 15.36  # Default fallback
+            return None
+
+        # Prefer dedicated sensor (available in both cloud and local mode)
+        installed_sensor = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        installed_state = self._hass.states.get(installed_sensor)
+        if installed_state and installed_state.state not in ["unknown", "unavailable", None, ""]:
+            try:
+                # Stored as Wh (Wp) → convert to kWh
+                total_kwh = float(installed_state.state) / 1000.0
+                if total_kwh > 0:
+                    return total_kwh
+            except (ValueError, TypeError):
+                pass
 
         # Zkusit získat z PV data (box_prms.p_bat)
         pv_data_sensor = f"sensor.oig_{self._box_id}_pv_data"
@@ -5425,16 +5508,21 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except (ValueError, TypeError):
                 pass
 
-        _LOGGER.warning("Unable to get total battery capacity, using default 15.36 kWh")
-        return 15.36
+        self._log_rate_limited(
+            "battery_capacity_missing",
+            "debug",
+            "Battery total capacity not available yet; waiting for sensors",
+            cooldown_s=600.0,
+        )
+        return None
 
-    def _get_current_battery_soc_percent(self) -> float:
+    def _get_current_battery_soc_percent(self) -> Optional[float]:
         """Získat aktuální SoC v % z API (actual.bat_c).
 
         Toto je SKUTEČNÝ SoC% vůči celkové kapacitě (0-100%).
         """
         if not self._hass:
-            return 46.0  # Default fallback
+            return None
 
         # Hlavní sensor: batt_bat_c (Battery Percent z API)
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
@@ -5448,10 +5536,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             except (ValueError, TypeError):
                 _LOGGER.debug(f"Invalid SoC value: {state.state}")
 
-        _LOGGER.warning("Unable to get battery SoC%, using default 46%")
-        return 46.0
+        self._log_rate_limited(
+            "battery_soc_missing",
+            "debug",
+            "Battery SoC%% not available yet; waiting for sensors",
+            cooldown_s=600.0,
+        )
+        return None
 
-    def _get_current_battery_capacity(self) -> float:
+    def _get_current_battery_capacity(self) -> Optional[float]:
         """Získat aktuální kapacitu baterie v kWh.
 
         NOVÝ VÝPOČET: total_capacity × soc_percent / 100
@@ -5459,6 +5552,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         total = self._get_total_battery_capacity()
         soc_percent = self._get_current_battery_soc_percent()
+        if total is None or soc_percent is None:
+            return None
         current_kwh = total * soc_percent / 100.0
 
         _LOGGER.debug(
@@ -5466,7 +5561,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         return current_kwh
 
-    def _get_max_battery_capacity(self) -> float:
+    def _get_max_battery_capacity(self) -> Optional[float]:
         """Získat maximální kapacitu baterie (= total capacity).
 
         DEPRECATED: Kept for backwards compatibility.
@@ -5474,13 +5569,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         return self._get_total_battery_capacity()
 
-    def _get_min_battery_capacity(self) -> float:
+    def _get_min_battery_capacity(self) -> Optional[float]:
         """Získat minimální kapacitu baterie z config flow.
 
         NOVÝ VÝPOČET: min_percent × total_capacity
         (místo min_percent × usable_capacity)
         """
         total = self._get_total_battery_capacity()
+        if total is None:
+            return None
 
         if self._config_entry:
             min_percent = (
@@ -5501,12 +5598,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Default: 33% z total
         return total * 0.33
 
-    def _get_target_battery_capacity(self) -> float:
+    def _get_target_battery_capacity(self) -> Optional[float]:
         """Získat cílovou kapacitu baterie z config flow.
 
         NOVÝ: Target capacity pro DP optimalizaci (kWh).
         """
         total = self._get_total_battery_capacity()
+        if total is None:
+            return None
 
         if self._config_entry:
             target_percent = (
@@ -5928,7 +6027,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Vypočítat battery_kwh z SOC
             battery_kwh = 0.0
             if battery_soc is not None:
-                total_capacity = self._get_total_battery_capacity()
+                total_capacity = self._get_total_battery_capacity() or 0.0
                 if total_capacity > 0:
                     battery_kwh = (battery_soc / 100.0) * total_capacity
 
@@ -8303,8 +8402,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         def _retry(now: datetime) -> None:
             self._autonomy_switch_retry_unsub = None
-            if self._hass:
-                self._hass.async_create_task(self._update_autonomy_switch_schedule())
+            self._create_task_threadsafe(self._update_autonomy_switch_schedule)
 
         self._autonomy_switch_retry_unsub = async_call_later(
             self._hass, delay_seconds, _retry
@@ -8312,6 +8410,47 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         _LOGGER.debug(
             "[AutonomySwitch] Delaying auto-switch sync by %.0f seconds", delay_seconds
         )
+
+    def _schedule_forecast_retry(self, delay_seconds: float) -> None:
+        if not self._hass or delay_seconds <= 0:
+            return
+        if self._forecast_retry_unsub:
+            return
+
+        def _retry(now: datetime) -> None:
+            self._forecast_retry_unsub = None
+            self._create_task_threadsafe(self.async_update)
+
+        self._forecast_retry_unsub = async_call_later(self._hass, delay_seconds, _retry)
+
+    def _create_task_threadsafe(self, coro_func, *args) -> None:
+        """Create an HA task safely from any thread without leaking an un-awaited coroutine."""
+        hass = getattr(self, "_hass", None) or getattr(self, "hass", None)
+        if not hass:
+            return
+
+        def _runner() -> None:
+            try:
+                hass.async_create_task(coro_func(*args))
+            except Exception as err:  # pragma: no cover - defensive
+                _LOGGER.debug(
+                    "Failed to schedule task %s: %s",
+                    getattr(coro_func, "__name__", str(coro_func)),
+                    err,
+                )
+
+        try:
+            loop = hass.loop
+            try:
+                running = asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is loop:
+                _runner()
+            else:
+                loop.call_soon_threadsafe(_runner)
+        except Exception:  # pragma: no cover - defensive
+            _runner()
 
     def _get_mode_switch_offset(self, from_mode: Optional[str], to_mode: str) -> float:
         """Return reaction-time offset based on shield tracker statistics."""
@@ -12320,46 +12459,49 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _get_solar_forecast(self) -> Dict[str, Any]:
         """Získat solární předpověď z solar_forecast senzoru."""
         if not self._hass:
-            _LOGGER.warning("🌞 SOLAR DEBUG: HomeAssistant instance not available")
+            return {}
+
+        # If solar forecast feature is disabled, don't warn/log.
+        if not (self._config_entry and self._config_entry.options.get("enable_solar_forecast", False)):
             return {}
 
         sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
         state = self._hass.states.get(sensor_id)
 
         if not state:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: Sensor {sensor_id} NOT FOUND in HA")
+            # Entity may not be registered yet during startup; avoid spamming warnings.
+            self._log_rate_limited(
+                "solar_forecast_missing",
+                "debug",
+                "Solar forecast sensor not found yet: %s",
+                sensor_id,
+                cooldown_s=900.0,
+            )
             return {}
 
         if not state.attributes:
-            _LOGGER.warning(f"🌞 SOLAR DEBUG: Sensor {sensor_id} has NO ATTRIBUTES")
+            self._log_rate_limited(
+                "solar_forecast_no_attrs",
+                "debug",
+                "Solar forecast sensor has no attributes yet: %s",
+                sensor_id,
+                cooldown_s=900.0,
+            )
             return {}
 
         # Načíst today a tomorrow data (správné názvy atributů)
         today = state.attributes.get("today_hourly_total_kw", {})
         tomorrow = state.attributes.get("tomorrow_hourly_total_kw", {})
 
-        # Enhanced debug logging
-        _LOGGER.info(f"🌞 SOLAR DEBUG: Retrieved solar forecast from {sensor_id}")
-        _LOGGER.info(f"🌞 SOLAR DEBUG: Today data points: {len(today)}")
-        _LOGGER.info(f"🌞 SOLAR DEBUG: Tomorrow data points: {len(tomorrow)}")
-
-        if today:
-            sample_keys = list(today.keys())[:3]
-            sample_values = [today[k] for k in sample_keys]
-            _LOGGER.info(
-                f"🌞 SOLAR DEBUG: Today sample: {dict(zip(sample_keys, sample_values))}"
-            )
-        else:
-            _LOGGER.warning("🌞 SOLAR DEBUG: TODAY DATA IS EMPTY! ❌")
-
-        if tomorrow:
-            sample_keys = list(tomorrow.keys())[:3]
-            sample_values = [tomorrow[k] for k in sample_keys]
-            _LOGGER.info(
-                f"🌞 SOLAR DEBUG: Tomorrow sample: {dict(zip(sample_keys, sample_values))}"
-            )
-        else:
-            _LOGGER.warning("🌞 SOLAR DEBUG: TOMORROW DATA IS EMPTY! ❌")
+        self._log_rate_limited(
+            "solar_forecast_loaded",
+            "debug",
+            "Solar forecast loaded: today=%d tomorrow=%d (%s)",
+            len(today) if isinstance(today, dict) else 0,
+            len(tomorrow) if isinstance(tomorrow, dict) else 0,
+            sensor_id,
+            cooldown_s=1800.0,
+        )
 
         return {"today": today, "tomorrow": tomorrow}
 
@@ -14863,8 +15005,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
         # Přepočítat forecast s novým plánem
-        if self._hass:
-            self._hass.async_create_task(self.async_update())
+        self._create_task_threadsafe(self.async_update)
 
         return True
 
@@ -14894,8 +15035,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._plan_status = "none"
 
         # Přepočítat forecast bez plánu
-        if self._hass:
-            self._hass.async_create_task(self.async_update())
+        self._create_task_threadsafe(self.async_update)
 
         return True
 

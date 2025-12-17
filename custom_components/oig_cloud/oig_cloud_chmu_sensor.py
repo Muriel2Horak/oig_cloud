@@ -211,7 +211,16 @@ class OigCloudChmuSensor(OigCloudSensor):
             )
 
         except Exception as e:
-            _LOGGER.error(f"🌦️ Error fetching ČHMÚ warning data: {e}", exc_info=True)
+            # ChmuApiError (including HTTP 404) is expected when endpoint changes; don't spam tracebacks.
+            try:
+                from .api.api_chmu import ChmuApiError
+
+                if isinstance(e, ChmuApiError):
+                    _LOGGER.warning("🌦️ ČHMÚ API error: %s", e)
+                else:
+                    raise
+            except Exception:
+                _LOGGER.error(f"🌦️ Error fetching ČHMÚ warning data: {e}", exc_info=True)
             # DŮLEŽITÉ: Při chybě API zachováváme stará data místo jejich mazání!
             if self._last_warning_data:
                 _LOGGER.warning(
@@ -286,22 +295,21 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Global sensor - všechna varování pro ČR
         if self._sensor_type == "chmu_warning_level_global":
-            # OPRAVA: Omezit velikost all_warnings aby nepřekročilo 16KB limit
+            # OPRAVA: Omezit velikost atributů aby nepřekročilo 16KB limit
             all_warnings_raw = self._last_warning_data.get("all_warnings", [])
-            # Limitovat na max 20 varování a zkrátit description
+            # Limitovat na max 5 varování a zkrátit description
             all_warnings_limited = []
-            for w in all_warnings_raw[:20]:  # Max 20 varování
+            for w in all_warnings_raw[:5]:  # Max 5 varování
                 warning_short = {
                     "event": w.get("event", ""),
                     "severity": w.get("severity", 0),
                     "onset": w.get("onset", ""),
                     "expires": w.get("expires", ""),
-                    "areas": w.get("areas", [])[:5],  # Max 5 oblastí
                 }
-                # Zkrátit description na max 200 znaků
+                # Zkrátit description na max 120 znaků
                 desc = w.get("description", "")
-                if len(desc) > 200:
-                    warning_short["description"] = desc[:197] + "..."
+                if len(desc) > 120:
+                    warning_short["description"] = desc[:117] + "..."
                 else:
                     warning_short["description"] = desc
                 all_warnings_limited.append(warning_short)
@@ -309,7 +317,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             attrs = {
                 "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
                 "all_warnings": all_warnings_limited,
-                "warnings_truncated": len(all_warnings_raw) > 20,
+                "warnings_truncated": len(all_warnings_raw) > 5,
                 "highest_severity": self._last_warning_data.get(
                     "highest_severity_cz", 0
                 ),
@@ -326,7 +334,6 @@ class OigCloudChmuSensor(OigCloudSensor):
         if top_warning:
             # Seznam všech reálných varování (bez "Žádná..." a "Žádný výhled")
             all_local_events = []
-            all_warnings_details = []
 
             for w in self._last_warning_data.get("local_warnings", []):
                 event = w.get("event", "")
@@ -336,23 +343,13 @@ class OigCloudChmuSensor(OigCloudSensor):
 
                 all_local_events.append(event)
 
-                # Extrahovat názvy regionů z areas
-                regions = []
-                for area in w.get("areas", []):
-                    area_desc = area.get("description", "")
-                    if area_desc:
-                        regions.append(area_desc)
-
-                # Detail pro každou výstrahu s regiony
-                all_warnings_details.append(
-                    {
-                        "event": event,
-                        "severity": w.get("severity", ""),
-                        "onset": w.get("onset"),
-                        "expires": w.get("expires"),
-                        "regions": regions,  # Seznam názvů regionů
-                    }
-                )
+            # Trim potentially large fields to stay below HA recorder attribute limits.
+            desc = top_warning.get("description", "") or ""
+            instr = top_warning.get("instruction", "") or ""
+            if len(desc) > 300:
+                desc = desc[:297] + "..."
+            if len(instr) > 300:
+                instr = instr[:297] + "..."
 
             attrs = {
                 # Hlavní informace z nejdůležitějšího varování (TOP priority)
@@ -361,14 +358,11 @@ class OigCloudChmuSensor(OigCloudSensor):
                 "onset": top_warning.get("onset"),  # Začátek TOP varování
                 "expires": top_warning.get("expires"),  # Konec TOP varování
                 "eta_hours": top_warning.get("eta_hours", 0),
-                "description": top_warning.get("description", ""),  # Popis TOP varování
-                "instruction": top_warning.get(
-                    "instruction", ""
-                ),  # Pokyny pro TOP varování
+                "description": desc,  # Popis TOP varování (truncated)
+                "instruction": instr,  # Pokyny pro TOP varování (truncated)
                 # Počty a přehled všech aktivních varování
                 "warnings_count": len(all_local_events),  # Jen reálné výstrahy
-                "all_warnings": all_local_events,  # Seznam názvů ["Silný vítr", "Nová sněhová pokrývka"]
-                "all_warnings_details": all_warnings_details,  # Detaily všech výstrah
+                "all_warnings": all_local_events[:5],  # Max 5 názvů výstrah
                 # Meta
                 "last_update": self._last_warning_data.get("last_update"),
                 "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
