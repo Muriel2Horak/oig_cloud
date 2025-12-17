@@ -88,6 +88,38 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except (ValueError, TypeError):
             return None
 
+    def _get_local_datetime(self, entity_id: str) -> Optional[datetime]:
+        """Read datetime-ish value from HA state, returning UTC datetime if parseable."""
+        if not getattr(self, "hass", None):
+            return None
+        st = self.hass.states.get(entity_id)
+        if not st or st.state in (None, "unknown", "unavailable", ""):
+            return None
+
+        value: Any = st.state
+        try:
+            if isinstance(value, (int, float)):
+                ts = float(value)
+                if ts > 1_000_000_000_000:  # ms epoch
+                    ts = ts / 1000.0
+                return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+            if isinstance(value, str):
+                s = value.strip()
+                if s.isdigit():
+                    ts = float(s)
+                    if ts > 1_000_000_000_000:  # ms epoch
+                        ts = ts / 1000.0
+                    return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+                dt = dt_util.parse_datetime(s)
+                if dt is None:
+                    dt = dt_util.dt.datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                return dt_util.as_utc(dt)
+        except Exception:
+            return None
+        return None
+
     def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[float]:
         """Get value from HA based on sensor definition (uses local_entity_id/suffix)."""
         try:
@@ -111,11 +143,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def _build_local_dependencies(self) -> list[str]:
         """Return list of entity_ids this computed sensor depends on."""
         deps: list[str] = []
-        if not self._box_id or self._box_id == "unknown":
-            return deps
-
-        box = self._box_id
         st = self._sensor_type
+        box: Optional[str] = self._box_id if self._box_id and self._box_id != "unknown" else None
 
         # Direct mapping from SENSOR_TYPES (local_entity_id/suffix)
         try:
@@ -125,7 +154,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             ent = cfg.get("local_entity_id")
             if not ent:
                 suffix = cfg.get("local_entity_suffix")
-                if suffix:
+                if suffix and box:
                     ent = f"sensor.oig_local_{box}_{suffix}"
             if ent:
                 deps.append(ent)
@@ -134,31 +163,45 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         # Special sums
         if st == "ac_in_aci_wtotal":
+            if not box:
+                return sorted(set(d for d in deps if d))
             base = f"sensor.oig_local_{box}_tbl_ac_in_aci_w"
             deps += [f"{base}r", f"{base}s", f"{base}t"]
         if st == "actual_aci_wtotal":
+            if not box:
+                return sorted(set(d for d in deps if d))
             base = f"sensor.oig_local_{box}_tbl_actual_aci_w"
             deps += [f"{base}r", f"{base}s", f"{base}t"]
         if st == "actual_fv_total":
+            if not box:
+                return sorted(set(d for d in deps if d))
             deps += [
                 f"sensor.oig_local_{box}_tbl_actual_fv_p1",
                 f"sensor.oig_local_{box}_tbl_actual_fv_p2",
             ]
         if st == "dc_in_fv_total":
+            if not box:
+                return sorted(set(d for d in deps if d))
             deps += [
                 f"sensor.oig_local_{box}_tbl_dc_in_fv_p1",
                 f"sensor.oig_local_{box}_tbl_dc_in_fv_p2",
             ]
         if st in ("batt_batt_comp_p_charge", "batt_batt_comp_p_discharge"):
+            if not box:
+                return sorted(set(d for d in deps if d))
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
 
         # Battery capacity helpers
         if st in ("usable_battery_capacity", "missing_battery_kwh", "remaining_usable_capacity"):
+            if not box:
+                return sorted(set(d for d in deps if d))
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
             deps.append(f"sensor.oig_local_{box}_tbl_batt_prms_bat_min")
 
         # Time to full/empty uses bat_p and bat_c
         if st in ("time_to_full", "time_to_empty"):
+            if not box:
+                return sorted(set(d for d in deps if d))
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
             deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
 
@@ -343,6 +386,22 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         # Speciální handling pro real_data_update senzor
         if self._sensor_type == "real_data_update":
+            # If local/hybrid mode is enabled, prefer the proxy "last data" timestamp.
+            try:
+                from .data_source import DATA_SOURCE_CLOUD_ONLY, get_effective_mode
+
+                entry = getattr(self.coordinator, "config_entry", None)
+                if entry is not None and get_effective_mode(self.hass, entry.entry_id) != DATA_SOURCE_CLOUD_ONLY:
+                    cfg = SENSOR_TYPES.get("real_data_update", {})
+                    ent = cfg.get("local_entity_id")
+                    if isinstance(ent, str):
+                        local_dt = self._get_local_datetime(ent)
+                        if local_dt is not None:
+                            self._last_update_time = dt_util.as_local(local_dt)
+                            return self._last_update_time.isoformat()
+            except Exception:
+                pass
+
             if self._check_for_real_data_changes(pv_data):
                 # Používáme lokální čas místo UTC
                 self._last_update_time = dt_util.now()
