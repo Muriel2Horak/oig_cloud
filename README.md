@@ -9,9 +9,18 @@
 
 Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Monitorování, řízení a automatizace vašeho domácího úložiště energie.
 
+Integrace umí čerpat telemetrii buď přímo z OIG Cloud, nebo z lokálního zdroje (OIG Proxy) pro rychlejší aktualizace a odolnější chod při krátkých výpadcích cloudu.
+
 ---
 
 ## 🚀 Hlavní Funkce
+
+### 🗂️ **Zdroje dat (Cloud / Local)**
+- **Cloud**: oficiální OIG Cloud API (standardní režim)
+- **Local (OIG Proxy)**: lokální zdroj telemetrie pro rychlejší refresh a fallback (typicky v LAN)
+
+📖 Podrobnosti: [Zdroj telemetrie](./docs/user/DATA_SOURCE.md)  
+🔗 OIG Proxy repo: https://github.com/Muriel2Horak/oig-proxy
 
 ### 📊 **Monitorování v reálném čase**
 - Aktuální výkon a stav baterie (SOC, napětí, teplota)
@@ -47,6 +56,15 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - Nabíjení baterie z FVE vs. ze sítě
 - Přesné výpočty pomocí Riemannovy integrace
 - Automatické resety statistik
+
+### 🗓️ **Plánovač nabíjení + predikce**
+Plánovač kombinuje spotové ceny, predikci FVE/spotřeby a cíle pro baterii. Výsledkem je plán režimů (typicky v 15min blocích) a možnost automatického přepínání režimu. Detailně včetně parametrů a chování: [Plánovač nabíjení](./docs/user/PLANNER.md).
+
+### ⚖️ **Balancování baterie**
+Podpora a vizualizace balancování baterie včetně přehledu stavu a doporučení, aby bylo jasné kdy a proč balancování probíhá. Viz: [Statistiky a metriky](./docs/user/STATISTICS.md).
+
+### 📉 **Efektivita nabíjení, profiling spotřeby, kvalita baterie (SoH)**
+Integrace počítá metriky z dlouhodobých statistik (HA recorder), aby bylo vidět jak efektivně se baterie nabíjí/vybíjí, jaký je profil spotřeby a odhad kvality baterie (SoH) z relevantních nabíjecích intervalů. Viz: [Statistiky a metriky](./docs/user/STATISTICS.md).
 
 ### 🔋 **Battery Health Monitoring**
 - Denní výpočet SoH% z historie v recorderu (na základě čistých nabíjecích intervalů)
@@ -142,6 +160,16 @@ Kompletní Home Assistant integrace pro ČEZ Battery Box přes OIG Cloud API. Mo
 - **[Troubleshooting](./docs/user/TROUBLESHOOTING.md)** - Řešení problémů
 - **[Živá data](./docs/user/LIVE_DATA_REQUIREMENT.md)** - Povinné nastavení v OIG Cloud aplikaci
 - **[ČHMÚ varování](./docs/user/CHMU_WARNINGS.md)** - Meteorologická varování (volitelný modul)
+
+---
+
+## 🖼️ Ukázky dashboardu
+
+### Energetické toky
+![Energetické toky](./docs/images/flow.png)
+
+### Predikce a statistiky
+![Predikce a statistiky](./docs/images/predikce.png)
 
 ---
 
