@@ -199,6 +199,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 return sorted(set(d for d in deps if d))
             deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
             deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
+        if st == "computed_batt_discharge_energy_today":
+            if not box:
+                return sorted(set(d for d in deps if d))
+            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_and")
         if st == "computed_batt_charge_fve_energy_month":
             if not box:
                 return sorted(set(d for d in deps if d))
@@ -725,12 +729,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             is_local_mode = False
 
         box = self._box_id if self._box_id and self._box_id != "unknown" else None
-        apd = ad = am = ay = None
+        apd = ad = am = ay = discharge_today_local = None
         if is_local_mode and box:
             apd = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
             ad = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
             am = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_am")
             ay = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ay")
+            discharge_today_local = self._get_local_number(
+                f"sensor.oig_local_{box}_tbl_batt_bat_and"
+            )
 
         # Overrides requested for local/hybrid:
         # - total today stays as integral (cloud logic)
@@ -738,6 +745,13 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         # - grid month/year should follow proxy counters; FVE month/year = total - grid
         if self._sensor_type == "computed_batt_charge_energy_today":
             return round(float(self._energy.get("charge_today", 0.0)), 3)
+
+        # Discharge today: in local/hybrid use the proxy counter if present (integral can drift vs. counters).
+        if (
+            self._sensor_type == "computed_batt_discharge_energy_today"
+            and discharge_today_local is not None
+        ):
+            return round(float(discharge_today_local), 3)
 
         if self._sensor_type == "computed_batt_charge_grid_energy_today" and ad is not None:
             return round(float(ad), 3)
