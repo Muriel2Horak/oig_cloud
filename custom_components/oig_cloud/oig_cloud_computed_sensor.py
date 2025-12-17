@@ -338,6 +338,33 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                     except (TypeError, ValueError):
                         continue
 
+                # Fallback: some previous versions didn't persist the full energy dict in attributes.
+                # If attributes look empty but the entity state is numeric, restore that into the right key.
+                if max_val <= 0.0:
+                    sensor_map = {
+                        "computed_batt_charge_energy_today": "charge_today",
+                        "computed_batt_discharge_energy_today": "discharge_today",
+                        "computed_batt_charge_energy_month": "charge_month",
+                        "computed_batt_discharge_energy_month": "discharge_month",
+                        "computed_batt_charge_energy_year": "charge_year",
+                        "computed_batt_discharge_energy_year": "discharge_year",
+                        "computed_batt_charge_fve_energy_today": "charge_fve_today",
+                        "computed_batt_charge_fve_energy_month": "charge_fve_month",
+                        "computed_batt_charge_fve_energy_year": "charge_fve_year",
+                        "computed_batt_charge_grid_energy_today": "charge_grid_today",
+                        "computed_batt_charge_grid_energy_month": "charge_grid_month",
+                        "computed_batt_charge_grid_energy_year": "charge_grid_year",
+                    }
+                    key = sensor_map.get(self._sensor_type)
+                    if key:
+                        try:
+                            v = float(old_state.state)
+                            if v > 0.0:
+                                self._energy[key] = v
+                                max_val = v
+                        except (TypeError, ValueError):
+                            pass
+
                 if max_val > 0.0:
                     _LOGGER.info(
                         f"[{self.entity_id}] 📥 Restoring from HA state (storage empty): max={max_val}"
