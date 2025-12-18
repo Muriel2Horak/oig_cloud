@@ -165,6 +165,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         config_entry: ConfigEntry,
         device_info: Dict[str, Any],
         hass: Optional[HomeAssistant] = None,
+        *,
+        side_effects_enabled: bool = True,
     ) -> None:
         """Initialize the battery forecast sensor."""
         super().__init__(coordinator)
@@ -175,6 +177,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Nastavit hass - priorita: parametr > coordinator.hass
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
+        # Guard side effects (service calls, timers) for temp instances created by coordinator.
+        self._side_effects_enabled: bool = bool(side_effects_enabled)
 
         # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
         try:
@@ -350,7 +354,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if self._auto_mode_switch_enabled():
             self._start_auto_switch_watchdog()
             # Keep scheduled set_box_mode calls aligned with the currently loaded timeline.
-            self._create_task_threadsafe(self._update_auto_switch_schedule)
+            if self._side_effects_enabled:
+                self._create_task_threadsafe(self._update_auto_switch_schedule)
 
         # Restore last successful forecast output (so dashboard doesn't show 0 after restart)
         # Source of truth is the precomputed storage which also includes timeline snapshot.
@@ -1216,7 +1221,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # Keep auto mode switching schedule in sync with the latest timeline.
             # This also cancels any previously scheduled events when switching is disabled.
-            self._create_task_threadsafe(self._update_auto_switch_schedule)
+            if self._side_effects_enabled:
+                self._create_task_threadsafe(self._update_auto_switch_schedule)
 
             # SIMPLE STORAGE: Update actual values každých 15 minut
             now = dt_util.now()
@@ -6215,7 +6221,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return entry.get("service_shield")
 
     async def _execute_mode_change(self, target_mode: str, reason: str) -> None:
-        if not self._hass:
+        if not self._hass or not self._side_effects_enabled:
             return
 
         now = dt_util.now()

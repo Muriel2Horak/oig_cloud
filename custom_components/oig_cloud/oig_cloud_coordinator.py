@@ -842,7 +842,12 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 f"🔍 Creating temp sensor with config_entry: {self.config_entry is not None}"
             )
             temp_sensor = OigCloudBatteryForecastSensor(
-                self, "battery_forecast", self.config_entry, device_info, self.hass
+                self,
+                "battery_forecast",
+                self.config_entry,
+                device_info,
+                self.hass,
+                side_effects_enabled=False,
             )
             _LOGGER.debug(
                 f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}"
