@@ -44,6 +44,8 @@ CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
 CONF_AUTO_MODE_SWITCH = "auto_mode_switch_enabled"
+# Backward-compatible option key used by older config flows/tests.
+CONF_AUTO_MODE_PLAN = "auto_mode_plan"
 
 # Battery Planning constants (BR-0.2)
 CONF_THRESHOLD_CHEAP_CZK = "threshold_cheap_czk"  # Threshold for "cheap" electricity
