@@ -96,12 +96,13 @@ class OnePlanner:
         # Repair loop: enforce planning minimum using UPS (<= max price).
         infeasible = False
         infeasible_reason: Optional[str] = None
+        recovery_done_idx: Optional[int] = None
 
         # If we already start below planning minimum, prioritise immediate recovery.
         # This is the only safe behavior when near HW floor; the classic "pick cheapest before violation"
         # strategy fails because the first violation is at index 0 (no prior intervals exist).
         if data.current_soc_kwh < planning_min_kwh - self.config.eps_kwh:
-            modes, infeasible, infeasible_reason = self._recover_from_below_min(
+            modes, infeasible, infeasible_reason, recovery_done_idx = self._recover_from_below_min(
                 data=data,
                 modes=modes,
                 planning_min_kwh=planning_min_kwh,
@@ -128,7 +129,17 @@ class OnePlanner:
             if modes_changed:
                 continue
 
-            violation_idx = _first_violation_index(soc_after, planning_min_kwh, self.config.eps_kwh)
+            violation_search_start = (recovery_done_idx + 1) if recovery_done_idx is not None else 0
+            violation_idx_rel = _first_violation_index(
+                soc_after[violation_search_start:],
+                planning_min_kwh,
+                self.config.eps_kwh,
+            )
+            violation_idx = (
+                (violation_search_start + violation_idx_rel)
+                if violation_idx_rel is not None
+                else None
+            )
             if violation_idx is None:
                 break
 
@@ -201,7 +212,7 @@ class OnePlanner:
         data: PlanInput,
         modes: List[int],
         planning_min_kwh: float,
-    ) -> Tuple[List[int], bool, Optional[str]]:
+    ) -> Tuple[List[int], bool, Optional[str], Optional[int]]:
         """Bootstrap recovery when current SoC is already below the planning minimum.
 
         Strategy:
@@ -213,7 +224,8 @@ class OnePlanner:
 
         for i in range(len(modes)):
             if soc >= planning_min_kwh - self.config.eps_kwh:
-                return modes, False, None
+                # recovery done at previous interval
+                return modes, False, None, max(0, i - 1)
 
             price = float(data.spot_prices[i].get("price", 0.0) or 0.0)
             if price > self.config.max_ups_price_czk:
@@ -224,6 +236,7 @@ class OnePlanner:
                         "Battery below planning minimum at start, but the earliest interval "
                         f"(index {i}) is above max_ups_price_czk={self.config.max_ups_price_czk}"
                     ),
+                    None,
                 )
 
             modes[i] = CBB_MODE_HOME_UPS
@@ -241,10 +254,14 @@ class OnePlanner:
             )
             soc = res.new_soc_kwh
 
+        if soc >= planning_min_kwh - self.config.eps_kwh:
+            return modes, False, None, len(modes) - 1
+
         return (
             modes,
             True,
             "Battery below planning minimum at start and could not recover within planning horizon",
+            None,
         )
 
     def _simulate(
