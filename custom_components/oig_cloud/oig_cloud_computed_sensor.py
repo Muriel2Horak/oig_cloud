@@ -4,7 +4,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
-from homeassistant.helpers.event import async_track_time_change, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_time_change,
+    async_track_time_interval,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -77,6 +81,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         # State-change listeners for HA entity dependencies
         self._local_dependencies: list[str] = []
         self._dep_unsub = None
+        self._local_tick_unsub = None
 
     def _get_local_number(self, entity_id: str) -> Optional[float]:
         """Read numeric value from HA state, returning None if missing/invalid."""
@@ -412,6 +417,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             self._dep_unsub = async_track_state_change_event(
                 self.hass, deps, _on_dep_change
             )
+            # Safety net: periodically refresh computed values that depend on local entities.
+            # This avoids "stuck" totals if we miss dependency events during HA startup.
+            if not self._local_tick_unsub:
+                self._local_tick_unsub = async_track_time_interval(
+                    self.hass,
+                    lambda _now: self.async_write_ha_state(),
+                    timedelta(seconds=30),
+                )
 
         # Po inicializaci (load/restore + dependency listeners) hned přepiš stav,
         # aby se uživatelům neukazovala dočasná nula po restartu.
@@ -441,11 +454,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     @property
     def state(self) -> Optional[Union[float, str]]:  # noqa: C901
-        if self.coordinator.data is None:
-            return None
-
-        data = self.coordinator.data
-        pv_data = list(data.values())[0]
+        # Prefer local-derived values even when coordinator payload is temporarily unavailable.
+        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else None
+        pv_data = None
+        if isinstance(data, dict) and data:
+            if self._box_id and self._box_id != "unknown" and self._box_id in data:
+                pv_data = data.get(self._box_id)
+            if pv_data is None:
+                pv_data = list(data.values())[0]
 
         # OPRAVA: Kontrola existence "actual" dat pouze tam kde jsou potřeba
         if (
@@ -457,7 +473,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 "missing_battery_kwh",
                 "remaining_usable_capacity",
             ]
-            and "actual" not in pv_data
+            and (not isinstance(pv_data, dict) or "actual" not in pv_data)
         ):
             _LOGGER.warning(
                 f"[{self.entity_id}] Live Data nejsou zapnutá v OIG aplikaci. "
@@ -483,7 +499,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             except Exception:
                 pass
 
-            if self._check_for_real_data_changes(pv_data):
+            if isinstance(pv_data, dict) and self._check_for_real_data_changes(pv_data):
                 # Používáme lokální čas místo UTC
                 self._last_update_time = dt_util.now()
                 _LOGGER.debug(
@@ -510,11 +526,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 wt = self._get_local_number(f"{base}t")
                 if wr is not None and ws is not None and wt is not None:
                     return float(wr + ws + wt)
-            return float(
-                pv_data["ac_in"]["aci_wr"]
-                + pv_data["ac_in"]["aci_ws"]
-                + pv_data["ac_in"]["aci_wt"]
-            )
+                # Fallback: sum our own per-phase sensors.
+                wr = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_wr")
+                ws = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_ws")
+                wt = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_wt")
+                if wr is not None and ws is not None and wt is not None:
+                    return float(wr + ws + wt)
+            if not isinstance(pv_data, dict):
+                return None
+            return float(pv_data["ac_in"]["aci_wr"] + pv_data["ac_in"]["aci_ws"] + pv_data["ac_in"]["aci_wt"])
         if self._sensor_type == "actual_aci_wtotal":
             # Nejprve zkusíme poskládat hodnotu přímo z HA entit (lokální senzory)
             if self._box_id and self._box_id != "unknown":
@@ -524,15 +544,17 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 wt = self._get_local_number(f"{base}t")
                 if wr is not None and ws is not None and wt is not None:
                     return float(wr + ws + wt)
+                # Fallback: sum our own per-phase sensors.
+                wr = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_wr")
+                ws = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_ws")
+                wt = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_wt")
+                if wr is not None and ws is not None and wt is not None:
+                    return float(wr + ws + wt)
 
             # Fallback na data v koordinatoru
-            if "actual" not in pv_data:
-                return 0.0
-            return float(
-                pv_data["actual"]["aci_wr"]
-                + pv_data["actual"]["aci_ws"]
-                + pv_data["actual"]["aci_wt"]
-            )
+            if not isinstance(pv_data, dict) or "actual" not in pv_data:
+                return None
+            return float(pv_data["actual"]["aci_wr"] + pv_data["actual"]["aci_ws"] + pv_data["actual"]["aci_wt"])
         if self._sensor_type == "dc_in_fv_total":
             if self._box_id and self._box_id != "unknown":
                 p1 = self._get_local_number(
@@ -1001,5 +1023,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if self._dep_unsub:
             try:
                 self._dep_unsub()
+            except Exception:
+                pass
+        if self._local_tick_unsub:
+            try:
+                self._local_tick_unsub()
             except Exception:
                 pass
