@@ -420,9 +420,12 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             # Safety net: periodically refresh computed values that depend on local entities.
             # This avoids "stuck" totals if we miss dependency events during HA startup.
             if not self._local_tick_unsub:
+                async def _periodic_refresh(_now: Any) -> None:
+                    self.async_write_ha_state()
+
                 self._local_tick_unsub = async_track_time_interval(
                     self.hass,
-                    lambda _now: self.async_write_ha_state(),
+                    _periodic_refresh,
                     timedelta(seconds=30),
                 )
 

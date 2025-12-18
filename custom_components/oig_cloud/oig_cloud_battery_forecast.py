@@ -349,6 +349,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if self._auto_mode_switch_enabled():
             self._start_auto_switch_watchdog()
+            # Keep scheduled set_box_mode calls aligned with the currently loaded timeline.
+            self._create_task_threadsafe(self._update_auto_switch_schedule)
 
         # Restore last successful forecast output (so dashboard doesn't show 0 after restart)
         # Source of truth is the precomputed storage which also includes timeline snapshot.
@@ -1211,6 +1213,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Data jsou už v coordinator.battery_forecast_data
                 # Grid charging sensor je závislý na coordinator update cycle
                 # NEMĚNÍME coordinator.data - jen přidáváme battery_forecast_data
+
+            # Keep auto mode switching schedule in sync with the latest timeline.
+            # This also cancels any previously scheduled events when switching is disabled.
+            self._create_task_threadsafe(self._update_auto_switch_schedule)
 
             # SIMPLE STORAGE: Update actual values každých 15 minut
             now = dt_util.now()
