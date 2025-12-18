@@ -37,6 +37,8 @@ from .const import (
     DOMAIN,
     CONF_AUTO_MODE_SWITCH,
 )  # PHASE 3: Import DOMAIN for BalancingManager access
+from .const import OTE_SPOT_PRICE_CACHE_FILE
+from .api.ote_api import OteApi
 
 # New single-planner implementation (one source of truth)
 from .planner import OnePlanner, PlanInput, PlannerConfig, BalancingInput
@@ -1109,6 +1111,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 opts = self._config_entry.options if self._config_entry else {}
                 max_ups_price_czk = float(opts.get("max_ups_price_czk", opts.get("max_price_conf", 10.0)))
+                efficiency = float(self._get_battery_efficiency())
 
                 planner = OnePlanner(
                     PlannerConfig(
@@ -9778,13 +9781,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         if not self.coordinator:
             _LOGGER.warning("Coordinator not available in _get_spot_price_timeline")
-            return []
-
-        # Read from coordinator data (Phase 1.5 - lean attributes)
-        spot_data = self.coordinator.data.get("spot_prices", {})
+            # Continue with fallbacks (sensor/OTE cache) if possible.
+            spot_data = {}
+        else:
+            # Read from coordinator data (Phase 1.5 - lean attributes)
+            spot_data = self.coordinator.data.get("spot_prices", {})  # type: ignore[union-attr]
 
         if not spot_data:
-            _LOGGER.warning("No spot_prices data in coordinator")
+            spot_data = self._get_spot_data_from_price_sensor(price_type="spot") or {}
+
+        if not spot_data and self._hass:
+            spot_data = await self._get_spot_data_from_ote_cache() or {}
+
+        if not spot_data:
+            _LOGGER.warning("No spot price data available for forecast")
             return []
 
         # spot_data format: {"prices15m_czk_kwh": {"2025-10-28T13:45:00": 2.29, ...}}
@@ -9792,8 +9802,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         raw_prices_dict = spot_data.get("prices15m_czk_kwh", {})
 
         if not raw_prices_dict:
-            _LOGGER.warning("No prices15m_czk_kwh in spot_data")
-            return []
+            # Coordinator payload may contain only hourly prices; try fallbacks that are known
+            # to carry 15-minute data.
+            fallback = self._get_spot_data_from_price_sensor(price_type="spot") or {}
+            if not fallback and self._hass:
+                fallback = await self._get_spot_data_from_ote_cache() or {}
+            raw_prices_dict = fallback.get("prices15m_czk_kwh", {}) if fallback else {}
+            if not raw_prices_dict:
+                _LOGGER.warning("No prices15m_czk_kwh in spot price data")
+                return []
 
         # Convert to timeline format WITH FINAL PRICES
         timeline = []
@@ -9830,14 +9847,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """
         if not self.coordinator:
             _LOGGER.warning("Coordinator not available in _get_export_price_timeline")
-            return []
+            spot_data = {}
+        else:
+            spot_data = self.coordinator.data.get("spot_prices", {})  # type: ignore[union-attr]
 
-        # Export prices jsou v coordinator data (stejně jako spot prices)
-        # OTE API je vrací v rámci get_spot_prices()
-        spot_data = self.coordinator.data.get("spot_prices", {})
+        # Prefer coordinator, then sensor internals, then OTE cache.
+        if not spot_data:
+            spot_data = self._get_spot_data_from_price_sensor(price_type="export") or {}
+        if not spot_data:
+            spot_data = self._get_spot_data_from_price_sensor(price_type="spot") or {}
+        if not spot_data and self._hass:
+            spot_data = await self._get_spot_data_from_ote_cache() or {}
 
         if not spot_data:
-            _LOGGER.warning("No spot_prices data in coordinator for export prices")
+            _LOGGER.warning("No spot price data available for export timeline")
             return []
 
         # Export prices jsou v "export_prices15m_czk_kwh" klíči (stejný formát jako spot)
@@ -9850,8 +9873,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             spot_prices_dict = spot_data.get("prices15m_czk_kwh", {})
 
             if not spot_prices_dict:
-                _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
-                return []
+                # Coordinator payload may carry only hourly prices; try 15m fallbacks.
+                fallback = self._get_spot_data_from_price_sensor(price_type="spot") or {}
+                if not fallback and self._hass:
+                    fallback = await self._get_spot_data_from_ote_cache() or {}
+                spot_prices_dict = (
+                    fallback.get("prices15m_czk_kwh", {}) if isinstance(fallback, dict) else {}
+                )
+                if not spot_prices_dict:
+                    _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
+                    return []
 
             # Get export pricing config from coordinator
             config_entry = self.coordinator.config_entry if self.coordinator else None
@@ -9884,6 +9915,74 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             f"Successfully loaded {len(timeline)} export price points from coordinator"
         )
         return timeline
+
+    def _get_spot_data_from_price_sensor(self, *, price_type: str) -> Optional[Dict[str, Any]]:
+        """Read internal 15min spot data from the spot/export price sensor entity.
+
+        This is a robust fallback when coordinator doesn't carry spot_prices (e.g. pricing disabled).
+        """
+        hass = self._hass
+        if not hass:
+            return None
+
+        if price_type == "export":
+            sensor_id = f"sensor.oig_{self._box_id}_export_price_current_15min"
+        else:
+            sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
+
+        try:
+            component = None
+            # HA 2024+: entity_components registry
+            entity_components = hass.data.get("entity_components") if isinstance(hass.data, dict) else None
+            if isinstance(entity_components, dict):
+                component = entity_components.get("sensor")
+
+            # Legacy fallback
+            if component is None:
+                component = hass.data.get("sensor") if isinstance(hass.data, dict) else None
+
+            entity_obj = None
+            if component is not None:
+                get_entity = getattr(component, "get_entity", None)
+                if callable(get_entity):
+                    entity_obj = get_entity(sensor_id)
+
+            if entity_obj is None and component is not None:
+                entities = getattr(component, "entities", None)
+                if isinstance(entities, list):
+                    for ent in entities:
+                        if getattr(ent, "entity_id", None) == sensor_id:
+                            entity_obj = ent
+                            break
+
+            if entity_obj is None:
+                return None
+
+            spot_data = getattr(entity_obj, "_spot_data_15min", None)
+            if isinstance(spot_data, dict) and spot_data:
+                return spot_data
+        except Exception as err:
+            _LOGGER.debug("Failed to read spot data from %s: %s", sensor_id, err)
+
+        return None
+
+    async def _get_spot_data_from_ote_cache(self) -> Optional[Dict[str, Any]]:
+        """Fallback: load spot prices via OTE cache (shared `.storage` file)."""
+        hass = self._hass
+        if not hass:
+            return None
+        try:
+            cache_path = hass.config.path(".storage", OTE_SPOT_PRICE_CACHE_FILE)
+            ote = OteApi(cache_path=cache_path)
+            try:
+                await ote.async_load_cached_spot_prices()
+                data = await ote.get_spot_prices()
+                return data if isinstance(data, dict) and data else None
+            finally:
+                await ote.close()
+        except Exception as err:
+            _LOGGER.debug("Failed to load OTE spot prices from cache: %s", err)
+            return None
 
     def _get_solar_forecast(self) -> Dict[str, Any]:
         """Získat solární předpověď z solar_forecast senzoru."""

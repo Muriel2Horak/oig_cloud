@@ -162,7 +162,7 @@ class DetailTabsDialog {
             const apiUrl = `/api/oig_cloud/battery_forecast/${this.boxId}/detail_tabs${query}`;
             console.log(`[DetailTabs] Fetching data from ${apiUrl}`);
 
-            const response = await fetch(apiUrl);
+            const response = await fetchWithAuth(apiUrl);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }

@@ -42,6 +42,29 @@ function getHAToken() {
     }
 }
 
+/**
+ * Wrapper around fetch() that attaches Home Assistant Bearer token when available.
+ * @param {string} url - Absolute or relative URL
+ * @param {object} options - Fetch options
+ * @returns {Promise<Response>}
+ */
+async function fetchWithAuth(url, options = {}) {
+    const token = getHAToken();
+    const mergedHeaders = {
+        ...(options.headers || {})
+    };
+
+    // Add Bearer token if not already provided.
+    if (token && !mergedHeaders.Authorization && !mergedHeaders.authorization) {
+        mergedHeaders.Authorization = `Bearer ${token}`;
+    }
+
+    return await fetch(url, {
+        ...options,
+        headers: mergedHeaders
+    });
+}
+
 // ============================================================================
 // SENSOR ID HELPERS
 // ============================================================================
@@ -226,7 +249,7 @@ async function getSensorStringSafe(entityId, silent = true) {
 async function fetchOIGAPI(endpoint, options = {}) {
     try {
         const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-        const response = await fetch(url, {
+        const response = await fetchWithAuth(url, {
             ...options,
             headers: {
                 'Content-Type': 'application/json',

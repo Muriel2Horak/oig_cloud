@@ -673,7 +673,7 @@
                 const entryId = new URLSearchParams(window.location.search).get('entry_id');
                 if (!entryId) return false; // safer default: keep hidden if we can't determine
                 try {
-                    const res = await fetch(`/api/oig_cloud/${entryId}/modules`);
+                    const res = await fetchWithAuth(`/api/oig_cloud/${entryId}/modules`);
                     if (!res.ok) return false;
                     const cfg = await res.json();
                     return !!(cfg && (cfg.enable_boiler || cfg.enable_auto));
@@ -1037,7 +1037,7 @@
                 const sn = INVERTER_SN;
 
                 days.forEach(day => {
-                    fetch(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
+                    fetchWithAuth(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
                         .then(r => r.ok ? r.json() : null)
                         .then(data => {
                             if (data) {

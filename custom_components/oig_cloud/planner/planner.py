@@ -97,7 +97,19 @@ class OnePlanner:
         infeasible = False
         infeasible_reason: Optional[str] = None
 
+        # If we already start below planning minimum, prioritise immediate recovery.
+        # This is the only safe behavior when near HW floor; the classic "pick cheapest before violation"
+        # strategy fails because the first violation is at index 0 (no prior intervals exist).
+        if data.current_soc_kwh < planning_min_kwh - self.config.eps_kwh:
+            modes, infeasible, infeasible_reason = self._recover_from_below_min(
+                data=data,
+                modes=modes,
+                planning_min_kwh=planning_min_kwh,
+            )
+
         for _ in range(self.config.max_iterations):
+            if infeasible:
+                break
             soc_before, soc_after, _flows = self._simulate(data, modes)
 
             # Battery-preservation rule near floor (day deficit): switch to HOME II to avoid discharging.
@@ -134,7 +146,7 @@ class OnePlanner:
                 )
                 break
 
-            self._apply_ups_with_min_duration(modes, candidate_idx)
+            self._apply_ups_with_min_duration(data, modes, candidate_idx)
 
         timeline = self._build_timeline(
             data=data,
@@ -152,17 +164,21 @@ class OnePlanner:
             infeasible_reason=infeasible_reason,
         )
 
-    def _apply_ups_with_min_duration(self, modes: List[int], idx: int) -> None:
+    def _apply_ups_with_min_duration(self, data: PlanInput, modes: List[int], idx: int) -> None:
         modes[idx] = CBB_MODE_HOME_UPS
         # Enforce UPS min duration forward where possible (simple).
         for j in range(idx + 1, min(len(modes), idx + self.config.ups_min_duration_intervals)):
+            price = float(data.spot_prices[j].get("price", 0.0) or 0.0)
+            if price > self.config.max_ups_price_czk:
+                continue
             modes[j] = CBB_MODE_HOME_UPS
 
     def _pick_ups_interval(self, *, data: PlanInput, modes: List[int], before_index: int) -> Optional[int]:
         candidates: List[Tuple[float, int]] = []
         preferred: set[datetime] = data.balancing.preferred_intervals if (data.balancing and data.balancing.preferred_intervals) else set()
 
-        for i in range(0, max(0, before_index)):
+        # Include the violation interval itself - charging "at" the violated interval can still repair it.
+        for i in range(0, min(len(modes), max(0, before_index) + 1)):
             if modes[i] == CBB_MODE_HOME_UPS:
                 continue
             price = float(data.spot_prices[i].get("price", 0.0) or 0.0)
@@ -178,6 +194,58 @@ class OnePlanner:
 
         candidates.sort(key=lambda x: x[0])
         return candidates[0][1]
+
+    def _recover_from_below_min(
+        self,
+        *,
+        data: PlanInput,
+        modes: List[int],
+        planning_min_kwh: float,
+    ) -> Tuple[List[int], bool, Optional[str]]:
+        """Bootstrap recovery when current SoC is already below the planning minimum.
+
+        Strategy:
+        - Prefer *earliest possible* UPS intervals (not cheapest), because we're already below the floor.
+        - Respect max_ups_price_czk (non-overridable).
+        """
+        soc = data.current_soc_kwh
+        charge_rate_kwh_15min = self.config.home_charge_rate_kw / 4.0
+
+        for i in range(len(modes)):
+            if soc >= planning_min_kwh - self.config.eps_kwh:
+                return modes, False, None
+
+            price = float(data.spot_prices[i].get("price", 0.0) or 0.0)
+            if price > self.config.max_ups_price_czk:
+                return (
+                    modes,
+                    True,
+                    (
+                        "Battery below planning minimum at start, but the earliest interval "
+                        f"(index {i}) is above max_ups_price_czk={self.config.max_ups_price_czk}"
+                    ),
+                )
+
+            modes[i] = CBB_MODE_HOME_UPS
+
+            res = simulate_interval(
+                mode=CBB_MODE_HOME_UPS,
+                solar_kwh=data.solar_kwh[i] if i < len(data.solar_kwh) else 0.0,
+                load_kwh=data.load_kwh[i] if i < len(data.load_kwh) else 0.125,
+                battery_soc_kwh=soc,
+                capacity_kwh=data.max_capacity_kwh,
+                hw_min_capacity_kwh=data.hw_min_kwh,
+                charge_efficiency=self.config.charge_efficiency,
+                discharge_efficiency=self.config.discharge_efficiency,
+                home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+            )
+            soc = res.new_soc_kwh
+
+        return (
+            modes,
+            True,
+            "Battery below planning minimum at start and could not recover within planning horizon",
+        )
 
     def _simulate(
         self,
@@ -266,8 +334,9 @@ class OnePlanner:
                     "spot_price_czk": round(spot_price, 6),
                     "export_price_czk": round(export_price, 6),
                     "net_cost": round(net_cost, 6),
-                    "solar_charge_kwh": round(max(0.0, res.battery_charge_kwh), 6),
-                    "grid_charge_kwh": round(max(0.0, res.grid_import_kwh - load_kwh) if mode == CBB_MODE_HOME_UPS else 0.0, 6),
+                    # Stacked chart values: raw kWh into battery by source (pre-efficiency).
+                    "solar_charge_kwh": round(max(0.0, res.solar_charge_kwh), 6),
+                    "grid_charge_kwh": round(max(0.0, res.grid_charge_kwh), 6),
                 }
             )
 
@@ -300,4 +369,3 @@ def _mode_name(mode: int) -> str:
     if mode == CBB_MODE_HOME_UPS:
         return "HOME UPS"
     return "HOME I"
-

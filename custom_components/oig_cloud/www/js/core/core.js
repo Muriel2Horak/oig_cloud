@@ -331,8 +331,10 @@ function init() {
     // Start number rolling animation observer
     initRollingNumbers();
 
-    // Phase 2.7: Initialize performance tracking chart
-    initPerformanceChart();
+    // Optional: legacy performance chart (removed)
+    if (typeof initPerformanceChart === 'function') {
+        initPerformanceChart();
+    }
 
     // OPRAVA: Počkat na dokončení layout načtení před voláním loadData()
     // Pokud byl načten custom layout, particles byly zastaveny
@@ -1063,9 +1065,9 @@ var updateModeRecommendations = window.DashboardPricing?.updateModeRecommendatio
 
 // === ANALYTICS (moved to dashboard-analytics.js) ===
 var initPerformanceChart = window.DashboardAnalytics?.initPerformanceChart;
-var updatePerformanceChart = window.DashboardAnalytics.updatePerformanceChart;
-var buildYesterdayAnalysis = window.DashboardAnalytics.buildYesterdayAnalysis;
-var renderYesterdayAnalysis = window.DashboardAnalytics.renderYesterdayAnalysis;
+var updatePerformanceChart = window.DashboardAnalytics?.updatePerformanceChart;
+var buildYesterdayAnalysis = window.DashboardAnalytics?.buildYesterdayAnalysis;
+var renderYesterdayAnalysis = window.DashboardAnalytics?.renderYesterdayAnalysis;
 
 // === EXPORT TILE RENDERING FUNCTIONS FOR TILES.JS ===
 window.renderEntityTile = renderEntityTile;

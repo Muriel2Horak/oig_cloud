@@ -520,7 +520,7 @@ class TimelineDialog {
 
         try {
             const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?plan=${plan}`;
-            const response = await fetch(apiUrl);
+            const response = await fetchWithAuth(apiUrl);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -655,7 +655,7 @@ class TimelineDialog {
 
         try {
             const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=${dayType}&plan=${plan}`;
-            const response = await fetch(apiUrl);
+            const response = await fetchWithAuth(apiUrl);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -3209,7 +3209,7 @@ async function buildExtendedTimeline() {
     const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=today`;
 
     try {
-        const response = await fetch(apiUrl);
+        const response = await fetchWithAuth(apiUrl);
         if (!response.ok) {
             console.error('[Extended Timeline] Failed to fetch data:', response.status);
             return;

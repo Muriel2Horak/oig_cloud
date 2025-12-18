@@ -31,6 +31,9 @@ class IntervalPhysicsResult:
     grid_export_kwh: float
     battery_charge_kwh: float
     battery_discharge_kwh: float
+    # Raw charging split (kWh flowing into battery before efficiency). Used for dashboard stacked charts.
+    grid_charge_kwh: float = 0.0
+    solar_charge_kwh: float = 0.0
 
 
 def simulate_interval(
@@ -56,6 +59,8 @@ def simulate_interval(
     grid_export = 0.0
     battery_charge = 0.0
     battery_discharge = 0.0
+    grid_charge_raw = 0.0
+    solar_charge_raw = 0.0
 
     # NIGHT optimization: solar == 0 → HOME I/II/III behave identically (discharge to HW min).
     if solar_kwh < 0.001 and mode in (CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III):
@@ -78,6 +83,8 @@ def simulate_interval(
             grid_export_kwh=0.0,
             battery_charge_kwh=0.0,
             battery_discharge_kwh=battery_discharge,
+            grid_charge_kwh=0.0,
+            solar_charge_kwh=0.0,
         )
 
     # HOME I (0) - day: solar→load, surplus→battery, deficit→battery (then grid if empty)
@@ -88,6 +95,7 @@ def simulate_interval(
             charge_amount = min(surplus, battery_space)
             if charge_amount > 0.001:
                 battery_charge = charge_amount
+                solar_charge_raw = charge_amount
                 soc = min(capacity_kwh, soc + charge_amount * charge_efficiency)
             remaining_surplus = surplus - charge_amount
             if remaining_surplus > 0.001:
@@ -114,6 +122,8 @@ def simulate_interval(
             grid_export_kwh=grid_export,
             battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
             battery_discharge_kwh=battery_discharge,
+            grid_charge_kwh=grid_charge_raw,
+            solar_charge_kwh=solar_charge_raw,
         )
 
     # HOME II (1) - day: solar→load, surplus→battery, deficit→GRID (battery untouched)
@@ -124,6 +134,7 @@ def simulate_interval(
             charge_amount = min(surplus, battery_space)
             if charge_amount > 0.001:
                 battery_charge = charge_amount
+                solar_charge_raw = charge_amount
                 soc = min(capacity_kwh, soc + charge_amount * charge_efficiency)
             remaining_surplus = surplus - charge_amount
             if remaining_surplus > 0.001:
@@ -137,6 +148,8 @@ def simulate_interval(
             grid_export_kwh=grid_export,
             battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
             battery_discharge_kwh=0.0,
+            grid_charge_kwh=grid_charge_raw,
+            solar_charge_kwh=solar_charge_raw,
         )
 
     # HOME III (2) - day: ALL solar→battery, load→GRID
@@ -145,6 +158,7 @@ def simulate_interval(
         charge_amount = min(solar_kwh, battery_space)
         if charge_amount > 0.001:
             battery_charge = charge_amount
+            solar_charge_raw = charge_amount
             soc = min(capacity_kwh, soc + charge_amount * charge_efficiency)
         remaining_solar = solar_kwh - charge_amount
         if remaining_solar > 0.001:
@@ -157,6 +171,8 @@ def simulate_interval(
             grid_export_kwh=grid_export,
             battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
             battery_discharge_kwh=0.0,
+            grid_charge_kwh=grid_charge_raw,
+            solar_charge_kwh=solar_charge_raw,
         )
 
     # HOME UPS (3): solar→battery, load→GRID, grid→battery (up to charge rate)
@@ -169,6 +185,7 @@ def simulate_interval(
             grid_import += grid_to_battery
             soc = min(capacity_kwh, soc + grid_to_battery * charge_efficiency)
             battery_charge += grid_to_battery
+            grid_charge_raw += grid_to_battery
 
         # 2) solar charging (after grid charge to respect space)
         battery_space = max(0.0, capacity_kwh - soc)
@@ -176,6 +193,7 @@ def simulate_interval(
         if solar_to_battery > 0.001:
             soc = min(capacity_kwh, soc + solar_to_battery * charge_efficiency)
             battery_charge += solar_to_battery
+            solar_charge_raw += solar_to_battery
 
         remaining_solar = solar_kwh - solar_to_battery
         if remaining_solar > 0.001:
@@ -190,6 +208,8 @@ def simulate_interval(
             grid_export_kwh=grid_export,
             battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
             battery_discharge_kwh=0.0,
+            grid_charge_kwh=grid_charge_raw,
+            solar_charge_kwh=solar_charge_raw,
         )
 
     # Unknown mode → behave like HOME I (safe)
@@ -204,4 +224,3 @@ def simulate_interval(
         discharge_efficiency=discharge_efficiency,
         home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
     )
-

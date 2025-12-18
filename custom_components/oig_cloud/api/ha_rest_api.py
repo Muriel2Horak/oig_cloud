@@ -844,14 +844,48 @@ class OIGCloudDetailTabsView(HomeAssistantView):
         plan_key = "hybrid"
 
         try:
-            # Find sensor entity
+            # STORAGE-FIRST: Serve from precomputed storage if available (fast path)
+            from homeassistant.helpers.storage import Store
+
+            store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+            precomputed_data: Optional[Dict[str, Any]] = None
+            try:
+                loaded: Optional[Dict[str, Any]] = await store.async_load()
+                if isinstance(loaded, dict):
+                    precomputed_data = loaded
+            except Exception as storage_error:
+                _LOGGER.warning(
+                    "Failed to read precomputed detail tabs data (fast path): %s",
+                    storage_error,
+                )
+
+            if precomputed_data:
+                detail_tabs = precomputed_data.get("detail_tabs") or precomputed_data.get(
+                    "detail_tabs_hybrid"
+                )
+                if detail_tabs:
+                    if tab and tab in ["yesterday", "today", "tomorrow"]:
+                        return web.json_response({tab: detail_tabs.get(tab, {})})
+                    return web.json_response(
+                        {
+                            "yesterday": detail_tabs.get("yesterday", {}),
+                            "today": detail_tabs.get("today", {}),
+                            "tomorrow": detail_tabs.get("tomorrow", {}),
+                        }
+                    )
+
+            # FALLBACK: Find sensor entity
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"
-            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+            component: Optional[EntityComponent] = (
+                hass.data.get("entity_components", {}).get("sensor")  # type: ignore[assignment]
+                if isinstance(hass.data.get("entity_components"), dict)
+                else None
+            )
+            if component is None:
+                component = hass.data.get("sensor")  # type: ignore[assignment]
 
             if not component:
-                return web.json_response(
-                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
-                )
+                return web.json_response({"error": SENSOR_COMPONENT_NOT_FOUND}, status=503)
 
             # Find entity by entity_id
             entity_obj = None
