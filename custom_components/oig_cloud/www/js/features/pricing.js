@@ -35,6 +35,34 @@ let pricingModeIconPluginRegistered = false;
 
 const pricingModeIconPlugin = {
     id: PRICING_MODE_ICON_PLUGIN_ID,
+    beforeLayout(chart, args, pluginOptions) {
+        // Reserve enough bottom space so the mode icon band never overlaps the X axis labels.
+        if (!pluginOptions || !chart?.options) {
+            return;
+        }
+
+        const axisBandPadding = pluginOptions.axisBandPadding ?? 10;
+        const axisBandHeight = pluginOptions.axisBandHeight ?? 28;
+        const requiredBottom = axisBandPadding + axisBandHeight + 6;
+
+        const options = chart.options;
+        options.layout = options.layout || {};
+
+        // Chart.js allows layout.padding to be a number or object.
+        const existingPadding = options.layout.padding;
+        const padding =
+            typeof existingPadding === 'number'
+                ? {
+                      top: existingPadding,
+                      right: existingPadding,
+                      bottom: existingPadding,
+                      left: existingPadding,
+                  }
+                : (existingPadding || {});
+
+        padding.bottom = Math.max(padding.bottom || 0, requiredBottom);
+        options.layout.padding = padding;
+    },
     beforeDatasetsDraw(chart, args, pluginOptions) {
         const segments = pluginOptions?.segments;
         if (!segments || segments.length === 0) {
@@ -81,23 +109,28 @@ const pricingModeIconPlugin = {
 		const labelFont = `${labelSize}px "Inter", sans-serif`;
 		const iconColor = pluginOptions?.iconColor || 'rgba(255, 255, 255, 0.95)';
 		const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
-		const axisBandPadding = pluginOptions?.axisBandPadding ?? 40;
+		const axisBandPadding = pluginOptions?.axisBandPadding ?? 10;
 		const axisBandHeight = pluginOptions?.axisBandHeight ?? (iconSize + labelSize + 10);
 		const axisBandColor = pluginOptions?.axisBandColor || 'rgba(6, 10, 18, 0.92)';
 		const iconAlignment = pluginOptions?.iconAlignment || 'start';
 		const iconStartOffset = pluginOptions?.iconStartOffset ?? 12;
 		const iconBaselineOffset = pluginOptions?.iconBaselineOffset ?? 4;
-		const axisBandTop = chartArea.bottom + axisBandPadding;
+		// Place the band below the X-axis labels (xScale.bottom is below tick labels).
+		const axisBandTopRaw = (xScale.bottom || chartArea.bottom) + axisBandPadding;
+		const axisBandTop = Math.min(axisBandTopRaw, chart.height - axisBandHeight - 2);
 		const axisBandWidth = chartArea.right - chartArea.left;
 		const baselineY = axisBandTop + iconBaselineOffset;
 
 		const ctx = chart.ctx;
+		// Draw behind axes/labels so we never obscure tick labels even if layout shifts.
 		ctx.save();
+		ctx.globalCompositeOperation = 'destination-over';
 		ctx.fillStyle = axisBandColor;
 		ctx.fillRect(chartArea.left, axisBandTop, axisBandWidth, axisBandHeight);
 		ctx.restore();
 
 		ctx.save();
+		ctx.globalCompositeOperation = 'destination-over';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'top';
 
@@ -429,8 +462,9 @@ function buildPricingModeIconOptions(segments) {
         iconColor: 'rgba(255, 255, 255, 0.95)',
         labelColor: 'rgba(255, 255, 255, 0.7)',
         backgroundOpacity: 0.14,
-        axisBandPadding: 40,
-        axisBandHeight: 30,
+        // Keep this compact and below X-axis labels.
+        axisBandPadding: 10,
+        axisBandHeight: 28,
         axisBandColor: 'rgba(8, 12, 20, 0.9)'
     };
 }
@@ -449,7 +483,7 @@ function applyPricingModeIconPadding(options, pluginOptions) {
     }
 
     const padding = options.layout.padding;
-    const axisBandPadding = pluginOptions?.axisBandPadding ?? 40;
+    const axisBandPadding = pluginOptions?.axisBandPadding ?? 10;
     const axisBandHeight = pluginOptions?.axisBandHeight ?? (pluginOptions?.iconSize || 18) + (pluginOptions?.labelSize || 10) + 6;
     const extra = pluginOptions ? axisBandPadding + axisBandHeight + 6 : 12;
 
@@ -1440,10 +1474,10 @@ async function loadPricingData() {
             allLabels = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
 
             // ZOBRAZENÍ KAPACITY BATERIE:
-            // battery_capacity_kwh = CÍLOVÁ kapacita (kam se dostaneme)
-            // solar_charge_kwh = kolik přidal solar v tomto intervalu
-            // grid_charge_kwh = kolik přidala síť v tomto intervalu
-            // baseline = battery_capacity_kwh - solar - grid (odkud jsme vyšli)
+            // battery_capacity_kwh = SOC baterie na konci intervalu (kWh)
+            // solar_charge_kwh = kWh do baterie ze soláru (pre-efficiency)
+            // grid_charge_kwh = kWh do baterie ze sítě (pre-efficiency)
+            // baseline = battery_capacity_kwh - solar_charge_kwh - grid_charge_kwh
 
             const batteryCapacityData = [];   // Cílová kapacita (linie navrch)
             const baselineData = [];          // Předchozí kapacita (baseline pro stack)
@@ -1458,14 +1492,15 @@ async function loadPricingData() {
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
-                    // HYBRID API uses battery_start, solar_kwh, grid_import_kwh
-                    // Legacy uses battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh
-                    const targetCapacity = timelineEntry.battery_start || timelineEntry.battery_capacity_kwh || 0;
-                    const solarCharge = timelineEntry.solar_kwh || timelineEntry.solar_charge_kwh || 0;
-                    const gridCharge = timelineEntry.grid_import_kwh || timelineEntry.grid_charge_kwh || 0;
+                    // OnePlanner timeline uses: battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh.
+                    // Keep compatibility fallbacks for older payloads.
+                    const targetCapacity =
+                        (timelineEntry.battery_capacity_kwh ?? timelineEntry.battery_soc ?? timelineEntry.battery_start) || 0;
+                    const solarCharge = timelineEntry.solar_charge_kwh || 0;
+                    const gridCharge = timelineEntry.grid_charge_kwh || 0;
                     const gridNet = typeof timelineEntry.grid_net === 'number'
                         ? timelineEntry.grid_net
-                        : (timelineEntry.grid_import_kwh || timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
+                        : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
 
                     // Baseline = odkud vyšli (cílová - přírůstky)
                     const baseline = targetCapacity - solarCharge - gridCharge;
@@ -1495,7 +1530,7 @@ async function loadPricingData() {
             // 1. Grid area (dole) - nabíjení ze sítě, BEZ borderu
             if (gridStackData.some(v => v != null && v > 0)) {
                 datasets.push({
-                    label: '⚡ Nabíjení ze sítě',
+                    label: '⚡ Do baterie ze sítě',
                     data: gridStackData,
                     backgroundColor: batteryColors.grid.bg,
                     borderColor: batteryColors.grid.border,
@@ -1514,7 +1549,7 @@ async function loadPricingData() {
             // 2. Solar area (uprostřed) - nabíjení ze solaru, BEZ borderu
             if (solarStackData.some(v => v != null && v > 0)) {
                 datasets.push({
-                    label: '☀️ Nabíjení ze solaru',
+                    label: '☀️ Do baterie ze soláru',
                     data: solarStackData,
                     backgroundColor: batteryColors.solar.bg,
                     borderColor: batteryColors.solar.border,
