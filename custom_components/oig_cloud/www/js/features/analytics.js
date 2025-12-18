@@ -1,192 +1,5 @@
 // ============================================================================
-// PHASE 2.7: PERFORMANCE TRACKING CHART
-// ============================================================================
-
-var performanceChart = null;
-
-/**
- * Initialize performance tracking chart
- */
-function initPerformanceChart() {
-    const canvas = document.getElementById('performance-chart');
-    if (!canvas) {
-        console.log('[Performance Chart] Canvas not found');
-        return;
-    }
-
-    const ctx = canvas.getContext('2d');
-
-    // Create Chart.js instance
-    performanceChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [
-                {
-                    label: 'Očekávané náklady',
-                    data: [],
-                    backgroundColor: 'rgba(156, 39, 176, 0.5)',
-                    borderColor: 'rgba(156, 39, 176, 0.8)',
-                    borderWidth: 1
-                },
-                {
-                    label: 'Skutečné náklady',
-                    data: [],
-                    backgroundColor: 'rgba(76, 175, 80, 0.5)',
-                    borderColor: 'rgba(76, 175, 80, 0.8)',
-                    borderWidth: 1
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            aspectRatio: 3,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    labels: {
-                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary') || '#333',
-                        font: {
-                            size: 10
-                        },
-                        boxWidth: 12,
-                        padding: 8
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
-                            }
-                            label += context.parsed.y.toFixed(2) + ' Kč';
-                            return label;
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    ticks: {
-                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary') || '#666',
-                        font: {
-                            size: 9
-                        },
-                        maxRotation: 45,
-                        minRotation: 0
-                    },
-                    grid: {
-                        display: false
-                    }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary') || '#666',
-                        font: {
-                            size: 9
-                        },
-                        callback: function(value) {
-                            return value.toFixed(0) + ' Kč';
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(156, 39, 176, 0.1)'
-                    }
-                }
-            }
-        }
-    });
-
-    console.log('[Performance Chart] Initialized');
-}
-
-/**
- * Update performance tracking chart with latest data
- */
-async function updatePerformanceChart() {
-    const hass = getHass();
-    if (!hass) return;
-
-    const performanceSensorId = `sensor.oig_${INVERTER_SN}_battery_forecast_performance`;
-    const performanceSensor = hass.states[performanceSensorId];
-
-    // Check if sensor is available
-    if (!performanceSensor || performanceSensor.state === 'unavailable' || performanceSensor.state === 'unknown') {
-        console.log('[Performance Chart] Performance sensor not available');
-
-        // Update summary with placeholder
-        updateElementIfChanged('perf-accuracy', '--', 'perf-acc');
-        updateElementIfChanged('perf-savings', '--', 'perf-sav');
-        updateElementIfChanged('perf-days', '--', 'perf-days');
-
-        return;
-    }
-
-    const attrs = performanceSensor.attributes || {};
-    const dailyHistory = attrs.daily_history || [];
-    const monthlySummary = attrs.monthly_summary || {};
-    const today = attrs.today || {};
-    const yesterday = attrs.yesterday || {};
-
-    // Update summary stats
-    const accuracy = monthlySummary.avg_accuracy || yesterday.accuracy || null;
-    const totalSavings = monthlySummary.total_savings || 0;
-    const daysTracked = monthlySummary.days_tracked || 0;
-
-    updateElementIfChanged('perf-accuracy',
-        accuracy !== null ? `${accuracy.toFixed(1)}%` : '--',
-        'perf-acc');
-    updateElementIfChanged('perf-savings',
-        totalSavings > 0 ? `+${totalSavings.toFixed(1)} Kč` : totalSavings < 0 ? `${totalSavings.toFixed(1)} Kč` : '0 Kč',
-        'perf-sav');
-    updateElementIfChanged('perf-days',
-        daysTracked > 0 ? `${daysTracked} dní` : '--',
-        'perf-days');
-
-    // Update chart if initialized
-    if (!performanceChart) {
-        initPerformanceChart();
-        if (!performanceChart) return;
-    }
-
-    // Prepare chart data (last 30 days)
-    const last30Days = dailyHistory.slice(-30);
-
-    const labels = [];
-    const expectedData = [];
-    const actualData = [];
-
-    last30Days.forEach(day => {
-        // Format date (DD.MM)
-        const dateStr = day.date || '';
-        const dateParts = dateStr.split('-');
-        if (dateParts.length === 3) {
-            labels.push(`${dateParts[2]}.${dateParts[1]}`);
-        } else {
-            labels.push(dateStr);
-        }
-
-        expectedData.push(day.expected || 0);
-        actualData.push(day.actual || 0);
-    });
-
-    // Update chart data
-    performanceChart.data.labels = labels;
-    performanceChart.data.datasets[0].data = expectedData;
-    performanceChart.data.datasets[1].data = actualData;
-
-    // Update chart
-    performanceChart.update('none'); // 'none' = no animation for performance
-
-    console.log(`[Performance Chart] Updated with ${last30Days.length} days`);
-}
-
-// ============================================================================
-// END PHASE 2.7
+// ANALYTICS HELPERS
 // ============================================================================
 
 // Import ČHMÚ functions from dashboard-chmu.js
@@ -260,24 +73,15 @@ async function loadCostComparisonTile(force = false) {
 
     const plannerPromise = window.PlannerState?.fetchSettings?.() || Promise.resolve(null);
 
-    costComparisonTilePromise = Promise.all([
-        fetchCostComparisonTileData(),
-        plannerPromise
-    ])
+    costComparisonTilePromise = Promise.all([fetchCostComparisonTileData(), plannerPromise])
         .then(([rawTiles, plannerSettings]) => {
-            const activePlan = window.PlannerState?.resolveActivePlan?.(
-                plannerSettings || window.PlannerState?.getCachedSettings?.()
-            ) || 'hybrid';
-            const summary = buildCostComparisonSummary(
-                rawTiles.hybrid,
-                rawTiles.autonomy,
-                activePlan
-            );
-            const payload = {
-                hybrid: rawTiles.hybrid,
-                autonomy: rawTiles.autonomy,
-                comparison: summary
-            };
+            const activePlan =
+                window.PlannerState?.resolveActivePlan?.(
+                    plannerSettings || window.PlannerState?.getCachedSettings?.()
+                ) || 'hybrid';
+
+            const summary = buildCostComparisonSummary(rawTiles.hybrid, activePlan);
+            const payload = { hybrid: rawTiles.hybrid, comparison: summary };
             costComparisonTileCache = payload;
             costComparisonTileLastFetch = Date.now();
             renderCostComparisonTile(payload);
@@ -293,29 +97,20 @@ async function loadCostComparisonTile(force = false) {
 async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
     try {
         console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        const [hybridRes, autonomyRes] = await Promise.all([
-            fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`),
-            fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile?mode=autonomy`)
-        ]);
+        const hybridRes = await fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`);
 
-        if (!hybridRes.ok || !autonomyRes.ok) {
+        if (!hybridRes.ok) {
             const shouldRetry = (code) => code >= 500;
-            if (
-                retryCount < maxRetries &&
-                (shouldRetry(hybridRes.status) || shouldRetry(autonomyRes.status))
-            ) {
+            if (retryCount < maxRetries && shouldRetry(hybridRes.status)) {
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
                 await new Promise((resolve) => setTimeout(resolve, delay));
                 return fetchCostComparisonTileData(retryCount + 1, maxRetries);
             }
-            throw new Error(`HTTP ${hybridRes.status}/${autonomyRes.status}`);
+            throw new Error(`HTTP ${hybridRes.status}`);
         }
 
-        const [hybridData, autonomyData] = await Promise.all([
-            hybridRes.json(),
-            autonomyRes.json()
-        ]);
-        return { hybrid: hybridData, autonomy: autonomyData };
+        const hybridData = await hybridRes.json();
+        return { hybrid: hybridData };
     } catch (error) {
         console.error('[Cost Comparison] Failed to load', error);
         if (retryCount < maxRetries) {
@@ -327,15 +122,12 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
     }
 }
 
-function buildCostComparisonSummary(hybridTile, autonomyTile, activePlan = 'hybrid') {
+function buildCostComparisonSummary(hybridTile, activePlan = 'hybrid') {
     const todayHybrid = (hybridTile || {}).today || {};
-    const todayAutonomy = (autonomyTile || {}).today || {};
 
     const actualSpent =
         todayHybrid.actual_cost_so_far ??
         todayHybrid.actual_total_cost ??
-        todayAutonomy.actual_cost_so_far ??
-        todayAutonomy.actual_total_cost ??
         0;
 
     function planSummary(dayData, planKey) {
@@ -352,23 +144,17 @@ function buildCostComparisonSummary(hybridTile, autonomyTile, activePlan = 'hybr
     }
 
     const standardSummary = planSummary(todayHybrid, 'hybrid');
-    const dynamicSummary = planSummary(todayAutonomy, 'autonomy');
-
     return {
         active_plan: activePlan,
         actual_spent: Math.round(actualSpent * 100) / 100,
         plans: {
-            standard: standardSummary,
-            dynamic: dynamicSummary
+            standard: standardSummary
         },
-        delta_vs_standard: Math.round(
-            dynamicSummary.total_cost - standardSummary.total_cost
-        ),
+        delta_vs_standard: 0,
         baseline: todayHybrid.baseline_comparison || null,
         yesterday: (hybridTile || {}).yesterday || null,
         tomorrow: {
-            standard: (hybridTile || {}).tomorrow?.plan_total_cost ?? null,
-            dynamic: (autonomyTile || {}).tomorrow?.plan_total_cost ?? null
+            standard: (hybridTile || {}).tomorrow?.plan_total_cost ?? null
         }
     };
 }
@@ -401,8 +187,7 @@ function renderCostComparisonTile(data) {
     }
 
     const options = {
-        onOpenHybrid: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'hybrid'),
-        onOpenAutonomy: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'autonomy')
+        onOpenHybrid: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'hybrid')
     };
 
     if (costComparisonTileInstance) {
@@ -1062,8 +847,6 @@ async function updateBatteryEfficiencyStats() {
 }
 
 window.DashboardAnalytics = {
-    initPerformanceChart,
-    updatePerformanceChart,
     buildYesterdayAnalysis,
     showYesterdayNoData,
     renderYesterdayAnalysis,

@@ -7,14 +7,28 @@ import hashlib
 import re
 from typing import Any, Dict
 
-from homeassistant import config_entries, core
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
+try:
+    from homeassistant import config_entries, core
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.const import Platform
+    from homeassistant.core import HomeAssistant
+    from homeassistant.exceptions import ConfigEntryNotReady
+    from homeassistant.helpers import config_validation as cv
+except ModuleNotFoundError:  # pragma: no cover
+    # Allow importing submodules (e.g., planner) outside a Home Assistant runtime.
+    config_entries = None  # type: ignore[assignment]
+    core = None  # type: ignore[assignment]
+    ConfigEntry = Any  # type: ignore[misc,assignment]
+    Platform = Any  # type: ignore[misc,assignment]
+    HomeAssistant = Any  # type: ignore[misc,assignment]
+    ConfigEntryNotReady = Exception  # type: ignore[assignment]
+    cv = None  # type: ignore[assignment]
 
-from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+try:
+    from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+except ModuleNotFoundError:  # pragma: no cover
+    # Allow importing submodules outside HA / without runtime deps.
+    OigCloudApi = Any  # type: ignore[misc,assignment]
 from .const import (
     CONF_NO_TELEMETRY,
     CONF_USERNAME,
@@ -23,18 +37,31 @@ from .const import (
     CONF_STANDARD_SCAN_INTERVAL,
     CONF_EXTENDED_SCAN_INTERVAL,
     CONF_AUTO_MODE_SWITCH,
-    CONF_AUTO_MODE_PLAN,
 )
-from .oig_cloud_coordinator import OigCloudCoordinator
-from .data_source import (
-    DataSourceController,
-    DATA_SOURCE_CLOUD_ONLY,
-    DEFAULT_DATA_SOURCE_MODE,
-    DEFAULT_PROXY_STALE_MINUTES,
-    DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
-    get_data_source_state,
-    init_data_source_state,
-)
+try:
+    from .oig_cloud_coordinator import OigCloudCoordinator
+    from .data_source import (
+        DataSourceController,
+        DATA_SOURCE_CLOUD_ONLY,
+        DEFAULT_DATA_SOURCE_MODE,
+        DEFAULT_PROXY_STALE_MINUTES,
+        DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+        get_data_source_state,
+        init_data_source_state,
+    )
+except ModuleNotFoundError:  # pragma: no cover
+    OigCloudCoordinator = Any  # type: ignore[misc,assignment]
+    DataSourceController = Any  # type: ignore[misc,assignment]
+    DATA_SOURCE_CLOUD_ONLY = "cloud_only"
+    DEFAULT_DATA_SOURCE_MODE = "cloud_only"
+    DEFAULT_PROXY_STALE_MINUTES = 15
+    DEFAULT_LOCAL_EVENT_DEBOUNCE_MS = 250
+
+    def get_data_source_state(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[misc]
+        return None
+
+    def init_data_source_state(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[misc]
+        return None
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
 try:
@@ -51,8 +78,12 @@ except Exception as err:
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+if config_entries is None or cv is None:  # pragma: no cover
+    PLATFORMS: list[Platform] = []
+    CONFIG_SCHEMA = None
+else:
+    PLATFORMS = [Platform.SENSOR]
+    CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
@@ -99,21 +130,20 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
 
 
 def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Ensure new planner-related options exist on legacy config entries."""
+    """Ensure planner-related options exist on legacy config entries.
+
+    Legacy multi-planner options were removed; only the single planner is supported.
+    """
 
     defaults = {
-        "battery_planner_mode": "hybrid_autonomy",
-        "enable_autonomous_preview": True,
         CONF_AUTO_MODE_SWITCH: False,
-        CONF_AUTO_MODE_PLAN: "autonomy",
-        "enable_cheap_window_ups": True,
-        "cheap_window_percentile": 30,
-        "cheap_window_max_intervals": 20,
-        "cheap_window_soc_guard_kwh": 0.5,
-        "autonomy_soc_step_kwh": 0.5,
-        "autonomy_target_penalty": 0.5,
-        "autonomy_min_penalty": 2.0,
-        "autonomy_negative_export_penalty": 50.0,
+        # Planner parameters (percentages are of max capacity).
+        "min_capacity_percent": 33.0,
+        "target_capacity_percent": 80.0,
+        # Hard cap for UPS charging (CZK/kWh).
+        "max_ups_price_czk": 10.0,
+        # AC charging power (kW) used for UPS mode simulation.
+        "home_charge_rate": 2.8,
     }
 
     options = dict(entry.options)
@@ -125,13 +155,6 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
             options[key] = default
             updated = True
 
-    # Migrace starších hodnot na nové vyvážené defaulty
-    if options.get("autonomy_min_penalty") in (15.0, 8.0):
-        options["autonomy_min_penalty"] = defaults["autonomy_min_penalty"]
-        updated = True
-    if options.get("autonomy_target_penalty") == 3.0:
-        options["autonomy_target_penalty"] = defaults["autonomy_target_penalty"]
-        updated = True
     if updated:
         _LOGGER.info(
             "🔧 Injecting missing planner options for entry %s: %s",

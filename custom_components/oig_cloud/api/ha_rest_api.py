@@ -38,7 +38,7 @@ from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.util import dt as dt_util
 from homeassistant.config_entries import ConfigEntry
 
-from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH, CONF_AUTO_MODE_PLAN
+from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         request.query.get("mode", "hybrid").lower()
         timeline_type = request.query.get("type", "both")
-        plan = request.query.get("plan", "hybrid").lower()
+        _ = request.query.get("plan", "hybrid").lower()  # legacy (single-planner)
 
         try:
             # STORAGE-FIRST: Serve from precomputed storage if available (fast path)
@@ -147,28 +147,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             if precomputed_data:
                 last_update: Optional[str] = (precomputed_data or {}).get("last_update")
 
-                if plan == "autonomy":
-                    stored_autonomy: Optional[list[Any]] = (precomputed_data or {}).get("timeline_autonomy")  # type: ignore[assignment]
-                    if stored_autonomy:
-                        metadata = {
-                            "box_id": box_id,
-                            "last_update": last_update,
-                            "points_count": len(stored_autonomy),
-                            "size_kb": round(
-                                sys.getsizeof(str(stored_autonomy)) / 1024, 1
-                            ),
-                        }
-                        # Keep legacy "timeline" for autonomy while also mirroring into "active"
-                        return web.json_response(
-                            {
-                                "plan": "autonomy",
-                                "timeline": stored_autonomy,
-                                "active": stored_autonomy,
-                                "metadata": metadata,
-                            }
-                        )
-
-                stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline_hybrid")  # type: ignore[assignment]
+                stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline")  # type: ignore[assignment]
+                if not stored_hybrid:
+                    stored_hybrid = (precomputed_data or {}).get("timeline_hybrid")  # type: ignore[assignment]
                 if stored_hybrid:
                     metadata = {
                         "box_id": box_id,
@@ -187,7 +168,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                         "metadata": metadata,
                     }
                     if timeline_type in ("baseline", "both"):
-                        response_data["baseline"] = []  # baseline is only available from live entity
+                        response_data["baseline"] = []  # baseline removed
                     return web.json_response(response_data)
 
             # FALLBACK: Find sensor entity and attempt to serve from its data
@@ -227,17 +208,12 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                         f"Failed to read precomputed timeline data: {storage_error}"
                     )
 
-            if plan == "autonomy":
-                # Autonomy planner removed - return error
-                return web.json_response(
-                    {"error": "Autonomy planner has been removed. Use 'hybrid' plan."},
-                    status=400,
-                )
-
             # Get timeline data from storage or sensor's internal variables
             stored_active = None
             if precomputed_data:
-                stored_active = precomputed_data.get("timeline_hybrid")
+                stored_active = precomputed_data.get("timeline") or precomputed_data.get(
+                    "timeline_hybrid"
+                )
                 if stored_active:
                     _LOGGER.debug(
                         "API: Serving hybrid timeline from precomputed storage for %s",
@@ -245,7 +221,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     )
 
             active_timeline = stored_active or getattr(entity_obj, "_timeline_data", [])
-            baseline_timeline = getattr(entity_obj, "_baseline_timeline", [])
+            baseline_timeline = []
             last_update = getattr(entity_obj, "_last_update", None)
             if stored_active and precomputed_data:
                 last_update = precomputed_data.get("last_update", last_update)
@@ -260,7 +236,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                 response_data["active"] = active_timeline
 
             if timeline_type in ("baseline", "both"):
-                response_data["baseline"] = baseline_timeline_api
+                response_data["baseline"] = []  # baseline removed
 
             # Add metadata
             response_data["metadata"] = {
@@ -696,8 +672,8 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
-        mode = (request.query.get("plan") or request.query.get("mode") or "hybrid")
-        mode = (mode or "hybrid").lower()
+        _ = (request.query.get("plan") or request.query.get("mode") or "hybrid")  # legacy
+        mode = "hybrid"
 
         try:
             # PERFORMANCE FIX: Try precomputed storage FIRST before looking for entity
@@ -711,12 +687,10 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             except Exception:
                 precomputed_data = None
 
-            # Determine which tile to serve based on mode
-            tile_key = (
-                "unified_cost_tile_autonomy"
-                if mode == "autonomy"
-                else "unified_cost_tile_hybrid"
-            )
+            # Single-planner: serve unified cost tile.
+            tile_key = "unified_cost_tile"
+            if precomputed_data and not precomputed_data.get(tile_key):
+                tile_key = "unified_cost_tile_hybrid"  # legacy alias
 
             # If we have precomputed data, serve it directly (fastest path)
             if precomputed_data and precomputed_data.get(tile_key):
@@ -764,59 +738,19 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                 precomputed_data.get("cost_comparison") if precomputed_data else None
             )
 
-            if mode == "autonomy":
-                if hasattr(entity_obj, "build_autonomy_cost_tile"):
-                    try:
-                        tile_data = await entity_obj.build_autonomy_cost_tile()
-                    except Exception as build_error:
-                        _LOGGER.error(
-                            f"API: Error in build_autonomy_cost_tile() for {box_id}: {build_error}",
-                            exc_info=True,
-                        )
-                        return web.json_response(
-                            {
-                                "error": f"Failed to build autonomy tile: {str(build_error)}"
-                            },
-                            status=500,
-                        )
-                else:
-                    return web.json_response(
-                        {"error": "Autonomy cost tile not supported"}, status=500
-                    )
-            else:
-                if hasattr(entity_obj, "build_unified_cost_tile"):
-                    try:
-                        _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
-                        tile_data = await entity_obj.build_unified_cost_tile()
-                        _LOGGER.info(
-                            f"API: Unified cost tile built successfully: {tile_data.keys()}"
-                        )
-                    except Exception as build_error:
-                        _LOGGER.error(
-                            f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
-                            exc_info=True,
-                        )
-                        return web.json_response(
-                            {"error": f"Failed to build tile: {str(build_error)}"},
-                            status=500,
-                        )
-                else:
-                    return web.json_response(
-                        {"error": "build_unified_cost_tile method not found"},
-                        status=500,
-                    )
-
-            # Build hybrid cost tile
             if hasattr(entity_obj, "build_unified_cost_tile"):
                 try:
-                    _LOGGER.info(f"API: Building unified cost tile for {box_id}...")
+                    _LOGGER.info("API: Building unified cost tile for %s...", box_id)
                     tile_data = await entity_obj.build_unified_cost_tile()
                     _LOGGER.info(
-                        f"API: Unified cost tile built successfully: {tile_data.keys()}"
+                        "API: Unified cost tile built successfully: %s",
+                        list(tile_data.keys()) if isinstance(tile_data, dict) else type(tile_data),
                     )
                 except Exception as build_error:
                     _LOGGER.error(
-                        f"API: Error in build_unified_cost_tile() for {box_id}: {build_error}",
+                        "API: Error in build_unified_cost_tile() for %s: %s",
+                        box_id,
+                        build_error,
                         exc_info=True,
                     )
                     return web.json_response(
@@ -939,12 +873,12 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                 try:
                     precomputed_data = await entity_obj._precomputed_store.async_load()
                     if precomputed_data:
-                        detail_key = "detail_tabs_hybrid"
-                        detail_tabs = precomputed_data.get(detail_key)
+                        detail_tabs = precomputed_data.get("detail_tabs") or precomputed_data.get(
+                            "detail_tabs_hybrid"
+                        )
                         if not detail_tabs:
                             _LOGGER.debug(
-                                "API: detail_tabs(%s) missing in precomputed store",
-                                plan_key,
+                                "API: detail_tabs missing in precomputed store",
                             )
                             detail_tabs = None
 
@@ -1029,7 +963,6 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         return web.json_response(
             {
                 "auto_mode_switch_enabled": value,
-                "auto_mode_plan": "hybrid",
                 "planner_mode": "hybrid",
             }
         )
@@ -1060,7 +993,6 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
             return web.json_response(
                 {
                     "auto_mode_switch_enabled": current_enabled,
-                    "auto_mode_plan": "hybrid",
                     "planner_mode": "hybrid",
                     "updated": False,
                 }
@@ -1068,7 +1000,6 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
 
         new_options = dict(entry.options)
         new_options[CONF_AUTO_MODE_SWITCH] = desired_enabled
-        new_options[CONF_AUTO_MODE_PLAN] = "hybrid"
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info(
             "Planner settings updated for %s: auto_mode_switch_enabled=%s",
@@ -1079,7 +1010,6 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         return web.json_response(
             {
                 "auto_mode_switch_enabled": desired_enabled,
-                "auto_mode_plan": "hybrid",
                 "planner_mode": "hybrid",
                 "updated": True,
             }

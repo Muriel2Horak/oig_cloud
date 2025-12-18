@@ -701,10 +701,6 @@
     background: rgb(0, 188, 212, 0.08);
 }
 
-.plan-status-banner.plan-autonomy {
-    border-color: rgb(255, 193, 7, 0.5);
-    background: rgb(255, 193, 7, 0.12);
-}
 
 .plan-status-banner .plan-hint {
     font-weight: 400;

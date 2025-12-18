@@ -63,17 +63,6 @@ CBB_MODE_SERVICE_MAP: Dict[int, str] = {
     CBB_MODE_HOME_UPS: SERVICE_MODE_HOME_UPS,
 }
 
-# Mapping from autonomy planner labels to HA service names
-AUTONOMY_MODE_SERVICE_MAP: Dict[str, str] = {
-    "HOME I": SERVICE_MODE_HOME_1,
-    "HOME 1": SERVICE_MODE_HOME_1,
-    "HOME II": SERVICE_MODE_HOME_2,
-    "HOME 2": SERVICE_MODE_HOME_2,
-    "HOME III": SERVICE_MODE_HOME_3,
-    "HOME 3": SERVICE_MODE_HOME_3,
-    "HOME UPS": SERVICE_MODE_HOME_UPS,
-}
-
 # Modes where AC charging is DISABLED (only solar DC/DC charging allowed)
 AC_CHARGING_DISABLED_MODES: List[int] = [
     CBB_MODE_HOME_I,
@@ -389,12 +378,18 @@ def mode_from_name(name: str) -> int:
             " ", ""
         ) == name_upper.replace(" ", ""):
             return mode_num
-    # Try autonomy map
-    service = AUTONOMY_MODE_SERVICE_MAP.get(name_upper)
-    if service:
-        for mode_num, srv in CBB_MODE_SERVICE_MAP.items():
-            if srv == service:
-                return mode_num
+    # Legacy aliases (older UI / logs)
+    legacy = {
+        "HOME I": CBB_MODE_HOME_I,
+        "HOME 1": CBB_MODE_HOME_I,
+        "HOME II": CBB_MODE_HOME_II,
+        "HOME 2": CBB_MODE_HOME_II,
+        "HOME III": CBB_MODE_HOME_III,
+        "HOME 3": CBB_MODE_HOME_III,
+        "HOME UPS": CBB_MODE_HOME_UPS,
+    }
+    if name_upper in legacy:
+        return legacy[name_upper]
     return CBB_MODE_HOME_III  # Default
 
 

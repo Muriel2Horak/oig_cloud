@@ -5589,92 +5589,6 @@
     box-shadow: 0 3px 8px var(--shadow-color);
 }
 
-.autonomy-mode .autonomy-day-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.autonomy-mode .autonomy-day-card {
-    flex: 1;
-    background: rgb(255, 255, 255, 0.05);
-    border-radius: 10px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.autonomy-mode .autonomy-day-label {
-    font-size: 0.7em;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--text-tertiary);
-}
-
-.autonomy-mode .autonomy-day-value {
-    font-size: 1.35em;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.autonomy-mode .autonomy-day-delta {
-    font-size: 0.85em;
-}
-
-.autonomy-mode .autonomy-day-delta.positive {
-    color: #4CAF50;
-}
-
-.autonomy-mode .autonomy-day-delta.negative {
-    color: #FF7043;
-}
-
-.autonomy-mode .autonomy-day-delta.neutral,
-.autonomy-mode .autonomy-day-delta.muted {
-    color: var(--text-secondary);
-}
-
-.autonomy-mode .autonomy-delta-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 4px;
-    font-size: 0.8em;
-    color: var(--text-tertiary);
-}
-
-.autonomy-mode .autonomy-delta-pill {
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.75em;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.autonomy-mode .autonomy-delta-pill.positive {
-    background: rgb(76, 175, 80, 0.15);
-    color: #4CAF50;
-}
-
-.autonomy-mode .autonomy-delta-pill.negative {
-    background: rgb(255, 112, 67, 0.15);
-    color: #FF7043;
-}
-
-.autonomy-mode .autonomy-delta-pill.neutral {
-    background: rgb(255, 255, 255, 0.08);
-    color: var(--text-secondary);
-}
-
-.autonomy-mode .autonomy-footnote-row {
-    margin-top: 10px;
-    font-size: 0.7em;
-    color: var(--text-secondary);
-    display: flex;
-    justify-content: space-between;
-}
-
         /* COMPACT HEADER: DNES 51 Kč [===] 3% ✅ */
         .uct-header-compact {
             display: flex;
@@ -7364,10 +7278,6 @@
     color: #fff;
 }
 
-.chart-plan-toggle-btn.autonomy.active {
-    background: rgb(255, 215, 0, 0.25);
-    color: #FFEB3B;
-}
 
 .chart-plan-pill {
     display: inline-flex;
@@ -7381,10 +7291,6 @@
     margin-left: 8px;
 }
 
-.chart-plan-pill.autonomy {
-    background: rgb(255, 215, 0, 0.2);
-    color: #FFE082;
-}
 
 .cost-card {
     background: linear-gradient(160deg, rgb(33, 150, 243, 0.18) 0%, rgb(13, 71, 161, 0.08) 100%);

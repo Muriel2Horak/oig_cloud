@@ -14,13 +14,11 @@ var pricingPlanMode = null;
 
 var timelineDataCache = {
     perPlan: {
-        hybrid: { data: null, timestamp: null, chartsRendered: false, stale: true },
-        autonomy: { data: null, timestamp: null, chartsRendered: false, stale: true }
+        hybrid: { data: null, timestamp: null, chartsRendered: false, stale: true }
     }
 };
 const timelineFetchPromises = {
-    hybrid: null,
-    autonomy: null
+    hybrid: null
 };
 
 const PRICING_MODE_CONFIG = {
@@ -169,10 +167,11 @@ function getPricingModeSegmentBounds(xScale, segment) {
 }
 
 function getTimelineCacheBucket(plan) {
-    if (!timelineDataCache.perPlan[plan]) {
-        timelineDataCache.perPlan[plan] = { data: null, timestamp: null, chartsRendered: false, stale: true };
+    const normalized = plan === 'hybrid' ? 'hybrid' : 'hybrid';
+    if (!timelineDataCache.perPlan[normalized]) {
+        timelineDataCache.perPlan[normalized] = { data: null, timestamp: null, chartsRendered: false, stale: true };
     }
-    return timelineDataCache.perPlan[plan];
+    return timelineDataCache.perPlan[normalized];
 }
 
 function invalidatePricingTimelineCache(plan) {
@@ -257,10 +256,9 @@ function updateChartPlanIndicator() {
 
     const pill = document.getElementById('chart-plan-pill');
     if (pill) {
-        const label = window.PLAN_LABELS?.[pricingPlanMode]?.short
-            || (pricingPlanMode === 'autonomy' ? 'Dynamický' : 'Standardní');
+        const label = window.PLAN_LABELS?.[pricingPlanMode]?.short || 'Plán';
         pill.textContent = label;
-        pill.classList.toggle('autonomy', pricingPlanMode === 'autonomy');
+        // No dual-plan UI - keep pill in default styling.
     }
 }
 
@@ -1880,7 +1878,7 @@ async function loadPricingData() {
     // Mark charts as rendered to skip re-rendering on next tab switch
     getTimelineCacheBucket(pricingPlanMode).chartsRendered = true;
 
-    // Load combined cost comparison tile (hybrid + autonomy)
+    // Single-planner: no dual-plan comparison tile here
     // Hide loading overlay
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
@@ -2212,7 +2210,7 @@ if (window.DashboardPricing && typeof window.DashboardPricing.init === 'function
     window.DashboardPricing.init();
 }
 async function fetchTimelineFromAPI(plan, boxId) {
-    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active&plan=${plan}`;
+    const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
     const fetchStart = performance.now();
     console.log(`[Pricing] Fetching ${plan} timeline from API...`);
     const response = await fetch(timelineUrl);
@@ -2220,7 +2218,7 @@ async function fetchTimelineFromAPI(plan, boxId) {
         throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
-    const timelineData = plan === 'autonomy' ? (data.timeline || []) : (data.active || []);
+    const timelineData = data.active || data.timeline || [];
     const fetchEnd = performance.now();
     console.log(`[Pricing] API fetch completed in ${(fetchEnd - fetchStart).toFixed(0)}ms - loaded ${timelineData.length} points for ${plan} plan`);
     return timelineData;

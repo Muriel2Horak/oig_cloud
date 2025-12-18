@@ -1515,8 +1515,7 @@ async function loadData() {
         window.DashboardPricing.updateModeRecommendations();
     }
 
-    // Phase 2.7: Update performance tracking chart
-    updatePerformanceChart();
+    // Performance chart removed (legacy performance tracking)
 }
 
 // Force full refresh (for manual reload or after service calls)

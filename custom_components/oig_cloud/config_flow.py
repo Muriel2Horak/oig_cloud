@@ -2573,32 +2573,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "balancing_economic_threshold": self._wizard_data.get(
                         "balancing_economic_threshold", 2.5
                     ),
-                    # Hybrid/autonomy planner settings
-                    "battery_planner_mode": planner_mode_value,
-                    "enable_autonomous_preview": planner_mode_value != "hybrid",
-                    "enable_cheap_window_ups": self._wizard_data.get(
-                        "enable_cheap_window_ups", True
-                    ),
-                    "cheap_window_percentile": self._wizard_data.get(
-                        "cheap_window_percentile", 30
-                    ),
-                    "cheap_window_max_intervals": self._wizard_data.get(
-                        "cheap_window_max_intervals", 20
-                    ),
-                    "cheap_window_soc_guard_kwh": self._wizard_data.get(
-                        "cheap_window_soc_guard_kwh", 0.5
-                    ),
-                    "autonomy_soc_step_kwh": self._wizard_data.get(
-                        "autonomy_soc_step_kwh", 0.5
-                    ),
-                    "autonomy_target_penalty": self._wizard_data.get(
-                        "autonomy_target_penalty", 0.5
-                    ),
-                    "autonomy_min_penalty": self._wizard_data.get(
-                        "autonomy_min_penalty", 2.0
-                    ),
-                    "autonomy_negative_export_penalty": self._wizard_data.get(
-                        "autonomy_negative_export_penalty", 50.0
+                    # Planner settings (single planner)
+                    "max_ups_price_czk": self._wizard_data.get(
+                        "max_ups_price_czk", self._wizard_data.get("max_price_conf", 10.0)
                     ),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
@@ -2938,9 +2915,10 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 # Auto module
                 "enable_auto": self._wizard_data.get("enable_auto", False),
-                # Hybrid/autonomy planner settings (CRITICAL - bylo missing!)
-                "battery_planner_mode": planner_mode_value,
-                "enable_autonomous_preview": planner_mode_value != "hybrid",
+                # Planner settings (single planner)
+                "max_ups_price_czk": self._wizard_data.get(
+                    "max_ups_price_czk", self._wizard_data.get("max_price_conf", 10.0)
+                ),
             }
 
             # Přidat debug log

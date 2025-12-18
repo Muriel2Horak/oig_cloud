@@ -390,8 +390,7 @@ function getInverterSN() {
 // ============================================================================
 
 const PLAN_LABELS = {
-    hybrid: { short: 'Standardní', long: 'Standardní plánování' },
-    autonomy: { short: 'Dynamický', long: 'Dynamické plánování' }
+    hybrid: { short: 'Plán', long: 'Plánování' }
 };
 
 const PlannerState = (() => {
@@ -401,18 +400,7 @@ const PlannerState = (() => {
     let inflight = null;
 
     const resolveActivePlan = (settings) => {
-        if (!settings) {
-            return 'hybrid';
-        }
-        // Use battery_planner_mode directly from settings
-        const plannerMode = settings.planner_mode;
-        if (plannerMode === 'autonomy' || plannerMode === 'autonomy_preview') {
-            return 'autonomy';
-        }
-        if (plannerMode === 'hybrid') {
-            return 'hybrid';
-        }
-        // Legacy fallback for old planner_mode values
+        // Single-planner: always hybrid (legacy name).
         return 'hybrid';
     };
 
