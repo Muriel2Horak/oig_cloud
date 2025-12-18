@@ -35,34 +35,6 @@ let pricingModeIconPluginRegistered = false;
 
 const pricingModeIconPlugin = {
     id: PRICING_MODE_ICON_PLUGIN_ID,
-    beforeLayout(chart, args, pluginOptions) {
-        // Reserve enough bottom space so the mode icon band never overlaps the X axis labels.
-        if (!pluginOptions || !chart?.options) {
-            return;
-        }
-
-        const axisBandPadding = pluginOptions.axisBandPadding ?? 10;
-        const axisBandHeight = pluginOptions.axisBandHeight ?? 28;
-        const requiredBottom = axisBandPadding + axisBandHeight + 6;
-
-        const options = chart.options;
-        options.layout = options.layout || {};
-
-        // Chart.js allows layout.padding to be a number or object.
-        const existingPadding = options.layout.padding;
-        const padding =
-            typeof existingPadding === 'number'
-                ? {
-                      top: existingPadding,
-                      right: existingPadding,
-                      bottom: existingPadding,
-                      left: existingPadding,
-                  }
-                : (existingPadding || {});
-
-        padding.bottom = Math.max(padding.bottom || 0, requiredBottom);
-        options.layout.padding = padding;
-    },
     beforeDatasetsDraw(chart, args, pluginOptions) {
         const segments = pluginOptions?.segments;
         if (!segments || segments.length === 0) {
@@ -838,6 +810,17 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Chart.js keeps a global registry per canvas. Always destroy any existing instance first
+    // to avoid: "Canvas is already in use. Chart with ID ... must be destroyed..."
+    try {
+        const existing = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+        if (existing) {
+            existing.destroy();
+        }
+    } catch (e) {
+        // ignore - best effort cleanup
+    }
 
     // Vypočítat statistiky pro detekci razantních změn (potřebujeme před optimalizací)
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
