@@ -300,10 +300,10 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
             getattr(frontend, "async_remove_panel")
         ):
             try:
-                await frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
+                frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
             except Exception:
                 try:
-                    await frontend.async_remove_panel(hass, panel_id)
+                    frontend.async_remove_panel(hass, panel_id)
                 except Exception:
                     pass
 
@@ -393,7 +393,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
             getattr(frontend, "async_remove_panel")
         ):
             try:
-                await frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
+                frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
                 _LOGGER.info("✅ Panel removed: %s", panel_id)
             except ValueError as ve:
                 if "unknown panel" in str(ve).lower():
@@ -404,7 +404,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
                     _LOGGER.warning("Error removing panel %s: {ve}", panel_id)
             except Exception as re:
                 try:
-                    await frontend.async_remove_panel(hass, panel_id)
+                    frontend.async_remove_panel(hass, panel_id)
                 except Exception:
                     _LOGGER.debug("Panel removal handled (panel may not exist): %s", re)
         else:
