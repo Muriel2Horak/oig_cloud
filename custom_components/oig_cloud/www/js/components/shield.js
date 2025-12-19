@@ -34,27 +34,41 @@ function subscribeToShield() {
     console.log('[Shield] Subscribing to state changes...');
 
     try {
-        // Subscribe to state changes
-        hass.connection.subscribeEvents((event) => {
-            if (event.event_type === 'state_changed') {
-                const entityId = event.data.entity_id;
+        // IMPORTANT: Do NOT create extra `subscribeEvents('state_changed')` subscriptions here.
+        // Mobile Safari / HA app can fall behind and HA will stop sending after 4096 pending messages.
+        const watcher = window.DashboardStateWatcher;
+        if (!watcher) {
+            console.warn('[Shield] StateWatcher not available yet, retrying...');
+            setTimeout(subscribeToShield, 500);
+            return;
+        }
+
+        // Start watcher (idempotent)
+        watcher.start({
+            intervalMs: 1000,
+            prefixes: [
+                `sensor.oig_${INVERTER_SN}_`,
+            ],
+        });
+
+        // Prevent duplicate callback registrations
+        if (!window.__oigShieldWatcherUnsub) {
+            const lastPricingPayload = new Map(); // entityId -> stable signature for skip logic
+
+            window.__oigShieldWatcherUnsub = watcher.onEntityChange((entityId, newState) => {
+                if (!entityId) return;
 
                 // Shield status sensors
                 if (entityId.includes('service_shield_')) {
-                    console.log(`[Shield] Shield sensor changed: ${entityId}`, event.data.new_state);
-                    // Use debounced monitor to prevent excessive updates
                     debouncedShieldMonitor();
                 }
 
                 // Target state sensors (box mode, boiler mode, grid delivery)
-                // Note: updateButtonStates() is already called by debouncedShieldMonitor()
-                // We only need to trigger debounce when target sensors change
                 if (entityId.includes('box_prms_mode') ||
                     entityId.includes('boiler_manual_mode') ||
                     entityId.includes('invertor_prms_to_grid') ||
                     entityId.includes('invertor_prm1_p_max_feed_grid')) {
-                    console.log(`[Shield] Target sensor changed: ${entityId}`, event.data.new_state);
-                    debouncedShieldMonitor(); // This will call updateButtonStates() after debounce
+                    debouncedShieldMonitor();
                 }
 
                 // Data sensors - trigger loadData() on changes
@@ -70,95 +84,58 @@ function subscribeToShield() {
                     entityId.includes('chmu_warning_level') ||  // ČHMÚ weather warning
                     entityId.includes('battery_efficiency') ||  // Battery efficiency stats
                     entityId.includes('real_data_update')) {    // Real data update
-                    // console.log(`[Data] Sensor changed: ${entityId}`, event.data.new_state?.state);
-                    debouncedLoadData(); // Trigger data update immediately (debounced)
+                    debouncedLoadData();
                 }
 
                 // Detail sensors - trigger loadNodeDetails() on changes
-                if (entityId.includes('dc_in_fv_p') ||         // Solar strings
-                    entityId.includes('extended_fve_') ||       // Solar voltage/current
-                    entityId.includes('computed_batt_') ||      // Battery energy
-                    entityId.includes('ac_in_') ||              // Grid details
-                    entityId.includes('ac_out_') ||             // House phases
-                    entityId.includes('spot_price') ||          // Grid pricing
-                    entityId.includes('current_tariff') ||      // Tariff
+                if (entityId.includes('dc_in_fv_p') ||           // Solar strings
+                    entityId.includes('extended_fve_') ||        // Solar voltage/current
+                    entityId.includes('computed_batt_') ||       // Battery energy
+                    entityId.includes('ac_in_') ||               // Grid details
+                    entityId.includes('ac_out_') ||              // House phases
+                    entityId.includes('spot_price') ||           // Grid pricing
+                    entityId.includes('current_tariff') ||       // Tariff
                     entityId.includes('grid_charging_planned') || // Grid charging plan
-                    entityId.includes('battery_balancing') ||   // Battery balancing plan
-                    entityId.includes('notification_count')) {  // Notifications
-                    // console.log(`[Details] Sensor changed: ${entityId}`);
-                    debouncedLoadNodeDetails(); // Trigger details update (debounced)
+                    entityId.includes('battery_balancing') ||    // Battery balancing plan
+                    entityId.includes('notification_count')) {   // Notifications
+                    debouncedLoadNodeDetails();
                 }
 
                 // Pricing chart sensors - trigger loadPricingData() on changes
-                if (entityId.includes('_spot_price_current_15min') ||  // Spot prices
+                if (entityId.includes('_spot_price_current_15min') ||   // Spot prices
                     entityId.includes('_export_price_current_15min') || // Export prices
-                    entityId.includes('_solar_forecast') ||              // Solar forecast
-                    entityId.includes('_battery_forecast')) {            // Battery forecast (OPRAVENO: prediction → forecast)
+                    entityId.includes('_solar_forecast') ||             // Solar forecast
+                    entityId.includes('_battery_forecast')) {           // Battery forecast
 
-                    // Battery forecast also triggers timeline refresh for Today Plan Tile
                     if (entityId.includes('_battery_forecast')) {
                         debouncedTimelineRefresh();
                     }
 
-                    // Check if actual data changed (not just last_updated timestamp)
-                    const oldState = event.data.old_state;
-                    const newState = event.data.new_state;
-
-                    if (oldState && newState) {
-                        // For pricing sensors, check if attributes actually changed
-                        const oldAttrs = JSON.stringify(oldState.attributes || {});
-                        const newAttrs = JSON.stringify(newState.attributes || {});
-
-                        if (oldAttrs === newAttrs && oldState.state === newState.state) {
-                            // No actual data change, skip update
-                            return;
+                    // Skip if payload didn't actually change (rough equivalent of old_state/new_state compare)
+                    if (newState) {
+                        let sig = '';
+                        try {
+                            sig = `${newState.state}|${JSON.stringify(newState.attributes || {})}`;
+                        } catch (e) {
+                            sig = `${newState.state}`;
                         }
+                        const prev = lastPricingPayload.get(entityId);
+                        if (prev === sig) return;
+                        lastPricingPayload.set(entityId, sig);
                     }
 
-                    // Invalidovat cache, aby se při další aktualizaci načetla nová timeline
                     if (typeof window.invalidatePricingTimelineCache === 'function') {
                         window.invalidatePricingTimelineCache();
                     }
-                    // console.log(`[Pricing] Sensor data changed: ${entityId}`, newState?.state);
-                    debouncedLoadPricingData(); // Trigger pricing chart update (debounced)
 
-                    // NOVÉ: Battery forecast obsahuje plánovanou spotřebu - aktualizovat ji
+                    debouncedLoadPricingData();
+
                     if (entityId.includes('_battery_forecast')) {
-                        debouncedUpdatePlannedConsumption(); // Trigger planned consumption update (debounced)
+                        debouncedUpdatePlannedConsumption();
                     }
                 }
-
-                // Custom tiles - check if entity is used in any tile
-                if (window.tileManager) {
-                    const tilesLeft = window.tileManager.getTiles('left');
-                    const tilesRight = window.tileManager.getTiles('right');
-                    const allTiles = [...(tilesLeft || []), ...(tilesRight || [])];
-
-                    // Check if changed entity is used in any tile (main or support entities)
-                    const isTileEntity = allTiles.some(tile => {
-                        if (!tile) return false;
-                        // Check main entity
-                        if (tile.entity === entityId) return true;
-                        // Check support entities
-                        if (tile.supportEntities) {
-                            return tile.supportEntities.some(se => se.entity === entityId);
-                        }
-                        return false;
-                    });
-
-                    if (isTileEntity) {
-                        console.log(`[Tiles] Entity used in tile changed: ${entityId}`);
-                        // Debounced re-render to prevent excessive updates
-                        if (!window.tileRenderTimeout) {
-                            window.tileRenderTimeout = setTimeout(() => {
-                                renderAllTiles();
-                                window.tileRenderTimeout = null;
-                            }, 100);
-                        }
-                    }
-                }
-            }
-        }, 'state_changed');
+            });
+        }
 
         // Subscribe to theme changes (HA events)
         hass.connection.subscribeEvents((event) => {

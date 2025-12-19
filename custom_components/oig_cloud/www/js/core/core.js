@@ -424,7 +424,7 @@ function init() {
     setTimeout(tryInitialShieldLoad, 1000);
 
     // === EVENT-DRIVEN ARCHITECTURE ===
-    // Veškeré updates jsou řízeny přes WebSocket subscriptions v subscribeToShield()
+    // Veškeré updates jsou řízeny přes StateWatcher (polling hass.states), bez dalších `state_changed` WS subscription.
     // - Data sensors -> debouncedLoadData() (200ms debounce)
     // - Detail sensors -> debouncedLoadNodeDetails() (500ms debounce)
     // - Pricing sensors -> debouncedLoadPricingData() (300ms debounce)

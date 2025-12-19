@@ -376,6 +376,9 @@ window.DashboardTileManager = DashboardTileManager;
 
 // Track subscribed entities to avoid duplicate subscriptions
 let subscribedEntities = new Set();
+let tilesWatchedEntities = new Set();
+let tilesWatcherUnsub = null;
+let tilesRenderTimeout = null;
 
 async function initCustomTiles() {
     console.log('[Tiles] Initializing custom tiles system...');
@@ -430,12 +433,6 @@ async function initCustomTiles() {
 function subscribeToTileEntities() {
     if (!tileManager) return;
 
-    const hass = getHass();
-    if (!hass || !hass.connection) {
-        console.warn('[Tiles] Cannot subscribe - no HA connection');
-        return;
-    }
-
     // Collect all entity IDs from tiles (both sides)
     const allEntityIds = new Set();
 
@@ -461,21 +458,35 @@ function subscribeToTileEntities() {
     // Only subscribe to new entities (avoid duplicates)
     const newEntities = [...allEntityIds].filter(id => !subscribedEntities.has(id));
 
-    if (newEntities.length > 0) {
-        console.log(`[Tiles] Subscribing to ${newEntities.length} entity updates:`, newEntities);
+    // Update watched set for the callback
+    tilesWatchedEntities = allEntityIds;
 
-        // Subscribe to state changes via WebSocket
-        hass.connection.subscribeEvents((event) => {
-            const entityId = event.data.entity_id;
-            const newState = event.data.new_state;
+    const watcher = window.DashboardStateWatcher;
+    if (!watcher) {
+        console.warn('[Tiles] StateWatcher not available yet, retrying...');
+        setTimeout(subscribeToTileEntities, 500);
+        return;
+    }
 
-            // Only update if entity is used in tiles
-            if (allEntityIds.has(entityId)) {
+    // Ensure watcher is running (idempotent)
+    watcher.start({ intervalMs: 1000, prefixes: [] });
+
+    // Ensure we have a single callback registered, and only update the watched entity set above.
+    if (!tilesWatcherUnsub) {
+        tilesWatcherUnsub = watcher.onEntityChange((entityId) => {
+            if (!tilesWatchedEntities || !tilesWatchedEntities.has(entityId)) return;
+            if (tilesRenderTimeout) return;
+            tilesRenderTimeout = setTimeout(() => {
+                tilesRenderTimeout = null;
                 console.log(`[Tiles] Entity ${entityId} changed, updating tiles...`);
-                // Re-render only tiles, not whole dashboard
                 renderAllTiles();
-            }
-        }, 'state_changed');
+            }, 100);
+        });
+    }
+
+    if (newEntities.length > 0) {
+        console.log(`[Tiles] Watching ${newEntities.length} entity updates:`, newEntities);
+        watcher.registerEntities(newEntities);
 
         // Mark as subscribed
         newEntities.forEach(id => subscribedEntities.add(id));

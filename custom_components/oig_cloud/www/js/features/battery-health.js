@@ -382,13 +382,25 @@ function subscribeBatteryHealthUpdates() {
 
     console.log('[Battery Health] Subscribing to updates:', sensorId);
 
-    // Event listener pro změny stavu
-    hass.connection.subscribeEvents((event) => {
-        if (event.data.entity_id === sensorId) {
+    const watcher = window.DashboardStateWatcher;
+    if (!watcher) {
+        console.warn('[Battery Health] StateWatcher not available yet, retrying...');
+        setTimeout(subscribeBatteryHealthUpdates, 500);
+        return;
+    }
+
+    // Ensure watcher is running (idempotent)
+    watcher.start({ intervalMs: 1000, prefixes: [`sensor.oig_${INVERTER_SN}_`] });
+
+    // Register and subscribe once
+    if (!window.__oigBatteryHealthWatcherUnsub) {
+        watcher.registerEntities([sensorId]);
+        window.__oigBatteryHealthWatcherUnsub = watcher.onEntityChange((entityId) => {
+            if (entityId !== sensorId) return;
             console.log('[Battery Health] Sensor changed, updating...');
             updateBatteryHealthStats();
-        }
-    }, 'state_changed');
+        });
+    }
 
     // První načtení
     updateBatteryHealthStats();
