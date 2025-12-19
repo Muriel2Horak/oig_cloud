@@ -628,6 +628,12 @@ var lastLayoutHash = null;
 // OPRAVA BUG #4: Cache pro power hodnoty
 var lastPowerValues = null;
 
+// Prevent overlapping refreshes (iOS WebView can freeze during HA initial state burst)
+var loadDataInProgress = false;
+var loadDataPending = false;
+var loadNodeDetailsInProgress = false;
+var loadNodeDetailsPending = false;
+
 // Calculate layout hash to detect changes
 function getLayoutHash() {
     const solar = document.querySelector('.solar');
@@ -644,14 +650,15 @@ function getLayoutHash() {
     // which changes getBoundingClientRect() top/left but *not* the layout inside the canvas.
     const canvasRect = canvas.getBoundingClientRect();
 
-    // OPRAVA BUG #5: Zahrnout délku obsahu pro detekci změny velikosti
+    // Hash based on relative geometry.
+    // IMPORTANT: Do NOT include textContent length; it changes frequently during updates and
+    // would cause unnecessary particle restarts (especially painful on iOS WebView).
     const hash = [solar, battery, inverter, grid, house]
         .map(el => {
             const rect = el.getBoundingClientRect();
-            const contentLength = el.textContent?.length || 0;
             const relLeft = rect.left - canvasRect.left;
             const relTop = rect.top - canvasRect.top;
-            return `${Math.round(relLeft)},${Math.round(relTop)},${Math.round(rect.width)},${Math.round(rect.height)},${contentLength}`;
+            return `${Math.round(relLeft)},${Math.round(relTop)},${Math.round(rect.width)},${Math.round(rect.height)}`;
         })
         .join('|');
 
@@ -710,7 +717,23 @@ function getNodeCenters() {
         house: getCenter(nodes.house)
     };
 
-    // OPRAVA BUG #1: Zkontrolovat změnu PŘED nastavením nového hashe
+    // Detect meaningful center movement (avoid restarting particles on tiny shifts).
+    const prev = cachedNodeCenters;
+    const centerShift = (a, b) => {
+        if (!a || !b) return 0;
+        const dx = (a.x || 0) - (b.x || 0);
+        const dy = (a.y || 0) - (b.y || 0);
+        return Math.sqrt(dx * dx + dy * dy);
+    };
+    const maxShift = prev
+        ? Math.max(
+            centerShift(prev.solar, centers.solar),
+            centerShift(prev.battery, centers.battery),
+            centerShift(prev.inverter, centers.inverter),
+            centerShift(prev.grid, centers.grid),
+            centerShift(prev.house, centers.house),
+        )
+        : 999;
     const layoutChanged = currentHash !== lastLayoutHash;
 
     // Cache the results
@@ -719,7 +742,7 @@ function getNodeCenters() {
 
     // OPRAVA: Pokud se layout změnil, vyčistit VŠECHNY particles
     // protože mají hardcodované staré cílové pozice v animacích
-    if (layoutChanged && currentHash) {
+    if (layoutChanged && currentHash && maxShift >= 12) {
         console.log('[Layout] Layout changed, stopping all particles and redrawing connections');
 
         // Zastavit všechny běžící particles (mají staré pozice)
@@ -1101,15 +1124,23 @@ function updateClassIfChanged(element, className, shouldAdd) {
 
 // Load and update data (optimized - partial updates only)
 async function loadData() {
+    if (loadDataInProgress) {
+        loadDataPending = true;
+        return;
+    }
+    loadDataInProgress = true;
+    try {
     // Solar
-    const solarP1Data = await getSensor(getSensorId('actual_fv_p1'));
-    const solarP2Data = await getSensor(getSensorId('actual_fv_p2'));
-    const solarPercData = await getSensor(getSensorId('dc_in_fv_proc'));
+    const [solarP1Data, solarP2Data, solarPercData, solarTodayData] = await Promise.all([
+        getSensor(getSensorId('actual_fv_p1')),
+        getSensor(getSensorId('actual_fv_p2')),
+        getSensor(getSensorId('dc_in_fv_proc')),
+        getSensor(getSensorId('dc_in_fv_ad')),
+    ]);
     const solarP1 = solarP1Data.value || 0;
     const solarP2 = solarP2Data.value || 0;
     const solarPower = solarP1 + solarP2;
     const solarPerc = solarPercData.value || 0;
-    const solarTodayData = await getSensor(getSensorId('dc_in_fv_ad'));
     const solarTodayWh = solarTodayData.value || 0;
     const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
 
@@ -1140,8 +1171,10 @@ async function loadData() {
     updateClassIfChanged(solarNode, 'active', solarPower > 50);
 
     // Battery
-    const batterySoCData = await getSensor(getSensorId('batt_bat_c'));
-    const batteryPowerData = await getSensor(getSensorId('batt_batt_comp_p'));
+    const [batterySoCData, batteryPowerData] = await Promise.all([
+        getSensor(getSensorId('batt_bat_c')),
+        getSensor(getSensorId('batt_batt_comp_p')),
+    ]);
     const batterySoC = batterySoCData.value || 0;
     const batteryPower = batteryPowerData.value || 0;
 
@@ -1451,10 +1484,11 @@ async function loadData() {
     // ===== ANIMATION DATA LOADING =====
     // Load sensors needed for proper animation logic (solarPerc already loaded above)
 
-    const boilerPowerData = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
+    const [boilerPowerData, boilerInstallPowerData] = await Promise.all([
+        getSensorSafe(getSensorId('boiler_current_cbb_w')),
+        getSensorSafe(getSensorId('boiler_install_power')),
+    ]);
     const boilerPower = boilerPowerData.value || 0;
-
-    const boilerInstallPowerData = await getSensorSafe(getSensorId('boiler_install_power'));
     const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
 
     // OPRAVA BUG #4: Volat animateFlow() jen pokud se hodnoty skutečně změnily
@@ -1484,8 +1518,12 @@ async function loadData() {
         }
         lastPowerValues = currentPowerValues;
 
-        // Animate particles (kontinuálně běžící s aktualizací rychlosti)
-        animateFlow(currentPowerValues);
+        // Animate particles only when Flow tab is active (reduces initial load cost on iOS).
+        const flowTab = document.querySelector('#flow-tab');
+        const isFlowTabActive = flowTab && flowTab.classList.contains('active');
+        if (isFlowTabActive) {
+            animateFlow(currentPowerValues);
+        }
     }
 
     // REMOVED: Control panel status now handled by WebSocket events
@@ -1496,7 +1534,8 @@ async function loadData() {
 
     // Load details for all nodes (only on first load or explicit refresh)
     if (!previousValues['node-details-loaded']) {
-        await loadNodeDetails(); // Wait for details on first load
+        // Do not await heavy details on first render; it can freeze iOS WebView.
+        loadNodeDetails();
         previousValues['node-details-loaded'] = true;
     }
 
@@ -1524,6 +1563,13 @@ async function loadData() {
     }
 
     // Performance chart removed (legacy performance tracking)
+    } finally {
+        loadDataInProgress = false;
+        if (loadDataPending) {
+            loadDataPending = false;
+            setTimeout(() => loadData(), 0);
+        }
+    }
 }
 
 // Force full refresh (for manual reload or after service calls)
@@ -1535,6 +1581,11 @@ function forceFullRefresh() {
 
 // Load detailed information for all nodes (optimized - partial updates)
 async function loadNodeDetails() {
+    if (loadNodeDetailsInProgress) {
+        loadNodeDetailsPending = true;
+        return;
+    }
+    loadNodeDetailsInProgress = true;
     try {
         // === SOLAR DETAILS ===
         const solarP1 = await getSensor(getSensorId('dc_in_fv_p1'));
@@ -1819,11 +1870,17 @@ async function loadNodeDetails() {
 
     } catch (e) {
         console.error('[Details] Error loading node details:', e);
-    }
+    } finally {
+        loadNodeDetailsInProgress = false;
+        if (loadNodeDetailsPending) {
+            loadNodeDetailsPending = false;
+            setTimeout(() => loadNodeDetails(), 0);
+        }
 
-    // FIX: Překreslit linky po načtení dat (může se změnit pozice elementů)
-    // Použít debounced verzi aby se nepřekreslovali příliš často
-    debouncedDrawConnections(50);
+        // FIX: Překreslit linky po načtení dat (může se změnit pozice elementů)
+        // Použít debounced verzi aby se nepřekreslovali příliš často
+        debouncedDrawConnections(50);
+    }
 }
 
 // Show charge battery dialog
