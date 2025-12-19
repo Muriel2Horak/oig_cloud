@@ -1145,12 +1145,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 )
 
         # Uložení dat do hass.data
+        # Local telemetry store (cloud-shaped payload for coordinator.data in local mode)
+        telemetry_store = None
+        try:
+            from .telemetry_store import TelemetryStore
+            from .oig_cloud_sensor import resolve_box_id
+
+            store_box_id = entry.options.get("box_id") or entry.data.get("box_id")
+            if not (isinstance(store_box_id, str) and store_box_id.isdigit()):
+                store_box_id = resolve_box_id(coordinator)
+            if isinstance(store_box_id, str) and store_box_id.isdigit():
+                telemetry_store = TelemetryStore(hass, box_id=store_box_id)
+                # Expose on coordinator for other modules (optional)
+                setattr(coordinator, "telemetry_store", telemetry_store)
+        except Exception:
+            telemetry_store = None
+
         hass.data[DOMAIN][entry.entry_id] = {
             "coordinator": coordinator,
             "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
             "data_source_controller": None,
             "data_source_state": get_data_source_state(hass, entry.entry_id),
+            "telemetry_store": telemetry_store,
             "solar_forecast": solar_forecast,
             "statistics_enabled": statistics_enabled,
             "analytics_device_info": analytics_device_info,
@@ -1169,7 +1186,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
         # Data source controller (cloud/hybrid/local with proxy health fallback)
         try:
-            data_source_controller = DataSourceController(hass, entry, coordinator)
+            data_source_controller = DataSourceController(
+                hass,
+                entry,
+                coordinator,
+                telemetry_store=hass.data[DOMAIN][entry.entry_id].get("telemetry_store"),
+            )
             await data_source_controller.async_start()
             hass.data[DOMAIN][entry.entry_id]["data_source_controller"] = (
                 data_source_controller

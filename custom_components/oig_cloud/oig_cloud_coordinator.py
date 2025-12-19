@@ -504,7 +504,27 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             except Exception:
                 use_cloud = True
 
-            stats = await self._try_get_stats() if use_cloud else (self.data or {})
+            if use_cloud:
+                stats = await self._try_get_stats()
+            else:
+                # Local mode: coordinator.data must already be cloud-shaped (filled by TelemetryStore).
+                telemetry_store = getattr(self, "telemetry_store", None)
+                if telemetry_store is not None:
+                    try:
+                        snap = telemetry_store.get_snapshot()
+                        stats = snap.payload
+                    except Exception:
+                        stats = self.data or {}
+                else:
+                    stats = self.data or {}
+
+                # Local mode: some configuration nodes can legitimately be missing/unknown.
+                # Fetch those from cloud as a lightweight fallback (no other exceptions).
+                try:
+                    if isinstance(stats, dict):
+                        await self._maybe_fill_config_nodes_from_cloud(stats)
+                except Exception:
+                    pass
 
             # Cloud notifications are optional and should never run in local/hybrid effective mode.
             cloud_notifications_enabled = bool(
@@ -759,6 +779,75 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error(f"Error fetching standard stats: {e}", exc_info=True)
             raise e
+
+    async def _maybe_fill_config_nodes_from_cloud(self, stats: Dict[str, Any]) -> None:
+        """In local effective mode, backfill missing configuration nodes from cloud (throttled)."""
+        now = self._utcnow()
+        last = getattr(self, "_last_cloud_config_fill_ts", None)
+        if isinstance(last, datetime):
+            if (now - last).total_seconds() < 900:
+                return
+
+        box_id: Optional[str] = None
+        try:
+            entry = self.config_entry
+            if entry:
+                opt = getattr(entry, "options", {}) or {}
+                for key in ("box_id", "inverter_sn"):
+                    val = opt.get(key)
+                    if isinstance(val, str) and val.isdigit():
+                        box_id = val
+                        break
+        except Exception:
+            box_id = None
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            try:
+                box_id = next((str(k) for k in stats.keys() if str(k).isdigit()), None)
+            except Exception:
+                box_id = None
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return
+
+        box = stats.get(box_id)
+        if not isinstance(box, dict):
+            return
+
+        config_nodes = (
+            "box_prms",
+            "batt_prms",
+            "invertor_prm1",
+            "invertor_prms",
+            "boiler_prms",
+        )
+        missing_nodes = [n for n in config_nodes if not isinstance(box.get(n), dict) or not box.get(n)]
+        if not missing_nodes:
+            return
+
+        cloud = None
+        try:
+            cloud = await self.api.get_stats()
+        except Exception as err:
+            _LOGGER.debug("Local mode: config backfill cloud fetch failed: %s", err)
+            return
+        if not isinstance(cloud, dict):
+            return
+        cloud_box = cloud.get(box_id)
+        if not isinstance(cloud_box, dict):
+            return
+
+        did = False
+        for node_id in missing_nodes:
+            node = cloud_box.get(node_id)
+            if isinstance(node, dict) and node:
+                box[node_id] = node
+                did = True
+
+        if did:
+            self._last_cloud_config_fill_ts = now
+            _LOGGER.info(
+                "Local mode: backfilled config nodes from cloud: %s",
+                ",".join(missing_nodes),
+            )
 
     def _today_range(self) -> Tuple[str, str]:
         """Vrátí dnešní datum jako string tuple pro API."""

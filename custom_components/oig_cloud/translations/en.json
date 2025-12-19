@@ -613,7 +613,7 @@
           "standard_scan_interval": "Basic data (seconds)"
         },
         "data_description": {
-          "data_source_mode": "Cloud only = always cloud; Hybrid = use mapped local entities when proxy is fresh, otherwise cloud; Local only = only mapped local entities",
+          "data_source_mode": "Cloud only = always cloud; Local only = mapped local entities (falls back to cloud when proxy is stale/unavailable)",
           "enable_cloud_notifications": "Enable fetching cloud notifications (typically enough once every few minutes)",
           "extended_scan_interval": "How often to load cell voltages, temperatures, currents and other detailed data (minimum 300 seconds, recommended 300-600 seconds)",
           "go_back": "Check this box and press 'Submit' - you will go back one step",

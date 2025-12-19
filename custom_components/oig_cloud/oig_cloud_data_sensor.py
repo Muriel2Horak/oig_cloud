@@ -5,15 +5,7 @@ from typing import Any, Callable, Dict, Optional, Union
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
-
-from .data_source import (
-    DATA_SOURCE_HYBRID,
-    DATA_SOURCE_LOCAL_ONLY,
-    EVENT_DATA_SOURCE_CHANGED,
-    get_data_source_state,
-)
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -105,43 +97,10 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         except Exception:
             self._restored_state = None
 
-        # Only useful when local mode is configured.
-        entry = getattr(self.coordinator, "config_entry", None)
-        self._entry_id = getattr(entry, "entry_id", None)
-        if entry and entry.options.get("data_source_mode", "cloud_only") == "cloud_only":
-            return
-
-        local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
-        if not local_entity_id:
-            return
-
-        # Refresh when effective data source changes (cloud <-> local fallback).
-        @callback
-        def _on_data_source_changed(event: Any) -> None:
-            if not self._entry_id:
-                return
-            if event.data.get("entry_id") != self._entry_id:
-                return
-            self.async_write_ha_state()
-
-        self._data_source_unsub = self.hass.bus.async_listen(
-            EVENT_DATA_SOURCE_CHANGED, _on_data_source_changed
-        )
-
-        @callback
-        def _on_local_change(_event: Any) -> None:
-            # Re-evaluate state immediately when the mapped local entity updates.
-            self.async_write_ha_state()
-
-        self._local_state_unsub = async_track_state_change_event(
-            self.hass, [local_entity_id], _on_local_change
-        )
-
-        # Populate state right away if local value already exists.
-        try:
-            self.async_write_ha_state()
-        except Exception:
-            pass
+        # Local telemetry mapping is handled centrally by DataSourceController
+        # which keeps coordinator.data in a cloud-shaped format even in local mode.
+        # Data sensors therefore never subscribe to `sensor.oig_local_*` directly.
+        return
 
     async def async_will_remove_from_hass(self) -> None:
         if self._local_state_unsub:
@@ -191,22 +150,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
 
     @property
     def available(self) -> bool:
-        """Prefer local entity availability in local/hybrid mode."""
-        try:
-            entry = getattr(self.coordinator, "config_entry", None)
-            entry_id = getattr(entry, "entry_id", None)
-            if entry_id:
-                ds = get_data_source_state(self.hass, entry_id)
-                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY):
-                    local_entity_id = self._get_local_entity_id_for_config(
-                        self._sensor_config
-                    )
-                    if local_entity_id:
-                        st = self.hass.states.get(local_entity_id)
-                        if st and st.state not in (None, "", "unknown", "unavailable"):
-                            return True
-        except Exception:
-            pass
+        """Return whether entity is available."""
         return super().available
 
     @property
@@ -240,25 +184,6 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                 return notification_manager.get_latest_notification_message()
 
             elif self._sensor_type == "bypass_status":
-                # Prefer local value in local/hybrid mode.
-                try:
-                    entry = getattr(self.coordinator, "config_entry", None)
-                    entry_id = getattr(entry, "entry_id", None)
-                    if entry_id:
-                        ds = get_data_source_state(self.hass, entry_id)
-                        if (
-                            ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY)
-                            and ds.local_available
-                        ):
-                            local_value = self._get_local_value()
-                            if local_value is not None:
-                                try:
-                                    return "on" if int(local_value) == 1 else "off"
-                                except Exception:
-                                    return "on" if str(local_value).lower() in ("on", "true", "1") else "off"
-                except Exception:
-                    pass
-
                 notification_manager = getattr(
                     self.coordinator, "notification_manager", None
                 )
@@ -292,36 +217,6 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                 if notification_manager is None:
                     return None
                 return notification_manager.get_unread_count()
-
-            # Hybrid/Local mode: federate values from oig_local sensors (no state writing)
-            entry = getattr(self.coordinator, "config_entry", None)
-            entry_id = getattr(entry, "entry_id", None)
-            if entry_id:
-                ds = get_data_source_state(self.hass, entry_id)
-                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY) and ds.local_available:
-                    local_value = self._get_local_value()
-                    if local_value is not None:
-                        # Apply the same per-sensor transforms as cloud path
-                        if self._sensor_type == "box_prms_mode":
-                            try:
-                                # Local sensor can already expose human-readable text ("Home 1"/"Home UPS")
-                                if isinstance(local_value, str) and local_value.lower().startswith("home"):
-                                    return local_value
-                                return self._get_mode_name(int(local_value), "cs")
-                            except (ValueError, TypeError):
-                                return str(local_value)
-                        if self._sensor_type == "invertor_prms_to_grid":
-                            return self._get_local_grid_mode(local_value, "cs")
-                        if "ssr" in self._sensor_type:
-                            return self._get_ssrmode_name(local_value, "cs")
-                        if self._sensor_type == "boiler_manual_mode":
-                            return self._get_boiler_mode_name(local_value, "cs")
-                        if self._sensor_type in ("boiler_is_use", "box_prms_crct"):
-                            return self._get_on_off_name(local_value, "cs")
-                        return local_value
-
-                    if ds.effective_mode == DATA_SOURCE_LOCAL_ONLY:
-                        return self._fallback_value()
 
             if self.coordinator.data is None:
                 return self._fallback_value()
@@ -724,19 +619,6 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Local-only / hybrid mode is event-driven per-entity: ignore coordinator refreshes
-        # for sensors that have a mapped local entity.
-        try:
-            entry = getattr(self.coordinator, "config_entry", None)
-            entry_id = getattr(entry, "entry_id", None)
-            local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
-            if entry_id and local_entity_id:
-                ds = get_data_source_state(self.hass, entry_id)
-                if ds.effective_mode in (DATA_SOURCE_HYBRID, DATA_SOURCE_LOCAL_ONLY):
-                    return
-        except Exception:
-            pass
-
         if self.coordinator.data:
             # Uložíme si starou hodnotu PŘED aktualizací
             old_value = self._last_state

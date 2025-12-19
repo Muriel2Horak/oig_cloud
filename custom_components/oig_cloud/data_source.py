@@ -267,13 +267,21 @@ class DataSourceController:
 
     _LOCAL_ENTITY_RE = re.compile(r"^sensor\.oig_local_(\d+)_")
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, coordinator: Any) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        coordinator: Any,
+        telemetry_store: Optional[Any] = None,
+    ) -> None:
         self.hass = hass
         self.entry = entry
         self.coordinator = coordinator
+        self.telemetry_store = telemetry_store
 
         self._unsubs: list[callable] = []
         self._last_local_entity_update: Optional[dt_util.dt.datetime] = None
+        self._pending_local_entities: set[str] = set()
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
@@ -284,6 +292,16 @@ class DataSourceController:
 
     async def async_start(self) -> None:
         self._update_state(force=True)
+
+        # Seed coordinator payload from existing local states (only in configured local/hybrid mode).
+        try:
+            if get_configured_mode(self.entry) != DATA_SOURCE_CLOUD_ONLY and self.telemetry_store:
+                did_seed = self.telemetry_store.seed_from_existing_local_states()
+                if did_seed and getattr(self.coordinator, "async_set_updated_data", None):
+                    snap = self.telemetry_store.get_snapshot()
+                    self.coordinator.async_set_updated_data(snap.payload)
+        except Exception:
+            pass
 
         # Watch proxy last_data changes
         if _async_track_state_change_event is not None:
@@ -344,6 +362,14 @@ class DataSourceController:
         if get_configured_mode(self.entry) == DATA_SOURCE_CLOUD_ONLY:
             return
 
+        # Ignore local events while effective mode is cloud fallback (no mixing).
+        try:
+            state = get_data_source_state(self.hass, self.entry.entry_id)
+            if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
+                return
+        except Exception:
+            pass
+
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
@@ -378,7 +404,8 @@ class DataSourceController:
         except Exception:
             self._last_local_entity_update = dt_util.utcnow()
 
-        # Re-evaluate effective mode and refresh sensors (debounced).
+        # Track changed entities and apply mapping to coordinator payload (debounced).
+        self._pending_local_entities.add(entity_id)
         self._schedule_debounced_poke()
 
     @callback
@@ -392,12 +419,22 @@ class DataSourceController:
         """Debounced handler for local telemetry changes.
 
         - Updates DataSourceState (may switch effective mode)
-        - Does not poke coordinator; entities refresh per-entity
+        - Applies local mapping into coordinator.data (cloud-shaped payload)
         """
         try:
             _, mode_changed = self._update_state()
             if mode_changed:
                 self._on_effective_mode_changed()
+            # Only apply local mapping when effective mode is local.
+            state = get_data_source_state(self.hass, self.entry.entry_id)
+            if state.effective_mode != DATA_SOURCE_CLOUD_ONLY and self.telemetry_store:
+                pending = list(self._pending_local_entities)
+                self._pending_local_entities.clear()
+                if pending:
+                    changed = self.telemetry_store.apply_local_events(pending)
+                    if changed and getattr(self.coordinator, "async_set_updated_data", None):
+                        snap = self.telemetry_store.get_snapshot()
+                        self.coordinator.async_set_updated_data(snap.payload)
         except Exception:
             pass
 

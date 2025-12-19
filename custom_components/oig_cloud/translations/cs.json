@@ -493,7 +493,7 @@
           "standard_scan_interval": "Základní data (sekund)"
         },
         "data_description": {
-          "data_source_mode": "Cloud only = vše z cloudu; Hybrid = lokální mapping pokud je proxy čerstvá, jinak cloud; Local only = jen lokální mapping",
+          "data_source_mode": "Cloud only = vše z cloudu; Local only = lokální mapping (při výpadku/zastarání proxy automaticky fallback na cloud)",
           "enable_cloud_notifications": "Povolit stahování cloud notifikací (typicky stačí 1× za několik minut)",
           "extended_scan_interval": "Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",

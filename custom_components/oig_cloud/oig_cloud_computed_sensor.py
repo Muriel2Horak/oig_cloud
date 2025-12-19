@@ -4,11 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
-from homeassistant.helpers.event import (
-    async_track_time_change,
-    async_track_time_interval,
-    async_track_state_change_event,
-)
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -78,13 +74,11 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         else:
             self._is_real_update_sensor = False
 
-        # State-change listeners for HA entity dependencies
-        self._local_dependencies: list[str] = []
-        self._dep_unsub = None
-        self._local_tick_unsub = None
+        # Unsubscribe handle for daily reset callback
+        self._daily_reset_unsub = None
 
-    def _get_local_number(self, entity_id: str) -> Optional[float]:
-        """Read numeric value from HA state, returning None if missing/invalid."""
+    def _get_entity_number(self, entity_id: str) -> Optional[float]:
+        """Read numeric value from HA state."""
         if not getattr(self, "hass", None):
             return None
         st = self.hass.states.get(entity_id)
@@ -95,148 +89,28 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except (ValueError, TypeError):
             return None
 
-    def _get_local_datetime(self, entity_id: str) -> Optional[datetime]:
-        """Read datetime-ish value from HA state, returning UTC datetime if parseable."""
+    def _get_oig_number(self, sensor_type: str) -> Optional[float]:
+        box = self._box_id
+        if not (isinstance(box, str) and box.isdigit()):
+            return None
+        return self._get_entity_number(f"sensor.oig_{box}_{sensor_type}")
+
+    def _get_oig_last_updated(self, sensor_type: str) -> Optional[datetime]:
         if not getattr(self, "hass", None):
             return None
-        st = self.hass.states.get(entity_id)
-        if not st or st.state in (None, "unknown", "unavailable", ""):
+        box = self._box_id
+        if not (isinstance(box, str) and box.isdigit()):
             return None
-
-        value: Any = st.state
-        try:
-            if isinstance(value, (int, float)):
-                ts = float(value)
-                if ts > 1_000_000_000_000:  # ms epoch
-                    ts = ts / 1000.0
-                return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
-            if isinstance(value, str):
-                s = value.strip()
-                if s.isdigit():
-                    ts = float(s)
-                    if ts > 1_000_000_000_000:  # ms epoch
-                        ts = ts / 1000.0
-                    return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
-                dt = dt_util.parse_datetime(s)
-                if dt is None:
-                    dt = dt_util.dt.datetime.fromisoformat(s)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
-                return dt_util.as_utc(dt)
-        except Exception:
+        st = self.hass.states.get(f"sensor.oig_{box}_{sensor_type}")
+        if not st:
             return None
-        return None
-
-    def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[float]:
-        """Get value from HA based on sensor definition (uses local_entity_id/suffix)."""
         try:
-            cfg = SENSOR_TYPES.get(sensor_type)
-            if not cfg:
+            dt = st.last_updated or st.last_changed
+            if dt is None:
                 return None
-
-            entity_id = cfg.get("local_entity_id")
-            if not entity_id:
-                suffix = cfg.get("local_entity_suffix")
-                if suffix and self._box_id and self._box_id != "unknown":
-                    entity_id = f"sensor.oig_local_{self._box_id}_{suffix}"
-
-            if not entity_id:
-                return None
-
-            return self._get_local_number(entity_id)
+            return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
         except Exception:
             return None
-
-    def _build_local_dependencies(self) -> list[str]:
-        """Return list of entity_ids this computed sensor depends on."""
-        deps: list[str] = []
-        st = self._sensor_type
-        box: Optional[str] = self._box_id if self._box_id and self._box_id != "unknown" else None
-
-        # Direct mapping from SENSOR_TYPES (local_entity_id/suffix)
-        try:
-            from .sensor_types import SENSOR_TYPES
-
-            cfg = SENSOR_TYPES.get(st, {})
-            ent = cfg.get("local_entity_id")
-            if not ent:
-                suffix = cfg.get("local_entity_suffix")
-                if suffix and box:
-                    ent = f"sensor.oig_local_{box}_{suffix}"
-            if ent:
-                deps.append(ent)
-        except Exception:
-            pass
-
-        # Special sums
-        if st == "ac_in_aci_wtotal":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            base = f"sensor.oig_local_{box}_tbl_ac_in_aci_w"
-            deps += [f"{base}r", f"{base}s", f"{base}t"]
-        if st == "actual_aci_wtotal":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            base = f"sensor.oig_local_{box}_tbl_actual_aci_w"
-            deps += [f"{base}r", f"{base}s", f"{base}t"]
-        if st == "actual_fv_total":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps += [
-                f"sensor.oig_local_{box}_tbl_actual_fv_p1",
-                f"sensor.oig_local_{box}_tbl_actual_fv_p2",
-            ]
-        if st == "dc_in_fv_total":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps += [
-                f"sensor.oig_local_{box}_tbl_dc_in_fv_p1",
-                f"sensor.oig_local_{box}_tbl_dc_in_fv_p2",
-            ]
-        if st in ("batt_batt_comp_p_charge", "batt_batt_comp_p_discharge"):
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
-
-        # Local/hybrid energy breakdown (proxy counters)
-        if st == "computed_batt_charge_energy_today":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
-        if st == "computed_batt_charge_fve_energy_today":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
-        if st == "computed_batt_discharge_energy_today":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_and")
-        if st == "computed_batt_charge_fve_energy_month":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_am")
-        if st == "computed_batt_charge_fve_energy_year":
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_bat_ay")
-
-        # Battery capacity helpers
-        if st in ("usable_battery_capacity", "missing_battery_kwh", "remaining_usable_capacity"):
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
-            deps.append(f"sensor.oig_local_{box}_tbl_batt_prms_bat_min")
-
-        # Time to full/empty uses bat_p and bat_c
-        if st in ("time_to_full", "time_to_empty"):
-            if not box:
-                return sorted(set(d for d in deps if d))
-            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_c")
-            deps.append(f"sensor.oig_local_{box}_tbl_actual_bat_p")
-
-        # Deduplicate
-        return sorted(set(d for d in deps if d))
 
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
@@ -405,31 +279,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                         f"(max={max_val}), keeping defaults"
                     )
 
-        # Nastavit listener na změny lokálních entit, které ovlivňují computed senzor
-        if not self._local_dependencies:
-            self._local_dependencies = self._build_local_dependencies()
-        if self._local_dependencies:
-            deps = self._local_dependencies
-
-            async def _on_dep_change(event):
-                # Přepočítat stav ihned po změně závislosti
-                self.async_write_ha_state()
-
-            self._dep_unsub = async_track_state_change_event(
-                self.hass, deps, _on_dep_change
-            )
-            # Safety net: periodically refresh computed values that depend on local entities.
-            # This avoids "stuck" totals if we miss dependency events during HA startup.
-            if not self._local_tick_unsub:
-                async def _periodic_refresh(_now: Any) -> None:
-                    self.async_write_ha_state()
-
-                self._local_tick_unsub = async_track_time_interval(
-                    self.hass,
-                    _periodic_refresh,
-                    timedelta(seconds=30),
-                )
-
         # Po inicializaci (load/restore + dependency listeners) hned přepiš stav,
         # aby se uživatelům neukazovala dočasná nula po restartu.
         self.async_write_ha_state()
@@ -458,226 +307,110 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     @property
     def state(self) -> Optional[Union[float, str]]:  # noqa: C901
-        # Prefer local-derived values even when coordinator payload is temporarily unavailable.
-        data = self.coordinator.data if isinstance(self.coordinator.data, dict) else None
-        pv_data = None
-        if isinstance(data, dict) and data:
-            if self._box_id and self._box_id != "unknown" and self._box_id in data:
-                pv_data = data.get(self._box_id)
-            if pv_data is None:
-                pv_data = list(data.values())[0]
-
-        # OPRAVA: Kontrola existence "actual" dat pouze tam kde jsou potřeba
-        if (
-            self._sensor_type
-            in [
-                "time_to_empty",
-                "time_to_full",
-                "usable_battery_capacity",
-                "missing_battery_kwh",
-                "remaining_usable_capacity",
-            ]
-            and (not isinstance(pv_data, dict) or "actual" not in pv_data)
-        ):
-            _LOGGER.warning(
-                f"[{self.entity_id}] Live Data nejsou zapnutá v OIG aplikaci. "
-                f"Zapněte Live Data v mobilní aplikaci OIG pro správnou funkci computed senzorů."
-            )
+        box = self._box_id
+        if not (isinstance(box, str) and box.isdigit()):
             return None
 
-        # Speciální handling pro real_data_update senzor
         if self._sensor_type == "real_data_update":
-            # If local/hybrid mode is enabled, prefer the proxy "last data" timestamp.
-            try:
-                from .data_source import DATA_SOURCE_CLOUD_ONLY, get_effective_mode
-
-                entry = getattr(self.coordinator, "config_entry", None)
-                if entry is not None and get_effective_mode(self.hass, entry.entry_id) != DATA_SOURCE_CLOUD_ONLY:
-                    cfg = SENSOR_TYPES.get("real_data_update", {})
-                    ent = cfg.get("local_entity_id")
-                    if isinstance(ent, str):
-                        local_dt = self._get_local_datetime(ent)
-                        if local_dt is not None:
-                            self._last_update_time = dt_util.as_local(local_dt)
-                            return self._last_update_time.isoformat()
-            except Exception:
-                pass
-
-            if isinstance(pv_data, dict) and self._check_for_real_data_changes(pv_data):
-                # Používáme lokální čas místo UTC
-                self._last_update_time = dt_util.now()
-                _LOGGER.debug(
-                    f"[{self.entity_id}] Real data update detected at {self._last_update_time}"
-                )
-
-            return (
-                self._last_update_time.isoformat() if self._last_update_time else None
+            dt = (
+                self._get_oig_last_updated("batt_batt_comp_p")
+                or self._get_oig_last_updated("batt_bat_c")
+                or self._get_oig_last_updated("device_lastcall")
             )
-
-        # Obecný fallback: pokud máme lokální entitu pro computed senzor, vezmeme její hodnotu
-        # (vynecháváme computed_batt_* - ty mají vlastní integrační/odvozenou logiku)
-        if not self._sensor_type.startswith("computed_batt_"):
-            local_direct = self._get_local_value_for_sensor_type(self._sensor_type)
-            if local_direct is not None:
-                return local_direct
+            return dt_util.as_local(dt).isoformat() if dt else None
 
         if self._sensor_type == "ac_in_aci_wtotal":
-            # Preferuj lokální fáze AC_IN
-            if self._box_id and self._box_id != "unknown":
-                base = f"sensor.oig_local_{self._box_id}_tbl_ac_in_aci_w"
-                wr = self._get_local_number(f"{base}r")
-                ws = self._get_local_number(f"{base}s")
-                wt = self._get_local_number(f"{base}t")
-                if wr is not None and ws is not None and wt is not None:
-                    return float(wr + ws + wt)
-                # Fallback: sum our own per-phase sensors.
-                wr = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_wr")
-                ws = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_ws")
-                wt = self._get_local_number(f"sensor.oig_{self._box_id}_ac_in_aci_wt")
-                if wr is not None and ws is not None and wt is not None:
-                    return float(wr + ws + wt)
-            if not isinstance(pv_data, dict):
+            wr = self._get_oig_number("ac_in_aci_wr")
+            ws = self._get_oig_number("ac_in_aci_ws")
+            wt = self._get_oig_number("ac_in_aci_wt")
+            if wr is None or ws is None or wt is None:
                 return None
-            return float(pv_data["ac_in"]["aci_wr"] + pv_data["ac_in"]["aci_ws"] + pv_data["ac_in"]["aci_wt"])
+            return float(wr + ws + wt)
+
         if self._sensor_type == "actual_aci_wtotal":
-            # Nejprve zkusíme poskládat hodnotu přímo z HA entit (lokální senzory)
-            if self._box_id and self._box_id != "unknown":
-                base = f"sensor.oig_local_{self._box_id}_tbl_actual_aci_w"
-                wr = self._get_local_number(f"{base}r")
-                ws = self._get_local_number(f"{base}s")
-                wt = self._get_local_number(f"{base}t")
-                if wr is not None and ws is not None and wt is not None:
-                    return float(wr + ws + wt)
-                # Fallback: sum our own per-phase sensors.
-                wr = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_wr")
-                ws = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_ws")
-                wt = self._get_local_number(f"sensor.oig_{self._box_id}_actual_aci_wt")
-                if wr is not None and ws is not None and wt is not None:
-                    return float(wr + ws + wt)
-
-            # Fallback na data v koordinatoru
-            if not isinstance(pv_data, dict) or "actual" not in pv_data:
+            wr = self._get_oig_number("actual_aci_wr")
+            ws = self._get_oig_number("actual_aci_ws")
+            wt = self._get_oig_number("actual_aci_wt")
+            if wr is None or ws is None or wt is None:
                 return None
-            return float(pv_data["actual"]["aci_wr"] + pv_data["actual"]["aci_ws"] + pv_data["actual"]["aci_wt"])
+            return float(wr + ws + wt)
+
         if self._sensor_type == "dc_in_fv_total":
-            if self._box_id and self._box_id != "unknown":
-                p1 = self._get_local_number(
-                    f"sensor.oig_local_{self._box_id}_tbl_dc_in_fv_p1"
-                )
-                p2 = self._get_local_number(
-                    f"sensor.oig_local_{self._box_id}_tbl_dc_in_fv_p2"
-                )
-                if p1 is not None and p2 is not None:
-                    return float(p1 + p2)
-            return float(pv_data["dc_in"]["fv_p1"] + pv_data["dc_in"]["fv_p2"])
+            p1 = self._get_oig_number("dc_in_fv_p1")
+            p2 = self._get_oig_number("dc_in_fv_p2")
+            if p1 is None or p2 is None:
+                return None
+            return float(p1 + p2)
+
         if self._sensor_type == "actual_fv_total":
-            if self._box_id and self._box_id != "unknown":
-                p1 = self._get_local_number(
-                    f"sensor.oig_local_{self._box_id}_tbl_actual_fv_p1"
-                )
-                p2 = self._get_local_number(
-                    f"sensor.oig_local_{self._box_id}_tbl_actual_fv_p2"
-                )
-                if p1 is not None and p2 is not None:
-                    return float(p1 + p2)
+            p1 = self._get_oig_number("actual_fv_p1")
+            p2 = self._get_oig_number("actual_fv_p2")
+            if p1 is None or p2 is None:
+                return None
+            return float(p1 + p2)
 
-            if "actual" not in pv_data:
-                return 0.0
-            return float(pv_data["actual"]["fv_p1"] + pv_data["actual"]["fv_p2"])
-
-        if self._node_id == "boiler" or self._sensor_type == "boiler_current_w":
-            return self._get_boiler_consumption(pv_data)
+        if self._sensor_type == "boiler_current_w":
+            return self._get_boiler_consumption_from_entities()
 
         if self._sensor_type == "batt_batt_comp_p_charge":
-            # Preferuj lokální hodnotu bat_p
-            p_bat = self._get_local_value_for_sensor_type("batt_batt_comp_p")
-            if p_bat is not None:
-                return self._get_batt_power_charge({"actual": {"bat_p": p_bat}})
-            return self._get_batt_power_charge(pv_data)
+            bat_p = self._get_oig_number("batt_batt_comp_p")
+            if bat_p is None:
+                return None
+            return float(bat_p) if bat_p > 0 else 0.0
+
         if self._sensor_type == "batt_batt_comp_p_discharge":
-            p_bat = self._get_local_value_for_sensor_type("batt_batt_comp_p")
-            if p_bat is not None:
-                return self._get_batt_power_discharge({"actual": {"bat_p": p_bat}})
-            return self._get_batt_power_discharge(pv_data)
+            bat_p = self._get_oig_number("batt_batt_comp_p")
+            if bat_p is None:
+                return None
+            return float(-bat_p) if bat_p < 0 else 0.0
 
         if self._sensor_type.startswith("computed_batt_"):
-            return self._accumulate_energy(pv_data)
-
-        if self._sensor_type == "extended_fve_current_1":
-            return self._get_extended_fve_current_1(self.coordinator)
-
-        if self._sensor_type == "extended_fve_current_2":
-            return self._get_extended_fve_current_2(self.coordinator)
+            return self._accumulate_energy()
 
         try:
-            bat_p = float(pv_data["box_prms"]["p_bat"])
-
-            # Získat bat_min z batt_prms (minimální nabití v %)
-            bat_min_percent = float(pv_data.get("batt_prms", {}).get("bat_min", 20))
-            # Využitelná kapacita = 100% - bat_min%
+            bat_p_wh = float(self._get_oig_number("installed_battery_capacity_kwh") or 0.0)
+            bat_min_percent = float(self._get_oig_number("batt_bat_min") or 20.0)
             usable_percent = (100 - bat_min_percent) / 100
+            bat_c = float(self._get_oig_number("batt_bat_c") or 0.0)
+            bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
 
-            # OPRAVA: Kontrola actual pouze pro tyto hodnoty
-            if "actual" not in pv_data:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Live Data nejsou zapnutá v OIG aplikaci. "
-                    f"Zapněte Live Data v mobilní aplikaci OIG pro správnou funkci computed senzorů."
-                )
-                return None
-
-            bat_c = float(pv_data["actual"]["bat_c"])  # Battery charge percentage
-            bat_power = float(pv_data["actual"]["bat_p"])  # Battery power
-
-            # 1. Využitelná kapacita baterie
             if self._sensor_type == "usable_battery_capacity":
-                value = round((bat_p * usable_percent) / 1000, 2)
-                return value
+                return round((bat_p_wh * usable_percent) / 1000, 2)
 
-            # 2. Kolik kWh chybí do 100%
             if self._sensor_type == "missing_battery_kwh":
-                value = round((bat_p * (1 - bat_c / 100)) / 1000, 2)
-                return value
-            # 3. Zbývající využitelná kapacita
-            if self._sensor_type == "remaining_usable_capacity":
-                usable = bat_p * usable_percent
-                missing = bat_p * (1 - bat_c / 100)
-                value = round((usable - missing) / 1000, 2)
-                return value
+                return round((bat_p_wh * (1 - bat_c / 100)) / 1000, 2)
 
-            # 4. Doba do nabití
+            if self._sensor_type == "remaining_usable_capacity":
+                usable = bat_p_wh * usable_percent
+                missing = bat_p_wh * (1 - bat_c / 100)
+                return round((usable - missing) / 1000, 2)
+
             if self._sensor_type == "time_to_full":
-                missing = bat_p * (1 - bat_c / 100)
+                missing = bat_p_wh * (1 - bat_c / 100)
                 if bat_power > 0:
                     return self._format_time(missing / bat_power)
-                elif missing == 0:
+                if missing == 0:
                     return "Nabito"
-                else:
-                    return "Vybíjí se"
+                return "Vybíjí se"
 
-            # 5. Doba do vybití
             if self._sensor_type == "time_to_empty":
-                usable = bat_p * usable_percent
-                missing = bat_p * (1 - bat_c / 100)
+                usable = bat_p_wh * usable_percent
+                missing = bat_p_wh * (1 - bat_c / 100)
                 remaining = usable - missing
-
-                # OPRAVA: Kontrola na plně nabitou baterii (100%)
                 if bat_c >= 100:
                     return "Nabito"
-                elif bat_power < 0:
+                if bat_power < 0:
                     return self._format_time(remaining / abs(bat_power))
-                elif remaining == 0:
+                if remaining == 0:
                     return "Vybito"
-                else:
-                    return "Nabíjí se"
+                return "Nabíjí se"
 
         except Exception as e:
-            _LOGGER.error(
-                f"[{{self.entity_id}}] Error computing value: {e}", exc_info=True
-            )
+            _LOGGER.debug("[%s] Error computing value: %s", self.entity_id, e)
 
         return None
 
-    def _accumulate_energy(self, pv_data: Dict[str, Any]) -> Optional[float]:
+    def _accumulate_energy(self) -> Optional[float]:
         # Use shared per-box cache so multiple computed energy sensors don't double-count.
         if self._box_id and self._box_id != "unknown":
             cached = _energy_data_cache.get(self._box_id)
@@ -687,21 +420,16 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 _energy_data_cache[self._box_id] = self._energy
 
         try:
-            # OPRAVA: Kontrola existence "actual" dat
-            if "actual" not in pv_data:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Live Data nejsou zapnutá v OIG aplikaci. "
-                    f"Energy tracking senzory potřebují Live Data pro správnou funkci. "
-                    f"Zapněte Live Data v mobilní aplikaci OIG."
-                )
-                return None
-
             now = datetime.utcnow()
 
-            bat_power = float(pv_data["actual"]["bat_p"])
-            fv_power = float(pv_data["actual"]["fv_p1"]) + float(
-                pv_data["actual"]["fv_p2"]
-            )
+            bat_power_val = self._get_oig_number("batt_batt_comp_p")
+            if bat_power_val is None:
+                return None
+            bat_power = float(bat_power_val)
+
+            fv_p1 = float(self._get_oig_number("actual_fv_p1") or 0.0)
+            fv_p2 = float(self._get_oig_number("actual_fv_p2") or 0.0)
+            fv_power = fv_p1 + fv_p2
 
             last_update = (
                 _energy_last_update_cache.get(self._box_id)
@@ -774,66 +502,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if isinstance(energy, dict):
             self._energy = energy
 
-        # Local datasource overrides (OIG Proxy counters)
-        is_local_mode = False
-        try:
-            from .data_source import DATA_SOURCE_CLOUD_ONLY, get_effective_mode
-
-            entry = getattr(self.coordinator, "config_entry", None)
-            if entry is not None and get_effective_mode(self.hass, entry.entry_id) != DATA_SOURCE_CLOUD_ONLY:
-                is_local_mode = True
-        except Exception:
-            is_local_mode = False
-
-        box = self._box_id if self._box_id and self._box_id != "unknown" else None
-        apd = ad = am = ay = discharge_today_local = None
-        if is_local_mode and box:
-            apd = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_apd")
-            ad = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ad")
-            am = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_am")
-            ay = self._get_local_number(f"sensor.oig_local_{box}_tbl_batt_bat_ay")
-            discharge_today_local = self._get_local_number(
-                f"sensor.oig_local_{box}_tbl_batt_bat_and"
-            )
-
-        # Overrides for local/hybrid:
-        # - total today maps 1:1 to proxy counter (tbl_batt_bat_apd)
-        # - FVE today uses APD - AD (proxy counters)
-        # - grid month/year should follow proxy counters; FVE month/year = total - grid
-        if self._sensor_type == "computed_batt_charge_energy_today":
-            if apd is not None:
-                return round(float(apd), 3)
-            return round(float(self._energy.get("charge_today", 0.0)), 3)
-
-        # Discharge today: in local/hybrid use the proxy counter if present (integral can drift vs. counters).
-        if (
-            self._sensor_type == "computed_batt_discharge_energy_today"
-            and discharge_today_local is not None
-        ):
-            return round(float(discharge_today_local), 3)
-
-        if self._sensor_type == "computed_batt_charge_grid_energy_today" and ad is not None:
-            return round(float(ad), 3)
-        if self._sensor_type == "computed_batt_charge_grid_energy_month" and am is not None:
-            return round(float(am), 3)
-        if self._sensor_type == "computed_batt_charge_grid_energy_year" and ay is not None:
-            return round(float(ay), 3)
-
-        if self._sensor_type == "computed_batt_charge_fve_energy_today":
-            if apd is not None and ad is not None:
-                return round(float(max(apd - ad, 0.0)), 3)
-            # Fallback: always compute as total - grid
-            grid_val = float(ad) if ad is not None else float(self._energy.get("charge_grid_today", 0.0))
-            return round(float(max(float(self._energy.get("charge_today", 0.0)) - grid_val, 0.0)), 3)
-
-        if self._sensor_type == "computed_batt_charge_fve_energy_month":
-            grid_val = float(am) if am is not None else float(self._energy.get("charge_grid_month", 0.0))
-            return round(float(max(float(self._energy.get("charge_month", 0.0)) - grid_val, 0.0)), 3)
-
-        if self._sensor_type == "computed_batt_charge_fve_energy_year":
-            grid_val = float(ay) if ay is not None else float(self._energy.get("charge_grid_year", 0.0))
-            return round(float(max(float(self._energy.get("charge_year", 0.0)) - grid_val, 0.0)), 3)
-
         sensor_map = {
             "computed_batt_charge_energy_today": "charge_today",
             "computed_batt_discharge_energy_today": "discharge_today",
@@ -853,31 +521,29 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return round(self._energy[energy_key], 3)
         return None
 
-    def _get_boiler_consumption(self, pv_data: Dict[str, Any]) -> Optional[float]:
+    def _get_boiler_consumption_from_entities(self) -> Optional[float]:
+        """Estimate boiler power using only `sensor.oig_{box}_*` entities."""
         if self._sensor_type != "boiler_current_w":
             return None
-
         try:
-            # OPRAVA: Kontrola existence "actual" dat
-            if "actual" not in pv_data:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Live Data nejsou zapnutá - nelze vypočítat spotřebu bojleru. "
-                    f"Zapněte Live Data v OIG aplikaci."
-                )
-                return None
+            fv_power = float(self._get_oig_number("actual_fv_p1") or 0.0) + float(
+                self._get_oig_number("actual_fv_p2") or 0.0
+            )
+            load_power = float(self._get_oig_number("actual_aco_p") or 0.0)
+            grid_p1 = float(self._get_oig_number("actual_aci_wr") or 0.0)
+            grid_p2 = float(self._get_oig_number("actual_aci_ws") or 0.0)
+            grid_p3 = float(self._get_oig_number("actual_aci_wt") or 0.0)
+            export_power = grid_p1 + grid_p2 + grid_p3
 
-            fv_power = float(pv_data["actual"]["fv_p1"]) + float(
-                pv_data["actual"]["fv_p2"]
-            )
-            load_power = float(pv_data["actual"]["aco_p"])
-            export_power = (
-                float(pv_data["actual"]["aci_wr"])
-                + float(pv_data["actual"]["aci_ws"])
-                + float(pv_data["actual"]["aci_wt"])
-            )
-            boiler_p_set = float(pv_data["boiler_prms"].get("p_set", 0))
-            boiler_manual = pv_data["boiler_prms"].get("manual", 0) == 1
-            bat_power = float(pv_data["actual"]["bat_p"])
+            boiler_p_set = float(self._get_oig_number("boiler_install_power") or 0.0)
+            bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
+
+            manual_state = None
+            if getattr(self, "hass", None) and self._box_id and self._box_id != "unknown":
+                st = self.hass.states.get(f"sensor.oig_{self._box_id}_boiler_manual_mode")
+                manual_state = st.state if st else None
+            manual_s = str(manual_state).strip().lower() if manual_state is not None else ""
+            boiler_manual = manual_s in {"1", "on", "zapnuto", "manual", "manuální", "manualni"} or manual_s.startswith("manu")
 
             if boiler_manual:
                 boiler_power = boiler_p_set
@@ -886,19 +552,16 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                     available_power = fv_power - load_power - export_power
                     boiler_power = min(max(available_power, 0), boiler_p_set)
                 else:
-                    boiler_power = 0
+                    boiler_power = 0.0
 
-            boiler_power = max(boiler_power, 0)
-
-            _LOGGER.debug(
-                f"[{self.entity_id}] Estimated boiler power: FVE={fv_power}W, Load={load_power}W, Export={export_power}W, Set={boiler_p_set}W, Manual={boiler_manual}, Bat_P={bat_power}W => Boiler={boiler_power}W"
-            )
-
-            return round(boiler_power, 2)
-
+            return round(float(max(boiler_power, 0.0)), 2)
         except Exception as e:
-            _LOGGER.error(f"Error calculating boiler consumption: {e}", exc_info=True)
+            _LOGGER.debug("Error calculating boiler consumption: %s", e)
             return None
+
+    def _get_boiler_consumption(self, pv_data: Dict[str, Any]) -> Optional[float]:
+        """Backward-compatible wrapper (legacy call sites)."""
+        return self._get_boiler_consumption_from_entities()
 
     def _get_batt_power_charge(self, pv_data: Dict[str, Any]) -> float:
         if "actual" not in pv_data:
@@ -1024,16 +687,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     async def async_will_remove_from_hass(self) -> None:
         await super().async_will_remove_from_hass()
         self._cancel_reset()
-        if self._dep_unsub:
-            try:
-                self._dep_unsub()
-            except Exception:
-                pass
-        if self._local_tick_unsub:
-            try:
-                self._local_tick_unsub()
-            except Exception:
-                pass
+        return
 
     def _cancel_reset(self) -> None:
         unsub = getattr(self, "_daily_reset_unsub", None)
