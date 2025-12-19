@@ -22,6 +22,8 @@ var dragStartY = 0;
 var dragStartTop = 0;
 var dragStartLeft = 0;
 var resizeTimer = null;
+var lastResizeWidth = null;
+var lastResizeHeight = null;
 
 // Callbacks pro redraw (registruje core)
 var onLayoutChangeCallback = null;
@@ -377,9 +379,19 @@ function handleLayoutResize() {
     if (resizeTimer) clearTimeout(resizeTimer);
 
     resizeTimer = setTimeout(() => {
-        const newBreakpoint = getCurrentBreakpoint();
+        // Mobile WebViews (incl. HA app) fire frequent resize events when the browser chrome
+        // shows/hides; ignore height-only micro-resizes to avoid infinite redraw loops.
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const widthChanged = lastResizeWidth === null ? true : Math.abs(w - lastResizeWidth) >= 24;
+        const heightChanged = lastResizeHeight === null ? true : Math.abs(h - lastResizeHeight) >= 180;
+        lastResizeWidth = w;
+        lastResizeHeight = h;
 
-        if (newBreakpoint !== currentBreakpoint) {
+        const newBreakpoint = getCurrentBreakpoint();
+        const breakpointChanged = newBreakpoint !== currentBreakpoint;
+
+        if (breakpointChanged) {
             console.log(`[Layout] Breakpoint: ${currentBreakpoint} → ${newBreakpoint}`);
             currentBreakpoint = newBreakpoint;
 
@@ -389,8 +401,8 @@ function handleLayoutResize() {
             }
         }
 
-        // Vždy notify při resize
-        if (onLayoutChangeCallback) {
+        // Notify only on meaningful resizes (breakpoint change, width change, or major height change e.g. rotation).
+        if (onLayoutChangeCallback && (breakpointChanged || widthChanged || heightChanged)) {
             onLayoutChangeCallback();
         }
     }, 300);

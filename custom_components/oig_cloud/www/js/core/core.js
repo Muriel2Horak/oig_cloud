@@ -473,27 +473,55 @@ function init() {
     // Time update every second
     setInterval(updateTime, 1000);
 
-    // Redraw lines on resize with debounce
+    // Redraw lines on resize with debounce.
+    // Mobile WebViews (incl. HA app) fire frequent resize events when browser chrome shows/hides.
+    // Avoid stopping/reinitializing particles on height-only micro-resizes.
     let resizeTimer;
+    let lastResizeWidth = window.innerWidth;
+    let lastResizeHeight = window.innerHeight;
+    let lastResizeBreakpoint = (window.innerWidth <= 768) ? 'mobile' : (window.innerWidth <= 1024 ? 'tablet' : 'desktop');
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
         // Clear cache on resize
         cachedNodeCenters = null;
         lastLayoutHash = null;
         resizeTimer = setTimeout(() => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const breakpoint = (w <= 768) ? 'mobile' : (w <= 1024 ? 'tablet' : 'desktop');
+
+            const dw = Math.abs(w - lastResizeWidth);
+            const dh = Math.abs(h - lastResizeHeight);
+            const breakpointChanged = breakpoint !== lastResizeBreakpoint;
+
+            // "Meaningful" resize: width changes (rotation / split-screen) or breakpoint changes.
+            // Height-only changes often happen continuously on mobile due to browser UI.
+            const meaningfulResize = breakpointChanged || dw >= 24 || dh >= 180;
+
+            lastResizeWidth = w;
+            lastResizeHeight = h;
+            lastResizeBreakpoint = breakpoint;
+
             // OPRAVA: Při resize na flow tabu musíme reinicializovat particles
             const flowTab = document.querySelector('#flow-tab');
             const isFlowTabActive = flowTab && flowTab.classList.contains('active');
 
             if (isFlowTabActive) {
-                console.log('[Resize] Flow tab is active, reinitializing particles...');
-                // Zastavit staré particles
-                stopAllParticleFlows();
-                // Překreslit connections s novým layoutem
-                drawConnections();
-                // Force restart particles s aktuálními pozicemi
-                needsFlowReinitialize = true;
-                loadData();
+                if (meaningfulResize) {
+                    console.log('[Resize] Flow tab meaningful resize, reinitializing particles...');
+                    stopAllParticleFlows();
+                    drawConnections();
+                    needsFlowReinitialize = true;
+                    // Trigger a data refresh (debounced) to kick animations with updated positions.
+                    if (typeof debouncedLoadData === 'function') {
+                        debouncedLoadData();
+                    } else {
+                        loadData();
+                    }
+                } else {
+                    // Lightweight update: just redraw connections; particle flows will self-correct on next data tick.
+                    drawConnections();
+                }
             } else {
                 // Jen překreslit connections pokud nejsme na flow tabu
                 drawConnections();

@@ -635,15 +635,23 @@ function getLayoutHash() {
     const inverter = document.querySelector('.inverter');
     const grid = document.querySelector('.grid-node');
     const house = document.querySelector('.house');
+    const canvas = document.querySelector('.flow-canvas');
 
-    if (!solar || !battery || !inverter || !grid || !house) return null;
+    if (!solar || !battery || !inverter || !grid || !house || !canvas) return null;
+
+    // Use coordinates relative to the canvas.
+    // On mobile WebViews (incl. HA app), viewport chrome show/hide triggers frequent resize/scroll
+    // which changes getBoundingClientRect() top/left but *not* the layout inside the canvas.
+    const canvasRect = canvas.getBoundingClientRect();
 
     // OPRAVA BUG #5: Zahrnout délku obsahu pro detekci změny velikosti
     const hash = [solar, battery, inverter, grid, house]
         .map(el => {
             const rect = el.getBoundingClientRect();
             const contentLength = el.textContent?.length || 0;
-            return `${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)},${contentLength}`;
+            const relLeft = rect.left - canvasRect.left;
+            const relTop = rect.top - canvasRect.top;
+            return `${Math.round(relLeft)},${Math.round(relTop)},${Math.round(rect.width)},${Math.round(rect.height)},${contentLength}`;
         })
         .join('|');
 
