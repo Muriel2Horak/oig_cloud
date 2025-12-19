@@ -326,7 +326,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        async_track_time_change(
+        # Keep unsubscribe handle so we can cleanly remove the entity during reloads.
+        self._daily_reset_unsub = async_track_time_change(
             self.hass, self._reset_daily, hour=0, minute=0, second=0
         )
 
@@ -1033,3 +1034,12 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 self._local_tick_unsub()
             except Exception:
                 pass
+
+    def _cancel_reset(self) -> None:
+        unsub = getattr(self, "_daily_reset_unsub", None)
+        if unsub:
+            try:
+                unsub()
+            except Exception:
+                pass
+            self._daily_reset_unsub = None

@@ -145,6 +145,13 @@ class OteApi:
         self._cnb_rate = CnbRate()
         self._cache_path: Optional[str] = cache_path
 
+    async def close(self) -> None:
+        """Compatibility no-op for sensors calling close() on removal.
+
+        OteApi does not keep a persistent aiohttp session, so there is nothing to close.
+        """
+        return
+
     def _load_cached_spot_prices_sync(self) -> None:
         if not self._cache_path:
             return

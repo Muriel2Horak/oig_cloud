@@ -295,6 +295,15 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
         from homeassistant.components import frontend
 
+        # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
+        if hasattr(frontend, "async_remove_panel") and callable(
+            getattr(frontend, "async_remove_panel")
+        ):
+            try:
+                await frontend.async_remove_panel(hass, panel_id)
+            except Exception:
+                pass
+
         # OPRAVA: Kontrola existence funkce a její volání bez await pokud vrací None
         if hasattr(frontend, "async_register_built_in_panel"):
             register_func = getattr(frontend, "async_register_built_in_panel")
@@ -375,44 +384,6 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
         from homeassistant.components import frontend
-
-        # OPRAVA: Důkladnější kontrola existence panelu
-        panels_exist = False
-        try:
-            # Zkusíme získat přístup k registrovaným panelům
-            if hasattr(hass, "components") and "frontend" in hass.components:
-                frontend_component = hass.components.frontend
-                if hasattr(frontend_component, "async_register_built_in_panel"):
-                    # Panel systém je dostupný
-                    panels_exist = True
-        except Exception:
-            pass
-
-        if not panels_exist:
-            _LOGGER.debug(
-                f"Frontend panel system not available, skipping removal of {panel_id}"
-            )
-            return
-
-        # OPRAVA: Kontrola existence panelu před odstraněním
-        try:
-            # Pokusíme se získat informace o panelu před jeho odstraněním
-            # Tím ověříme, že skutečně existuje
-            panel_exists = False
-
-            if hasattr(hass.data.get("frontend_panels", {}), panel_id):
-                panel_exists = True
-            elif hasattr(hass.data.get("frontend", {}), "panels"):
-                existing_panels = hass.data["frontend"].panels
-                panel_exists = panel_id in existing_panels
-
-            if not panel_exists:
-                _LOGGER.debug("Panel %s doesn't exist, nothing to remove", panel_id)
-                return
-        except Exception as check_error:
-            _LOGGER.debug(
-                f"Cannot check panel existence, proceeding with removal attempt: {check_error}"
-            )
 
         # Pokus o odebrání panelu
         if hasattr(frontend, "async_remove_panel") and callable(

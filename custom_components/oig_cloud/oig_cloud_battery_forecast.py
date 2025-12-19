@@ -80,6 +80,9 @@ CBB_MODE_HOME_I = 0  # Grid priority (cheap mode)
 CBB_MODE_HOME_II = 1  # Battery priority
 CBB_MODE_HOME_III = 2  # Solar priority (default)
 CBB_MODE_HOME_UPS = 3  # UPS mode (AC charging enabled)
+#
+# Note: The box also supports "Home 5" and "Home 6". We do not simulate these
+# modes; when they appear in history/current state, we map them to HOME I.
 
 # Mode names for display
 CBB_MODE_NAMES = {
@@ -99,6 +102,8 @@ SERVICE_MODE_HOME_1 = "Home 1"
 SERVICE_MODE_HOME_2 = "Home 2"
 SERVICE_MODE_HOME_3 = "Home 3"
 SERVICE_MODE_HOME_UPS = "Home UPS"
+SERVICE_MODE_HOME_5 = "Home 5"
+SERVICE_MODE_HOME_6 = "Home 6"
 
 DATE_FMT = "%Y-%m-%d"
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
@@ -200,7 +205,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_icon = "mdi:battery-charging-60"
         self._attr_native_unit_of_measurement = "kWh"
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        # Represents current/forecasted battery capacity; not strictly increasing.
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_entity_category = None
 
         # Načíst název ze sensor types
@@ -8343,6 +8349,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,  # 1
             SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,  # 2
             SERVICE_MODE_HOME_UPS: CBB_MODE_HOME_UPS,  # 3
+            # Home 5/6 are not simulated; map them to HOME I without warnings.
+            SERVICE_MODE_HOME_5: CBB_MODE_HOME_I,
+            SERVICE_MODE_HOME_6: CBB_MODE_HOME_I,
         }
 
         # Normalizovat string (remove extra spaces, case-insensitive)
@@ -9529,6 +9538,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     SERVICE_MODE_HOME_1: CBB_MODE_HOME_I,
                     SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,
                     SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,
+                    SERVICE_MODE_HOME_5: CBB_MODE_HOME_I,
+                    SERVICE_MODE_HOME_6: CBB_MODE_HOME_I,
                 }
 
                 if mode_value in mode_map:
@@ -9539,13 +9550,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             else:
                 mode = int(mode_value)
 
-            # Validate mode range
-            if mode not in [
+            # Validate mode range; Home 5/6 map to HOME I for simulation.
+            if mode in (4, 5):
+                return CBB_MODE_HOME_I
+            if mode not in (
                 CBB_MODE_HOME_I,
                 CBB_MODE_HOME_II,
                 CBB_MODE_HOME_III,
                 CBB_MODE_HOME_UPS,
-            ]:
+            ):
                 _LOGGER.warning(f"Invalid mode {mode}, using fallback HOME III")
                 return CBB_MODE_HOME_III
 
