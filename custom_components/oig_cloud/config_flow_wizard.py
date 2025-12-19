@@ -896,8 +896,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "home_charge_rate": self.wizard_data.get(
                         "battery_charge_rate", 2.8
                     ),
-                    "max_price_conf": self.wizard_data.get("battery_max_price", 10.0),
-                    "percentile_conf": 75.0,
+                    "max_ups_price_czk": self.wizard_data.get("battery_max_price", 10.0),
                 }
             )
 
@@ -915,8 +914,7 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "home_charge_rate": self.wizard_data.get(
                         "battery_charge_rate", 2.8
                     ),
-                    "max_price_conf": self.wizard_data.get("battery_max_price", 10.0),
-                    "percentile_conf": self.wizard_data.get("battery_percentile", 75.0),
+                    "max_ups_price_czk": self.wizard_data.get("battery_max_price", 10.0),
                 }
             )
 

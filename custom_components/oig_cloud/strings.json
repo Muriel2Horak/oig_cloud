@@ -122,8 +122,7 @@
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "target_capacity_percent": "Cílová kapacita baterie (%)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
-          "percentile_conf": "Percentil pro detekci špičky (%)",
-          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
+          "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "charge_on_bad_weather": "Nabíjet preventivně při špatném počasí",
           "weather_entity": "Weather entita pro předpověď počasí",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -132,8 +131,7 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
-          "percentile_conf": "Percentil pro detekci špičkové spotřeby - vyšší hodnota = agresivnější nabíjení (50-95%)",
-          "max_price_conf": "Maximální cena elektřiny, za kterou ještě nabíjet (1-50 CZK/kWh)",
+          "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "charge_on_bad_weather": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Při předpovědi deštivého počasí se baterie přednabije na cílovou kapacitu",
           "weather_entity": "Výběr konkrétní weather entity pro předpověď (prázdné = automaticky)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
@@ -395,8 +393,7 @@
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "target_capacity_percent": "Cílová kapacita baterie (%)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
-          "percentile_conf": "Percentil pro detekci špičky (%)",
-          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
+          "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "charge_on_bad_weather": "Nabíjet preventivně při špatném počasí",
           "weather_entity": "Weather entita pro předpověď počasí",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -405,8 +402,7 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
-          "percentile_conf": "Percentil pro detekci špičkové spotřeby - vyšší hodnota = agresivnější nabíjení (50-95%)",
-          "max_price_conf": "Maximální cena elektřiny, za kterou ještě nabíjet (1-50 CZK/kWh)",
+          "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "charge_on_bad_weather": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Při předpovědi deště se baterie přednabije",
           "weather_entity": "Výběr weather entity pro předpověď (prázdné = automaticky)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"

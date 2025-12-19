@@ -683,7 +683,7 @@ class WizardMixin:
             summary_parts.append("   ✅ Predikce baterie")
             min_cap = self._wizard_data.get("min_capacity_percent", 20)
             target_cap = self._wizard_data.get("target_capacity_percent", 80)
-            max_price = self._wizard_data.get("max_price_conf", 10.0)
+            max_price = self._wizard_data.get("max_ups_price_czk", 10.0)
             summary_parts.append(f"      → Kapacita: {min_cap}% - {target_cap}%")
             summary_parts.append(f"      → Max. cena: {max_price} CZK/kWh")
 
@@ -947,7 +947,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_solar_forecast", False):
             total += 1  # wizard_solar
         if self._wizard_data.get("enable_battery_prediction", False):
-            total += 2  # wizard_battery + wizard_planner
+            total += 1  # wizard_battery
         if self._wizard_data.get("enable_pricing", False):
             total += 3  # wizard_pricing (3 kroky: import, export, distribution)
         if self._wizard_data.get("enable_boiler", False):
@@ -995,11 +995,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # Battery + Planner settings
         battery_enabled = self._wizard_data.get("enable_battery_prediction", False)
         if step_id == "wizard_battery":
-            return current
-        if battery_enabled:
-            current += 1
-
-        if step_id == "wizard_planner":
             return current
         if battery_enabled:
             current += 1
@@ -1069,7 +1064,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_intervals",
             "wizard_solar",
             "wizard_battery",
-            "wizard_planner",
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
@@ -1091,10 +1085,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ):
                 continue
             if step == "wizard_battery" and not self._wizard_data.get(
-                "enable_battery_prediction"
-            ):
-                continue
-            if step == "wizard_planner" and not self._wizard_data.get(
                 "enable_battery_prediction"
             ):
                 continue
@@ -1477,64 +1467,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return vol.Schema(schema_fields)
 
-    async def async_step_wizard_planner(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Wizard Step 5b: Planner-specific parameters."""
-
-        # Pokud je planner vypnutý, přeskoč krok (obrana proti nekonzistenci)
-        if not self._wizard_data.get("enable_battery_prediction", False):
-            next_step = self._get_next_step("wizard_planner")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        if user_input is not None:
-            if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_planner")
-
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_planner")
-
-            next_step = self._get_next_step("wizard_planner")
-            return await getattr(self, f"async_step_{next_step}")()
-
-        return self.async_show_form(
-            step_id="wizard_planner",
-            data_schema=self._get_planner_schema(),
-            description_placeholders=self._get_step_placeholders("wizard_planner"),
-        )
-
-    def _get_planner_schema(
-        self, defaults: Optional[Dict[str, Any]] = None
-    ) -> vol.Schema:
-        """Get schema for planner-specific settings (cheap window only)."""
-        if defaults is None:
-            defaults = self._wizard_data if self._wizard_data else {}
-
-        schema_fields: Dict[Any, Any] = {
-            vol.Optional(
-                "enable_cheap_window_ups",
-                default=defaults.get("enable_cheap_window_ups", True),
-            ): bool,
-            vol.Optional(
-                "cheap_window_percentile",
-                default=defaults.get("cheap_window_percentile", 30),
-            ): vol.All(vol.Coerce(float), vol.Range(min=5, max=80)),
-            vol.Optional(
-                "cheap_window_max_intervals",
-                default=defaults.get("cheap_window_max_intervals", 20),
-            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=96)),
-            vol.Optional(
-                "cheap_window_soc_guard_kwh",
-                default=defaults.get("cheap_window_soc_guard_kwh", 0.5),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-        }
-
-        schema_fields[vol.Optional("go_back", default=False)] = (
-            selector.BooleanSelector()
-        )
-
-        return vol.Schema(schema_fields)
-
     async def async_step_wizard_battery(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -1554,9 +1486,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 errors["min_capacity_percent"] = "min_must_be_less_than_target"
 
             # Validace max price
-            max_price = user_input.get("max_price_conf", 10.0)
+            max_price = user_input.get("max_ups_price_czk", 10.0)
             if max_price < 1.0 or max_price > 50.0:
-                errors["max_price_conf"] = "invalid_price"
+                errors["max_ups_price_czk"] = "invalid_price"
 
             if errors:
                 return self.async_show_form(
@@ -1603,21 +1535,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
-            # ECONOMIC CHARGING PARAMETERS
+            # SAFETY LIMIT (applies to planner)
             vol.Optional(
-                "enable_economic_charging",
-                default=defaults.get("enable_economic_charging", True),
-            ): bool,
-            vol.Optional(
-                "min_savings_margin", default=defaults.get("min_savings_margin", 0.30)
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-            vol.Optional(
-                "safety_margin_percent",
-                default=defaults.get("safety_margin_percent", 10.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=50.0)),
-            # SAFETY LIMIT (applies to ALL algorithms)
-            vol.Optional(
-                "max_price_conf", default=defaults.get("max_price_conf", 10.0)
+                "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
             # BATTERY BALANCING PARAMETERS
             vol.Optional(
@@ -1654,6 +1574,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.5, max=10.0, step=0.1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            # Used by balancer window selection
+            vol.Optional(
+                "cheap_window_percentile",
+                default=defaults.get("cheap_window_percentile", 30),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=5, max=80, step=1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
         }
@@ -2545,18 +2474,10 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
                         CONF_AUTO_MODE_SWITCH, False
                     ),
-                    # Economic charging
-                    "enable_economic_charging": self._wizard_data.get(
-                        "enable_economic_charging", True
+                    # Planner safety limit (CZK/kWh)
+                    "max_ups_price_czk": self._wizard_data.get(
+                        "max_ups_price_czk", 10.0
                     ),
-                    "min_savings_margin": self._wizard_data.get(
-                        "min_savings_margin", 0.30
-                    ),
-                    "safety_margin_percent": self._wizard_data.get(
-                        "safety_margin_percent", 10.0
-                    ),
-                    # Safety limit
-                    "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
                     # Battery balancing
                     "balancing_enabled": self._wizard_data.get(
                         "balancing_enabled", True
@@ -2573,9 +2494,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "balancing_economic_threshold": self._wizard_data.get(
                         "balancing_economic_threshold", 2.5
                     ),
-                    # Planner settings (single planner)
-                    "max_ups_price_czk": self._wizard_data.get(
-                        "max_ups_price_czk", self._wizard_data.get("max_price_conf", 10.0)
+                    # Used by balancer window selection
+                    "cheap_window_percentile": self._wizard_data.get(
+                        "cheap_window_percentile", 30
                     ),
                     # Pricing - použít mapované backend atributy
                     **pricing_backend,
@@ -2838,16 +2759,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
                     CONF_AUTO_MODE_SWITCH, False
                 ),
-                # Economic charging
-                "enable_economic_charging": self._wizard_data.get(
-                    "enable_economic_charging", True
-                ),
-                "min_savings_margin": self._wizard_data.get("min_savings_margin", 0.30),
-                "safety_margin_percent": self._wizard_data.get(
-                    "safety_margin_percent", 10.0
-                ),
-                # Safety limit
-                "max_price_conf": self._wizard_data.get("max_price_conf", 10.0),
+                # Planner safety limit (CZK/kWh)
+                "max_ups_price_czk": self._wizard_data.get("max_ups_price_czk", 10.0),
                 # Battery balancing
                 "balancing_enabled": self._wizard_data.get("balancing_enabled", True),
                 "balancing_interval_days": self._wizard_data.get(
@@ -2861,6 +2774,10 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 "balancing_economic_threshold": self._wizard_data.get(
                     "balancing_economic_threshold", 2.5
+                ),
+                # Used by balancer window selection
+                "cheap_window_percentile": self._wizard_data.get(
+                    "cheap_window_percentile", 30
                 ),
                 # Pricing - použít mapované backend atributy
                 **pricing_backend,
@@ -2915,10 +2832,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 # Auto module
                 "enable_auto": self._wizard_data.get("enable_auto", False),
-                # Planner settings (single planner)
-                "max_ups_price_czk": self._wizard_data.get(
-                    "max_ups_price_czk", self._wizard_data.get("max_price_conf", 10.0)
-                ),
             }
 
             # Přidat debug log

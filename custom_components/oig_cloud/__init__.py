@@ -144,9 +144,33 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "max_ups_price_czk": 10.0,
         # AC charging power (kW) used for UPS mode simulation.
         "home_charge_rate": 2.8,
+        # Used by balancer window selection.
+        "cheap_window_percentile": 30,
     }
 
     options = dict(entry.options)
+    # Migrate and purge removed/obsolete planner options.
+    obsolete_keys = {
+        "enable_cheap_window_ups",
+        "cheap_window_max_intervals",
+        "cheap_window_soc_guard_kwh",
+        "enable_economic_charging",
+        "min_savings_margin",
+        "safety_margin_percent",
+        "percentile_conf",
+    }
+
+    if "max_price_conf" in options and "max_ups_price_czk" not in options:
+        try:
+            options["max_ups_price_czk"] = float(options.get("max_price_conf", 10.0))
+        except Exception:
+            options["max_ups_price_czk"] = defaults["max_ups_price_czk"]
+        options.pop("max_price_conf", None)
+
+    removed = [k for k in list(options.keys()) if k in obsolete_keys]
+    for k in removed:
+        options.pop(k, None)
+
     missing_keys = [key for key in defaults.keys() if entry.options.get(key) is None]
     updated = False
 
@@ -155,7 +179,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
             options[key] = default
             updated = True
 
-    if updated:
+    if updated or removed:
         _LOGGER.info(
             "🔧 Injecting missing planner options for entry %s: %s",
             entry.entry_id,

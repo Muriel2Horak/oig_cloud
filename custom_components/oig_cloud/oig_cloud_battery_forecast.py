@@ -1117,7 +1117,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     solar_kwh_list = solar_kwh_list[:max_intervals]
 
                 opts = self._config_entry.options if self._config_entry else {}
-                max_ups_price_czk = float(opts.get("max_ups_price_czk", opts.get("max_price_conf", 10.0)))
+                max_ups_price_czk = float(opts.get("max_ups_price_czk", 10.0))
                 efficiency = float(self._get_battery_efficiency())
 
                 planner = OnePlanner(
@@ -3385,55 +3385,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         selected_indices.sort()
 
         return selected_indices
-
-    def _apply_cheap_window_ups(
-        self,
-        modes: List[int],
-        spot_prices: List[Dict[str, Any]],
-        forward_soc_before: Optional[List[Optional[float]]],
-        min_capacity: float,
-        cheap_price_threshold: float,
-    ) -> int:
-        """Force HOME_UPS during cheapest intervals to preserve battery for later peak."""
-
-        max_intervals = self._config_entry.options.get("cheap_window_max_intervals", 20)
-        soc_guard = self._config_entry.options.get("cheap_window_soc_guard_kwh", 0.5)
-
-        if max_intervals <= 0:
-            return 0
-
-        cheap_indices = [
-            idx
-            for idx, sp in enumerate(spot_prices)
-            if sp.get("price", 999) <= cheap_price_threshold
-        ]
-
-        applied = 0
-        for idx in cheap_indices:
-            if applied >= max_intervals:
-                break
-
-            if idx >= len(modes):
-                continue
-
-            if modes[idx] == CBB_MODE_HOME_UPS:
-                continue
-
-            soc_before = None
-            if forward_soc_before is not None and 0 <= idx < len(forward_soc_before):
-                soc_before = forward_soc_before[idx]
-
-            if soc_before is None:
-                continue
-
-            if soc_before < min_capacity + soc_guard:
-                # Baterie příliš nízko – raději využij baterii než UPS
-                continue
-
-            modes[idx] = CBB_MODE_HOME_UPS
-            applied += 1
-
-        return applied
 
     def _find_cheapest_night_interval_before(
         self,

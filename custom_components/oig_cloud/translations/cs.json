@@ -90,17 +90,11 @@
           "balancing_hold_hours": "Doba držení na 100% (hodiny)",
           "balancing_interval_days": "Interval vyrovnání (dny)",
           "balancing_opportunistic_threshold": "Cena pro opportunistic balancing (CZK/kWh)",
-          "cheap_window_max_intervals": "Max. počet HOME UPS intervalů",
           "cheap_window_percentile": "Percentil levných hodin (%)",
-          "cheap_window_soc_guard_kwh": "SOC ochranné pásmo pro UPS (kWh)",
-          "enable_cheap_window_ups": "Strategie levných hodin pro HOME UPS (standardní plán)",
-          "enable_economic_charging": "Povolit ekonomický algoritmus nabíjení",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
-          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
-          "min_savings_margin": "Minimální úsporný margin (CZK/kWh)",
-          "safety_margin_percent": "Bezpečnostní margin nad minimum (%)",
+          "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
@@ -110,17 +104,11 @@
           "balancing_hold_hours": "Jak dlouho držet baterii na 100% pro vyrovnání článků (1-12 hodin, doporučeno 3 hodiny)",
           "balancing_interval_days": "Maximální počet dní mezi cykly vyrovnání (3-30 dní, doporučeno 7 dní)",
           "balancing_opportunistic_threshold": "Pokud spot cena klesne pod tuto hodnotu, vyrovnat okamžitě bez ohledu na dny (typicky 1.1 CZK/kWh)",
-          "cheap_window_max_intervals": "Horní limit 15min bloků, kdy se může UPS násilně držet.",
-          "cheap_window_percentile": "Ceny pod tímto percentilem se považují za levné pro držení UPS.",
-          "cheap_window_soc_guard_kwh": "Nezasahuje do UPS, pokud je SOC blíže plánovacímu minimu než tato hodnota.",
-          "enable_cheap_window_ups": "Vynutí režim HOME UPS v nejlevnějších intervalech a šetří tak kapacitu na drahé hodiny.",
-          "enable_economic_charging": "Použít forward simulaci pro inteligentní optimalizaci nabíjení",
+          "cheap_window_percentile": "Používá balancing pro výběr \"levné\" části cenové křivky.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
-          "max_price_conf": "Maximální cena elektřiny, za kterou ještě nabíjet (1-50 CZK/kWh) - pojistka",
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
-          "min_savings_margin": "Minimální úspora nutná pro nabíjení ze sítě (typicky 0.30 CZK/kWh)",
-          "safety_margin_percent": "Bezpečnostní rezerva nad minimální kapacitou (typicky 10%)",
+          "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
@@ -398,17 +386,11 @@
       "battery_prediction": {
         "data": {
           "auto_mode_switch_enabled": "Automatické přepínání režimů podle plánu",
-          "cheap_window_max_intervals": "Max. počet UPS intervalů",
-          "cheap_window_percentile": "Percentil levných hodin (%)",
-          "cheap_window_soc_guard_kwh": "SOC ochranné pásmo (kWh)",
-          "enable_cheap_window_ups": "Strategie levných hodin pro UPS"
+          "cheap_window_percentile": "Percentil levných hodin (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu. Stejné nastavení jako v průvodci.",
-          "cheap_window_max_intervals": "Horní limit celkového počtu 15min intervalů s vynuceným UPS.",
-          "cheap_window_percentile": "Určuje, která část cenové křivky se považuje za levnou pro UPS.",
-          "cheap_window_soc_guard_kwh": "Pokud je SOC blízko minima méně než tato hodnota, UPS se nevynutí.",
-          "enable_cheap_window_ups": "Zapněte, pokud chcete v nejlevnějších hodinách držet HOME UPS a šetřit drahé pásmo."
+          "cheap_window_percentile": "Používá balancing pro výběr \"levné\" části cenové křivky."
         }
       },
       "wizard_battery": {
@@ -419,17 +401,11 @@
           "balancing_hold_hours": "Doba držení na 100% (hodiny)",
           "balancing_interval_days": "Interval vyrovnání (dny)",
           "balancing_opportunistic_threshold": "Cena pro opportunistic balancing (CZK/kWh)",
-          "cheap_window_max_intervals": "Max. počet UPS intervalů",
           "cheap_window_percentile": "Percentil levných hodin (%)",
-          "cheap_window_soc_guard_kwh": "SOC ochranné pásmo (kWh)",
-          "enable_cheap_window_ups": "Strategie levných hodin pro UPS",
-          "enable_economic_charging": "Povolit ekonomický algoritmus nabíjení",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
-          "max_price_conf": "Maximální cena pro nabíjení (CZK/kWh)",
+          "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
-          "min_savings_margin": "Minimální úsporný margin (CZK/kWh)",
-          "safety_margin_percent": "Bezpečnostní margin nad minimum (%)",
           "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
@@ -439,17 +415,11 @@
           "balancing_hold_hours": "Jak dlouho držet baterii na 100% pro vyrovnání článků (1-12 hodin, doporučeno 3 hodiny)",
           "balancing_interval_days": "Maximální počet dní mezi cykly vyrovnání (3-30 dní, doporučeno 7 dní)",
           "balancing_opportunistic_threshold": "Pokud spot cena klesne pod tuto hodnotu, vyrovnat okamžitě bez ohledu na dny (typicky 1.1 CZK/kWh)",
-          "cheap_window_max_intervals": "Horní limit celkového počtu 15min intervalů s vynuceným UPS.",
-          "cheap_window_percentile": "Určuje, která část cenové křivky se považuje za levnou pro UPS.",
-          "cheap_window_soc_guard_kwh": "Pokud je SOC blízko minima méně než tato hodnota, UPS se nevynutí.",
-          "enable_cheap_window_ups": "Zapněte, pokud chcete v nejlevnějších hodinách držet HOME UPS a šetřit drahé pásmo.",
-          "enable_economic_charging": "Použít forward simulaci pro inteligentní optimalizaci nabíjení",
+          "cheap_window_percentile": "Používá balancing pro výběr \"levné\" části cenové křivky.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
-          "max_price_conf": "Maximální cena elektřiny, za kterou ještě nabíjet (1-50 CZK/kWh) - pojistka",
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
-          "min_savings_margin": "Minimální úspora nutná pro nabíjení ze sítě (typicky 0.30 CZK/kWh)",
-          "safety_margin_percent": "Bezpečnostní rezerva nad minimální kapacitou (typicky 10%)",
+          "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
