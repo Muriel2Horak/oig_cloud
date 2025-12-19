@@ -35,6 +35,36 @@ def _coerce_number(value: Any) -> Any:
     return value
 
 
+def _normalize_box_mode(value: Any) -> Optional[int]:
+    """Normalize local box mode to the cloud numeric ID (0..5)."""
+    coerced = _coerce_number(value)
+    if coerced is None:
+        return None
+    if isinstance(coerced, (int, float)):
+        try:
+            as_int = int(coerced)
+        except Exception:
+            return None
+        return as_int if 0 <= as_int <= 5 else None
+    if isinstance(coerced, str):
+        s = coerced.strip().lower()
+        if not s:
+            return None
+        # Czech/English "unknown" strings
+        if s in {"neznámý", "neznamy", "unknown"}:
+            return None
+        # Common representations
+        if s.startswith("home"):
+            if "ups" in s:
+                return 3
+            # Accept "home 1" .. "home 6" (Home 4 is Home UPS)
+            for num, mode_id in (("1", 0), ("2", 1), ("3", 2), ("4", 3), ("5", 4), ("6", 5)):
+                if num in s:
+                    return mode_id
+        return None
+    return None
+
+
 # Extended "values" layout used by OigCloudDataSensor._get_extended_value()
 _EXTENDED_INDEX_BY_SENSOR_TYPE: Dict[str, Tuple[str, int]] = {
     # battery -> extended_batt
@@ -147,9 +177,17 @@ class LocalUpdateApplier:
                 if not isinstance(node, dict):
                     box[upd.node_id] = {}
                     node = box[upd.node_id]
+                new_value: Any = value
+                # Normalize local box mode string ("Home 1") to numeric ID expected by cloud path.
+                if upd.node_id == "box_prms" and upd.node_key == "mode":
+                    normalized = _normalize_box_mode(state)
+                    if normalized is None:
+                        continue
+                    new_value = normalized
+
                 prev = node.get(upd.node_key)
-                if prev != value:
-                    node[upd.node_key] = value
+                if prev != new_value:
+                    node[upd.node_key] = new_value
                     changed = True
             elif isinstance(upd, _ExtendedUpdate):
                 group_size = _EXTENDED_GROUP_SIZES.get(upd.group, upd.index + 1)
@@ -179,4 +217,3 @@ class LocalUpdateApplier:
                     changed = True
 
         return changed
-
