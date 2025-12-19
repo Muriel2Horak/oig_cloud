@@ -673,6 +673,9 @@
                 const entryId = new URLSearchParams(window.location.search).get('entry_id');
                 if (!entryId) return false; // safer default: keep hidden if we can't determine
                 try {
+                    if (typeof fetchWithAuth !== 'function') {
+                        throw new Error('fetchWithAuth not ready');
+                    }
                     const res = await fetchWithAuth(`/api/oig_cloud/${entryId}/modules`);
                     if (!res.ok) return false;
                     const cfg = await res.json();
@@ -708,7 +711,18 @@
                     .catch(err => console.error('[Dashboard] Failed to load boiler-tab.html:', err));
             }
 
-            _initBoilerAutoTab();
+            // Wait until core api helpers are loaded (dashboard injects scripts later in the HTML).
+            (function _bootBoilerTab(tries = 0) {
+                if (typeof fetchWithAuth === 'function') {
+                    _initBoilerAutoTab();
+                    return;
+                }
+                if (tries >= 40) { // ~10s
+                    console.warn('[Dashboard] Boiler tab init skipped: fetchWithAuth not available');
+                    return;
+                }
+                setTimeout(() => _bootBoilerTab(tries + 1), 250);
+            })();
         </script>
 
         <!-- Tab: Pricing & Forecast -->

@@ -84,13 +84,15 @@ class OnePlanner:
         modes: List[int] = [CBB_MODE_HOME_I] * n
 
         # Apply balancing holding window (UPS).
-        if data.balancing and data.balancing.holding_start and data.balancing.holding_end:
+        hold_start = _coerce_naive_dt(getattr(data.balancing, "holding_start", None)) if data.balancing else None
+        hold_end = _coerce_naive_dt(getattr(data.balancing, "holding_end", None)) if data.balancing else None
+        if hold_start and hold_end:
             for i in range(n):
                 ts = _parse_ts(data.spot_prices[i].get("time"))
                 if not ts:
                     continue
                 ts_end = ts + timedelta(minutes=15)
-                if ts < data.balancing.holding_end and ts_end > data.balancing.holding_start:
+                if ts < hold_end and ts_end > hold_start:
                     modes[i] = CBB_MODE_HOME_UPS
 
         # Repair loop: enforce planning minimum using UPS (<= max price).
@@ -364,7 +366,25 @@ def _parse_ts(value: Any) -> Optional[datetime]:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value))
+        ts = datetime.fromisoformat(str(value))
+        return ts.replace(tzinfo=None) if ts.tzinfo is not None else ts
+    except Exception:
+        return None
+
+
+def _coerce_naive_dt(value: Any) -> Optional[datetime]:
+    """Coerce datetime-like values into a naive datetime comparable with spot price timestamps.
+
+    Spot price timestamps are stored as ISO strings without timezone. Balancing windows may come
+    from HA storage/API as ISO strings with timezone offsets; comparing aware↔naive datetimes raises.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    try:
+        ts = datetime.fromisoformat(str(value))
+        return ts.replace(tzinfo=None) if ts.tzinfo is not None else ts
     except Exception:
         return None
 
