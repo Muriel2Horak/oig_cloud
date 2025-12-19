@@ -12158,6 +12158,190 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         # Trigger state update after loading cache
         self.async_write_ha_state()
 
+
+class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
+    """Text sensor exposing the planner's recommended mode for the current interval."""
+
+    def __init__(
+        self,
+        coordinator: Any,
+        sensor_type: str,
+        config_entry: ConfigEntry,
+        device_info: Dict[str, Any],
+        hass: Optional[HomeAssistant] = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._config_entry = config_entry
+        self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
+        self._attr_device_info = device_info
+
+        from .sensor_types import SENSOR_TYPES
+
+        self._config = SENSOR_TYPES.get(sensor_type, {})
+
+        try:
+            from .oig_cloud_sensor import resolve_box_id
+
+            self._box_id = resolve_box_id(coordinator)
+        except Exception:
+            self._box_id = "unknown"
+
+        self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
+        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+
+        name_cs = self._config.get("name_cs")
+        name_en = self._config.get("name")
+        self._attr_name = name_cs or name_en or sensor_type
+        self._attr_icon = self._config.get("icon", "mdi:robot")
+        self._attr_native_unit_of_measurement = None
+        self._attr_device_class = None
+        self._attr_state_class = None
+
+        entity_category = self._config.get("entity_category")
+        if entity_category:
+            self._attr_entity_category = EntityCategory(entity_category)
+
+    def _get_forecast_payload(self) -> Optional[Dict[str, Any]]:
+        payload = getattr(self.coordinator, "battery_forecast_data", None)
+        if isinstance(payload, dict):
+            return payload
+        return None
+
+    def _parse_local_start(self, ts: Any) -> Optional[datetime]:
+        if not ts:
+            return None
+        try:
+            dt_obj = dt_util.parse_datetime(str(ts)) or datetime.fromisoformat(str(ts))
+        except Exception:
+            return None
+        if dt_obj.tzinfo is None:
+            return dt_obj.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        return dt_util.as_local(dt_obj)
+
+    def _normalize_mode_label(self, mode_name: Optional[str], mode_code: Optional[int]) -> Optional[str]:
+        if mode_name:
+            upper = str(mode_name).strip().upper()
+            if "UPS" in upper:
+                return "Home UPS"
+            if "HOME I" in upper or upper == "HOME 1":
+                return "Home 1"
+            if "HOME II" in upper or upper == "HOME 2":
+                return "Home 2"
+            if "HOME III" in upper or upper == "HOME 3":
+                return "Home 3"
+            # Already a service label?
+            if upper in {"HOME 1", "HOME 2", "HOME 3", "HOME UPS"}:
+                return str(mode_name).title()
+
+        if isinstance(mode_code, int):
+            if mode_code == 0:
+                return "Home 1"
+            if mode_code == 1:
+                return "Home 2"
+            if mode_code == 2:
+                return "Home 3"
+            if mode_code == 3:
+                return "Home UPS"
+        return None
+
+    @property
+    def available(self) -> bool:
+        payload = self._get_forecast_payload() or {}
+        timeline = payload.get("timeline_data")
+        return bool(isinstance(timeline, list) and timeline)
+
+    @property
+    def native_value(self) -> Optional[str]:
+        payload = self._get_forecast_payload() or {}
+        timeline = payload.get("timeline_data")
+        if not isinstance(timeline, list) or not timeline:
+            return None
+
+        now = dt_util.now()
+        current_idx: Optional[int] = None
+        for i, item in enumerate(timeline):
+            start = self._parse_local_start(item.get("time") or item.get("timestamp"))
+            if not start:
+                continue
+            end = start + timedelta(minutes=15)
+            if start <= now < end:
+                current_idx = i
+                break
+            if start <= now:
+                current_idx = i
+            if start > now and current_idx is not None:
+                break
+
+        if current_idx is None:
+            current_idx = 0
+
+        item = timeline[current_idx]
+        return self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        attrs: Dict[str, Any] = {}
+        payload = self._get_forecast_payload() or {}
+        timeline = payload.get("timeline_data")
+        attrs["last_update"] = payload.get("calculation_time")
+        attrs["points_count"] = len(timeline) if isinstance(timeline, list) else 0
+
+        if not isinstance(timeline, list) or not timeline:
+            return attrs
+
+        now = dt_util.now()
+        current_idx: Optional[int] = None
+        current_mode: Optional[str] = None
+        current_mode_code: Optional[int] = None
+        current_start: Optional[datetime] = None
+
+        for i, item in enumerate(timeline):
+            start = self._parse_local_start(item.get("time") or item.get("timestamp"))
+            if not start:
+                continue
+            end = start + timedelta(minutes=15)
+            if start <= now < end:
+                current_idx = i
+                current_start = start
+                current_mode = self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
+                current_mode_code = item.get("mode") if isinstance(item.get("mode"), int) else None
+                break
+            if start <= now:
+                current_idx = i
+                current_start = start
+                current_mode = self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
+                current_mode_code = item.get("mode") if isinstance(item.get("mode"), int) else None
+            if start > now and current_idx is not None:
+                break
+
+        attrs["recommended_mode"] = current_mode
+        attrs["recommended_mode_code"] = current_mode_code
+        attrs["recommended_interval_start"] = (
+            current_start.isoformat() if isinstance(current_start, datetime) else None
+        )
+
+        # Next change
+        next_change_at: Optional[datetime] = None
+        next_mode: Optional[str] = None
+        next_mode_code: Optional[int] = None
+        if current_idx is not None and current_mode:
+            for item in timeline[current_idx + 1 :]:
+                start = self._parse_local_start(item.get("time") or item.get("timestamp"))
+                if not start:
+                    continue
+                candidate = self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
+                if candidate and candidate != current_mode:
+                    next_change_at = start
+                    next_mode = candidate
+                    next_mode_code = item.get("mode") if isinstance(item.get("mode"), int) else None
+                    break
+
+        attrs["next_mode_change_at"] = next_change_at.isoformat() if next_change_at else None
+        attrs["next_mode"] = next_mode
+        attrs["next_mode_code"] = next_mode_code
+        return attrs
+
     async def _get_home_ups_blocks_from_detail_tabs(
         self, plan: str = "hybrid"
     ) -> List[Dict[str, Any]]:

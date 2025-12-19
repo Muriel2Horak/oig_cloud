@@ -84,6 +84,7 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
             "battery_prediction",
             "grid_charging_plan",
             "battery_efficiency",
+            "planner_status",
         } and entry.options.get("enable_battery_prediction", False):
             expected.add(sensor_type)
             continue
@@ -1013,6 +1014,35 @@ async def async_setup_entry(  # noqa: C901
                         all_sensors.extend(efficiency_sensors)  # PERFORMANCE: Collect
                 except Exception as e:
                     _LOGGER.error(f"Error creating battery efficiency sensors: {e}")
+
+                # Přidat také planner status sensor (recommended mode)
+                try:
+                    from .oig_cloud_battery_forecast import (
+                        OigCloudPlannerRecommendedModeSensor,
+                    )
+
+                    planner_status_sensors: List[Any] = []
+                    for sensor_type, config in SENSOR_TYPES.items():
+                        if config.get("sensor_type_category") == "planner_status":
+                            sensor = OigCloudPlannerRecommendedModeSensor(
+                                coordinator,
+                                sensor_type,
+                                entry,
+                                analytics_device_info,
+                                hass,
+                            )
+                            planner_status_sensors.append(sensor)
+                            _LOGGER.debug(
+                                f"Created planner status sensor: {sensor_type}"
+                            )
+
+                    if planner_status_sensors:
+                        _LOGGER.info(
+                            f"Registering {len(planner_status_sensors)} planner status sensors"
+                        )
+                        all_sensors.extend(planner_status_sensors)
+                except Exception as e:
+                    _LOGGER.error(f"Error creating planner status sensors: {e}")
 
                 # Přidat také adaptive load profiles sensor
                 try:

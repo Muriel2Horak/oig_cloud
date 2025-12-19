@@ -297,6 +297,18 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Aktuální predikovaná kapacita baterie (kWh). Atributy obsahují kompletní timeline predikce.",
     },
+    "planner_recommended_mode": {
+        "name": "Planner Recommended Mode",
+        "name_cs": "Doporučený režim (plánovač)",
+        "unit": None,
+        "icon": "mdi:robot",
+        "device_class": None,
+        "state_class": None,
+        "sensor_type_category": "planner_status",
+        "device_mapping": "analytics",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "description": "Doporučený režim pro aktuální interval z hybrid plánovače (např. Home 1/Home UPS) + informace o příští změně.",
+    },
     "battery_balancing": {
         "name": "Battery Balancing Status",
         "name_cs": "Stav vyrovnání baterie",
