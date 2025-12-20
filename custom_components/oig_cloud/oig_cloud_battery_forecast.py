@@ -8393,7 +8393,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
 
         # Normalizovat string (remove extra spaces, case-insensitive)
-        normalized = mode_name.strip()
+        normalized = str(mode_name or "").strip()
+        if not normalized:
+            return 0
+        if normalized.lower() in {"unknown", "neznámý", "neznamy"}:
+            # Avoid noisy warning for placeholder/unknown values.
+            return 0
 
         mode_id = mode_mapping.get(normalized)
         if mode_id is None:
