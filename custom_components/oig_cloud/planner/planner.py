@@ -161,6 +161,19 @@ class OnePlanner:
 
             self._apply_ups_with_min_duration(data, modes, candidate_idx)
 
+        # Target-filling: after minimum is safe, add the cheapest UPS intervals to reach target.
+        # Respect max_ups_price_czk and UPS min duration.
+        if not infeasible and target_kwh > planning_min_kwh + self.config.eps_kwh:
+            for _ in range(self.config.max_iterations):
+                soc_before, soc_after, _flows = self._simulate(data, modes)
+                max_soc = max(soc_after) if soc_after else data.current_soc_kwh
+                if max_soc >= target_kwh - self.config.eps_kwh:
+                    break
+                candidate_idx = self._pick_ups_interval_for_target(data=data, modes=modes)
+                if candidate_idx is None:
+                    break
+                self._apply_ups_with_min_duration(data, modes, candidate_idx)
+
         timeline = self._build_timeline(
             data=data,
             modes=modes,
@@ -205,6 +218,21 @@ class OnePlanner:
         if not candidates:
             return None
 
+        candidates.sort(key=lambda x: x[0])
+        return candidates[0][1]
+
+    def _pick_ups_interval_for_target(self, *, data: PlanInput, modes: List[int]) -> Optional[int]:
+        """Pick the cheapest eligible interval to push SoC toward target."""
+        candidates: List[Tuple[float, int]] = []
+        for i in range(len(modes)):
+            if modes[i] == CBB_MODE_HOME_UPS:
+                continue
+            price = float(data.spot_prices[i].get("price", 0.0) or 0.0)
+            if price > self.config.max_ups_price_czk:
+                continue
+            candidates.append((price, i))
+        if not candidates:
+            return None
         candidates.sort(key=lambda x: x[0])
         return candidates[0][1]
 
