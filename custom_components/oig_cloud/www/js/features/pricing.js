@@ -192,22 +192,36 @@ window.invalidatePricingTimelineCache = invalidatePricingTimelineCache;
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
-    if (loadPricingDataTimer) clearTimeout(loadPricingDataTimer);
-    loadPricingDataTimer = setTimeout(() => {
+    try {
+        if (loadPricingDataTimer) clearTimeout(loadPricingDataTimer);
+    } catch (e) { }
+    try {
+        loadPricingDataTimer = setTimeout(() => {
         if (pricingTabActive) {  // Only update if pricing tab is active
             loadPricingData();
         }
-    }, 300); // Wait 300ms before executing (allow multiple changes to settle)
+        }, 300); // Wait 300ms before executing (allow multiple changes to settle)
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        loadPricingDataTimer = null;
+    }
 }
 
 // Debounced updatePlannedConsumptionStats() - prevents excessive calls when battery_forecast changes
 function debouncedUpdatePlannedConsumption() {
-    if (updatePlannedConsumptionTimer) clearTimeout(updatePlannedConsumptionTimer);
-    updatePlannedConsumptionTimer = setTimeout(() => {
+    try {
+        if (updatePlannedConsumptionTimer) clearTimeout(updatePlannedConsumptionTimer);
+    } catch (e) { }
+    try {
+        updatePlannedConsumptionTimer = setTimeout(() => {
         if (pricingTabActive) {  // Only update if pricing tab is active
             updatePlannedConsumptionStats();
         }
-    }, 300); // Wait 300ms before executing
+        }, 300); // Wait 300ms before executing
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        updatePlannedConsumptionTimer = null;
+    }
 }
 
 var combinedChart = null;

@@ -1049,6 +1049,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
         placeholders = {
             "step": f"Krok {current} z {total}",
             "progress": progress_bar,
+            # Some translations use "{info}" in step descriptions. Provide a safe default.
+            "info": "",
         }
 
         # Přidat další placeholders podle potřeby

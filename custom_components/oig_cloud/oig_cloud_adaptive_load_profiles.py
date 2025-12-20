@@ -365,7 +365,8 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug(
                 f"Loading 72h statistics for {consumption_sensor_entity_id}..."
             )
-            stats_rows = await self._hass.async_add_executor_job(get_hourly_statistics)
+            # Run DB queries via the recorder DB executor (avoids HA warnings and keeps DB access serialized)
+            stats_rows = await recorder_instance.async_add_executor_job(get_hourly_statistics)
 
             if not stats_rows:
                 _LOGGER.warning(
@@ -488,7 +489,8 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug(
                 f"Loading historical statistics for profile matching ({days_back} days)..."
             )
-            stats_rows = await self._hass.async_add_executor_job(get_all_statistics)
+            # Run DB queries via the recorder DB executor (avoids HA warnings and keeps DB access serialized)
+            stats_rows = await recorder_instance.async_add_executor_job(get_all_statistics)
 
             if not stats_rows:
                 _LOGGER.warning(

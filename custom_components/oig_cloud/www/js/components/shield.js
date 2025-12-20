@@ -6,21 +6,35 @@ let timelineRefreshTimer = null;
 
 // Debounced shield monitor - prevents excessive calls when shield sensors change rapidly
 function debouncedShieldMonitor() {
-    if (shieldMonitorTimer) clearTimeout(shieldMonitorTimer);
-    shieldMonitorTimer = setTimeout(() => {
+    try {
+        if (shieldMonitorTimer) clearTimeout(shieldMonitorTimer);
+    } catch (e) { }
+    try {
+        shieldMonitorTimer = setTimeout(() => {
         monitorShieldActivity();
         updateShieldQueue();
         updateShieldUI();
         updateButtonStates();
-    }, 100); // Wait 100ms before executing (shorter delay for responsive UI)
+        }, 100); // Wait 100ms before executing (shorter delay for responsive UI)
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        shieldMonitorTimer = null;
+    }
 }
 
 // Debounced timeline refresh - for Today Plan Tile updates
 function debouncedTimelineRefresh() {
-    if (timelineRefreshTimer) clearTimeout(timelineRefreshTimer);
-    timelineRefreshTimer = setTimeout(() => {
+    try {
+        if (timelineRefreshTimer) clearTimeout(timelineRefreshTimer);
+    } catch (e) { }
+    try {
+        timelineRefreshTimer = setTimeout(() => {
         window.DashboardTimeline?.buildExtendedTimeline?.();
-    }, 300); // Wait 300ms before executing
+        }, 300); // Wait 300ms before executing
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        timelineRefreshTimer = null;
+    }
 }
 
 // Subscribe to shield status changes

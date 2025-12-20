@@ -25,12 +25,33 @@ var drawConnectionsTimeout = null;
 var loadDataTimer = null;
 var loadDetailsTimer = null;
 
+function safeClearTimeout(timerId) {
+    try {
+        if (timerId) clearTimeout(timerId);
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+    }
+}
+
+function safeSetTimeout(fn, delay) {
+    try {
+        return setTimeout(() => {
+            try {
+                if (document?.body) fn();
+            } catch (e) { }
+        }, delay);
+    } catch (e) {
+        // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        return null;
+    }
+}
+
 // Debounced version of drawConnections to prevent excessive redraws
 function debouncedDrawConnections(delay = 100) {
     if (drawConnectionsTimeout) {
-        clearTimeout(drawConnectionsTimeout);
+        safeClearTimeout(drawConnectionsTimeout);
     }
-    drawConnectionsTimeout = setTimeout(() => {
+    drawConnectionsTimeout = safeSetTimeout(() => {
         drawConnections();
         drawConnectionsTimeout = null;
     }, delay);
@@ -38,16 +59,16 @@ function debouncedDrawConnections(delay = 100) {
 
 // Debounced loadData() - prevents excessive calls
 function debouncedLoadData() {
-    if (loadDataTimer) clearTimeout(loadDataTimer);
-    loadDataTimer = setTimeout(() => {
+    if (loadDataTimer) safeClearTimeout(loadDataTimer);
+    loadDataTimer = safeSetTimeout(() => {
         loadData();
     }, 200); // Wait 200ms before executing
 }
 
 // Debounced loadNodeDetails() - prevents excessive calls
 function debouncedLoadNodeDetails() {
-    if (loadDetailsTimer) clearTimeout(loadDetailsTimer);
-    loadDetailsTimer = setTimeout(() => {
+    if (loadDetailsTimer) safeClearTimeout(loadDetailsTimer);
+    loadDetailsTimer = safeSetTimeout(() => {
         loadNodeDetails();
     }, 500); // Wait 500ms before executing
 }
