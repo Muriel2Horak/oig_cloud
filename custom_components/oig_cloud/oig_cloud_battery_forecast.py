@@ -218,6 +218,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._attr_name = name_cs or name_en or sensor_type
 
         # Timeline data cache
+        # Throttling: forecast should be computed at most once per 15-minute interval.
+        self._last_forecast_bucket: Optional[datetime] = None
+        self._forecast_in_progress: bool = False
+        self._profiles_dirty: bool = False
         self._timeline_data: List[Dict[str, Any]] = (
             []
         )  # ACTIVE timeline (with applied plan)
@@ -491,15 +495,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         async def _on_profiles_updated():
             """Called when AdaptiveLoadProfiles completes update."""
-            _LOGGER.info(
-                "📡 Received profiles_updated signal - triggering forecast refresh"
+            # Do not recompute immediately; keep forecast cadence at 1× / 15 minutes.
+            # Mark inputs dirty and let the next scheduled 15-min tick pick it up.
+            self._profiles_dirty = True
+            self._log_rate_limited(
+                "profiles_updated_deferred",
+                "info",
+                "📡 profiles_updated received - deferring forecast refresh to next 15-min tick",
+                cooldown_s=300.0,
             )
-            try:
-                await self.async_update()
-            except Exception as e:
-                _LOGGER.error(
-                    f"Forecast refresh after profiles update failed: {e}", exc_info=True
-                )
 
         # Subscribe to profiles updates
         signal_name = f"oig_cloud_{self._box_id}_profiles_updated"
@@ -865,6 +869,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         await super().async_update()
 
         try:
+            mark_bucket_done = False
+            now_aware = dt_util.now()
+            bucket_minute = (now_aware.minute // 15) * 15
+            bucket_start = now_aware.replace(minute=bucket_minute, second=0, microsecond=0)
+
+            # Enforce single in-flight computation.
+            if self._forecast_in_progress:
+                self._log_rate_limited(
+                    "forecast_in_progress",
+                    "debug",
+                    "Forecast computation already in progress - skipping",
+                    cooldown_s=60.0,
+                )
+                return
+
+            # Enforce cadence: at most once per 15-minute bucket.
+            if self._last_forecast_bucket == bucket_start:
+                return
+
+            self._forecast_in_progress = True
+
             # Získat všechna potřebná data
             self._log_rate_limited(
                 "forecast_update_tick",
@@ -889,6 +914,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 self._schedule_forecast_retry(10.0)
                 return
+            mark_bucket_done = True
 
             _LOGGER.debug(
                 "Battery capacities: current=%.2f kWh, max=%.2f kWh, min=%.2f kWh",
@@ -914,11 +940,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             # CRITICAL FIX: Filter spot prices to start from current 15-minute interval
             # Round NOW down to nearest 15-minute interval (00, 15, 30, 45)
-            now_aware = dt_util.now()
-            current_minute = (now_aware.minute // 15) * 15
-            current_interval_start = now_aware.replace(
-                minute=current_minute, second=0, microsecond=0
-            )
+            current_interval_start = bucket_start
             # Convert to naive datetime for comparison (spot prices are timezone-naive strings)
             current_interval_naive = current_interval_start.replace(tzinfo=None)
 
@@ -1275,6 +1297,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         except Exception as e:
             _LOGGER.error(f"Error updating battery forecast: {e}", exc_info=True)
+        finally:
+            # Mark bucket complete only if prerequisites were ready.
+            try:
+                if mark_bucket_done:
+                    now_done = dt_util.now()
+                    done_bucket_minute = (now_done.minute // 15) * 15
+                    self._last_forecast_bucket = now_done.replace(
+                        minute=done_bucket_minute, second=0, microsecond=0
+                    )
+                    # We intentionally keep profiles dirty until a successful compute; if async_update
+                    # failed, the next tick will retry.
+                    if self._timeline_data:
+                        self._profiles_dirty = False
+            except Exception:
+                pass
+            self._forecast_in_progress = False
 
     def _simulate_interval(
         self,
@@ -12616,6 +12654,11 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         if entity_category:
             self._attr_entity_category = EntityCategory(entity_category)
 
+        self._attr_native_value: Optional[str] = None
+        self._attr_extra_state_attributes: Dict[str, Any] = {}
+        self._last_signature: Optional[str] = None
+        self._unsubs: list[callable] = []
+
     def _get_forecast_payload(self) -> Optional[Dict[str, Any]]:
         payload = getattr(self.coordinator, "battery_forecast_data", None)
         if isinstance(payload, dict):
@@ -12660,42 +12703,8 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
                 return "Home UPS"
         return None
 
-    @property
-    def available(self) -> bool:
-        payload = self._get_forecast_payload() or {}
-        timeline = payload.get("timeline_data")
-        return bool(isinstance(timeline, list) and timeline)
-
-    @property
-    def native_value(self) -> Optional[str]:
-        payload = self._get_forecast_payload() or {}
-        timeline = payload.get("timeline_data")
-        if not isinstance(timeline, list) or not timeline:
-            return None
-
-        now = dt_util.now()
-        current_idx: Optional[int] = None
-        for i, item in enumerate(timeline):
-            start = self._parse_local_start(item.get("time") or item.get("timestamp"))
-            if not start:
-                continue
-            end = start + timedelta(minutes=15)
-            if start <= now < end:
-                current_idx = i
-                break
-            if start <= now:
-                current_idx = i
-            if start > now and current_idx is not None:
-                break
-
-        if current_idx is None:
-            current_idx = 0
-
-        item = timeline[current_idx]
-        return self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def _compute_state_and_attrs(self) -> tuple[Optional[str], Dict[str, Any], str]:
+        """Compute recommended mode + attributes and return signature for change detection."""
         attrs: Dict[str, Any] = {}
         payload = self._get_forecast_payload() or {}
         timeline = payload.get("timeline_data")
@@ -12703,7 +12712,8 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         attrs["points_count"] = len(timeline) if isinstance(timeline, list) else 0
 
         if not isinstance(timeline, list) or not timeline:
-            return attrs
+            sig = json.dumps({"v": None, "a": attrs}, sort_keys=True, default=str)
+            return None, attrs, sig
 
         now = dt_util.now()
         current_idx: Optional[int] = None
@@ -12764,7 +12774,95 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         attrs["next_mode_change_at"] = next_change_at.isoformat() if next_change_at else None
         attrs["next_mode"] = next_mode
         attrs["next_mode_code"] = next_mode_code
-        return attrs
+
+        # Signature controls when we write HA state; include derived values + last_update.
+        sig = json.dumps(
+            {
+                "v": current_mode,
+                "c": current_mode_code,
+                "s": attrs.get("recommended_interval_start"),
+                "n": attrs.get("next_mode_change_at"),
+                "nv": next_mode,
+                "nc": next_mode_code,
+                "lu": attrs.get("last_update"),
+                "pc": attrs.get("points_count"),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return current_mode, attrs, sig
+
+    async def _async_recompute(self) -> None:
+        try:
+            value, attrs, sig = self._compute_state_and_attrs()
+            if sig == self._last_signature:
+                return
+            self._last_signature = sig
+            self._attr_native_value = value
+            self._attr_extra_state_attributes = attrs
+            if self.hass:
+                self.async_write_ha_state()
+        except Exception:
+            # Keep the sensor resilient; do not raise from background callbacks.
+            return
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        # Do NOT update on every coordinator tick (local telemetry can be very noisy).
+        # Recompute only on forecast updates and on 15-minute boundaries.
+        from homeassistant.helpers.dispatcher import async_dispatcher_connect
+        from homeassistant.helpers.event import async_track_time_change
+
+        # Forecast updated signal
+        signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
+
+        async def _on_forecast_updated() -> None:
+            self.hass.async_create_task(self._async_recompute())
+
+        try:
+            self._unsubs.append(async_dispatcher_connect(self.hass, signal_name, _on_forecast_updated))
+        except Exception:
+            pass
+
+        # 15-minute boundary recompute (recommended_mode changes with time even if timeline unchanged)
+        async def _on_tick(_now: datetime) -> None:
+            self.hass.async_create_task(self._async_recompute())
+
+        try:
+            for minute in [0, 15, 30, 45]:
+                self._unsubs.append(
+                    async_track_time_change(self.hass, _on_tick, minute=minute, second=2)
+                )
+        except Exception:
+            pass
+
+        await self._async_recompute()
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []) or []:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubs = []
+        await super().async_will_remove_from_hass()
+
+    @property
+    def available(self) -> bool:
+        return bool(self._attr_extra_state_attributes.get("points_count"))
+
+    @property
+    def native_value(self) -> Optional[str]:
+        return self._attr_native_value
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        return dict(self._attr_extra_state_attributes)
+
+    def _handle_coordinator_update(self) -> None:
+        # Intentionally ignore coordinator updates (local telemetry is noisy).
+        return
 
 
 # =============================================================================
