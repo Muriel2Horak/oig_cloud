@@ -1173,18 +1173,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     )
                 )
 
-                self._timeline_data = plan.timeline
-                self._hybrid_timeline = self._timeline_data
-                self._mode_optimization_result = {
-                    "optimal_timeline": self._timeline_data,
-                    "optimal_modes": plan.modes,
+            self._timeline_data = plan.timeline
+            self._add_decision_reasons_to_timeline(
+                self._timeline_data,
+                current_capacity=current_capacity,
+                max_capacity=max_capacity,
+                min_capacity=plan.planning_min_kwh,
+                efficiency=float(efficiency),
+            )
+            self._hybrid_timeline = self._timeline_data
+            self._mode_optimization_result = {
+                "optimal_timeline": self._timeline_data,
+                "optimal_modes": plan.modes,
                     "planner": "one_planner",
                     "planning_min_kwh": plan.planning_min_kwh,
                     "target_kwh": plan.target_kwh,
                     "infeasible": plan.infeasible,
                     "infeasible_reason": plan.infeasible_reason,
                 }
-                self._mode_recommendations = self._create_mode_recommendations(self._timeline_data, hours_ahead=48)
+            self._mode_recommendations = self._create_mode_recommendations(self._timeline_data, hours_ahead=48)
 
             except Exception as e:
                 _LOGGER.error("OnePlanner failed: %s", e, exc_info=True)
@@ -2992,6 +2999,114 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.info(f"✅ MIN_MODE_DURATION: Fixed {violations_fixed} violations")
 
         return result
+
+    def _add_decision_reasons_to_timeline(
+        self,
+        timeline: List[Dict[str, Any]],
+        *,
+        current_capacity: float,
+        max_capacity: float,
+        min_capacity: float,
+        efficiency: float,
+    ) -> None:
+        """Attach decision reason strings and metrics to each timeline interval."""
+        if not timeline:
+            return
+
+        battery = current_capacity
+
+        future_ups_avg_price: List[Optional[float]] = [None] * len(timeline)
+        cumulative_charge = 0.0
+        cumulative_cost = 0.0
+
+        for idx in range(len(timeline) - 1, -1, -1):
+            entry = timeline[idx]
+            if entry.get("mode") == CBB_MODE_HOME_UPS:
+                charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
+                if charge_kwh > 0:
+                    cumulative_charge += charge_kwh
+                    cumulative_cost += charge_kwh * (entry.get("spot_price", 0) or 0)
+
+            if cumulative_charge > 0:
+                future_ups_avg_price[idx] = cumulative_cost / cumulative_charge
+
+        for idx, entry in enumerate(timeline):
+            entry["battery_soc_start"] = battery
+
+            mode = entry.get("mode")
+            load_kwh = entry.get("load_kwh", 0.0) or 0.0
+            solar_kwh = entry.get("solar_kwh", 0.0) or 0.0
+            price = entry.get("spot_price", 0.0) or 0.0
+
+            decision_reason = None
+            decision_metrics: Dict[str, Any] = {}
+
+            deficit = max(0.0, load_kwh - solar_kwh)
+
+            if mode == CBB_MODE_HOME_II:
+                if deficit > 0:
+                    available_battery = max(0.0, battery - min_capacity)
+                    discharge_kwh = (
+                        min(deficit / efficiency, available_battery)
+                        if efficiency > 0
+                        else 0.0
+                    )
+                    covered_kwh = discharge_kwh * efficiency
+                    interval_saving = covered_kwh * price
+                    avg_price = future_ups_avg_price[idx]
+                    recharge_cost = (
+                        (discharge_kwh / efficiency) * avg_price
+                        if avg_price is not None and efficiency > 0
+                        else None
+                    )
+
+                    decision_metrics = {
+                        "home1_saving_czk": round(interval_saving, 2),
+                        "soc_drop_kwh": round(discharge_kwh, 2),
+                        "recharge_avg_price_czk": round(avg_price, 2)
+                        if avg_price is not None
+                        else None,
+                        "recharge_cost_czk": round(recharge_cost, 2)
+                        if recharge_cost is not None
+                        else None,
+                    }
+
+                    if recharge_cost is not None:
+                        decision_reason = (
+                            f"Drzeni baterie: HOME I by usetril {interval_saving:.2f} Kc, "
+                            f"dobiti ~{recharge_cost:.2f} Kc"
+                        )
+                    else:
+                        decision_reason = (
+                            f"Drzeni baterie: HOME I by usetril {interval_saving:.2f} Kc, "
+                            "chybi UPS okno pro dobiti"
+                        )
+                else:
+                    decision_reason = "Prebytky ze solaru do baterie (bez vybijeni)"
+            elif mode == CBB_MODE_HOME_UPS:
+                charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
+                if charge_kwh > 0:
+                    decision_reason = (
+                        f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
+                    )
+                else:
+                    decision_reason = "UPS rezim (ochrana/udrzovani)"
+            elif mode == CBB_MODE_HOME_III:
+                decision_reason = "Max nabijeni z FVE, spotreba ze site"
+            else:
+                if deficit > 0:
+                    decision_reason = "Vybijeni baterie misto odberu ze site"
+                else:
+                    decision_reason = "Solar pokryva spotrebu, prebytky do baterie"
+
+            entry["decision_reason"] = decision_reason
+            entry["decision_metrics"] = decision_metrics
+
+            # Advance battery for next interval (end-of-interval stored in timeline)
+            try:
+                battery = float(entry.get("battery_soc", battery))
+            except (TypeError, ValueError):
+                battery = battery
 
     def _validate_planning_minimum(
         self,
