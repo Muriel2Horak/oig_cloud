@@ -298,6 +298,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._precomputed_store: Optional[Store] = None
         self._precompute_interval = timedelta(minutes=15)
         self._last_precompute_at: Optional[datetime] = None
+        self._last_precompute_hash: Optional[str] = None
         self._precompute_task: Optional[asyncio.Task] = None
         if self._hass:
             self._precomputed_store = Store(
@@ -1173,25 +1174,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     )
                 )
 
-            self._timeline_data = plan.timeline
-            self._add_decision_reasons_to_timeline(
-                self._timeline_data,
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=plan.planning_min_kwh,
-                efficiency=float(efficiency),
-            )
-            self._hybrid_timeline = self._timeline_data
-            self._mode_optimization_result = {
-                "optimal_timeline": self._timeline_data,
-                "optimal_modes": plan.modes,
+                self._timeline_data = plan.timeline
+                self._add_decision_reasons_to_timeline(
+                    self._timeline_data,
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    min_capacity=plan.planning_min_kwh,
+                    efficiency=float(efficiency),
+                )
+                self._hybrid_timeline = self._timeline_data
+                self._mode_optimization_result = {
+                    "optimal_timeline": self._timeline_data,
+                    "optimal_modes": plan.modes,
                     "planner": "one_planner",
                     "planning_min_kwh": plan.planning_min_kwh,
                     "target_kwh": plan.target_kwh,
                     "infeasible": plan.infeasible,
                     "infeasible_reason": plan.infeasible_reason,
                 }
-            self._mode_recommendations = self._create_mode_recommendations(self._timeline_data, hours_ahead=48)
+                self._mode_recommendations = self._create_mode_recommendations(
+                    self._timeline_data, hours_ahead=48
+                )
 
             except Exception as e:
                 _LOGGER.error("OnePlanner failed: %s", e, exc_info=True)
@@ -1293,7 +1296,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # PHASE 3.5: Precompute UI data for instant API responses
             # Build timeline_extended + unified_cost_tile and save to storage
             # This runs every 15 min after forecast update
-            self._schedule_precompute(force=self._last_precompute_at is None)
+            hash_changed = self._data_hash != self._last_precompute_hash
+            self._schedule_precompute(
+                force=self._last_precompute_at is None or hash_changed
+            )
 
             # Notify dependent sensors (BatteryBalancing) that forecast is ready
             from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -5893,6 +5899,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
             await self._precomputed_store.async_save(precomputed_data)
+            self._last_precompute_hash = self._data_hash
 
             duration = (dt_util.now() - start_time).total_seconds()
             plan_cost = unified_cost_tile.get("today", {}).get("plan_total_cost") or 0.0
