@@ -12891,6 +12891,15 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         except Exception:
             self._box_id = "unknown"
 
+        self._precomputed_store: Optional[Store] = None
+        self._precomputed_payload: Optional[Dict[str, Any]] = None
+        if self._hass:
+            self._precomputed_store = Store(
+                self._hass,
+                version=1,
+                key=f"oig_cloud.precomputed_data_{self._box_id}",
+            )
+
         self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
@@ -12911,10 +12920,26 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         self._last_signature: Optional[str] = None
         self._unsubs: list[callable] = []
 
+    async def _async_refresh_precomputed_payload(self) -> None:
+        if not self._precomputed_store:
+            return
+        try:
+            precomputed = await self._precomputed_store.async_load()
+        except Exception:
+            return
+        if not isinstance(precomputed, dict):
+            return
+        timeline = precomputed.get("timeline") or precomputed.get("timeline_hybrid")
+        if not isinstance(timeline, list) or not timeline:
+            return
+        self._precomputed_payload = {
+            "timeline_data": timeline,
+            "calculation_time": precomputed.get("last_update"),
+        }
+
     def _get_forecast_payload(self) -> Optional[Dict[str, Any]]:
-        payload = getattr(self.coordinator, "battery_forecast_data", None)
-        if isinstance(payload, dict):
-            return payload
+        if isinstance(self._precomputed_payload, dict):
+            return self._precomputed_payload
         return None
 
     def _parse_local_start(self, ts: Any) -> Optional[datetime]:
@@ -13099,6 +13124,7 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
 
     async def _async_recompute(self) -> None:
         try:
+            await self._async_refresh_precomputed_payload()
             value, attrs, sig = self._compute_state_and_attrs()
             if sig == self._last_signature:
                 return
@@ -13113,6 +13139,12 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        if not self._precomputed_store and self.hass:
+            self._precomputed_store = Store(
+                self.hass,
+                version=1,
+                key=f"oig_cloud.precomputed_data_{self._box_id}",
+            )
 
         # Do NOT update on every coordinator tick (local telemetry can be very noisy).
         # Recompute only on forecast updates and on 15-minute boundaries.
