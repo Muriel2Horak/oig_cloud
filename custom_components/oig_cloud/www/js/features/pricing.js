@@ -1054,9 +1054,11 @@ async function loadPricingData() {
 
     // OPRAVA: Filtrovat pouze aktuální a budoucí intervaly
     const nowDate = new Date();
+    const bucketStart = new Date(nowDate);
+    bucketStart.setMinutes(Math.floor(nowDate.getMinutes() / 15) * 15, 0, 0);
     timelineData = timelineData.filter(point => {
         const pointTime = new Date(point.timestamp);
-        return pointTime >= nowDate;
+        return pointTime >= bucketStart;
     });
     console.log(`[Pricing] After filtering future intervals: ${timelineData.length} points`);
 
