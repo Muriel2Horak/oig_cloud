@@ -12955,6 +12955,34 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
                 return "Home UPS"
         return None
 
+    def _get_auto_switch_lead_seconds(
+        self, from_mode: Optional[str], to_mode: Optional[str]
+    ) -> float:
+        fallback = 180.0
+        if self._config_entry and self._config_entry.options:
+            fallback = float(
+                self._config_entry.options.get(
+                    "auto_mode_switch_lead_seconds",
+                    self._config_entry.options.get(
+                        "autonomy_switch_lead_seconds", 180.0
+                    ),
+                )
+            )
+        if not from_mode or not to_mode or not self._hass or not self._config_entry:
+            return fallback
+        try:
+            entry = self._hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
+            service_shield = entry.get("service_shield")
+            mode_tracker = getattr(service_shield, "mode_tracker", None)
+            if not mode_tracker:
+                return fallback
+            offset_seconds = mode_tracker.get_offset_for_scenario(from_mode, to_mode)
+            if offset_seconds is None or offset_seconds <= 0:
+                return fallback
+            return float(offset_seconds)
+        except Exception:
+            return fallback
+
     def _compute_state_and_attrs(self) -> tuple[Optional[str], Dict[str, Any], str]:
         """Compute recommended mode + attributes and return signature for change detection."""
         attrs: Dict[str, Any] = {}
@@ -13000,8 +13028,6 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
             if start > now and current_idx is not None:
                 break
 
-        attrs["recommended_mode"] = current_mode
-        attrs["recommended_mode_code"] = current_mode_code
         attrs["recommended_interval_start"] = (
             current_start.isoformat() if isinstance(current_start, datetime) else None
         )
@@ -13027,22 +13053,49 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         attrs["next_mode"] = next_mode
         attrs["next_mode_code"] = next_mode_code
 
+        effective_mode = current_mode
+        effective_mode_code = current_mode_code
+        lead_seconds: Optional[float] = None
+        effective_from: Optional[datetime] = None
+        if next_change_at and next_mode:
+            lead_seconds = self._get_auto_switch_lead_seconds(current_mode, next_mode)
+            if lead_seconds < 0:
+                lead_seconds = 0.0
+            effective_from = next_change_at - timedelta(seconds=lead_seconds)
+            if now >= effective_from:
+                effective_mode = next_mode
+                effective_mode_code = next_mode_code
+
+        attrs["planned_interval_mode"] = current_mode
+        attrs["planned_interval_mode_code"] = current_mode_code
+        attrs["recommended_mode"] = effective_mode
+        attrs["recommended_mode_code"] = effective_mode_code
+        attrs["recommended_effective_from"] = (
+            effective_from.isoformat() if effective_from else None
+        )
+        if lead_seconds is not None:
+            attrs["auto_switch_lead_seconds"] = lead_seconds
+
         # Signature controls when we write HA state; include derived values + last_update.
         sig = json.dumps(
             {
-                "v": current_mode,
-                "c": current_mode_code,
+                "v": effective_mode,
+                "c": effective_mode_code,
+                "cv": current_mode,
+                "cc": current_mode_code,
                 "s": attrs.get("recommended_interval_start"),
                 "n": attrs.get("next_mode_change_at"),
                 "nv": next_mode,
                 "nc": next_mode_code,
+                "ef": attrs.get("recommended_effective_from"),
+                "ls": lead_seconds,
                 "lu": attrs.get("last_update"),
                 "pc": attrs.get("points_count"),
             },
             sort_keys=True,
             default=str,
         )
-        return current_mode, attrs, sig
+        return effective_mode, attrs, sig
 
     async def _async_recompute(self) -> None:
         try:
