@@ -3522,6 +3522,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         total_cost = 0.0
 
         for i, mode in enumerate(modes):
+            battery_start = battery
             timestamp_str = spot_prices[i].get("time", "")
             price = spot_prices[i].get("price", 0)
             export_price = export_price_lookup.get(timestamp_str, 0)
@@ -3684,6 +3685,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "time": timestamp_str,
                     "timestamp": timestamp_str,  # Alias pro zpětnou kompatibilitu s dashboardem
                     "battery_soc": battery,
+                    "battery_soc_start": battery_start,
                     "battery_capacity_kwh": battery,  # Alias pro zpětnou kompatibilitu s dashboardem
                     "mode": mode,
                     "mode_name": CBB_MODE_NAMES.get(mode, "Unknown"),
@@ -3700,6 +3702,86 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "grid_charge_kwh": round(grid_charge_kwh, 3),  # For stacked graph
                 }
             )
+
+        # Build future UPS average price lookup for decision diagnostics
+        future_ups_avg_price: List[Optional[float]] = [None] * len(timeline)
+        cumulative_charge = 0.0
+        cumulative_cost = 0.0
+
+        for idx in range(len(timeline) - 1, -1, -1):
+            entry = timeline[idx]
+            if entry.get("mode") == CBB_MODE_HOME_UPS:
+                charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
+                if charge_kwh > 0:
+                    cumulative_charge += charge_kwh
+                    cumulative_cost += charge_kwh * (entry.get("spot_price", 0) or 0)
+
+            if cumulative_charge > 0:
+                future_ups_avg_price[idx] = cumulative_cost / cumulative_charge
+
+        # Decision diagnostics for UI (per interval)
+        for idx, entry in enumerate(timeline):
+            decision_reason = None
+            decision_metrics: Dict[str, Any] = {}
+
+            mode = entry.get("mode")
+            battery_start = entry.get("battery_soc_start", entry.get("battery_soc", 0))
+            load_kwh = entry.get("load_kwh", 0) or 0
+            solar_kwh = entry.get("solar_kwh", 0) or 0
+            price = entry.get("spot_price", 0) or 0
+
+            deficit = max(0.0, load_kwh - solar_kwh)
+
+            if mode == CBB_MODE_HOME_II:
+                if deficit > 0:
+                    available_battery = max(0.0, battery_start - effective_floor_capacity)
+                    discharge_kwh = min(deficit / efficiency, available_battery) if efficiency > 0 else 0
+                    covered_kwh = discharge_kwh * efficiency
+                    interval_saving = covered_kwh * price
+                    avg_price = future_ups_avg_price[idx]
+                    recharge_cost = (
+                        (discharge_kwh / efficiency) * avg_price
+                        if avg_price is not None and efficiency > 0
+                        else None
+                    )
+
+                    decision_metrics = {
+                        "home1_saving_czk": round(interval_saving, 2),
+                        "soc_drop_kwh": round(discharge_kwh, 2),
+                        "recharge_avg_price_czk": round(avg_price, 2) if avg_price is not None else None,
+                        "recharge_cost_czk": round(recharge_cost, 2) if recharge_cost is not None else None,
+                    }
+
+                    if recharge_cost is not None:
+                        decision_reason = (
+                            f"Drzeni baterie: HOME I by usetril {interval_saving:.2f} Kc, "
+                            f"dobiti ~{recharge_cost:.2f} Kc"
+                        )
+                    else:
+                        decision_reason = (
+                            f"Drzeni baterie: HOME I by usetril {interval_saving:.2f} Kc, "
+                            "chybi UPS okno pro dobiti"
+                        )
+                else:
+                    decision_reason = "Prebytky ze solaru do baterie (bez vybijeni)"
+            elif mode == CBB_MODE_HOME_UPS:
+                charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
+                if charge_kwh > 0:
+                    decision_reason = (
+                        f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
+                    )
+                else:
+                    decision_reason = "UPS rezim (ochrana/udrzovani)"
+            elif mode == CBB_MODE_HOME_III:
+                decision_reason = "Max nabijeni z FVE, spotreba ze site"
+            else:  # HOME I
+                if deficit > 0:
+                    decision_reason = "Vybijeni baterie misto odberu ze site"
+                else:
+                    decision_reason = "Solar pokryva spotrebu, prebytky do baterie"
+
+            entry["decision_reason"] = decision_reason
+            entry["decision_metrics"] = decision_metrics
 
         # Mode recommendations - použít _create_mode_recommendations() pro bloky s detaily
         mode_recommendations = self._create_mode_recommendations(
@@ -6685,6 +6767,22 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 block["grid_export_actual_kwh"], block["grid_export_planned_kwh"]
             )
 
+            interval_reasons = []
+            for iv in group_intervals:
+                planned = iv.get("planned") or {}
+                reason = planned.get("decision_reason")
+                if reason:
+                    interval_reasons.append(
+                        {
+                            "time": iv.get("time", ""),
+                            "reason": reason,
+                            "metrics": planned.get("decision_metrics") or {},
+                        }
+                    )
+
+            if interval_reasons:
+                block["interval_reasons"] = interval_reasons
+
             # Adherence % (pro completed bloky)
             if data_type in ["completed", "both"] and block["mode_match"]:
                 block["adherence_pct"] = 100
@@ -8867,6 +8965,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                 "savings": 0,
                             }
 
+                if status == "current":
+                    current_mode = self._get_current_mode()
+                    current_mode_name = CBB_MODE_NAMES.get(
+                        current_mode, "HOME I"
+                    )
+                    current_soc = self._get_current_battery_soc_percent()
+                    current_kwh = self._get_current_battery_capacity()
+
+                    if actual_data is None:
+                        actual_data = {
+                            "consumption_kwh": 0,
+                            "solar_kwh": 0,
+                            "grid_import_kwh": 0,
+                            "grid_export_kwh": 0,
+                            "net_cost": 0,
+                            "savings": 0,
+                        }
+
+                    actual_data["mode"] = current_mode
+                    actual_data["mode_name"] = current_mode_name
+                    if current_soc is not None:
+                        actual_data["battery_soc"] = round(current_soc, 1)
+                    if current_kwh is not None:
+                        actual_data["battery_kwh"] = round(current_kwh, 2)
+
                 # Přidat interval pokud máme actual NEBO planned
                 if actual_data or planned_data:
                     intervals.append(
@@ -8937,6 +9060,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             "spot_price": round(planned.get("spot_price", 0), 2),
             "net_cost": round(planned.get("net_cost", 0), 2),
             "savings_vs_home_i": round(planned.get("savings_vs_home_i", 0), 2),
+            "decision_reason": planned.get("decision_reason"),
+            "decision_metrics": planned.get("decision_metrics"),
         }
 
     def _format_actual_data(

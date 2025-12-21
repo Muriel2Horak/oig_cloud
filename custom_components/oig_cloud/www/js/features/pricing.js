@@ -83,7 +83,7 @@ const pricingModeIconPlugin = {
 		const labelColor = pluginOptions?.labelColor || 'rgba(255, 255, 255, 0.7)';
 		const axisBandPadding = pluginOptions?.axisBandPadding ?? 10;
 		const axisBandHeight = pluginOptions?.axisBandHeight ?? (iconSize + labelSize + 10);
-		const axisBandColor = pluginOptions?.axisBandColor || 'rgba(6, 10, 18, 0.92)';
+			const axisBandColor = pluginOptions?.axisBandColor || 'rgba(6, 10, 18, 0.12)';
 		const iconAlignment = pluginOptions?.iconAlignment || 'start';
 		const iconStartOffset = pluginOptions?.iconStartOffset ?? 12;
 		const iconBaselineOffset = pluginOptions?.iconBaselineOffset ?? 4;
@@ -451,7 +451,7 @@ function buildPricingModeIconOptions(segments) {
         // Keep this compact and below X-axis labels.
         axisBandPadding: 10,
         axisBandHeight: 28,
-        axisBandColor: 'rgba(8, 12, 20, 0.9)'
+        axisBandColor: 'rgba(6, 10, 18, 0.12)'
     };
 }
 

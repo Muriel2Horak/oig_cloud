@@ -271,6 +271,34 @@
     gap: 8px;
 }
 
+.block-item.block-reasons {
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+}
+
+.reason-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.reason-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-secondary, #cfcfcf);
+    font-size: 0.85rem;
+}
+
+.reason-time {
+    display: inline-flex;
+    min-width: 48px;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+}
+
 .item-label {
     font-size: 0.85rem;
     color: var(--text-secondary, #999);

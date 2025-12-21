@@ -482,7 +482,8 @@ class DetailTabsDialog {
             grid_import_planned_kwh,
             grid_import_actual_kwh,
             grid_export_planned_kwh,
-            grid_export_actual_kwh
+            grid_export_actual_kwh,
+            interval_reasons
         } = block;
 
         // Get mode config
@@ -547,6 +548,7 @@ class DetailTabsDialog {
         const costLabelText = hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:';
 
         const timeRange = this.formatTimeRange(start_time, end_time);
+        const reasonsHtml = this.renderIntervalReasons(interval_reasons, status);
 
         return `
             <div class="mode-block ${matchClass}" data-index="${index}">
@@ -620,6 +622,31 @@ class DetailTabsDialog {
                             )}
                         </div>
                     </div>
+
+                    ${reasonsHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    renderIntervalReasons(intervalReasons, status) {
+        if (!intervalReasons || intervalReasons.length === 0) {
+            return '';
+        }
+        if (status === 'completed') {
+            return '';
+        }
+
+        const items = intervalReasons.map(item => {
+            const timeLabel = this.formatTimeLabel(item.time);
+            return `<div class="reason-line"><span class="reason-time">${timeLabel}</span>${item.reason}</div>`;
+        }).join('');
+
+        return `
+            <div class="block-item block-reasons">
+                <span class="item-label">🧠 Důvod:</span>
+                <div class="item-value reason-list">
+                    ${items}
                 </div>
             </div>
         `;
@@ -674,6 +701,19 @@ class DetailTabsDialog {
         } catch (err) {
             console.warn('[DetailTabs] Failed to format time range', err);
             return `${startIso} - ${endIso}`;
+        }
+    }
+
+    formatTimeLabel(isoTs) {
+        if (!isoTs) return '--:--';
+        try {
+            const dt = new Date(isoTs);
+            if (isNaN(dt.getTime())) {
+                return '--:--';
+            }
+            return dt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+            return '--:--';
         }
     }
 

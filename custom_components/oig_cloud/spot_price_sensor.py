@@ -67,6 +67,8 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._track_15min_remove: Optional[Any] = None
         self._retry_remove: Optional[Any] = None
         self._retry_attempt: int = 0
+        self._cached_state: Optional[float] = None
+        self._cached_attributes: Dict[str, Any] = {}
 
     def _resolve_box_id(self) -> str:
         return _resolve_box_id_from_coordinator(self.coordinator)
@@ -125,6 +127,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 if spot_data:
                     self._spot_data_15min = spot_data
                     self._last_update = dt_now()
+                    self._refresh_cached_state_and_attributes()
                     intervals = len(spot_data.get("prices15m_czk_kwh", {}))
                     _LOGGER.debug(
                         f"[{self.entity_id}] Synced 15min export prices from coordinator ({intervals} intervals)"
@@ -165,6 +168,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
     async def _update_current_interval(self, *_: Any) -> None:
         """Aktualizace stavu senzoru při změně 15min intervalu."""
         _LOGGER.debug(f"[{self.entity_id}] Updating current 15min interval")
+        self._refresh_cached_state_and_attributes()
         self.async_write_ha_state()
         # Trigger coordinator refresh in background to avoid blocking the event loop
         # and hitting HA warnings about slow state updates.
@@ -205,6 +209,7 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             if spot_data and "prices15m_czk_kwh" in spot_data:
                 self._spot_data_15min = spot_data
                 self._last_update = dt_now()
+                self._refresh_cached_state_and_attributes()
 
                 intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
                 _LOGGER.info(
@@ -271,36 +276,15 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
         """Vrátí index 15min intervalu (0-95) pro daný čas."""
         return OteApi.get_current_15min_interval(now)
 
-    def _calculate_export_price_15min(
-        self, spot_price_czk: float, target_datetime: datetime
-    ) -> float:
-        """Vypočítat výkupní cenu BEZ distribuce a BEZ DPH.
+    def _refresh_cached_state_and_attributes(self) -> None:
+        """Recompute cached state/attributes to avoid heavy work in properties."""
+        self._cached_state = self._calculate_current_state()
+        self._cached_attributes = self._calculate_attributes()
+        self._attr_native_value = self._cached_state
+        self._attr_extra_state_attributes = self._cached_attributes
 
-        Výkupní cena = Spotová cena - Poplatek za prodej (% nebo fixní)
-        """
-        options = self._entry.options
-
-        # Parametry z konfigurace
-        pricing_model: str = options.get("export_pricing_model", "percentage")
-        export_fee_percent: float = options.get("export_fee_percent", 15.0)
-        export_fixed_fee_czk: float = options.get("export_fixed_fee_czk", 0.20)
-        # Výpočet výkupní ceny
-        if pricing_model == "percentage":
-            # Dostaneme X% ze spotové ceny (obvykle 85-90%)
-            # Např: 100% - 15% = 85% ze spotové ceny
-            export_price = spot_price_czk * (1 - export_fee_percent / 100.0)
-        else:  # fixed
-            # Odečteme fixní poplatek
-            export_price = spot_price_czk - export_fixed_fee_czk
-
-        # ŽÁDNÉ DPH - jako neplatíme neplatíme DPH z výkupu
-        # ŽÁDNÁ DISTRIBUCE - výkupní cena není zatížená distribucí
-
-        return round(export_price, 2)
-
-    @property
-    def state(self) -> Optional[float]:
-        """Aktuální výkupní cena pro 15min interval (BEZ DPH, BEZ distribuce)."""
+    def _calculate_current_state(self) -> Optional[float]:
+        """Compute current export price for the active 15min interval."""
         try:
             if not self._spot_data_15min:
                 return None
@@ -308,33 +292,20 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             now = dt_now()
             interval_index = self._get_current_interval_index(now)
 
-            # Získat raw spotovou cenu z dat (CZK/kWh z OTE)
             spot_price_czk = OteApi.get_15min_price_for_interval(
                 interval_index, self._spot_data_15min, now.date()
             )
-
             if spot_price_czk is None:
                 return None
 
-            # Vypočítat výkupní cenu
-            export_price = self._calculate_export_price_15min(spot_price_czk, now)
-
-            return export_price
+            return self._calculate_export_price_15min(spot_price_czk, now)
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error getting state: {e}")
+            _LOGGER.error(f"[{self.entity_id}] Error computing state: {e}")
             return None
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """
-        Atributy s budoucími výkupními cenami - LEAN VERSION (Phase 1.5).
-
-        PŘED: ~40 KB (192 intervals v attributes)
-        PO: ~2 KB (summary only, intervals přes API)
-
-        Full data: GET /api/oig_cloud/spot_prices/{box_id}/intervals?currency=czk
-        """
+    def _calculate_attributes(self) -> Dict[str, Any]:
+        """Compute attributes summary for export prices."""
         attrs: Dict[str, Any] = {}
 
         try:
@@ -345,11 +316,9 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 return attrs
 
             now = dt_now()
-
             current_interval_index = self._get_current_interval_index(now)
             prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
 
-            # Počítat statistiky místo ukládání všech intervalů
             future_prices = []
             current_price: Optional[float] = None
             next_price: Optional[float] = None
@@ -382,7 +351,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                     _LOGGER.debug(f"Error processing interval {time_key}: {e}")
                     continue
 
-            # Metadata + statistics
             next_interval = (current_interval_index + 1) % 96
             next_hour = next_interval // 4
             next_minute = (next_interval % 4) * 15
@@ -392,7 +360,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             if next_interval == 0:
                 next_update += timedelta(days=1)
 
-            # LEAN ATTRIBUTES: Summary only
             attrs = {
                 "current_datetime": now.strftime("%Y-%m-%d %H:%M"),
                 "source": "OTE_WSDL_API_QUARTER_HOUR",
@@ -406,7 +373,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                     self._last_update.isoformat() if self._last_update else None
                 ),
                 "note": "Export prices WITHOUT VAT and WITHOUT distribution fees",
-                # Statistics (instead of full intervals)
                 "price_min": round(min(future_prices), 2) if future_prices else None,
                 "price_max": round(max(future_prices), 2) if future_prices else None,
                 "price_avg": (
@@ -415,7 +381,6 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
                     else None
                 ),
                 "currency": "CZK/kWh",
-                # API endpoint hint
                 "api_endpoint": (
                     f"/api/oig_cloud/spot_prices/{self._resolve_box_id()}/intervals?type=export"
                 ),
@@ -426,6 +391,43 @@ class ExportPrice15MinSensor(OigCloudSensor, RestoreEntity):
             _LOGGER.error(f"[{self.entity_id}] Error building attributes: {e}")
 
         return attrs
+
+    def _calculate_export_price_15min(
+        self, spot_price_czk: float, target_datetime: datetime
+    ) -> float:
+        """Vypočítat výkupní cenu BEZ distribuce a BEZ DPH.
+
+        Výkupní cena = Spotová cena - Poplatek za prodej (% nebo fixní)
+        """
+        options = self._entry.options
+
+        # Parametry z konfigurace
+        pricing_model: str = options.get("export_pricing_model", "percentage")
+        export_fee_percent: float = options.get("export_fee_percent", 15.0)
+        export_fixed_fee_czk: float = options.get("export_fixed_fee_czk", 0.20)
+        # Výpočet výkupní ceny
+        if pricing_model == "percentage":
+            # Dostaneme X% ze spotové ceny (obvykle 85-90%)
+            # Např: 100% - 15% = 85% ze spotové ceny
+            export_price = spot_price_czk * (1 - export_fee_percent / 100.0)
+        else:  # fixed
+            # Odečteme fixní poplatek
+            export_price = spot_price_czk - export_fixed_fee_czk
+
+        # ŽÁDNÉ DPH - jako neplatíme neplatíme DPH z výkupu
+        # ŽÁDNÁ DISTRIBUCE - výkupní cena není zatížená distribucí
+
+        return round(export_price, 2)
+
+    @property
+    def state(self) -> Optional[float]:
+        """Aktuální výkupní cena pro 15min interval (BEZ DPH, BEZ distribuce)."""
+        return self._cached_state
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Cached attributes to avoid expensive work on every state update."""
+        return self._cached_attributes
 
     @property
     def unique_id(self) -> str:

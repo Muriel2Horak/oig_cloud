@@ -1128,8 +1128,20 @@ class BalancingManager:
             return None
 
         try:
-            capacity = float(state.state)
-            _LOGGER.debug(f"Battery capacity: {capacity:.2f} kWh from {sensor_id}")
+            capacity_raw = float(state.state)
+            unit = (state.attributes or {}).get("unit_of_measurement")
+            capacity = capacity_raw
+
+            # Some installations expose this sensor in Wh, not kWh.
+            if unit and unit.lower() == "wh":
+                capacity = capacity_raw / 1000.0
+            elif capacity_raw > 1000:
+                # Safety net: treat large values as Wh.
+                capacity = capacity_raw / 1000.0
+
+            _LOGGER.debug(
+                f"Battery capacity: {capacity:.2f} kWh from {sensor_id} (raw={capacity_raw}, unit={unit})"
+            )
             return capacity
         except (ValueError, TypeError):
             return None
