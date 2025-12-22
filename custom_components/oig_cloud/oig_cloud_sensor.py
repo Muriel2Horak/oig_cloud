@@ -8,7 +8,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEFAULT_NAME, DOMAIN
-from .coordinator import OigCloudDataUpdateCoordinator
+from .oig_cloud_coordinator import OigCloudCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
     """Base implementation of OIG Cloud sensor."""
 
     def __init__(
-        self, coordinator: OigCloudDataUpdateCoordinator, sensor_type: str
+        self, coordinator: OigCloudCoordinator, sensor_type: str
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
