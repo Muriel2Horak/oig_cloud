@@ -11,10 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from homeassistant.util import dt as dt_util
 
-from ..types import (
-    CBB_MODE_HOME_UPS,
-    INTERVAL_MINUTES,
-)
+from ..types import CBB_MODE_HOME_UPS, INTERVAL_MINUTES
 
 _LOGGER = logging.getLogger(__name__)
 

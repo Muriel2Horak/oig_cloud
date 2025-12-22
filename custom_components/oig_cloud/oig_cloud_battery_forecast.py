@@ -1,47 +1,46 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
 import asyncio
+import copy
+import hashlib
+import json
 import logging
 import math
-import numpy as np
-import copy
-import json
-import hashlib
 import time
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 from datetime import date, datetime, timedelta, timezone
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.storage import Store
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.event import async_call_later, async_track_point_in_time
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.storage import Store
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.event import (
-    async_track_point_in_time,
-    async_call_later,
-)
 
 try:
-    from homeassistant.helpers.event import async_track_time_interval as _async_track_time_interval  # type: ignore
+    from homeassistant.helpers.event import (
+        async_track_time_interval as _async_track_time_interval,  # type: ignore
+    )
 except Exception:  # pragma: no cover
     _async_track_time_interval = None
 
-from .const import (
-    DOMAIN,
-    CONF_AUTO_MODE_SWITCH,
-)  # PHASE 3: Import DOMAIN for BalancingManager access
-from .const import OTE_SPOT_PRICE_CACHE_FILE
 from .api.ote_api import OteApi
+from .const import (  # PHASE 3: Import DOMAIN for BalancingManager access
+    CONF_AUTO_MODE_SWITCH,
+    DOMAIN,
+    OTE_SPOT_PRICE_CACHE_FILE,
+)
 
 # New single-planner implementation (one source of truth)
-from .planner import OnePlanner, PlanInput, PlannerConfig, BalancingInput
+from .planner import BalancingInput, OnePlanner, PlanInput, PlannerConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -315,7 +314,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             )
 
     # Legacy attributes kept for backward compatibility (single planner only).
-        # NOTE: Single planner only.
+    # NOTE: Single planner only.
 
     def _log_rate_limited(
         self,
@@ -381,7 +380,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     setattr(self, "_hybrid_timeline", copy.deepcopy(timeline))
                     if isinstance(last_update, str) and last_update:
                         try:
-                            self._last_update = dt_util.parse_datetime(last_update) or dt_util.dt.datetime.fromisoformat(last_update)
+                            self._last_update = dt_util.parse_datetime(
+                                last_update
+                            ) or dt_util.dt.datetime.fromisoformat(last_update)
                         except Exception:
                             self._last_update = dt_util.now()
                     self._data_hash = self._calculate_data_hash(self._timeline_data)
@@ -391,7 +392,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         len(self._timeline_data),
                     )
             except Exception as err:
-                _LOGGER.debug("[BatteryForecast] Failed to restore precomputed data: %s", err)
+                _LOGGER.debug(
+                    "[BatteryForecast] Failed to restore precomputed data: %s", err
+                )
 
         # Restore data z předchozí instance
         if last_state := await self.async_get_last_state():
@@ -873,7 +876,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             mark_bucket_done = False
             now_aware = dt_util.now()
             bucket_minute = (now_aware.minute // 15) * 15
-            bucket_start = now_aware.replace(minute=bucket_minute, second=0, microsecond=0)
+            bucket_start = now_aware.replace(
+                minute=bucket_minute, second=0, microsecond=0
+            )
 
             # Enforce single in-flight computation.
             if self._forecast_in_progress:
@@ -1101,19 +1106,31 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Balancing input from BalancingManager (optional)
                 balancing_input: Optional[BalancingInput] = None
                 try:
-                    entry_id = self._config_entry.entry_id if self._config_entry else None
-                    if entry_id and DOMAIN in self._hass.data and entry_id in self._hass.data[DOMAIN]:
-                        balancing_manager = self._hass.data[DOMAIN][entry_id].get("balancing_manager")
+                    entry_id = (
+                        self._config_entry.entry_id if self._config_entry else None
+                    )
+                    if (
+                        entry_id
+                        and DOMAIN in self._hass.data
+                        and entry_id in self._hass.data[DOMAIN]
+                    ):
+                        balancing_manager = self._hass.data[DOMAIN][entry_id].get(
+                            "balancing_manager"
+                        )
                         if balancing_manager:
                             active_plan = balancing_manager.get_active_plan()
                             if active_plan and active_plan.active:
                                 preferred: set[datetime] = set()
-                                for interval in getattr(active_plan, "intervals", []) or []:
+                                for interval in (
+                                    getattr(active_plan, "intervals", []) or []
+                                ):
                                     ts = getattr(interval, "ts", None)
                                     if ts:
                                         if isinstance(ts, str):
                                             try:
-                                                preferred.add(datetime.fromisoformat(ts))
+                                                preferred.add(
+                                                    datetime.fromisoformat(ts)
+                                                )
                                             except Exception:
                                                 pass
                                         else:
@@ -1121,7 +1138,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                                 balancing_input = BalancingInput(
                                     holding_start=active_plan.holding_start,
                                     holding_end=active_plan.holding_end,
-                                    preferred_intervals=preferred if preferred else None,
+                                    preferred_intervals=(
+                                        preferred if preferred else None
+                                    ),
                                 )
                 except Exception as err:
                     _LOGGER.debug("Could not load BalancingManager plan: %s", err)
@@ -1133,7 +1152,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         ts = datetime.fromisoformat(sp.get("time", ""))
                         if ts.tzinfo is None:
                             ts = dt_util.as_local(ts)
-                        solar_kwh_list.append(self._get_solar_for_timestamp(ts, solar_forecast))
+                        solar_kwh_list.append(
+                            self._get_solar_for_timestamp(ts, solar_forecast)
+                        )
                     except Exception:
                         solar_kwh_list.append(0.0)
 
@@ -1151,7 +1172,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 planner = OnePlanner(
                     PlannerConfig(
-                        planning_min_percent=float(opts.get("min_capacity_percent", 33.0)),
+                        planning_min_percent=float(
+                            opts.get("min_capacity_percent", 33.0)
+                        ),
                         target_percent=float(opts.get("target_capacity_percent", 80.0)),
                         max_ups_price_czk=max_ups_price_czk,
                         home_charge_rate_kw=float(opts.get("home_charge_rate", 2.8)),
@@ -2747,7 +2770,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         cheap_percentile = self._config_entry.options.get("cheap_window_percentile", 30)
         sorted_prices = sorted(float(sp.get("price", 0) or 0) for sp in spot_prices)
         percentile_index = int(len(sorted_prices) * cheap_percentile / 100)
-        cheap_price_threshold = sorted_prices[percentile_index] if sorted_prices else 999
+        cheap_price_threshold = (
+            sorted_prices[percentile_index] if sorted_prices else 999
+        )
 
         avg_price = sum(sorted_prices) / len(sorted_prices) if sorted_prices else 0
         if sorted_prices:
@@ -3069,12 +3094,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     decision_metrics = {
                         "home1_saving_czk": round(interval_saving, 2),
                         "soc_drop_kwh": round(discharge_kwh, 2),
-                        "recharge_avg_price_czk": round(avg_price, 2)
-                        if avg_price is not None
-                        else None,
-                        "recharge_cost_czk": round(recharge_cost, 2)
-                        if recharge_cost is not None
-                        else None,
+                        "recharge_avg_price_czk": (
+                            round(avg_price, 2) if avg_price is not None else None
+                        ),
+                        "recharge_cost_czk": (
+                            round(recharge_cost, 2)
+                            if recharge_cost is not None
+                            else None
+                        ),
                     }
 
                     if recharge_cost is not None:
@@ -3092,9 +3119,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             elif mode == CBB_MODE_HOME_UPS:
                 charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
                 if charge_kwh > 0:
-                    decision_reason = (
-                        f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
-                    )
+                    decision_reason = f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
                 else:
                     decision_reason = "UPS rezim (ochrana/udrzovani)"
             elif mode == CBB_MODE_HOME_III:
@@ -3855,8 +3880,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             if mode == CBB_MODE_HOME_II:
                 if deficit > 0:
-                    available_battery = max(0.0, battery_start - effective_floor_capacity)
-                    discharge_kwh = min(deficit / efficiency, available_battery) if efficiency > 0 else 0
+                    available_battery = max(
+                        0.0, battery_start - effective_floor_capacity
+                    )
+                    discharge_kwh = (
+                        min(deficit / efficiency, available_battery)
+                        if efficiency > 0
+                        else 0
+                    )
                     covered_kwh = discharge_kwh * efficiency
                     interval_saving = covered_kwh * price
                     avg_price = future_ups_avg_price[idx]
@@ -3869,8 +3900,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     decision_metrics = {
                         "home1_saving_czk": round(interval_saving, 2),
                         "soc_drop_kwh": round(discharge_kwh, 2),
-                        "recharge_avg_price_czk": round(avg_price, 2) if avg_price is not None else None,
-                        "recharge_cost_czk": round(recharge_cost, 2) if recharge_cost is not None else None,
+                        "recharge_avg_price_czk": (
+                            round(avg_price, 2) if avg_price is not None else None
+                        ),
+                        "recharge_cost_czk": (
+                            round(recharge_cost, 2)
+                            if recharge_cost is not None
+                            else None
+                        ),
                     }
 
                     if recharge_cost is not None:
@@ -3888,9 +3925,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             elif mode == CBB_MODE_HOME_UPS:
                 charge_kwh = entry.get("grid_charge_kwh", 0.0) or 0.0
                 if charge_kwh > 0:
-                    decision_reason = (
-                        f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
-                    )
+                    decision_reason = f"Nabijeni ze site: +{charge_kwh:.2f} kWh pri {price:.2f} Kc/kWh"
                 else:
                     decision_reason = "UPS rezim (ochrana/udrzovani)"
             elif mode == CBB_MODE_HOME_III:
@@ -4257,7 +4292,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Prefer dedicated sensor (available in both cloud and local mode)
         installed_sensor = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
         installed_state = self._hass.states.get(installed_sensor)
-        if installed_state and installed_state.state not in ["unknown", "unavailable", None, ""]:
+        if installed_state and installed_state.state not in [
+            "unknown",
+            "unavailable",
+            None,
+            "",
+        ]:
             try:
                 # Stored as Wh (Wp) → convert to kWh
                 total_kwh = float(installed_state.state) / 1000.0
@@ -5901,6 +5941,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             await self._precomputed_store.async_save(precomputed_data)
             self._last_precompute_hash = self._data_hash
 
+            if self.hass:
+                from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+                signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
+                async_dispatcher_send(self.hass, signal_name)
+
             duration = (dt_util.now() - start_time).total_seconds()
             plan_cost = unified_cost_tile.get("today", {}).get("plan_total_cost") or 0.0
             _LOGGER.info(
@@ -6249,7 +6295,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return
 
         self._auto_switch_watchdog_unsub = _async_track_time_interval(
-            self._hass, self._auto_switch_watchdog_tick, self._auto_switch_watchdog_interval
+            self._hass,
+            self._auto_switch_watchdog_tick,
+            self._auto_switch_watchdog_interval,
         )
         _LOGGER.debug(
             "[AutoModeSwitch] Watchdog started (interval=%ss)",
@@ -6384,7 +6432,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             fallback = float(
                 self._config_entry.options.get(
                     "auto_mode_switch_lead_seconds",
-                    self._config_entry.options.get("autonomy_switch_lead_seconds", 180.0),
+                    self._config_entry.options.get(
+                        "autonomy_switch_lead_seconds", 180.0
+                    ),
                 )
             )
         if not from_mode or not self._hass or not self._config_entry:
@@ -8641,7 +8691,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if not self._hass:
             return {}
 
-        mode_history = await self._fetch_mode_history_from_recorder(day_start, fetch_end)
+        mode_history = await self._fetch_mode_history_from_recorder(
+            day_start, fetch_end
+        )
 
         mode_changes: list[dict[str, Any]] = []
         for mode_entry in mode_history:
@@ -9089,9 +9141,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                 if status == "current":
                     current_mode = self._get_current_mode()
-                    current_mode_name = CBB_MODE_NAMES.get(
-                        current_mode, "HOME I"
-                    )
+                    current_mode_name = CBB_MODE_NAMES.get(current_mode, "HOME I")
                     current_soc = self._get_current_battery_soc_percent()
                     current_kwh = self._get_current_battery_capacity()
 
@@ -10140,11 +10190,15 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
             if not spot_prices_dict:
                 # Coordinator payload may carry only hourly prices; try 15m fallbacks.
-                fallback = self._get_spot_data_from_price_sensor(price_type="spot") or {}
+                fallback = (
+                    self._get_spot_data_from_price_sensor(price_type="spot") or {}
+                )
                 if not fallback and self._hass:
                     fallback = await self._get_spot_data_from_ote_cache() or {}
                 spot_prices_dict = (
-                    fallback.get("prices15m_czk_kwh", {}) if isinstance(fallback, dict) else {}
+                    fallback.get("prices15m_czk_kwh", {})
+                    if isinstance(fallback, dict)
+                    else {}
                 )
                 if not spot_prices_dict:
                     _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
@@ -10182,7 +10236,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
         return timeline
 
-    def _get_spot_data_from_price_sensor(self, *, price_type: str) -> Optional[Dict[str, Any]]:
+    def _get_spot_data_from_price_sensor(
+        self, *, price_type: str
+    ) -> Optional[Dict[str, Any]]:
         """Read internal 15min spot data from the spot/export price sensor entity.
 
         This is a robust fallback when coordinator doesn't carry spot_prices (e.g. pricing disabled).
@@ -10199,13 +10255,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         try:
             component = None
             # HA 2024+: entity_components registry
-            entity_components = hass.data.get("entity_components") if isinstance(hass.data, dict) else None
+            entity_components = (
+                hass.data.get("entity_components")
+                if isinstance(hass.data, dict)
+                else None
+            )
             if isinstance(entity_components, dict):
                 component = entity_components.get("sensor")
 
             # Legacy fallback
             if component is None:
-                component = hass.data.get("sensor") if isinstance(hass.data, dict) else None
+                component = (
+                    hass.data.get("sensor") if isinstance(hass.data, dict) else None
+                )
 
             entity_obj = None
             if component is not None:
@@ -10256,7 +10318,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return {}
 
         # If solar forecast feature is disabled, don't warn/log.
-        if not (self._config_entry and self._config_entry.options.get("enable_solar_forecast", False)):
+        if not (
+            self._config_entry
+            and self._config_entry.options.get("enable_solar_forecast", False)
+        ):
             return {}
 
         sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
@@ -10266,7 +10331,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Entity may not be registered yet during startup.
             # Fallback: use coordinator cached solar_forecast_data restored from storage.
             cached = getattr(self.coordinator, "solar_forecast_data", None)
-            total_hourly = cached.get("total_hourly") if isinstance(cached, dict) else None
+            total_hourly = (
+                cached.get("total_hourly") if isinstance(cached, dict) else None
+            )
             if isinstance(total_hourly, dict) and total_hourly:
                 today = dt_util.now().date()
                 tomorrow = today + timedelta(days=1)
@@ -11691,7 +11758,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             curr_point["battery_capacity_kwh"] = round(new_capacity, 2)
 
             # Aktualizovat mode pokud se změnilo grid_charge
-            curr_point["mode"] = MODE_LABEL_HOME_UPS if is_ups_mode else MODE_LABEL_HOME_I
+            curr_point["mode"] = (
+                MODE_LABEL_HOME_UPS if is_ups_mode else MODE_LABEL_HOME_I
+            )
 
     # =========================================================================
     # ADAPTIVE LOAD PREDICTION v2
@@ -12202,7 +12271,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             for profile_id, profile in profiles.items():
                 if profile_id.startswith(standard_profile_id):
                     # Vezmi první matching profil
-                    if not best_match or "_typical" in profile_id or len(profile_id.split("_")) == 2:
+                    if (
+                        not best_match
+                        or "_typical" in profile_id
+                        or len(profile_id.split("_")) == 2
+                    ):
                         best_match = profile
 
             if best_match:
@@ -12307,6 +12380,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return 0.48
 
     # ═══════════════════════════════════════════════════════════════════════════
+
+
 class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     """Sensor pro plánované nabíjení ze sítě - odvozený z battery_forecast."""
 
@@ -12411,7 +12486,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         )
         # Trigger state update after loading cache
         self.async_write_ha_state()
-
 
     async def _get_home_ups_blocks_from_detail_tabs(
         self, plan: str = "hybrid"
@@ -12863,7 +12937,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
+class OigCloudPlannerRecommendedModeSensor(
+    RestoreEntity, CoordinatorEntity, SensorEntity
+):
     """Text sensor exposing the planner's recommended mode for the current interval."""
 
     def __init__(
@@ -13062,10 +13138,14 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         next_mode_code: Optional[int] = None
         if current_idx is not None and current_mode:
             for item in timeline[current_idx + 1 :]:
-                start = self._parse_local_start(item.get("time") or item.get("timestamp"))
+                start = self._parse_local_start(
+                    item.get("time") or item.get("timestamp")
+                )
                 if not start:
                     continue
-                candidate = self._normalize_mode_label(item.get("mode_name"), item.get("mode"))
+                candidate = self._normalize_mode_label(
+                    item.get("mode_name"), item.get("mode")
+                )
                 if candidate and candidate != current_mode:
                     next_change_at = start
                     next_mode = candidate
@@ -13074,7 +13154,9 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
                     )
                     break
 
-        attrs["next_mode_change_at"] = next_change_at.isoformat() if next_change_at else None
+        attrs["next_mode_change_at"] = (
+            next_change_at.isoformat() if next_change_at else None
+        )
         attrs["next_mode"] = next_mode
         attrs["next_mode_code"] = next_mode_code
 
@@ -13158,7 +13240,9 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
             self.hass.async_create_task(self._async_recompute())
 
         try:
-            self._unsubs.append(async_dispatcher_connect(self.hass, signal_name, _on_forecast_updated))
+            self._unsubs.append(
+                async_dispatcher_connect(self.hass, signal_name, _on_forecast_updated)
+            )
         except Exception:
             pass
 
@@ -13169,7 +13253,9 @@ class OigCloudPlannerRecommendedModeSensor(RestoreEntity, CoordinatorEntity, Sen
         try:
             for minute in [0, 15, 30, 45]:
                 self._unsubs.append(
-                    async_track_time_change(self.hass, _on_tick, minute=minute, second=2)
+                    async_track_time_change(
+                        self.hass, _on_tick, minute=minute, second=2
+                    )
                 )
         except Exception:
             pass

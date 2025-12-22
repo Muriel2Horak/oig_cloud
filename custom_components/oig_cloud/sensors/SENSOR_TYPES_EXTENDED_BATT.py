@@ -1,13 +1,14 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.const import (
-    UnitOfElectricPotential,
-    UnitOfElectricCurrent,
     PERCENTAGE,
-    UnitOfTemperature,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfTemperature,
 )
+from homeassistant.helpers.entity import EntityCategory
 
 SENSOR_TYPES_EXTENDED_BATT: Dict[str, Dict[str, Any]] = {
     "extended_battery_voltage": {

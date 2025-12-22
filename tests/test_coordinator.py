@@ -2,20 +2,20 @@
 
 import asyncio
 from datetime import timedelta
+from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from typing import Dict, Any
 
 import pytest
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from custom_components.oig_cloud.const import DEFAULT_UPDATE_INTERVAL
+from custom_components.oig_cloud.coordinator import OigCloudDataUpdateCoordinator
 from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
     OigCloudApi,
     OigCloudApiError,
 )
-from custom_components.oig_cloud.const import DEFAULT_UPDATE_INTERVAL
-from custom_components.oig_cloud.coordinator import OigCloudDataUpdateCoordinator
-from homeassistant.config_entries import ConfigEntry
 
 
 @pytest.fixture

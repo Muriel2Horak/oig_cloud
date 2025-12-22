@@ -8,6 +8,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+
 from .oig_cloud_sensor import OigCloudSensor
 from .sensor_types import SENSOR_TYPES
 
@@ -128,7 +129,9 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     async def _load_energy_from_storage(self) -> bool:
         """Load energy data from persistent storage. Returns True if data was loaded."""
         # Already loaded for this box?
-        if self._box_id in _energy_data_cache and _energy_cache_loaded.get(self._box_id):
+        if self._box_id in _energy_data_cache and _energy_cache_loaded.get(
+            self._box_id
+        ):
             cached = _energy_data_cache[self._box_id]
             for key in self._energy:
                 cached.setdefault(key, 0.0)
@@ -368,7 +371,9 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return self._accumulate_energy()
 
         try:
-            bat_p_wh = float(self._get_oig_number("installed_battery_capacity_kwh") or 0.0)
+            bat_p_wh = float(
+                self._get_oig_number("installed_battery_capacity_kwh") or 0.0
+            )
             bat_min_percent = float(self._get_oig_number("batt_bat_min") or 20.0)
             usable_percent = (100 - bat_min_percent) / 100
             bat_c = float(self._get_oig_number("batt_bat_c") or 0.0)
@@ -539,11 +544,26 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
 
             manual_state = None
-            if getattr(self, "hass", None) and self._box_id and self._box_id != "unknown":
-                st = self.hass.states.get(f"sensor.oig_{self._box_id}_boiler_manual_mode")
+            if (
+                getattr(self, "hass", None)
+                and self._box_id
+                and self._box_id != "unknown"
+            ):
+                st = self.hass.states.get(
+                    f"sensor.oig_{self._box_id}_boiler_manual_mode"
+                )
                 manual_state = st.state if st else None
-            manual_s = str(manual_state).strip().lower() if manual_state is not None else ""
-            boiler_manual = manual_s in {"1", "on", "zapnuto", "manual", "manuální", "manualni"} or manual_s.startswith("manu")
+            manual_s = (
+                str(manual_state).strip().lower() if manual_state is not None else ""
+            )
+            boiler_manual = manual_s in {
+                "1",
+                "on",
+                "zapnuto",
+                "manual",
+                "manuální",
+                "manualni",
+            } or manual_s.startswith("manu")
 
             if boiler_manual:
                 boiler_power = boiler_p_set

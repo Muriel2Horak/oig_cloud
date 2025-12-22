@@ -57,14 +57,19 @@ class OigCloudDataSourceSensor(SensorEntity):
     @property
     def state(self) -> str:
         ds = get_data_source_state(self.hass, self.entry.entry_id)
-        if ds.effective_mode in (DATA_SOURCE_LOCAL_ONLY, DATA_SOURCE_HYBRID) and ds.local_available:
+        if (
+            ds.effective_mode in (DATA_SOURCE_LOCAL_ONLY, DATA_SOURCE_HYBRID)
+            and ds.local_available
+        ):
             return "local"
         return "cloud"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         ds = get_data_source_state(self.hass, self.entry.entry_id)
-        last_dt: Optional[str] = ds.last_local_data.isoformat() if ds.last_local_data else None
+        last_dt: Optional[str] = (
+            ds.last_local_data.isoformat() if ds.last_local_data else None
+        )
         return {
             "configured_mode": ds.configured_mode,
             "effective_mode": ds.effective_mode,
@@ -88,9 +93,7 @@ class OigCloudDataSourceSensor(SensorEntity):
         )
         # periodic refresh to catch controller changes
         self._unsubs.append(
-            async_track_time_interval(
-                self.hass, _refresh, timedelta(seconds=30)
-            )
+            async_track_time_interval(self.hass, _refresh, timedelta(seconds=30))
         )
         await super().async_added_to_hass()
 

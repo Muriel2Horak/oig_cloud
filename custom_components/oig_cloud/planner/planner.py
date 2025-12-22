@@ -77,15 +77,25 @@ class OnePlanner:
                 infeasible=False,
             )
 
-        planning_min_kwh = (self.config.planning_min_percent / 100.0) * data.max_capacity_kwh
+        planning_min_kwh = (
+            self.config.planning_min_percent / 100.0
+        ) * data.max_capacity_kwh
         target_kwh = (self.config.target_percent / 100.0) * data.max_capacity_kwh
 
         # Default modes: HOME I everywhere (simple, stable).
         modes: List[int] = [CBB_MODE_HOME_I] * n
 
         # Apply balancing holding window (UPS).
-        hold_start = _coerce_naive_dt(getattr(data.balancing, "holding_start", None)) if data.balancing else None
-        hold_end = _coerce_naive_dt(getattr(data.balancing, "holding_end", None)) if data.balancing else None
+        hold_start = (
+            _coerce_naive_dt(getattr(data.balancing, "holding_start", None))
+            if data.balancing
+            else None
+        )
+        hold_end = (
+            _coerce_naive_dt(getattr(data.balancing, "holding_end", None))
+            if data.balancing
+            else None
+        )
         if hold_start and hold_end:
             for i in range(n):
                 ts = _parse_ts(data.spot_prices[i].get("time"))
@@ -104,10 +114,12 @@ class OnePlanner:
         # This is the only safe behavior when near HW floor; the classic "pick cheapest before violation"
         # strategy fails because the first violation is at index 0 (no prior intervals exist).
         if data.current_soc_kwh < planning_min_kwh - self.config.eps_kwh:
-            modes, infeasible, infeasible_reason, recovery_done_idx = self._recover_from_below_min(
-                data=data,
-                modes=modes,
-                planning_min_kwh=planning_min_kwh,
+            modes, infeasible, infeasible_reason, recovery_done_idx = (
+                self._recover_from_below_min(
+                    data=data,
+                    modes=modes,
+                    planning_min_kwh=planning_min_kwh,
+                )
             )
 
         for _ in range(self.config.max_iterations):
@@ -124,14 +136,19 @@ class OnePlanner:
                     continue
                 if data.solar_kwh[i] >= data.load_kwh[i]:
                     continue
-                if soc_before[i] <= planning_min_kwh + self.config.preserve_battery_margin_kwh:
+                if (
+                    soc_before[i]
+                    <= planning_min_kwh + self.config.preserve_battery_margin_kwh
+                ):
                     modes[i] = CBB_MODE_HOME_II
                     modes_changed = True
 
             if modes_changed:
                 continue
 
-            violation_search_start = (recovery_done_idx + 1) if recovery_done_idx is not None else 0
+            violation_search_start = (
+                (recovery_done_idx + 1) if recovery_done_idx is not None else 0
+            )
             violation_idx_rel = _first_violation_index(
                 soc_after[violation_search_start:],
                 planning_min_kwh,
@@ -169,7 +186,9 @@ class OnePlanner:
                 max_soc = max(soc_after) if soc_after else data.current_soc_kwh
                 if max_soc >= target_kwh - self.config.eps_kwh:
                     break
-                candidate_idx = self._pick_ups_interval_for_target(data=data, modes=modes)
+                candidate_idx = self._pick_ups_interval_for_target(
+                    data=data, modes=modes
+                )
                 if candidate_idx is None:
                     break
                 self._apply_ups_with_min_duration(data, modes, candidate_idx)
@@ -190,18 +209,28 @@ class OnePlanner:
             infeasible_reason=infeasible_reason,
         )
 
-    def _apply_ups_with_min_duration(self, data: PlanInput, modes: List[int], idx: int) -> None:
+    def _apply_ups_with_min_duration(
+        self, data: PlanInput, modes: List[int], idx: int
+    ) -> None:
         modes[idx] = CBB_MODE_HOME_UPS
         # Enforce UPS min duration forward where possible (simple).
-        for j in range(idx + 1, min(len(modes), idx + self.config.ups_min_duration_intervals)):
+        for j in range(
+            idx + 1, min(len(modes), idx + self.config.ups_min_duration_intervals)
+        ):
             price = float(data.spot_prices[j].get("price", 0.0) or 0.0)
             if price > self.config.max_ups_price_czk:
                 continue
             modes[j] = CBB_MODE_HOME_UPS
 
-    def _pick_ups_interval(self, *, data: PlanInput, modes: List[int], before_index: int) -> Optional[int]:
+    def _pick_ups_interval(
+        self, *, data: PlanInput, modes: List[int], before_index: int
+    ) -> Optional[int]:
         candidates: List[Tuple[float, int]] = []
-        preferred: set[datetime] = data.balancing.preferred_intervals if (data.balancing and data.balancing.preferred_intervals) else set()
+        preferred: set[datetime] = (
+            data.balancing.preferred_intervals
+            if (data.balancing and data.balancing.preferred_intervals)
+            else set()
+        )
 
         # Include the violation interval itself - charging "at" the violated interval can still repair it.
         for i in range(0, min(len(modes), max(0, before_index) + 1)):
@@ -221,7 +250,9 @@ class OnePlanner:
         candidates.sort(key=lambda x: x[0])
         return candidates[0][1]
 
-    def _pick_ups_interval_for_target(self, *, data: PlanInput, modes: List[int]) -> Optional[int]:
+    def _pick_ups_interval_for_target(
+        self, *, data: PlanInput, modes: List[int]
+    ) -> Optional[int]:
         """Pick the cheapest eligible interval to push SoC toward target."""
         candidates: List[Tuple[float, int]] = []
         for i in range(len(modes)):
@@ -345,7 +376,11 @@ class OnePlanner:
         for i, mode in enumerate(modes):
             ts_str = str(data.spot_prices[i].get("time", ""))
             spot_price = float(data.spot_prices[i].get("price", 0.0) or 0.0)
-            export_price = float(data.export_prices[i].get("price", 0.0) or 0.0) if i < len(data.export_prices) else 0.0
+            export_price = (
+                float(data.export_prices[i].get("price", 0.0) or 0.0)
+                if i < len(data.export_prices)
+                else 0.0
+            )
             solar_kwh = data.solar_kwh[i] if i < len(data.solar_kwh) else 0.0
             load_kwh = data.load_kwh[i] if i < len(data.load_kwh) else 0.125
 
@@ -362,7 +397,9 @@ class OnePlanner:
             )
             soc = res.new_soc_kwh
 
-            net_cost = (res.grid_import_kwh * spot_price) - (res.grid_export_kwh * export_price)
+            net_cost = (res.grid_import_kwh * spot_price) - (
+                res.grid_export_kwh * export_price
+            )
 
             timeline.append(
                 {
@@ -417,7 +454,9 @@ def _coerce_naive_dt(value: Any) -> Optional[datetime]:
         return None
 
 
-def _first_violation_index(soc_after: Sequence[float], planning_min_kwh: float, eps_kwh: float) -> Optional[int]:
+def _first_violation_index(
+    soc_after: Sequence[float], planning_min_kwh: float, eps_kwh: float
+) -> Optional[int]:
     for i, soc in enumerate(soc_after):
         if soc < planning_min_kwh - eps_kwh:
             return i

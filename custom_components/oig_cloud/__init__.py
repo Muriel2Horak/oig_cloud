@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
 import re
 from typing import Any, Dict
 
@@ -30,25 +30,26 @@ except ModuleNotFoundError:  # pragma: no cover
     # Allow importing submodules outside HA / without runtime deps.
     OigCloudApi = Any  # type: ignore[misc,assignment]
 from .const import (
-    CONF_NO_TELEMETRY,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    DOMAIN,
-    CONF_STANDARD_SCAN_INTERVAL,
-    CONF_EXTENDED_SCAN_INTERVAL,
     CONF_AUTO_MODE_SWITCH,
+    CONF_EXTENDED_SCAN_INTERVAL,
+    CONF_NO_TELEMETRY,
+    CONF_PASSWORD,
+    CONF_STANDARD_SCAN_INTERVAL,
+    CONF_USERNAME,
+    DOMAIN,
 )
+
 try:
-    from .oig_cloud_coordinator import OigCloudCoordinator
     from .data_source import (
-        DataSourceController,
         DATA_SOURCE_CLOUD_ONLY,
         DEFAULT_DATA_SOURCE_MODE,
-        DEFAULT_PROXY_STALE_MINUTES,
         DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+        DEFAULT_PROXY_STALE_MINUTES,
+        DataSourceController,
         get_data_source_state,
         init_data_source_state,
     )
+    from .oig_cloud_coordinator import OigCloudCoordinator
 except ModuleNotFoundError:  # pragma: no cover
     OigCloudCoordinator = Any  # type: ignore[misc,assignment]
     DataSourceController = Any  # type: ignore[misc,assignment]
@@ -62,6 +63,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
     def init_data_source_state(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[misc]
         return None
+
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
 try:
@@ -89,7 +91,9 @@ else:
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 
 
-def _ensure_data_source_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _ensure_data_source_option_defaults(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
     defaults = {
         "data_source_mode": DEFAULT_DATA_SOURCE_MODE,
         "local_proxy_stale_minutes": DEFAULT_PROXY_STALE_MINUTES,
@@ -243,7 +247,9 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         except Exception:
             inverter_sn = None
 
-        coordinator_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+        coordinator_data = (
+            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+        )
         if inverter_sn is None and coordinator_data:
             try:
                 from .oig_cloud_sensor import resolve_box_id
@@ -269,8 +275,8 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         )
 
         # Cache-busting: Přidat verzi + timestamp k URL pro vymazání browseru cache
-        import os
         import json
+        import os
         import time
 
         manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
@@ -415,11 +421,14 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         _LOGGER.debug("Panel removal handled gracefully: %s", e)
 
 
-async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:  # noqa: C901
+async def _migrate_entity_unique_ids(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:  # noqa: C901
     """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
     _LOGGER.info("🔍 Starting _migrate_entity_unique_ids function...")
-    from homeassistant.helpers import entity_registry as er
     import re
+
+    from homeassistant.helpers import entity_registry as er
 
     entity_registry = er.async_get(hass)
 
@@ -615,7 +624,9 @@ async def _migrate_entity_unique_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         )
 
 
-async def _cleanup_invalid_empty_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _cleanup_invalid_empty_devices(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
     """Remove clearly-invalid devices (e.g., 'spot_prices', 'unknown') with no entities.
 
     This is a targeted/safe cleanup to get rid of stale registry entries created by
@@ -677,7 +688,9 @@ async def _cleanup_invalid_empty_devices(hass: HomeAssistant, entry: ConfigEntry
         _LOGGER.debug("Device registry cleanup failed (non-critical): %s", err)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:  # noqa: C901
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
     _LOGGER.info(f"Setting up OIG Cloud entry: {entry.title}")
@@ -722,7 +735,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             proxy_box = hass.states.get(
                 "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
             )
-            if proxy_box and isinstance(proxy_box.state, str) and proxy_box.state.isdigit():
+            if (
+                proxy_box
+                and isinstance(proxy_box.state, str)
+                and proxy_box.state.isdigit()
+            ):
                 options["box_id"] = proxy_box.state
                 hass.config_entries.async_update_entry(entry, options=options)
                 _LOGGER.info("Inferred box_id=%s from proxy sensor", proxy_box.state)
@@ -733,7 +750,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                     hass.config_entries.async_update_entry(entry, options=options)
                     _LOGGER.info("Inferred box_id=%s from local entities", inferred)
     except Exception as err:
-        _LOGGER.debug("Inferring box_id from local entities failed (non-critical): %s", err)
+        _LOGGER.debug(
+            "Inferring box_id from local entities failed (non-critical): %s", err
+        )
 
     # OPRAVA: Inicializujeme service_shield jako None před try blokem
     service_shield = None
@@ -815,12 +834,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
             # CRITICAL: Check if live data is enabled (actual element present in API response)
             # Stats structure: { "box_id": { "actual": {...}, "settings": {...} } }
-            _LOGGER.debug("Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'...")
+            _LOGGER.debug(
+                "Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'..."
+            )
             try:
                 test_stats = await oig_api.get_stats()
                 if test_stats:
                     # Get first device data
-                    first_device = next(iter(test_stats.values())) if test_stats else None
+                    first_device = (
+                        next(iter(test_stats.values())) if test_stats else None
+                    )
                     if not first_device or "actual" not in first_device:
                         _LOGGER.error(
                             "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
@@ -877,13 +900,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 if box_id:
                     options["box_id"] = box_id
                     hass.config_entries.async_update_entry(entry, options=options)
-                    _LOGGER.info("Persisted box_id=%s into config entry options", box_id)
+                    _LOGGER.info(
+                        "Persisted box_id=%s into config entry options", box_id
+                    )
         except Exception as err:
             _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
 
         # OPRAVA: Inicializace notification manageru se správným error handling
         notification_manager = None
-        enable_cloud_notifications = entry.options.get("enable_cloud_notifications", True)
+        enable_cloud_notifications = entry.options.get(
+            "enable_cloud_notifications", True
+        )
         cloud_active_for_setup = (
             get_data_source_state(hass, entry.entry_id).effective_mode
             == DATA_SOURCE_CLOUD_ONLY
@@ -913,14 +940,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                         device_id = opt_box
                 except Exception:
                     device_id = None
-                if device_id is None and coordinator.data and isinstance(coordinator.data, dict):
+                if (
+                    device_id is None
+                    and coordinator.data
+                    and isinstance(coordinator.data, dict)
+                ):
                     device_id = next(
                         (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
                         None,
                     )
                 if device_id:
                     notification_manager.set_device_id(device_id)
-                    _LOGGER.debug("Set notification manager device_id to: %s", device_id)
+                    _LOGGER.debug(
+                        "Set notification manager device_id to: %s", device_id
+                    )
 
                     # Inicializace Mode Transition Tracker
                     if service_shield:
@@ -1071,14 +1104,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 except Exception:
                     box_id = None
 
-                if box_id is None and coordinator.data and isinstance(coordinator.data, dict):
+                if (
+                    box_id is None
+                    and coordinator.data
+                    and isinstance(coordinator.data, dict)
+                ):
                     box_id = next(
                         (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
                         None,
                     )
 
                 if not box_id:
-                    _LOGGER.warning("oig_cloud: No box_id available for BalancingManager")
+                    _LOGGER.warning(
+                        "oig_cloud: No box_id available for BalancingManager"
+                    )
 
                 storage_path = hass.config.path(".storage")
 
@@ -1088,11 +1127,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 _LOGGER.info("oig_cloud: BalancingManager successfully initialized")
 
                 # Periodické volání balancingu (check every 30min)
-                from homeassistant.helpers.event import (
-                    async_track_time_interval,
-                    async_call_later,
-                )
                 from datetime import timedelta
+
+                from homeassistant.helpers.event import (
+                    async_call_later,
+                    async_track_time_interval,
+                )
 
                 async def update_balancing(_now: Any) -> None:
                     """Periodická kontrola balancingu."""
@@ -1148,8 +1188,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         # Local telemetry store (cloud-shaped payload for coordinator.data in local mode)
         telemetry_store = None
         try:
-            from .telemetry_store import TelemetryStore
             from .oig_cloud_sensor import resolve_box_id
+            from .telemetry_store import TelemetryStore
 
             store_box_id = entry.options.get("box_id") or entry.data.get("box_id")
             if not (isinstance(store_box_id, str) and store_box_id.isdigit()):
@@ -1190,12 +1230,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 hass,
                 entry,
                 coordinator,
-                telemetry_store=hass.data[DOMAIN][entry.entry_id].get("telemetry_store"),
+                telemetry_store=hass.data[DOMAIN][entry.entry_id].get(
+                    "telemetry_store"
+                ),
             )
             await data_source_controller.async_start()
-            hass.data[DOMAIN][entry.entry_id]["data_source_controller"] = (
-                data_source_controller
-            )
+            hass.data[DOMAIN][entry.entry_id][
+                "data_source_controller"
+            ] = data_source_controller
         except Exception as err:
             _LOGGER.warning("DataSourceController start failed (non-critical): %s", err)
 
@@ -1254,8 +1296,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
         # Async importy pro vyhnání se blokování event loopu
         from .services import (
-            async_setup_services,
             async_setup_entry_services_with_shield,
+            async_setup_services,
         )
 
         # Setup základních služeb (pouze jednou pro celou integraci)
@@ -1326,8 +1368,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                     _LOGGER.debug("[OIG Shield] Telemetry handler není aktivní")
 
             # Registrujeme test callback na kratší interval pro debug
-            from homeassistant.helpers.event import async_track_time_interval
             from datetime import timedelta
+
+            from homeassistant.helpers.event import async_track_time_interval
 
             entry.async_on_unload(
                 async_track_time_interval(
@@ -1449,7 +1492,9 @@ async def async_remove_config_entry_device(
         # - "oig_cloud_analytics"
         # - "oig_cloud_shield"
         allowed_domains = {DOMAIN, f"{DOMAIN}_analytics", f"{DOMAIN}_shield"}
-        return any(identifier[0] in allowed_domains for identifier in device_entry.identifiers)
+        return any(
+            identifier[0] in allowed_domains for identifier in device_entry.identifiers
+        )
     except Exception:
         return False
 

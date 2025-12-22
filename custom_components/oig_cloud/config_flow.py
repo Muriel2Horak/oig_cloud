@@ -1,23 +1,24 @@
-import voluptuous as vol
-import logging
 import asyncio
+import logging
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
 import aiohttp
-from typing import Dict, Any, Optional, TYPE_CHECKING
+import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
-from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 if TYPE_CHECKING:
     pass
 from .const import (
+    CONF_AUTO_MODE_SWITCH,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     DEFAULT_NAME,
     DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_AUTO_MODE_SWITCH,
 )
 from .data_source import PROXY_BOX_ID_ENTITY_ID, PROXY_LAST_DATA_ENTITY_ID
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
@@ -1120,7 +1121,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             extended = user_input.get("extended_scan_interval", 300)
             data_source_mode = self._sanitize_data_source_mode(
                 user_input.get(
-                    "data_source_mode", self._wizard_data.get("data_source_mode", "cloud_only")
+                    "data_source_mode",
+                    self._wizard_data.get("data_source_mode", "cloud_only"),
                 )
             )
             proxy_stale = user_input.get(
@@ -1163,8 +1165,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     STATE_UNKNOWN,
                 ):
                     errors["data_source_mode"] = "local_proxy_missing"
-                proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID) if self.hass else None
-                if proxy_box is None or not (isinstance(proxy_box.state, str) and proxy_box.state.isdigit()):
+                proxy_box = (
+                    self.hass.states.get(PROXY_BOX_ID_ENTITY_ID) if self.hass else None
+                )
+                if proxy_box is None or not (
+                    isinstance(proxy_box.state, str) and proxy_box.state.isdigit()
+                ):
                     errors["data_source_mode"] = "local_proxy_missing"
 
             if errors:
@@ -1178,10 +1184,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             vol.Optional(
                                 "extended_scan_interval", default=extended
                             ): int,
-                            vol.Optional("data_source_mode", default=data_source_mode): selector.SelectSelector(
+                            vol.Optional(
+                                "data_source_mode", default=data_source_mode
+                            ): selector.SelectSelector(
                                 selector.SelectSelectorConfig(
                                     options=[
-                                        {"value": "cloud_only", "label": "☁️ Cloud only"},
+                                        {
+                                            "value": "cloud_only",
+                                            "label": "☁️ Cloud only",
+                                        },
                                         {
                                             "value": "local_only",
                                             "label": "🏠 Local only (fallback na cloud při výpadku)",
@@ -1223,7 +1234,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 {
                     vol.Optional("standard_scan_interval", default=30): int,
                     vol.Optional("extended_scan_interval", default=300): int,
-                    vol.Optional("data_source_mode", default=data_source_mode): selector.SelectSelector(
+                    vol.Optional(
+                        "data_source_mode", default=data_source_mode
+                    ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
                                 {"value": "cloud_only", "label": "☁️ Cloud only"},
@@ -1974,8 +1987,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_HAS_ALTERNATIVE_HEATING,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
             CONF_BOILER_HEATER_SWITCH_ENTITY,
-            CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_PLAN_SLOT_MINUTES,
+            CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_SPOT_PRICE_SENSOR,
             CONF_BOILER_STRATIFICATION_MODE,
             CONF_BOILER_TARGET_TEMP_C,
@@ -1987,8 +2000,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_DEADLINE_TIME,
             DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
-            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
             DEFAULT_BOILER_TEMP_SENSOR_POSITION,

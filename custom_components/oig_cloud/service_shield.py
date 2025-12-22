@@ -1,17 +1,18 @@
-from datetime import datetime, timedelta
-from homeassistant.helpers.event import (
-    async_track_time_interval,
-    async_track_state_change_event,
-)
-from homeassistant.core import callback, HomeAssistant, Context, Event
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.util.dt import now as dt_now
-import logging
-import uuid
-import time
 import asyncio
+import logging
+import time
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import voluptuous as vol
-from typing import Dict, List, Tuple, Optional, Any, Callable
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import Context, Event, HomeAssistant, callback
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
+from homeassistant.util.dt import now as dt_now
 
 from .shared.logging import setup_simple_telemetry
 
@@ -120,7 +121,9 @@ class ServiceShield:
         """Log telemetry event using SimpleTelemetry."""
         try:
             _LOGGER.debug(
-                "Telemetry log start: event_type=%s service=%s", event_type, service_name
+                "Telemetry log start: event_type=%s service=%s",
+                event_type,
+                service_name,
             )
             _LOGGER.debug(
                 "Telemetry handler available: %s", self._telemetry_handler is not None

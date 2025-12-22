@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.helpers.event import async_track_time_change

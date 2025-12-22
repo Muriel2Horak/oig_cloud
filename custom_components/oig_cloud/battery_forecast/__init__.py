@@ -39,40 +39,6 @@ Architecture (NEW 3-layer design):
         └── consumption.py
 """
 
-from .types import (
-    # Mode constants
-    CBBMode,
-    CBB_MODE_HOME_I,
-    CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
-    CBB_MODE_HOME_UPS,
-    CBB_MODE_NAMES,
-    CBB_MODE_SERVICE_MAP,
-    AC_CHARGING_DISABLED_MODES,
-    # TypedDicts
-    TimelineInterval,
-    SpotPrice,
-    BalancingPlan,
-    OptimizationResult,
-    ModeRecommendation,
-    # Constants
-    TRANSITION_COSTS,
-    MIN_MODE_DURATION,
-    DEFAULT_EFFICIENCY,
-    DEFAULT_CHARGE_RATE_KW,
-    INTERVAL_MINUTES,
-    # Helper functions
-    get_mode_name,
-    is_charging_mode,
-)
-
-from .sensor import (
-    BatteryForecastOrchestrator,
-    ForecastConfig,
-    ForecastResult,
-    calculate_battery_forecast,
-)
-
 from .bridge import (
     calculate_hybrid_with_new_module,
     calculate_timeline_with_new_module,
@@ -82,37 +48,61 @@ from .bridge import (
 
 # NEW: 3-layer architecture exports
 from .config import (
-    SimulatorConfig,
-    HybridConfig,
     BalancingConfig,
-    ForecastServiceConfig,
-    NegativePriceStrategy,
     ChargingStrategy,
-    default_config,
+    ForecastServiceConfig,
+    HybridConfig,
+    NegativePriceStrategy,
+    SimulatorConfig,
     aggressive_charging_config,
     battery_preservation_config,
+    default_config,
     maximum_self_consumption_config,
 )
-
-from .physics import (
-    IntervalSimulator,
-    IntervalResult,
+from .physics import IntervalResult, IntervalSimulator
+from .sensor import (
+    BatteryForecastOrchestrator,
+    ForecastConfig,
+    ForecastResult,
+    calculate_battery_forecast,
 )
-
-from .strategy import (
-    BalancingStrategy,
-    BalancingPlan as BalancingPlanNew,  # Avoid conflict with types.BalancingPlan
-    BalancingResult,
-    HybridStrategy,
-    HybridResult,
-)
-
 from .service import (
     BatteryForecastService,
     ForecastInput,
     ForecastOutput,
     create_service,
     create_service_from_ha,
+)
+from .strategy import (
+    BalancingPlan as BalancingPlanNew,  # Avoid conflict with types.BalancingPlan
+)
+from .strategy import (
+    BalancingResult,
+    BalancingStrategy,
+    HybridResult,
+    HybridStrategy,
+)
+from .types import (  # Mode constants; TypedDicts; Constants; Helper functions
+    AC_CHARGING_DISABLED_MODES,
+    CBB_MODE_HOME_I,
+    CBB_MODE_HOME_II,
+    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_UPS,
+    CBB_MODE_NAMES,
+    CBB_MODE_SERVICE_MAP,
+    DEFAULT_CHARGE_RATE_KW,
+    DEFAULT_EFFICIENCY,
+    INTERVAL_MINUTES,
+    MIN_MODE_DURATION,
+    TRANSITION_COSTS,
+    BalancingPlan,
+    CBBMode,
+    ModeRecommendation,
+    OptimizationResult,
+    SpotPrice,
+    TimelineInterval,
+    get_mode_name,
+    is_charging_mode,
 )
 
 __all__ = [

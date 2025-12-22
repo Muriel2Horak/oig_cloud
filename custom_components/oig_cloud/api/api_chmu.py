@@ -5,15 +5,16 @@ Stahuje a parsuje CAP (Common Alerting Protocol) XML bulletiny s meteorologický
 Filtruje varování podle GPS souřadnic (point-in-polygon/circle).
 """
 
-import logging
 import asyncio
-import aiohttp
+import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from math import asin, cos, radians, sin, sqrt
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Optional, Any, Tuple
-from math import radians, cos, sin, asin, sqrt
-import re
+
+import aiohttp
 import async_timeout
 
 _LOGGER = logging.getLogger(__name__)
@@ -138,7 +139,12 @@ class ChmuApi:
             preferred = [it for it in items if it[1] == "50"]
             dt, series, fname = max(preferred or items, key=lambda x: x[0])
             url = f"{CHMU_CAP_BASE_URL}{fname}"
-            _LOGGER.debug("ČHMÚ CAP resolved: series=%s file=%s ts=%s", series, fname, dt.isoformat())
+            _LOGGER.debug(
+                "ČHMÚ CAP resolved: series=%s file=%s ts=%s",
+                series,
+                fname,
+                dt.isoformat(),
+            )
             return url
         except ChmuApiError:
             raise

@@ -1,16 +1,16 @@
 """Sensor pro automatickou tvorbu adaptivních profilů spotřeby z historických dat."""
 
-import logging
 import asyncio
-import numpy as np
-from typing import Any, Dict, List, Optional
+import logging
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
+import numpy as np
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -366,7 +366,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 f"Loading 72h statistics for {consumption_sensor_entity_id}..."
             )
             # Run DB queries via the recorder DB executor (avoids HA warnings and keeps DB access serialized)
-            stats_rows = await recorder_instance.async_add_executor_job(get_hourly_statistics)
+            stats_rows = await recorder_instance.async_add_executor_job(
+                get_hourly_statistics
+            )
 
             if not stats_rows:
                 _LOGGER.warning(
@@ -490,7 +492,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 f"Loading historical statistics for profile matching ({days_back} days)..."
             )
             # Run DB queries via the recorder DB executor (avoids HA warnings and keeps DB access serialized)
-            stats_rows = await recorder_instance.async_add_executor_job(get_all_statistics)
+            stats_rows = await recorder_instance.async_add_executor_job(
+                get_all_statistics
+            )
 
             if not stats_rows:
                 _LOGGER.warning(

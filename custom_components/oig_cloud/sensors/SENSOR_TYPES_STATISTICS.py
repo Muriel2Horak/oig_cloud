@@ -1,13 +1,9 @@
 """Definice statistických senzorů pro OIG Cloud."""
 
-from typing import Dict, Any
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import (
-    UnitOfPower,
-    UnitOfEnergy,
-    PERCENTAGE,
-    EntityCategory,
-)
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower
 
 # Seznam statistických senzorů s jejich konfigurací
 SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {

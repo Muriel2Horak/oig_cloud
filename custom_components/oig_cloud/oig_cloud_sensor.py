@@ -8,7 +8,6 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEFAULT_NAME, DOMAIN
-
 from .coordinator import OigCloudDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,6 +24,7 @@ def resolve_box_id(coordinator: Any) -> str:
     4) hodnoty z lokálních entit (oig_local)
     5) numerické klíče v coordinator.data
     """
+
     def _extract_digits(text: Any) -> Optional[str]:
         if not isinstance(text, str):
             return None
@@ -63,13 +63,16 @@ def resolve_box_id(coordinator: Any) -> str:
         if hass:
             try:
                 # Přímý senzor s box_id
-                state = hass.states.get("sensor.oig_local_oig_proxy_proxy_status_box_device_id")
+                state = hass.states.get(
+                    "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
+                )
                 if state and _is_valid(state.state):
                     return state.state
             except Exception:
                 pass
             try:
                 import re
+
                 from homeassistant.helpers import entity_registry as er
 
                 reg = er.async_get(hass)
@@ -294,7 +297,9 @@ class OigCloudSensor(CoordinatorEntity, SensorEntity):
         if not box_id or box_id == "unknown":
             return None
         try:
-            data: Dict[str, Any] = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+            data: Dict[str, Any] = (
+                self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+            )
             return data[box_id][self._node_id][self._node_key]
         except (KeyError, TypeError):
             _LOGGER.debug(

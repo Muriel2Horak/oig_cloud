@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union, List, Tuple
 from statistics import median
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.event import (
-    async_track_time_interval,
-)
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)

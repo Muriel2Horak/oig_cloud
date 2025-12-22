@@ -2,14 +2,15 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.storage import Store
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.storage import Store
+
 from .oig_cloud_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -353,10 +354,11 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Základní atributy z top_local_warning pro snadný přístup
         if top_warning:
+
             def _regions_from_warning(w: Dict[str, Any]) -> list[str]:
                 regions: list[str] = []
                 try:
-                    for area in (w.get("areas") or []):
+                    for area in w.get("areas") or []:
                         desc = (area or {}).get("description")
                         if isinstance(desc, str) and desc.strip():
                             regions.append(desc.strip())

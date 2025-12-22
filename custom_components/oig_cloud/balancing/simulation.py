@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
-import logging
 
 from ..const import HOME_I, HOME_II, HOME_III, HOME_UPS
 

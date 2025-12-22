@@ -13,8 +13,8 @@ from ..types import (
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
-    TimelineInterval,
     INTERVAL_MINUTES,
+    TimelineInterval,
 )
 
 _LOGGER = logging.getLogger(__name__)

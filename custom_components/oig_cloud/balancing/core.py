@@ -17,18 +17,19 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..const import HOME_UPS
 from .plan import (
-    BalancingPlan,
     BalancingInterval,
+    BalancingPlan,
+    create_forced_plan,
     create_natural_plan,
     create_opportunistic_plan,
-    create_forced_plan,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -978,7 +979,9 @@ class BalancingManager:
                                 grid_kwh = float(
                                     interval.get(
                                         "grid_consumption_kwh",
-                                        interval.get("grid_import", interval.get("grid_net", 0.0)),
+                                        interval.get(
+                                            "grid_import", interval.get("grid_net", 0.0)
+                                        ),
                                     )
                                     or 0.0
                                 )
@@ -987,7 +990,11 @@ class BalancingManager:
                                     getattr(
                                         interval,
                                         "grid_consumption_kwh",
-                                        getattr(interval, "grid_import", getattr(interval, "grid_net", 0.0)),
+                                        getattr(
+                                            interval,
+                                            "grid_import",
+                                            getattr(interval, "grid_net", 0.0),
+                                        ),
                                     )
                                     or 0.0
                                 )

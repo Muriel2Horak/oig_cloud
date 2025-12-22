@@ -211,7 +211,10 @@ class ForecastServiceConfig:
         balancing_holding = int(
             ha_config.get(
                 "balancing_hold_hours",
-                ha_config.get("balancing_holding_hours", ha_config.get("balancing_holding_time", 3)),
+                ha_config.get(
+                    "balancing_holding_hours",
+                    ha_config.get("balancing_holding_time", 3),
+                ),
             )
         )
 

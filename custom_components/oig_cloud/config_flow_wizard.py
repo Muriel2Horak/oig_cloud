@@ -11,14 +11,15 @@ Nová architektura s lepším UX:
 6. Responsive help s příklady
 """
 
-import voluptuous as vol
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import FlowResult
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD
+from .const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -896,7 +897,9 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "home_charge_rate": self.wizard_data.get(
                         "battery_charge_rate", 2.8
                     ),
-                    "max_ups_price_czk": self.wizard_data.get("battery_max_price", 10.0),
+                    "max_ups_price_czk": self.wizard_data.get(
+                        "battery_max_price", 10.0
+                    ),
                 }
             )
 
@@ -914,7 +917,9 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "home_charge_rate": self.wizard_data.get(
                         "battery_charge_rate", 2.8
                     ),
-                    "max_ups_price_czk": self.wizard_data.get("battery_max_price", 10.0),
+                    "max_ups_price_czk": self.wizard_data.get(
+                        "battery_max_price", 10.0
+                    ),
                 }
             )
 

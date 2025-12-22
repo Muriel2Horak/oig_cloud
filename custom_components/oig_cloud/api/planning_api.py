@@ -21,8 +21,8 @@ import logging
 from datetime import datetime
 
 from aiohttp import web
-from homeassistant.helpers.http import HomeAssistantView, KEY_HASS
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class OIGCloudPlanListView(HomeAssistantView):
                 )
 
             # List plans
-            from ..planning.plan_manager import PlanType, PlanStatus
+            from ..planning.plan_manager import PlanStatus, PlanType
 
             plan_type_enum = None
             if plan_type:

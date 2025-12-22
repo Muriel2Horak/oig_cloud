@@ -261,7 +261,8 @@ async def _cleanup_empty_devices_internal(
     """
     removed = 0
 
-    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
 
     devices = dr.async_entries_for_config_entry(device_reg, entry.entry_id)
 
@@ -298,7 +299,8 @@ async def _cleanup_all_orphaned_entities(
     Returns:
         Celkový počet odstraněných položek (sensors + devices)
     """
-    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
 
     _LOGGER.info("🧹 Starting comprehensive cleanup of orphaned entities")
 
@@ -375,7 +377,9 @@ async def async_setup_entry(  # noqa: C901
     # HA will warn if setup exceeds 10s; sensors can be registered immediately and will
     # populate when coordinator/local entities become available.
     if coordinator.data is None:
-        _LOGGER.debug("Coordinator data not ready during sensor setup; registering entities anyway")
+        _LOGGER.debug(
+            "Coordinator data not ready during sensor setup; registering entities anyway"
+        )
     else:
         try:
             _LOGGER.debug(
@@ -383,7 +387,9 @@ async def async_setup_entry(  # noqa: C901
                 len(coordinator.data),
             )
         except Exception:
-            _LOGGER.debug("Setting up sensors with coordinator data (device count unavailable)")
+            _LOGGER.debug(
+                "Setting up sensors with coordinator data (device count unavailable)"
+            )
 
     # === CLEANUP PŘED REGISTRACÍ ===
     # POZN: Cleanup je vypnutý kvůli pomalému setupu (>10s)
@@ -415,7 +421,9 @@ async def async_setup_entry(  # noqa: C901
             if new_opts.get("box_id") != inverter_sn:
                 new_opts["box_id"] = inverter_sn
                 hass.config_entries.async_update_entry(entry, options=new_opts)
-                _LOGGER.info("Stored box_id=%s from title into entry options", inverter_sn)
+                _LOGGER.info(
+                    "Stored box_id=%s from title into entry options", inverter_sn
+                )
 
     if inverter_sn == "unknown":
         _LOGGER.error("No valid box_id/inverter_sn resolved, skipping sensor setup")
@@ -437,17 +445,16 @@ async def async_setup_entry(  # noqa: C901
     # Main OIG Device
 
     # Analytics & Predictions Device (prefer definition from __init__.py for consistency)
-    analytics_device_info: Dict[str, Any] = (
-        hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("analytics_device_info")
-        or {
-            "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
-            "name": f"Analytics & Predictions {inverter_sn}",
-            "manufacturer": "OIG",
-            "model": "Analytics Module",
-            "via_device": (DOMAIN, inverter_sn),
-            "entry_type": "service",
-        }
-    )
+    analytics_device_info: Dict[str, Any] = hass.data.get(DOMAIN, {}).get(
+        entry.entry_id, {}
+    ).get("analytics_device_info") or {
+        "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
+        "name": f"Analytics & Predictions {inverter_sn}",
+        "manufacturer": "OIG",
+        "model": "Analytics Module",
+        "via_device": (DOMAIN, inverter_sn),
+        "entry_type": "service",
+    }
 
     # ServiceShield Device
 
@@ -1096,9 +1103,9 @@ async def async_setup_entry(  # noqa: C901
         try:
             _LOGGER.info("💰 Creating analytics sensors for pricing and spot prices")
 
-            from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
             from .oig_cloud_analytics_sensor import OigCloudAnalyticsSensor
-            from .spot_price_sensor import SpotPrice15MinSensor, ExportPrice15MinSensor
+            from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
+            from .spot_price_sensor import ExportPrice15MinSensor, SpotPrice15MinSensor
 
             analytics_sensors: List[Any] = []
 
@@ -1181,8 +1188,8 @@ async def async_setup_entry(  # noqa: C901
         try:
             _LOGGER.info("🌦️ Creating ČHMÚ weather warning sensors")
 
-            from .sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
             from .oig_cloud_chmu_sensor import OigCloudChmuSensor
+            from .sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
 
             chmu_sensors: List[Any] = []
 
@@ -1323,7 +1330,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
             _LOGGER.debug(f"Coordinator shut down for entry {config_entry.entry_id}")
 
         # Vyčistíme prázdná zařízení (použijeme novou interní funkci)
-        from homeassistant.helpers import device_registry as dr, entity_registry as er
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
 
         device_reg = dr.async_get(hass)
         entity_reg = er.async_get(hass)
@@ -1347,7 +1355,8 @@ async def _cleanup_empty_devices(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> None:
     """Clean up devices that have no entities, including service devices."""
-    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.device_registry import DeviceEntryType
 
     _LOGGER.info(

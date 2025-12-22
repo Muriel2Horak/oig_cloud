@@ -1,7 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
-
-from typing import Dict, Any
 
 SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
     "boiler_current_cbb_w": {

@@ -1,11 +1,12 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
-    UnitOfEnergy,
-    UnitOfPower,
     UnitOfElectricPotential,
+    UnitOfEnergy,
     UnitOfFrequency,
+    UnitOfPower,
 )
-from typing import Dict, Any
 
 SENSOR_TYPES_AC_IN: Dict[str, Dict[str, Any]] = {
     "ac_in_ac_ad": {

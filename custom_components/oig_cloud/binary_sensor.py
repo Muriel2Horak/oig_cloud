@@ -6,8 +6,9 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from .const import DOMAIN, DEFAULT_NAME
+
 from .binary_sensor_types import BINARY_SENSOR_TYPES
+from .const import DEFAULT_NAME, DOMAIN
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +28,9 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
             from .oig_cloud_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(self.coordinator)
-            _LOGGER.debug("Created binary sensor %s with box_id %s", self.name, self._box_id)
+            _LOGGER.debug(
+                "Created binary sensor %s with box_id %s", self.name, self._box_id
+            )
         except Exception:
             return
 

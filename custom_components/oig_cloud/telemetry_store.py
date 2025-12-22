@@ -64,7 +64,9 @@ class TelemetryStore:
             if st is None:
                 continue
             try:
-                did = self._applier.apply_state(self._payload, entity_id, st.state, st.last_updated)
+                did = self._applier.apply_state(
+                    self._payload, entity_id, st.state, st.last_updated
+                )
             except Exception as err:
                 _LOGGER.debug("Local apply failed for %s: %s", entity_id, err)
                 did = False
@@ -87,4 +89,3 @@ class TelemetryStore:
         if self._updated_at is None:
             self._updated_at = _utcnow()
         return TelemetrySnapshot(payload=self._payload, updated_at=self._updated_at)
-

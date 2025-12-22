@@ -1,10 +1,11 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
+    UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfPower,
-    UnitOfElectricCurrent,
 )
-from typing import Dict, Any
 
 SENSOR_TYPES_EXTENDED_FVE: Dict[str, Dict[str, Any]] = {
     "extended_fve_voltage_1": {

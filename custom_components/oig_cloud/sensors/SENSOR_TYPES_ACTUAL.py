@@ -1,6 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfPower
-from typing import Dict, Any
 
 SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
     "actual_aci_wr": {

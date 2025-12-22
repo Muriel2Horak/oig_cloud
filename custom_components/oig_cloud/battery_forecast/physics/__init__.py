@@ -3,10 +3,7 @@
 This package contains the core physics simulation for CBB battery modes.
 """
 
-from .interval_simulator import (
-    IntervalSimulator,
-    IntervalResult,
-)
+from .interval_simulator import IntervalResult, IntervalSimulator
 
 __all__ = [
     "IntervalSimulator",

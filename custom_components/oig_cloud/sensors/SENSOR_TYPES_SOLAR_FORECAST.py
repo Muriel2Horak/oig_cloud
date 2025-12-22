@@ -1,6 +1,7 @@
 """Definice typů senzorů pro solar forecast."""
 
-from typing import Dict, Any
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy
 

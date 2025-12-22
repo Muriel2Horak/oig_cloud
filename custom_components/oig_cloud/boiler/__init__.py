@@ -1,7 +1,7 @@
 """OIG Cloud - Bojler modul."""
 
 from .coordinator import BoilerCoordinator
-from .models import BoilerProfile, BoilerPlan, BoilerSlot, EnergySource
+from .models import BoilerPlan, BoilerProfile, BoilerSlot, EnergySource
 
 __all__ = [
     "BoilerCoordinator",

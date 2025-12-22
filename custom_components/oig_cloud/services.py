@@ -1,14 +1,14 @@
 """Služby pro integraci OIG Cloud."""
 
 import logging
-import voluptuous as vol
-from typing import Dict, Any, Optional, Callable, Awaitable, List
-from opentelemetry import trace
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from homeassistant.core import HomeAssistant, ServiceCall, Context, callback
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import Context, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from opentelemetry import trace
 
 from .const import DOMAIN
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
@@ -34,12 +34,14 @@ def get_box_id_from_device(
 
     def _box_id_from_entry() -> Optional[str]:
         try:
-            entry = getattr(coordinator, "config_entry", None) or hass.config_entries.async_get_entry(
-                entry_id
-            )
+            entry = getattr(
+                coordinator, "config_entry", None
+            ) or hass.config_entries.async_get_entry(entry_id)
             if entry:
-                val = entry.options.get("box_id") or entry.data.get("box_id") or entry.data.get(
-                    "inverter_sn"
+                val = (
+                    entry.options.get("box_id")
+                    or entry.data.get("box_id")
+                    or entry.data.get("inverter_sn")
                 )
                 if isinstance(val, str) and val.isdigit():
                     return val

@@ -4,15 +4,15 @@ import asyncio
 import logging
 import random
 import time
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudApiError
 from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
+from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudApiError
 
 _LOGGER = logging.getLogger(__name__)
 

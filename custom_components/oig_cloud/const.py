@@ -1,6 +1,5 @@
 """Constants for the OIG Cloud integration."""
 
-
 DOMAIN = "oig_cloud"
 
 # Configuration constants

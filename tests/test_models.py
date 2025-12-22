@@ -6,9 +6,10 @@ from datetime import datetime
 from unittest.mock import Mock
 
 from custom_components.oig_cloud.lib.oig_cloud_client.models import (
-    AcInData,
     AcInBData,
+    AcInData,
     AcOutData,
+    ActualData,
     BatteryData,
     BatteryParams,
     BoilerData,
@@ -20,9 +21,8 @@ from custom_components.oig_cloud.lib.oig_cloud_client.models import (
     DeviceData,
     InvertorParams,
     InvertorParams1,
-    ActualData,
-    OigCloudDeviceData,
     OigCloudData,
+    OigCloudDeviceData,
 )
 
 

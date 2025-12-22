@@ -10,15 +10,15 @@ This strategy selects the optimal CBB mode for each interval based on:
 The optimizer uses a forward simulation approach with scoring.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Tuple
 import logging
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 from ..config import (
-    HybridConfig,
-    SimulatorConfig,
     ChargingStrategy,
+    HybridConfig,
     NegativePriceStrategy,
+    SimulatorConfig,
 )
 from ..physics import IntervalSimulator
 from ..types import (
@@ -30,7 +30,6 @@ from ..types import (
     SpotPrice,
 )
 from .balancing import BalancingPlan
-
 
 _LOGGER = logging.getLogger(__name__)
 

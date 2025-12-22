@@ -32,13 +32,13 @@ import sys
 from typing import Any, Dict, Optional
 
 from aiohttp import web
-from homeassistant.helpers.http import HomeAssistantView
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
-from homeassistant.config_entries import ConfigEntry
 
-from ..const import DOMAIN, CONF_AUTO_MODE_SWITCH
+from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,9 +155,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                         "box_id": box_id,
                         "last_update": last_update,
                         "points_count": len(stored_hybrid),
-                        "size_kb": round(
-                            sys.getsizeof(str(stored_hybrid)) / 1024, 1
-                        ),
+                        "size_kb": round(sys.getsizeof(str(stored_hybrid)) / 1024, 1),
                     }
                     # Return in the same shape as the live path so the dashboard
                     # can always consume `active` (and keep `timeline` for backward compatibility).
@@ -211,9 +209,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
             # Get timeline data from storage or sensor's internal variables
             stored_active = None
             if precomputed_data:
-                stored_active = precomputed_data.get("timeline") or precomputed_data.get(
-                    "timeline_hybrid"
-                )
+                stored_active = precomputed_data.get(
+                    "timeline"
+                ) or precomputed_data.get("timeline_hybrid")
                 if stored_active:
                     _LOGGER.debug(
                         "API: Serving hybrid timeline from precomputed storage for %s",
@@ -672,7 +670,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             }
         """
         hass: HomeAssistant = request.app["hass"]
-        _ = (request.query.get("plan") or request.query.get("mode") or "hybrid")  # legacy
+        _ = request.query.get("plan") or request.query.get("mode") or "hybrid"  # legacy
         mode = "hybrid"
 
         try:
@@ -744,7 +742,11 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                     tile_data = await entity_obj.build_unified_cost_tile()
                     _LOGGER.info(
                         "API: Unified cost tile built successfully: %s",
-                        list(tile_data.keys()) if isinstance(tile_data, dict) else type(tile_data),
+                        (
+                            list(tile_data.keys())
+                            if isinstance(tile_data, dict)
+                            else type(tile_data)
+                        ),
                     )
                 except Exception as build_error:
                     _LOGGER.error(
@@ -860,9 +862,9 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                 )
 
             if precomputed_data:
-                detail_tabs = precomputed_data.get("detail_tabs") or precomputed_data.get(
-                    "detail_tabs_hybrid"
-                )
+                detail_tabs = precomputed_data.get(
+                    "detail_tabs"
+                ) or precomputed_data.get("detail_tabs_hybrid")
                 if detail_tabs:
                     if tab and tab in ["yesterday", "today", "tomorrow"]:
                         return web.json_response({tab: detail_tabs.get(tab, {})})
@@ -885,7 +887,9 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                 component = hass.data.get("sensor")  # type: ignore[assignment]
 
             if not component:
-                return web.json_response({"error": SENSOR_COMPONENT_NOT_FOUND}, status=503)
+                return web.json_response(
+                    {"error": SENSOR_COMPONENT_NOT_FOUND}, status=503
+                )
 
             # Find entity by entity_id
             entity_obj = None
@@ -907,9 +911,9 @@ class OIGCloudDetailTabsView(HomeAssistantView):
                 try:
                     precomputed_data = await entity_obj._precomputed_store.async_load()
                     if precomputed_data:
-                        detail_tabs = precomputed_data.get("detail_tabs") or precomputed_data.get(
-                            "detail_tabs_hybrid"
-                        )
+                        detail_tabs = precomputed_data.get(
+                            "detail_tabs"
+                        ) or precomputed_data.get("detail_tabs_hybrid")
                         if not detail_tabs:
                             _LOGGER.debug(
                                 "API: detail_tabs missing in precomputed store",

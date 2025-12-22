@@ -1,7 +1,8 @@
 """Tests for battery_forecast module."""
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 
 # Test imports work
@@ -198,6 +199,7 @@ def test_hybrid_optimizer_basic():
 def test_balancing_executor():
     """Test balancing executor."""
     from zoneinfo import ZoneInfo
+
     from custom_components.oig_cloud.battery_forecast.balancing.executor import (
         BalancingExecutor,
     )

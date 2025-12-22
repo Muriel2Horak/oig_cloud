@@ -1,17 +1,18 @@
-import logging
 import asyncio
+import logging
 import random
-from datetime import timedelta, datetime, timezone
-from typing import Dict, Any, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
+
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.util import dt as dt_util
 
-from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 from .data_source import DATA_SOURCE_CLOUD_ONLY, get_data_source_state
+from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,7 +93,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                                 self.ote_api._last_data.get("hours_count", 0),
                             )
                     except Exception as err:
-                        _LOGGER.debug("Failed to load OTE cache asynchronously: %s", err)
+                        _LOGGER.debug(
+                            "Failed to load OTE cache asynchronously: %s", err
+                        )
 
                 self.hass.async_create_task(_async_load_ote_cache())
 
@@ -216,7 +219,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             return value
 
         if isinstance(value, str):
-            return value if len(value) <= COORDINATOR_CACHE_MAX_STR_LEN else value[:COORDINATOR_CACHE_MAX_STR_LEN]
+            return (
+                value
+                if len(value) <= COORDINATOR_CACHE_MAX_STR_LEN
+                else value[:COORDINATOR_CACHE_MAX_STR_LEN]
+            )
 
         if isinstance(value, datetime):
             try:
@@ -546,7 +553,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                         self.notification_manager = OigNotificationManager(
                             self.hass, self.api, "https://www.oigpower.cz"
                         )
-                        _LOGGER.debug("Notification manager initialized with API session")
+                        _LOGGER.debug(
+                            "Notification manager initialized with API session"
+                        )
                     except Exception as e:
                         _LOGGER.error(f"Failed to initialize notification manager: {e}")
                         self.notification_manager = None
@@ -819,7 +828,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             "invertor_prms",
             "boiler_prms",
         )
-        missing_nodes = [n for n in config_nodes if not isinstance(box.get(n), dict) or not box.get(n)]
+        missing_nodes = [
+            n
+            for n in config_nodes
+            if not isinstance(box.get(n), dict) or not box.get(n)
+        ]
         if not missing_nodes:
             return
 
@@ -909,7 +922,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
 
             if not inverter_sn:
-                _LOGGER.debug("🔋 No numeric inverter_sn available, skipping forecast update")
+                _LOGGER.debug(
+                    "🔋 No numeric inverter_sn available, skipping forecast update"
+                )
                 return
 
             _LOGGER.debug("🔍 Inverter SN resolved for forecast: %s", inverter_sn)
@@ -983,7 +998,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Základní data z koordinátoru
         if self.data:
-            device_id = next((str(k) for k in self.data.keys() if str(k).isdigit()), None)
+            device_id = next(
+                (str(k) for k in self.data.keys() if str(k).isdigit()), None
+            )
             device_data = self.data.get(device_id, {}) if device_id else {}
             battery_level = device_data.get("batt_bat_c", 0)
         else:

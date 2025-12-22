@@ -5,13 +5,9 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_AC_IN import SENSOR_TYPES_AC_IN
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_AC_OUT import SENSOR_TYPES_AC_OUT
-from custom_components.oig_cloud.sensors.SENSOR_TYPES_ACTUAL import (
-    SENSOR_TYPES_ACTUAL,
-)
+from custom_components.oig_cloud.sensors.SENSOR_TYPES_ACTUAL import SENSOR_TYPES_ACTUAL
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_BATT import SENSOR_TYPES_BATT
-from custom_components.oig_cloud.sensors.SENSOR_TYPES_BOILER import (
-    SENSOR_TYPES_BOILER,
-)
+from custom_components.oig_cloud.sensors.SENSOR_TYPES_BOILER import SENSOR_TYPES_BOILER
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_BOX import SENSOR_TYPES_BOX
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_COMPUTED import (
@@ -31,9 +27,7 @@ from custom_components.oig_cloud.sensors.SENSOR_TYPES_EXTENDED_LOAD import (
     SENSOR_TYPES_EXTENDED_LOAD,
 )
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_MISC import SENSOR_TYPES_MISC
-from custom_components.oig_cloud.sensors.SENSOR_TYPES_SHIELD import (
-    SENSOR_TYPES_SHIELD,
-)
+from custom_components.oig_cloud.sensors.SENSOR_TYPES_SHIELD import SENSOR_TYPES_SHIELD
 from custom_components.oig_cloud.sensors.SENSOR_TYPES_SOLAR_FORECAST import (
     SENSOR_TYPES_SOLAR_FORECAST,
 )

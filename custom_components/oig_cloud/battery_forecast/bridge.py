@@ -18,11 +18,7 @@ Usage in oig_cloud_battery_forecast.py:
 import logging
 from typing import Any, Dict, List, Optional
 
-from .sensor import (
-    BatteryForecastOrchestrator,
-    ForecastConfig,
-    ForecastResult,
-)
+from .sensor import BatteryForecastOrchestrator, ForecastConfig, ForecastResult
 from .types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_UPS,
@@ -313,7 +309,9 @@ def validate_bridge_compatibility(
         )
     else:
         mode_diff_count = sum(
-            1 for legacy_mode, new_mode in zip(legacy_modes, new_modes) if legacy_mode != new_mode
+            1
+            for legacy_mode, new_mode in zip(legacy_modes, new_modes)
+            if legacy_mode != new_mode
         )
         if mode_diff_count > 0:
             differences.append(
@@ -449,6 +447,7 @@ def calculate_timeline_with_new_module(
         Timeline in legacy format
     """
     from .timeline.simulator import SoCSimulator
+
     n_intervals = len(spot_prices)
 
     # Convert solar forecast

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import datetime
-from datetime import timedelta
-from typing import Any, Optional
 import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -32,12 +31,16 @@ PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
 
 try:
-    from homeassistant.helpers.event import async_track_state_change_event as _async_track_state_change_event  # type: ignore
+    from homeassistant.helpers.event import (
+        async_track_state_change_event as _async_track_state_change_event,  # type: ignore
+    )
 except Exception:  # pragma: no cover
     _async_track_state_change_event = None
 
 try:
-    from homeassistant.helpers.event import async_track_time_interval as _async_track_time_interval  # type: ignore
+    from homeassistant.helpers.event import (
+        async_track_time_interval as _async_track_time_interval,  # type: ignore
+    )
 except Exception:  # pragma: no cover
     _async_track_time_interval = None
 
@@ -73,21 +76,29 @@ def get_effective_mode(hass: HomeAssistant, entry_id: str) -> str:
 def get_configured_mode(entry: ConfigEntry) -> str:
     mode = entry.options.get("data_source_mode", DEFAULT_DATA_SOURCE_MODE)
     if mode == DATA_SOURCE_HYBRID:
-        _LOGGER.debug("Data source mode 'hybrid' mapped to 'local_only' for compatibility")
+        _LOGGER.debug(
+            "Data source mode 'hybrid' mapped to 'local_only' for compatibility"
+        )
         return DATA_SOURCE_LOCAL_ONLY
     return mode
 
 
 def get_proxy_stale_minutes(entry: ConfigEntry) -> int:
     try:
-        return int(entry.options.get("local_proxy_stale_minutes", DEFAULT_PROXY_STALE_MINUTES))
+        return int(
+            entry.options.get("local_proxy_stale_minutes", DEFAULT_PROXY_STALE_MINUTES)
+        )
     except Exception:
         return DEFAULT_PROXY_STALE_MINUTES
 
 
 def get_local_event_debounce_ms(entry: ConfigEntry) -> int:
     try:
-        return int(entry.options.get("local_event_debounce_ms", DEFAULT_LOCAL_EVENT_DEBOUNCE_MS))
+        return int(
+            entry.options.get(
+                "local_event_debounce_ms", DEFAULT_LOCAL_EVENT_DEBOUNCE_MS
+            )
+        )
     except Exception:
         return DEFAULT_LOCAL_EVENT_DEBOUNCE_MS
 
@@ -104,7 +115,9 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
         except Exception:
             return None
     if isinstance(value, dt_util.dt.datetime):
-        return dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
+        return (
+            dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
+        )
     if isinstance(value, str):
         value = value.strip()
         if value.isdigit():
@@ -196,7 +209,9 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
         try:
             dt = proxy_state.last_updated or proxy_state.last_changed
             if dt is not None:
-                proxy_entity_dt = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                proxy_entity_dt = (
+                    dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                )
         except Exception:
             proxy_entity_dt = None
 
@@ -205,7 +220,9 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 
     box_id_for_scan = expected_box_id or proxy_box_id
     local_entities_dt = (
-        _get_latest_local_entity_update(hass, box_id_for_scan) if box_id_for_scan else None
+        _get_latest_local_entity_update(hass, box_id_for_scan)
+        if box_id_for_scan
+        else None
     )
 
     candidates: list[tuple[str, dt_util.dt.datetime]] = []
@@ -256,9 +273,9 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
         last_local_data=last_dt,
         reason=reason,
     )
-    hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["data_source_state"] = (
-        state
-    )
+    hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})[
+        "data_source_state"
+    ] = state
     return state
 
 
@@ -295,9 +312,14 @@ class DataSourceController:
 
         # Seed coordinator payload from existing local states (only in configured local/hybrid mode).
         try:
-            if get_configured_mode(self.entry) != DATA_SOURCE_CLOUD_ONLY and self.telemetry_store:
+            if (
+                get_configured_mode(self.entry) != DATA_SOURCE_CLOUD_ONLY
+                and self.telemetry_store
+            ):
                 did_seed = self.telemetry_store.seed_from_existing_local_states()
-                if did_seed and getattr(self.coordinator, "async_set_updated_data", None):
+                if did_seed and getattr(
+                    self.coordinator, "async_set_updated_data", None
+                ):
                     snap = self.telemetry_store.get_snapshot()
                     self.coordinator.async_set_updated_data(snap.payload)
         except Exception:
@@ -317,12 +339,16 @@ class DataSourceController:
                 if event.data.get("entity_id") == PROXY_LAST_DATA_ENTITY_ID:
                     self._on_proxy_change(event)
 
-            self._unsubs.append(self.hass.bus.async_listen("state_changed", _on_state_changed))
+            self._unsubs.append(
+                self.hass.bus.async_listen("state_changed", _on_state_changed)
+            )
 
         # Periodic HC: detect stale even without state changes
         if _async_track_time_interval is not None:
             self._unsubs.append(
-                _async_track_time_interval(self.hass, self._on_periodic, timedelta(minutes=1))
+                _async_track_time_interval(
+                    self.hass, self._on_periodic, timedelta(minutes=1)
+                )
             )
 
         # Local telemetry events (5s updates) – just poke coordinator listeners
@@ -432,7 +458,9 @@ class DataSourceController:
                 self._pending_local_entities.clear()
                 if pending:
                     changed = self.telemetry_store.apply_local_events(pending)
-                    if changed and getattr(self.coordinator, "async_set_updated_data", None):
+                    if changed and getattr(
+                        self.coordinator, "async_set_updated_data", None
+                    ):
                         snap = self.telemetry_store.get_snapshot()
                         self.coordinator.async_set_updated_data(snap.payload)
         except Exception:
@@ -460,7 +488,9 @@ class DataSourceController:
                 dt = proxy_state.last_updated or proxy_state.last_changed
                 if dt is not None:
                     proxy_entity_dt = (
-                        dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                        dt_util.as_utc(dt)
+                        if dt.tzinfo
+                        else dt.replace(tzinfo=dt_util.UTC)
                     )
             except Exception:
                 proxy_entity_dt = None
@@ -473,13 +503,17 @@ class DataSourceController:
             expected_box_id = None
 
         proxy_box_state = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-        proxy_box_id = _coerce_box_id(proxy_box_state.state if proxy_box_state else None)
+        proxy_box_id = _coerce_box_id(
+            proxy_box_state.state if proxy_box_state else None
+        )
 
         box_id_for_scan = expected_box_id or proxy_box_id
         local_entities_dt = self._last_local_entity_update
         if local_entities_dt is None and box_id_for_scan:
             # Startup fallback when we haven't seen any local state_changed yet.
-            local_entities_dt = _get_latest_local_entity_update(self.hass, box_id_for_scan)
+            local_entities_dt = _get_latest_local_entity_update(
+                self.hass, box_id_for_scan
+            )
 
         candidates: list[tuple[str, dt_util.dt.datetime]] = []
         if proxy_last_dt:

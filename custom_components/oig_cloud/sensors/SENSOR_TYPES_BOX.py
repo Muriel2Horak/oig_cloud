@@ -1,7 +1,7 @@
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfTemperature
+from typing import Any, Dict
 
-from typing import Dict, Any
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTemperature
 
 SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
     "box_humid": {

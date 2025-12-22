@@ -1,6 +1,7 @@
 """Definice typů senzorů pro ČHMÚ meteorologická varování."""
 
-from typing import Dict, Any
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorStateClass
 
 # Typy senzorů pro ČHMÚ varování

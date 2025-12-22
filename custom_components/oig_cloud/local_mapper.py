@@ -58,7 +58,14 @@ def _normalize_box_mode(value: Any) -> Optional[int]:
             if "ups" in s:
                 return 3
             # Accept "home 1" .. "home 6" (Home 4 is Home UPS)
-            for num, mode_id in (("1", 0), ("2", 1), ("3", 2), ("4", 3), ("5", 4), ("6", 5)):
+            for num, mode_id in (
+                ("1", 0),
+                ("2", 1),
+                ("3", 2),
+                ("4", 3),
+                ("5", 4),
+                ("6", 5),
+            ):
                 if num in s:
                     return mode_id
         return None
@@ -122,7 +129,12 @@ def _build_suffix_updates() -> Dict[str, List[LocalUpdate]]:
 
         node_id = cfg.get("node_id")
         node_key = cfg.get("node_key")
-        if isinstance(node_id, str) and isinstance(node_key, str) and node_id and node_key:
+        if (
+            isinstance(node_id, str)
+            and isinstance(node_key, str)
+            and node_id
+            and node_key
+        ):
             updates.append(_NodeUpdate(node_id=node_id, node_key=node_key))
 
         ext = _EXTENDED_INDEX_BY_SENSOR_TYPE.get(sensor_type)

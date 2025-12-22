@@ -9,14 +9,13 @@ This strategy is called BEFORE HybridStrategy and provides constraints
 that the hybrid optimizer must respect.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple, Set
-import logging
+from typing import List, Optional, Set, Tuple
 
 from ..config import BalancingConfig, SimulatorConfig
 from ..types import SpotPrice
-
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 CBB_MODE_HOME_I = 0
 CBB_MODE_HOME_II = 1
 CBB_MODE_HOME_III = 2
@@ -63,7 +62,11 @@ def simulate_interval(
     solar_charge_raw = 0.0
 
     # NIGHT optimization: solar == 0 → HOME I/II/III behave identically (discharge to HW min).
-    if solar_kwh < 0.001 and mode in (CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III):
+    if solar_kwh < 0.001 and mode in (
+        CBB_MODE_HOME_I,
+        CBB_MODE_HOME_II,
+        CBB_MODE_HOME_III,
+    ):
         available_battery = max(0.0, soc - hw_min_capacity_kwh)
         usable_from_battery = available_battery * discharge_efficiency
 
@@ -120,7 +123,9 @@ def simulate_interval(
             new_soc_kwh=min(capacity_kwh, soc),
             grid_import_kwh=grid_import,
             grid_export_kwh=grid_export,
-            battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
+            battery_charge_kwh=(
+                battery_charge * charge_efficiency if battery_charge > 0 else 0.0
+            ),
             battery_discharge_kwh=battery_discharge,
             grid_charge_kwh=grid_charge_raw,
             solar_charge_kwh=solar_charge_raw,
@@ -140,13 +145,15 @@ def simulate_interval(
             if remaining_surplus > 0.001:
                 grid_export += remaining_surplus
         else:
-            grid_import += (load_kwh - solar_kwh)
+            grid_import += load_kwh - solar_kwh
 
         return IntervalPhysicsResult(
             new_soc_kwh=min(capacity_kwh, soc),
             grid_import_kwh=grid_import,
             grid_export_kwh=grid_export,
-            battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
+            battery_charge_kwh=(
+                battery_charge * charge_efficiency if battery_charge > 0 else 0.0
+            ),
             battery_discharge_kwh=0.0,
             grid_charge_kwh=grid_charge_raw,
             solar_charge_kwh=solar_charge_raw,
@@ -169,7 +176,9 @@ def simulate_interval(
             new_soc_kwh=min(capacity_kwh, soc),
             grid_import_kwh=grid_import,
             grid_export_kwh=grid_export,
-            battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
+            battery_charge_kwh=(
+                battery_charge * charge_efficiency if battery_charge > 0 else 0.0
+            ),
             battery_discharge_kwh=0.0,
             grid_charge_kwh=grid_charge_raw,
             solar_charge_kwh=solar_charge_raw,
@@ -206,7 +215,9 @@ def simulate_interval(
             new_soc_kwh=min(capacity_kwh, soc),
             grid_import_kwh=grid_import,
             grid_export_kwh=grid_export,
-            battery_charge_kwh=battery_charge * charge_efficiency if battery_charge > 0 else 0.0,
+            battery_charge_kwh=(
+                battery_charge * charge_efficiency if battery_charge > 0 else 0.0
+            ),
             battery_discharge_kwh=0.0,
             grid_charge_kwh=grid_charge_raw,
             solar_charge_kwh=solar_charge_raw,

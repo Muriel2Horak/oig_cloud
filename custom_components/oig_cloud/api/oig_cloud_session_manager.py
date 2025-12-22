@@ -8,10 +8,10 @@ Instead, it wraps API calls to provide:
 - Detailed logging for debugging
 """
 
-import logging
 import asyncio
+import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Callable, TypeVar, ParamSpec
+from typing import Any, Callable, Dict, Optional, ParamSpec, TypeVar
 
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 

@@ -1,6 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfEnergy, UnitOfPower, PERCENTAGE
-from typing import Dict, Any
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 
 SENSOR_TYPES_COMPUTED: Dict[str, Dict[str, Any]] = {
     # Live hodnoty

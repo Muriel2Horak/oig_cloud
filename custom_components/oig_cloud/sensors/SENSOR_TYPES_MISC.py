@@ -1,7 +1,7 @@
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfEnergy
+from typing import Any, Dict
 
-from typing import Dict, Any
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
     "device_lastcall": {

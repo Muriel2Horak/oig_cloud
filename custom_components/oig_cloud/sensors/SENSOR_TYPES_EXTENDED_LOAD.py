@@ -1,6 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfPower
-from typing import Dict, Any
 
 SENSOR_TYPES_EXTENDED_LOAD: Dict[str, Dict[str, Any]] = {
     "extended_load_l1_power": {

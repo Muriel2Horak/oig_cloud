@@ -1,11 +1,11 @@
 """ServiceShield senzory pro OIG Cloud integraci."""
 
 import logging
-from typing import Any, Dict, Optional, Union
 from datetime import datetime
+from typing import Any, Dict, Optional, Union
 
-from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
 from .const import DOMAIN
+from .oig_cloud_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -465,7 +465,12 @@ class OigCloudShieldSensor(OigCloudSensor):
             try:
                 import re
 
-                title = getattr(getattr(self.coordinator, "config_entry", None), "title", "") or ""
+                title = (
+                    getattr(
+                        getattr(self.coordinator, "config_entry", None), "title", ""
+                    )
+                    or ""
+                )
                 m = re.search(r"(\\d{6,})", title)
                 if m:
                     box_id = m.group(1)

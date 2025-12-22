@@ -2,20 +2,20 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import ssl
 import time
 from typing import Any, Dict, Optional, Union, cast
-import re
 
 import aiohttp
+import certifi
 from aiohttp import (
-    ClientTimeout,
     ClientConnectorError,
     ClientResponseError,
+    ClientTimeout,
     ServerTimeoutError,
     TCPConnector,
 )
-import certifi
 
 # Conditional import of opentelemetry
 _logger = logging.getLogger(__name__)

@@ -1,26 +1,26 @@
 """Battery Health Monitoring - měření skutečné kapacity a degradace baterie."""
 
 import asyncio
-import logging
 import json
+import logging
 import os
-import numpy as np
-from typing import Any, Dict, List, Optional, Tuple, Callable
-from datetime import datetime, timedelta
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import numpy as np
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.event import async_call_later
-from homeassistant.const import EntityCategory, EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EntityCategory
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -408,9 +408,10 @@ class BatteryCapacityTracker:
         Returns:
             List pseudo-state objektů s atributy: state, last_changed
         """
+        from dataclasses import dataclass
+
         from homeassistant.helpers.recorder import get_instance
         from sqlalchemy import text
-        from dataclasses import dataclass
 
         @dataclass
         class PseudoState:
@@ -566,8 +567,8 @@ class BatteryCapacityTracker:
         Returns:
             BatteryMeasurement nebo None pokud není validní
         """
-        from homeassistant.helpers import recorder
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.helpers import recorder
 
         try:
             delta_soc = end_soc - start_soc

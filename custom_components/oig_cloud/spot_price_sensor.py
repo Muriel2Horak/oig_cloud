@@ -5,15 +5,15 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.dt import now as dt_now
-from homeassistant.config_entries import ConfigEntry
 
+from .api.ote_api import OteApi
 from .const import OTE_SPOT_PRICE_CACHE_FILE
 from .oig_cloud_sensor import OigCloudSensor
-from .api.ote_api import OteApi
 from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
 
 _LOGGER = logging.getLogger(__name__)

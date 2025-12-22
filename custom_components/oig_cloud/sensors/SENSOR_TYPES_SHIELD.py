@@ -1,8 +1,9 @@
 """Definice typů senzorů pro ServiceShield."""
 
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory
-from typing import Dict, Any
 
 # Typy senzorů pro ServiceShield monitoring
 SENSOR_TYPES_SHIELD: Dict[str, Dict[str, Any]] = {

@@ -2,8 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from custom_components.oig_cloud.planner import BalancingInput, OnePlanner, PlanInput, PlannerConfig
-from custom_components.oig_cloud.planner.physics import CBB_MODE_HOME_I, CBB_MODE_HOME_UPS
+from custom_components.oig_cloud.planner import (
+    BalancingInput,
+    OnePlanner,
+    PlanInput,
+    PlannerConfig,
+)
+from custom_components.oig_cloud.planner.physics import (
+    CBB_MODE_HOME_I,
+    CBB_MODE_HOME_UPS,
+)
 
 
 def _make_prices(base: datetime, n: int, price: float) -> list[dict]:
@@ -21,7 +29,7 @@ def test_recover_from_below_planning_min_schedules_earliest_ups() -> None:
     planner = OnePlanner(
         PlannerConfig(
             planning_min_percent=33.0,
-            target_percent=80.0,
+            target_percent=33.0,
             max_ups_price_czk=10.0,
             home_charge_rate_kw=2.8,
             charge_efficiency=0.9,

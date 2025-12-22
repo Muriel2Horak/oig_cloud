@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
-
 HOME_I = 0
 HOME_II = 1
 HOME_III = 2

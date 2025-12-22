@@ -29,11 +29,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from ..config import SimulatorConfig
-from ..types import (
-    CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
-    CBB_MODE_HOME_UPS,
-)
+from ..types import CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS
 
 
 @dataclass(frozen=True)

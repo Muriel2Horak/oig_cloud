@@ -11,20 +11,20 @@ Algoritmus:
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -110,8 +110,8 @@ class BatteryHealthTracker:
         Returns:
             List nových měření
         """
-        from homeassistant.components.recorder.history import get_significant_states
         from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
 
         end_time = dt_util.now()
         start_time = end_time - timedelta(days=10)

@@ -1,6 +1,7 @@
 """Definice typů senzorů pro spotové ceny elektřiny z OTE a ČNB."""
 
-from typing import Dict, Any
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass
 
 # Typy senzorů pro spotové ceny elektřiny

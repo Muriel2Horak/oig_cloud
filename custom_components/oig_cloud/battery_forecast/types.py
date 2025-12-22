@@ -12,7 +12,6 @@ All types are designed for static type checking with mypy/pyright.
 from enum import IntEnum
 from typing import Any, Dict, List, Optional, TypedDict
 
-
 # =============================================================================
 # CBB Mode Constants
 # =============================================================================

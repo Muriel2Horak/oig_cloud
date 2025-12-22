@@ -1,6 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfPower, UnitOfEnergy, PERCENTAGE
-from typing import Dict, Any
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.helpers.entity import EntityCategory
 
 SENSOR_TYPES_BATT: Dict[str, Dict[str, Any]] = {

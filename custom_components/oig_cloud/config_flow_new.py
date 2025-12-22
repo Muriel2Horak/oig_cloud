@@ -15,12 +15,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 
-from .const import (
-    DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    DEFAULT_NAME,
-)
+from .const import CONF_PASSWORD, CONF_USERNAME, DEFAULT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -3,9 +3,10 @@
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import aiohttp
+
 from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
 
 _LOGGER = logging.getLogger(__name__)

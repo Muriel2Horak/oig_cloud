@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Optional, List, Tuple, Union  # PŘIDÁNO: Union
+from typing import Any, Dict, List, Optional, Tuple, Union  # PŘIDÁNO: Union
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
@@ -592,14 +592,18 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
     # Helpers to keep complexity low
     def _final_price_with_fees(
-        self, spot_price_czk: Optional[float], target_datetime: Optional[datetime] = None
+        self,
+        spot_price_czk: Optional[float],
+        target_datetime: Optional[datetime] = None,
     ) -> Optional[float]:
         """Vypočítat finální cenu včetně obchodních a distribučních poplatků a DPH."""
         if spot_price_czk is None:
             return None
 
         pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
-        positive_fee_percent = self._entry.options.get("spot_positive_fee_percent", 15.0)
+        positive_fee_percent = self._entry.options.get(
+            "spot_positive_fee_percent", 15.0
+        )
         negative_fee_percent = self._entry.options.get("spot_negative_fee_percent", 9.0)
         fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
         distribution_fee_vt_kwh = self._entry.options.get(
@@ -628,7 +632,9 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             current_tariff = "VT"
 
         distribution_fee = (
-            distribution_fee_vt_kwh if current_tariff == "VT" else distribution_fee_nt_kwh
+            distribution_fee_vt_kwh
+            if current_tariff == "VT"
+            else distribution_fee_nt_kwh
         )
 
         price_without_vat = commercial_price + distribution_fee
@@ -670,9 +676,11 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                 final_price = self._final_price_with_fees(spot_price, price_datetime)
                 if final_price is None:
                     continue
-                if best_final_price is None or (
-                    find_min and final_price < best_final_price
-                ) or (not find_min and final_price > best_final_price):
+                if (
+                    best_final_price is None
+                    or (find_min and final_price < best_final_price)
+                    or (not find_min and final_price > best_final_price)
+                ):
                     best_final_price = final_price
             except (ValueError, AttributeError):
                 continue

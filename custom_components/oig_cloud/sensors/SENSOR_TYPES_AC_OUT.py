@@ -1,7 +1,7 @@
+from typing import Any, Dict
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy, UnitOfPower
-from typing import Dict, Any
-
 
 SENSOR_TYPES_AC_OUT: Dict[str, Dict[str, Any]] = {  # Oprava: Any místo union type
     "ac_out_aco_p": {

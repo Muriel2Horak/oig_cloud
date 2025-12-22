@@ -4,16 +4,15 @@ This sensor only displays information, all planning logic is in BalancingManager
 """
 
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
-from datetime import datetime
-from datetime import timedelta
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -110,7 +109,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             manager_state = manager.get_sensor_state()
             manager_attrs = manager.get_sensor_attributes()
         except Exception as err:
-            _LOGGER.debug("Balancing sensor: manager state read failed: %s", err, exc_info=True)
+            _LOGGER.debug(
+                "Balancing sensor: manager state read failed: %s", err, exc_info=True
+            )
             self._status = "unknown"
             return
 
@@ -135,7 +136,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         )
         try:
             days_since_val = manager_attrs.get("days_since_last")
-            self._days_since_last = int(float(days_since_val)) if days_since_val is not None else 99
+            self._days_since_last = (
+                int(float(days_since_val)) if days_since_val is not None else 99
+            )
         except Exception:
             self._days_since_last = 99
 
@@ -150,7 +153,9 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         if active_plan:
             holding_start = active_plan.holding_start
             holding_end = active_plan.holding_end
-            intervals = [{"ts": i.ts, "mode": i.mode} for i in (active_plan.intervals or [])]
+            intervals = [
+                {"ts": i.ts, "mode": i.mode} for i in (active_plan.intervals or [])
+            ]
 
             charging_intervals = []
             try:
@@ -164,8 +169,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 charging_intervals = []
 
             self._planned_window = {
-                "mode": getattr(active_plan.mode, "value", str(active_plan.mode)).lower(),
-                "priority": getattr(active_plan.priority, "value", str(active_plan.priority)).lower(),
+                "mode": getattr(
+                    active_plan.mode, "value", str(active_plan.mode)
+                ).lower(),
+                "priority": getattr(
+                    active_plan.priority, "value", str(active_plan.priority)
+                ).lower(),
                 "holding_start": holding_start,
                 "holding_end": holding_end,
                 "reason": active_plan.reason,
@@ -210,7 +219,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     elif now < hs:
                         # If we're within any interval before holding_start, call it charging.
                         in_interval = False
-                        for it in (active_plan.intervals or []):
+                        for it in active_plan.intervals or []:
                             ts = _parse_dt_local(it.ts)
                             if ts and ts <= now < (ts + timedelta(minutes=15)):
                                 in_interval = True
@@ -294,8 +303,12 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     except Exception:
                         pass
                 self._planned_window = attrs.get("planned") or self._planned_window
-                self._cost_immediate = attrs.get("cost_immediate_czk", self._cost_immediate)
-                self._cost_selected = attrs.get("cost_selected_czk", self._cost_selected)
+                self._cost_immediate = attrs.get(
+                    "cost_immediate_czk", self._cost_immediate
+                )
+                self._cost_selected = attrs.get(
+                    "cost_selected_czk", self._cost_selected
+                )
                 self._cost_savings = attrs.get("cost_savings_czk", self._cost_savings)
         except Exception:
             pass

@@ -2,10 +2,10 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional, Union
 
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -135,7 +135,8 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     def device_info(self) -> Any:
         """Return device info."""
         from homeassistant.helpers.entity import DeviceInfo
-        from .const import DOMAIN, DEFAULT_NAME
+
+        from .const import DEFAULT_NAME, DOMAIN
 
         box_id = self._box_id
         if not box_id or box_id == "unknown":
@@ -525,7 +526,9 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             return _LANGS["on"][language]
         return _LANGS["unknown"][language]
 
-    def _get_local_entity_id_for_config(self, sensor_config: Dict[str, Any]) -> Optional[str]:
+    def _get_local_entity_id_for_config(
+        self, sensor_config: Dict[str, Any]
+    ) -> Optional[str]:
         entity_id = sensor_config.get("local_entity_id")
         if entity_id:
             return entity_id
@@ -577,9 +580,12 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     def _get_local_grid_mode(self, node_value: Any, language: str) -> str:
         try:
             to_grid = int(node_value) if node_value is not None else 0
-            grid_enabled = int(self._get_local_value_for_sensor_type("box_prms_crct") or 0)
+            grid_enabled = int(
+                self._get_local_value_for_sensor_type("box_prms_crct") or 0
+            )
             max_grid_feed = int(
-                self._get_local_value_for_sensor_type("invertor_prm1_p_max_feed_grid") or 0
+                self._get_local_value_for_sensor_type("invertor_prm1_p_max_feed_grid")
+                or 0
             )
             # Queen mode not reliably available locally; default to king logic.
             return self._grid_mode_king(grid_enabled, to_grid, max_grid_feed, language)

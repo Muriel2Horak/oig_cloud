@@ -1,9 +1,10 @@
 """Tests for ETag caching functionality."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from aiohttp import ClientResponse
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from aiohttp import ClientResponse
 
 from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
     OigCloudApi,
@@ -238,8 +239,8 @@ class TestJitter:
     def test_jitter_range(self):
         """Test jitter is within expected range."""
         from custom_components.oig_cloud.coordinator import (
-            OigCloudDataUpdateCoordinator,
             JITTER_SECONDS,
+            OigCloudDataUpdateCoordinator,
         )
 
         # Mock dependencies
