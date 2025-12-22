@@ -273,7 +273,7 @@
           "export_pricing_scenario": "💡 Klikněte 'Odeslat' pro zobrazení parametrů zvoleného scénáře",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
-        "description": "{step}\n{progress}\n\n📖 **Krok 2: Prodejní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za prodej přebytků do sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT - procento - Výhodné při vysokých spotových cenách\n• �� SPOT - fixní srážka - Stabilnější výkup\n• 🔒 FIX cena - Stabilní výkupní cena po celý rok\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
+        "description": "{step}\n{progress}\n\n📖 **Krok 2: Prodejní cena elektřiny**\n\nVyberte, jak chcete počítat cenu za prodej přebytků do sítě.\n\n💡 **Doporučené scénáře:**\n• 💰 SPOT - procento - Výhodné při vysokých spotových cenách\n• 💵 SPOT - fixní srážka - Stabilnější výkup\n• 🔒 FIX cena - Stabilní výkupní cena po celý rok\n\n⚙️ Po výběru scénáře klikněte 'Odeslat' pro zobrazení parametrů.",
         "title": "💸 Konfigurace prodejní ceny (2/3)"
       },
       "wizard_pricing_import": {
