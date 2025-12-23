@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import frame as frame_helper
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.oig_cloud.const import DEFAULT_UPDATE_INTERVAL
@@ -34,9 +35,10 @@ def mock_config_entry() -> Mock:
 
 
 @pytest.fixture
-def mock_hass() -> Mock:
-    """Create a mock Home Assistant instance."""
-    return Mock()
+def mock_hass(hass):
+    """Create a Home Assistant instance with frame helper set."""
+    frame_helper.async_setup(hass)
+    return hass
 
 
 @pytest.fixture

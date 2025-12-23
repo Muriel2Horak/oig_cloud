@@ -542,8 +542,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         break
                     await asyncio.sleep(1)
                 else:
-                    _LOGGER.warning(
-                        "⚠️ Profiles not ready after 60s - starting forecast anyway"
+                    _LOGGER.info(
+                        "Profiles not ready after 60s - starting forecast anyway"
                     )
 
                 # Now run forecast

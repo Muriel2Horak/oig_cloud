@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional, Union
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -455,23 +455,37 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         self, pv_data: Dict[str, Any], node_value: Any, language: str
     ) -> str:
         try:
-            # Bezpečné získání hodnot s proper error handling
-            if "box_prms" not in pv_data or "crcte" not in pv_data["box_prms"]:
-                _LOGGER.warning(f"[{self.entity_id}] Missing box_prms.crcte in data")
+            box_prms = pv_data.get("box_prms", {}) or {}
+            grid_enabled_raw = None
+            if isinstance(box_prms, dict):
+                grid_enabled_raw = box_prms.get("crcte", box_prms.get("crct"))
+
+            invertor_prm1 = pv_data.get("invertor_prm1", {}) or {}
+            max_grid_feed_raw = (
+                invertor_prm1.get("p_max_feed_grid")
+                if isinstance(invertor_prm1, dict)
+                else None
+            )
+
+            if grid_enabled_raw is None or max_grid_feed_raw is None:
+                local_mode = self._get_local_grid_mode(node_value, language)
+                if local_mode != _LANGS["unknown"][language]:
+                    return local_mode
+                if grid_enabled_raw is None:
+                    _LOGGER.debug(
+                        "[%s] Missing box_prms.crcte/crct in data",
+                        self.entity_id,
+                    )
+                if max_grid_feed_raw is None:
+                    _LOGGER.debug(
+                        "[%s] Missing invertor_prm1.p_max_feed_grid in data",
+                        self.entity_id,
+                    )
                 return _LANGS["unknown"][language]
 
-            if (
-                "invertor_prm1" not in pv_data
-                or "p_max_feed_grid" not in pv_data["invertor_prm1"]
-            ):
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Missing invertor_prm1.p_max_feed_grid in data"
-                )
-                return _LANGS["unknown"][language]
-
-            grid_enabled = int(pv_data["box_prms"]["crcte"])
+            grid_enabled = int(grid_enabled_raw)
             to_grid = int(node_value) if node_value is not None else 0
-            max_grid_feed = int(pv_data["invertor_prm1"]["p_max_feed_grid"])
+            max_grid_feed = int(max_grid_feed_raw)
 
             if "queen" in pv_data and bool(pv_data["queen"]):
                 return self._grid_mode_queen(
@@ -549,7 +563,12 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     def _fallback_value(self) -> Optional[Any]:
         if self._last_state is not None:
             return self._last_state
-        return self._restored_state
+        if self._restored_state is not None:
+            return self._restored_state
+        if self._sensor_config:
+            if self._sensor_config.get("device_class") == SensorDeviceClass.ENERGY:
+                return 0.0
+        return None
 
     def _get_local_value(self) -> Optional[Any]:
         local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)

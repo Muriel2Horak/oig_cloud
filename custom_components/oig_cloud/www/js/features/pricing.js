@@ -1483,6 +1483,7 @@ async function loadPricingData() {
             const solarStackData = [];        // Solar přírůstek
             const gridStackData = [];         // Grid přírůstek
             const gridNetData = [];           // Netto odběr ze sítě (import - export)
+            const consumptionData = [];       // Plánovaná spotřeba (kW)
 
             for (let i = 0; i < allLabels.length; i++) {
                 const timeLabel = allLabels[i];
@@ -1500,6 +1501,13 @@ async function loadPricingData() {
                     const gridNet = typeof timelineEntry.grid_net === 'number'
                         ? timelineEntry.grid_net
                         : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
+                    const loadKwhRaw =
+                        timelineEntry.load_kwh ??
+                        timelineEntry.consumption_kwh ??
+                        timelineEntry.load ??
+                        0;
+                    const loadKwh = Number(loadKwhRaw) || 0;
+                    const loadKw = loadKwh * 4;
 
                     // Baseline = odkud vyšli (cílová - přírůstky)
                     const baseline = targetCapacity - solarCharge - gridCharge;
@@ -1509,12 +1517,14 @@ async function loadPricingData() {
                     solarStackData.push(solarCharge);
                     gridStackData.push(gridCharge);
                     gridNetData.push(gridNet);
+                    consumptionData.push(loadKw);
                 } else {
                     batteryCapacityData.push(null);
                     baselineData.push(null);
                     solarStackData.push(null);
                     gridStackData.push(null);
                     gridNetData.push(null);
+                    consumptionData.push(null);
                 }
             }
 
@@ -1524,6 +1534,25 @@ async function loadPricingData() {
                 solar: { border: 'transparent', bg: 'rgba(255, 167, 38, 0.6)' },   // výrazná oranžová - solár
                 grid: { border: 'transparent', bg: 'rgba(33, 150, 243, 0.6)' }    // výrazná modrá - síť
             };
+
+            if (consumptionData.some(v => v != null && v > 0)) {
+                datasets.push({
+                    label: '🏠 Spotřeba (plán)',
+                    data: consumptionData,
+                    borderColor: 'rgba(255, 112, 67, 0.7)',
+                    backgroundColor: 'rgba(255, 112, 67, 0.12)',
+                    borderWidth: 1.5,
+                    type: 'line',
+                    fill: false,
+                    tension: 0.25,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    yAxisID: 'y-power',
+                    stack: 'consumption',
+                    borderDash: [6, 4],
+                    order: 2
+                });
+            }
 
             // POŘADÍ DATASETŮ určuje pořadí ve stacku (první = dole, poslední = nahoře)
             // 1. Grid area (dole) - nabíjení ze sítě, BEZ borderu
