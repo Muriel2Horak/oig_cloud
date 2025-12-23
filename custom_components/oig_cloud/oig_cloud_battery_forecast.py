@@ -257,6 +257,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Phase 2.9: Current daily plan state (will be restored from HA storage)
         self._daily_plan_state: Optional[Dict[str, Any]] = None
+        self._baseline_repair_attempts: set[str] = set()
 
         # Phase 1.5: Hash-based change detection
         self._data_hash: Optional[str] = (
@@ -9087,6 +9088,43 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             storage_invalid = (
                 self._is_baseline_plan_invalid(storage_day) if storage_day else True
             )
+            storage_missing = not storage_day or not storage_day.get("intervals")
+            if (
+                self._plans_store
+                and (storage_missing or storage_invalid)
+                and date_str not in self._baseline_repair_attempts
+            ):
+                self._baseline_repair_attempts.add(date_str)
+                _LOGGER.warning(
+                    "Baseline plan missing/invalid for %s, attempting rebuild",
+                    date_str,
+                )
+                try:
+                    repaired = await self._create_baseline_plan(date_str)
+                except Exception as err:
+                    _LOGGER.error(
+                        "Baseline rebuild failed for %s: %s",
+                        date_str,
+                        err,
+                        exc_info=True,
+                    )
+                    repaired = False
+                if repaired:
+                    try:
+                        storage_plans = await self._plans_store.async_load() or {}
+                        storage_day = storage_plans.get("detailed", {}).get(date_str)
+                        storage_invalid = (
+                            self._is_baseline_plan_invalid(storage_day)
+                            if storage_day
+                            else True
+                        )
+                    except Exception as err:
+                        _LOGGER.error(
+                            "Failed to reload baseline plan after rebuild for %s: %s",
+                            date_str,
+                            err,
+                            exc_info=True,
+                        )
             if storage_day and storage_day.get("intervals") and not storage_invalid:
                 past_planned = storage_day["intervals"]
                 _LOGGER.debug(
