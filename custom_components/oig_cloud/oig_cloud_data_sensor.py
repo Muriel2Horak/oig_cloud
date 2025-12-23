@@ -511,11 +511,13 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     def _grid_mode_king(
         self, grid_enabled: int, to_grid: int, max_grid_feed: int, language: str
     ) -> str:
-        if 0 == grid_enabled and 0 == to_grid:
+        if grid_enabled == 0:
             return GridMode.OFF
-        elif 1 == grid_enabled and 1 == to_grid and 10000 == max_grid_feed:
+        if to_grid == 0:
+            return GridMode.OFF
+        if to_grid == 1 and max_grid_feed >= 10000:
             return GridMode.ON
-        elif 1 == grid_enabled and 1 == to_grid and 9999 >= max_grid_feed:
+        if to_grid == 1 and max_grid_feed <= 9999:
             return GridMode.LIMITED
         return _LANGS["changing"][language]
 

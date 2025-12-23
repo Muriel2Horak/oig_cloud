@@ -2663,6 +2663,29 @@ class TimelineDialog {
         const gridColor = 'rgba(255, 255, 255, 0.08)';
         const tickColor = 'rgba(255, 255, 255, 0.7)';
         const legendColor = 'rgba(255, 255, 255, 0.75)';
+        const zoomOptions = {
+            pan: {
+                enabled: true,
+                mode: 'x',
+                modifierKey: 'shift'
+            },
+            zoom: {
+                wheel: {
+                    enabled: true,
+                    speed: 0.1
+                },
+                pinch: {
+                    enabled: true
+                },
+                drag: {
+                    enabled: true,
+                    backgroundColor: 'rgba(33, 150, 243, 0.2)',
+                    borderColor: 'rgba(33, 150, 243, 0.4)',
+                    borderWidth: 1
+                },
+                mode: 'x'
+            }
+        };
 
         const tooltipLabel = (unit, decimals = 2) => (context) => {
             const value = context.parsed?.y;
@@ -2726,6 +2749,7 @@ class TimelineDialog {
                     tooltip: {
                         callbacks: { label: tooltipLabel('kWh', 2) }
                     },
+                    zoom: zoomOptions,
                     annotation: { annotations }
                 },
                 scales: {
@@ -2787,6 +2811,7 @@ class TimelineDialog {
                     tooltip: {
                         callbacks: { label: tooltipLabel('%', 1) }
                     },
+                    zoom: zoomOptions,
                     annotation: { annotations }
                 },
                 scales: {
@@ -2848,6 +2873,7 @@ class TimelineDialog {
                     tooltip: {
                         callbacks: { label: tooltipLabel('Kč', 2) }
                     },
+                    zoom: zoomOptions,
                     annotation: { annotations }
                 },
                 scales: {

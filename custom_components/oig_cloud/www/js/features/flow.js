@@ -1329,7 +1329,7 @@ async function loadData() {
     const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
 
     // Display grid power using formatPower helper (absolute value) - UPDATE ONLY IF CHANGED
-    updateElementIfChanged('grid-power', formatPower(Math.abs(gridPower)), 'grid-power');
+    updateElementIfChanged('grid-power', formatPower(gridPower), 'grid-power');
     updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
 
     // Update grid status only if state changed
@@ -1665,7 +1665,9 @@ async function loadNodeDetails() {
         const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
         const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
         const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
-        const gridPower = gridPowerData.value || 0;
+        const gridL1Power = gridL1P.value || 0;
+        const gridL2Power = gridL2P.value || 0;
+        const gridL3Power = gridL3P.value || 0;
 
         // Grid pricing sensors
         const spotPrice = await getSensor(getSensorId('spot_price_current_15min'));
@@ -1696,17 +1698,17 @@ async function loadNodeDetails() {
         updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
         updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
         updateElementIfChanged('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
-        updateElementIfChanged('grid-l1-power', Math.round(gridL1P.value || 0) + 'W');
-        updateElementIfChanged('grid-l2-power', Math.round(gridL2P.value || 0) + 'W');
-        updateElementIfChanged('grid-l3-power', Math.round(gridL3P.value || 0) + 'W');
+        updateElementIfChanged('grid-l1-power', Math.round(gridL1Power) + 'W');
+        updateElementIfChanged('grid-l2-power', Math.round(gridL2Power) + 'W');
+        updateElementIfChanged('grid-l3-power', Math.round(gridL3Power) + 'W');
 
         // Update main box phases (new elements)
         updateElementIfChanged('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
         updateElementIfChanged('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
         updateElementIfChanged('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
-        updateElementIfChanged('grid-l1-power-main', Math.round(gridL1P.value || 0) + 'W');
-        updateElementIfChanged('grid-l2-power-main', Math.round(gridL2P.value || 0) + 'W');
-        updateElementIfChanged('grid-l3-power-main', Math.round(gridL3P.value || 0) + 'W');
+        updateElementIfChanged('grid-l1-power-main', Math.round(gridL1Power) + 'W');
+        updateElementIfChanged('grid-l2-power-main', Math.round(gridL2Power) + 'W');
+        updateElementIfChanged('grid-l3-power-main', Math.round(gridL3Power) + 'W');
 
         // === HOUSE DETAILS ===
         const houseL1 = await getSensor(getSensorId('ac_out_aco_pr'));

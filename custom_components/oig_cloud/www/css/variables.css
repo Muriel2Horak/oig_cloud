@@ -1005,10 +1005,10 @@
             transform: var(--inverter-transform);
             border-color: var(--inverter-border);
             background: var(--inverter-bg);
-            min-width: 200px;
+            min-width: 240px;
 
             /* Rozšířeno pro lepší zobrazení notifikací a přetoků */
-            max-width: 200px;
+            max-width: 240px;
         }
 
         .inverter:hover {
