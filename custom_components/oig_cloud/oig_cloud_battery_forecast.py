@@ -5485,6 +5485,53 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             hybrid_timeline = getattr(self, "_timeline_data", [])
 
             if not hybrid_timeline:
+                fallback_intervals: List[Dict[str, Any]] = []
+
+                if self._plans_store:
+                    try:
+                        storage_plans = await self._plans_store.async_load() or {}
+                        archive_day = (
+                            storage_plans.get("daily_archive", {}).get(date_str, {})
+                            or {}
+                        )
+                        if archive_day.get("plan"):
+                            fallback_intervals = archive_day.get("plan") or []
+                        if not fallback_intervals:
+                            detailed_day = storage_plans.get("detailed", {}).get(
+                                date_str, {}
+                            )
+                            if detailed_day.get("intervals"):
+                                fallback_intervals = detailed_day.get("intervals") or []
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Failed to load fallback plans for %s: %s",
+                            date_str,
+                            err,
+                        )
+
+                if (
+                    not fallback_intervals
+                    and getattr(self, "_daily_plan_state", None)
+                    and self._daily_plan_state.get("date") == date_str
+                ):
+                    fallback_intervals = self._daily_plan_state.get("plan") or []
+
+                if fallback_intervals:
+                    fallback_plan = {
+                        "intervals": fallback_intervals,
+                        "filled_intervals": None,
+                    }
+                    if not self._is_baseline_plan_invalid(fallback_plan):
+                        _LOGGER.info(
+                            "Using fallback plan to create baseline for %s",
+                            date_str,
+                        )
+                        return await self._save_plan_to_storage(
+                            date_str,
+                            fallback_intervals,
+                            {"baseline": True, "filled_intervals": None},
+                        )
+
                 _LOGGER.warning(
                     "No HYBRID timeline available - cannot create baseline plan"
                 )
@@ -8946,10 +8993,35 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
                     if archive_day and archive_day.get("plan"):
                         planned_intervals_list = archive_day.get("plan", [])
-                        _LOGGER.warning(
-                            "Using daily archive plan for %s (baseline invalid)",
-                            date_str,
-                        )
+                        archive_plan = {
+                            "intervals": planned_intervals_list,
+                            "filled_intervals": None,
+                        }
+                        if (
+                            self._plans_store
+                            and not self._is_baseline_plan_invalid(archive_plan)
+                        ):
+                            try:
+                                await self._save_plan_to_storage(
+                                    date_str,
+                                    planned_intervals_list,
+                                    {"baseline": True, "filled_intervals": None},
+                                )
+                                _LOGGER.info(
+                                    "Rebuilt baseline plan for %s from daily archive",
+                                    date_str,
+                                )
+                            except Exception as err:
+                                _LOGGER.debug(
+                                    "Failed to persist archive baseline for %s: %s",
+                                    date_str,
+                                    err,
+                                )
+                        else:
+                            _LOGGER.info(
+                                "Using daily archive plan for %s (baseline invalid)",
+                                date_str,
+                            )
                     else:
                         planned_intervals_list = yesterday_plan.get("intervals", [])
 
@@ -9095,7 +9167,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 and date_str not in self._baseline_repair_attempts
             ):
                 self._baseline_repair_attempts.add(date_str)
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Baseline plan missing/invalid for %s, attempting rebuild",
                     date_str,
                 )
@@ -9139,7 +9211,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 plan_intervals = self._daily_plan_state.get("plan", [])
                 if plan_intervals:
                     past_planned = plan_intervals
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "Using in-memory daily plan for %s (baseline invalid)",
                         date_str,
                     )

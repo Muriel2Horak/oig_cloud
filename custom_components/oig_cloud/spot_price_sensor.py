@@ -474,6 +474,8 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._data_hash: Optional[str] = None  # Phase 1.5: Hash for change detection
         self._retry_remove: Optional[Any] = None
         self._retry_attempt: int = 0
+        self._cached_state: Optional[float] = None
+        self._cached_attributes: Dict[str, Any] = {}
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
@@ -529,6 +531,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
                 if spot_data:
                     self._spot_data_15min = spot_data
                     self._last_update = dt_now()
+                    self._refresh_cached_state_and_attributes()
                     intervals = len(spot_data.get("prices15m_czk_kwh", {}))
                     _LOGGER.debug(
                         f"[{self.entity_id}] Synced 15min spot prices from coordinator ({intervals} intervals)"
@@ -572,6 +575,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
     async def _update_current_interval(self, *_: Any) -> None:
         """Aktualizace stavu senzoru při změně 15min intervalu."""
         _LOGGER.debug(f"[{self.entity_id}] Updating current 15min interval")
+        self._refresh_cached_state_and_attributes()
         self.async_write_ha_state()
         # Trigger coordinator refresh in background to avoid blocking the event loop
         # and hitting HA warnings about slow state updates.
@@ -609,6 +613,7 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
             if spot_data and "prices15m_czk_kwh" in spot_data:
                 self._spot_data_15min = spot_data
                 self._last_update = dt_now()
+                self._refresh_cached_state_and_attributes()
 
                 intervals_count = len(spot_data.get("prices15m_czk_kwh", {}))
                 _LOGGER.info(
@@ -674,6 +679,121 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
     def _get_current_interval_index(self, now: datetime) -> int:
         """Vrátí index 15min intervalu (0-95) pro daný čas."""
         return OteApi.get_current_15min_interval(now)
+
+    def _refresh_cached_state_and_attributes(self) -> None:
+        """Recompute cached state/attributes to avoid heavy work in properties."""
+        self._cached_state = self._calculate_current_state()
+        self._cached_attributes = self._calculate_attributes()
+        self._attr_native_value = self._cached_state
+        self._attr_extra_state_attributes = self._cached_attributes
+
+    def _calculate_current_state(self) -> Optional[float]:
+        """Compute current spot price for the active 15min interval."""
+        try:
+            if not self._spot_data_15min:
+                return None
+
+            now = dt_now()
+            interval_index = self._get_current_interval_index(now)
+
+            spot_price_czk = OteApi.get_15min_price_for_interval(
+                interval_index, self._spot_data_15min, now.date()
+            )
+
+            if spot_price_czk is None:
+                return None
+
+            return self._calculate_final_price_15min(spot_price_czk, now)
+
+        except Exception as e:
+            _LOGGER.error(f"[{self.entity_id}] Error getting state: {e}")
+            return None
+
+    def _calculate_attributes(self) -> Dict[str, Any]:
+        """Compute attributes summary for spot prices."""
+        attrs: Dict[str, Any] = {}
+
+        try:
+            if (
+                not self._spot_data_15min
+                or "prices15m_czk_kwh" not in self._spot_data_15min
+            ):
+                return attrs
+
+            now = dt_now()
+            current_interval_index = self._get_current_interval_index(now)
+            prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
+
+            future_prices = []
+            current_price: Optional[float] = None
+            next_price: Optional[float] = None
+
+            for time_key, spot_price_czk in sorted(prices_15m.items()):
+                try:
+                    dt_naive = datetime.fromisoformat(time_key)
+                    dt = (
+                        dt_naive.replace(tzinfo=now.tzinfo)
+                        if dt_naive.tzinfo is None
+                        else dt_naive
+                    )
+
+                    interval_end = dt + timedelta(minutes=15)
+                    if interval_end <= now:
+                        continue
+
+                    final_price = self._calculate_final_price_15min(spot_price_czk, dt)
+
+                    future_prices.append(final_price)
+
+                    if current_price is None:
+                        current_price = final_price
+                    elif next_price is None:
+                        next_price = final_price
+
+                except Exception as e:
+                    _LOGGER.debug(f"Error processing interval {time_key}: {e}")
+                    continue
+
+            next_interval = (current_interval_index + 1) % 96
+            next_hour = next_interval // 4
+            next_minute = (next_interval % 4) * 15
+            next_update = now.replace(
+                hour=next_hour, minute=next_minute, second=0, microsecond=0
+            )
+            if next_interval == 0:
+                next_update += timedelta(days=1)
+
+            attrs = {
+                "current_datetime": now.strftime("%Y-%m-%d %H:%M"),
+                "source": "OTE_WSDL_API_QUARTER_HOUR",
+                "interval_type": "QUARTER_HOUR",
+                "current_interval": current_interval_index,
+                "current_price": current_price,
+                "next_price": next_price,
+                "next_update": next_update.isoformat(),
+                "current_tariff": self._get_tariff_for_datetime(now),
+                "intervals_count": len(future_prices),
+                "last_update": (
+                    self._last_update.isoformat() if self._last_update else None
+                ),
+                "price_min": round(min(future_prices), 2) if future_prices else None,
+                "price_max": round(max(future_prices), 2) if future_prices else None,
+                "price_avg": (
+                    round(sum(future_prices) / len(future_prices), 2)
+                    if future_prices
+                    else None
+                ),
+                "currency": "CZK/kWh",
+                "api_endpoint": (
+                    f"/api/oig_cloud/spot_prices/{_resolve_box_id_from_coordinator(self.coordinator)}/intervals?type=spot"
+                ),
+                "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
+            }
+
+        except Exception as e:
+            _LOGGER.error(f"[{self.entity_id}] Error building attributes: {e}")
+
+        return attrs
 
     def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
         """Získat tarif (VT/NT) pro daný datetime - kopie z analytics sensoru."""
@@ -771,29 +891,9 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
     @property
     def state(self) -> Optional[float]:
         """Aktuální finální cena pro 15min interval včetně distribuce a DPH."""
-        try:
-            if not self._spot_data_15min:
-                return None
-
-            now = dt_now()
-            interval_index = self._get_current_interval_index(now)
-
-            # Získat raw spotovou cenu z dat (CZK/kWh z OTE)
-            spot_price_czk = OteApi.get_15min_price_for_interval(
-                interval_index, self._spot_data_15min, now.date()
-            )
-
-            if spot_price_czk is None:
-                return None
-
-            # Vypočítat finální cenu včetně obchodní přirážky, distribuce a DPH
-            final_price = self._calculate_final_price_15min(spot_price_czk, now)
-
-            return final_price
-
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error getting state: {e}")
-            return None
+        if self._cached_state is not None or self._cached_attributes:
+            return self._cached_state
+        return self._calculate_current_state()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -805,97 +905,9 @@ class SpotPrice15MinSensor(OigCloudSensor, RestoreEntity):
 
         Full data: GET /api/oig_cloud/battery_forecast/{box_id}/timeline?type=active
         """
-        attrs: Dict[str, Any] = {}
-
-        try:
-            if (
-                not self._spot_data_15min
-                or "prices15m_czk_kwh" not in self._spot_data_15min
-            ):
-                return attrs
-
-            now = dt_now()
-            current_interval_index = self._get_current_interval_index(now)
-            prices_15m = self._spot_data_15min["prices15m_czk_kwh"]
-
-            # Počítat statistiky místo ukládání všech intervalů
-            future_prices = []
-            current_price: Optional[float] = None
-            next_price: Optional[float] = None
-
-            for time_key, spot_price_czk in sorted(prices_15m.items()):
-                try:
-                    # Parse datetime z klíče
-                    dt_naive = datetime.fromisoformat(time_key)
-                    dt = (
-                        dt_naive.replace(tzinfo=now.tzinfo)
-                        if dt_naive.tzinfo is None
-                        else dt_naive
-                    )
-
-                    # Zahrnout aktuální probíhající interval + budoucnost
-                    interval_end = dt + timedelta(minutes=15)
-                    if interval_end <= now:
-                        continue  # Interval už skončil, přeskočit
-
-                    # Vypočítat finální cenu pro tento interval
-                    final_price = self._calculate_final_price_15min(spot_price_czk, dt)
-
-                    future_prices.append(final_price)
-
-                    if current_price is None:
-                        current_price = final_price
-                    elif next_price is None:
-                        next_price = final_price
-
-                except Exception as e:
-                    _LOGGER.debug(f"Error processing interval {time_key}: {e}")
-                    continue
-
-            # Metadata
-            next_interval = (current_interval_index + 1) % 96
-            next_hour = next_interval // 4
-            next_minute = (next_interval % 4) * 15
-            next_update = now.replace(
-                hour=next_hour, minute=next_minute, second=0, microsecond=0
-            )
-            if next_interval == 0:
-                next_update += timedelta(days=1)
-
-            # LEAN ATTRIBUTES: Summary only
-            attrs = {
-                "current_datetime": now.strftime("%Y-%m-%d %H:%M"),
-                "source": "OTE_WSDL_API_QUARTER_HOUR",
-                "interval_type": "QUARTER_HOUR",
-                "current_interval": current_interval_index,
-                "current_price": current_price,
-                "next_price": next_price,
-                "next_update": next_update.isoformat(),
-                "current_tariff": self._get_tariff_for_datetime(now),
-                "intervals_count": len(future_prices),
-                "last_update": (
-                    self._last_update.isoformat() if self._last_update else None
-                ),
-                # Statistics (instead of full intervals)
-                "price_min": round(min(future_prices), 2) if future_prices else None,
-                "price_max": round(max(future_prices), 2) if future_prices else None,
-                "price_avg": (
-                    round(sum(future_prices) / len(future_prices), 2)
-                    if future_prices
-                    else None
-                ),
-                "currency": "CZK/kWh",
-                # API endpoint hint
-                "api_endpoint": (
-                    f"/api/oig_cloud/spot_prices/{_resolve_box_id_from_coordinator(self.coordinator)}/intervals?type=spot"
-                ),
-                "api_note": "Full intervals data available via API endpoint (reduces sensor size by 95%)",
-            }
-
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error building attributes: {e}")
-
-        return attrs
+        if self._cached_attributes:
+            return self._cached_attributes
+        return self._calculate_attributes()
 
     @property
     def unique_id(self) -> str:

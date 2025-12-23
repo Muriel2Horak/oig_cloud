@@ -942,8 +942,10 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
                             return web.json_response(result)
 
-                    _LOGGER.warning(
-                        f"No precomputed detail_tabs ({plan_key}) data found for {box_id}, falling back to live build"
+                    _LOGGER.debug(
+                        "No precomputed detail_tabs (%s) data found for %s, falling back to live build",
+                        plan_key,
+                        box_id,
                     )
                 except Exception as storage_error:
                     _LOGGER.warning(
