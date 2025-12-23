@@ -234,6 +234,7 @@ class TimelineDialog {
         this.autoModeToggleErrorTimeout = null;
         this.autoPlanSyncEnabled = true;
         this.activePlannerPlan = 'hybrid';  // Always hybrid
+        this.compareCharts = {};
     }
 
     createEmptyCache() {
@@ -242,7 +243,8 @@ class TimelineDialog {
             today: null,
             tomorrow: null,
             detail: null,
-            history: null
+            history: null,
+            compare: null
         };
     }
 
@@ -634,6 +636,7 @@ class TimelineDialog {
 
         // Stop update interval
         this.stopUpdateInterval();
+        this.destroyCompareCharts();
         this.autoPlanSyncEnabled = true;
         this.syncPlanWithAutoMode('hybrid');
     }
@@ -779,7 +782,6 @@ class TimelineDialog {
         console.log(`[TimelineDialog] Rendering ${dayType} tab`);
 
         const planCache = this.getPlanCache();
-        const data = planCache[dayType];
         const containerId = `${dayType}-timeline-container`;
         const container = document.getElementById(containerId);
 
@@ -788,6 +790,25 @@ class TimelineDialog {
             return;
         }
 
+        if (dayType === 'compare') {
+            const yesterdayData = planCache.yesterday;
+            const todayData = planCache.today;
+            if (
+                !yesterdayData ||
+                !todayData ||
+                !Array.isArray(yesterdayData.intervals) ||
+                !Array.isArray(todayData.intervals)
+            ) {
+                container.innerHTML = this.renderNoData(dayType);
+                return;
+            }
+
+            container.innerHTML = this.renderCompareTab(yesterdayData, todayData);
+            this.initializeCompareCharts(yesterdayData, todayData);
+            return;
+        }
+
+        const data = planCache[dayType];
         if (!data || !data.mode_blocks || data.mode_blocks.length === 0) {
             container.innerHTML = this.renderNoData(dayType);
             return;
@@ -815,7 +836,8 @@ class TimelineDialog {
             yesterday: 'Včerejší data nejsou k dispozici',
             today: 'Dnešní data nejsou k dispozici',
             tomorrow: 'Plán pro zítřek ještě není k dispozici',
-            history: 'Historická data nejsou k dispozici'
+            history: 'Historická data nejsou k dispozici',
+            compare: 'Srovnání 48h zatím není k dispozici'
         };
 
         return `
@@ -2412,6 +2434,444 @@ class TimelineDialog {
                 </p>
             </div>
         `;
+    }
+
+    /**
+     * Render 48h compare tab (včera + dnes)
+     */
+    renderCompareTab(yesterdayData, todayData) {
+        const yesterdayCount = Array.isArray(yesterdayData?.intervals)
+            ? yesterdayData.intervals.length
+            : 0;
+        const todayCount = Array.isArray(todayData?.intervals)
+            ? todayData.intervals.length
+            : 0;
+        const totalCount = yesterdayCount + todayCount;
+
+        return `
+            <div class="compare-tab">
+                <div class="compare-header">
+                    <div>
+                        <div class="compare-title">📊 Srovnání 48h (včera + dnes)</div>
+                        <div class="compare-sub">15min intervaly • ${totalCount} bodů</div>
+                    </div>
+                    <div class="compare-legend">
+                        <span class="legend-item"><span class="legend-line legend-actual"></span> Skutečnost</span>
+                        <span class="legend-item"><span class="legend-line legend-planned"></span> Plán</span>
+                    </div>
+                </div>
+
+                <div class="compare-grid">
+                    <div class="compare-card">
+                        <div class="compare-card-title">🏠 Spotřeba & ☀️ Solár</div>
+                        <canvas id="compare-energy-chart"></canvas>
+                    </div>
+                    <div class="compare-card">
+                        <div class="compare-card-title">🔋 SoC (%)</div>
+                        <canvas id="compare-soc-chart"></canvas>
+                    </div>
+                    <div class="compare-card">
+                        <div class="compare-card-title">💰 Náklady (Kč / 15 min)</div>
+                        <canvas id="compare-cost-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async getBatteryCapacityKwh() {
+        try {
+            const sensorId = getSensorId('installed_battery_capacity_kwh');
+            const sensor = await getSensor(sensorId);
+            const value = Number(sensor?.value);
+            if (!Number.isFinite(value) || value <= 0) {
+                return null;
+            }
+            return value / 1000;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    buildCompareSeries(yesterdayData, todayData, capacityKwh) {
+        const yesterdayIntervals = Array.isArray(yesterdayData?.intervals)
+            ? yesterdayData.intervals
+            : [];
+        const todayIntervals = Array.isArray(todayData?.intervals)
+            ? todayData.intervals
+            : [];
+        const intervals = [...yesterdayIntervals, ...todayIntervals];
+        const boundaryIndex = yesterdayIntervals.length;
+
+        const labels = [];
+        const times = [];
+        const consumptionActual = [];
+        const consumptionPlanned = [];
+        const solarActual = [];
+        const solarPlanned = [];
+        const costActual = [];
+        const costPlanned = [];
+        const socActual = [];
+        const socPlanned = [];
+
+        const toNumber = (value) => {
+            if (value === null || value === undefined) {
+                return null;
+            }
+            const num = Number(value);
+            return Number.isFinite(num) ? num : null;
+        };
+
+        const totalIntervals = intervals.length;
+        const labelStride = totalIntervals > 160 ? 12 : totalIntervals > 120 ? 8 : 4;
+
+        intervals.forEach((interval, idx) => {
+            const time = new Date(interval.time);
+            times.push(time);
+
+            let label = '';
+            if (idx % labelStride === 0) {
+                const hh = time.getHours().toString().padStart(2, '0');
+                const mm = time.getMinutes().toString().padStart(2, '0');
+                label = `${hh}:${mm}`;
+                if (hh === '00' && mm === '00') {
+                    const dd = time.getDate().toString().padStart(2, '0');
+                    const mo = (time.getMonth() + 1).toString().padStart(2, '0');
+                    label = `${dd}.${mo} ${label}`;
+                }
+            }
+            labels.push(label);
+
+            const planned = interval.planned || {};
+            const actual = interval.actual || {};
+
+            consumptionActual.push(toNumber(actual.consumption_kwh));
+            consumptionPlanned.push(toNumber(planned.consumption_kwh));
+            solarActual.push(toNumber(actual.solar_kwh));
+            solarPlanned.push(toNumber(planned.solar_kwh));
+            costActual.push(toNumber(actual.net_cost));
+            costPlanned.push(toNumber(planned.net_cost));
+
+            const actualSoc = toNumber(actual.battery_soc);
+            socActual.push(actualSoc);
+
+            let plannedSoc = toNumber(planned.battery_soc);
+            if (plannedSoc === null) {
+                const plannedKwh = toNumber(planned.battery_kwh);
+                if (plannedKwh !== null && capacityKwh) {
+                    plannedSoc = (plannedKwh / capacityKwh) * 100;
+                }
+            }
+            socPlanned.push(plannedSoc);
+        });
+
+        let nowIndex = -1;
+        const now = new Date();
+        times.forEach((time, idx) => {
+            if (time <= now) {
+                nowIndex = idx;
+            }
+        });
+
+        return {
+            labels,
+            times,
+            boundaryIndex,
+            nowIndex,
+            consumptionActual,
+            consumptionPlanned,
+            solarActual,
+            solarPlanned,
+            costActual,
+            costPlanned,
+            socActual,
+            socPlanned
+        };
+    }
+
+    buildCompareAnnotations(series) {
+        const annotations = {};
+
+        if (series.boundaryIndex > 0 && series.boundaryIndex < series.labels.length) {
+            annotations.daySplit = {
+                type: 'line',
+                xMin: series.boundaryIndex,
+                xMax: series.boundaryIndex,
+                borderColor: 'rgba(255, 255, 255, 0.25)',
+                borderWidth: 2,
+                label: {
+                    display: true,
+                    content: 'DNES',
+                    position: 'start',
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    font: { size: 10, weight: '600' }
+                }
+            };
+        }
+
+        if (series.nowIndex >= 0) {
+            annotations.nowLine = {
+                type: 'line',
+                xMin: series.nowIndex,
+                xMax: series.nowIndex,
+                borderColor: 'rgba(255, 152, 0, 0.8)',
+                borderWidth: 2,
+                label: {
+                    display: true,
+                    content: 'TEĎ',
+                    position: 'start',
+                    backgroundColor: 'rgba(255, 152, 0, 0.85)',
+                    color: '#fff',
+                    font: { size: 10, weight: '700' }
+                }
+            };
+        }
+
+        return annotations;
+    }
+
+    destroyCompareCharts() {
+        Object.values(this.compareCharts || {}).forEach((chart) => {
+            if (chart && typeof chart.destroy === 'function') {
+                chart.destroy();
+            }
+        });
+        this.compareCharts = {};
+    }
+
+    async initializeCompareCharts(yesterdayData, todayData) {
+        if (typeof Chart === 'undefined') {
+            console.warn('[TimelineDialog] Chart.js not available - compare charts skipped');
+            return;
+        }
+
+        const energyCanvas = document.getElementById('compare-energy-chart');
+        const socCanvas = document.getElementById('compare-soc-chart');
+        const costCanvas = document.getElementById('compare-cost-chart');
+
+        if (!energyCanvas || !socCanvas || !costCanvas) {
+            return;
+        }
+
+        this.destroyCompareCharts();
+
+        const capacityKwh = await this.getBatteryCapacityKwh();
+        const series = this.buildCompareSeries(yesterdayData, todayData, capacityKwh);
+        const annotations = this.buildCompareAnnotations(series);
+
+        const gridColor = 'rgba(255, 255, 255, 0.08)';
+        const tickColor = 'rgba(255, 255, 255, 0.7)';
+        const legendColor = 'rgba(255, 255, 255, 0.75)';
+
+        const tooltipLabel = (unit, decimals = 2) => (context) => {
+            const value = context.parsed?.y;
+            if (!Number.isFinite(value)) {
+                return `${context.dataset.label}: —`;
+            }
+            return `${context.dataset.label}: ${value.toFixed(decimals)} ${unit}`;
+        };
+
+        this.compareCharts.energy = new Chart(energyCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: series.labels,
+                datasets: [
+                    {
+                        label: 'Spotřeba – skutečnost',
+                        data: series.consumptionActual,
+                        borderColor: 'rgba(33, 150, 243, 0.9)',
+                        backgroundColor: 'rgba(33, 150, 243, 0.12)',
+                        borderWidth: 2,
+                        tension: 0.25,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Spotřeba – plán',
+                        data: series.consumptionPlanned,
+                        borderColor: 'rgba(33, 150, 243, 0.5)',
+                        borderDash: [6, 4],
+                        borderWidth: 2,
+                        tension: 0.25,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Solár – skutečnost',
+                        data: series.solarActual,
+                        borderColor: 'rgba(255, 193, 7, 0.9)',
+                        backgroundColor: 'rgba(255, 193, 7, 0.15)',
+                        borderWidth: 2,
+                        tension: 0.25,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Solár – plán',
+                        data: series.solarPlanned,
+                        borderColor: 'rgba(255, 193, 7, 0.5)',
+                        borderDash: [6, 4],
+                        borderWidth: 2,
+                        tension: 0.25,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { color: legendColor }
+                    },
+                    tooltip: {
+                        callbacks: { label: tooltipLabel('kWh', 2) }
+                    },
+                    annotation: { annotations }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            color: tickColor,
+                            autoSkip: true,
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            minRotation: 0
+                        }
+                    },
+                    y: {
+                        grid: { color: gridColor },
+                        ticks: {
+                            color: tickColor,
+                            callback: (value) => `${value.toFixed(2)} kWh`
+                        },
+                        title: { display: true, text: 'kWh / 15 min', color: tickColor }
+                    }
+                }
+            }
+        });
+
+        this.compareCharts.soc = new Chart(socCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: series.labels,
+                datasets: [
+                    {
+                        label: 'SoC – skutečnost',
+                        data: series.socActual,
+                        borderColor: 'rgba(76, 175, 80, 0.9)',
+                        backgroundColor: 'rgba(76, 175, 80, 0.12)',
+                        borderWidth: 2,
+                        tension: 0.2,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'SoC – plán',
+                        data: series.socPlanned,
+                        borderColor: 'rgba(76, 175, 80, 0.5)',
+                        borderDash: [6, 4],
+                        borderWidth: 2,
+                        tension: 0.2,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { color: legendColor }
+                    },
+                    tooltip: {
+                        callbacks: { label: tooltipLabel('%', 1) }
+                    },
+                    annotation: { annotations }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            color: tickColor,
+                            autoSkip: true,
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            minRotation: 0
+                        }
+                    },
+                    y: {
+                        grid: { color: gridColor },
+                        ticks: {
+                            color: tickColor,
+                            callback: (value) => `${value.toFixed(0)}%`
+                        },
+                        min: 0,
+                        max: 100
+                    }
+                }
+            }
+        });
+
+        this.compareCharts.cost = new Chart(costCanvas.getContext('2d'), {
+            data: {
+                labels: series.labels,
+                datasets: [
+                    {
+                        type: 'bar',
+                        label: 'Náklady – skutečnost',
+                        data: series.costActual,
+                        backgroundColor: 'rgba(255, 152, 0, 0.45)',
+                        borderColor: 'rgba(255, 152, 0, 0.75)',
+                        borderWidth: 1
+                    },
+                    {
+                        type: 'line',
+                        label: 'Náklady – plán',
+                        data: series.costPlanned,
+                        borderColor: 'rgba(255, 152, 0, 0.9)',
+                        borderDash: [6, 4],
+                        borderWidth: 2,
+                        tension: 0.25,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { color: legendColor }
+                    },
+                    tooltip: {
+                        callbacks: { label: tooltipLabel('Kč', 2) }
+                    },
+                    annotation: { annotations }
+                },
+                scales: {
+                    x: {
+                        stacked: false,
+                        grid: { display: false },
+                        ticks: {
+                            color: tickColor,
+                            autoSkip: true,
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            minRotation: 0
+                        }
+                    },
+                    y: {
+                        grid: { color: gridColor },
+                        ticks: {
+                            color: tickColor,
+                            callback: (value) => `${value.toFixed(2)} Kč`
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /**

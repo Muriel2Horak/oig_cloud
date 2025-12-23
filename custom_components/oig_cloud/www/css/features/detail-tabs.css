@@ -176,6 +176,98 @@
     color: #4caf50;
 }
 
+/* ========================================
+   48H COMPARE TAB (včera + dnes)
+   ======================================== */
+.compare-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.compare-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.compare-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+}
+
+.compare-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #b0b0b0);
+    margin-top: 4px;
+}
+
+.compare-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #b0b0b0);
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend-line {
+    display: inline-block;
+    width: 22px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.legend-line.legend-planned {
+    background: transparent;
+    border-top: 2px dashed rgba(255, 255, 255, 0.45);
+}
+
+.compare-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+.compare-card {
+    background: rgba(15, 20, 30, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.compare-card-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+    margin-bottom: 8px;
+}
+
+.compare-card canvas {
+    width: 100% !important;
+    height: 240px !important;
+    max-height: 240px !important;
+}
+
+@media (width <= 900px) {
+    .compare-card canvas {
+        height: 220px !important;
+        max-height: 220px !important;
+    }
+}
+
 /* Mode Blocks Container */
 .mode-blocks-container {
     display: flex;

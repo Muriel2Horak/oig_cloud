@@ -5428,6 +5428,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             _LOGGER.error(f"Error checking plan existence: {e}", exc_info=True)
             return False
 
+    def _is_baseline_plan_invalid(self, plan: Optional[Dict[str, Any]]) -> bool:
+        if not plan:
+            return True
+
+        intervals = plan.get("intervals") or []
+        if len(intervals) < 90:
+            return True
+
+        filled_intervals = str(plan.get("filled_intervals") or "").strip()
+        if filled_intervals in ("00:00-23:45", "00:00-23:59"):
+            return True
+
+        nonzero_consumption = sum(
+            1
+            for interval in intervals
+            if abs(float(interval.get("consumption_kwh", 0) or 0)) > 1e-6
+        )
+        if nonzero_consumption < max(4, len(intervals) // 24):
+            return True
+
+        return False
+
     async def _create_baseline_plan(self, date_str: str) -> bool:
         """
         Create baseline plan for given date.
@@ -5493,24 +5515,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         continue
 
                     # Parse time (can be HH:MM or ISO format)
-                try:
-                    if "T" in hi_time_str:
-                        # ISO format
-                        hi_dt = datetime.fromisoformat(hi_time_str)
-                        if hi_dt.tzinfo is None:
-                            hi_dt = dt_util.as_local(hi_dt)
-                        hi_time_only = hi_dt.strftime("%H:%M")
-                    else:
-                        # Just time HH:MM
-                        hi_time_only = hi_time_str
+                    try:
+                        if "T" in hi_time_str:
+                            # ISO format
+                            hi_dt = datetime.fromisoformat(hi_time_str)
+                            if hi_dt.tzinfo is None:
+                                hi_dt = dt_util.as_local(hi_dt)
+                            hi_time_only = hi_dt.strftime("%H:%M")
+                        else:
+                            # Just time HH:MM
+                            hi_time_only = hi_time_str
 
-                    if hi_time_only == interval_time_str:
-                        hybrid_interval = hi
-                        if first_hybrid_time is None:
-                            first_hybrid_time = interval_time_str
-                        break
-                except Exception:
-                    continue
+                        if hi_time_only == interval_time_str:
+                            hybrid_interval = hi
+                            if first_hybrid_time is None:
+                                first_hybrid_time = interval_time_str
+                            break
+                    except Exception:
+                        continue
 
                 # Build interval
                 if hybrid_interval:
@@ -8915,8 +8937,20 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Získat planned intervaly z Storage
             planned_intervals_map = {}
             if storage_plans:
+                planned_intervals_list = []
                 yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
-                planned_intervals_list = yesterday_plan.get("intervals", [])
+                if yesterday_plan and not self._is_baseline_plan_invalid(yesterday_plan):
+                    planned_intervals_list = yesterday_plan.get("intervals", [])
+                else:
+                    archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
+                    if archive_day and archive_day.get("plan"):
+                        planned_intervals_list = archive_day.get("plan", [])
+                        _LOGGER.warning(
+                            "Using daily archive plan for %s (baseline invalid)",
+                            date_str,
+                        )
+                    else:
+                        planned_intervals_list = yesterday_plan.get("intervals", [])
 
                 # Build lookup table: time -> planned_data
                 for planned_entry in planned_intervals_list:
@@ -8924,10 +8958,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if time_key:
                         # Normalize to full datetime format
                         try:
-                            # time is "HH:MM" format
-                            planned_dt = datetime.combine(
-                                date, datetime.strptime(time_key, "%H:%M").time()
-                            )
+                            if "T" in time_key:
+                                planned_dt = datetime.fromisoformat(
+                                    time_key.replace("Z", "+00:00")
+                                )
+                            else:
+                                planned_dt = datetime.combine(
+                                    date, datetime.strptime(time_key, "%H:%M").time()
+                                )
                             planned_dt = dt_util.as_local(planned_dt)
                             time_str = planned_dt.strftime(DATETIME_FMT)
                             planned_intervals_map[time_str] = planned_entry
@@ -9032,7 +9070,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # ========================================
             # DNES: Historical (Recorder) + Planned (kombinace actual + future)
             # Planned data KOMBINACE:
-            #   1. MINULOST: Z _daily_plan_state["actual"] (plánovaná data z rána)
+            #   1. MINULOST: Z uloženého daily plánu (Storage / _daily_plan_state.plan)
             #   2. BUDOUCNOST: Z _timeline_data (aktivní optimalizace)
             # Historical modes: Z Recorderu
             # ========================================
@@ -9040,26 +9078,46 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             # Phase 1: Get past planned intervals
             # Priority:
             #   1. Storage Helper (ranní plán uložený v 00:10)
-            #   2. Fallback: _daily_plan_state["actual"] (pokud storage není dostupný)
+            #   2. Fallback: _daily_plan_state.plan (pokud storage není dostupný / je vadný)
             past_planned = []
 
             # Try Storage Helper first
             date_str = date.strftime(DATE_FMT)
             storage_day = storage_plans.get("detailed", {}).get(date_str)
-            if storage_day and storage_day.get("intervals"):
+            storage_invalid = (
+                self._is_baseline_plan_invalid(storage_day) if storage_day else True
+            )
+            if storage_day and storage_day.get("intervals") and not storage_invalid:
                 past_planned = storage_day["intervals"]
                 _LOGGER.debug(
                     f"📦 Loaded {len(past_planned)} planned intervals from Storage Helper for {date}"
                 )
             # Fallback: _daily_plan_state
-            elif hasattr(self, "_daily_plan_state") and self._daily_plan_state:
-                actual_intervals = self._daily_plan_state.get("actual", [])
-                # "actual" obsahuje jak actual tak i planned data z rána
-                for interval in actual_intervals:
-                    if interval.get("time"):
-                        past_planned.append(interval)
+            elif (
+                hasattr(self, "_daily_plan_state")
+                and self._daily_plan_state
+                and self._daily_plan_state.get("date") == date_str
+            ):
+                plan_intervals = self._daily_plan_state.get("plan", [])
+                if plan_intervals:
+                    past_planned = plan_intervals
+                    _LOGGER.warning(
+                        "Using in-memory daily plan for %s (baseline invalid)",
+                        date_str,
+                    )
+                else:
+                    actual_intervals = self._daily_plan_state.get("actual", [])
+                    for interval in actual_intervals:
+                        if interval.get("time"):
+                            past_planned.append(interval)
                 _LOGGER.debug(
                     f"📋 Loaded {len(past_planned)} intervals from _daily_plan_state for {date}"
+                )
+            elif storage_day and storage_day.get("intervals"):
+                past_planned = storage_day["intervals"]
+                _LOGGER.warning(
+                    "Using baseline plan for %s despite invalid data (no fallback)",
+                    date_str,
                 )
             else:
                 _LOGGER.debug(f"⚠️  No past planned data available for {date}")
@@ -9073,7 +9131,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 time_str = interval.get("time")
                 if time_str:
                     try:
-                        interval_dt = datetime.fromisoformat(time_str)
+                        interval_dt = datetime.fromisoformat(
+                            time_str.replace("Z", "+00:00")
+                        )
                         # Keep only intervals from today
                         if interval_dt.date() == date:
                             future_planned.append(interval)
@@ -9115,7 +9175,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             # HH:MM format from storage - prepend date
                             time_str = f"{date_str}T{time_str}:00"
 
-                        interval_dt = datetime.fromisoformat(time_str)
+                        interval_dt = datetime.fromisoformat(
+                            time_str.replace("Z", "+00:00")
+                        )
                         interval_dt_naive = (
                             interval_dt.replace(tzinfo=None)
                             if interval_dt.tzinfo
@@ -9323,15 +9385,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     def _format_planned_data(self, planned: Dict[str, Any]) -> Dict[str, Any]:
         """Formátovat planned data pro API."""
+        def _pick(keys, default=0.0):
+            for key in keys:
+                if key in planned and planned.get(key) is not None:
+                    return planned.get(key)
+            return default
+
+        battery_kwh = _pick(["battery_kwh", "battery_capacity_kwh", "battery_soc"], 0.0)
+        consumption_kwh = _pick(["load_kwh", "consumption_kwh"], 0.0)
+        grid_import = _pick(["grid_import", "grid_import_kwh"], 0.0)
+        grid_export = _pick(["grid_export", "grid_export_kwh"], 0.0)
+        spot_price = _pick(["spot_price", "spot_price_czk"], 0.0)
+
         return {
             "mode": planned.get("mode", 0),
             "mode_name": planned.get("mode_name", "HOME I"),
-            "battery_kwh": round(planned.get("battery_soc", 0), 2),
-            "solar_kwh": round(planned.get("solar_kwh", 0), 3),
-            "consumption_kwh": round(planned.get("load_kwh", 0), 3),
-            "grid_import": round(planned.get("grid_import", 0), 3),
-            "grid_export": round(planned.get("grid_export", 0), 3),
-            "spot_price": round(planned.get("spot_price", 0), 2),
+            "battery_kwh": round(battery_kwh, 2),
+            "solar_kwh": round(_pick(["solar_kwh"], 0.0), 3),
+            "consumption_kwh": round(consumption_kwh, 3),
+            "grid_import": round(grid_import, 3),
+            "grid_export": round(grid_export, 3),
+            "spot_price": round(spot_price, 2),
             "net_cost": round(planned.get("net_cost", 0), 2),
             "savings_vs_home_i": round(planned.get("savings_vs_home_i", 0), 2),
             "decision_reason": planned.get("decision_reason"),

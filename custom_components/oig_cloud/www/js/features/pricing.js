@@ -2115,9 +2115,7 @@ async function updatePlannedConsumptionStats() {
     // Profil display - bez emoji, čistý text (nahoru místo "Zbývá dnes + celý zítřek")
     let profileDisplay = '';
     if (profileToday && profileToday !== 'Žádný profil' && profileToday !== 'Neznámý profil') {
-        // Zkrátit dlouhé názvy profilů
-        const shortProfile = profileToday.length > 55 ? profileToday.substring(0, 52) + '...' : profileToday;
-        profileDisplay = shortProfile;
+        profileDisplay = profileToday;
     } else {
         profileDisplay = 'Žádný profil';
     }
