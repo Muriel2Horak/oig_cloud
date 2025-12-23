@@ -12,7 +12,7 @@ that the hybrid optimizer must respect.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..config import BalancingConfig, SimulatorConfig
 from ..types import SpotPrice
@@ -50,6 +50,7 @@ class BalancingPlan:
     # Intervals
     charging_intervals: Set[int] = field(default_factory=set)  # Indices to charge
     holding_intervals: Set[int] = field(default_factory=set)  # Indices in holding
+    mode_overrides: Dict[int, int] = field(default_factory=dict)  # Interval -> CBB mode
 
     # Charging windows (for display/debugging)
     windows: List[ChargingWindow] = field(default_factory=list)

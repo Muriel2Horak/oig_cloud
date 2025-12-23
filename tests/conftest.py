@@ -4,6 +4,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+try:
+    import pytest_homeassistant_custom_component  # noqa: F401
+
+    _HAS_HA_PLUGIN = True
+except ImportError:
+    _HAS_HA_PLUGIN = False
+
 
 @pytest.fixture(autouse=True)
 def enable_event_loop_debug() -> None:
@@ -25,6 +32,17 @@ def verify_cleanup(expected_lingering_tasks: bool, expected_lingering_timers: bo
         return
     # Let HA's own cleanup checks run via its internal fixtures when possible.
     yield
+
+
+if not _HAS_HA_PLUGIN:
+
+    @pytest.fixture
+    def expected_lingering_tasks() -> bool:
+        return False
+
+    @pytest.fixture
+    def expected_lingering_timers() -> bool:
+        return False
 
 
 @pytest.fixture

@@ -83,6 +83,8 @@ class HybridResult:
     # Flags
     negative_prices_detected: bool
     balancing_applied: bool
+    infeasible: bool = False
+    infeasible_reason: Optional[str] = None
 
     @property
     def modes(self) -> List[int]:
@@ -207,7 +209,7 @@ class HybridStrategy:
         has_negative = len(negative_prices) > 0
 
         # Step 1: Plan charging intervals using backward propagation
-        charging_intervals = self._plan_charging_intervals(
+        charging_intervals, infeasible_reason = self._plan_charging_intervals(
             initial_battery_kwh=initial_battery_kwh,
             prices=prices,
             solar_forecast=solar_forecast,
@@ -215,6 +217,7 @@ class HybridStrategy:
             balancing_plan=balancing_plan,
             negative_price_intervals=negative_prices,
         )
+        infeasible = infeasible_reason is not None
 
         _LOGGER.debug(
             "Backward propagation planned %d charging intervals: %s",
@@ -246,21 +249,34 @@ class HybridStrategy:
             is_holding = balancing_plan and i in balancing_plan.holding_intervals
             is_charging = i in charging_intervals
             is_negative = price < 0
+            override_mode = (
+                balancing_plan.mode_overrides.get(i)
+                if balancing_plan and balancing_plan.mode_overrides
+                else None
+            )
 
             # Determine mode based on planning
-            if is_holding:
-                mode = CBB_MODE_HOME_III if solar > 0.1 else CBB_MODE_HOME_II
+            if override_mode is not None:
+                mode = override_mode
+                if is_holding:
+                    reason = "holding_period"
+                elif is_balancing:
+                    reason = "balancing_charge"
+                else:
+                    reason = "balancing_override"
+            elif is_holding:
+                mode = CBB_MODE_HOME_UPS
                 reason = "holding_period"
             elif is_balancing:
                 mode = CBB_MODE_HOME_UPS
                 reason = "balancing_charge"
-            elif is_charging:
-                mode = CBB_MODE_HOME_UPS
-                reason = f"planned_charge_{price:.2f}CZK"
             elif is_negative:
                 mode, reason = self._handle_negative_price(
                     battery, solar, load, price, export_price
                 )
+            elif is_charging:
+                mode = CBB_MODE_HOME_UPS
+                reason = f"planned_charge_{price:.2f}CZK"
             else:
                 # Default: HOME I (discharge battery when needed)
                 mode = CBB_MODE_HOME_I
@@ -272,7 +288,7 @@ class HybridStrategy:
                 mode=mode,
                 solar_kwh=solar,
                 load_kwh=load,
-                force_charge=is_balancing or is_charging,
+                force_charge=(mode == CBB_MODE_HOME_UPS) and (is_balancing or is_charging),
             )
 
             # Calculate cost
@@ -320,6 +336,8 @@ class HybridStrategy:
             calculation_time_ms=calc_time,
             negative_prices_detected=has_negative,
             balancing_applied=balancing_plan is not None and balancing_plan.is_active,
+            infeasible=infeasible,
+            infeasible_reason=infeasible_reason,
         )
 
     def _plan_charging_intervals(
@@ -330,101 +348,100 @@ class HybridStrategy:
         consumption_forecast: List[float],
         balancing_plan: Optional[BalancingPlan] = None,
         negative_price_intervals: Optional[List[int]] = None,
-    ) -> set[int]:
-        """Plan charging intervals using backward propagation.
-
-        Algorithm:
-        1. Calculate energy balance: (battery + solar) vs consumption
-        2. If deficit exists, find cheapest intervals to charge
-        3. Ensure battery never drops below planning_min + buffer
-
-        The key insight: We don't just prevent dropping BELOW planning_min,
-        we ensure enough reserve for future consumption.
-
-        Args:
-            initial_battery_kwh: Starting battery level
-            prices: Spot prices for all intervals
-            solar_forecast: Solar production per interval
-            consumption_forecast: Load per interval
-            balancing_plan: Optional balancing constraints
-            negative_price_intervals: Intervals with negative prices (always charge)
-
-        Returns:
-            Set of interval indices that should use HOME UPS
-        """
+    ) -> Tuple[set[int], Optional[str]]:
+        """Plan charging intervals with planning-min enforcement and price guard."""
         n = len(prices)
         charging_intervals: set[int] = set()
+        infeasible_reason: Optional[str] = None
+        eps_kwh = 0.01
 
-        # Always charge during negative prices
-        if negative_price_intervals:
-            charging_intervals.update(negative_price_intervals)
+        blocked_indices: set[int] = set()
+        if balancing_plan and balancing_plan.mode_overrides:
+            blocked_indices = {
+                idx
+                for idx, mode in balancing_plan.mode_overrides.items()
+                if mode != CBB_MODE_HOME_UPS and 0 <= idx < n
+            }
 
-        # Add balancing intervals
+        # Add balancing charge intervals (UPS only)
         if balancing_plan:
-            charging_intervals.update(balancing_plan.charging_intervals)
+            for idx in balancing_plan.charging_intervals:
+                if 0 <= idx < n and idx not in blocked_indices:
+                    charging_intervals.add(idx)
 
-        # Calculate energy balance
-        total_solar = sum(solar_forecast)
-        total_consumption = sum(consumption_forecast)
-        available_battery = initial_battery_kwh - self._planning_min  # Usable energy
+        # Respect negative price strategy (only force UPS when configured)
+        if (
+            negative_price_intervals
+            and self.config.negative_price_strategy
+            == NegativePriceStrategy.CHARGE_GRID
+        ):
+            for idx in negative_price_intervals:
+                if 0 <= idx < n and idx not in blocked_indices:
+                    charging_intervals.add(idx)
 
-        # Energy deficit = what we need beyond solar + battery
-        # Account for efficiency losses (~88% DC-AC)
-        usable_solar = total_solar * 0.95  # DC-DC efficiency
-        usable_battery = available_battery * self.sim_config.dc_ac_efficiency
-        energy_available = usable_solar + usable_battery
-        energy_deficit = max(0, total_consumption - energy_available)
-
-        _LOGGER.debug(
-            "Energy balance: solar=%.2f, battery=%.2f, consumption=%.2f, deficit=%.2f",
-            usable_solar,
-            usable_battery,
-            total_consumption,
-            energy_deficit,
-        )
-
-        # If deficit exists, we MUST charge from grid
-        # Calculate how many intervals of charging we need
-        # HOME UPS charges ~1.25 kWh per interval (accounting for efficiency)
-        charge_per_interval = (
-            self.CHARGE_PER_INTERVAL * self.sim_config.ac_dc_efficiency
-        )
-        intervals_needed = (
-            int(energy_deficit / charge_per_interval) + 1 if energy_deficit > 0 else 0
-        )
-
-        # But also ensure we have TARGET battery at end (not just planning_min)
-        # This is what HA does - it charges to target, not just to avoid depletion
-        target_deficit = self._target - initial_battery_kwh
-        if target_deficit > 0:
-            # How many intervals to reach target?
-            intervals_for_target = int(target_deficit / charge_per_interval) + 1
-            intervals_needed = max(intervals_needed, intervals_for_target)
-
-        _LOGGER.debug(
-            "Intervals needed: %d (deficit=%d, target=%d)",
-            intervals_needed,
-            int(energy_deficit / charge_per_interval) + 1 if energy_deficit > 0 else 0,
-            int(target_deficit / charge_per_interval) + 1 if target_deficit > 0 else 0,
-        )
-
-        # Create price index sorted by price (cheapest first)
-        available_for_charging = [
-            (i, prices[i]) for i in range(n) if i not in charging_intervals
-        ]
-        available_for_charging.sort(key=lambda x: x[1])  # Sort by price ascending
-
-        # Select cheapest intervals up to what we need
-        for idx, price in available_for_charging[:intervals_needed]:
+        def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
+            if idx in blocked_indices:
+                return
             charging_intervals.add(idx)
-            _LOGGER.debug("Selected interval %d for charging at %.2f CZK", idx, price)
+            min_len = max(1, self.config.min_ups_duration_intervals)
+            if min_len <= 1:
+                return
+            for offset in range(1, min_len):
+                next_idx = idx + offset
+                if next_idx >= n:
+                    break
+                if next_idx in blocked_indices or next_idx in charging_intervals:
+                    continue
+                if allow_expensive or prices[next_idx] <= self.config.max_ups_price_czk:
+                    charging_intervals.add(next_idx)
 
-        # Backward propagation refinement: ensure no dip below planning_min
-        iteration = 0
-        while iteration < self.MAX_ITERATIONS:
-            iteration += 1
+        # Recovery if we start below planning minimum: charge ASAP.
+        recovery_index: Optional[int] = None
+        if initial_battery_kwh < self._planning_min - eps_kwh:
+            soc = initial_battery_kwh
+            for i in range(n):
+                if soc >= self._planning_min - eps_kwh:
+                    recovery_index = max(0, i - 1)
+                    break
 
-            # Simulate with current charging plan
+                price = prices[i]
+                if price > self.config.max_ups_price_czk and infeasible_reason is None:
+                    infeasible_reason = (
+                        "Battery below planning minimum at start; "
+                        f"interval {i} exceeds max_ups_price_czk={self.config.max_ups_price_czk}"
+                    )
+                add_ups_interval(i, allow_expensive=price > self.config.max_ups_price_czk)
+
+                solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
+                load = (
+                    consumption_forecast[i]
+                    if i < len(consumption_forecast)
+                    else 0.125
+                )
+                res = self.simulator.simulate(
+                    battery_start=soc,
+                    mode=CBB_MODE_HOME_UPS,
+                    solar_kwh=solar,
+                    load_kwh=load,
+                    force_charge=True,
+                )
+                soc = res.battery_end
+
+            if recovery_index is None and soc >= self._planning_min - eps_kwh:
+                recovery_index = n - 1
+
+            if soc < self._planning_min - eps_kwh:
+                if infeasible_reason is None:
+                    infeasible_reason = (
+                        "Battery below planning minimum at start and could not recover within planning horizon"
+                    )
+                return charging_intervals, infeasible_reason
+        else:
+            recovery_index = 0
+
+        # Repair loop: add UPS intervals before first violation.
+        buffer = 0.5
+        for _ in range(self.MAX_ITERATIONS):
             battery_trajectory = self._simulate_trajectory(
                 initial_battery_kwh=initial_battery_kwh,
                 solar_forecast=solar_forecast,
@@ -432,54 +449,90 @@ class HybridStrategy:
                 charging_intervals=charging_intervals,
             )
 
-            # Find first interval where battery gets too low
-            # Use a buffer above planning_min to have some reserve
-            buffer = 0.5  # 0.5 kWh buffer
-            problem_interval = None
-            for i, batt in enumerate(battery_trajectory):
-                if batt < self._planning_min + buffer:
-                    problem_interval = i
+            violation_idx = None
+            start_idx = recovery_index + 1 if recovery_index is not None else 0
+            for i in range(start_idx, len(battery_trajectory)):
+                if battery_trajectory[i] < self._planning_min + buffer:
+                    violation_idx = i
                     break
 
-            if problem_interval is None:
-                # No problems - we're done!
-                _LOGGER.debug(
-                    "Backward propagation converged after %d iterations", iteration
-                )
+            if violation_idx is None:
                 break
 
-            # Find cheapest available interval BEFORE the problem
-            cheapest_before = None
-            for idx, price in available_for_charging:
-                if idx < problem_interval and idx not in charging_intervals:
-                    cheapest_before = idx
-                    break  # Already sorted by price, so first match is cheapest
+            candidate = None
+            candidate_price = None
+            for idx in range(0, min(n, violation_idx + 1)):
+                if idx in charging_intervals or idx in blocked_indices:
+                    continue
+                price = prices[idx]
+                if price > self.config.max_ups_price_czk:
+                    continue
+                if candidate is None or price < candidate_price:
+                    candidate = idx
+                    candidate_price = price
 
-            if cheapest_before is None:
-                # No available interval before problem - can't fix
-                _LOGGER.warning(
-                    "Cannot fix battery drop at interval %d - no cheaper intervals before",
-                    problem_interval,
-                )
+            if candidate is None:
+                if infeasible_reason is None:
+                    infeasible_reason = (
+                        f"No UPS interval <= max_ups_price_czk={self.config.max_ups_price_czk} "
+                        f"available before violation index {violation_idx}"
+                    )
+                for idx in range(0, min(n, violation_idx + 1)):
+                    add_ups_interval(idx, allow_expensive=True)
                 break
 
-            # Mark this interval for charging
-            charging_intervals.add(cheapest_before)
-            _LOGGER.debug(
-                "Iteration %d: Problem at %d (batt=%.2f), charging at %d (%.2f CZK)",
-                iteration,
-                problem_interval,
-                battery_trajectory[problem_interval],
-                cheapest_before,
-                prices[cheapest_before],
-            )
+            add_ups_interval(candidate)
 
-        if iteration >= self.MAX_ITERATIONS:
-            _LOGGER.warning(
-                "Backward propagation hit max iterations (%d)", self.MAX_ITERATIONS
-            )
+        # Target fill: add cheapest UPS intervals until target SoC is reachable.
+        if self._target > self._planning_min + eps_kwh:
+            for _ in range(self.MAX_ITERATIONS):
+                battery_trajectory = self._simulate_trajectory(
+                    initial_battery_kwh=initial_battery_kwh,
+                    solar_forecast=solar_forecast,
+                    consumption_forecast=consumption_forecast,
+                    charging_intervals=charging_intervals,
+                )
+                max_soc = (
+                    max(battery_trajectory)
+                    if battery_trajectory
+                    else initial_battery_kwh
+                )
+                if max_soc >= self._target - eps_kwh:
+                    break
 
-        return charging_intervals
+                candidate = None
+                candidate_price = None
+                for idx, price in enumerate(prices):
+                    if idx in charging_intervals or idx in blocked_indices:
+                        continue
+                    if price > self.config.max_ups_price_czk:
+                        continue
+                    if candidate is None or price < candidate_price:
+                        candidate = idx
+                        candidate_price = price
+
+                if candidate is None:
+                    break
+
+                add_ups_interval(candidate)
+
+        # Final validation: flag infeasible if still under planning minimum.
+        final_trajectory = self._simulate_trajectory(
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+        )
+        start_idx = recovery_index + 1 if recovery_index is not None else 0
+        for i in range(start_idx, len(final_trajectory)):
+            if final_trajectory[i] < self._planning_min - eps_kwh:
+                if infeasible_reason is None:
+                    infeasible_reason = (
+                        f"Planner could not satisfy planning minimum (first violation at index {i})"
+                    )
+                break
+
+        return charging_intervals, infeasible_reason
 
     def _simulate_trajectory(
         self,

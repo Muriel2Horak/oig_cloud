@@ -39,13 +39,6 @@ Architecture (NEW 3-layer design):
         └── consumption.py
 """
 
-from .bridge import (
-    calculate_hybrid_with_new_module,
-    calculate_timeline_with_new_module,
-    simulate_interval_with_new_module,
-    validate_bridge_compatibility,
-)
-
 # NEW: 3-layer architecture exports
 from .config import (
     BalancingConfig,
@@ -60,12 +53,6 @@ from .config import (
     maximum_self_consumption_config,
 )
 from .physics import IntervalResult, IntervalSimulator
-from .sensor import (
-    BatteryForecastOrchestrator,
-    ForecastConfig,
-    ForecastResult,
-    calculate_battery_forecast,
-)
 from .service import (
     BatteryForecastService,
     ForecastInput,
@@ -105,6 +92,25 @@ from .types import (  # Mode constants; TypedDicts; Constants; Helper functions
     is_charging_mode,
 )
 
+_HAS_HOME_ASSISTANT = True
+try:
+    from .bridge import (
+        calculate_hybrid_with_new_module,
+        calculate_timeline_with_new_module,
+        simulate_interval_with_new_module,
+        validate_bridge_compatibility,
+    )
+    from .sensor import (
+        BatteryForecastOrchestrator,
+        ForecastConfig,
+        ForecastResult,
+        calculate_battery_forecast,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name != "homeassistant":
+        raise
+    _HAS_HOME_ASSISTANT = False
+
 __all__ = [
     # Mode constants
     "CBBMode",
@@ -130,16 +136,6 @@ __all__ = [
     # Helper functions
     "get_mode_name",
     "is_charging_mode",
-    # Orchestrator
-    "BatteryForecastOrchestrator",
-    "ForecastConfig",
-    "ForecastResult",
-    "calculate_battery_forecast",
-    # Bridge (legacy compatibility)
-    "calculate_hybrid_with_new_module",
-    "calculate_timeline_with_new_module",
-    "simulate_interval_with_new_module",
-    "validate_bridge_compatibility",
     # NEW: Configuration
     "SimulatorConfig",
     "HybridConfig",
@@ -167,3 +163,17 @@ __all__ = [
     "create_service",
     "create_service_from_ha",
 ]
+
+if _HAS_HOME_ASSISTANT:
+    __all__ += [
+        # Orchestrator
+        "BatteryForecastOrchestrator",
+        "ForecastConfig",
+        "ForecastResult",
+        "calculate_battery_forecast",
+        # Bridge (legacy compatibility)
+        "calculate_hybrid_with_new_module",
+        "calculate_timeline_with_new_module",
+        "simulate_interval_with_new_module",
+        "validate_bridge_compatibility",
+    ]

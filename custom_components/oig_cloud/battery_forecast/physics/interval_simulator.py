@@ -28,8 +28,14 @@ HOME UPS (mode=3):
 from dataclasses import dataclass
 from typing import Tuple
 
+from ...physics import simulate_interval
 from ..config import SimulatorConfig
-from ..types import CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS
+from ..types import (
+    CBB_MODE_HOME_I,
+    CBB_MODE_HOME_II,
+    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_UPS,
+)
 
 
 @dataclass(frozen=True)
@@ -123,17 +129,46 @@ class IntervalSimulator:
         solar_kwh = max(0, solar_kwh)
         load_kwh = max(0, load_kwh)
 
-        # Dispatch to mode-specific handler
-        if mode == CBB_MODE_HOME_UPS:
-            return self._simulate_home_ups(
-                battery_start, solar_kwh, load_kwh, force_charge
-            )
-        elif mode == CBB_MODE_HOME_III:
-            return self._simulate_home_iii(battery_start, solar_kwh, load_kwh)
-        elif mode == CBB_MODE_HOME_II:
-            return self._simulate_home_ii(battery_start, solar_kwh, load_kwh)
-        else:  # HOME_I or default
-            return self._simulate_home_i(battery_start, solar_kwh, load_kwh)
+        # Canonical physics lives in shared simulate_interval().
+        # Note: force_charge is currently ignored because UPS physics always charges.
+        charge_efficiency = self._ac_dc
+        discharge_efficiency = self._dc_ac
+
+        flows = simulate_interval(
+            mode=mode,
+            solar_kwh=solar_kwh,
+            load_kwh=load_kwh,
+            battery_soc_kwh=battery_start,
+            capacity_kwh=self._max,
+            hw_min_capacity_kwh=self._min,
+            charge_efficiency=charge_efficiency,
+            discharge_efficiency=discharge_efficiency,
+            home_charge_rate_kwh_15min=self._max_charge,
+        )
+
+        if mode in (CBB_MODE_HOME_I, CBB_MODE_HOME_II):
+            solar_used_direct = min(solar_kwh, load_kwh)
+        else:
+            solar_used_direct = 0.0
+
+        solar_to_battery = flows.solar_charge_kwh
+        solar_exported = flows.grid_export_kwh
+        solar_curtailed = max(
+            0.0,
+            solar_kwh - solar_used_direct - solar_to_battery - solar_exported,
+        )
+
+        return IntervalResult(
+            battery_end=flows.new_soc_kwh,
+            grid_import=flows.grid_import_kwh,
+            grid_export=flows.grid_export_kwh,
+            battery_charge=flows.battery_charge_kwh * charge_efficiency,
+            battery_discharge=flows.battery_discharge_kwh,
+            solar_used_direct=solar_used_direct,
+            solar_to_battery=solar_to_battery,
+            solar_exported=solar_exported,
+            solar_curtailed=solar_curtailed,
+        )
 
     def _simulate_home_ups(
         self,

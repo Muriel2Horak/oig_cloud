@@ -33,14 +33,15 @@ except Exception:  # pragma: no cover
     _async_track_time_interval = None
 
 from .api.ote_api import OteApi
+from .battery_forecast.config import HybridConfig, SimulatorConfig
+from .battery_forecast.strategy import BalancingPlan as StrategyBalancingPlan
+from .battery_forecast.strategy import HybridStrategy
 from .const import (  # PHASE 3: Import DOMAIN for BalancingManager access
     CONF_AUTO_MODE_SWITCH,
     DOMAIN,
     OTE_SPOT_PRICE_CACHE_FILE,
 )
-
-# New single-planner implementation (one source of truth)
-from .planner import BalancingInput, OnePlanner, PlanInput, PlannerConfig
+from .physics import simulate_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1101,10 +1102,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         load_forecast, recent_ratio
                     )
 
-            # ONE PLANNER: build plan timeline with strict planning-min enforcement.
+            # PLANNER: build plan timeline with HybridStrategy.
             try:
-                # Balancing input from BalancingManager (optional)
-                balancing_input: Optional[BalancingInput] = None
+                active_balancing_plan = None
                 try:
                     entry_id = (
                         self._config_entry.entry_id if self._config_entry else None
@@ -1118,30 +1118,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             "balancing_manager"
                         )
                         if balancing_manager:
-                            active_plan = balancing_manager.get_active_plan()
-                            if active_plan and active_plan.active:
-                                preferred: set[datetime] = set()
-                                for interval in (
-                                    getattr(active_plan, "intervals", []) or []
-                                ):
-                                    ts = getattr(interval, "ts", None)
-                                    if ts:
-                                        if isinstance(ts, str):
-                                            try:
-                                                preferred.add(
-                                                    datetime.fromisoformat(ts)
-                                                )
-                                            except Exception:
-                                                pass
-                                        else:
-                                            preferred.add(ts)
-                                balancing_input = BalancingInput(
-                                    holding_start=active_plan.holding_start,
-                                    holding_end=active_plan.holding_end,
-                                    preferred_intervals=(
-                                        preferred if preferred else None
-                                    ),
-                                )
+                            active_balancing_plan = (
+                                balancing_manager.get_active_plan()
+                            )
                 except Exception as err:
                     _LOGGER.debug("Could not load BalancingManager plan: %s", err)
 
@@ -1166,61 +1145,89 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     load_forecast = load_forecast[:max_intervals]
                     solar_kwh_list = solar_kwh_list[:max_intervals]
 
+                balancing_plan = self._build_strategy_balancing_plan(
+                    spot_prices, active_balancing_plan
+                )
+
                 opts = self._config_entry.options if self._config_entry else {}
                 max_ups_price_czk = float(opts.get("max_ups_price_czk", 10.0))
                 efficiency = float(self._get_battery_efficiency())
+                home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
 
-                planner = OnePlanner(
-                    PlannerConfig(
-                        planning_min_percent=float(
-                            opts.get("min_capacity_percent", 33.0)
-                        ),
-                        target_percent=float(opts.get("target_capacity_percent", 80.0)),
-                        max_ups_price_czk=max_ups_price_czk,
-                        home_charge_rate_kw=float(opts.get("home_charge_rate", 2.8)),
-                        charge_efficiency=float(efficiency),
-                        discharge_efficiency=float(efficiency),
-                    )
+                sim_config = SimulatorConfig(
+                    max_capacity_kwh=max_capacity,
+                    min_capacity_kwh=max_capacity * 0.20,
+                    charge_rate_kw=home_charge_rate_kw,
+                    dc_dc_efficiency=efficiency,
+                    dc_ac_efficiency=efficiency,
+                    ac_dc_efficiency=efficiency,
+                )
+                hybrid_config = HybridConfig(
+                    planning_min_percent=float(
+                        opts.get("min_capacity_percent", 33.0)
+                    ),
+                    target_percent=float(opts.get("target_capacity_percent", 80.0)),
+                    max_ups_price_czk=max_ups_price_czk,
                 )
 
-                plan = planner.plan(
-                    PlanInput(
-                        now=dt_util.now(),
-                        current_soc_kwh=current_capacity,
-                        max_capacity_kwh=max_capacity,
-                        hw_min_kwh=max_capacity * 0.20,
-                        spot_prices=spot_prices,
-                        export_prices=export_prices,
-                        solar_kwh=solar_kwh_list,
-                        load_kwh=load_forecast,
-                        balancing=balancing_input,
-                    )
+                export_price_values: List[float] = []
+                for i in range(len(spot_prices)):
+                    if i < len(export_prices):
+                        export_price_values.append(
+                            float(export_prices[i].get("price", 0.0) or 0.0)
+                        )
+                    else:
+                        export_price_values.append(0.0)
+
+                strategy = HybridStrategy(hybrid_config, sim_config)
+                result = strategy.optimize(
+                    initial_battery_kwh=current_capacity,
+                    spot_prices=spot_prices,
+                    solar_forecast=solar_kwh_list,
+                    consumption_forecast=load_forecast,
+                    balancing_plan=balancing_plan,
+                    export_prices=export_price_values,
                 )
 
-                self._timeline_data = plan.timeline
+                hw_min_kwh = max_capacity * 0.20
+                self._timeline_data = self._build_planner_timeline(
+                    modes=result.modes,
+                    spot_prices=spot_prices,
+                    export_prices=export_prices,
+                    solar_forecast=solar_forecast,
+                    load_forecast=load_forecast,
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    hw_min_capacity=hw_min_kwh,
+                    efficiency=efficiency,
+                    home_charge_rate_kw=home_charge_rate_kw,
+                )
+                self._attach_planner_reasons(self._timeline_data, result.decisions)
+
+                planning_min_kwh = hybrid_config.planning_min_kwh(max_capacity)
                 self._add_decision_reasons_to_timeline(
                     self._timeline_data,
                     current_capacity=current_capacity,
                     max_capacity=max_capacity,
-                    min_capacity=plan.planning_min_kwh,
+                    min_capacity=planning_min_kwh,
                     efficiency=float(efficiency),
                 )
                 self._hybrid_timeline = self._timeline_data
                 self._mode_optimization_result = {
                     "optimal_timeline": self._timeline_data,
-                    "optimal_modes": plan.modes,
-                    "planner": "one_planner",
-                    "planning_min_kwh": plan.planning_min_kwh,
-                    "target_kwh": plan.target_kwh,
-                    "infeasible": plan.infeasible,
-                    "infeasible_reason": plan.infeasible_reason,
+                    "optimal_modes": result.modes,
+                    "planner": "planner",
+                    "planning_min_kwh": planning_min_kwh,
+                    "target_kwh": hybrid_config.target_kwh(max_capacity),
+                    "infeasible": result.infeasible,
+                    "infeasible_reason": result.infeasible_reason,
                 }
                 self._mode_recommendations = self._create_mode_recommendations(
                     self._timeline_data, hours_ahead=48
                 )
 
             except Exception as e:
-                _LOGGER.error("OnePlanner failed: %s", e, exc_info=True)
+                _LOGGER.error("Planner failed: %s", e, exc_info=True)
                 self._timeline_data = []
                 self._hybrid_timeline = []
                 self._mode_optimization_result = None
@@ -1414,219 +1421,38 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 export_revenue_czk: Příjem z exportu (Kč)
                 net_cost_czk: Čisté náklady (Kč)
         """
-        # Initialize result
-        result = {
-            "new_soc_kwh": battery_soc_kwh,
-            "grid_import_kwh": 0.0,
-            "grid_export_kwh": 0.0,
-            "battery_charge_kwh": 0.0,
-            "battery_discharge_kwh": 0.0,
-            "grid_cost_czk": 0.0,
-            "export_revenue_czk": 0.0,
-            "net_cost_czk": 0.0,
-        }
-
-        # =====================================================================
-        # CRITICAL OPTIMIZATION: NOC (solar == 0) → HOME I/II/III IDENTICKÉ!
-        # =====================================================================
-        # Podle CBB_MODES_DEFINITIVE.md TABULKA 2:
-        # "HOME I/II/III: Všechny IDENTICKÉ - baterie vybíjí do planning_min SoC"
-
-        # Use planning_min if provided, otherwise fall back to hw_min
         effective_min = (
             planning_min_capacity_kwh
             if planning_min_capacity_kwh is not None
             else hw_min_capacity_kwh
         )
 
-        if solar_kwh < 0.001 and mode in [
-            CBB_MODE_HOME_I,
-            CBB_MODE_HOME_II,
-            CBB_MODE_HOME_III,
-        ]:
-            # NOC: Společná logika - vybíjení baterie do effective_min (planning min nebo hw min)
-            available_battery = max(0.0, battery_soc_kwh - effective_min)
-            usable_from_battery = available_battery * discharge_efficiency
+        flows = simulate_interval(
+            mode=mode,
+            solar_kwh=solar_kwh,
+            load_kwh=load_kwh,
+            battery_soc_kwh=battery_soc_kwh,
+            capacity_kwh=capacity_kwh,
+            hw_min_capacity_kwh=effective_min,
+            charge_efficiency=charge_efficiency,
+            discharge_efficiency=discharge_efficiency,
+            home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+        )
 
-            battery_discharge_kwh = min(load_kwh, usable_from_battery)
+        grid_cost_czk = flows.grid_import_kwh * spot_price_czk
+        export_revenue_czk = flows.grid_export_kwh * export_price_czk
+        net_cost_czk = grid_cost_czk - export_revenue_czk
 
-            if battery_discharge_kwh > 0.001:
-                result["battery_discharge_kwh"] = (
-                    battery_discharge_kwh / discharge_efficiency
-                )
-                result["new_soc_kwh"] = (
-                    battery_soc_kwh - result["battery_discharge_kwh"]
-                )
-
-            covered_by_battery = battery_discharge_kwh
-            deficit = load_kwh - covered_by_battery
-
-            if deficit > 0.001:
-                result["grid_import_kwh"] = deficit
-                result["grid_cost_czk"] = deficit * spot_price_czk
-
-            result["net_cost_czk"] = result["grid_cost_czk"]
-            return result
-
-        # =====================================================================
-        # HOME I (0) - DEN: FVE → spotřeba → baterie, deficit vybíjí
-        # =====================================================================
-
-        if mode == CBB_MODE_HOME_I:
-            if solar_kwh >= load_kwh:
-                # FVE pokrývá spotřebu, přebytek → baterie
-                surplus = solar_kwh - load_kwh
-                battery_space = capacity_kwh - battery_soc_kwh
-                charge_amount = min(surplus, battery_space)
-
-                if charge_amount > 0.001:
-                    result["battery_charge_kwh"] = charge_amount
-                    physical_charge = charge_amount * charge_efficiency
-                    result["new_soc_kwh"] = min(
-                        battery_soc_kwh + physical_charge, capacity_kwh
-                    )
-
-                remaining_surplus = surplus - charge_amount
-                if remaining_surplus > 0.001:
-                    result["grid_export_kwh"] = remaining_surplus
-                    result["export_revenue_czk"] = remaining_surplus * export_price_czk
-
-            else:
-                # FVE < load → deficit vybíjí baterii (do planning_min nebo hw_min)
-                deficit = load_kwh - solar_kwh
-                available_battery = max(0.0, battery_soc_kwh - effective_min)
-                usable_from_battery = available_battery * discharge_efficiency
-
-                battery_discharge_kwh = min(deficit, usable_from_battery)
-
-                if battery_discharge_kwh > 0.001:
-                    result["battery_discharge_kwh"] = (
-                        battery_discharge_kwh / discharge_efficiency
-                    )
-                    result["new_soc_kwh"] = (
-                        battery_soc_kwh - result["battery_discharge_kwh"]
-                    )
-
-                remaining_deficit = deficit - battery_discharge_kwh
-                if remaining_deficit > 0.001:
-                    result["grid_import_kwh"] = remaining_deficit
-                    result["grid_cost_czk"] = remaining_deficit * spot_price_czk
-
-            result["net_cost_czk"] = (
-                result["grid_cost_czk"] - result["export_revenue_czk"]
-            )
-            return result
-
-        # =====================================================================
-        # HOME II (1) - DEN: FVE → spotřeba, přebytek → baterie, deficit → SÍŤ!
-        # =====================================================================
-        # ⚠️ KRITICKÉ: Při deficitu baterie NETOUCHED, deficit POUZE ZE SÍTĚ!
-
-        elif mode == CBB_MODE_HOME_II:
-            if solar_kwh >= load_kwh:
-                # FVE pokrývá spotřebu, přebytek → baterie
-                surplus = solar_kwh - load_kwh
-                battery_space = capacity_kwh - battery_soc_kwh
-                charge_amount = min(surplus, battery_space)
-
-                if charge_amount > 0.001:
-                    result["battery_charge_kwh"] = charge_amount
-                    physical_charge = charge_amount * charge_efficiency
-                    result["new_soc_kwh"] = min(
-                        battery_soc_kwh + physical_charge, capacity_kwh
-                    )
-
-                remaining_surplus = surplus - charge_amount
-                if remaining_surplus > 0.001:
-                    result["grid_export_kwh"] = remaining_surplus
-                    result["export_revenue_czk"] = remaining_surplus * export_price_czk
-
-            else:
-                # FVE < load → deficit ze SÍTĚ (baterie NETOUCHED!)
-                # ⚠️ TOTO JE KLÍČOVÝ ROZDÍL mezi HOME I (vybíjí) a HOME II (šetří)!
-                deficit = load_kwh - solar_kwh
-                result["grid_import_kwh"] = deficit
-                result["grid_cost_czk"] = deficit * spot_price_czk
-                # result["new_soc_kwh"] zůstává battery_soc_kwh (NETOUCHED)
-
-            result["net_cost_czk"] = (
-                result["grid_cost_czk"] - result["export_revenue_czk"]
-            )
-            return result
-
-        # =====================================================================
-        # HOME III (2) - DEN: FVE → baterie, spotřeba → VŽDY SÍŤ
-        # =====================================================================
-        # ⚠️ KRITICKÉ: Baterie se přes den NEVYBÍJÍ pro spotřebu!
-
-        elif mode == CBB_MODE_HOME_III:
-            # CELÁ FVE → baterie (agresivní nabíjení)
-            battery_space = capacity_kwh - battery_soc_kwh
-            charge_amount = min(solar_kwh, battery_space)
-
-            if charge_amount > 0.001:
-                result["battery_charge_kwh"] = charge_amount
-                physical_charge = charge_amount * charge_efficiency
-                result["new_soc_kwh"] = min(
-                    battery_soc_kwh + physical_charge, capacity_kwh
-                )
-
-            # Spotřeba VŽDY ze sítě (i když je FVE!)
-            result["grid_import_kwh"] = load_kwh
-            result["grid_cost_czk"] = load_kwh * spot_price_czk
-
-            # Export přebytku (pokud baterie plná)
-            remaining_solar = solar_kwh - charge_amount
-            if remaining_solar > 0.001:
-                result["grid_export_kwh"] = remaining_solar
-                result["export_revenue_czk"] = remaining_solar * export_price_czk
-
-            result["net_cost_czk"] = (
-                result["grid_cost_czk"] - result["export_revenue_czk"]
-            )
-            return result
-
-        # =====================================================================
-        # HOME UPS (3) - Nabíjení na 100% ze VŠECH zdrojů (FVE + síť)
-        # =====================================================================
-
-        elif mode == CBB_MODE_HOME_UPS:
-            battery_space = capacity_kwh - battery_soc_kwh
-
-            # FVE → baterie (bez limitu)
-            solar_to_battery = min(solar_kwh, battery_space)
-
-            # Grid → baterie (max home_charge_rate)
-            remaining_space = battery_space - solar_to_battery
-            grid_to_battery = min(home_charge_rate_kwh_15min, remaining_space)
-
-            # Celkové nabití
-            total_charge = solar_to_battery + grid_to_battery
-
-            if total_charge > 0.001:
-                result["battery_charge_kwh"] = total_charge
-                physical_charge = total_charge * charge_efficiency
-                result["new_soc_kwh"] = min(
-                    battery_soc_kwh + physical_charge, capacity_kwh
-                )
-
-            # Spotřeba + grid charging ze sítě
-            result["grid_import_kwh"] = load_kwh + grid_to_battery
-            result["grid_cost_czk"] = result["grid_import_kwh"] * spot_price_czk
-
-            # Export přebytku FVE (pokud baterie plná)
-            remaining_solar = solar_kwh - solar_to_battery
-            if remaining_solar > 0.001:
-                result["grid_export_kwh"] = remaining_solar
-                result["export_revenue_czk"] = remaining_solar * export_price_czk
-
-            result["net_cost_czk"] = (
-                result["grid_cost_czk"] - result["export_revenue_czk"]
-            )
-            return result
-
-        else:
-            raise ValueError(f"Unknown mode: {mode} (expected 0-3)")
+        return {
+            "new_soc_kwh": flows.new_soc_kwh,
+            "grid_import_kwh": flows.grid_import_kwh,
+            "grid_export_kwh": flows.grid_export_kwh,
+            "battery_charge_kwh": flows.battery_charge_kwh,
+            "battery_discharge_kwh": flows.battery_discharge_kwh,
+            "grid_cost_czk": grid_cost_czk,
+            "export_revenue_czk": export_revenue_czk,
+            "net_cost_czk": net_cost_czk,
+        }
 
     # =========================================================================
     # STARÉ FUNKCE ODSTRANĚNY (TODO 6: Cleanup)
@@ -3031,6 +2857,274 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return result
 
+    def _build_strategy_balancing_plan(
+        self,
+        spot_prices: List[Dict[str, Any]],
+        active_plan: Any,
+    ) -> Optional[StrategyBalancingPlan]:
+        """Convert BalancingManager plan into HybridStrategy balancing plan."""
+        if not active_plan:
+            return None
+
+        if hasattr(active_plan, "active") and not active_plan.active:
+            return None
+
+        plan_mode = getattr(active_plan, "mode", None)
+        plan_mode_value = (
+            plan_mode.value
+            if hasattr(plan_mode, "value")
+            else (str(plan_mode) if plan_mode else None)
+        )
+        intervals = getattr(active_plan, "intervals", None) or []
+        if plan_mode_value == "natural" and not intervals:
+            return None
+
+        holding_start_raw = getattr(active_plan, "holding_start", None)
+        holding_end_raw = getattr(active_plan, "holding_end", None)
+        if not holding_start_raw or not holding_end_raw:
+            return None
+
+        def _coerce_dt(value: Any) -> Optional[datetime]:
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                ts = value
+            else:
+                try:
+                    ts = datetime.fromisoformat(str(value))
+                except Exception:
+                    return None
+            if ts.tzinfo is None:
+                ts = dt_util.as_local(ts)
+            return ts
+
+        holding_start = _coerce_dt(holding_start_raw)
+        holding_end = _coerce_dt(holding_end_raw)
+        if not holding_start or not holding_end:
+            return None
+
+        interval_delta = timedelta(minutes=15)
+        spot_times: List[Optional[datetime]] = []
+        idx_by_ts: Dict[datetime, int] = {}
+        idx_by_naive: Dict[datetime, int] = {}
+
+        for idx, sp in enumerate(spot_prices):
+            ts_raw = sp.get("time")
+            if not ts_raw:
+                spot_times.append(None)
+                continue
+            ts = _coerce_dt(ts_raw)
+            spot_times.append(ts)
+            if ts is None:
+                continue
+            idx_by_ts[ts] = idx
+            idx_by_naive[ts.replace(tzinfo=None)] = idx
+
+        def _find_index(ts: Optional[datetime]) -> Optional[int]:
+            if ts is None:
+                return None
+            idx = idx_by_ts.get(ts)
+            if idx is not None:
+                return idx
+            naive = ts.replace(tzinfo=None)
+            idx = idx_by_naive.get(naive)
+            if idx is not None:
+                return idx
+            for i, base in enumerate(spot_times):
+                if base is None:
+                    continue
+                if base <= ts < (base + interval_delta):
+                    return i
+            return None
+
+        holding_indices: set[int] = set()
+        for idx, ts in enumerate(spot_times):
+            if ts is None:
+                continue
+            if ts < holding_end and (ts + interval_delta) > holding_start:
+                holding_indices.add(idx)
+
+        mode_overrides: Dict[int, int] = {}
+        for interval in intervals:
+            ts_value = getattr(interval, "ts", None)
+            if ts_value is None and isinstance(interval, dict):
+                ts_value = interval.get("ts")
+            mode_value = getattr(interval, "mode", None)
+            if mode_value is None and isinstance(interval, dict):
+                mode_value = interval.get("mode")
+            if ts_value is None or mode_value is None:
+                continue
+            ts = _coerce_dt(ts_value)
+            idx = _find_index(ts)
+            if idx is None:
+                continue
+            try:
+                mode_int = int(mode_value)
+            except (TypeError, ValueError):
+                continue
+            mode_overrides[idx] = mode_int
+
+        charging_indices: set[int] = set()
+        for idx, mode_int in mode_overrides.items():
+            if idx in holding_indices:
+                continue
+            if mode_int == CBB_MODE_HOME_UPS:
+                charging_indices.add(idx)
+
+        return StrategyBalancingPlan(
+            deadline=holding_start,
+            holding_start=holding_start,
+            holding_end=holding_end,
+            charging_intervals=charging_indices,
+            holding_intervals=holding_indices,
+            is_active=True,
+            reason=str(getattr(active_plan, "reason", "balancing")),
+            mode_overrides=mode_overrides,
+        )
+
+    def _build_planner_timeline(
+        self,
+        *,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        export_prices: List[Dict[str, Any]],
+        solar_forecast: Dict[str, Any],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        hw_min_capacity: float,
+        efficiency: float,
+        home_charge_rate_kw: float,
+    ) -> List[Dict[str, Any]]:
+        """Build timeline in legacy format from planner modes."""
+        timeline: List[Dict[str, Any]] = []
+        soc = current_capacity
+        charge_rate_kwh_15min = home_charge_rate_kw / 4.0
+
+        for i, mode in enumerate(modes):
+            if i >= len(spot_prices):
+                break
+            ts_str = str(spot_prices[i].get("time", ""))
+            spot_price = float(spot_prices[i].get("price", 0.0) or 0.0)
+            export_price = (
+                float(export_prices[i].get("price", 0.0) or 0.0)
+                if i < len(export_prices)
+                else 0.0
+            )
+
+            solar_kwh = 0.0
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if ts.tzinfo is None:
+                    ts = dt_util.as_local(ts)
+                solar_kwh = self._get_solar_for_timestamp(ts, solar_forecast)
+            except Exception:
+                solar_kwh = 0.0
+
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+
+            res = simulate_interval(
+                mode=mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc_kwh=soc,
+                capacity_kwh=max_capacity,
+                hw_min_capacity_kwh=hw_min_capacity,
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
+                home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+            )
+            soc = res.new_soc_kwh
+
+            net_cost = (res.grid_import_kwh * spot_price) - (
+                res.grid_export_kwh * export_price
+            )
+
+            timeline.append(
+                {
+                    "time": ts_str,
+                    "timestamp": ts_str,
+                    "battery_soc": round(soc, 6),
+                    "battery_capacity_kwh": round(soc, 6),
+                    "mode": int(mode),
+                    "mode_name": CBB_MODE_NAMES.get(int(mode), "HOME I"),
+                    "solar_kwh": round(solar_kwh, 6),
+                    "load_kwh": round(load_kwh, 6),
+                    "grid_import": round(res.grid_import_kwh, 6),
+                    "grid_export": round(res.grid_export_kwh, 6),
+                    "grid_net": round(res.grid_import_kwh - res.grid_export_kwh, 6),
+                    "spot_price": round(spot_price, 6),
+                    "spot_price_czk": round(spot_price, 6),
+                    "export_price_czk": round(export_price, 6),
+                    "net_cost": round(net_cost, 6),
+                    "solar_charge_kwh": round(max(0.0, res.solar_charge_kwh), 6),
+                    "grid_charge_kwh": round(max(0.0, res.grid_charge_kwh), 6),
+                }
+            )
+
+        return timeline
+
+    def _format_planner_reason(
+        self,
+        reason_code: Optional[str],
+        *,
+        spot_price: Optional[float] = None,
+    ) -> Optional[str]:
+        """Map planner reason codes to user-facing text."""
+        if not reason_code:
+            return None
+
+        if reason_code.startswith("planned_charge"):
+            if spot_price is not None:
+                return f"Plánované nabíjení ze sítě ({spot_price:.2f} Kč/kWh)"
+            return "Plánované nabíjení ze sítě"
+
+        if reason_code in {"balancing_charge", "balancing_override"}:
+            return "Balancování: nabíjení na 100 %"
+        if reason_code == "holding_period":
+            return "Balancování: držení 100 %"
+
+        if reason_code in {"negative_price_charge", "auto_negative_charge"}:
+            return "Negativní cena: nabíjení ze sítě"
+        if reason_code in {"negative_price_curtail", "auto_negative_curtail"}:
+            return "Negativní cena: omezení exportu (HOME III)"
+        if reason_code in {"negative_price_consume", "auto_negative_consume"}:
+            return "Negativní cena: maximalizace spotřeby"
+
+        return None
+
+    def _attach_planner_reasons(
+        self,
+        timeline: List[Dict[str, Any]],
+        decisions: List[Any],
+    ) -> None:
+        """Attach planner reasons and decision metrics to timeline entries."""
+        for idx, decision in enumerate(decisions):
+            if idx >= len(timeline):
+                break
+            reason_code = getattr(decision, "reason", None)
+            metrics = timeline[idx].get("decision_metrics") or {}
+            if reason_code:
+                metrics.setdefault("planner_reason_code", reason_code)
+                metrics.setdefault("planner_reason", reason_code)
+            metrics.setdefault(
+                "planner_is_balancing", bool(getattr(decision, "is_balancing", False))
+            )
+            metrics.setdefault(
+                "planner_is_holding", bool(getattr(decision, "is_holding", False))
+            )
+            metrics.setdefault(
+                "planner_is_negative_price",
+                bool(getattr(decision, "is_negative_price", False)),
+            )
+            timeline[idx]["decision_metrics"] = metrics
+
+            reason_text = self._format_planner_reason(
+                reason_code, spot_price=timeline[idx].get("spot_price")
+            )
+            if reason_text:
+                timeline[idx]["decision_reason"] = reason_text
+
     def _add_decision_reasons_to_timeline(
         self,
         timeline: List[Dict[str, Any]],
@@ -3068,6 +3162,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             load_kwh = entry.get("load_kwh", 0.0) or 0.0
             solar_kwh = entry.get("solar_kwh", 0.0) or 0.0
             price = entry.get("spot_price", 0.0) or 0.0
+
+            existing_reason = entry.get("decision_reason")
+            existing_metrics = entry.get("decision_metrics") or {}
 
             decision_reason = None
             decision_metrics: Dict[str, Any] = {}
@@ -3129,6 +3226,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     decision_reason = "Vybijeni baterie misto odberu ze site"
                 else:
                     decision_reason = "Solar pokryva spotrebu, prebytky do baterie"
+
+            if existing_reason:
+                decision_reason = existing_reason
+            if existing_metrics:
+                decision_metrics = {**decision_metrics, **existing_metrics}
 
             entry["decision_reason"] = decision_reason
             entry["decision_metrics"] = decision_metrics
@@ -5928,7 +6030,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             precomputed_data = {
                 "detail_tabs": detail_tabs,
                 "detail_tabs_hybrid": detail_tabs,  # legacy alias
-                "active_planner": "one_planner",
+                "active_planner": "planner",
                 "unified_cost_tile": unified_cost_tile,
                 "unified_cost_tile_hybrid": unified_cost_tile,  # legacy alias
                 "timeline": timeline,

@@ -1491,7 +1491,7 @@ async function loadPricingData() {
                 const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
 
                 if (timelineEntry) {
-                    // OnePlanner timeline uses: battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh.
+                    // Planner timeline uses: battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh.
                     // Keep compatibility fallbacks for older payloads.
                     const targetCapacity =
                         (timelineEntry.battery_capacity_kwh ?? timelineEntry.battery_soc ?? timelineEntry.battery_start) || 0;
