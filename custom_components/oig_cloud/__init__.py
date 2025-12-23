@@ -22,7 +22,13 @@ except ModuleNotFoundError:  # pragma: no cover
     Platform = Any  # type: ignore[misc,assignment]
     HomeAssistant = Any  # type: ignore[misc,assignment]
     ConfigEntryNotReady = Exception  # type: ignore[assignment]
-    cv = None  # type: ignore[assignment]
+
+    class _CvStub:  # pragma: no cover - only used outside HA
+        @staticmethod
+        def config_entry_only_config_schema(_domain: str) -> object:
+            return object()
+
+    cv = _CvStub()  # type: ignore[assignment]
 
 try:
     from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
@@ -80,12 +86,12 @@ except Exception as err:
 
 _LOGGER = logging.getLogger(__name__)
 
-if config_entries is None or cv is None:  # pragma: no cover
-    PLATFORMS: list[Platform] = []
-    CONFIG_SCHEMA = None
+if config_entries is None:  # pragma: no cover
+    PLATFORMS = []
 else:
     PLATFORMS = [Platform.SENSOR]
-    CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
