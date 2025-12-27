@@ -106,7 +106,6 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         # Pull canonical state/attrs from manager API (avoids poking private fields).
         try:
-            manager_state = manager.get_sensor_state()
             manager_attrs = manager.get_sensor_attributes()
         except Exception as err:
             _LOGGER.debug(

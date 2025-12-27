@@ -297,7 +297,8 @@ class HybridStrategy:
                 mode=mode,
                 solar_kwh=solar,
                 load_kwh=load,
-                force_charge=(mode == CBB_MODE_HOME_UPS) and (is_balancing or is_charging),
+                force_charge=(mode == CBB_MODE_HOME_UPS)
+                and (is_balancing or is_charging),
             )
 
             # Calculate cost
@@ -383,8 +384,7 @@ class HybridStrategy:
         # Respect negative price strategy (only force UPS when configured)
         if (
             negative_price_intervals
-            and self.config.negative_price_strategy
-            == NegativePriceStrategy.CHARGE_GRID
+            and self.config.negative_price_strategy == NegativePriceStrategy.CHARGE_GRID
         ):
             for idx in negative_price_intervals:
                 if 0 <= idx < n and idx not in blocked_indices:
@@ -421,13 +421,13 @@ class HybridStrategy:
                         "Battery below planning minimum at start; "
                         f"interval {i} exceeds max_ups_price_czk={self.config.max_ups_price_czk}"
                     )
-                add_ups_interval(i, allow_expensive=price > self.config.max_ups_price_czk)
+                add_ups_interval(
+                    i, allow_expensive=price > self.config.max_ups_price_czk
+                )
 
                 solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
                 load = (
-                    consumption_forecast[i]
-                    if i < len(consumption_forecast)
-                    else 0.125
+                    consumption_forecast[i] if i < len(consumption_forecast) else 0.125
                 )
                 res = self.simulator.simulate(
                     battery_start=soc,
@@ -443,9 +443,7 @@ class HybridStrategy:
 
             if soc < self._planning_min - eps_kwh:
                 if infeasible_reason is None:
-                    infeasible_reason = (
-                        "Battery below planning minimum at start and could not recover within planning horizon"
-                    )
+                    infeasible_reason = "Battery below planning minimum at start and could not recover within planning horizon"
                 return charging_intervals, infeasible_reason, price_band_intervals
         else:
             recovery_index = 0
@@ -538,9 +536,7 @@ class HybridStrategy:
         for i in range(start_idx, len(final_trajectory)):
             if final_trajectory[i] < self._planning_min - eps_kwh:
                 if infeasible_reason is None:
-                    infeasible_reason = (
-                        f"Planner could not satisfy planning minimum (first violation at index {i})"
-                    )
+                    infeasible_reason = f"Planner could not satisfy planning minimum (first violation at index {i})"
                 break
 
         if not recovery_mode:

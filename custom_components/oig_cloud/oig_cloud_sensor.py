@@ -130,9 +130,7 @@ def _get_sensor_definition(sensor_type: str) -> Dict[str, Any]:
 class OigCloudSensor(CoordinatorEntity, SensorEntity):
     """Base implementation of OIG Cloud sensor."""
 
-    def __init__(
-        self, coordinator: OigCloudCoordinator, sensor_type: str
-    ) -> None:
+    def __init__(self, coordinator: OigCloudCoordinator, sensor_type: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._coordinator = coordinator

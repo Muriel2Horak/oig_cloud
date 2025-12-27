@@ -8,7 +8,6 @@ from homeassistant import config_entries
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 if TYPE_CHECKING:
@@ -2391,8 +2390,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
             # Převést UI pricing scénáře na backend atributy
             pricing_backend = self._map_pricing_to_backend(self._wizard_data)
 
-            planner_mode_value = self._get_planner_mode_value(self._wizard_data)
-
             return self.async_create_entry(
                 title=DEFAULT_NAME,
                 data={
@@ -2683,9 +2680,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
             # Převést UI pricing scénáře na backend atributy (stejně jako v ConfigFlow)
             pricing_backend = self._map_pricing_to_backend(self._wizard_data)
-
-            # Získat planner mode a aplikovat overrides (CRITICAL - bylo missing!)
-            planner_mode_value = self._get_planner_mode_value(self._wizard_data)
 
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
             new_options = {

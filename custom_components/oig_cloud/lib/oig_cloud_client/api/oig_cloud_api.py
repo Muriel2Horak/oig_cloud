@@ -2,10 +2,9 @@ import asyncio
 import datetime
 import json
 import logging
-import re
 import ssl
 import time
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional
 
 import aiohttp
 import certifi
@@ -16,6 +15,7 @@ from aiohttp import (
     ServerTimeoutError,
     TCPConnector,
 )
+from ..models import OigCloudData
 
 # Conditional import of opentelemetry
 _logger = logging.getLogger(__name__)
@@ -31,8 +31,6 @@ except ImportError:
     tracer = None  # type: ignore
     SpanKind = None  # type: ignore
     _has_opentelemetry = False
-
-from ..models import OigCloudData, OigCloudDeviceData
 
 # Using a lock to prevent multiple simultaneous API calls
 lock: asyncio.Lock = asyncio.Lock()

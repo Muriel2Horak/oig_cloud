@@ -37,7 +37,12 @@ def mock_config_entry() -> Mock:
 @pytest.fixture
 def mock_hass(hass):
     """Create a Home Assistant instance with frame helper set."""
-    frame_helper.async_setup(hass)
+    if hasattr(frame_helper, "async_setup"):
+        frame_helper.async_setup(hass)
+    elif hasattr(frame_helper, "setup"):
+        frame_helper.setup(hass)
+    elif hasattr(frame_helper, "async_setup_frame"):
+        frame_helper.async_setup_frame(hass)
     return hass
 
 

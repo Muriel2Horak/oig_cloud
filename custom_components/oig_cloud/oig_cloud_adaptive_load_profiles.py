@@ -463,9 +463,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                         WHERE sm.statistic_id = :statistic_id
                         """
                     )
-                    result = session.execute(
-                        query, {"statistic_id": sensor_entity_id}
-                    )
+                    result = session.execute(query, {"statistic_id": sensor_entity_id})
                     return result.scalar()
 
             min_ts = await recorder_instance.async_add_executor_job(get_min_start_ts)
@@ -474,7 +472,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
             earliest = datetime.fromtimestamp(float(min_ts), tz=dt_util.UTC)
             local = dt_util.as_local(earliest)
-            return datetime.combine(local.date(), datetime.min.time(), tzinfo=local.tzinfo)
+            return datetime.combine(
+                local.date(), datetime.min.time(), tzinfo=local.tzinfo
+            )
 
         except Exception as e:
             _LOGGER.error(
@@ -484,7 +484,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
     def _build_daily_profiles(
         self, hourly_series: List[Tuple[datetime, float]]
-    ) -> Tuple[Dict[datetime.date, List[float]], Dict[int, float], Dict[datetime.date, int]]:
+    ) -> Tuple[
+        Dict[datetime.date, List[float]], Dict[int, float], Dict[datetime.date, int]
+    ]:
         """Zarovnat hodinová data na kalendářní dny a dopočítat chybějící hodiny."""
         if not hourly_series:
             return {}, {}, {}
@@ -603,9 +605,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             if d1 != d0 + timedelta(days=1) or d2 != d1 + timedelta(days=1):
                 continue
 
-            profile_data = (
-                daily_profiles[d0] + daily_profiles[d1] + daily_profiles[d2]
-            )
+            profile_data = daily_profiles[d0] + daily_profiles[d1] + daily_profiles[d2]
 
             if len(profile_data) != PROFILE_HOURS:
                 continue
@@ -710,9 +710,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return predicted, 0
 
         recent_window = recent_match[-24:] if recent_match else []
-        recent_avg = (
-            float(np.mean(recent_window)) if recent_window else 0.0
-        )
+        recent_avg = float(np.mean(recent_window)) if recent_window else 0.0
 
         applied = 0
         for idx, value in enumerate(predicted):
@@ -844,9 +842,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             history_label = "all"
             start_time = None
             if days_back is None:
-                start_time = await self._get_earliest_statistics_start(
-                    sensor_entity_id
-                )
+                start_time = await self._get_earliest_statistics_start(sensor_entity_id)
                 if not start_time:
                     days_back = DEFAULT_DAYS_BACK
                     history_label = f"{days_back}d (fallback)"
@@ -873,9 +869,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
             if not hourly_series:
                 self._last_profile_reason = "no_hourly_stats"
-                _LOGGER.debug(
-                    "No hourly statistics data for %s", sensor_entity_id
-                )
+                _LOGGER.debug("No hourly statistics data for %s", sensor_entity_id)
                 return None
 
             daily_profiles, hour_medians, interpolated = self._build_daily_profiles(
@@ -899,14 +893,10 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                     sum(interpolated.values()),
                 )
 
-            current_match = self._build_current_match(
-                hourly_series, hour_medians
-            )
+            current_match = self._build_current_match(hourly_series, hour_medians)
             if not current_match or len(current_match) < match_hours:
                 current_len = len(current_match) if current_match else 0
-                self._last_profile_reason = (
-                    f"not_enough_current_data_{current_len}"
-                )
+                self._last_profile_reason = f"not_enough_current_data_{current_len}"
                 _LOGGER.debug(
                     "Not enough current data for matching (need %s, got %s)",
                     match_hours,
@@ -926,9 +916,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 if len(profile_data) != PROFILE_HOURS:
                     continue
                 profile_match = profile_data[:match_hours]
-                score = self._calculate_profile_similarity(
-                    current_match, profile_match
-                )
+                score = self._calculate_profile_similarity(current_match, profile_match)
                 scored_profiles.append((score, profile))
 
             if not scored_profiles:
@@ -940,9 +928,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             sample_count = min(TOP_MATCHES, len(scored_profiles))
             selected = scored_profiles[:sample_count]
 
-            avg_score = (
-                float(np.mean([s for s, _ in selected])) if selected else 0.0
-            )
+            avg_score = float(np.mean([s for s, _ in selected])) if selected else 0.0
 
             avg_profile_full: List[float] = []
             for idx in range(PROFILE_HOURS):
@@ -964,14 +950,10 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 "match_hours": match_hours,
                 "predict_hours": predict_hours,
                 "sample_count": sample_count,
-                "matched_profile_sources": [
-                    p.get("start_date") for _, p in selected
-                ],
+                "matched_profile_sources": [p.get("start_date") for _, p in selected],
                 "floor_applied": floor_applied,
                 "data_source": sensor_entity_id,
-                "interpolated_hours": sum(interpolated.values())
-                if interpolated
-                else 0,
+                "interpolated_hours": sum(interpolated.values()) if interpolated else 0,
             }
 
             _LOGGER.info(

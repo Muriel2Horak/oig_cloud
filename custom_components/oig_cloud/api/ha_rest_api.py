@@ -219,13 +219,9 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     )
 
             active_timeline = stored_active or getattr(entity_obj, "_timeline_data", [])
-            baseline_timeline = []
             last_update = getattr(entity_obj, "_last_update", None)
             if stored_active and precomputed_data:
                 last_update = precomputed_data.get("last_update", last_update)
-
-            # Transform baseline timeline to API format (long keys → short keys)
-            baseline_timeline_api = _transform_timeline_for_api(baseline_timeline)
 
             # Build response based on requested type
             response_data: Dict[str, Any] = {}
