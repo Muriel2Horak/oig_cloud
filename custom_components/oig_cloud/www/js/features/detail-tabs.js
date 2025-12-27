@@ -633,9 +633,6 @@ class DetailTabsDialog {
         if (!intervalReasons || intervalReasons.length === 0) {
             return '';
         }
-        if (status === 'completed') {
-            return '';
-        }
 
         const items = intervalReasons.map(item => {
             const timeLabel = this.formatTimeLabel(item.time);
@@ -644,7 +641,7 @@ class DetailTabsDialog {
 
         return `
             <div class="block-item block-reasons">
-                <span class="item-label">🧠 Důvod:</span>
+                <span class="item-label">🧠 Důvod${status === 'completed' ? ' (plán)' : ''}:</span>
                 <div class="item-value reason-list">
                     ${items}
                 </div>

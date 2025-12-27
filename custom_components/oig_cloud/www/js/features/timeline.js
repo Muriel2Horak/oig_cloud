@@ -144,6 +144,14 @@ function getModeSegmentPixelRange(meta, segment) {
     };
 }
 
+function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
+    if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => task(), { timeout: timeoutMs });
+        return;
+    }
+    setTimeout(task, fallbackDelayMs);
+}
+
 // Global Today Plan Tile instance
 var todayPlanTileInstance = null;
 
@@ -235,6 +243,8 @@ class TimelineDialog {
         this.autoPlanSyncEnabled = true;
         this.activePlannerPlan = 'hybrid';  // Always hybrid
         this.compareCharts = {};
+        this.timelineCharts = {};
+        this.chartResizeObservers = new Map();
     }
 
     createEmptyCache() {
@@ -487,23 +497,25 @@ class TimelineDialog {
     /**
      * Prefetch data for all tabs (called on init, not on open)
      */
-    async prefetchAllTabs() {
-        console.log('[TimelineDialog] Prefetching all tab data...');
+    prefetchAllTabs() {
+        runWhenIdle(async () => {
+            console.log('[TimelineDialog] Prefetching all tab data...');
 
-        try {
-            let defaultPlan = 'hybrid';
-            if (window.PlannerState) {
-                try {
-                    defaultPlan = await window.PlannerState.getDefaultPlan();
-                } catch (error) {
-                    console.warn('[TimelineDialog] Failed to resolve default plan for prefetch', error);
+            try {
+                let defaultPlan = 'hybrid';
+                if (window.PlannerState) {
+                    try {
+                        defaultPlan = await window.PlannerState.getDefaultPlan();
+                    } catch (error) {
+                        console.warn('[TimelineDialog] Failed to resolve default plan for prefetch', error);
+                    }
                 }
+                await this.loadAllTabsData(false, defaultPlan);
+                console.log('[TimelineDialog] Prefetch complete');
+            } catch (error) {
+                console.warn('[TimelineDialog] Prefetch failed:', error);
             }
-            await this.loadAllTabsData(false, defaultPlan);
-            console.log('[TimelineDialog] Prefetch complete');
-        } catch (error) {
-            console.warn('[TimelineDialog] Prefetch failed:', error);
-        }
+        }, 2500, 900);
     }
 
     /**
@@ -637,6 +649,14 @@ class TimelineDialog {
         // Stop update interval
         this.stopUpdateInterval();
         this.destroyCompareCharts();
+        Object.values(this.timelineCharts).forEach((chart) => {
+            if (chart && typeof chart.destroy === 'function') {
+                chart.destroy();
+            }
+        });
+        this.timelineCharts = {};
+        this.chartResizeObservers.forEach((observer) => observer.disconnect());
+        this.chartResizeObservers.clear();
         this.autoPlanSyncEnabled = true;
         this.syncPlanWithAutoMode('hybrid');
     }
@@ -825,6 +845,38 @@ class TimelineDialog {
             container.innerHTML = this.renderTomorrowTab(data);
         } else if (dayType === 'history') {
             container.innerHTML = this.renderHistoryTab(data);
+        }
+    }
+
+    scheduleChartResize(chart, canvas) {
+        if (!chart || !canvas) {
+            return;
+        }
+
+        const resize = () => {
+            try {
+                chart.resize();
+            } catch (err) {
+                // Ignore resize errors when chart is being destroyed
+            }
+        };
+
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(() => {
+                resize();
+                window.requestAnimationFrame(resize);
+            });
+        } else {
+            setTimeout(resize, 50);
+        }
+
+        if (typeof ResizeObserver !== 'undefined') {
+            const container = canvas.parentElement;
+            if (container && !this.chartResizeObservers.has(canvas)) {
+                const observer = new ResizeObserver(() => resize());
+                observer.observe(container);
+                this.chartResizeObservers.set(canvas, observer);
+            }
         }
     }
 
@@ -1536,9 +1588,6 @@ class TimelineDialog {
         if (!intervalReasons || intervalReasons.length === 0) {
             return '';
         }
-        if (status === 'completed') {
-            return '';
-        }
 
         const items = intervalReasons.map(item => {
             const timeLabel = this.formatReasonTime(item.time);
@@ -1547,7 +1596,7 @@ class TimelineDialog {
 
         return `
             <div class="block-item block-reasons">
-                <span class="item-label">🧠 Důvod:</span>
+                <span class="item-label">🧠 Důvod${status === 'completed' ? ' (plán)' : ''}:</span>
                 <div class="item-value reason-list">
                     ${items}
                 </div>
@@ -2821,6 +2870,7 @@ class TimelineDialog {
                 }
             }
         });
+        this.scheduleChartResize(this.compareCharts.energy, energyCanvas);
 
         this.compareCharts.soc = new Chart(socCanvas.getContext('2d'), {
             type: 'line',
@@ -2884,6 +2934,7 @@ class TimelineDialog {
                 }
             }
         });
+        this.scheduleChartResize(this.compareCharts.soc, socCanvas);
 
         this.compareCharts.cost = new Chart(costCanvas.getContext('2d'), {
             data: {
@@ -2945,6 +2996,7 @@ class TimelineDialog {
                 }
             }
         });
+        this.scheduleChartResize(this.compareCharts.cost, costCanvas);
     }
 
     /**
@@ -3581,8 +3633,17 @@ class TimelineDialog {
         }
 
         // Create chart with NOW marker annotation
+        if (this.timelineCharts[dayType]) {
+            try {
+                this.timelineCharts[dayType].destroy();
+            } catch (err) {
+                // Ignore destroy errors
+            }
+            this.timelineCharts[dayType] = null;
+        }
+
         const ctx = canvas.getContext('2d');
-        new Chart(ctx, {
+        const chart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
@@ -3673,6 +3734,9 @@ class TimelineDialog {
                 }
             }
         });
+
+        this.timelineCharts[dayType] = chart;
+        this.scheduleChartResize(chart, canvas);
     }
 
     /**

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -7443,13 +7444,25 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             for iv in group_intervals
             if isinstance(iv.get("planned"), dict)
         ]
-        if not planned_entries:
+        actual_entries = [
+            iv.get("actual")
+            for iv in group_intervals
+            if isinstance(iv.get("actual"), dict)
+        ]
+        entries_source = planned_entries if planned_entries else actual_entries
+        if not entries_source:
             return None
 
-        metrics_list = [p.get("decision_metrics") or {} for p in planned_entries]
+        metrics_list = (
+            [p.get("decision_metrics") or {} for p in planned_entries]
+            if planned_entries
+            else []
+        )
 
-        guard_metrics = next(
-            (m for m in metrics_list if m.get("guard_active")), None
+        guard_metrics = (
+            next((m for m in metrics_list if m.get("guard_active")), None)
+            if metrics_list
+            else None
         )
         if guard_metrics:
             guard_type = guard_metrics.get("guard_type")
@@ -7490,23 +7503,37 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 return None
             return sum(vals) / len(vals)
 
+        def _avg_from_metrics(key: str) -> Optional[float]:
+            if not metrics_list:
+                return None
+            return _mean([m.get(key) for m in metrics_list if m.get(key) is not None])
+
+        def _avg_from_entries(key: str) -> Optional[float]:
+            return _mean(
+                [
+                    entry.get(key)
+                    for entry in entries_source
+                    if isinstance(entry.get(key), (int, float))
+                ]
+            )
+
         prices: List[Optional[float]] = []
-        for planned in planned_entries:
-            price = planned.get("spot_price")
+        for entry in entries_source:
+            price = entry.get("spot_price")
             if price is None:
-                price = planned.get("spot_price_czk")
+                price = entry.get("spot_price_czk")
             if price is None:
-                price = (planned.get("decision_metrics") or {}).get("spot_price_czk")
+                price = (entry.get("decision_metrics") or {}).get("spot_price_czk")
             prices.append(price)
         avg_price = _mean(prices)
 
-        avg_future_ups = _mean(
-            [
-                m.get("future_ups_avg_price_czk")
-                for m in metrics_list
-                if m.get("future_ups_avg_price_czk") is not None
-            ]
-        )
+        avg_future_ups = _avg_from_metrics("future_ups_avg_price_czk")
+        avg_grid_charge = _avg_from_metrics("grid_charge_kwh")
+        avg_home1_saving = _avg_from_metrics("home1_saving_czk")
+        avg_recharge_cost = _avg_from_metrics("recharge_cost_czk")
+        avg_deficit = _avg_from_metrics("deficit_kwh")
+        avg_solar = _avg_from_entries("solar_kwh")
+        avg_load = _avg_from_entries("consumption_kwh")
 
         start_kwh = block.get("battery_kwh_start")
         end_kwh = block.get("battery_kwh_end")
@@ -7531,6 +7558,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         if dominant_code:
             if dominant_code == "price_band_hold":
                 if avg_price is not None:
+                    if avg_future_ups is not None and avg_price <= avg_future_ups - 0.01:
+                        return (
+                            "UPS držíme v cenovém pásmu ±"
+                            f"{band_pct * 100:.0f}% "
+                            f"(průměr {avg_price:.2f} Kč/kWh, "
+                            f"levnější než další okna {avg_future_ups:.2f} Kč/kWh)."
+                        )
                     return (
                         "UPS držíme v cenovém pásmu ±"
                         f"{band_pct * 100:.0f}% "
@@ -7542,45 +7576,57 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 dominant_code, spot_price=avg_price
             )
             if reason_text:
+                if avg_price is not None and "Kč/kWh" not in reason_text:
+                    reason_text = (
+                        f"{reason_text} (průměr {avg_price:.2f} Kč/kWh)."
+                    )
                 return reason_text
 
         if "UPS" in mode_upper:
+            charge_kwh = None
+            if avg_grid_charge is not None and avg_grid_charge > 0.01:
+                charge_kwh = avg_grid_charge
+            elif delta_kwh is not None and delta_kwh > 0.05:
+                charge_kwh = delta_kwh
+
             if avg_price is not None:
                 if avg_price <= max_ups_price + 0.0001:
-                    return (
-                        "Nabíjíme ze sítě: průměrná cena "
-                        f"{avg_price:.2f} Kč/kWh je pod limitem "
-                        f"{max_ups_price:.2f} Kč/kWh."
+                    detail = (
+                        f"Nabíjíme ze sítě"
+                        + (f" (+{charge_kwh:.2f} kWh)" if charge_kwh else "")
+                        + f": {avg_price:.2f} Kč/kWh ≤ limit {max_ups_price:.2f}."
                     )
-                return (
-                    "UPS režim při vyšší ceně "
-                    f"{avg_price:.2f} Kč/kWh (limit {max_ups_price:.2f})."
+                    if avg_future_ups is not None and avg_price <= avg_future_ups - 0.01:
+                        detail += (
+                            f" Je levnější než další UPS okna ({avg_future_ups:.2f} Kč/kWh)."
+                        )
+                    return detail
+                detail = (
+                    f"UPS režim i přes vyšší cenu {avg_price:.2f} Kč/kWh "
+                    f"(limit {max_ups_price:.2f})"
                 )
+                if charge_kwh:
+                    detail += f", nabíjení +{charge_kwh:.2f} kWh."
+                else:
+                    detail += "."
+                return detail
             return "UPS režim (plánované nabíjení)."
 
         if "HOME II" in mode_upper or "HOME 2" in mode_upper:
-            avg_save = _mean(
-                [
-                    m.get("home1_saving_czk")
-                    for m in metrics_list
-                    if m.get("home1_saving_czk") is not None
-                ]
-            )
-            avg_recharge = _mean(
-                [
-                    m.get("recharge_cost_czk")
-                    for m in metrics_list
-                    if m.get("recharge_cost_czk") is not None
-                ]
-            )
-            if avg_save is not None and avg_recharge is not None:
+            if avg_home1_saving is not None and avg_recharge_cost is not None:
                 return (
-                    "Držíme baterii: HOME I by ušetřil ~"
-                    f"{avg_save:.2f} Kč, dobíjení v UPS ~{avg_recharge:.2f} Kč."
+                    "Držíme baterii (HOME II): HOME I by ušetřil ~"
+                    f"{avg_home1_saving:.2f} Kč, dobíjení v UPS ~{avg_recharge_cost:.2f} Kč."
                 )
             return "Držíme baterii (HOME II), bez vybíjení do zátěže."
 
         if "HOME III" in mode_upper or "HOME 3" in mode_upper:
+            if avg_solar is not None and avg_load is not None and avg_solar > avg_load:
+                return (
+                    "HOME III: FVE pokrývá spotřebu "
+                    f"({avg_solar:.2f} kWh > {avg_load:.2f} kWh), "
+                    "maximalizujeme nabíjení."
+                )
             return "Maximalizujeme nabíjení z FVE, spotřeba jde ze sítě."
 
         if "HOME I" in mode_upper or "HOME 1" in mode_upper:
@@ -7609,11 +7655,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     "Solár pokrývá spotřebu, přebytky ukládáme do baterie "
                     f"(+{delta_kwh:.2f} kWh)."
                 )
+            if avg_solar is not None and avg_load is not None and avg_solar >= avg_load:
+                return (
+                    "Solár pokrývá spotřebu "
+                    f"({avg_solar:.2f} kWh ≥ {avg_load:.2f} kWh), "
+                    "baterie se výrazně nemění."
+                )
             return "Solár pokrývá spotřebu, baterie se výrazně nemění."
 
         reasons = [
             p.get("decision_reason")
-            for p in planned_entries
+            for p in entries_source
             if p.get("decision_reason")
         ]
         if reasons:
@@ -12600,14 +12652,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         # Získat název z profile["ui"]["name"]
         ui = profile.get("ui", {})
-        description = ui.get("name", "Neznámý profil")
+        raw_name = ui.get("name", "Neznámý profil") or "Neznámý profil"
+        cleaned_name = re.sub(
+            r"\s*\([^)]*(podobn|shoda)[^)]*\)",
+            "",
+            str(raw_name),
+            flags=re.IGNORECASE,
+        ).strip()
+        if not cleaned_name:
+            cleaned_name = str(raw_name).strip()
+        cleaned_name = re.sub(r"\s{2,}", " ", cleaned_name)
 
         # Získat season z profile["characteristics"]["season"]
         characteristics = profile.get("characteristics", {})
         season = characteristics.get("season", "")
 
         # Počet dnů z profile["sample_count"]
-        day_count = profile.get("sample_count", 0)
+        day_count = ui.get("sample_count", profile.get("sample_count", 0))
+        similarity_score = ui.get("similarity_score")
 
         # České názvy ročních období
         season_names = {
@@ -12618,13 +12680,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         }
         season_cz = season_names.get(season, season)
 
-        # Formát: "Popis (season, X podobných dnů)"
-        if season and day_count > 0:
-            return f"{description} ({season_cz}, {day_count} podobných dnů)"
-        elif season:
-            return f"{description} ({season_cz})"
-        else:
-            return description
+        suffix_parts: List[str] = []
+        if season_cz:
+            suffix_parts.append(str(season_cz))
+        try:
+            day_count_val = int(day_count) if day_count is not None else 0
+        except (TypeError, ValueError):
+            day_count_val = 0
+        if day_count_val > 0:
+            suffix_parts.append(f"{day_count_val} dnů")
+        try:
+            similarity_val = (
+                float(similarity_score) if similarity_score is not None else None
+            )
+        except (TypeError, ValueError):
+            similarity_val = None
+        if similarity_val is not None:
+            suffix_parts.append(f"shoda {similarity_val:.2f}")
+
+        if suffix_parts:
+            return f"{cleaned_name} ({', '.join(suffix_parts)})"
+        return cleaned_name
 
     def _process_adaptive_consumption_for_dashboard(
         self, adaptive_profiles: Optional[Dict[str, Any]]

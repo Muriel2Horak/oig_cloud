@@ -25,6 +25,31 @@ function toggleControlPanel() {
     icon.textContent = panel.classList.contains('minimized') ? '+' : '−';
 }
 
+function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
+    if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => task(), { timeout: timeoutMs });
+        return;
+    }
+    setTimeout(task, fallbackDelayMs);
+}
+
+function detectHaApp() {
+    try {
+        const ua = window.navigator?.userAgent || '';
+        return /Home Assistant/i.test(ua);
+    } catch (e) {
+        return false;
+    }
+}
+
+window.OIG_RUNTIME = window.OIG_RUNTIME || {};
+if (window.OIG_RUNTIME.isHaApp === undefined) {
+    window.OIG_RUNTIME.isHaApp = detectHaApp();
+}
+if (window.OIG_RUNTIME.initialLoadComplete === undefined) {
+    window.OIG_RUNTIME.initialLoadComplete = false;
+}
+
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
 var subscribeToShield = window.DashboardShield?.subscribeToShield;
@@ -340,12 +365,20 @@ function init() {
     // Pokud byl načten custom layout, particles byly zastaveny
     // a needsFlowReinitialize je TRUE, takže loadData() je restartuje
     setTimeout(() => {
-        // Initial full load
-        forceFullRefresh();
+        // Initial full load (defer heavy work in HA app to avoid UI freeze)
+        const startHeavyLoad = () => {
+            forceFullRefresh();
+        };
+        if (window.OIG_RUNTIME?.isHaApp) {
+            setTimeout(() => runWhenIdle(startHeavyLoad, 2500, 900), 200);
+        } else {
+            startHeavyLoad();
+        }
+
         updateTime();
 
         // NOVÉ: Load extended timeline for Today Plan Tile
-        buildExtendedTimeline();
+        runWhenIdle(buildExtendedTimeline, 2500, 900);
 
         // OPRAVA: Načíst pricing data pokud je pricing tab aktivní při načtení stránky
         const pricingTab = document.getElementById('pricing-tab');

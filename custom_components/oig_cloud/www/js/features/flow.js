@@ -1151,6 +1151,19 @@ async function loadData() {
     }
     loadDataInProgress = true;
     try {
+    const runtime = window.OIG_RUNTIME || {};
+    const shouldYield = !!runtime.isHaApp && !runtime.initialLoadComplete;
+    const yieldIfNeeded = async () => {
+        if (!shouldYield) return;
+        await new Promise(resolve => {
+            if (typeof window.requestAnimationFrame === 'function') {
+                window.requestAnimationFrame(() => resolve());
+            } else {
+                setTimeout(resolve, 0);
+            }
+        });
+    };
+
     // Solar
     const [solarP1Data, solarP2Data, solarPercData, solarTodayData] = await Promise.all([
         getSensor(getSensorId('actual_fv_p1')),
@@ -1190,6 +1203,8 @@ async function loadData() {
     // Update active class only if changed
     const solarNode = document.querySelector('.solar');
     updateClassIfChanged(solarNode, 'active', solarPower > 50);
+
+    await yieldIfNeeded();
 
     // Battery
     const [batterySoCData, batteryPowerData] = await Promise.all([
@@ -1318,6 +1333,8 @@ async function loadData() {
     // Update temperature value
     updateElementIfChanged('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
 
+    await yieldIfNeeded();
+
     // Grid
     const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
     const gridConsumptionData = await getSensor(getSensorId('extended_grid_consumption'));
@@ -1353,6 +1370,8 @@ async function loadData() {
         gridStatus.className = newGridClass;
         previousValues['grid-state'] = newGridState;
     }
+
+    await yieldIfNeeded();
 
     // House
     const housePowerData = await getSensor(getSensorId('actual_aco_p'));
@@ -1556,7 +1575,17 @@ async function loadData() {
     // Load details for all nodes (only on first load or explicit refresh)
     if (!previousValues['node-details-loaded']) {
         // Do not await heavy details on first render; it can freeze iOS WebView.
-        loadNodeDetails();
+        if (runtime.isHaApp && !runtime.initialLoadComplete) {
+            if (!runtime.nodeDetailsScheduled) {
+                runtime.nodeDetailsScheduled = true;
+                setTimeout(() => {
+                    loadNodeDetails();
+                    runtime.nodeDetailsScheduled = false;
+                }, 1500);
+            }
+        } else {
+            loadNodeDetails();
+        }
         previousValues['node-details-loaded'] = true;
     }
 
@@ -1586,6 +1615,9 @@ async function loadData() {
     // Performance chart removed (legacy performance tracking)
     } finally {
         loadDataInProgress = false;
+        if (window.OIG_RUNTIME) {
+            window.OIG_RUNTIME.initialLoadComplete = true;
+        }
         if (loadDataPending) {
             loadDataPending = false;
             setTimeout(() => loadData(), 0);
