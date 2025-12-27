@@ -1150,9 +1150,10 @@ async function loadData() {
         return;
     }
     loadDataInProgress = true;
-    try {
     const runtime = window.OIG_RUNTIME || {};
-    const shouldYield = !!runtime.isHaApp && !runtime.initialLoadComplete;
+    try {
+    const isConstrainedRuntime = !!runtime.isHaApp || !!runtime.isMobile || window.innerWidth <= 768;
+    const shouldYield = isConstrainedRuntime && !runtime.initialLoadComplete;
     const yieldIfNeeded = async () => {
         if (!shouldYield) return;
         await new Promise(resolve => {
@@ -1415,6 +1416,7 @@ async function loadData() {
     }
 
     await updatePlannerModeBadge();
+    await yieldIfNeeded();
 
     // Aktualizovat boiler mode (ve flow diagramu), ale zachovat třídu mode-changing pokud existuje
     const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
@@ -1562,7 +1564,11 @@ async function loadData() {
         const flowTab = document.querySelector('#flow-tab');
         const isFlowTabActive = flowTab && flowTab.classList.contains('active');
         if (isFlowTabActive) {
-            animateFlow(currentPowerValues);
+            if (isConstrainedRuntime && !runtime.initialLoadComplete) {
+                runtime.pendingFlowValues = currentPowerValues;
+            } else {
+                animateFlow(currentPowerValues);
+            }
         }
     }
 
@@ -1575,7 +1581,7 @@ async function loadData() {
     // Load details for all nodes (only on first load or explicit refresh)
     if (!previousValues['node-details-loaded']) {
         // Do not await heavy details on first render; it can freeze iOS WebView.
-        if (runtime.isHaApp && !runtime.initialLoadComplete) {
+        if ((runtime.isHaApp || runtime.isMobile || window.innerWidth <= 768) && !runtime.initialLoadComplete) {
             if (!runtime.nodeDetailsScheduled) {
                 runtime.nodeDetailsScheduled = true;
                 setTimeout(() => {
@@ -1617,6 +1623,16 @@ async function loadData() {
         loadDataInProgress = false;
         if (window.OIG_RUNTIME) {
             window.OIG_RUNTIME.initialLoadComplete = true;
+        }
+        if (runtime.pendingFlowValues && (runtime.isHaApp || runtime.isMobile || window.innerWidth <= 768)) {
+            const pendingValues = runtime.pendingFlowValues;
+            runtime.pendingFlowValues = null;
+            setTimeout(() => {
+                const flowTab = document.querySelector('#flow-tab');
+                if (flowTab && flowTab.classList.contains('active')) {
+                    animateFlow(pendingValues);
+                }
+            }, 400);
         }
         if (loadDataPending) {
             loadDataPending = false;

@@ -36,7 +36,18 @@ function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
 function detectHaApp() {
     try {
         const ua = window.navigator?.userAgent || '';
-        return /Home Assistant/i.test(ua);
+        return /Home Assistant|HomeAssistant/i.test(ua);
+    } catch (e) {
+        return false;
+    }
+}
+
+function detectMobile() {
+    try {
+        const ua = window.navigator?.userAgent || '';
+        const mobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+        const smallViewport = window.innerWidth <= 768 || window.matchMedia?.('(max-width: 768px)')?.matches;
+        return mobileUA || !!smallViewport;
     } catch (e) {
         return false;
     }
@@ -45,6 +56,9 @@ function detectHaApp() {
 window.OIG_RUNTIME = window.OIG_RUNTIME || {};
 if (window.OIG_RUNTIME.isHaApp === undefined) {
     window.OIG_RUNTIME.isHaApp = detectHaApp();
+}
+if (window.OIG_RUNTIME.isMobile === undefined) {
+    window.OIG_RUNTIME.isMobile = detectMobile();
 }
 if (window.OIG_RUNTIME.initialLoadComplete === undefined) {
     window.OIG_RUNTIME.initialLoadComplete = false;
@@ -321,6 +335,7 @@ var closeGridChargingDialog = window.DashboardGridCharging?.closeGridChargingDia
 // === INITIALIZATION ===
 function init() {
     console.log('[Dashboard] Initializing...');
+    const isConstrainedRuntime = !!(window.OIG_RUNTIME?.isHaApp || window.OIG_RUNTIME?.isMobile);
 
     // Detekovat a aplikovat téma z Home Assistantu
     detectAndApplyTheme();
@@ -369,8 +384,8 @@ function init() {
         const startHeavyLoad = () => {
             forceFullRefresh();
         };
-        if (window.OIG_RUNTIME?.isHaApp) {
-            setTimeout(() => runWhenIdle(startHeavyLoad, 2500, 900), 200);
+        if (isConstrainedRuntime) {
+            setTimeout(() => runWhenIdle(startHeavyLoad, 3500, 1200), 200);
         } else {
             startHeavyLoad();
         }
@@ -378,7 +393,7 @@ function init() {
         updateTime();
 
         // NOVÉ: Load extended timeline for Today Plan Tile
-        runWhenIdle(buildExtendedTimeline, 2500, 900);
+        runWhenIdle(buildExtendedTimeline, isConstrainedRuntime ? 3500 : 2500, isConstrainedRuntime ? 1200 : 900);
 
         // OPRAVA: Načíst pricing data pokud je pricing tab aktivní při načtení stránky
         const pricingTab = document.getElementById('pricing-tab');
@@ -566,10 +581,18 @@ function init() {
     // Problém: Po restartu HA se někdy načítají CSS/HTML v jiném pořadí
     // Řešení: Opakované překreslení po různých intervalech
     // OPRAVA BUG #3: Inicializovat cache před prvním kreslením
-    setTimeout(() => { getNodeCenters(); drawConnections(); }, 100);   // První pokus po 100ms
-    setTimeout(() => { getNodeCenters(); drawConnections(); }, 500);   // Druhý pokus po 500ms
-    setTimeout(() => { getNodeCenters(); drawConnections(); }, 1000);  // Třetí pokus po 1s
-    setTimeout(() => { getNodeCenters(); drawConnections(); }, 2000);  // Finální po 2s
+    const scheduleConnectionsDraw = (delay) => {
+        setTimeout(() => { getNodeCenters(); drawConnections(); }, delay);
+    };
+    if (isConstrainedRuntime) {
+        scheduleConnectionsDraw(200);   // První pokus po 200ms (mobile/HA app)
+        scheduleConnectionsDraw(1200);  // Finální po 1.2s
+    } else {
+        scheduleConnectionsDraw(100);   // První pokus po 100ms
+        scheduleConnectionsDraw(500);   // Druhý pokus po 500ms
+        scheduleConnectionsDraw(1000);  // Třetí pokus po 1s
+        scheduleConnectionsDraw(2000);  // Finální po 2s
+    }
 
     // Mobile: Toggle node details on click (collapsed by default)
     if (window.innerWidth <= 768) {
