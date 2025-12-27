@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import time
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
@@ -45,7 +46,7 @@ from .physics import simulate_interval
 
 _LOGGER = logging.getLogger(__name__)
 
-AUTO_SWITCH_STARTUP_DELAY = timedelta(minutes=4)
+AUTO_SWITCH_STARTUP_DELAY = timedelta(seconds=0)
 
 
 # PHASE 3.0 FIX: Safe nested get helper to prevent AttributeError on None values
@@ -135,6 +136,9 @@ MIN_MODE_DURATION = {
     MODE_LABEL_HOME_II: 1,
 }
 
+# Stabilizační guard po změně režimu (v minutách)
+MODE_GUARD_MINUTES = 60
+
 CBB_MODE_SERVICE_MAP = {
     CBB_MODE_HOME_I: SERVICE_MODE_HOME_1,
     CBB_MODE_HOME_II: SERVICE_MODE_HOME_2,
@@ -222,6 +226,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         self._last_forecast_bucket: Optional[datetime] = None
         self._forecast_in_progress: bool = False
         self._profiles_dirty: bool = False
+        self._plan_lock_until: Optional[datetime] = None
+        self._plan_lock_modes: Dict[str, int] = {}
         self._timeline_data: List[Dict[str, Any]] = (
             []
         )  # ACTIVE timeline (with applied plan)
@@ -882,6 +888,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 minute=bucket_minute, second=0, microsecond=0
             )
 
+            previous_timeline = (
+                copy.deepcopy(self._timeline_data)
+                if getattr(self, "_timeline_data", None)
+                else None
+            )
+
             # Enforce single in-flight computation.
             if self._forecast_in_progress:
                 self._log_rate_limited(
@@ -1191,8 +1203,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
 
                 hw_min_kwh = max_capacity * 0.20
-                self._timeline_data = self._build_planner_timeline(
+                planning_min_kwh = hybrid_config.planning_min_kwh(max_capacity)
+                (
+                    guarded_modes,
+                    guard_overrides,
+                    guard_until,
+                    guard_current_mode,
+                ) = self._apply_mode_guard(
                     modes=result.modes,
+                    spot_prices=spot_prices,
+                    solar_kwh_list=solar_kwh_list,
+                    load_forecast=load_forecast,
+                    current_capacity=current_capacity,
+                    max_capacity=max_capacity,
+                    hw_min_capacity=hw_min_kwh,
+                    efficiency=efficiency,
+                    home_charge_rate_kw=home_charge_rate_kw,
+                    planning_min_kwh=planning_min_kwh,
+                    previous_timeline=previous_timeline,
+                )
+                self._timeline_data = self._build_planner_timeline(
+                    modes=guarded_modes,
                     spot_prices=spot_prices,
                     export_prices=export_prices,
                     solar_forecast=solar_forecast,
@@ -1205,7 +1236,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 )
                 self._attach_planner_reasons(self._timeline_data, result.decisions)
 
-                planning_min_kwh = hybrid_config.planning_min_kwh(max_capacity)
                 self._add_decision_reasons_to_timeline(
                     self._timeline_data,
                     current_capacity=current_capacity,
@@ -1213,10 +1243,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     min_capacity=planning_min_kwh,
                     efficiency=float(efficiency),
                 )
+                self._apply_guard_reasons_to_timeline(
+                    self._timeline_data,
+                    guard_overrides,
+                    guard_until,
+                    guard_current_mode,
+                )
                 self._hybrid_timeline = self._timeline_data
                 self._mode_optimization_result = {
                     "optimal_timeline": self._timeline_data,
-                    "optimal_modes": result.modes,
+                    "optimal_modes": guarded_modes,
                     "planner": "planner",
                     "planning_min_kwh": planning_min_kwh,
                     "target_kwh": hybrid_config.target_kwh(max_capacity),
@@ -2858,6 +2894,243 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         return result
 
+    def _get_mode_guard_context(
+        self, now: datetime
+    ) -> Tuple[Optional[int], Optional[datetime]]:
+        """Zjistit aktuální režim a konec guard okna po poslední změně."""
+        if not self._hass or MODE_GUARD_MINUTES <= 0:
+            return None, None
+
+        sensor_id = f"sensor.oig_{self._box_id}_box_prms_mode"
+        state = self._hass.states.get(sensor_id)
+        if not state or state.state in ["unknown", "unavailable", None]:
+            return None, None
+
+        current_mode = self._get_current_mode()
+        last_changed = getattr(state, "last_changed", None)
+        if not isinstance(last_changed, datetime):
+            return current_mode, None
+
+        if last_changed.tzinfo is None:
+            last_changed = dt_util.as_local(last_changed)
+
+        guard_until = last_changed + timedelta(minutes=MODE_GUARD_MINUTES)
+        if guard_until <= now:
+            return current_mode, None
+
+        return current_mode, guard_until
+
+    def _get_plan_lock(
+        self,
+        now: datetime,
+        spot_prices: List[Dict[str, Any]],
+        modes: List[int],
+    ) -> Tuple[Optional[datetime], Dict[str, int]]:
+        """Vrátit uzamčený plán pro nejbližších MODE_GUARD_MINUTES minut."""
+        if MODE_GUARD_MINUTES <= 0:
+            return None, {}
+
+        lock_until = self._plan_lock_until
+        lock_modes = self._plan_lock_modes or {}
+        if isinstance(lock_until, datetime) and now < lock_until and lock_modes:
+            return lock_until, lock_modes
+
+        lock_until = now + timedelta(minutes=MODE_GUARD_MINUTES)
+        lock_modes = {}
+        for i, sp in enumerate(spot_prices):
+            if i >= len(modes):
+                break
+            ts_value = sp.get("time")
+            start_dt = self._parse_timeline_timestamp(str(ts_value or ""))
+            if not start_dt:
+                start_dt = now + timedelta(minutes=15 * i)
+            if start_dt >= lock_until:
+                break
+            if ts_value:
+                lock_modes[str(ts_value)] = modes[i]
+
+        self._plan_lock_until = lock_until
+        self._plan_lock_modes = lock_modes
+        return lock_until, lock_modes
+
+    def _apply_mode_guard(
+        self,
+        *,
+        modes: List[int],
+        spot_prices: List[Dict[str, Any]],
+        solar_kwh_list: List[float],
+        load_forecast: List[float],
+        current_capacity: float,
+        max_capacity: float,
+        hw_min_capacity: float,
+        efficiency: float,
+        home_charge_rate_kw: float,
+        planning_min_kwh: float,
+        previous_timeline: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[List[int], List[Dict[str, Any]], Optional[datetime], Optional[int]]:
+        """Uzamknout plán v guard okně na potvrzený plán, výjimka jen při nízkém SoC."""
+        if not modes:
+            return modes, [], None, None
+
+        now = dt_util.now()
+        guard_until, lock_modes = self._get_plan_lock(now, spot_prices, modes)
+        if guard_until is None or not lock_modes:
+            return modes, [], None, None
+
+        guarded_modes = list(modes)
+        overrides: List[Dict[str, Any]] = []
+        soc = current_capacity
+        charge_rate_kwh_15min = home_charge_rate_kw / 4.0
+
+        for i, planned_mode in enumerate(modes):
+            if i >= len(spot_prices):
+                break
+
+            ts_value = spot_prices[i].get("time")
+            start_dt = self._parse_timeline_timestamp(str(ts_value or ""))
+            if not start_dt:
+                start_dt = now + timedelta(minutes=15 * i)
+
+            if start_dt >= guard_until:
+                break
+
+            solar_kwh = solar_kwh_list[i] if i < len(solar_kwh_list) else 0.0
+            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+            locked_mode = lock_modes.get(str(ts_value or ""))
+
+            # Držíme potvrzený plán v rámci lock okna.
+            forced_mode = locked_mode if locked_mode is not None else planned_mode
+            res = simulate_interval(
+                mode=forced_mode,
+                solar_kwh=solar_kwh,
+                load_kwh=load_kwh,
+                battery_soc_kwh=soc,
+                capacity_kwh=max_capacity,
+                hw_min_capacity_kwh=hw_min_capacity,
+                charge_efficiency=efficiency,
+                discharge_efficiency=efficiency,
+                home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+            )
+            next_soc = res.new_soc_kwh
+
+            if next_soc < planning_min_kwh:
+                # Výjimka: plánovací minimum by bylo porušeno → necháme plán.
+                if planned_mode != forced_mode:
+                    overrides.append(
+                        {
+                            "idx": i,
+                            "type": "guard_exception_soc",
+                            "planned_mode": planned_mode,
+                            "forced_mode": planned_mode,
+                        }
+                    )
+                forced_mode = planned_mode
+                res = simulate_interval(
+                    mode=forced_mode,
+                    solar_kwh=solar_kwh,
+                    load_kwh=load_kwh,
+                    battery_soc_kwh=soc,
+                    capacity_kwh=max_capacity,
+                    hw_min_capacity_kwh=hw_min_capacity,
+                    charge_efficiency=efficiency,
+                    discharge_efficiency=efficiency,
+                    home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+                )
+                next_soc = res.new_soc_kwh
+            else:
+                if planned_mode != forced_mode:
+                    guarded_modes[i] = forced_mode
+                    overrides.append(
+                        {
+                            "idx": i,
+                            "type": "guard_locked_plan",
+                            "planned_mode": planned_mode,
+                            "forced_mode": forced_mode,
+                        }
+                    )
+
+            soc = next_soc
+
+        if overrides:
+            self._log_rate_limited(
+                "mode_guard_applied",
+                "info",
+                "🛡️ Guard aktivní: zamknuto %s intervalů (do %s)",
+                len(overrides),
+                guard_until.isoformat(),
+                cooldown_s=900.0,
+            )
+
+        return guarded_modes, overrides, guard_until, None
+
+    def _apply_guard_reasons_to_timeline(
+        self,
+        timeline: List[Dict[str, Any]],
+        overrides: List[Dict[str, Any]],
+        guard_until: Optional[datetime],
+        current_mode: Optional[int],
+    ) -> None:
+        if not timeline or not overrides:
+            return
+
+        current_mode_name = (
+            CBB_MODE_NAMES.get(current_mode, "HOME I") if current_mode is not None else ""
+        )
+        guard_until_str = guard_until.isoformat() if guard_until else None
+
+        for override in overrides:
+            idx = override.get("idx")
+            if idx is None or idx >= len(timeline):
+                continue
+
+            entry = timeline[idx]
+            planned_mode = override.get("planned_mode")
+            forced_mode = override.get("forced_mode")
+            override_type = override.get("type")
+
+            planned_name = CBB_MODE_NAMES.get(planned_mode, "HOME I")
+            forced_name = CBB_MODE_NAMES.get(forced_mode, planned_name)
+
+            if override_type == "guard_exception_soc":
+                reason = (
+                    "Výjimka guardu: SoC pod plánovacím minimem – "
+                    f"povolujeme změnu na {planned_name}."
+                )
+            elif override_type == "guard_locked_plan":
+                guard_until_label = self._format_time_label(guard_until_str)
+                if guard_until_label != "--:--":
+                    reason = (
+                        "Stabilizace: držíme potvrzený plán "
+                        f"{forced_name} do {guard_until_label}."
+                    )
+                else:
+                    reason = (
+                        "Stabilizace: držíme potvrzený plán "
+                        f"{forced_name} 60 min po poslední změně."
+                    )
+            else:
+                reason = (
+                    "Stabilizace: držíme aktuální režim "
+                    f"{current_mode_name or forced_name} 60 min po poslední změně."
+                )
+
+            metrics = entry.get("decision_metrics") or {}
+            existing_reason = entry.get("decision_reason")
+            if existing_reason:
+                metrics.setdefault("guard_original_reason", existing_reason)
+
+            metrics.update(
+                {
+                    "guard_active": True,
+                    "guard_type": override_type,
+                    "guard_until": guard_until_str,
+                    "guard_planned_mode": planned_name,
+                    "guard_forced_mode": forced_name,
+                }
+            )
+            entry["decision_metrics"] = metrics
+            entry["decision_reason"] = reason
+
     def _build_strategy_balancing_plan(
         self,
         spot_prices: List[Dict[str, Any]],
@@ -3080,6 +3353,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 return f"Plánované nabíjení ze sítě ({spot_price:.2f} Kč/kWh)"
             return "Plánované nabíjení ze sítě"
 
+        if reason_code == "price_band_hold":
+            if spot_price is not None:
+                return (
+                    f"UPS držíme v cenovém pásmu dle účinnosti "
+                    f"({spot_price:.2f} Kč/kWh)"
+                )
+            return "UPS držíme v cenovém pásmu dle účinnosti"
+
         if reason_code in {"balancing_charge", "balancing_override"}:
             return "Balancování: nabíjení na 100 %"
         if reason_code == "holding_period":
@@ -3232,6 +3513,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 decision_reason = existing_reason
             if existing_metrics:
                 decision_metrics = {**decision_metrics, **existing_metrics}
+
+            avg_ups_price = future_ups_avg_price[idx]
+            decision_metrics.setdefault("spot_price_czk", round(price, 2))
+            decision_metrics.setdefault(
+                "future_ups_avg_price_czk",
+                round(avg_ups_price, 2) if avg_ups_price is not None else None,
+            )
+            decision_metrics.setdefault("load_kwh", round(load_kwh, 3))
+            decision_metrics.setdefault("solar_kwh", round(solar_kwh, 3))
+            decision_metrics.setdefault("deficit_kwh", round(deficit, 3))
+            decision_metrics.setdefault(
+                "grid_charge_kwh",
+                round(entry.get("grid_charge_kwh", 0.0) or 0.0, 3),
+            )
+            decision_metrics.setdefault(
+                "battery_start_kwh",
+                round(entry.get("battery_soc_start", battery), 2),
+            )
+            decision_metrics.setdefault(
+                "battery_end_kwh",
+                round(entry.get("battery_soc", entry.get("battery_soc_start", battery)), 2),
+            )
 
             entry["decision_reason"] = decision_reason
             entry["decision_metrics"] = decision_metrics
@@ -6768,22 +7071,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
         if current_mode:
             await self._ensure_current_mode(current_mode, "current planned block")
-        else:
-            current_capacity = self._get_current_battery_capacity()
-            planning_min = self._get_min_battery_capacity()
-            if (
-                current_capacity is not None
-                and planning_min is not None
-                and current_capacity <= planning_min + 0.1
-            ):
-                _LOGGER.warning(
-                    "[AutoModeSwitch] SOC %.2f kWh <= planning minimum %.2f kWh - forcing immediate Home UPS",
-                    current_capacity,
-                    planning_min,
-                )
-                await self._ensure_current_mode(
-                    MODE_LABEL_HOME_UPS, "soc below planning minimum"
-                )
 
         if not scheduled_events:
             _LOGGER.debug("[AutoModeSwitch] No upcoming mode changes to schedule")
@@ -6791,10 +7078,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return
 
         for when, mode, prev_mode in scheduled_events:
-            lead_seconds = self._get_mode_switch_offset(
-                prev_mode or current_mode or SERVICE_MODE_HOME_1, mode
-            )
-            adjusted_when = when - timedelta(seconds=lead_seconds)
+            adjusted_when = when
             if adjusted_when <= now:
                 adjusted_when = now + timedelta(seconds=1)
 
@@ -6806,7 +7090,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             unsub = async_track_point_in_time(self._hass, _callback, adjusted_when)
             self._auto_switch_handles.append(unsub)
             _LOGGER.info(
-                f"[AutoModeSwitch] Scheduled switch to {mode} at {adjusted_when.isoformat()} (lead {lead_seconds:.0f}s, target {when.isoformat()})"
+                f"[AutoModeSwitch] Scheduled switch to {mode} at {adjusted_when.isoformat()}"
             )
         self._start_auto_switch_watchdog()
 
@@ -7111,21 +7395,14 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 block["grid_export_actual_kwh"], block["grid_export_planned_kwh"]
             )
 
-            interval_reasons = []
-            for iv in group_intervals:
-                planned = iv.get("planned") or {}
-                reason = planned.get("decision_reason")
-                if reason:
-                    interval_reasons.append(
-                        {
-                            "time": iv.get("time", ""),
-                            "reason": reason,
-                            "metrics": planned.get("decision_metrics") or {},
-                        }
-                    )
-
-            if interval_reasons:
-                block["interval_reasons"] = interval_reasons
+            block_reason = self._summarize_block_reason(group_intervals, block)
+            if block_reason:
+                block["interval_reasons"] = [
+                    {
+                        "time": block.get("start_time", ""),
+                        "reason": block_reason,
+                    }
+                ]
 
             # Adherence % (pro completed bloky)
             if data_type in ["completed", "both"] and block["mode_match"]:
@@ -7157,6 +7434,192 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return dt_obj.strftime("%H:%M")
         except Exception:
             return iso_ts
+
+    def _summarize_block_reason(
+        self, group_intervals: List[Dict[str, Any]], block: Dict[str, Any]
+    ) -> Optional[str]:
+        planned_entries = [
+            iv.get("planned")
+            for iv in group_intervals
+            if isinstance(iv.get("planned"), dict)
+        ]
+        if not planned_entries:
+            return None
+
+        metrics_list = [p.get("decision_metrics") or {} for p in planned_entries]
+
+        guard_metrics = next(
+            (m for m in metrics_list if m.get("guard_active")), None
+        )
+        if guard_metrics:
+            guard_type = guard_metrics.get("guard_type")
+            if guard_type == "guard_exception_soc":
+                planned_mode = guard_metrics.get("guard_planned_mode") or block.get(
+                    "mode_planned"
+                )
+                return (
+                    "Výjimka guardu: SoC pod plánovacím minimem – "
+                    f"povolujeme {planned_mode}."
+                )
+
+            forced_mode = guard_metrics.get("guard_forced_mode") or block.get(
+                "mode_planned"
+            )
+            guard_until = guard_metrics.get("guard_until")
+            guard_until_label = self._format_time_label(guard_until)
+            if guard_until_label != "--:--":
+                return f"Stabilizace: držíme režim {forced_mode} do {guard_until_label}."
+            return f"Stabilizace: držíme režim {forced_mode} 60 min po poslední změně."
+
+        reason_codes = [
+            m.get("planner_reason_code")
+            for m in metrics_list
+            if m.get("planner_reason_code")
+        ]
+        dominant_code = (
+            Counter(reason_codes).most_common(1)[0][0] if reason_codes else None
+        )
+
+        def _mean(values: List[Optional[float]]) -> Optional[float]:
+            vals = [
+                v
+                for v in values
+                if isinstance(v, (int, float)) and not math.isnan(v)
+            ]
+            if not vals:
+                return None
+            return sum(vals) / len(vals)
+
+        prices: List[Optional[float]] = []
+        for planned in planned_entries:
+            price = planned.get("spot_price")
+            if price is None:
+                price = planned.get("spot_price_czk")
+            if price is None:
+                price = (planned.get("decision_metrics") or {}).get("spot_price_czk")
+            prices.append(price)
+        avg_price = _mean(prices)
+
+        avg_future_ups = _mean(
+            [
+                m.get("future_ups_avg_price_czk")
+                for m in metrics_list
+                if m.get("future_ups_avg_price_czk") is not None
+            ]
+        )
+
+        start_kwh = block.get("battery_kwh_start")
+        end_kwh = block.get("battery_kwh_end")
+        delta_kwh = (
+            (end_kwh - start_kwh)
+            if isinstance(start_kwh, (int, float))
+            and isinstance(end_kwh, (int, float))
+            else None
+        )
+
+        opts = self._config_entry.options if self._config_entry else {}
+        max_ups_price = float(opts.get("max_ups_price_czk", 10.0))
+        efficiency = float(self._get_battery_efficiency() or 0.0)
+        if 0 < efficiency <= 1.0:
+            band_pct = max(0.08, (1.0 / efficiency) - 1.0)
+        else:
+            band_pct = 0.08
+
+        mode_label = (block.get("mode_planned") or block.get("mode_historical") or "")
+        mode_upper = str(mode_label).upper()
+
+        if dominant_code:
+            if dominant_code == "price_band_hold":
+                if avg_price is not None:
+                    return (
+                        "UPS držíme v cenovém pásmu ±"
+                        f"{band_pct * 100:.0f}% "
+                        f"(průměr {avg_price:.2f} Kč/kWh)."
+                    )
+                return "UPS držíme v cenovém pásmu dle účinnosti."
+
+            reason_text = self._format_planner_reason(
+                dominant_code, spot_price=avg_price
+            )
+            if reason_text:
+                return reason_text
+
+        if "UPS" in mode_upper:
+            if avg_price is not None:
+                if avg_price <= max_ups_price + 0.0001:
+                    return (
+                        "Nabíjíme ze sítě: průměrná cena "
+                        f"{avg_price:.2f} Kč/kWh je pod limitem "
+                        f"{max_ups_price:.2f} Kč/kWh."
+                    )
+                return (
+                    "UPS režim při vyšší ceně "
+                    f"{avg_price:.2f} Kč/kWh (limit {max_ups_price:.2f})."
+                )
+            return "UPS režim (plánované nabíjení)."
+
+        if "HOME II" in mode_upper or "HOME 2" in mode_upper:
+            avg_save = _mean(
+                [
+                    m.get("home1_saving_czk")
+                    for m in metrics_list
+                    if m.get("home1_saving_czk") is not None
+                ]
+            )
+            avg_recharge = _mean(
+                [
+                    m.get("recharge_cost_czk")
+                    for m in metrics_list
+                    if m.get("recharge_cost_czk") is not None
+                ]
+            )
+            if avg_save is not None and avg_recharge is not None:
+                return (
+                    "Držíme baterii: HOME I by ušetřil ~"
+                    f"{avg_save:.2f} Kč, dobíjení v UPS ~{avg_recharge:.2f} Kč."
+                )
+            return "Držíme baterii (HOME II), bez vybíjení do zátěže."
+
+        if "HOME III" in mode_upper or "HOME 3" in mode_upper:
+            return "Maximalizujeme nabíjení z FVE, spotřeba jde ze sítě."
+
+        if "HOME I" in mode_upper or "HOME 1" in mode_upper:
+            if delta_kwh is not None and delta_kwh < -0.05:
+                if avg_price is not None and avg_future_ups is not None:
+                    delta_price = avg_price - avg_future_ups
+                    if delta_price > 0.01:
+                        return (
+                            "Vybíjíme baterii (-"
+                            f"{abs(delta_kwh):.2f} kWh), protože UPS by byl "
+                            f"o {delta_price:.2f} Kč/kWh dražší "
+                            f"(nyní {avg_price:.2f}, UPS okna {avg_future_ups:.2f})."
+                        )
+                if avg_price is not None and avg_price > max_ups_price + 0.0001:
+                    return (
+                        "Vybíjíme baterii (-"
+                        f"{abs(delta_kwh):.2f} kWh), cena {avg_price:.2f} Kč/kWh "
+                        f"je nad limitem UPS {max_ups_price:.2f} Kč/kWh."
+                    )
+                return (
+                    "Vybíjíme baterii (-"
+                    f"{abs(delta_kwh):.2f} kWh) místo odběru ze sítě."
+                )
+            if delta_kwh is not None and delta_kwh > 0.05:
+                return (
+                    "Solár pokrývá spotřebu, přebytky ukládáme do baterie "
+                    f"(+{delta_kwh:.2f} kWh)."
+                )
+            return "Solár pokrývá spotřebu, baterie se výrazně nemění."
+
+        reasons = [
+            p.get("decision_reason")
+            for p in planned_entries
+            if p.get("decision_reason")
+        ]
+        if reasons:
+            return Counter(reasons).most_common(1)[0][0]
+
+        return None
 
     def _determine_block_status(
         self,
@@ -13292,16 +13755,24 @@ class OigCloudPlannerRecommendedModeSensor(
         if not isinstance(precomputed, dict):
             return
         timeline = precomputed.get("timeline") or precomputed.get("timeline_hybrid")
+        detail_tabs = precomputed.get("detail_tabs") or precomputed.get(
+            "detail_tabs_hybrid"
+        )
         if not isinstance(timeline, list) or not timeline:
             return
         self._precomputed_payload = {
             "timeline_data": timeline,
             "calculation_time": precomputed.get("last_update"),
+            "detail_tabs": detail_tabs if isinstance(detail_tabs, dict) else None,
         }
 
     def _get_forecast_payload(self) -> Optional[Dict[str, Any]]:
+        # Prefer precomputed payload to stay aligned with detail_tabs output.
         if isinstance(self._precomputed_payload, dict):
             return self._precomputed_payload
+        data = getattr(self.coordinator, "battery_forecast_data", None)
+        if isinstance(data, dict) and isinstance(data.get("timeline_data"), list):
+            return data
         return None
 
     def _parse_local_start(self, ts: Any) -> Optional[datetime]:
@@ -13314,6 +13785,16 @@ class OigCloudPlannerRecommendedModeSensor(
         if dt_obj.tzinfo is None:
             return dt_obj.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
         return dt_util.as_local(dt_obj)
+
+    def _parse_interval_time(
+        self, ts: Any, date_hint: Optional[str] = None
+    ) -> Optional[datetime]:
+        if not ts:
+            return None
+        ts_str = str(ts)
+        if "T" not in ts_str and date_hint:
+            ts_str = f"{date_hint}T{ts_str}:00"
+        return self._parse_local_start(ts_str)
 
     def _normalize_mode_label(
         self, mode_name: Optional[str], mode_code: Optional[int]
@@ -13374,11 +13855,29 @@ class OigCloudPlannerRecommendedModeSensor(
         """Compute recommended mode + attributes and return signature for change detection."""
         attrs: Dict[str, Any] = {}
         payload = self._get_forecast_payload() or {}
+        detail_tabs = (
+            payload.get("detail_tabs")
+            if isinstance(payload.get("detail_tabs"), dict)
+            else None
+        )
         timeline = payload.get("timeline_data")
         attrs["last_update"] = payload.get("calculation_time")
-        attrs["points_count"] = len(timeline) if isinstance(timeline, list) else 0
+        detail_intervals: Optional[List[Dict[str, Any]]] = None
+        detail_date: Optional[str] = None
+        if isinstance(detail_tabs, dict):
+            today_tab = detail_tabs.get("today") or {}
+            if isinstance(today_tab, dict):
+                detail_intervals = today_tab.get("intervals")
+                detail_date = today_tab.get("date")
 
-        if not isinstance(timeline, list) or not timeline:
+        source_intervals = (
+            detail_intervals if isinstance(detail_intervals, list) else timeline
+        )
+        attrs["points_count"] = (
+            len(source_intervals) if isinstance(source_intervals, list) else 0
+        )
+
+        if not isinstance(source_intervals, list) or not source_intervals:
             sig = json.dumps({"v": None, "a": attrs}, sort_keys=True, default=str)
             return None, attrs, sig
 
@@ -13388,32 +13887,99 @@ class OigCloudPlannerRecommendedModeSensor(
         current_mode_code: Optional[int] = None
         current_start: Optional[datetime] = None
 
-        for i, item in enumerate(timeline):
-            start = self._parse_local_start(item.get("time") or item.get("timestamp"))
-            if not start:
-                continue
-            end = start + timedelta(minutes=15)
-            if start <= now < end:
-                current_idx = i
-                current_start = start
-                current_mode = self._normalize_mode_label(
-                    item.get("mode_name"), item.get("mode")
+        if detail_intervals and isinstance(detail_intervals, list):
+            def _planned_mode(interval: Dict[str, Any]) -> tuple[Optional[str], Optional[int]]:
+                planned = interval.get("planned") or {}
+                mode_label = self._normalize_mode_label(
+                    planned.get("mode_name"), planned.get("mode")
                 )
-                current_mode_code = (
-                    item.get("mode") if isinstance(item.get("mode"), int) else None
+                mode_code = (
+                    planned.get("mode") if isinstance(planned.get("mode"), int) else None
                 )
-                break
-            if start <= now:
-                current_idx = i
-                current_start = start
-                current_mode = self._normalize_mode_label(
-                    item.get("mode_name"), item.get("mode")
+                return mode_label, mode_code
+
+            for i, item in enumerate(detail_intervals):
+                start = self._parse_interval_time(
+                    item.get("time") or item.get("timestamp"), detail_date
                 )
-                current_mode_code = (
-                    item.get("mode") if isinstance(item.get("mode"), int) else None
+                if not start:
+                    continue
+                end = start + timedelta(minutes=15)
+                mode_label, mode_code = _planned_mode(item)
+                if not mode_label:
+                    continue
+                if start <= now < end:
+                    current_idx = i
+                    current_start = start
+                    current_mode = mode_label
+                    current_mode_code = mode_code
+                    break
+                if start <= now:
+                    current_idx = i
+                    current_start = start
+                    current_mode = mode_label
+                    current_mode_code = mode_code
+                if start > now and current_idx is not None:
+                    break
+
+            if current_mode is None and isinstance(timeline, list):
+                for i, item in enumerate(timeline):
+                    start = self._parse_local_start(
+                        item.get("time") or item.get("timestamp")
+                    )
+                    if not start:
+                        continue
+                    end = start + timedelta(minutes=15)
+                    if start <= now < end:
+                        current_idx = i
+                        current_start = start
+                        current_mode = self._normalize_mode_label(
+                            item.get("mode_name"), item.get("mode")
+                        )
+                        current_mode_code = (
+                            item.get("mode") if isinstance(item.get("mode"), int) else None
+                        )
+                        break
+                    if start <= now:
+                        current_idx = i
+                        current_start = start
+                        current_mode = self._normalize_mode_label(
+                            item.get("mode_name"), item.get("mode")
+                        )
+                        current_mode_code = (
+                            item.get("mode") if isinstance(item.get("mode"), int) else None
+                        )
+                    if start > now and current_idx is not None:
+                        break
+        else:
+            for i, item in enumerate(source_intervals):
+                start = self._parse_local_start(
+                    item.get("time") or item.get("timestamp")
                 )
-            if start > now and current_idx is not None:
-                break
+                if not start:
+                    continue
+                end = start + timedelta(minutes=15)
+                if start <= now < end:
+                    current_idx = i
+                    current_start = start
+                    current_mode = self._normalize_mode_label(
+                        item.get("mode_name"), item.get("mode")
+                    )
+                    current_mode_code = (
+                        item.get("mode") if isinstance(item.get("mode"), int) else None
+                    )
+                    break
+                if start <= now:
+                    current_idx = i
+                    current_start = start
+                    current_mode = self._normalize_mode_label(
+                        item.get("mode_name"), item.get("mode")
+                    )
+                    current_mode_code = (
+                        item.get("mode") if isinstance(item.get("mode"), int) else None
+                    )
+                if start > now and current_idx is not None:
+                    break
 
         attrs["recommended_interval_start"] = (
             current_start.isoformat() if isinstance(current_start, datetime) else None
@@ -13423,22 +13989,45 @@ class OigCloudPlannerRecommendedModeSensor(
         next_mode: Optional[str] = None
         next_mode_code: Optional[int] = None
         if current_idx is not None and current_mode:
-            for item in timeline[current_idx + 1 :]:
-                start = self._parse_local_start(
-                    item.get("time") or item.get("timestamp")
-                )
-                if not start:
-                    continue
-                candidate = self._normalize_mode_label(
-                    item.get("mode_name"), item.get("mode")
-                )
-                if candidate and candidate != current_mode:
-                    next_change_at = start
-                    next_mode = candidate
-                    next_mode_code = (
-                        item.get("mode") if isinstance(item.get("mode"), int) else None
+            if detail_intervals and isinstance(detail_intervals, list):
+                for item in detail_intervals[current_idx + 1 :]:
+                    start = self._parse_interval_time(
+                        item.get("time") or item.get("timestamp"), detail_date
                     )
-                    break
+                    if not start:
+                        continue
+                    planned = item.get("planned") or {}
+                    candidate = self._normalize_mode_label(
+                        planned.get("mode_name"), planned.get("mode")
+                    )
+                    if candidate and candidate != current_mode:
+                        next_change_at = start
+                        next_mode = candidate
+                        next_mode_code = (
+                            planned.get("mode")
+                            if isinstance(planned.get("mode"), int)
+                            else None
+                        )
+                        break
+            else:
+                for item in source_intervals[current_idx + 1 :]:
+                    start = self._parse_local_start(
+                        item.get("time") or item.get("timestamp")
+                    )
+                    if not start:
+                        continue
+                    candidate = self._normalize_mode_label(
+                        item.get("mode_name"), item.get("mode")
+                    )
+                    if candidate and candidate != current_mode:
+                        next_change_at = start
+                        next_mode = candidate
+                        next_mode_code = (
+                            item.get("mode")
+                            if isinstance(item.get("mode"), int)
+                            else None
+                        )
+                        break
 
         attrs["next_mode_change_at"] = (
             next_change_at.isoformat() if next_change_at else None
@@ -13448,16 +14037,14 @@ class OigCloudPlannerRecommendedModeSensor(
 
         effective_mode = current_mode
         effective_mode_code = current_mode_code
-        lead_seconds: Optional[float] = None
+        lead_seconds: Optional[float] = 0.0
         effective_from: Optional[datetime] = None
-        if next_change_at and next_mode:
+        if next_change_at and next_mode and current_mode:
             lead_seconds = self._get_auto_switch_lead_seconds(current_mode, next_mode)
-            if lead_seconds < 0:
+            if lead_seconds and lead_seconds > 0:
+                effective_from = next_change_at - timedelta(seconds=lead_seconds)
+            else:
                 lead_seconds = 0.0
-            effective_from = next_change_at - timedelta(seconds=lead_seconds)
-            if now >= effective_from:
-                effective_mode = next_mode
-                effective_mode_code = next_mode_code
 
         attrs["planned_interval_mode"] = current_mode
         attrs["planned_interval_mode_code"] = current_mode_code
@@ -13466,8 +14053,7 @@ class OigCloudPlannerRecommendedModeSensor(
         attrs["recommended_effective_from"] = (
             effective_from.isoformat() if effective_from else None
         )
-        if lead_seconds is not None:
-            attrs["auto_switch_lead_seconds"] = lead_seconds
+        attrs["auto_switch_lead_seconds"] = lead_seconds
 
         # Signature controls when we write HA state; include derived values + last_update.
         sig = json.dumps(

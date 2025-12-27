@@ -144,6 +144,7 @@ class HybridStrategy:
     # Legacy constants for compatibility
     LOOKAHEAD_INTERVALS = 24  # Look 6 hours ahead (24 * 15min)
     MIN_PRICE_SPREAD_PERCENT = 15.0  # Min price spread to justify charging (%)
+    MIN_UPS_PRICE_BAND_PCT = 0.08  # Minimum price band for UPS continuity (8%)
 
     def __init__(
         self,
@@ -209,7 +210,11 @@ class HybridStrategy:
         has_negative = len(negative_prices) > 0
 
         # Step 1: Plan charging intervals using backward propagation
-        charging_intervals, infeasible_reason = self._plan_charging_intervals(
+        (
+            charging_intervals,
+            infeasible_reason,
+            price_band_intervals,
+        ) = self._plan_charging_intervals(
             initial_battery_kwh=initial_battery_kwh,
             prices=prices,
             solar_forecast=solar_forecast,
@@ -248,6 +253,7 @@ class HybridStrategy:
             is_balancing = balancing_plan and i in balancing_plan.charging_intervals
             is_holding = balancing_plan and i in balancing_plan.holding_intervals
             is_charging = i in charging_intervals
+            is_price_band = i in price_band_intervals
             is_negative = price < 0
             override_mode = (
                 balancing_plan.mode_overrides.get(i)
@@ -276,7 +282,10 @@ class HybridStrategy:
                 )
             elif is_charging:
                 mode = CBB_MODE_HOME_UPS
-                reason = f"planned_charge_{price:.2f}CZK"
+                if is_price_band:
+                    reason = "price_band_hold"
+                else:
+                    reason = f"planned_charge_{price:.2f}CZK"
             else:
                 # Default: HOME I (discharge battery when needed)
                 mode = CBB_MODE_HOME_I
@@ -348,12 +357,14 @@ class HybridStrategy:
         consumption_forecast: List[float],
         balancing_plan: Optional[BalancingPlan] = None,
         negative_price_intervals: Optional[List[int]] = None,
-    ) -> Tuple[set[int], Optional[str]]:
+    ) -> Tuple[set[int], Optional[str], set[int]]:
         """Plan charging intervals with planning-min enforcement and price guard."""
         n = len(prices)
         charging_intervals: set[int] = set()
+        price_band_intervals: set[int] = set()
         infeasible_reason: Optional[str] = None
         eps_kwh = 0.01
+        recovery_mode = initial_battery_kwh < self._planning_min - eps_kwh
 
         blocked_indices: set[int] = set()
         if balancing_plan and balancing_plan.mode_overrides:
@@ -397,7 +408,7 @@ class HybridStrategy:
 
         # Recovery if we start below planning minimum: charge ASAP.
         recovery_index: Optional[int] = None
-        if initial_battery_kwh < self._planning_min - eps_kwh:
+        if recovery_mode:
             soc = initial_battery_kwh
             for i in range(n):
                 if soc >= self._planning_min - eps_kwh:
@@ -435,7 +446,7 @@ class HybridStrategy:
                     infeasible_reason = (
                         "Battery below planning minimum at start and could not recover within planning horizon"
                     )
-                return charging_intervals, infeasible_reason
+                return charging_intervals, infeasible_reason, price_band_intervals
         else:
             recovery_index = 0
 
@@ -532,7 +543,93 @@ class HybridStrategy:
                     )
                 break
 
-        return charging_intervals, infeasible_reason
+        if not recovery_mode:
+            original_charging = set(charging_intervals)
+            price_band_intervals = self._extend_ups_blocks_by_price_band(
+                charging_intervals=original_charging,
+                prices=prices,
+                blocked_indices=blocked_indices,
+            )
+            if price_band_intervals:
+                charging_intervals |= price_band_intervals
+                _LOGGER.debug(
+                    "Price-band UPS extension added %d intervals (delta=%.1f%%)",
+                    len(price_band_intervals),
+                    self._get_price_band_delta_pct() * 100,
+                )
+
+        return charging_intervals, infeasible_reason, price_band_intervals
+
+    def _get_price_band_delta_pct(self) -> float:
+        """Compute price band delta from battery efficiency (min 8%)."""
+        eff = getattr(self.sim_config, "ac_dc_efficiency", None)
+        try:
+            eff_val = float(eff)
+        except (TypeError, ValueError):
+            eff_val = 0.0
+
+        if eff_val <= 0 or eff_val > 1.0:
+            return self.MIN_UPS_PRICE_BAND_PCT
+
+        derived = (1.0 / eff_val) - 1.0
+        return max(self.MIN_UPS_PRICE_BAND_PCT, derived)
+
+    def _extend_ups_blocks_by_price_band(
+        self,
+        *,
+        charging_intervals: set[int],
+        prices: List[float],
+        blocked_indices: set[int],
+    ) -> set[int]:
+        """Extend UPS blocks forward when prices stay within efficiency-based band."""
+        if not charging_intervals or not prices:
+            return set()
+
+        max_price = float(self.config.max_ups_price_czk)
+        delta_pct = self._get_price_band_delta_pct()
+        n = len(prices)
+
+        ups_flags = [False] * n
+        for idx in charging_intervals:
+            if 0 <= idx < n:
+                ups_flags[idx] = True
+
+        def _can_extend(prev_idx: int, idx: int) -> bool:
+            if idx in blocked_indices:
+                return False
+            prev_price = prices[prev_idx]
+            if prev_price > max_price:
+                return False
+            price = prices[idx]
+            if price > max_price:
+                return False
+            return price <= prev_price * (1.0 + delta_pct)
+
+        extended: set[int] = set()
+
+        # Forward hysteresis: držet UPS, pokud cena neroste nad pásmo
+        for i in range(1, n):
+            if ups_flags[i - 1] and not ups_flags[i] and _can_extend(i - 1, i):
+                ups_flags[i] = True
+                if i not in charging_intervals:
+                    extended.add(i)
+
+        # Vyplnit jednorázové mezery mezi UPS bloky
+        for i in range(1, n - 1):
+            if ups_flags[i - 1] and (not ups_flags[i]) and ups_flags[i + 1]:
+                if _can_extend(i - 1, i):
+                    ups_flags[i] = True
+                    if i not in charging_intervals:
+                        extended.add(i)
+
+        # Ještě jednou dopředně, aby se navázalo na doplněné mezery
+        for i in range(1, n):
+            if ups_flags[i - 1] and not ups_flags[i] and _can_extend(i - 1, i):
+                ups_flags[i] = True
+                if i not in charging_intervals:
+                    extended.add(i)
+
+        return extended
 
     def _simulate_trajectory(
         self,

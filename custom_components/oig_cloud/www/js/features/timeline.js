@@ -1400,7 +1400,8 @@ class TimelineDialog {
                 solar_total_kwh,
                 consumption_total_kwh,
                 grid_import_total_kwh,
-                grid_export_total_kwh
+                grid_export_total_kwh,
+                interval_reasons
             } = block;
 
             // Get mode config
@@ -1434,6 +1435,8 @@ class TimelineDialog {
                     </span>
                 `;
             }
+
+            const reasonsHtml = this.renderIntervalReasons(interval_reasons, status);
 
             return `
                 <div class="mode-block ${matchClass}" data-index="${index}">
@@ -1500,12 +1503,56 @@ class TimelineDialog {
                             <span class="item-label">⬆️ Export:</span>
                             <div class="item-value">${grid_export_total_kwh?.toFixed(2) || '0.00'} kWh</div>
                         </div>
+
+                        ${reasonsHtml}
                     </div>
                 </div>
             `;
         }).join('');
 
         return blocksHtml;
+    }
+
+    formatReasonTime(isoTs) {
+        if (!isoTs) {
+            return '--:--';
+        }
+        try {
+            const fmt = new Intl.DateTimeFormat('cs-CZ', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            const dt = new Date(isoTs);
+            if (Number.isNaN(dt.getTime())) {
+                return isoTs;
+            }
+            return fmt.format(dt);
+        } catch (err) {
+            return isoTs;
+        }
+    }
+
+    renderIntervalReasons(intervalReasons, status) {
+        if (!intervalReasons || intervalReasons.length === 0) {
+            return '';
+        }
+        if (status === 'completed') {
+            return '';
+        }
+
+        const items = intervalReasons.map(item => {
+            const timeLabel = this.formatReasonTime(item.time);
+            return `<div class="reason-line"><span class="reason-time">${timeLabel}</span>${item.reason}</div>`;
+        }).join('');
+
+        return `
+            <div class="block-item block-reasons">
+                <span class="item-label">🧠 Důvod:</span>
+                <div class="item-value reason-list">
+                    ${items}
+                </div>
+            </div>
+        `;
     }
 
     /**

@@ -16,6 +16,7 @@ It does NOT:
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -110,8 +111,19 @@ class BalancingManager:
         return int(opts.get("balancing_cycle_days") or 7)
 
     def _get_cooldown_hours(self) -> int:
-        """Get balancing cooldown hours from config (default 24 hours)."""
-        return self._config_entry.options.get("balancing_cooldown_hours", 24)
+        """Get balancing cooldown hours from config (default ~70% of cycle, min 24h)."""
+        configured = self._config_entry.options.get("balancing_cooldown_hours")
+        if configured is not None:
+            try:
+                configured_val = float(configured)
+            except (TypeError, ValueError):
+                configured_val = None
+            if configured_val and configured_val > 0:
+                return int(configured_val)
+
+        cycle_days = float(self._get_cycle_days())
+        cooldown_hours = int(math.ceil(cycle_days * 24 * 0.7))
+        return max(24, cooldown_hours)
 
     def _get_soc_threshold(self) -> int:
         """Get SoC threshold for opportunistic balancing from config (default 80%)."""

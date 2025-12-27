@@ -644,16 +644,6 @@
     }
   },
   "selector": {
-    "set_box_mode": {
-      "options": {
-        "home_1": "Home 1",
-        "home_2": "Home 2",
-        "home_3": "Home 3",
-        "home_5": "Home 5",
-        "home_6": "Home 6",
-        "home_ups": "Home UPS"
-      }
-    },
     "setup_type": {
       "options": {
         "import": "📥 Import z YAML",
