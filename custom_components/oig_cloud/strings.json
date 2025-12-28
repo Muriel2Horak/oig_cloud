@@ -200,6 +200,9 @@
           "distribution_fee_nt_kwh": "Poplatek za distribuci NT (CZK/kWh)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
+          "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
+          "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
+          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
@@ -209,6 +212,9 @@
           "distribution_fee_nt_kwh": "Distribuční poplatek NT (nízký tarif). Např. 0.91 CZK/kWh",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
+          "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
+          "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
+          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
@@ -455,6 +461,9 @@
           "distribution_fee_nt_kwh": "Poplatek za distribuci NT (CZK/kWh)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
+          "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
+          "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
+          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
@@ -464,6 +473,9 @@
           "distribution_fee_nt_kwh": "Distribuční poplatek NT (nízký tarif). Např. 0.91 CZK/kWh",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
+          "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
+          "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
+          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }

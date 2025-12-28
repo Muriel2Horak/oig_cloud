@@ -14,6 +14,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
+from .const import DOMAIN
 from .shared.logging import setup_simple_telemetry
 
 _LOGGER = logging.getLogger(__name__)
@@ -1477,41 +1478,59 @@ class ServiceShield:
                 return "value"  # Fallback
 
         def find_entity(suffix: str) -> str | None:
-            _LOGGER.info(f"[FIND ENTITY] Hledám entitu se suffixem: {suffix}")
-            matching_entities = []
-            for entity in self.hass.states.async_all():
-                if entity.entity_id.endswith(suffix):
-                    matching_entities.append(entity.entity_id)
+            _LOGGER.info("[FIND ENTITY] Hledám cloud entitu se suffixem: %s", suffix)
 
-            if matching_entities:
-                # Preferuj klasické senzory před binary/ostatními
-                preferred_prefixes = ("sensor.", "number.", "binary_sensor.")
-                for prefix in preferred_prefixes:
-                    for entity_id in matching_entities:
-                        if entity_id.startswith(prefix):
-                            _LOGGER.info(
-                                "[FIND ENTITY] Vybrána preferovaná entita: %s",
-                                entity_id,
-                            )
-                            return entity_id
-                _LOGGER.info(
-                    f"[FIND ENTITY] Nalezeno {len(matching_entities)} entit: {matching_entities}"
-                )
-                return matching_entities[0]
-            else:
+            # Preferuj pouze cloud senzory: sensor.oig_<box_id>_<suffix>
+            box_id = None
+            for key in ("box_id", "inverter_sn"):
+                val = self.entry.options.get(key) or self.entry.data.get(key)
+                if isinstance(val, str) and val.isdigit():
+                    box_id = val
+                    break
+
+            if not box_id:
+                try:
+                    from .oig_cloud_sensor import resolve_box_id
+
+                    coordinator = None
+                    for entry_data in self.hass.data.get(DOMAIN, {}).values():
+                        if not isinstance(entry_data, dict):
+                            continue
+                        if entry_data.get("service_shield") != self:
+                            continue
+                        coordinator = entry_data.get("coordinator")
+                        break
+                    if coordinator:
+                        resolved = resolve_box_id(coordinator)
+                        if isinstance(resolved, str) and resolved.isdigit():
+                            box_id = resolved
+                except Exception:
+                    box_id = None
+
+            if not box_id:
                 _LOGGER.warning(
-                    f"[FIND ENTITY] NENALEZENA žádná entita se suffixem: {suffix}"
-                )
-                # Debug: Vypíšeme všechny invertor entity
-                all_invertor = [
-                    e.entity_id
-                    for e in self.hass.states.async_all()
-                    if "invertor" in e.entity_id.lower()
-                ]
-                _LOGGER.warning(
-                    f"[FIND ENTITY] Všechny invertor entity: {all_invertor}"
+                    "[FIND ENTITY] box_id nelze určit, cloud entitu pro suffix '%s' nelze vybrat",
+                    suffix,
                 )
                 return None
+
+            prefix = f"sensor.oig_{box_id}_"
+            matching_entities = [
+                entity.entity_id
+                for entity in self.hass.states.async_all()
+                if entity.entity_id.startswith(prefix)
+                and entity.entity_id.endswith(suffix)
+            ]
+
+            if matching_entities:
+                entity_id = matching_entities[0]
+                _LOGGER.info("[FIND ENTITY] Vybrána cloud entita: %s", entity_id)
+                return entity_id
+
+            _LOGGER.warning(
+                "[FIND ENTITY] NENALEZENA cloud entita %s*%s", prefix, suffix
+            )
+            return None
 
         # OPRAVA: Speciální handling pro set_formating_mode - nemá žádný senzor k ověření
         if service_name == "oig_cloud.set_formating_mode":
