@@ -397,12 +397,7 @@ async def async_setup_entry_services_with_shield(
             await shield.intercept_service_call(
                 DOMAIN,
                 service_name,
-                {
-                    "params": data,
-                    "entities": shield.extract_expected_entities(
-                        f"{DOMAIN}.{service_name}", data
-                    ),
-                },
+                {"params": data},
                 handler_func,
                 blocking=False,
                 context=call.context,

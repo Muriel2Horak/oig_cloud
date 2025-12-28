@@ -465,13 +465,23 @@ class ServiceShield:
         return False
 
     def _normalize_value(self, val: Any) -> str:
-        val = str(val or "").strip().lower().replace(" ", "").replace("/", "")
+        val = (
+            str(val or "")
+            .strip()
+            .lower()
+            .replace(" ", "")
+            .replace("/", "")
+            .replace("_", "")
+        )
         mapping = {
             "vypnutoon": "vypnuto",
             "vypnuto": "vypnuto",
+            "off": "vypnuto",
             "zapnutoon": "zapnuto",
             "zapnuto": "zapnuto",
+            "on": "zapnuto",
             "somezenimlimited": "omezeno",
+            "limited": "omezeno",
             "omezeno": "omezeno",
             "manuální": "manualni",
             "manual": "manualni",
@@ -491,11 +501,12 @@ class ServiceShield:
 
         if service_name == "oig_cloud.set_boiler_mode":
             mode = params.get("mode")
+            mode_key = str(mode or "").strip().lower()
             api_info = {
                 "api_endpoint": "Device.Set.Value.php",
                 "api_table": "boiler_prms",
                 "api_column": "manual",
-                "api_value": 1 if mode == "Manual" else 0,
+                "api_value": 1 if mode_key in {"manual", "manuální"} else 0,
                 "api_description": f"Set boiler mode to {mode}",
             }
         elif service_name == SERVICE_SET_BOX_MODE:
@@ -1187,13 +1198,18 @@ class ServiceShield:
                         except (ValueError, TypeError):
                             norm_expected = str(expected_value)
                             norm_current = str(current_value or "")
+                    elif entity_id and entity_id.endswith("_invertor_prms_to_grid"):
+                        norm_expected = self._normalize_value(expected_value)
+                        norm_current = self._normalize_value(current_value)
+                        # U binary_sensoru neodlišíme "omezeno" vs "zapnuto"
+                        if (
+                            entity_id.startswith("binary_sensor.")
+                            and norm_expected == "omezeno"
+                        ):
+                            norm_expected = "zapnuto"
                     else:
-                        norm_expected = (
-                            str(expected_value or "").strip().lower().replace(" ", "")
-                        )
-                        norm_current = (
-                            str(current_value or "").strip().lower().replace(" ", "")
-                        )
+                        norm_expected = self._normalize_value(expected_value)
+                        norm_current = self._normalize_value(current_value)
 
                     _LOGGER.info(
                         "[SHIELD CHECK] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s') → MATCH: %s",
@@ -1468,6 +1484,16 @@ class ServiceShield:
                     matching_entities.append(entity.entity_id)
 
             if matching_entities:
+                # Preferuj klasické senzory před binary/ostatními
+                preferred_prefixes = ("sensor.", "number.", "binary_sensor.")
+                for prefix in preferred_prefixes:
+                    for entity_id in matching_entities:
+                        if entity_id.startswith(prefix):
+                            _LOGGER.info(
+                                "[FIND ENTITY] Vybrána preferovaná entita: %s",
+                                entity_id,
+                            )
+                            return entity_id
                 _LOGGER.info(
                     f"[FIND ENTITY] Nalezeno {len(matching_entities)} entit: {matching_entities}"
                 )
@@ -1498,9 +1524,26 @@ class ServiceShield:
             return {fake_entity_id: "completed_after_timeout"}
 
         if service_name == SERVICE_SET_BOX_MODE:
-            expected_value = str(data.get("mode") or "").strip()
+            mode_raw = str(data.get("mode") or "").strip()
+            expected_value = mode_raw
             if not expected_value or expected_value.lower() == "none":
                 return {}
+            mode_key = self._normalize_value(mode_raw)
+            mode_mapping = {
+                "home1": "Home 1",
+                "home2": "Home 2",
+                "home3": "Home 3",
+                "homeups": "Home UPS",
+                "home5": "Home 5",
+                "home6": "Home 6",
+                "0": "Home 1",
+                "1": "Home 2",
+                "2": "Home 3",
+                "3": "Home UPS",
+                "4": "Home 5",
+                "5": "Home 6",
+            }
+            expected_value = mode_mapping.get(mode_key, mode_raw)
             entity_id = find_entity("_box_prms_mode")
             if entity_id:
                 self.last_checked_entity_id = entity_id
@@ -1516,8 +1559,6 @@ class ServiceShield:
 
         elif service_name == "oig_cloud.set_boiler_mode":
             mode = str(data.get("mode") or "").strip()
-            if mode not in ("CBB", "Manual"):
-                return {}
 
             # OPRAVA: Přesné mapování služba → senzor (backend VŽDY česky)
             # Služba přijímá: "CBB", "Manual" (anglicky)
@@ -1525,8 +1566,13 @@ class ServiceShield:
             boiler_mode_mapping = {
                 "CBB": "CBB",  # Stejné
                 "Manual": "Manuální",  # Překlad EN → CS
+                "cbb": "CBB",
+                "manual": "Manuální",
             }
             expected_value = boiler_mode_mapping.get(mode)
+            if not expected_value:
+                _LOGGER.warning("[extract] Unknown boiler mode: %s", mode)
+                return {}
 
             entity_id = find_entity("_boiler_manual_mode")
             if entity_id:
@@ -1593,9 +1639,17 @@ class ServiceShield:
                     "Vypnuto / Off": "Vypnuto",  # Přesná shoda
                     "Zapnuto / On": "Zapnuto",  # Přesná shoda (NE "nebo Omezeno"!)
                     "S omezením / Limited": "Omezeno",  # Přesná shoda (NE "Zapnuto nebo"!)
+                    "vypnuto / off": "Vypnuto",
+                    "zapnuto / on": "Zapnuto",
+                    "s omezením / limited": "Omezeno",
+                    "off": "Vypnuto",
+                    "on": "Zapnuto",
+                    "limited": "Omezeno",
                 }
 
-                expected_text = mode_mapping.get(mode_string)
+                expected_text = mode_mapping.get(mode_string) or mode_mapping.get(
+                    mode_string.lower()
+                )
                 if not expected_text:
                     _LOGGER.warning(
                         f"[extract] Unknown grid delivery mode: {mode_string}"
@@ -1662,7 +1716,7 @@ class ServiceShield:
                 expected_value == 1 and current_value in on_values
             )
         elif "box_prms_mode" in entity_id:
-            # OPRAVA: Přidání nových režimů Home 5 a Home 6
+            # OPRAVA: Přidání nových režimů Home 5 a Home 6 + podpora slug/label
             mode_mapping = {
                 0: "Home 1",
                 1: "Home 2",
@@ -1671,21 +1725,33 @@ class ServiceShield:
                 4: "Home 5",
                 5: "Home 6",
             }
-            if current_value == mode_mapping.get(expected_value):
-                return True
-        elif "invertor_prms_to_grid" in entity_id:
-            # Grid delivery mode: expected_value je TEXT ("Vypnuto", "Zapnuto nebo Omezeno")
-            # current_value je TEXT ze senzoru ("Vypnuto", "Zapnuto", "Omezeno")
-            if expected_value == "Vypnuto":
-                return current_value == "Vypnuto"
-            if expected_value == "Zapnuto nebo Omezeno":
-                return current_value in {"Zapnuto", "Omezeno"}
-            # Fallback na starou logiku (pokud je expected_value číslo)
+            if isinstance(expected_value, str):
+                if self._normalize_value(current_value) == self._normalize_value(
+                    expected_value
+                ):
+                    return True
+                if expected_value.isdigit():
+                    expected_value = int(expected_value)
             if isinstance(expected_value, int):
-                if expected_value == 0:
-                    return current_value == "Vypnuto"
-                if expected_value == 1:
-                    return current_value in {"Zapnuto", "Omezeno"}
+                return current_value == mode_mapping.get(expected_value)
+        elif "invertor_prms_to_grid" in entity_id:
+            # Grid delivery mode: expected_value je TEXT ("Vypnuto", "Zapnuto", "Omezeno")
+            # current_value je TEXT ze senzoru nebo "on/off" u binary_sensoru
+            norm_expected = self._normalize_value(expected_value)
+            norm_current = self._normalize_value(current_value)
+            if isinstance(expected_value, int) or str(expected_value).isdigit():
+                norm_expected = "zapnuto" if int(expected_value) == 1 else "vypnuto"
+            if norm_expected == "vypnuto":
+                return norm_current in {"vypnuto"}
+            if norm_expected == "zapnuto":
+                if entity_id.startswith("binary_sensor."):
+                    return norm_current in {"zapnuto", "omezeno"}
+                return norm_current == "zapnuto"
+            if norm_expected == "omezeno":
+                # U binary_sensoru neodlišíme "omezeno" vs "zapnuto"
+                if entity_id.startswith("binary_sensor."):
+                    return norm_current in {"zapnuto", "omezeno"}
+                return norm_current == "omezeno"
             return False
         elif "p_max_feed_grid" in entity_id:
             # Grid delivery limit: porovnání čísel (W)
