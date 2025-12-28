@@ -122,6 +122,13 @@ MODES: Dict[str, str] = {
     "home_ups": "3",
     "home_5": "4",
     "home_6": "5",
+    # Alternate slug variants (legacy docs)
+    "home1": "0",
+    "home2": "1",
+    "home3": "2",
+    "homeups": "3",
+    "home5": "4",
+    "home6": "5",
     # Backward-compatible labels (legacy automations)
     "Home 1": "0",
     "Home 2": "1",

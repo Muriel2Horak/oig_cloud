@@ -1838,11 +1838,11 @@ async function loadNodeDetails() {
         const boilerControlSection = document.getElementById('boiler-control-section');
         if (boilerControlSection) {
             if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
+                boilerControlSection.style.display = 'block';
                 boilerControlSection.style.opacity = '1';
                 boilerControlSection.style.pointerEvents = 'auto';
             } else {
-                boilerControlSection.style.opacity = '0.3';
-                boilerControlSection.style.pointerEvents = 'none';
+                boilerControlSection.style.display = 'none';
             }
         }
 
