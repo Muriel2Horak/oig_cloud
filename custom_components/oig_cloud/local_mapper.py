@@ -72,6 +72,46 @@ def _normalize_box_mode(value: Any) -> Optional[int]:
     return None
 
 
+def _normalize_domains(value: Any) -> Tuple[str, ...]:
+    if isinstance(value, str):
+        raw = [value]
+    elif isinstance(value, (list, tuple, set)):
+        raw = list(value)
+    else:
+        raw = []
+
+    domains: List[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        domain = item.strip()
+        if domain in {"sensor", "binary_sensor"} and domain not in domains:
+            domains.append(domain)
+
+    if not domains:
+        domains = ["sensor"]
+    return tuple(domains)
+
+
+def _normalize_value_map(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key, mapped in value.items():
+        if not isinstance(key, str):
+            continue
+        out[key.strip().lower()] = mapped
+    return out or None
+
+
+def _apply_value_map(value: Any, value_map: Optional[Dict[str, Any]]) -> Any:
+    if isinstance(value, str) and value_map:
+        key = value.strip().lower()
+        if key in value_map:
+            return value_map[key]
+    return _coerce_number(value)
+
+
 # Extended "values" layout used by OigCloudDataSensor._get_extended_value()
 _EXTENDED_INDEX_BY_SENSOR_TYPE: Dict[str, Tuple[str, int]] = {
     # battery -> extended_batt
@@ -118,14 +158,40 @@ class _ExtendedUpdate:
 LocalUpdate = _NodeUpdate | _ExtendedUpdate
 
 
-def _build_suffix_updates() -> Dict[str, List[LocalUpdate]]:
-    out: Dict[str, List[LocalUpdate]] = {}
+@dataclass(frozen=True, slots=True)
+class _SuffixConfig:
+    updates: Tuple[LocalUpdate, ...]
+    domains: Tuple[str, ...]
+    value_map: Optional[Dict[str, Any]]
+
+
+def _build_suffix_updates() -> Dict[str, _SuffixConfig]:
+    raw: Dict[str, Dict[str, Any]] = {}
     for sensor_type, cfg in SENSOR_TYPES.items():
         suffix = cfg.get("local_entity_suffix")
         if not isinstance(suffix, str) or not suffix:
             continue
+        entry = raw.setdefault(
+            suffix,
+            {
+                "updates": [],
+                "domains": [],
+                "value_map": None,
+            },
+        )
 
-        updates: List[LocalUpdate] = out.setdefault(suffix, [])
+        domains = _normalize_domains(cfg.get("local_entity_domains"))
+        for domain in domains:
+            if domain not in entry["domains"]:
+                entry["domains"].append(domain)
+
+        value_map = _normalize_value_map(cfg.get("local_value_map"))
+        if value_map:
+            if entry["value_map"] is None:
+                entry["value_map"] = {}
+            entry["value_map"].update(value_map)
+
+        updates: List[LocalUpdate] = entry["updates"]
 
         node_id = cfg.get("node_id")
         node_key = cfg.get("node_key")
@@ -142,10 +208,18 @@ def _build_suffix_updates() -> Dict[str, List[LocalUpdate]]:
             group, index = ext
             updates.append(_ExtendedUpdate(group=group, index=index))
 
+    out: Dict[str, _SuffixConfig] = {}
+    for suffix, entry in raw.items():
+        domains = tuple(entry["domains"]) if entry["domains"] else ("sensor",)
+        out[suffix] = _SuffixConfig(
+            updates=tuple(entry["updates"]),
+            domains=domains,
+            value_map=entry["value_map"],
+        )
     return out
 
 
-_SUFFIX_UPDATES: Dict[str, List[LocalUpdate]] = _build_suffix_updates()
+_SUFFIX_UPDATES: Dict[str, _SuffixConfig] = _build_suffix_updates()
 
 
 class LocalUpdateApplier:
@@ -162,15 +236,24 @@ class LocalUpdateApplier:
         last_updated: Optional[datetime],
     ) -> bool:
         """Return True if payload changed."""
-        prefix = f"sensor.oig_local_{self.box_id}_"
-        if not (isinstance(entity_id, str) and entity_id.startswith(prefix)):
+        if not isinstance(entity_id, str):
             return False
-        suffix = entity_id[len(prefix) :]
-        updates = _SUFFIX_UPDATES.get(suffix)
-        if not updates:
+        domain = None
+        suffix = None
+        for candidate_domain in ("sensor", "binary_sensor"):
+            prefix = f"{candidate_domain}.oig_local_{self.box_id}_"
+            if entity_id.startswith(prefix):
+                domain = candidate_domain
+                suffix = entity_id[len(prefix) :]
+                break
+        if domain is None or suffix is None:
             return False
 
-        value = _coerce_number(state)
+        suffix_cfg = _SUFFIX_UPDATES.get(suffix)
+        if not suffix_cfg or domain not in suffix_cfg.domains:
+            return False
+
+        value = _apply_value_map(state, suffix_cfg.value_map)
         if value is None:
             return False
 
@@ -183,7 +266,7 @@ class LocalUpdateApplier:
             payload[self.box_id] = {}
             box = payload[self.box_id]
 
-        for upd in updates:
+        for upd in suffix_cfg.updates:
             if isinstance(upd, _NodeUpdate):
                 node = box.setdefault(upd.node_id, {})
                 if not isinstance(node, dict):

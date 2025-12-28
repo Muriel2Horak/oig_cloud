@@ -77,11 +77,12 @@ class TelemetryStore:
 
     def seed_from_existing_local_states(self) -> bool:
         """Seed payload from all currently-known local entity states for this box."""
-        prefix = f"sensor.oig_local_{self.box_id}_"
         entity_ids = []
-        for st in self.hass.states.async_all("sensor"):
-            if st.entity_id.startswith(prefix):
-                entity_ids.append(st.entity_id)
+        for domain in ("sensor", "binary_sensor"):
+            prefix = f"{domain}.oig_local_{self.box_id}_"
+            for st in self.hass.states.async_all(domain):
+                if st.entity_id.startswith(prefix):
+                    entity_ids.append(st.entity_id)
         return self.apply_local_events(entity_ids)
 
     def get_snapshot(self) -> TelemetrySnapshot:

@@ -170,19 +170,22 @@ def _get_latest_local_entity_update(
     """Return the most recent update timestamp among local telemetry entities for a box."""
     if not (isinstance(box_id, str) and box_id.isdigit()):
         return None
-    prefix = f"sensor.oig_local_{box_id}_"
     try:
         latest: Optional[dt_util.dt.datetime] = None
-        for st in hass.states.async_all("sensor"):
-            if not st.entity_id.startswith(prefix):
-                continue
-            if st.state in (None, "", "unknown", "unavailable"):
-                continue
-            dt = st.last_updated or st.last_changed
-            if dt is None:
-                continue
-            dt_utc = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
-            latest = dt_utc if latest is None else max(latest, dt_utc)
+        for domain in ("sensor", "binary_sensor"):
+            prefix = f"{domain}.oig_local_{box_id}_"
+            for st in hass.states.async_all(domain):
+                if not st.entity_id.startswith(prefix):
+                    continue
+                if st.state in (None, "", "unknown", "unavailable"):
+                    continue
+                dt = st.last_updated or st.last_changed
+                if dt is None:
+                    continue
+                dt_utc = (
+                    dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                )
+                latest = dt_utc if latest is None else max(latest, dt_utc)
         return latest
     except Exception:
         return None
@@ -282,7 +285,7 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
-    _LOCAL_ENTITY_RE = re.compile(r"^sensor\.oig_local_(\d+)_")
+    _LOCAL_ENTITY_RE = re.compile(r"^(?:sensor|binary_sensor)\.oig_local_(\d+)_")
 
     def __init__(
         self,
@@ -399,7 +402,10 @@ class DataSourceController:
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
-        if not entity_id.startswith("sensor.oig_local_"):
+        if not (
+            entity_id.startswith("sensor.oig_local_")
+            or entity_id.startswith("binary_sensor.oig_local_")
+        ):
             return
 
         # Ensure the local update belongs to this entry's box_id (prevents cross-device wiring).

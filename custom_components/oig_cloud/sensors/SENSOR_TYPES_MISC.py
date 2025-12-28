@@ -53,6 +53,8 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "options": ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"],
         "sensor_type_category": "data",
         "device_mapping": "main",
+        "local_entity_domains": ["sensor", "binary_sensor"],
+        "local_value_map": {"on": 1, "off": 0},
         "local_entity_suffix": "tbl_invertor_prms_to_grid",
     },
     "installed_battery_capacity_kwh": {

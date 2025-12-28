@@ -551,7 +551,20 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
 
         suffix = sensor_config.get("local_entity_suffix")
         if suffix and self._box_id and self._box_id != "unknown":
-            return f"sensor.oig_local_{self._box_id}_{suffix}"
+            domains = sensor_config.get("local_entity_domains")
+            if isinstance(domains, str):
+                domain_list = [domains]
+            elif isinstance(domains, (list, tuple, set)):
+                domain_list = [d for d in domains if isinstance(d, str)]
+            else:
+                domain_list = ["sensor"]
+            if not domain_list:
+                domain_list = ["sensor"]
+            for domain in domain_list:
+                candidate = f"{domain}.oig_local_{self._box_id}_{suffix}"
+                if self.hass.states.get(candidate):
+                    return candidate
+            return f"{domain_list[0]}.oig_local_{self._box_id}_{suffix}"
         return None
 
     def _coerce_number(self, value: Any) -> Any:
@@ -561,6 +574,16 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             return float(value) if "." in value else int(value)
         except ValueError:
             return value
+
+    def _apply_local_value_map(self, value: Any, sensor_config: Dict[str, Any]) -> Any:
+        if value is None:
+            return None
+        value_map = sensor_config.get("local_value_map")
+        if isinstance(value, str) and isinstance(value_map, dict):
+            key = value.strip().lower()
+            if key in value_map:
+                return value_map[key]
+        return self._coerce_number(value)
 
     def _fallback_value(self) -> Optional[Any]:
         if self._last_state is not None:
@@ -579,7 +602,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         st = self.hass.states.get(local_entity_id)
         if not st or st.state in (None, "unknown", "unavailable"):
             return None
-        return self._coerce_number(st.state)
+        return self._apply_local_value_map(st.state, self._sensor_config)
 
     def _get_local_value_for_sensor_type(self, sensor_type: str) -> Optional[Any]:
         try:
@@ -594,7 +617,7 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             st = self.hass.states.get(local_entity_id)
             if not st or st.state in (None, "unknown", "unavailable"):
                 return None
-            return self._coerce_number(st.state)
+            return self._apply_local_value_map(st.state, cfg)
         except Exception:
             return None
 
