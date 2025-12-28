@@ -1923,9 +1923,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             old_weekend_same = self._wizard_data.get(
                 "tariff_weekend_same_as_weekday", True
             )
-            new_weekend_same = user_input.get(
-                "tariff_weekend_same_as_weekday", True
-            )
+            new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
             if new_tariff_count == "dual" and old_weekend_same != new_weekend_same:
                 self._wizard_data.update(user_input)
                 return self.async_show_form(
@@ -1958,9 +1956,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 if not is_valid:
                     errors["tariff_vt_start_weekday"] = error_key
 
-                weekend_same = user_input.get(
-                    "tariff_weekend_same_as_weekday", True
-                )
+                weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
                 if not weekend_same:
                     vt_weekend = user_input.get("tariff_vt_start_weekend", "")
                     nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
@@ -2009,21 +2005,19 @@ Kliknutím na "Odeslat" spustíte průvodce.
         tariff_count = defaults.get("tariff_count", "single")
         weekday_vt_default = defaults.get("tariff_vt_start_weekday", "6")
         weekday_nt_default = defaults.get("tariff_nt_start_weekday", "22,2")
-        weekend_vt_default = defaults.get(
-            "tariff_vt_start_weekend", weekday_vt_default
-        )
-        weekend_nt_default = defaults.get(
-            "tariff_nt_start_weekend", weekday_nt_default
-        )
+        weekend_vt_default = defaults.get("tariff_vt_start_weekend", weekday_vt_default)
+        weekend_nt_default = defaults.get("tariff_nt_start_weekend", weekday_nt_default)
         weekend_same_default = defaults.get("tariff_weekend_same_as_weekday")
         if weekend_same_default is None:
-            if "tariff_vt_start_weekend" not in defaults and "tariff_nt_start_weekend" not in defaults:
+            if (
+                "tariff_vt_start_weekend" not in defaults
+                and "tariff_nt_start_weekend" not in defaults
+            ):
                 weekend_same_default = True
             else:
-                weekend_same_default = (
-                    str(weekend_vt_default) == str(weekday_vt_default)
-                    and str(weekend_nt_default) == str(weekday_nt_default)
-                )
+                weekend_same_default = str(weekend_vt_default) == str(
+                    weekday_vt_default
+                ) and str(weekend_nt_default) == str(weekday_nt_default)
 
         schema_fields = {
             vol.Optional("tariff_count", default=tariff_count): vol.In(
