@@ -19,11 +19,12 @@ set_box_mode:
       description: The mode to set
       selector:
         select:
+          translation_key: box_mode
           options:
-            - Home 1
-            - Home 2
-            - Home 3
-            - Home UPS
+            - home_1
+            - home_2
+            - home_3
+            - home_ups
     acknowledgement:
       description: |
         I acknowledge that calling the service will result in parameter modification of a live system.
@@ -68,10 +69,11 @@ set_grid_delivery:
       description: Režim přetoků
       selector:
         select:
+          translation_key: grid_delivery_mode
           options:
-            - Vypnuto / Off
-            - Zapnuto / On
-            - S omezením / Limited
+            - off
+            - on
+            - limited
     limit:
       description: Nastavení limitu výkonu přetoků (W)
       selector:
@@ -131,9 +133,10 @@ set_boiler_mode:
       description: Režim bojleru
       selector:
         select:
+          translation_key: boiler_mode
           options:
-            - CBB
-            - Manual
+            - cbb
+            - manual
     acknowledgement:
       description: |
         I acknowledge that calling the service will result in parameter modification of a live system.
@@ -162,9 +165,10 @@ set_formating_mode:
       description: Režim nabíjení
       selector:
         select:
+          translation_key: battery_charge_mode
           options:
-            - Nenabíjet
-            - Nabíjet
+            - no_charge
+            - charge
     limit:
       description: Cílové procento nabití
       selector:

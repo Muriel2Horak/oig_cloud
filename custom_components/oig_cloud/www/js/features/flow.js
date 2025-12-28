@@ -785,6 +785,20 @@ function getNodeCenters() {
 
 // Animate particles - v2.0 with continuous normalization
 function animateFlow(data) {
+    const runtime = window.OIG_RUNTIME || {};
+    if (runtime.reduceMotion) {
+        if (!runtime.particlesDisabled) {
+            runtime.particlesDisabled = true;
+            if (typeof stopAllParticleFlows === 'function') {
+                stopAllParticleFlows();
+            }
+            const container = document.getElementById('particles');
+            if (container) {
+                container.innerHTML = '';
+            }
+        }
+        return;
+    }
     const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
 
     // Use cached positions
@@ -1415,8 +1429,11 @@ async function loadData() {
         }
     }
 
-    await updatePlannerModeBadge();
-    await yieldIfNeeded();
+    const shouldUpdatePlanner = !isConstrainedRuntime || runtime.initialLoadComplete;
+    if (shouldUpdatePlanner) {
+        await updatePlannerModeBadge();
+        await yieldIfNeeded();
+    }
 
     // Aktualizovat boiler mode (ve flow diagramu), ale zachovat třídu mode-changing pokud existuje
     const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
@@ -1605,17 +1622,20 @@ async function loadData() {
         window.DashboardAnalytics.updateBatteryEfficiencyStats();
     }
 
-    // Update planned consumption statistics
-    if (window.DashboardPricing?.updatePlannedConsumptionStats) {
-        window.DashboardPricing.updatePlannedConsumptionStats();
-    }
+    const pricingActive = typeof pricingTabActive !== 'undefined' ? pricingTabActive : false;
+    if (pricingActive) {
+        // Update planned consumption statistics
+        if (window.DashboardPricing?.updatePlannedConsumptionStats) {
+            window.DashboardPricing.updatePlannedConsumptionStats();
+        }
 
-    // Phase 2.6: Update what-if analysis and mode recommendations
-    if (window.DashboardPricing?.updateWhatIfAnalysis) {
-        window.DashboardPricing.updateWhatIfAnalysis();
-    }
-    if (window.DashboardPricing?.updateModeRecommendations) {
-        window.DashboardPricing.updateModeRecommendations();
+        // Phase 2.6: Update what-if analysis and mode recommendations
+        if (window.DashboardPricing?.updateWhatIfAnalysis) {
+            window.DashboardPricing.updateWhatIfAnalysis();
+        }
+        if (window.DashboardPricing?.updateModeRecommendations) {
+            window.DashboardPricing.updateModeRecommendations();
+        }
     }
 
     // Performance chart removed (legacy performance tracking)

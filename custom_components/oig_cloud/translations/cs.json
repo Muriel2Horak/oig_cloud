@@ -650,6 +650,33 @@
         "quick": "⚡ Rychlé nastavení",
         "wizard": "🧙‍♂️ Průvodce nastavením (doporučeno)"
       }
+    },
+    "box_mode": {
+      "options": {
+        "home_1": "Home 1",
+        "home_2": "Home 2",
+        "home_3": "Home 3",
+        "home_ups": "Home UPS"
+      }
+    },
+    "boiler_mode": {
+      "options": {
+        "cbb": "CBB",
+        "manual": "Manual"
+      }
+    },
+    "battery_charge_mode": {
+      "options": {
+        "no_charge": "Nenabíjet",
+        "charge": "Nabíjet"
+      }
+    },
+    "grid_delivery_mode": {
+      "options": {
+        "off": "Vypnuto / Off",
+        "on": "Zapnuto / On",
+        "limited": "S omezením / Limited"
+      }
     }
   },
   "services": {

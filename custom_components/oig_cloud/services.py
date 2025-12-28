@@ -116,6 +116,13 @@ CHECK_BALANCING_SCHEMA = vol.Schema(
 
 # Konstanty pro služby
 MODES: Dict[str, str] = {
+    "home_1": "0",
+    "home_2": "1",
+    "home_3": "2",
+    "home_ups": "3",
+    "home_5": "4",
+    "home_6": "5",
+    # Backward-compatible labels (legacy automations)
     "Home 1": "0",
     "Home 2": "1",
     "Home 3": "2",
@@ -124,9 +131,29 @@ MODES: Dict[str, str] = {
     "Home 6": "5",
 }
 
-GRID_DELIVERY = {"Vypnuto / Off": 0, "Zapnuto / On": 1, "S omezením / Limited": 1}
-BOILER_MODE = {"CBB": 0, "Manual": 1}
-FORMAT_BATTERY = {"Nenabíjet": 0, "Nabíjet": 1}
+GRID_DELIVERY = {
+    "off": 0,
+    "on": 1,
+    "limited": 1,
+    # Backward-compatible labels
+    "Vypnuto / Off": 0,
+    "Zapnuto / On": 1,
+    "S omezením / Limited": 1,
+}
+BOILER_MODE = {
+    "cbb": 0,
+    "manual": 1,
+    # Backward-compatible labels
+    "CBB": 0,
+    "Manual": 1,
+}
+FORMAT_BATTERY = {
+    "no_charge": 0,
+    "charge": 1,
+    # Backward-compatible labels
+    "Nenabíjet": 0,
+    "Nabíjet": 1,
+}
 
 tracer = trace.get_tracer(__name__)
 

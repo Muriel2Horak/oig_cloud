@@ -60,6 +60,10 @@ if (window.OIG_RUNTIME.isHaApp === undefined) {
 if (window.OIG_RUNTIME.isMobile === undefined) {
     window.OIG_RUNTIME.isMobile = detectMobile();
 }
+if (window.OIG_RUNTIME.reduceMotion === undefined) {
+    const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    window.OIG_RUNTIME.reduceMotion = !!(prefersReduced || window.OIG_RUNTIME.isHaApp || window.OIG_RUNTIME.isMobile);
+}
 if (window.OIG_RUNTIME.initialLoadComplete === undefined) {
     window.OIG_RUNTIME.initialLoadComplete = false;
 }
@@ -336,6 +340,13 @@ var closeGridChargingDialog = window.DashboardGridCharging?.closeGridChargingDia
 function init() {
     console.log('[Dashboard] Initializing...');
     const isConstrainedRuntime = !!(window.OIG_RUNTIME?.isHaApp || window.OIG_RUNTIME?.isMobile);
+    if (window.OIG_RUNTIME?.reduceMotion) {
+        document.body.classList.add('oig-reduce-motion');
+        const particles = document.getElementById('particles');
+        if (particles) {
+            particles.style.display = 'none';
+        }
+    }
 
     // Detekovat a aplikovat téma z Home Assistantu
     detectAndApplyTheme();
@@ -406,8 +417,15 @@ function init() {
         }
     }, 50);
 
-    // Subscribe to shield state changes for real-time updates
-    subscribeToShield();
+    // Subscribe to shield state changes for real-time updates (defer on mobile/HA app)
+    const startShieldSubscription = () => {
+        subscribeToShield();
+    };
+    if (isConstrainedRuntime) {
+        setTimeout(() => runWhenIdle(startShieldSubscription, 4000, 1500), 300);
+    } else {
+        startShieldSubscription();
+    }
 
     // Initial shield UI update with retry logic (wait for sensors after HA restart)
     let retryCount = 0;

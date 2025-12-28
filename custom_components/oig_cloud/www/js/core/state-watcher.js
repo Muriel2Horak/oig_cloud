@@ -35,8 +35,47 @@
     function registerPrefix(prefix) {
         const hass = _getHassSafe();
         if (!hass || !hass.states || typeof prefix !== 'string') return;
-        const ids = Object.keys(hass.states).filter((eid) => eid.startsWith(prefix));
-        registerEntities(ids);
+
+        const ids = Object.keys(hass.states);
+        const runtime = window.OIG_RUNTIME || {};
+        const shouldChunk = !!(runtime.isHaApp || runtime.isMobile || ids.length > 800);
+
+        if (!shouldChunk) {
+            registerEntities(ids.filter((eid) => eid.startsWith(prefix)));
+            return;
+        }
+
+        let index = 0;
+        const chunkSize = runtime.isHaApp || runtime.isMobile ? 200 : 400;
+
+        const step = (deadline) => {
+            const timeBudget = deadline && typeof deadline.timeRemaining === 'function'
+                ? deadline.timeRemaining()
+                : 0;
+            const useTimeBudget = timeBudget > 0;
+            const start = index;
+            while (index < ids.length) {
+                const id = ids[index];
+                if (id.startsWith(prefix)) watched.add(id);
+                index += 1;
+                if (index - start >= chunkSize) break;
+                if (useTimeBudget && deadline.timeRemaining() < 3) break;
+            }
+
+            if (index < ids.length) {
+                schedule();
+            }
+        };
+
+        const schedule = () => {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(step, { timeout: 250 });
+            } else {
+                setTimeout(step, 16);
+            }
+        };
+
+        schedule();
     }
 
     function onEntityChange(cb) {
@@ -70,7 +109,11 @@
         if (running) return;
         running = true;
 
-        const intervalMs = Number(options.intervalMs || 1000);
+        const runtime = window.OIG_RUNTIME || {};
+        const baseInterval = Number(options.intervalMs || 1000);
+        const intervalMs = (runtime.isHaApp || runtime.isMobile)
+            ? Math.max(2000, baseInterval)
+            : baseInterval;
         const prefixes = Array.isArray(options.prefixes) ? options.prefixes : [];
 
         // Initial registration
@@ -80,9 +123,10 @@
         timer = setInterval(_tick, Math.max(250, intervalMs));
 
         // Rescan prefixes occasionally (new entities, reloads)
+        const rescanInterval = (runtime.isHaApp || runtime.isMobile) ? 60000 : 30000;
         rescanTimer = setInterval(() => {
             prefixes.forEach(registerPrefix);
-        }, 30000);
+        }, rescanInterval);
 
         console.log('[StateWatcher] Started', { intervalMs, prefixes, watched: watched.size });
     }
@@ -104,4 +148,3 @@
         onEntityChange,
     };
 })();
-
