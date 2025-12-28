@@ -243,7 +243,10 @@
           "go_back": "⬅️ I want to go back (check + click Submit)",
           "tariff_count": "Number of tariffs",
           "tariff_nt_start_weekday": "LT start weekday (hour1,hour2)",
+          "tariff_nt_start_weekend": "LT start weekend (hour1,hour2)",
           "tariff_vt_start_weekday": "HT start weekday (hour)",
+          "tariff_vt_start_weekend": "HT start weekend (hour)",
+          "tariff_weekend_same_as_weekday": "Weekend same as weekdays",
           "vat_rate": "VAT (%)"
         },
         "data_description": {
@@ -252,7 +255,10 @@
           "go_back": "Check this box and press 'Submit' - you will go back one step",
           "tariff_count": "💡 Click 'Submit' to show parameters according to number of tariffs",
           "tariff_nt_start_weekday": "LT start on weekday. Format: hour1,hour2 (e.g., '22,2' = 22:00 evening and 02:00 morning)",
+          "tariff_nt_start_weekend": "LT start on weekend. Format: hour1,hour2 (e.g., '0' = LT all day)",
           "tariff_vt_start_weekday": "HT start on weekday. Format: hour (e.g., '6' = 06:00)",
+          "tariff_vt_start_weekend": "HT start on weekend. Format: hour (leave empty for LT all day)",
+          "tariff_weekend_same_as_weekday": "Use the same HT/LT times on weekends",
           "vat_rate": "VAT rate in percent. Standard 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Step 3: Distribution and VAT**\n\nSet distribution fees and VAT.\n\n💡 **Information:**\n• Distribution is **independent** of purchase/sale type (FIXED/SPOT)\n• If you have 2 tariffs (HT/LT), check 'Two tariffs'\n• HT hours are automatically set according to common times\n\n⚙️ After selecting number of tariffs, click 'Submit' to show parameters.",
@@ -660,7 +666,10 @@
           "go_back": "⬅️ I want to go back (check + click Submit)",
           "tariff_count": "Number of tariffs",
           "tariff_nt_start_weekday": "LT start weekday (hour1,hour2)",
+          "tariff_nt_start_weekend": "LT start weekend (hour1,hour2)",
           "tariff_vt_start_weekday": "HT start weekday (hour)",
+          "tariff_vt_start_weekend": "HT start weekend (hour)",
+          "tariff_weekend_same_as_weekday": "Weekend same as weekdays",
           "vat_rate": "VAT (%)"
         },
         "data_description": {
@@ -669,7 +678,10 @@
           "go_back": "Check this box and press 'Submit' - you will go back one step",
           "tariff_count": "💡 Click 'Submit' to show parameters according to number of tariffs",
           "tariff_nt_start_weekday": "LT start on weekday. Format: hour1,hour2 (e.g., '22,2' = 22:00 evening and 02:00 morning)",
+          "tariff_nt_start_weekend": "LT start on weekend. Format: hour1,hour2 (e.g., '0' = LT all day)",
           "tariff_vt_start_weekday": "HT start on weekday. Format: hour (e.g., '6' = 06:00)",
+          "tariff_vt_start_weekend": "HT start on weekend. Format: hour (leave empty for LT all day)",
+          "tariff_weekend_same_as_weekday": "Use the same HT/LT times on weekends",
           "vat_rate": "VAT rate in percent. Standard 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Step 3: Distribution and VAT**\n\nSet distribution fees and VAT.\n\n💡 **Information:**\n• Distribution is **independent** of purchase/sale type (FIXED/SPOT)\n• If you have 2 tariffs (HT/LT), check 'Two tariffs'\n• HT hours are automatically set according to common times\n\n⚙️ After selecting number of tariffs, click 'Submit' to show parameters.",

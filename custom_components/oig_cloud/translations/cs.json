@@ -243,7 +243,10 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "tariff_count": "Počet tarifů",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
+          "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
+          "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
+          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)"
         },
         "data_description": {
@@ -252,7 +255,10 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "tariff_count": "💡 Klikněte 'Odeslat' pro zobrazení parametrů podle počtu tarifů",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
+          "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
+          "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
+          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Krok 3: Distribuce a DPH**\n\nNastavte distribuční poplatky a DPH.\n\n💡 **Informace:**\n• Distribuce je **nezávislá** na typu nákupu/prodeje (FIX/SPOT)\n• Pokud máte 2 tarify (VT/NT), zaškrtněte 'Dva tarify'\n• VT hodiny se automaticky nastaví podle běžných časů\n\n⚙️ Po výběru počtu tarifů klikněte 'Odeslat' pro zobrazení parametrů.",
@@ -540,7 +546,10 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "tariff_count": "Počet tarifů",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
+          "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
+          "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
+          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)"
         },
         "data_description": {
@@ -549,7 +558,10 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "tariff_count": "💡 Klikněte 'Odeslat' pro zobrazení parametrů podle počtu tarifů",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
+          "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
+          "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
+          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Krok 3: Distribuce a DPH**\n\nNastavte distribuční poplatky a DPH.\n\n💡 **Informace:**\n• Distribuce je **nezávislá** na typu nákupu/prodeje (FIX/SPOT)\n• Pokud máte 2 tarify (VT/NT), zaškrtněte 'Dva tarify'\n• VT hodiny se automaticky nastaví podle běžných časů\n\n⚙️ Po výběru počtu tarifů klikněte 'Odeslat' pro zobrazení parametrů.",

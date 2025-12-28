@@ -243,7 +243,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 def _validate_tariff_hours(
-    vt_starts_str: str, nt_starts_str: str
+    vt_starts_str: str, nt_starts_str: str, allow_single_tariff: bool = False
 ) -> tuple[bool, Optional[str]]:
     """Validate VT/NT tariff hour starts for gaps and overlaps.
 
@@ -265,6 +265,13 @@ def _validate_tariff_hours(
             return False, "invalid_hour_range"
     except ValueError:
         return False, "invalid_hour_format"
+
+    if not vt_starts and not nt_starts:
+        return False, "tariff_gaps"
+    if allow_single_tariff and (not vt_starts or not nt_starts):
+        return True, None
+    if not vt_starts or not nt_starts:
+        return False, "tariff_gaps"
 
     # Build 24-hour coverage map
     hour_map = {}  # hour -> tariff type
@@ -448,6 +455,15 @@ class WizardMixin:
         if dual_tariff:
             migrated["vt_hours_start"] = data.get("vt_hours_start", "6:00")
             migrated["vt_hours_end"] = data.get("vt_hours_end", "22:00")
+            weekday_vt = data.get(
+                "tariff_vt_start_weekday", data.get("vt_hours_start", "6")
+            )
+            weekday_nt = data.get("tariff_nt_start_weekday", "22,2")
+            migrated.setdefault("tariff_vt_start_weekday", weekday_vt)
+            migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
+            migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
+            migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
+            migrated.setdefault("tariff_weekend_same_as_weekday", True)
 
         return migrated
 
@@ -522,6 +538,24 @@ class WizardMixin:
             backend_data["tariff_nt_start_weekday"] = wizard_data.get(
                 "tariff_nt_start_weekday", "22,2"
             )
+            weekend_same = wizard_data.get("tariff_weekend_same_as_weekday", True)
+            backend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
+            if weekend_same:
+                backend_data["tariff_vt_start_weekend"] = backend_data[
+                    "tariff_vt_start_weekday"
+                ]
+                backend_data["tariff_nt_start_weekend"] = backend_data[
+                    "tariff_nt_start_weekday"
+                ]
+            else:
+                backend_data["tariff_vt_start_weekend"] = wizard_data.get(
+                    "tariff_vt_start_weekend",
+                    backend_data["tariff_vt_start_weekday"],
+                )
+                backend_data["tariff_nt_start_weekend"] = wizard_data.get(
+                    "tariff_nt_start_weekend",
+                    backend_data["tariff_nt_start_weekday"],
+                )
 
         # VAT rate
         backend_data["vat_rate"] = wizard_data.get("vat_rate", 21.0)
@@ -588,11 +622,26 @@ class WizardMixin:
             frontend_data["distribution_fee_nt_kwh"] = backend_data.get(
                 "distribution_fee_nt_kwh", 0.91
             )
-            frontend_data["tariff_vt_start_weekday"] = backend_data.get(
-                "tariff_vt_start_weekday", "6"
+            weekday_vt = backend_data.get("tariff_vt_start_weekday", "6")
+            weekday_nt = backend_data.get("tariff_nt_start_weekday", "22,2")
+            weekend_vt = backend_data.get("tariff_vt_start_weekend")
+            weekend_nt = backend_data.get("tariff_nt_start_weekend")
+            weekend_same = backend_data.get("tariff_weekend_same_as_weekday")
+            if weekend_same is None:
+                if weekend_vt is None and weekend_nt is None:
+                    weekend_same = True
+                else:
+                    weekend_same = str(weekend_vt) == str(weekday_vt) and str(
+                        weekend_nt
+                    ) == str(weekday_nt)
+            frontend_data["tariff_vt_start_weekday"] = weekday_vt
+            frontend_data["tariff_nt_start_weekday"] = weekday_nt
+            frontend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
+            frontend_data["tariff_vt_start_weekend"] = (
+                weekend_vt if weekend_vt is not None else weekday_vt
             )
-            frontend_data["tariff_nt_start_weekday"] = backend_data.get(
-                "tariff_nt_start_weekday", "22,2"
+            frontend_data["tariff_nt_start_weekend"] = (
+                weekend_nt if weekend_nt is not None else weekday_nt
             )
 
         # VAT rate
@@ -1870,6 +1919,23 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ),
                 )
 
+            # Detekce změny víkendového nastavení - přepnout zobrazení polí
+            old_weekend_same = self._wizard_data.get(
+                "tariff_weekend_same_as_weekday", True
+            )
+            new_weekend_same = user_input.get(
+                "tariff_weekend_same_as_weekday", True
+            )
+            if new_tariff_count == "dual" and old_weekend_same != new_weekend_same:
+                self._wizard_data.update(user_input)
+                return self.async_show_form(
+                    step_id="wizard_pricing_distribution",
+                    data_schema=self._get_pricing_distribution_schema(user_input),
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_pricing_distribution"
+                    ),
+                )
+
             errors = {}
 
             # Validace distribučních poplatků
@@ -1891,6 +1957,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 is_valid, error_key = _validate_tariff_hours(vt_starts, nt_starts)
                 if not is_valid:
                     errors["tariff_vt_start_weekday"] = error_key
+
+                weekend_same = user_input.get(
+                    "tariff_weekend_same_as_weekday", True
+                )
+                if not weekend_same:
+                    vt_weekend = user_input.get("tariff_vt_start_weekend", "")
+                    nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
+                    is_valid, error_key = _validate_tariff_hours(
+                        vt_weekend, nt_weekend, allow_single_tariff=True
+                    )
+                    if not is_valid:
+                        errors["tariff_vt_start_weekend"] = error_key
 
             # Validace VAT
             vat = user_input.get("vat_rate", 21.0)
@@ -1929,6 +2007,23 @@ Kliknutím na "Odeslat" spustíte průvodce.
             defaults = self._wizard_data if self._wizard_data else {}
 
         tariff_count = defaults.get("tariff_count", "single")
+        weekday_vt_default = defaults.get("tariff_vt_start_weekday", "6")
+        weekday_nt_default = defaults.get("tariff_nt_start_weekday", "22,2")
+        weekend_vt_default = defaults.get(
+            "tariff_vt_start_weekend", weekday_vt_default
+        )
+        weekend_nt_default = defaults.get(
+            "tariff_nt_start_weekend", weekday_nt_default
+        )
+        weekend_same_default = defaults.get("tariff_weekend_same_as_weekday")
+        if weekend_same_default is None:
+            if "tariff_vt_start_weekend" not in defaults and "tariff_nt_start_weekend" not in defaults:
+                weekend_same_default = True
+            else:
+                weekend_same_default = (
+                    str(weekend_vt_default) == str(weekday_vt_default)
+                    and str(weekend_nt_default) == str(weekday_nt_default)
+                )
 
         schema_fields = {
             vol.Optional("tariff_count", default=tariff_count): vol.In(
@@ -1953,14 +2048,31 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
                     vol.Optional(
                         "tariff_vt_start_weekday",
-                        default=defaults.get("tariff_vt_start_weekday", "6"),
+                        default=weekday_vt_default,
                     ): str,
                     vol.Optional(
                         "tariff_nt_start_weekday",
-                        default=defaults.get("tariff_nt_start_weekday", "22,2"),
+                        default=weekday_nt_default,
                     ): str,
+                    vol.Optional(
+                        "tariff_weekend_same_as_weekday",
+                        default=bool(weekend_same_default),
+                    ): bool,
                 }
             )
+            if not weekend_same_default:
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            "tariff_vt_start_weekend",
+                            default=weekend_vt_default,
+                        ): str,
+                        vol.Optional(
+                            "tariff_nt_start_weekend",
+                            default=weekend_nt_default,
+                        ): str,
+                    }
+                )
 
         schema_fields.update(
             {
