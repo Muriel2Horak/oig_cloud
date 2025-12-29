@@ -1,0 +1,2867 @@
+        /* === EDIT MODE STYLES === */
+
+        /* Edit mode активní - nodes jsou draggable */
+        .flow-canvas.edit-mode .node {
+            cursor: move;
+            border: 2px dashed rgb(255, 193, 7, 0.6);
+            box-shadow: 0 0 20px rgb(255, 193, 7, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .flow-canvas.edit-mode .node:hover {
+            border-color: rgb(255, 193, 7, 0.9);
+            box-shadow: 0 0 30px rgb(255, 193, 7, 0.5);
+        }
+
+        /* Během dragování */
+        .node.dragging {
+            opacity: 0.8;
+            z-index: 1000;
+            cursor: grabbing !important;
+            box-shadow: 0 10px 40px rgb(0, 0, 0, 0.5);
+            transform: scale(1.05) !important;
+        }
+
+        /* Touch-friendly hit area pro mobily */
+        @media (width <= 768px) {
+            .flow-canvas.edit-mode .node {
+                min-width: 44px;
+                min-height: 44px;
+                padding: 12px;
+            }
+        }
+
+        /* Node Content - VELMI KOMPAKTNÍ! */
+        .node-icon {
+            font-size: 28px;
+
+            /* Ještě menší */
+            margin-bottom: 4px;
+            filter: drop-shadow(0 2px 4px rgb(0, 0, 0, 0.3));
+            position: relative;
+
+            /* Pro absolutní pozici emoji ikony */
+        }
+
+        .node-label {
+            font-size: 10px;
+
+            /* Zvětšeno z 9px */
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            opacity: 0.7;
+            margin-bottom: 3px;
+            font-weight: 600;
+            align-self: stretch;
+            text-align: center;
+            box-sizing: border-box;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .node-value {
+            font-size: 22px;
+
+            /* Zvětšeno z 20px */
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 2px;
+            align-self: stretch;
+            text-align: center;
+            box-sizing: border-box;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .node-subvalue {
+            font-size: 10px;
+
+            /* Zvětšeno z 9px */
+            opacity: 0.6;
+            align-self: stretch;
+            text-align: center;
+            box-sizing: border-box;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Phase values in main box */
+        .node-phases {
+            margin-top: 4px;
+            font-size: 10px;
+
+            /* Zvětšeno z 9px */
+            opacity: 0.8;
+            display: flex;
+            flex-direction: row;
+
+            /* Výchozí pro Spotřebu - 1 řádek */
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+            max-width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        /* Síť - 2 řádky (výkony nad napětími) */
+        .grid-node .node-phases {
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .phase-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .phase-label {
+            font-weight: 600;
+            min-width: 20px;
+        }
+
+        .phase-value {
+            font-size: 10px;
+
+            /* Zvětšeno z 9px */
+            opacity: 0.9;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .phase-separator {
+            opacity: 0.4;
+            margin: 0 2px;
+        }
+
+        .phase-row-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Dvousloupcový layout pro fáze v Síti */
+        .phase-col-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .phase-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 45px;
+        }
+
+        /* Tariff indicator in grid box */
+        .node-tariff {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 12px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .node-tariff:hover {
+            transform: scale(1.1);
+        }
+
+        /* Frequency indicator in grid box */
+        .node-frequency {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 9px;
+            line-height: 1;
+            z-index: 10;
+            opacity: 0.7;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin: 0 !important;
+        }
+
+        .node-frequency:hover {
+            opacity: 1;
+        }
+
+        /* Battery corner indicators */
+        .battery-voltage-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .battery-current-indicator {
+            position: absolute !important;
+            top: 30px !important;
+            left: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .battery-current-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        /* Battery Balancing Indicator - pod proudem */
+        .battery-balancing-indicator {
+            position: absolute !important;
+            top: 62px !important;
+            left: 8px !important;
+            font-size: 10px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: help;
+            margin: 0 !important;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 6px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.25) 0%, rgb(255, 152, 0, 0.15) 100%);
+            border: 1px solid rgb(255, 193, 7, 0.4);
+            transition: all 0.3s ease;
+            animation: pulse-balancing 2s ease-in-out infinite;
+        }
+
+        .battery-balancing-indicator:hover {
+            transform: scale(1.05);
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.35) 0%, rgb(255, 152, 0, 0.25) 100%);
+            box-shadow: 0 0 10px rgb(255, 193, 7, 0.4);
+        }
+
+        .balancing-icon {
+            font-size: 12px;
+            display: inline-block;
+        }
+
+        .balancing-text {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--warning-text);
+            white-space: nowrap;
+        }
+
+        /* Balancing states - různé barvy podle fáze */
+        .battery-balancing-indicator.charging {
+            background: linear-gradient(135deg, rgb(255, 193, 7, 0.3) 0%, rgb(255, 152, 0, 0.2) 100%);
+            border-color: rgb(255, 193, 7, 0.5);
+        }
+
+        .battery-balancing-indicator.holding {
+            background: linear-gradient(135deg, rgb(66, 165, 245, 0.25) 0%, rgb(33, 150, 243, 0.15) 100%);
+            border-color: rgb(66, 165, 245, 0.4);
+        }
+
+        .battery-balancing-indicator.holding .balancing-text {
+            color: var(--info-text);
+        }
+
+        .battery-balancing-indicator.completed {
+            background: linear-gradient(135deg, rgb(76, 175, 80, 0.25) 0%, rgb(56, 142, 60, 0.15) 100%);
+            border-color: rgb(76, 175, 80, 0.4);
+            animation: none;
+        }
+
+        .battery-balancing-indicator.completed .balancing-text {
+            color: var(--success-text);
+        }
+
+        @keyframes pulse-balancing {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.85;
+                transform: scale(1.02);
+            }
+        }
+
+        .battery-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .battery-temp-icon {
+            font-size: 14px;
+            display: inline-block; /* Nutné pro animaci transform */
+        }
+
+        .battery-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .battery-grid-charging-indicator {
+            position: absolute !important;
+            top: 58px !important;
+            right: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+
+            /* Default OFF state - šedá, průhledná */
+            opacity: 0.4;
+        }
+
+        /* Active ON state - plná opacity, animovaná */
+        .battery-grid-charging-indicator.active {
+            opacity: 1;
+        }
+
+        .battery-grid-charging-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        @keyframes pulse-charging {
+            0%,
+            100% {
+                opacity: 0.7;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .battery-voltage-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        /* Dynamic battery icon */
+        .battery-icon-dynamic {
+            font-size: 32px;
+            transition: all 0.3s ease;
+        }
+
+        /* Temperature animations */
+        @keyframes pulse-hot {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        @keyframes pulse-cold {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        /* Pending mode change animation */
+        @keyframes pulse-pending {
+            0%,
+            100% {
+                opacity: 0.6;
+                box-shadow: 0 0 0 0 var(--status-idle-bg-transparent);
+            }
+
+            50% {
+                opacity: 0.8;
+                box-shadow: 0 0 12px 4px var(--status-idle-bg-semi);
+            }
+        }
+
+        /* Mode change in flow diagram */
+        @keyframes pulse-mode-changing {
+            0%,
+            100% {
+                opacity: 0.7;
+                text-shadow: 0 0 8px var(--warning-bg-transparent);
+            }
+
+            50% {
+                opacity: 1;
+                text-shadow: 0 0 16px var(--warning-text-transparent);
+            }
+        }
+
+        .mode-changing {
+            animation: pulse-mode-changing 2s ease-in-out infinite;
+        }
+
+        /* Mode change indicator badge */
+        .mode-change-indicator {
+            position: absolute;
+            top: 30px;
+            right: -80px;
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--indicator-text);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .mode-change-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Grid delivery change indicators - dva badges vedle sebe */
+        .grid-change-indicator {
+            position: absolute;
+            top: 70px;
+            right: -80px;
+            background: var(--indicator-info-bg);
+            border: 1px solid var(--indicator-info-border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--indicator-text);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px var(--indicator-info-shadow);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .grid-change-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .grid-limit-indicator {
+            position: absolute;
+            top: 70px;
+            right: -80px;
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--indicator-text);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.15s both;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .grid-limit-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .boiler-change-indicator {
+            position: absolute;
+            top: 30px;
+            right: -80px;
+            background: var(--indicator-warning-bg);
+            border: 1px solid var(--indicator-warning-border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--indicator-text);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px var(--indicator-warning-shadow);
+            animation: popIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .boiler-change-indicator .spinner {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border: 2px solid var(--spinner-border);
+            border-top-color: var(--spinner-border-top);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .temp-hot {
+            /* Container má jen červený stín */
+            filter: drop-shadow(0 0 3px rgb(244, 67, 54, 0.8));
+        }
+
+        /* Ikona uvnitř temp-hot bliká - použij ID pro vyšší specificitu */
+        .temp-hot #battery-temp-icon,
+        .temp-hot .battery-temp-icon,
+        .temp-hot #inverter-temp-icon,
+        .temp-hot .inverter-temp-icon {
+            animation: pulse-hot 1s ease-in-out infinite !important;
+            display: inline-block;
+        }
+
+        .temp-cold {
+            /* Container má jen modrý stín */
+            filter: drop-shadow(0 0 3px rgb(33, 150, 243, 0.8));
+        }
+
+        /* Ikona uvnitř temp-cold bliká */
+        .temp-cold #battery-temp-icon,
+        .temp-cold .battery-temp-icon {
+            animation: pulse-cold 1s ease-in-out infinite !important;
+            display: inline-block;
+        }
+
+        /* Inverter corner indicators */
+        .inverter-bypass-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-bypass-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .bypass-ok {
+            filter: drop-shadow(0 0 3px var(--shadow-success));
+        }
+
+        .bypass-warning {
+            /* Container má jen červený stín */
+            filter: drop-shadow(0 0 5px var(--shadow-error));
+        }
+
+        /* Ikona (emoji) uvnitř bypass-warning bliká */
+        .bypass-warning #inverter-bypass-icon {
+            animation: pulse-warning 1s ease-in-out infinite;
+            display: inline-block;
+        }
+
+        .inverter-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .inverter-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-temp-icon {
+            font-size: 14px;
+        }
+
+        /* Warning border animation for inverter */
+        @keyframes warning-border {
+            0%,
+            100% {
+                border-color: var(--shadow-error-weak);
+                box-shadow: 0 0 10px var(--shadow-error-light);
+            }
+
+            50% {
+                border-color: var(--shadow-error);
+                box-shadow: 0 0 20px var(--shadow-error-weak);
+            }
+        }
+
+        .inverter.warning-active {
+            border: 3px solid var(--shadow-error-weak);
+            animation: warning-border 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%,
+            100% {
+                transform: scale(1);
+                filter: drop-shadow(0 0 3px var(--shadow-error-weak));
+            }
+
+            50% {
+                transform: scale(1.15);
+                filter: drop-shadow(0 0 8px var(--shadow-error));
+            }
+        }
+
+        /* Notification styles */
+        .notification-error {
+            color: var(--error-text) !important;
+            font-weight: 700 !important;
+        }
+
+        .notification-ok {
+            color: var(--success-text) !important;
+        }
+
+        /* Solar icon animations */
+        .solar-icon-dynamic {
+            font-size: 32px;
+            transition: all 0.3s ease;
+        }
+
+        /* Měsíc v noci - zvětšený a výraznější */
+        .solar-icon-moon {
+            font-size: 36px !important;
+            filter: drop-shadow(0 0 8px rgb(255, 255, 255, 0.8));
+        }
+
+        @keyframes solar-pulse {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+        }
+
+        @keyframes solar-glow {
+            0%,
+            100% {
+                filter: drop-shadow(0 0 5px rgb(255, 213, 79, 0.6));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 15px rgb(255, 213, 79, 1));
+            }
+        }
+
+        .solar-active {
+            animation: solar-pulse 2s ease-in-out infinite, solar-glow 2s ease-in-out infinite;
+        }
+
+        /* Solar forecast indicators */
+        .solar-forecast-today {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .solar-forecast-tomorrow {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1.2;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .solar-forecast-today:hover,
+        .solar-forecast-tomorrow:hover {
+            transform: scale(1.1);
+        }
+
+        .forecast-icon {
+            font-size: 12px;
+        }
+
+        .forecast-value {
+            font-size: 10px;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+
+        /* Inverter corner indicators */
+        .inverter-bypass-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            left: 8px !important;
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-bypass-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-bypass-indicator.status-ok {
+            color: var(--success-text);
+        }
+
+        .inverter-bypass-indicator.warning-active {
+            color: var(--error-text-alt);
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        .inverter-bypass-label {
+            position: absolute !important;
+            top: 28px !important;
+            left: 8px !important;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--error-text);
+            background: rgb(220, 53, 69, 0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            z-index: 11;
+            pointer-events: none;
+            white-space: nowrap;
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        .inverter-temp-indicator {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            font-size: 11px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .inverter-temp-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .inverter-temp-icon {
+            font-size: 14px;
+        }
+
+        /* Inverter temperature hot threshold at 35°C */
+        .inverter-temp-hot {
+            animation: pulse-hot 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px var(--shadow-error-weak));
+        }
+
+        .inverter-temp-cold {
+            animation: pulse-cold 1s ease-in-out infinite;
+            filter: drop-shadow(0 0 3px var(--shadow-info));
+        }
+
+        /* Distribution crisis indicator */
+        .inverter-distribution-crisis {
+            position: absolute !important;
+            top: 50% !important;
+            left: 15px !important;
+            transform: translateY(-50%);
+            font-size: 14px;
+            line-height: 1;
+            z-index: 10;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0 !important;
+        }
+
+        .inverter-distribution-crisis:hover {
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .inverter-distribution-crisis.status-ok {
+            color: var(--success-text);
+        }
+
+        .inverter-distribution-crisis.warning-active {
+            color: var(--error-text-alt);
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        /* Notification indicator */
+        .notification-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .notification-badge.has-error {
+            color: var(--error-text-alt);
+            font-weight: 700;
+        }
+
+        .notification-badge.has-unread {
+            color: var(--warning-text);
+            font-weight: 600;
+        }
+
+        /* Solar strings layout */
+        .node-strings {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 4px;
+            margin-bottom: 4px;
+        }
+
+        .string-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .string-item:first-child {
+            justify-content: flex-start;
+        }
+
+        .string-item:last-child {
+            justify-content: flex-end;
+        }
+
+        .string-icon {
+            font-size: 10px;
+        }
+
+        .string-value {
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .string-value:hover {
+            opacity: 0.8;
+        }
+
+        /* Solar columns in details */
+        .solar-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 0;
+        }
+
+        .solar-column {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .solar-column .detail-group {
+            margin-bottom: 6px;
+        }
+
+        .solar-column .detail-group:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Grid box price coloring */
+        .grid-node.price-cheap {
+            border: 2px solid var(--battery-border);
+            box-shadow: 0 0 15px var(--shadow-success);
+            animation: price-cheap-pulse 3s ease-in-out infinite;
+        }
+
+        .grid-node.price-normal {
+            border: 2px solid var(--border-primary);
+
+            /* Žádná animace - neutrální stav */
+        }
+
+        .grid-node.price-expensive {
+            border: 2px solid var(--status-discharging-border);
+            box-shadow: 0 0 15px var(--status-discharging-shadow);
+            animation: price-expensive-pulse 2s ease-in-out infinite;
+        }
+
+        /* Export do sítě - vždy zelený s animací (prodáváme elektřinu!) */
+        .grid-node.grid-exporting {
+            border: 2px solid var(--battery-border);
+            box-shadow: 0 0 20px var(--shadow-success);
+            animation: export-pulse 2.5s ease-in-out infinite;
+        }
+
+        /* Ikony pro cenové stavy - barevné stíny kolem zásuvky */
+        .price-icon-cheap {
+            animation: icon-savings 2s ease-in-out infinite;
+
+            /* Zelený světelný efekt */
+            text-shadow:
+                0 0 10px rgb(76, 175, 80, 1),
+                0 0 20px rgb(76, 175, 80, 0.8),
+                0 0 30px rgb(76, 175, 80, 0.6);
+        }
+
+        .price-icon-normal {
+            /* Žlutý/oranžový světelný efekt */
+            text-shadow:
+                0 0 10px rgb(255, 193, 7, 1),
+                0 0 20px rgb(255, 193, 7, 0.8),
+                0 0 30px rgb(255, 193, 7, 0.6);
+        }
+
+        .price-icon-expensive {
+            animation: icon-expensive 1.5s ease-in-out infinite;
+
+            /* Červený světelný efekt */
+            text-shadow:
+                0 0 10px rgb(244, 67, 54, 1),
+                0 0 20px rgb(244, 67, 54, 0.8),
+                0 0 30px rgb(244, 67, 54, 0.6);
+        }
+
+        /* Node Details - Čitelné písmo */
+        .node-details {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-secondary);
+            font-size: 11px;
+
+            /* Zvětšeno z 8px */
+            line-height: 1.4;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .detail-label {
+            opacity: 0.6;
+            font-size: 10px;
+
+            /* Zvětšeno z 8px */
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Battery node needs more compact labels to keep card narrow */
+        .node.battery .detail-label {
+            font-size: 9px;
+            text-transform: none !important;
+            letter-spacing: 0.1px;
+            font-weight: 500;
+        }
+
+        .node.battery .detail-row {
+            gap: 3px;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            font-size: 11px;
+
+            /* Zvětšeno z 9px */
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .detail-extra {
+            font-size: 10px;
+
+            /* Zvětšeno z 8px */
+            opacity: 0.7;
+            margin-left: 4px;
+        }
+
+        /* Grid charging popup/table styling */
+        .grid-charging-popup {
+            max-width: 340px;
+            font-size: 11px;
+            line-height: 1.4;
+            text-align: left;
+            overflow-x: auto;
+        }
+
+.grid-charging-popup table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.grid-charging-popup thead tr {
+    border-bottom: 1px solid var(--border-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.grid-charging-popup tfoot tr {
+    border-top: 1px solid var(--border-secondary);
+}
+
+.grid-charging-popup th,
+.grid-charging-popup td {
+    padding: 6px 8px;
+    white-space: nowrap;
+}
+
+.grid-charging-popup tbody tr:not(:last-child) {
+    border-bottom: 1px dashed rgb(255,255,255,0.15);
+}
+
+.grid-charging-popup tbody tr:nth-child(odd) {
+    background-color: rgb(255,255,255,0.02);
+}
+
+.grid-charging-popup tbody tr:hover {
+    background: rgb(255, 215, 64, 0.15);
+    transition: background 0.2s ease-in-out;
+}
+
+.grid-charging-popup td:first-child,
+.grid-charging-popup th:first-child {
+    text-align: left;
+    font-weight: 600;
+}
+
+.grid-charging-popup td:nth-child(2),
+.grid-charging-popup td:nth-child(3),
+.grid-charging-popup th:nth-child(2),
+.grid-charging-popup th:nth-child(3) {
+    text-align: right;
+}
+
+        .detail-group {
+            margin-top: 6px;
+            padding-top: 5px;
+            border-top: 1px solid var(--border-tertiary);
+        }
+
+        .detail-subheader {
+            font-size: 10px;
+
+            /* Zvětšeno z 8px */
+            text-transform: uppercase;
+            opacity: 0.5;
+            margin-bottom: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .node-status {
+            margin-top: 6px;
+            margin-bottom: 4px;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            align-self: center;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Baterie - ještě menší status */
+        .battery .node-status {
+            margin-top: 4px;
+            margin-bottom: 2px;
+            font-size: 9px;
+            padding: 2px 6px;
+        }
+
+        /* Mobile: Expand/Collapse indicator */
+        @media (width <= 768px) {
+            .node::after {
+                content: '▼';
+                position: absolute;
+                bottom: 3px;
+                right: 5px;
+                font-size: 8px;
+                opacity: 0.4;
+                transition: transform 0.3s ease, opacity 0.3s ease;
+            }
+
+            .node:hover::after {
+                opacity: 0.7;
+            }
+
+            .node.expanded::after {
+                transform: rotate(180deg);
+                opacity: 0.7;
+            }
+        }
+
+        /* Klikatelné hodnoty s entity */
+        .entity-value {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .entity-value:hover {
+            color: var(--info-text);
+            transform: scale(1.05);
+        }
+
+        /* Globální tooltip kontejner - mimo flow, position: fixed */
+        #global-tooltip {
+            position: fixed;
+            background: var(--tooltip-bg);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: normal;
+            max-width: min(250px, calc(100vw - 20px));
+            width: max-content;
+            overflow-wrap: break-word;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 100000;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            top: -9999px;
+            left: -9999px;
+        }
+
+        /* Světlý režim - detekce z HA tématu pomocí JavaScript */
+        body.light-theme #global-tooltip {
+            background: var(--tooltip-bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 4px 12px var(--shadow-color);
+        }
+
+        /* Fallback: Světlý režim - systémová preference (pokud JS selže) */
+        @media (prefers-color-scheme: light) {
+            #global-tooltip {
+                background: var(--tooltip-bg-secondary);
+                color: var(--text-primary);
+                box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3);
+            }
+        }
+
+        #global-tooltip.visible {
+            opacity: 1;
+        }
+
+        /* Globální tooltip šipka */
+        #global-tooltip-arrow {
+            position: fixed;
+            width: 0;
+            height: 0;
+            border: 5px solid transparent;
+            border-top-color: var(--tooltip-border);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 100000;
+            top: -9999px;
+            left: -9999px;
+        }
+
+        /* Světlý režim - detekce z HA tématu pomocí JavaScript */
+        body.light-theme #global-tooltip-arrow {
+            border-top-color: var(--tooltip-border-secondary);
+        }
+
+        body.light-theme #global-tooltip-arrow.below {
+            border-top-color: transparent;
+            border-bottom-color: var(--tooltip-border-secondary);
+        }
+
+        /* Fallback: Světlý režim - systémová preference (pokud JS selže) */
+        @media (prefers-color-scheme: light) {
+            #global-tooltip-arrow {
+                border-top-color: var(--tooltip-border-secondary);
+            }
+
+            #global-tooltip-arrow.below {
+                border-top-color: transparent;
+                border-bottom-color: var(--tooltip-border-secondary);
+            }
+        }
+
+        #global-tooltip-arrow.visible {
+            opacity: 1;
+        }
+
+        #global-tooltip-arrow.below {
+            border-top-color: transparent;
+            border-bottom-color: var(--tooltip-border);
+        }
+
+        /* Info bubble system */
+        .info-bubble {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            background: var(--info-bg);
+            border: 1px solid var(--indicator-info-border);
+            border-radius: 50%;
+            font-size: 11px;
+            cursor: help;
+            margin-left: 4px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .info-bubble:hover {
+            background: var(--status-charging-bg);
+            transform: scale(1.1);
+        }
+
+        .info-bubble-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            background: var(--tooltip-bg);
+            color: var(--text-primary);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: normal;
+            width: 280px;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            z-index: 10000;
+            text-align: left;
+            box-shadow: 0 4px 12px var(--shadow-color);
+        }
+
+        .info-bubble:hover .info-bubble-tooltip {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .info-bubble-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: var(--tooltip-border);
+        }
+
+        .info-bubble-tooltip strong {
+            color: var(--info-text);
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .info-bubble-tooltip ul {
+            margin: 6px 0;
+            padding-left: 16px;
+        }
+
+        .info-bubble-tooltip li {
+            margin: 3px 0;
+        }
+
+        /* Ikony v detailech */
+        .detail-icon {
+            margin-right: 2px;
+            font-size: 10px;
+        }
+
+        .status-charging {
+            background: var(--status-charging-bg);
+            color: var(--status-charging-text);
+        }
+
+        .status-discharging {
+            background: var(--status-discharging-bg);
+            color: var(--status-discharging-text);
+        }
+
+        .status-idle {
+            background: var(--status-idle-bg);
+            color: var(--status-idle-text);
+        }
+
+        .status-importing {
+            background: var(--status-importing-bg);
+            color: var(--status-importing-text);
+        }
+
+        .status-exporting {
+            background: var(--status-exporting-bg);
+            color: var(--status-exporting-text);
+        }
+
+        /* Flow Particles Container - OPRAVA: Stabilní positioning kontext */
+        #particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            overflow: visible;
+        }
+
+        /* Flow Particles */
+        .particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 10px currentcolor;
+            will-change: transform, opacity;
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: scale(1.2);
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* Price indicator animations - jemné pulzování */
+        @keyframes price-cheap-pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 15px var(--shadow-success);
+                border-color: var(--battery-border);
+            }
+
+            50% {
+                box-shadow: 0 0 25px var(--shadow-success);
+                border-color: var(--button-active-border);
+            }
+        }
+
+        @keyframes price-expensive-pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 15px var(--status-discharging-shadow);
+                border-color: var(--status-discharging-border);
+            }
+
+            50% {
+                box-shadow: 0 0 25px var(--status-discharging-border);
+                border-color: var(--status-discharging-text);
+            }
+        }
+
+        /* Export animation - silnější zelené pulzování (prodáváme!) */
+        @keyframes export-pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 20px var(--shadow-success);
+                border-color: var(--battery-border);
+            }
+
+            50% {
+                box-shadow: 0 0 35px rgb(76, 175, 80, 0.9);
+                border-color: var(--button-active-border);
+            }
+        }
+
+        @keyframes icon-savings {
+            0%,
+            100% {
+                transform: scale(1) rotate(0deg);
+            }
+
+            25% {
+                transform: scale(1.1) rotate(-5deg);
+            }
+
+            75% {
+                transform: scale(1.1) rotate(5deg);
+            }
+        }
+
+        @keyframes icon-expensive {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        .control-button {
+            padding: 6px 12px;
+            background: var(--status-charging-bg);
+            border: 1px solid var(--status-charging-border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .control-button:hover {
+            background: var(--status-charging-shadow);
+            transform: scale(1.05);
+        }
+
+        .control-buttons-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% center;
+            }
+
+            100% {
+                background-position: 200% center;
+            }
+        }
+
+        .solar.active .node-icon {
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        /* Battery - Kompaktnější layout - ŠIROKÝ */
+        .battery {
+            min-width: 260px !important;
+            max-width: 340px !important;
+        }
+
+        .battery .node-details {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+
+            /* 2 sloupce */
+            gap: 4px 10px;
+        }
+
+        .battery .detail-row {
+            grid-column: span 1;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .battery .detail-group {
+            grid-column: span 2;
+
+            /* Celá šířka */
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px solid var(--border-tertiary);
+        }
+
+        .battery .detail-group .detail-row {
+            grid-column: span 1;
+        }
+
+        .battery .detail-group>div[style*="grid"] {
+            background: transparent;
+        }
+
+        .battery .detail-group>div[style*="grid"]>div {
+            background: transparent;
+        }
+
+        .battery .detail-subheader {
+            grid-column: span 2;
+            margin-bottom: 2px;
+            font-size: 9px;
+        }
+
+        /* Battery SVG Icon */
+        .battery-icon-svg {
+            display: block;
+            margin: 0 auto;
+            filter: drop-shadow(0 2px 4px rgb(0, 0, 0, 0.2));
+        }
+
+        .battery-outline {
+            stroke: var(--text-primary);
+        }
+
+        .battery-terminal {
+            fill: var(--text-primary);
+        }
+
+        .battery-fill {
+            /* Gradient je definován v SVG, zde jen animace */
+            transition: height 0.8s ease, y 0.8s ease, opacity 0.3s ease;
+            transform-origin: bottom;
+        }
+
+        /* Animace blikání při nabíjení */
+        .battery-fill.charging {
+            animation: battery-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes battery-pulse {
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        /* Grid charging blesk */
+        .battery-lightning {
+            fill: #ffd700;
+            font-size: 24px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .battery-lightning.active {
+            opacity: 1;
+            animation: lightning-blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes lightning-blink {
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* Warning-capable values (Bypass, Distribution) */
+        .warning-capable {
+            transition: all 0.3s ease;
+        }
+
+        /* Green (OK) - when OFF/Standby */
+        .warning-capable.status-ok {
+            color: var(--success-text) !important;
+            font-weight: 600 !important;
+            font-size: 11px !important;
+        }
+
+        /* Red (WARNING) - when ON/Active */
+        .warning-capable.warning-active {
+            color: var(--error-text-alt) !important;
+            font-weight: 700 !important;
+            font-size: 11px !important;
+            text-shadow: 0 0 8px var(--shadow-error-weak);
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%,
+            100% {
+                opacity: 1;
+                text-shadow: 0 0 8px var(--shadow-error-weak);
+            }
+
+            50% {
+                opacity: 0.85;
+                text-shadow: 0 0 12px var(--shadow-error);
+            }
+        }
+
+        /* Info Panel */
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 16px;
+            padding: 16px 24px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            gap: 30px;
+            z-index: 3;
+        }
+
+        .info-item {
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.6;
+            margin-bottom: 4px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        /* Responsive */
+
+        /* Desktop - wider screens, avoid overlap */
+        @media (width >= 1400px) {
+            .flow-canvas {
+                margin-top: 0;
+
+                /* Top bar doesn't need margin */
+            }
+        }
+
+        /* Mobile - small screens */
+        @media (width <= 768px) {
+            .container {
+                padding: 5px;
+                padding-bottom: 10px;
+                max-width: 100vw;
+                overflow-x: hidden;
+            }
+
+            .header {
+                margin-bottom: 5px;
+
+                /* Menší margin */
+                flex-wrap: wrap;
+                padding: 5px;
+            }
+
+            .header h1 {
+                font-size: 14px;
+
+                /* Menší font */
+                width: 100%;
+                margin-bottom: 2px;
+            }
+
+            .time {
+                font-size: 11px;
+
+                /* Menší font */
+            }
+
+            .last-update {
+                font-size: 8px;
+
+                /* Menší font */
+                width: 100%;
+                text-align: left;
+                margin-top: 2px;
+            }
+
+            .flow-canvas {
+                height: 750px;
+
+                /* Zvětšeno z 650px pro více prostoru */
+                max-width: 100%;
+                margin-top: 0;
+                transform: scale(0.92);
+
+                /* Zvětšeno z 0.82 pro lepší čitelnost */
+                transform-origin: top center;
+                overflow: visible;
+            }
+
+            /* Zmenšení všech boxů pro mobil */
+            .node {
+                min-width: 130px;
+                max-width: 180px;
+                padding: 10px 12px;
+            }
+
+            .node-icon {
+                font-size: 24px;
+                margin-bottom: 3px;
+            }
+
+            .node-label {
+                font-size: 9px;
+                margin-bottom: 2px;
+                font-weight: 600;
+            }
+
+            .node-value {
+                font-size: 20px;
+                margin-bottom: 2px;
+            }
+
+            .node-subvalue {
+                font-size: 9px;
+            }
+
+            /* COLLAPSED DETAILS - skryté defaultně */
+            .node-details {
+                display: none;
+                font-size: 8px;
+                margin-top: 5px;
+                padding-top: 4px;
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+            }
+
+            .node.expanded .node-details {
+                display: block;
+                max-height: 500px;
+            }
+
+            /* Overflow protection - detaily nesmí vytékat */
+            .node {
+                overflow: visible;
+
+                /* Změněno z hidden aby fungovaly indikátory */
+
+                /* position zůstává absolute z výchozího CSS! */
+            }
+
+            .node-details {
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            /* Battery - extra protection */
+            .battery .detail-group,
+            .battery .detail-row {
+                max-width: 100%;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+
+            .battery .detail-group>div[style*="grid"] {
+                background: transparent;
+                max-width: 100%;
+            }
+
+            .detail-label {
+                font-size: 7.5px;
+            }
+
+            .detail-value {
+                font-size: 8.5px;
+            }
+
+            .detail-extra {
+                font-size: 7.5px;
+            }
+
+            .detail-subheader {
+                font-size: 7.5px;
+                padding: 2px 4px;
+                margin-bottom: 3px;
+            }
+
+            .detail-row {
+                gap: 3px;
+                margin-bottom: 3px;
+            }
+
+            /* POUŽITÍ DESKTOP LAYOUTU s větším rozestupem pro mobil */
+
+            /* Zmenšení střídače aby se nevěkrýval */
+            .inverter {
+                min-width: 110px;
+                max-width: 140px;
+                padding: 8px 10px;
+                top: 55%;
+
+                /* Posunuto níž aby se nepřekrýval se sítí/spotřebou */
+            }
+
+            /* Síť více vlevo a nahoru */
+            .grid-node {
+                left: 5px;
+
+                /* Ještě blíž ke kraji */
+                top: 40%;
+
+                /* Výš než střídač */
+            }
+
+            /* Spotřeba více vpravo a nahoru */
+            .house {
+                right: 5px;
+
+                /* Ještě blíž ke kraji */
+                top: 40%;
+
+                /* Výš než střídač */
+            }
+
+            /* Solar forecast corners - větší */
+            .solar-forecast-today,
+            .solar-forecast-tomorrow {
+                font-size: 8px;
+                padding: 3px 5px;
+            }
+
+            .forecast-icon {
+                font-size: 10px;
+            }
+
+            .forecast-value {
+                font-size: 8px;
+            }
+
+            /* Battery indicators - větší */
+            .battery-current-indicator,
+            .battery-voltage-indicator,
+            .battery-temp-indicator {
+                font-size: 8px;
+                padding: 3px 4px;
+            }
+
+            /* Inverter notifications */
+            .inverter-notification {
+                font-size: 8px;
+                padding: 3px 5px;
+            }
+
+            /* Grid mode indicator */
+            .grid-mode-indicator {
+                font-size: 7.5px;
+                padding: 3px 5px;
+            }
+
+            /* Info panel */
+            .info-panel {
+                position: relative;
+                bottom: auto;
+                margin-top: 15px;
+                flex-direction: column;
+                gap: 6px;
+                font-size: 8px;
+                padding: 6px;
+            }
+
+            /* Control panel - mobile sticky */
+            .control-panel {
+                position: sticky;
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                max-height: 85vh;
+                border-radius: 0 0 10px 10px;
+                overflow-y: auto;
+            }
+
+            .panel-header h3 {
+                font-size: 10px;
+            }
+
+            .panel-content {
+                max-height: calc(85vh - 50px);
+                overflow-y: auto;
+                padding: 6px;
+            }
+
+            .control-section {
+                margin-bottom: 10px;
+            }
+
+            .control-section h4 {
+                font-size: 10px;
+                margin-bottom: 5px;
+            }
+
+            .button-group {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 5px;
+            }
+
+            .button-group button {
+                font-size: 9px;
+                padding: 5px 6px;
+            }
+
+            /* Menší battery gauge */
+            .battery-gauge {
+                height: 4px;
+                margin-top: 4px;
+                margin-bottom: 3px;
+            }
+
+            /* Solar columns - vertical stacking */
+            .solar-columns {
+                flex-direction: column;
+                gap: 3px;
+            }
+
+            .solar-column {
+                width: 100%;
+            }
+
+            /* Phase displays */
+            .node-phases {
+                font-size: 7px;
+                gap: 2px;
+            }
+
+            .phase-value {
+                font-size: 7px;
+            }
+
+            /* Shield queue - hide on mobile nebo zmenšit */
+            #shield-queue-section {
+                display: none;
+
+                /* Skrýt na mobilu kvůli prostoru */
+            }
+
+            /* Pokud by se shield queue zobrazila, udělat ji scrollovatelnou */
+            .shield-queue-table {
+                display: block;
+                overflow-x: auto;
+                font-size: 9px;
+            }
+
+            .shield-queue-table thead,
+            .shield-queue-table tbody,
+            .shield-queue-table tr {
+                display: table;
+                width: 100%;
+                table-layout: fixed;
+            }
+
+            .shield-queue-table th,
+            .shield-queue-table td {
+                padding: 6px 4px;
+                font-size: 9px;
+            }
+
+            /* Menší šířky sloupců pro mobil */
+            .shield-queue-table th:nth-child(1) {
+                width: 80px;
+            }
+
+            /* Stav */
+            .shield-queue-table th:nth-child(2) {
+                width: 100px;
+            }
+
+            /* Služba */
+            .shield-queue-table th:nth-child(3) {
+                width: auto;
+            }
+
+            /* Změny */
+            .shield-queue-table th:nth-child(4) {
+                width: 60px;
+            }
+
+            /* Vytvořeno */
+            .shield-queue-table th:nth-child(5) {
+                width: 50px;
+            }
+
+            /* Trvání */
+
+            /* Tooltips - menší na mobilu */
+            #global-tooltip {
+                max-width: min(180px, calc(100vw - 20px));
+                font-size: 9px;
+                padding: 5px 8px;
+            }
+
+            /* Badges - menší */
+            .mode-change-indicator,
+            .grid-change-indicator,
+            .grid-limit-indicator,
+            .boiler-change-indicator {
+                font-size: 7px;
+                padding: 2px 4px;
+            }
+
+            /* Status badges */
+            .node-status {
+                font-size: 7px;
+                padding: 2px 6px;
+            }
+        }
+
+        /* Extra small phones */
+        @media (width <= 380px) {
+            .flow-canvas {
+                transform: scale(0.78);
+                height: 650px;
+            }
+
+            .node {
+                min-width: 125px;
+                max-width: 175px;
+            }
+
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
+            /* Žádné custom pozice */
+        }
+
+        /* Tablet portrait mode (iPad: 768x1024px) */
+        @media (width >= 769px) and (width <= 1024px) and (orientation: portrait) {
+            .flow-canvas {
+                height: 650px;
+                transform: scale(0.95);
+                max-width: 650px;
+                margin: 0 auto;
+            }
+
+            .node {
+                min-width: 100px;
+                max-width: 135px;
+                padding: 9px 11px;
+            }
+
+            /* Na tabletu ZOBRAZIT detaily - ne collapsed! */
+            .node-details {
+                display: block !important;
+                font-size: 8.5px;
+            }
+
+            .node-icon {
+                font-size: 22px;
+            }
+
+            .node-label {
+                font-size: 9.5px;
+            }
+
+            .node-value {
+                font-size: 18px;
+            }
+
+            .node-subvalue {
+                font-size: 9.5px;
+            }
+
+            .node-details {
+                font-size: 8.5px;
+            }
+
+            .detail-label {
+                font-size: 8px;
+            }
+
+            .detail-value {
+                font-size: 9.5px;
+            }
+
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
+            /* Žádné custom pozice - vše zůstává z výchozího CSS */
+
+            /* Větší indikátory pro tablet */
+            .solar-forecast-today,
+            .solar-forecast-tomorrow,
+            .battery-current-indicator,
+            .battery-voltage-indicator,
+            .battery-temp-indicator,
+            .inverter-notification,
+            .grid-mode-indicator {
+                font-size: 8.5px;
+                padding: 3px 6px;
+            }
+
+            .forecast-icon {
+                font-size: 11px;
+            }
+
+            .info-panel {
+                font-size: 9.5px;
+                padding: 9px 11px;
+                gap: 9px;
+            }
+        }
+
+        /* Tablet landscape mode (Nest Hub: 1024x600px, iPad Mini: 1024x768px) */
+        @media (width >= 769px) and (width <= 1200px) and (orientation: landscape) {
+            .flow-canvas {
+                height: 600px;
+                transform: scale(0.75);
+                max-width: 100%;
+                margin: 0 auto;
+            }
+
+            .node {
+                min-width: 140px;
+                max-width: 180px;
+                padding: 12px 14px;
+            }
+
+            /* COLLAPSED DETAILS - skryté defaultně jako na mobilu */
+            .node-details {
+                display: none;
+                font-size: 9px;
+                margin-top: 5px;
+                padding-top: 4px;
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+            }
+
+            .node.expanded .node-details {
+                display: block;
+                max-height: 500px;
+            }
+
+            .node-icon {
+                font-size: 28px;
+            }
+
+            .node-label {
+                font-size: 10px;
+            }
+
+            .node-value {
+                font-size: 22px;
+            }
+
+            .node-subvalue {
+                font-size: 10px;
+            }
+
+            .detail-label {
+                font-size: 9px;
+            }
+
+            .detail-value {
+                font-size: 10px;
+            }
+
+            /* DESKTOP LAYOUT - stejný jako fullscreen! */
+
+            /* Žádné custom pozice - vše zůstává z výchozího CSS */
+
+            /* Indikátory */
+            .solar-forecast-today,
+            .solar-forecast-tomorrow,
+            .battery-current-indicator,
+            .battery-voltage-indicator,
+            .battery-temp-indicator,
+            .inverter-notification,
+            .grid-mode-indicator {
+                font-size: 9px;
+                padding: 3px 6px;
+            }
+
+            .forecast-icon {
+                font-size: 12px;
+            }
+
+            .info-panel {
+                font-size: 10px;
+                padding: 10px 12px;
+                gap: 10px;
+            }
+
+            .control-panel {
+                max-height: 90vh;
+            }
+        }
+
+        /* Control Panel Styles - Top Bar - VELMI MALÝ! */
+        .control-panel {
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            max-height: auto;
+
+            /* Auto - přizpůsobí se obsahu */
+            background: var(--control-panel-bg);
+            border-bottom: 2px solid var(--control-panel-border);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            box-shadow: 0 4px 20px var(--shadow-color);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .control-panel.minimized {
+            max-height: 32px;
+
+            /* Minimalizovaný stav */
+        }
+
+        .control-panel.minimized .panel-content {
+            display: none;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 12px;
+
+            /* Ještě menší */
+            background: var(--info-bg);
+            border-bottom: 1px solid var(--border-secondary);
+            cursor: pointer;
+        }
+
+        .panel-header h3 {
+            margin: 0;
+            font-size: 12px;
+
+            /* Velmi malé */
+            font-weight: 600;
+        }
+
+        .btn-minimize {
+            background: var(--button-bg);
+            border: none;
+            color: var(--text-primary);
+            width: 20px;
+
+            /* Velmi malé */
+            height: 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+
+            /* Menší */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .btn-minimize:hover {
+            background: var(--button-hover);
+        }
+
+        .panel-content {
+            max-height: none;
+
+            /* Není omezení - přizpůsobí se obsahu */
+            overflow: hidden visible;
+            padding: 4px 12px;
+
+            /* Velmi malý padding */
+        }
+
+        /* Desktop - horizontal layout with sections */
+        @media (width >= 1200px) {
+            .panel-content {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0;
+                padding: 12px 16px;
+                align-items: flex-start;
+            }
+
+            .control-section {
+                flex: 0 0 auto;
+                min-width: auto;
+                margin-bottom: 0;
+                padding-bottom: 0;
+                border-bottom: none;
+                border-right: none;
+                padding-right: 0;
+                margin-right: 12px;
+            }
+
+            .control-section:last-child {
+                border-right: none;
+                padding-right: 0;
+                margin-right: 0;
+            }
+
+            /* Queue section full width */
+            #shield-queue-section {
+                flex: 1 0 100%;
+            }
+        }
+
+        .panel-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .panel-content::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+        }
+
+        .panel-content::-webkit-scrollbar-thumb {
+            background: var(--button-hover);
+            border-radius: 10px;
+        }
+
+        .panel-content::-webkit-scrollbar-thumb:hover {
+            background: var(--bg-hover);
+        }
+
+        .control-section {
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: none;
+        }
+
+        #charge-battery-btn {
+            background: var(--shield-pending-bg);
+            border-color: var(--shield-pending-border);
+        }
+
+        .dialog-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .dialog-input:focus {
+            border-color: var(--input-focus-border);
+            outline: none;
+        }
+
+        .control-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+            margin-right: 0;
+        }
+
+        .control-section h4 {
+            font-size: 10px;
+            font-weight: 600;
+            margin: 0 0 4px;
+            color: var(--text-label);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .button-group {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 6px;
+            margin-bottom: 0;
+        }
+
+        .button-group button {
+            padding: 6px 12px;
+            background: var(--info-bg);
+            border: 1px solid var(--indicator-info-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .button-group button:hover {
+            background: var(--status-charging-bg);
+            border-color: var(--status-charging-border);
+            transform: translateY(-2px);
+        }
+
+        .button-group button:active {
+            transform: translateY(0);
+        }
+
+        .button-group button.active {
+            background: var(--button-active-bg);
+            border-color: var(--battery-border);
+        }
+
+        .button-group button:disabled,
+        .button-group button.disabled {
+            background: var(--button-disabled-bg);
+            border-color: var(--button-disabled-border);
+            color: var(--button-disabled-text);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .button-group button:disabled:hover,
+        .button-group button.disabled:hover {
+            transform: none;
+            background: var(--button-disabled-bg);
+        }
+
+        .button-group button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .input-group label {
+            font-size: 10px;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 6px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 11px;
+            min-width: 80px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--input-focus-border);
+            background: var(--bg-hover);
+        }
+
+        .input-group button {
+            padding: 6px 12px;
+            background: var(--status-idle-bg);
+            border: 1px solid var(--battery-border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-group button:hover {
+            background: var(--button-active-bg);
+            border-color: var(--button-active-border);
+        }
+
+        .input-group {
+            display: none;
+
+            /* Skryté - šetříme místo */
+        }
+
+        .input-group label {
+            font-size: 8px;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 2px 4px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 3px;
+            color: var(--text-primary);
+            font-size: 9px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--input-focus-border);
+            background: var(--bg-hover);
+        }
+
+        /* Status texty - skryté */
+        .control-section .status {
+            display: none;
+        }
+
+        .input-group button,
+        .btn-action {
+            padding: 8px 16px;
+            background: var(--status-idle-bg);
+            border: 1px solid var(--battery-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-group button:hover,
+        .btn-action:hover {
+            background: var(--button-active-bg);
+        }
+
+        .status {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 8px;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+        }
+
+        .status span {
+            color: var(--success-text);
+            font-weight: 600;
+        }
+
+        .btn-secondary {
+            width: 100%;
+            padding: 12px;
+            background: var(--inverter-bg);
+            border: 1px solid var(--inverter-border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-active);
+        }
+
+        .notification-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            min-width: 400px;
+            max-width: 500px;
+            background: var(--dialog-bg);
+            border: 2px solid var(--dialog-border);
+            border-radius: 16px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 60px var(--shadow-strong);
+            z-index: 10000;
+            animation: popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: translate(-50%, -50%) scale(0.7);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid var(--border-secondary);
+        }
+
+        .toast-header strong {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .toast-header button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            opacity: 0.5;
+            line-height: 1;
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            transition: all 0.2s;
+        }
+
+        .toast-header button:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        .toast-body {
+            padding: 16px 24px 20px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--toast-body-text);
+        }
+
+        .toast-success {
+            border-color: var(--toast-success-border);
+            box-shadow: var(--toast-success-shadow);
+        }
+
+        .toast-success .toast-header {
+            border-bottom-color: var(--toast-success-border-light);
+        }
+
+        .toast-error {
+            border-color: var(--toast-error-border);
+            box-shadow: var(--toast-error-shadow);
+        }
+
+        .toast-error .toast-header {
+            border-bottom-color: var(--toast-error-border-light);
+        }
+
+        .toast-warning {
+            border-color: var(--toast-warning-border);
+            box-shadow: var(--toast-warning-shadow);
+        }
+
+        .toast-warning .toast-header {
+            border-bottom-color: var(--toast-warning-border-light);
+        }
+
+        /* Custom Acknowledgement Dialog */
+        .ack-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--modal-backdrop);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+
+        .ack-dialog {
+            background: var(--modal-bg);
+            border: 1px solid var(--modal-border);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: var(--modal-shadow);
+        }
+
+        .ack-dialog-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--modal-header-text);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .ack-dialog-body {
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: var(--modal-body-text);
+        }
+
+        .ack-dialog-warning {
+            background: var(--modal-warning-bg);
+            border: 1px solid var(--modal-warning-border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: var(--modal-warning-text);
+        }
+
+        .ack-checkbox-wrapper {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 12px;
+            background: var(--modal-checkbox-bg);
+            border-radius: 8px;
+        }
+
+        .ack-checkbox-wrapper input[type="checkbox"] {
+            margin-top: 3px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .ack-checkbox-wrapper label {
+            flex: 1;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--modal-checkbox-label);
+            cursor: pointer;
+        }
+
+        .ack-dialog-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .ack-dialog-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .ack-dialog-buttons .btn-cancel {
+            background: var(--modal-button-cancel-bg);
+            color: var(--modal-button-cancel-text);
+        }
+
+        .ack-dialog-buttons .btn-cancel:hover {
+            background: var(--modal-button-cancel-hover);
+        }
+
+        .ack-dialog-buttons .btn-confirm {
+            background: var(--modal-button-confirm-bg);
+            color: white;
+        }
+
+        .ack-dialog-buttons .btn-confirm:hover:not(:disabled) {
+            background: var(--modal-button-confirm-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--modal-button-confirm-shadow);
+        }
+
+        .ack-dialog-buttons .btn-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }

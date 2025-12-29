@@ -65,6 +65,36 @@ jobs:
           git tag -a v${{ github.event.inputs.version }} -m "Version ${{ github.event.inputs.version }}"
           git push --tags
 
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        if: ${{ github.event.inputs.create-tag == 'true' }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ ! -f CHANGELOG.md ]; then
+            {
+              echo "notes<<EOF"
+              echo "Release ${VERSION}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NOTES="$(awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { in_section=1 }
+            in_section && $0 ~ "^## \\[" && $0 !~ "^## \\[" ver "\\]" { exit }
+            in_section { print }
+          ' CHANGELOG.md)"
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${VERSION}"
+          fi
+
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create draft release
         uses: actions/create-release@v1
         if: ${{ github.event.inputs.create-tag == 'true' }}
@@ -73,5 +103,5 @@ jobs:
         with:
           tag_name: v${{ github.event.inputs.version }}
           release_name: Release ${{ github.event.inputs.version }}
+          body: ${{ steps.changelog.outputs.notes }}
           draft: true
-
