@@ -8,6 +8,7 @@
  * @version 1.0.0
  * @status EXAMPLE - NE PRO PRODUKCI
  */
+/* global TodayPlanTile */
 
 // ============================================================================
 // PŘÍKLAD 1: Základní použití dlaždice
@@ -229,5 +230,6 @@ export {
     setupTodayPlanTileAutoRefresh,
     refreshTodayPlanTile,
     openTodayTab,
+    initializeDashboard,
     manualUpdateTodayPlanTile
 };

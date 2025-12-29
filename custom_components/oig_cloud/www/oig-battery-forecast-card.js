@@ -582,7 +582,7 @@ class OigBatteryForecastCard extends HTMLElement {
         const series = [];
 
         // Připravíme data pro dvě nezávislé linie
-        const { batteryLineData, gridChargeData, solarChargeData } = this.prepareTwoLineData(attrs);
+        const { batteryLineData, gridChargeData, solarChargeData } = this.prepareTwoLineData();
 
         // 1. ČÁRA BATERIE - kapacita na levé Y ose (axis 0)
         if (batteryLineData.length > 0) {
@@ -615,7 +615,9 @@ class OigBatteryForecastCard extends HTMLElement {
         }
 
         return series;
-    }    prepareTwoLineData(attrs) {
+    }
+
+    prepareTwoLineData() {
         console.log('🔥 prepareTwoLineData called - Phase 1.5 API VERSION!');
         const batteryLineData = [];
         const gridChargeData = [];

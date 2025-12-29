@@ -10,6 +10,7 @@
  * @author OIG Cloud Team
  * @status IMPLEMENTOVÁNO - NEZASAZENO (čeká na review)
  */
+/* global Chart */
 
 class TodayPlanTile {
     /**
@@ -36,20 +37,12 @@ class TodayPlanTile {
         }
 
         const {
-            progress_pct,
             planned_so_far,
             actual_so_far,
             delta,
             delta_pct,
-            eod_prediction,
-            eod_plan,
-            eod_delta_pct,
-            confidence,
-            current_time
+            eod_prediction
         } = this.data;
-
-        // Určit CSS třídy podle delta
-        const deltaClass = delta < 0 ? 'better' : (delta > 0 ? 'worse' : 'neutral');
         const deltaIcon = delta < 0 ? '↓' : (delta > 0 ? '↑' : '→');
 
         // Barva podle výsledku (zelená = lepší, červená = horší)
@@ -123,34 +116,7 @@ class TodayPlanTile {
 
         const ctx = canvas.getContext('2d');
 
-        // Příprava dat
-        const labels = chartData.map(d => {
-            const time = d.time.substring(11, 16); // HH:MM
-            return time;
-        });
-
-        const data = chartData.map(d => d.delta);
-
-        // Barevné kódování podle hodnoty a statusu
-        const colors = chartData.map(d => {
-            if (!d.is_historical) {
-                // Planned (ještě nenastalo) - šedá
-                return 'rgba(200, 200, 200, 0.5)';
-            }
-
-            if (d.delta === null) {
-                // Historical ale bez delta - šedá
-                return 'rgba(200, 200, 200, 0.7)';
-            }
-
-            // Historical s delta - zelená (lepší) / červená (horší)
-            return d.delta < 0
-                ? 'rgba(76, 175, 80, 0.8)'  // Zelená - úspora
-                : 'rgba(244, 67, 54, 0.8)'; // Červená - ztráta
-        });
-
-        // Najít NOW index pro marker
-        const nowIndex = chartData.findIndex(d => d.is_current);
+        const { labels, data, colors, nowIndex } = this.buildMiniChartData(chartData);
 
         // Zničit existující chart pokud je
         if (this.chart) {
@@ -170,96 +136,126 @@ class TodayPlanTile {
                     categoryPercentage: 0.95
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
+            options: this.buildMiniChartOptions(chartData, nowIndex, data)
+        });
+    }
+
+    buildMiniChartData(chartData) {
+        const labels = chartData.map(d => d.time.substring(11, 16));
+        const data = chartData.map(d => d.delta);
+
+        const colors = chartData.map(d => {
+            if (!d.is_historical) {
+                return 'rgba(200, 200, 200, 0.5)';
+            }
+
+            if (d.delta === null) {
+                return 'rgba(200, 200, 200, 0.7)';
+            }
+
+            return d.delta < 0
+                ? 'rgba(76, 175, 80, 0.8)'
+                : 'rgba(244, 67, 54, 0.8)';
+        });
+
+        return {
+            labels,
+            data,
+            colors,
+            nowIndex: chartData.findIndex(d => d.is_current)
+        };
+    }
+
+    buildMiniChartOptions(chartData, nowIndex, data) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        title: (context) => {
+                            const index = context[0].dataIndex;
+                            const item = chartData[index];
+                            return item.time.substring(11, 16);
+                        },
+                        label: (context) => {
+                            const index = context.dataIndex;
+                            const item = chartData[index];
+
+                            if (!item.is_historical) {
+                                return 'Plán (ještě nenastalo)';
+                            }
+
+                            if (item.delta === null) {
+                                return 'Chybí actual data';
+                            }
+
+                            const value = context.parsed.y;
+                            const sign = value < 0 ? '' : '+';
+                            return `Odchylka: ${sign}${value.toFixed(2)} Kč`;
+                        }
+                    }
+                },
+                annotation: nowIndex >= 0 ? {
+                    annotations: {
+                        nowLine: {
+                            type: 'line',
+                            xMin: nowIndex - 0.5,
+                            xMax: nowIndex - 0.5,
+                            borderColor: 'rgb(255, 99, 132)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                content: 'NOW',
+                                enabled: true,
+                                position: 'top',
+                                backgroundColor: 'rgb(255, 99, 132)',
+                                color: 'white',
+                                font: {
+                                    size: 10,
+                                    weight: 'bold'
+                                }
+                            }
+                        }
+                    }
+                } : undefined
+            },
+            scales: {
+                x: {
+                    display: true,
+                    grid: {
                         display: false
                     },
-                    tooltip: {
-                        enabled: true,
-                        callbacks: {
-                            title: (context) => {
-                                const index = context[0].dataIndex;
-                                const item = chartData[index];
-                                return item.time.substring(11, 16); // HH:MM
-                            },
-                            label: (context) => {
-                                const index = context.dataIndex;
-                                const item = chartData[index];
-
-                                if (!item.is_historical) {
-                                    return 'Plán (ještě nenastalo)';
-                                }
-
-                                if (item.delta === null) {
-                                    return 'Chybí actual data';
-                                }
-
-                                const value = context.parsed.y;
-                                const sign = value < 0 ? '' : '+';
-                                return `Odchylka: ${sign}${value.toFixed(2)} Kč`;
-                            }
+                    ticks: {
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 8,
+                        font: {
+                            size: 9
                         }
-                    },
-                    annotation: nowIndex >= 0 ? {
-                        annotations: {
-                            nowLine: {
-                                type: 'line',
-                                xMin: nowIndex - 0.5,
-                                xMax: nowIndex - 0.5,
-                                borderColor: 'rgb(255, 99, 132)',
-                                borderWidth: 2,
-                                borderDash: [5, 5],
-                                label: {
-                                    content: 'NOW',
-                                    enabled: true,
-                                    position: 'top',
-                                    backgroundColor: 'rgb(255, 99, 132)',
-                                    color: 'white',
-                                    font: {
-                                        size: 10,
-                                        weight: 'bold'
-                                    }
-                                }
-                            }
-                        }
-                    } : undefined
+                    }
                 },
-                scales: {
-                    x: {
-                        display: true,
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            maxRotation: 0,
-                            autoSkip: true,
-                            maxTicksLimit: 8,
-                            font: {
-                                size: 9
-                            }
-                        }
+                y: {
+                    display: true,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
                     },
-                    y: {
-                        display: true,
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
+                    ticks: {
+                        callback: (value) => {
+                            const sign = value < 0 ? '' : '+';
+                            return `${sign}${value.toFixed(1)}`;
                         },
-                        ticks: {
-                            callback: (value) => {
-                                const sign = value < 0 ? '' : '+';
-                                return `${sign}${value.toFixed(1)}`;
-                            },
-                            font: {
-                                size: 9
-                            }
+                        font: {
+                            size: 9
                         }
                     }
                 }
             }
-        });
+        };
     }
 
     /**

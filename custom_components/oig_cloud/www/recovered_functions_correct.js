@@ -1,5 +1,3 @@
-/* global DashboardAnalytics, DashboardPricing */
-
 function updateBatteryEfficiencyBar(...args) {
     return window.DashboardAnalytics?.updateBatteryEfficiencyBar?.(...args);
 }
