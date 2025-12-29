@@ -68,8 +68,8 @@ def resolve_box_id(coordinator: Any) -> str:
                 )
                 if state and _is_valid(state.state):
                     return state.state
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to resolve box_id from proxy sensor: %s", err)
             try:
                 import re
 
@@ -84,8 +84,8 @@ def resolve_box_id(coordinator: Any) -> str:
                         ids.add(m.group(1))
                 if len(ids) == 1:
                     return next(iter(ids))
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to resolve box_id from entity registry: %s", err)
 
         # Fallback – zkusíme zjistit box_id z klíčů dat koordinátoru
         data = getattr(coordinator, "data", None)
@@ -94,8 +94,8 @@ def resolve_box_id(coordinator: Any) -> str:
             numeric = next((str(k) for k in data.keys() if str(k).isdigit()), None)
             if numeric:
                 return numeric
-    except Exception:
-        pass
+    except Exception as err:
+        _LOGGER.debug("Failed to resolve box_id from coordinator data: %s", err)
 
     return "unknown"
 

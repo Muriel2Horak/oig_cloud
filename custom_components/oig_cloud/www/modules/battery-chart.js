@@ -2,6 +2,7 @@
  * Battery Chart Module - Chart.js visualization for battery forecast
  * Zobrazuje průběh kapacity baterie s plochami zobrazujícími příspěvek ze soláru a sítě
  */
+/* global Chart */
 
 export class BatteryChartModule {
     constructor() {
@@ -283,9 +284,9 @@ export class BatteryChartModule {
      */
     isLightTheme() {
         try {
-            const haElement = parent.document.querySelector('home-assistant');
+            const haElement = window.parent.document.querySelector('home-assistant');
             if (haElement) {
-                const computedStyle = getComputedStyle(haElement);
+                const computedStyle = window.getComputedStyle(haElement);
                 const primaryBg = computedStyle.getPropertyValue('--primary-background-color');
                 if (primaryBg) {
                     const rgb = primaryBg.match(/\d+/g);
@@ -295,7 +296,9 @@ export class BatteryChartModule {
                     }
                 }
             }
-        } catch (e) {}
+        } catch (err) {
+            console.debug('[BatteryChart] Theme detection failed:', err);
+        }
         return false; // Default: dark theme
     }
 }

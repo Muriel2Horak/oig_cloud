@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
@@ -21,6 +22,8 @@ from .data_source import (
     get_data_source_state,
 )
 from .oig_cloud_sensor import resolve_box_id
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class OigCloudDataSourceSensor(SensorEntity):
@@ -101,7 +104,7 @@ class OigCloudDataSourceSensor(SensorEntity):
         for unsub in self._unsubs:
             try:
                 unsub()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to unsubscribe data source listener: %s", err)
         self._unsubs.clear()
         await super().async_will_remove_from_hass()

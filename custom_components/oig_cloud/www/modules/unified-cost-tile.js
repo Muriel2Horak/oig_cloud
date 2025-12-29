@@ -68,62 +68,89 @@ class UnifiedCostTile {
      * Maximum info density in minimal space
      */
     renderTileHTML(today, yesterday, tomorrow) {
-        const performanceClass = today.performance_class || 'on_plan';
-        const performanceIcon = today.performance_icon || '⚪';
-        const progressPct = Math.round(today.progress_pct || 0);
-        const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
+        const performance = this.getPerformanceMeta(today);
+        const baseline = this.getBaselineMeta(today);
+        const footer = this.getFooterMeta(today, yesterday, tomorrow);
 
-        // Baseline comparison
+        return this.buildTileMarkup(today, performance, baseline, footer);
+    }
+
+    getPerformanceMeta(today) {
+        const predictedTotal = today.eod_prediction?.predicted_total || today.plan_total_cost;
+        return {
+            performanceClass: today.performance_class || 'on_plan',
+            performanceIcon: today.performance_icon || '⚪',
+            progressPct: Math.round(today.progress_pct || 0),
+            predictedTotal,
+        };
+    }
+
+    getBaselineMeta(today) {
         const bc = today.baseline_comparison;
-        const savings = bc ? Math.round(bc.savings) : 0;  // DON'T negate!
-        const savingsPct = bc ? Math.round(bc.savings_pct) : 0;  // DON'T negate!
+        const savings = bc ? Math.round(bc.savings) : 0;
         const baselineName = bc ? bc.best_baseline.replace('HOME_', 'H') : '';
         const savingsClass = savings > 0 ? 'positive' : (savings < 0 ? 'negative' : 'neutral');
+        const savingsIcon = savings > 0 ? '💚' : '⚠️';
+        const savingsPrefix = savings > 0 ? '+' : '';
 
-        // Yesterday/tomorrow context
+        return {
+            savings,
+            savingsClass,
+            baselineName,
+            savingsIcon,
+            savingsPrefix,
+        };
+    }
+
+    getFooterMeta(today, yesterday, tomorrow) {
         const yesterdayContext = this.buildContextValue(yesterday, { preferActual: true, planLabel: 'plán' });
         const tomorrowContext = this.buildContextValue(tomorrow, { preferActual: false, planLabel: '' });
-        const hasYesterday = yesterdayContext !== null;
-        const hasTomorrow = tomorrowContext !== null;
 
-        // Tooltips from backend
-        const todayTooltip = today.tooltips?.today || '';
-        const yesterdayTooltip = today.tooltips?.yesterday || '';
-        const tomorrowTooltip = today.tooltips?.tomorrow || '';
+        return {
+            yesterdayContext,
+            tomorrowContext,
+            hasYesterday: yesterdayContext !== null,
+            hasTomorrow: tomorrowContext !== null,
+            todayTooltip: today.tooltips?.today || '',
+            yesterdayTooltip: today.tooltips?.yesterday || '',
+            tomorrowTooltip: today.tooltips?.tomorrow || '',
+        };
+    }
+
+    buildTileMarkup(today, performance, baseline, footer) {
+        const footerHtml = footer.hasYesterday || footer.hasTomorrow
+            ? `
+                <div class="uct-footer">
+                    ${footer.hasYesterday ? `<span data-tooltip="${this.escapeHtml(footer.yesterdayTooltip)}">Včera ${footer.yesterdayContext}</span>` : '<span>—</span>'}
+                    ${footer.hasTomorrow ? `<span data-tooltip="${this.escapeHtml(footer.tomorrowTooltip)}">Zítra ${footer.tomorrowContext}</span>` : '<span>—</span>'}
+                </div>
+            `
+            : '';
 
         return `
-            <div class="unified-cost-tile-compact ${performanceClass}" data-clickable="true" data-tooltip="${this.escapeHtml(todayTooltip)}">
-                <!-- Compact header: DNES 51 Kč  [progress] 3% ✅ -->
+            <div class="unified-cost-tile-compact ${performance.performanceClass}" data-clickable="true" data-tooltip="${this.escapeHtml(footer.todayTooltip)}">
                 <div class="uct-header-compact">
                     <span class="uct-label-inline">💰 DNES</span>
-                    <span class="uct-cost-inline">${this.formatCostCompact(predictedTotal)}</span>
+                    <span class="uct-cost-inline">${this.formatCostCompact(performance.predictedTotal)}</span>
                     <div class="uct-progress-inline">
-                        <div class="uct-progress-bar" style="width: ${progressPct}%"></div>
+                        <div class="uct-progress-bar" style="width: ${performance.progressPct}%"></div>
                     </div>
-                    <span class="uct-progress-text">${progressPct}%</span>
-                    <span class="uct-status">${performanceIcon}</span>
+                    <span class="uct-progress-text">${performance.progressPct}%</span>
+                    <span class="uct-status">${performance.performanceIcon}</span>
                 </div>
 
-                <!-- Minigraph -->
                 ${this.renderSpotPriceMinigraph(today.spot_prices_today)}
 
-                <!-- Savings + Plan vs Actual in ONE row -->
                 <div class="uct-info-row">
-                    <div class="uct-savings ${savingsClass}">
-                        ${savings > 0 ? '💚' : '⚠️'} ${savings > 0 ? '+' : ''}${savings} Kč vs ${baselineName}
+                    <div class="uct-savings ${baseline.savingsClass}">
+                        ${baseline.savingsIcon} ${baseline.savingsPrefix}${baseline.savings} Kč vs ${baseline.baselineName}
                     </div>
-                    <div class="uct-delta ${performanceClass}">
-                        ${this.formatCostCompact(today.plan_total_cost)} → ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})
+                    <div class="uct-delta ${performance.performanceClass}">
+                        ${this.formatCostCompact(today.plan_total_cost)} → ${this.formatCostCompact(today.actual_total_cost)} → ${this.formatCostCompact(performance.predictedTotal)} (${this.formatDeltaCompact(today.eod_prediction?.vs_plan || 0, today.plan_total_cost)})
                     </div>
                 </div>
 
-                <!-- Context footer: Včera | Zítra -->
-                ${(hasYesterday || hasTomorrow) ? `
-                <div class="uct-footer">
-                    ${hasYesterday ? `<span data-tooltip="${this.escapeHtml(yesterdayTooltip)}">Včera ${yesterdayContext}</span>` : '<span>—</span>'}
-                    ${hasTomorrow ? `<span data-tooltip="${this.escapeHtml(tomorrowTooltip)}">Zítra ${tomorrowContext}</span>` : '<span>—</span>'}
-                </div>
-                ` : ''}
+                ${footerHtml}
             </div>
         `;
     }
@@ -408,3 +435,5 @@ class UnifiedCostTile {
         return div.innerHTML;
     }
 }
+
+window.UnifiedCostTile = UnifiedCostTile;

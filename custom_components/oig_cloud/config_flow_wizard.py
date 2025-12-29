@@ -1060,6 +1060,6 @@ class ModernConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     state = self.hass.states.get(entity.entity_id)
                     if state and state.state not in ("unknown", "unavailable"):
                         return round(float(state.state) / 1000, 1)
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Auto-detect FVE power failed: %s", err)
         return 5.4  # Default

@@ -280,8 +280,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         try:
             self.hass.async_create_task(_save())
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to schedule coordinator cache save: %s", err)
 
     def update_intervals(self, standard_interval: int, extended_interval: int) -> None:
         """Dynamicky aktualizuje intervaly coordinatoru."""
@@ -536,8 +536,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 try:
                     if isinstance(stats, dict):
                         await self._maybe_fill_config_nodes_from_cloud(stats)
-                except Exception:
-                    pass
+                except Exception as err:
+                    _LOGGER.debug("Failed to fill config nodes from cloud: %s", err)
 
             # Cloud notifications are optional and should never run in local/hybrid effective mode.
             cloud_notifications_enabled = bool(

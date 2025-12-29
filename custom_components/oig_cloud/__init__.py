@@ -318,11 +318,16 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         ):
             try:
                 frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
-            except Exception:
+            except Exception as err:
                 try:
                     frontend.async_remove_panel(hass, panel_id)
-                except Exception:
-                    pass
+                except Exception as fallback_err:
+                    _LOGGER.debug(
+                        "Failed to remove panel %s: %s (fallback: %s)",
+                        panel_id,
+                        err,
+                        fallback_err,
+                    )
 
         # OPRAVA: Kontrola existence funkce a její volání bez await pokud vrací None
         if hasattr(frontend, "async_register_built_in_panel"):

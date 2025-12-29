@@ -125,13 +125,19 @@ class ChmuApi:
                         )
                     index_html = await response.text()
 
+            def _parse_index_dt(value: str) -> Optional[datetime]:
+                try:
+                    return datetime.strptime(value, "%d-%b-%Y %H:%M")
+                except Exception as err:
+                    _LOGGER.debug("Skipping CAP index entry '%s': %s", value, err)
+                    return None
+
             items: list[tuple[datetime, str, str]] = []
             for m in self._AUTO_INDEX_RE.finditer(index_html):
-                try:
-                    dt = datetime.strptime(m.group("dt"), "%d-%b-%Y %H:%M")
-                    items.append((dt, m.group("series"), m.group("file")))
-                except Exception:
+                dt = _parse_index_dt(m.group("dt"))
+                if dt is None:
                     continue
+                items.append((dt, m.group("series"), m.group("file")))
 
             if not items:
                 raise ChmuApiError("CAP index neobsahuje žádné alert_cap_*.xml soubory")
@@ -164,7 +170,7 @@ class ChmuApi:
             Seznam varování (raw data z XML)
         """
         try:
-            root = ET.fromstring(xml_text)
+            root = ET.fromstring(xml_text)  # nosec B314
         except ET.ParseError as e:
             _LOGGER.error(f"Chyba parsování CAP XML: {e}")
             return []

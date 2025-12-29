@@ -714,6 +714,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if unsub:
             try:
                 unsub()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug(
+                    "[%s] Failed to cancel daily reset listener: %s", self.entity_id, err
+                )
             self._daily_reset_unsub = None

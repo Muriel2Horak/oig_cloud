@@ -126,8 +126,8 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
                 if ts > 1_000_000_000_000:  # ms epoch
                     ts = ts / 1000.0
                 return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to parse numeric timestamp '%s': %s", value, err)
         dt = dt_util.parse_datetime(value)
         if dt is None:
             try:
@@ -325,8 +325,8 @@ class DataSourceController:
                 ):
                     snap = self.telemetry_store.get_snapshot()
                     self.coordinator.async_set_updated_data(snap.payload)
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to seed local telemetry snapshot: %s", err)
 
         # Watch proxy last_data changes
         if _async_track_state_change_event is not None:
@@ -369,8 +369,8 @@ class DataSourceController:
         for unsub in self._unsubs:
             try:
                 unsub()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to unsubscribe data source listener: %s", err)
         self._unsubs.clear()
 
     @callback
@@ -396,8 +396,8 @@ class DataSourceController:
             state = get_data_source_state(self.hass, self.entry.entry_id)
             if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
                 return
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to read data source state: %s", err)
 
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
@@ -444,8 +444,8 @@ class DataSourceController:
     def _schedule_debounced_poke(self) -> None:
         try:
             self.hass.async_create_task(self._debouncer.async_call())
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to schedule local telemetry debounce: %s", err)
 
     async def _handle_local_event(self) -> None:
         """Debounced handler for local telemetry changes.
@@ -469,8 +469,8 @@ class DataSourceController:
                     ):
                         snap = self.telemetry_store.get_snapshot()
                         self.coordinator.async_set_updated_data(snap.payload)
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to handle local telemetry event: %s", err)
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:
@@ -611,19 +611,19 @@ class DataSourceController:
                     "reason": state.reason,
                 },
             )
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to fire data source change event: %s", err)
 
         if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
             # Ensure cloud data is fresh when falling back
             try:
                 self.hass.async_create_task(self.coordinator.async_request_refresh())
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
 
     async def _poke_coordinator(self) -> None:
         try:
             if self.coordinator and getattr(self.coordinator, "data", None) is not None:
                 self.coordinator.async_set_updated_data(self.coordinator.data)
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to poke coordinator: %s", err)

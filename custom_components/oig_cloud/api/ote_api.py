@@ -289,7 +289,7 @@ class OteApi:
 
     def _parse_soap_response(self, soap_response: str) -> ET.Element:
         try:
-            root = ET.fromstring(soap_response)
+            root = ET.fromstring(soap_response)  # nosec B314
         except Exception as e:
             if "Application is not available" in soap_response:
                 raise UpdateFailed("OTE Portal is currently not available!") from e

@@ -2,6 +2,7 @@
  * OIG Bojler Dashboard - Frontend
  * Heatmap visualizace, timeline graf, profiling tabulka
  */
+/* global Chart, URLSearchParams */
 
 class BoilerDashboard {
     constructor(entryId) {

@@ -106,14 +106,22 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         if self._local_state_unsub:
             try:
                 self._local_state_unsub()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug(
+                    "[%s] Failed to unsubscribe local state listener: %s",
+                    self.entity_id,
+                    err,
+                )
             self._local_state_unsub = None
         if self._data_source_unsub:
             try:
                 self._data_source_unsub()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug(
+                    "[%s] Failed to unsubscribe data source listener: %s",
+                    self.entity_id,
+                    err,
+                )
             self._data_source_unsub = None
         await super().async_will_remove_from_hass()
 

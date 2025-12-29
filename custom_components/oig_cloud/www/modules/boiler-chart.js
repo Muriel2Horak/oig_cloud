@@ -2,6 +2,7 @@
  * Boiler Chart Module - Chart.js visualization for water heater planning
  * Zobrazuje průběh teploty, SOC, plánované topení a náklady
  */
+/* global Chart */
 
 export class BoilerChartModule {
     constructor() {
@@ -65,11 +66,31 @@ export class BoilerChartModule {
 
         console.log('[BoilerChart] Plan slots:', slots.length, 'Digest:', digest);
 
-        // Připravit data pro Chart.js
+        const series = this.buildSeries(slots);
+        const metadata = this.buildMetadata({
+            socSensor,
+            tempSensor,
+            energySensor,
+            costSensor,
+            digest,
+        });
+        const datasets = this.buildDatasets(series);
+
+        // Vytvořit nebo aktualizovat graf
+        if (this.chart) {
+            this.chart.data.labels = series.labels;
+            this.chart.data.datasets = datasets;
+            this.chart.update('none');  // Bez animace pro rychlejší refresh
+        } else {
+            this.createChart(series.labels, datasets, metadata);
+        }
+    }
+
+    buildSeries(slots) {
         const labels = [];
         const temperatureData = [];
         const socData = [];
-        const heatingData = [];  // 0 nebo 1 (vypnuto/zapnuto)
+        const heatingData = [];
         const spotPriceData = [];
         const costData = [];
 
@@ -79,7 +100,7 @@ export class BoilerChartModule {
 
             temperatureData.push(slot.temp_top || 0);
             socData.push(slot.soc || 0);
-            heatingData.push(slot.heating ? 1 : 0);  // Boolean → 0/1
+            heatingData.push(slot.heating ? 1 : 0);
             spotPriceData.push(slot.spot_price || 0);
             costData.push(slot.cost || 0);
         });
@@ -93,19 +114,32 @@ export class BoilerChartModule {
             cost: costData[0]
         });
 
-        // Získat aktuální hodnoty senzorů
-        const currentSoc = socSensor ? parseFloat(socSensor.state) : 0;
-        const currentTemp = tempSensor ? parseFloat(tempSensor.state) : 0;
-        const energyRequired = energySensor ? parseFloat(energySensor.state) : 0;
-        const totalCost = costSensor ? parseFloat(costSensor.state) : 0;
+        return {
+            labels,
+            temperatureData,
+            socData,
+            heatingData,
+            spotPriceData,
+            costData,
+        };
+    }
 
-        // Připravit datasets pro Chart.js
+    buildMetadata({ socSensor, tempSensor, energySensor, costSensor, digest }) {
+        return {
+            currentSoc: socSensor ? parseFloat(socSensor.state) : 0,
+            currentTemp: tempSensor ? parseFloat(tempSensor.state) : 0,
+            energyRequired: energySensor ? parseFloat(energySensor.state) : 0,
+            totalCost: costSensor ? parseFloat(costSensor.state) : 0,
+            digest,
+        };
+    }
+
+    buildDatasets(series) {
         const datasets = [];
 
-        // 1. Teplota horní zóny (°C) - primární osa Y vlevo
         datasets.push({
             label: 'Teplota horní zóna (°C)',
-            data: temperatureData,
+            data: series.temperatureData,
             borderColor: '#ff6b6b',
             backgroundColor: 'rgba(255, 107, 107, 0.1)',
             borderWidth: 2,
@@ -118,10 +152,9 @@ export class BoilerChartModule {
             order: 1
         });
 
-        // 2. SOC (%) - sekundární osa Y vpravo
         datasets.push({
             label: 'SOC (%)',
-            data: socData,
+            data: series.socData,
             borderColor: '#4ecdc4',
             backgroundColor: 'rgba(78, 205, 196, 0.1)',
             borderWidth: 2,
@@ -134,11 +167,9 @@ export class BoilerChartModule {
             order: 2
         });
 
-        // 3. Plánované topení (On/Off) - jako bar chart na primární ose
-        const heatingBarData = heatingData.map((heating, idx) => {
+        const heatingBarData = series.heatingData.map((heating, idx) => {
             if (heating === 1) {
-                // Pokud se topí, zobrazit na úrovni teploty aby bylo vidět kde topíme
-                return temperatureData[idx];
+                return series.temperatureData[idx];
             }
             return null;
         });
@@ -156,10 +187,9 @@ export class BoilerChartModule {
             order: 3
         });
 
-        // 4. Spotová cena (Kč/kWh) - skrytá linka, zobrazená v tooltipu
         datasets.push({
             label: 'Spot cena (Kč/kWh)',
-            data: spotPriceData,
+            data: series.spotPriceData,
             borderColor: '#95a5a6',
             backgroundColor: 'rgba(149, 165, 166, 0.1)',
             borderWidth: 1,
@@ -170,24 +200,11 @@ export class BoilerChartModule {
             pointRadius: 0,
             pointHoverRadius: 3,
             yAxisID: 'y-price',
-            hidden: true,  // Skrytá, ale zobrazená v tooltipu
+            hidden: true,
             order: 4
         });
 
-        // Vytvořit nebo aktualizovat graf
-        if (this.chart) {
-            this.chart.data.labels = labels;
-            this.chart.data.datasets = datasets;
-            this.chart.update('none');  // Bez animace pro rychlejší refresh
-        } else {
-            this.createChart(labels, datasets, {
-                currentSoc,
-                currentTemp,
-                energyRequired,
-                totalCost,
-                digest
-            });
-        }
+        return datasets;
     }
 
     /**
@@ -206,154 +223,157 @@ export class BoilerChartModule {
                 labels,
                 datasets
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                plugins: {
-                    title: {
-                        display: true,
-                        text: `Plán ohřevu bojleru | SOC: ${metadata.currentSoc.toFixed(0)}% | Teplota: ${metadata.currentTemp.toFixed(1)}°C | Energie: ${metadata.energyRequired.toFixed(2)} kWh | Náklady: ${metadata.totalCost.toFixed(2)} Kč`,
-                        font: { size: 14, weight: 'bold' },
-                        color: '#ffffff'
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            color: '#ffffff',
-                            usePointStyle: true,
-                            padding: 15,
-                            filter: (legendItem) => {
-                                // Skrýt spot cenu z legendy (je v tooltipu)
-                                return !legendItem.text.includes('Spot cena');
-                            }
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: '#4ecdc4',
-                        borderWidth: 1,
-                        padding: 12,
-                        displayColors: true,
-                        callbacks: {
-                            title: (tooltipItems) => {
-                                const item = tooltipItems[0];
-                                const date = new Date(item.label);
-                                return date.toLocaleString('cs-CZ', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                });
-                            },
-                            label: (context) => {
-                                const label = context.dataset.label || '';
-                                const value = context.parsed.y;
-
-                                if (label.includes('Teplota')) {
-                                    return `${label}: ${value.toFixed(1)}°C`;
-                                } else if (label.includes('SOC')) {
-                                    return `${label}: ${value.toFixed(0)}%`;
-                                } else if (label.includes('Topení')) {
-                                    return value !== null ? '🔥 Topení ZAPNUTO' : '';
-                                } else if (label.includes('Spot cena')) {
-                                    return `${label}: ${value.toFixed(2)} Kč/kWh`;
-                                }
-                                return `${label}: ${value}`;
-                            }
-                        }
-                    },
-                    zoom: {
-                        pan: {
-                            enabled: true,
-                            mode: 'x'
-                        },
-                        zoom: {
-                            wheel: {
-                                enabled: true
-                            },
-                            pinch: {
-                                enabled: true
-                            },
-                            mode: 'x'
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'hour',
-                            displayFormats: {
-                                hour: 'HH:mm'
-                            },
-                            tooltipFormat: 'dd.MM HH:mm'
-                        },
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        },
-                        ticks: {
-                            color: '#ffffff',
-                            maxRotation: 0,
-                            autoSkip: true,
-                            maxTicksLimit: 12
-                        }
-                    },
-                    'y-temp': {
-                        type: 'linear',
-                        position: 'left',
-                        title: {
-                            display: true,
-                            text: 'Teplota (°C)',
-                            color: '#ff6b6b'
-                        },
-                        grid: {
-                            color: 'rgba(255, 107, 107, 0.2)'
-                        },
-                        ticks: {
-                            color: '#ff6b6b',
-                            callback: (value) => `${value}°C`
-                        },
-                        min: 0,
-                        max: 100
-                    },
-                    'y-soc': {
-                        type: 'linear',
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: 'SOC (%)',
-                            color: '#4ecdc4'
-                        },
-                        grid: {
-                            drawOnChartArea: false
-                        },
-                        ticks: {
-                            color: '#4ecdc4',
-                            callback: (value) => `${value}%`
-                        },
-                        min: 0,
-                        max: 100
-                    },
-                    'y-price': {
-                        type: 'linear',
-                        position: 'right',
-                        display: false,  // Skrytá osa, ale data jsou v tooltipu
-                        grid: {
-                            drawOnChartArea: false
-                        }
-                    }
-                }
-            }
+            options: this.buildChartOptions(metadata)
         });
 
         console.log('[BoilerChart] Chart created successfully');
+    }
+
+    buildChartOptions(metadata) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: `Plán ohřevu bojleru | SOC: ${metadata.currentSoc.toFixed(0)}% | Teplota: ${metadata.currentTemp.toFixed(1)}°C | Energie: ${metadata.energyRequired.toFixed(2)} kWh | Náklady: ${metadata.totalCost.toFixed(2)} Kč`,
+                    font: { size: 14, weight: 'bold' },
+                    color: '#ffffff'
+                },
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: '#ffffff',
+                        usePointStyle: true,
+                        padding: 15,
+                        filter: (legendItem) => {
+                            return !legendItem.text.includes('Spot cena');
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: '#4ecdc4',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: true,
+                    callbacks: {
+                        title: (tooltipItems) => {
+                            const item = tooltipItems[0];
+                            const date = new Date(item.label);
+                            return date.toLocaleString('cs-CZ', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                        },
+                        label: (context) => {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+
+                            if (label.includes('Teplota')) {
+                                return `${label}: ${value.toFixed(1)}°C`;
+                            } else if (label.includes('SOC')) {
+                                return `${label}: ${value.toFixed(0)}%`;
+                            } else if (label.includes('Topení')) {
+                                return value !== null ? '🔥 Topení ZAPNUTO' : '';
+                            } else if (label.includes('Spot cena')) {
+                                return `${label}: ${value.toFixed(2)} Kč/kWh`;
+                            }
+                            return `${label}: ${value}`;
+                        }
+                    }
+                },
+                zoom: {
+                    pan: {
+                        enabled: true,
+                        mode: 'x'
+                    },
+                    zoom: {
+                        wheel: {
+                            enabled: true
+                        },
+                        pinch: {
+                            enabled: true
+                        },
+                        mode: 'x'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'hour',
+                        displayFormats: {
+                            hour: 'HH:mm'
+                        },
+                        tooltipFormat: 'dd.MM HH:mm'
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    },
+                    ticks: {
+                        color: '#ffffff',
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 12
+                    }
+                },
+                'y-temp': {
+                    type: 'linear',
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Teplota (°C)',
+                        color: '#ff6b6b'
+                    },
+                    grid: {
+                        color: 'rgba(255, 107, 107, 0.2)'
+                    },
+                    ticks: {
+                        color: '#ff6b6b',
+                        callback: (value) => `${value}°C`
+                    },
+                    min: 0,
+                    max: 100
+                },
+                'y-soc': {
+                    type: 'linear',
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'SOC (%)',
+                        color: '#4ecdc4'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        color: '#4ecdc4',
+                        callback: (value) => `${value}%`
+                    },
+                    min: 0,
+                    max: 100
+                },
+                'y-price': {
+                    type: 'linear',
+                    position: 'right',
+                    display: false,
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            }
+        };
     }
 
     /**

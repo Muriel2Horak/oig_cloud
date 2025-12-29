@@ -1,3 +1,4 @@
+/* global ApexCharts */
 class OigBatteryForecastCard extends HTMLElement {
     constructor() {
         super();
@@ -411,8 +412,6 @@ class OigBatteryForecastCard extends HTMLElement {
             return;
         }
 
-        const attrs = entity.attributes;
-
         // Extract box_id from entity_id: sensor.oig_2206237016_battery_forecast -> 2206237016
         const boxIdMatch = entityId.match(/sensor\.oig_(\d+)_battery_forecast/);
         if (!boxIdMatch) {
@@ -519,7 +518,6 @@ class OigBatteryForecastCard extends HTMLElement {
         // Přidat spot price annotations (červená čísla nahoře)
         const spotPrices = attrs.spot_prices || {};
         const peakHours = attrs.peak_hours || [];
-        const offPeakHours = attrs.off_peak_hours || [];
 
         Object.entries(spotPrices).forEach(([timestamp, price]) => {
             const time = new Date(timestamp).getTime();

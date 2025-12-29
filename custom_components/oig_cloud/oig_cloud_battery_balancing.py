@@ -299,8 +299,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 if attrs.get("days_since_last") is not None:
                     try:
                         self._days_since_last = int(attrs.get("days_since_last"))
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        _LOGGER.debug("Failed to restore days_since_last: %s", err)
                 self._planned_window = attrs.get("planned") or self._planned_window
                 self._cost_immediate = attrs.get(
                     "cost_immediate_czk", self._cost_immediate
@@ -309,8 +309,8 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                     "cost_selected_czk", self._cost_selected
                 )
                 self._cost_savings = attrs.get("cost_savings_czk", self._cost_savings)
-        except Exception:
-            pass
+        except Exception as err:
+            _LOGGER.debug("Failed to restore balancing state: %s", err)
 
         # Initial update
         self._update_from_manager()

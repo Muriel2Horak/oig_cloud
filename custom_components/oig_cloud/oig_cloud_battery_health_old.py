@@ -1256,8 +1256,8 @@ class BatteryCapacityTracker:
             try:
                 cycle_id = self._generate_cycle_id(measurement.timestamp)
                 self._processing_cycle_ids.discard(cycle_id)
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Failed to clear processing cycle id: %s", err)
 
     async def _find_data_availability_window(
         self,

@@ -24,6 +24,14 @@ FORECAST_SOLAR_API_URL = (
 FORECAST_SOLAR_API_URL_WITH_KEY = "https://api.forecast.solar/{api_key}/estimate/{lat}/{lon}/{declination}/{azimuth}/{kwp}"
 
 
+def _parse_forecast_hour(hour_str: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(hour_str)
+    except Exception as err:
+        _LOGGER.debug("Invalid forecast hour '%s': %s", hour_str, err)
+        return None
+
+
 class OigCloudSolarForecastSensor(OigCloudSensor):
     """Senzor pro solar forecast data."""
 
@@ -830,46 +838,43 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 tomorrow_string2_sum = 0
 
                 for hour_str, power in total_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        power_kw = round(power / 1000, 2)
-
-                        if hour_dt.date() == today:
-                            today_total[hour_str] = power_kw
-                            today_total_sum += power_kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_total[hour_str] = power_kw
-                            tomorrow_total_sum += power_kw
-                    except Exception:
+                    hour_dt = _parse_forecast_hour(hour_str)
+                    if hour_dt is None:
                         continue
+                    power_kw = round(power / 1000, 2)
+
+                    if hour_dt.date() == today:
+                        today_total[hour_str] = power_kw
+                        today_total_sum += power_kw
+                    elif hour_dt.date() == tomorrow:
+                        tomorrow_total[hour_str] = power_kw
+                        tomorrow_total_sum += power_kw
 
                 for hour_str, power in string1_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        power_kw = round(power / 1000, 2)
-
-                        if hour_dt.date() == today:
-                            today_string1[hour_str] = power_kw
-                            today_string1_sum += power_kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_string1[hour_str] = power_kw
-                            tomorrow_string1_sum += power_kw
-                    except Exception:
+                    hour_dt = _parse_forecast_hour(hour_str)
+                    if hour_dt is None:
                         continue
+                    power_kw = round(power / 1000, 2)
+
+                    if hour_dt.date() == today:
+                        today_string1[hour_str] = power_kw
+                        today_string1_sum += power_kw
+                    elif hour_dt.date() == tomorrow:
+                        tomorrow_string1[hour_str] = power_kw
+                        tomorrow_string1_sum += power_kw
 
                 for hour_str, power in string2_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        power_kw = round(power / 1000, 2)
-
-                        if hour_dt.date() == today:
-                            today_string2[hour_str] = power_kw
-                            today_string2_sum += power_kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_string2[hour_str] = power_kw
-                            tomorrow_string2_sum += power_kw
-                    except Exception:
+                    hour_dt = _parse_forecast_hour(hour_str)
+                    if hour_dt is None:
                         continue
+                    power_kw = round(power / 1000, 2)
+
+                    if hour_dt.date() == today:
+                        today_string2[hour_str] = power_kw
+                        today_string2_sum += power_kw
+                    elif hour_dt.date() == tomorrow:
+                        tomorrow_string2[hour_str] = power_kw
+                        tomorrow_string2_sum += power_kw
 
                 attrs.update(
                     {
@@ -911,18 +916,17 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
                 # OPRAVA: Iterovat přes string1_hourly místo today_hours
                 for hour_str, power in string1_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        power_kw = round(power / 1000, 2)
-
-                        if hour_dt.date() == today:
-                            today_hours[hour_str] = power_kw
-                            today_sum += power_kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_hours[hour_str] = power_kw
-                            tomorrow_sum += power_kw
-                    except Exception:
+                    hour_dt = _parse_forecast_hour(hour_str)
+                    if hour_dt is None:
                         continue
+                    power_kw = round(power / 1000, 2)
+
+                    if hour_dt.date() == today:
+                        today_hours[hour_str] = power_kw
+                        today_sum += power_kw
+                    elif hour_dt.date() == tomorrow:
+                        tomorrow_hours[hour_str] = power_kw
+                        tomorrow_sum += power_kw
 
                 attrs.update(
                     {
@@ -955,18 +959,17 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
                 # OPRAVA: Iterovat přes string2_hourly místo today_hours
                 for hour_str, power in string2_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        power_kw = round(power / 1000, 2)
-
-                        if hour_dt.date() == today:
-                            today_hours[hour_str] = power_kw
-                            today_sum += power_kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_hours[hour_str] = power_kw
-                            tomorrow_sum += power_kw
-                    except Exception:
+                    hour_dt = _parse_forecast_hour(hour_str)
+                    if hour_dt is None:
                         continue
+                    power_kw = round(power / 1000, 2)
+
+                    if hour_dt.date() == today:
+                        today_hours[hour_str] = power_kw
+                        today_sum += power_kw
+                    elif hour_dt.date() == tomorrow:
+                        tomorrow_hours[hour_str] = power_kw
+                        tomorrow_sum += power_kw
 
                 attrs.update(
                     {
