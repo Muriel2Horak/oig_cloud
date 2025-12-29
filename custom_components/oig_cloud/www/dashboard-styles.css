@@ -13,7 +13,6 @@
             font-weight: 700;
             background: var(--header-gradient);
             background-clip: text;
-            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -3229,7 +3228,6 @@
             position: relative;
             background: rgb(255, 255, 255, 0.03);
             backdrop-filter: blur(10px);
-            backdrop-filter: blur(10px);
             border: 1px solid rgb(255, 255, 255, 0.08);
             border-radius: 8px;
             min-height: 45px;
@@ -3265,8 +3263,6 @@
         /* Stav tlačítka */
 
         /* Název při hover */
-
-        .dashboard-tile:hover
 
         /* Podporné entity v rozích */
 
@@ -3452,7 +3448,6 @@
             border: 1px solid rgb(255, 255, 255, 0.15);
             border-radius: 8px;
             background: rgb(20, 20, 25, 0.95);
-            backdrop-filter: blur(20px);
             backdrop-filter: blur(20px);
             max-height: 240px;
             overflow-y: auto;

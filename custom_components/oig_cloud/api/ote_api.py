@@ -18,8 +18,8 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 _LOGGER = logging.getLogger(__name__)
 
 # --- NAMESPACE & SOAP ---
-NAMESPACE = "http://www.ote-cr.cz/schema/service/public"
-SOAPENV = "http://schemas.xmlsoap.org/soap/envelope/"
+NAMESPACE = "http://www.ote-cr.cz/schema/service/public"  # NOSONAR - XML namespace identifier
+SOAPENV = "http://schemas.xmlsoap.org/soap/envelope/"  # NOSONAR - XML namespace identifier
 
 # OTE endpoint podporuje HTTPS (viz WSDL soap:address) - preferujeme zabezpečenou variantu
 OTE_PUBLIC_URL = "https://www.ote-cr.cz/services/PublicDataService"
