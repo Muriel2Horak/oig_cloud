@@ -447,7 +447,7 @@ class OigBatteryForecastCard extends HTMLElement {
         const attrs = entity.attributes;
 
         // Příprava dat pro graf
-        const series = this.prepareSeries(attrs);
+        const series = this.prepareSeries();
         const annotations = this.prepareAnnotations(attrs);
 
         // Nastavení max hodnoty pro Y-axis kapacity
@@ -578,7 +578,7 @@ class OigBatteryForecastCard extends HTMLElement {
         return annotations;
     }
 
-    prepareSeries(attrs) {
+    prepareSeries() {
         const series = [];
 
         // Připravíme data pro dvě nezávislé linie

@@ -136,7 +136,7 @@ class TodayPlanTile {
                     categoryPercentage: 0.95
                 }]
             },
-            options: this.buildMiniChartOptions(chartData, nowIndex, data)
+            options: this.buildMiniChartOptions(chartData, nowIndex)
         });
     }
 
@@ -166,7 +166,7 @@ class TodayPlanTile {
         };
     }
 
-    buildMiniChartOptions(chartData, nowIndex, data) {
+    buildMiniChartOptions(chartData, nowIndex) {
         return {
             responsive: true,
             maintainAspectRatio: false,
