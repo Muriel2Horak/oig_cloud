@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import math
-import re
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -3543,7 +3542,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             try:
                 battery = float(entry.get("battery_soc", battery))
             except (TypeError, ValueError):
-                battery = battery
+                pass
 
     def _validate_planning_minimum(
         self,
@@ -12654,15 +12653,27 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         # Získat název z profile["ui"]["name"]
         ui = profile.get("ui", {})
         raw_name = ui.get("name", "Neznámý profil") or "Neznámý profil"
-        cleaned_name = re.sub(
-            r"\s*\([^)]*(podobn|shoda)[^)]*\)",
-            "",
-            str(raw_name),
-            flags=re.IGNORECASE,
-        ).strip()
+        def _strip_similarity_parens(value: str) -> str:
+            out_chars: List[str] = []
+            i = 0
+            while i < len(value):
+                if value[i] == "(":
+                    end = value.find(")", i + 1)
+                    if end != -1:
+                        segment = value[i + 1 : end].lower()
+                        if "podobn" in segment or "shoda" in segment:
+                            while out_chars and out_chars[-1].isspace():
+                                out_chars.pop()
+                            i = end + 1
+                            continue
+                out_chars.append(value[i])
+                i += 1
+            return "".join(out_chars)
+
+        cleaned_name = _strip_similarity_parens(str(raw_name)).strip()
         if not cleaned_name:
             cleaned_name = str(raw_name).strip()
-        cleaned_name = re.sub(r"\s{2,}", " ", cleaned_name)
+        cleaned_name = " ".join(cleaned_name.split())
 
         # Získat season z profile["characteristics"]["season"]
         characteristics = profile.get("characteristics", {})

@@ -7,6 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import aiohttp
@@ -35,30 +36,135 @@ class OigNotification:
     raw_data: Optional[Dict[str, Any]] = None
 
 
+class _NotificationHtmlParser(HTMLParser):
+    """Lightweight HTML parser for OIG notification blocks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.items: List[Tuple[str, str, str, str, str]] = []
+        self._current: Optional[Dict[str, str]] = None
+        self._folder_depth = 0
+        self._capture: Optional[str] = None
+        self._row2_parts: List[str] = []
+        self._body_parts: List[str] = []
+        self._in_strong = False
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        if tag != "div":
+            if tag == "strong" and self._capture == "row-2":
+                self._in_strong = True
+            elif tag == "br" and self._capture == "body":
+                self._body_parts.append("\n")
+            return
+
+        attrs_map = dict(attrs)
+        class_attr = attrs_map.get("class") or ""
+        classes = class_attr.split()
+
+        if "folder" in classes:
+            self._finalize_current()
+            self._current = {
+                "severity_level": "",
+                "date_str": "",
+                "device_id": "",
+                "short_message": "",
+                "full_message": "",
+            }
+            self._folder_depth = 1
+            return
+
+        if not self._current:
+            return
+
+        self._folder_depth += 1
+
+        if "point" in classes:
+            for cls in classes:
+                if cls.startswith("level-"):
+                    self._current["severity_level"] = cls.split("-", 1)[1]
+                    break
+        elif "date" in classes:
+            self._capture = "date"
+        elif "row-2" in classes:
+            self._capture = "row-2"
+            self._row2_parts = []
+        elif "body" in classes:
+            self._capture = "body"
+            self._body_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "strong":
+            self._in_strong = False
+            return
+
+        if tag != "div" or not self._current:
+            return
+
+        if self._capture == "row-2":
+            row2_text = "".join(self._row2_parts).strip()
+            if row2_text:
+                if "-" in row2_text:
+                    _, _, short_message = row2_text.partition("-")
+                    self._current["short_message"] = short_message.strip()
+                else:
+                    self._current["short_message"] = row2_text
+            self._capture = None
+        elif self._capture == "body":
+            self._current["full_message"] = "".join(self._body_parts).strip()
+            self._capture = None
+        elif self._capture == "date":
+            self._capture = None
+
+        self._folder_depth -= 1
+        if self._folder_depth <= 0:
+            self._finalize_current()
+
+    def handle_data(self, data: str) -> None:
+        if not self._current or not self._capture or not data:
+            return
+
+        if self._capture == "date":
+            self._current["date_str"] += data.strip()
+            return
+
+        if self._capture == "row-2":
+            if self._in_strong:
+                self._current["device_id"] += data.strip()
+            else:
+                self._row2_parts.append(data)
+            return
+
+        if self._capture == "body":
+            self._body_parts.append(data)
+
+    def _finalize_current(self) -> None:
+        if not self._current:
+            return
+
+        if any(self._current.values()):
+            self.items.append(
+                (
+                    self._current.get("severity_level", ""),
+                    self._current.get("date_str", ""),
+                    self._current.get("device_id", ""),
+                    self._current.get("short_message", ""),
+                    self._current.get("full_message", ""),
+                )
+            )
+
+        self._current = None
+        self._folder_depth = 0
+        self._capture = None
+        self._row2_parts = []
+        self._body_parts = []
+        self._in_strong = False
+
 class OigNotificationParser:
     """Parser for OIG Cloud notifications from JavaScript/JSON."""
 
     def __init__(self) -> None:
         """Initialize notification parser."""
-        # OPRAVA: Aktualizované patterny pro HTML strukturu s escaped znaky
-        self._html_notification_pattern = re.compile(
-            r'<div class="folder">.*?<div class="point level-(\d+)">.*?</div>.*?<div class="date">([^<]+)</div>.*?<div class="row-2"><strong>([^<]+)</strong>\s*-\s*([^<]+)</div>.*?<div class="body"><p>([^<]*(?:<br[^>]*>[^<]*)*)</p></div>.*?</div>',
-            re.DOTALL | re.MULTILINE,
-        )
-
-        # Původní patterny pro JSON (backup)
-        self._js_function_pattern = re.compile(
-            r"showNotifications\s*\(\s*([^)]+)\s*\)", re.MULTILINE | re.DOTALL
-        )
-        self._json_pattern = re.compile(
-            r'(\{[^{}]*(?:"type"|"level"|"severity")\s*:\s*"(?:error|warning|info|debug|alert|notice)"[^{}]*\})',
-            re.MULTILINE,
-        )
-        # Rozšířené patterny pro bypass detekci
-        self._bypass_pattern = re.compile(
-            r"(?:bypass|manual|maintenance|service).*?(?:true|false|on|off|enabled|disabled|zapnuto|vypnuto|active|inactive)",
-            re.IGNORECASE,
-        )
+        self._max_parse_chars = 200000
 
     def parse_from_controller_call(self, content: str) -> List[OigNotification]:
         """Parse notifications from Controller.Call.php content."""
@@ -138,11 +244,16 @@ class OigNotificationParser:
         notifications = []
 
         try:
-            # Najít všechny HTML notifikace
-            html_matches = self._html_notification_pattern.findall(content)
-            _LOGGER.debug(f"Found {len(html_matches)} HTML notification matches")
+            if len(content) > self._max_parse_chars:
+                content = content[: self._max_parse_chars]
 
-            for match in html_matches:
+            parser = _NotificationHtmlParser()
+            parser.feed(content)
+            parser.close()
+
+            _LOGGER.debug(f"Found {len(parser.items)} HTML notification matches")
+
+            for match in parser.items:
                 severity_level, date_str, device_id, short_message, full_message = match
 
                 try:
@@ -165,12 +276,14 @@ class OigNotificationParser:
         notifications = []
 
         try:
-            # Původní logika pro JSON
-            js_matches = self._js_function_pattern.findall(content)
-            _LOGGER.debug(f"Found {len(js_matches)} JS function matches")
+            payloads = self._extract_show_notifications_payloads(content)
+            if not payloads:
+                payloads = [content]
 
-            for js_match in js_matches:
-                json_matches = self._json_pattern.findall(js_match)
+            _LOGGER.debug(f"Found {len(payloads)} JS function matches")
+
+            for payload in payloads:
+                json_matches = self._extract_json_objects(payload)
                 for json_str in json_matches:
                     notification = self._parse_single_notification(json_str)
                     if notification:
@@ -180,6 +293,95 @@ class OigNotificationParser:
             _LOGGER.error(f"Error parsing JSON notifications: {e}")
 
         return notifications
+
+    def _extract_show_notifications_payloads(self, content: str) -> List[str]:
+        """Extract payloads passed to showNotifications(...) without regex."""
+        payloads: List[str] = []
+        marker = "showNotifications"
+        search_index = 0
+
+        while True:
+            start = content.find(marker, search_index)
+            if start == -1:
+                break
+
+            open_paren = content.find("(", start + len(marker))
+            if open_paren == -1:
+                break
+
+            close_paren = self._find_matching_paren(content, open_paren)
+            if close_paren == -1:
+                break
+
+            payloads.append(content[open_paren + 1 : close_paren])
+            search_index = close_paren + 1
+
+        return payloads
+
+    def _find_matching_paren(self, text: str, open_index: int) -> int:
+        """Find matching closing parenthesis for the opening one."""
+        depth = 0
+        string_quote: Optional[str] = None
+        escape = False
+
+        for idx in range(open_index, len(text)):
+            ch = text[idx]
+            if string_quote:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == string_quote:
+                    string_quote = None
+                continue
+
+            if ch in ('"', "'"):
+                string_quote = ch
+                continue
+
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return idx
+
+        return -1
+
+    def _extract_json_objects(self, payload: str) -> List[str]:
+        """Extract JSON objects from a string payload without regex."""
+        objects: List[str] = []
+        depth = 0
+        start: Optional[int] = None
+        string_quote: Optional[str] = None
+        escape = False
+
+        for idx, ch in enumerate(payload):
+            if string_quote:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == string_quote:
+                    string_quote = None
+                continue
+
+            if ch in ('"', "'"):
+                string_quote = ch
+                continue
+
+            if ch == "{":
+                if depth == 0:
+                    start = idx
+                depth += 1
+            elif ch == "}":
+                if depth:
+                    depth -= 1
+                    if depth == 0 and start is not None:
+                        objects.append(payload[start : idx + 1])
+                        start = None
+
+        return objects
 
     def _parse_single_notification(self, json_str: str) -> Optional[OigNotification]:
         """Parse single notification from JSON string."""
@@ -245,12 +447,22 @@ class OigNotificationParser:
 
             # Unescape HTML entities
             clean_message = html.unescape(full_message)
-            clean_message = re.sub(r"<br\s*/?>", "\n", clean_message)
-            clean_message = re.sub(r"<[^>]+>", "", clean_message).strip()
+            clean_message = (
+                clean_message.replace("<br />", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br>", "\n")
+            )
+            clean_message = "\n".join(
+                part.strip() for part in clean_message.replace("\r", "").split("\n")
+            ).strip()
 
             # Extrahovat device ID z formátu "Box #2206237016"
-            device_match = re.search(r"Box #(\w+)", device_id)
-            extracted_device_id = device_match.group(1) if device_match else device_id
+            extracted_device_id = device_id.strip()
+            marker = "Box #"
+            if marker in device_id:
+                extracted_device_id = (
+                    device_id.split(marker, 1)[1].strip().split()[0].strip()
+                )
 
             # Parsovat datum - formát "28. 6. 2025 | 13:05"
             timestamp = self._parse_czech_datetime(date_str)
@@ -317,94 +529,89 @@ class OigNotificationParser:
     def detect_bypass_status(self, content: str) -> bool:
         """Detect bypass status from content."""
         try:
-            # OPRAVA: Najdeme VŠECHNY bypass zprávy a vrátíme POSLEDNÍ (nejnovější)
-            bypass_on_patterns = [
-                r"automatický\s+BYPASS\s*-\s*Zapnut",
-                r"automatic\s+BYPASS\s*-\s*ON",
-                r"bypass.*zapnut",
-                r"bypass.*enabled",
-                r"bypass.*active",
+            normalized = " ".join(content.lower().split())
+            compact = normalized.replace(" ", "")
+
+            def _find_positions(text: str, phrase: str) -> List[int]:
+                positions: List[int] = []
+                start = text.find(phrase)
+                while start != -1:
+                    positions.append(start)
+                    start = text.find(phrase, start + 1)
+                return positions
+
+            on_phrases = [
+                "automatický bypass - zapnut",
+                "automatic bypass - on",
+            ]
+            off_phrases = [
+                "automatický bypass - vypnut",
+                "automatic bypass - off",
             ]
 
-            bypass_off_patterns = [
-                r"automatický\s+BYPASS\s*-\s*Vypnut",
-                r"automatic\s+BYPASS\s*-\s*OFF",
-                r"bypass.*vypnut",
-                r"bypass.*disabled",
-                r"bypass.*inactive",
-            ]
+            matches: List[Tuple[int, bool]] = []
+            for phrase in on_phrases:
+                for pos in _find_positions(normalized, phrase):
+                    matches.append((pos, True))
+            for phrase in off_phrases:
+                for pos in _find_positions(normalized, phrase):
+                    matches.append((pos, False))
 
-            # Najdeme všechny pozice výskytů ON zpráv
-            on_positions = []
-            for pattern in bypass_on_patterns:
-                for match in re.finditer(pattern, content, re.IGNORECASE):
-                    on_positions.append((match.start(), True))
-                    _LOGGER.debug(
-                        f"Found bypass ON at position {match.start()}: {match.group()}"
-                    )
+            on_tokens = ["zapnut", "enabled", "active", "on"]
+            off_tokens = ["vypnut", "disabled", "inactive", "off"]
 
-            # Najdeme všechny pozice výskytů OFF zpráv
-            off_positions = []
-            for pattern in bypass_off_patterns:
-                for match in re.finditer(pattern, content, re.IGNORECASE):
-                    off_positions.append((match.start(), False))
-                    _LOGGER.debug(
-                        f"Found bypass OFF at position {match.start()}: {match.group()}"
-                    )
+            search_index = 0
+            while True:
+                pos = normalized.find("bypass", search_index)
+                if pos == -1:
+                    break
+                window = normalized[pos : pos + 80]
+                if any(token in window for token in on_tokens):
+                    matches.append((pos, True))
+                elif any(token in window for token in off_tokens):
+                    matches.append((pos, False))
+                search_index = pos + len("bypass")
 
-            # Spojíme a seřadíme podle pozice (poslední = nejnovější)
-            all_matches = sorted(
-                on_positions + off_positions, key=lambda x: x[0], reverse=True
-            )
-
-            # Vrátíme stav z POSLEDNÍ zprávy
-            if all_matches:
-                last_status = all_matches[0][1]
+            if matches:
+                last_status = max(matches, key=lambda item: item[0])[1]
                 _LOGGER.info(
-                    f"Bypass status from LATEST message: {'ON' if last_status else 'OFF'} (found {len(all_matches)} total bypass messages)"
+                    "Bypass status from LATEST message: %s (found %s total bypass messages)",
+                    "ON" if last_status else "OFF",
+                    len(matches),
                 )
                 return last_status
 
-            # Rozšířené hledání indikátorů bypass stavu v HTML/JS obsahu
-            bypass_indicators = [
-                r"bypass.*?(?:true|on|enabled|zapnuto|active|1)",
-                r"manual.*?mode.*?(?:true|on|enabled|zapnuto|active|1)",
-                r"maintenance.*?(?:true|on|enabled|zapnuto|active|1)",
-                r"service.*?mode.*?(?:true|on|enabled|zapnuto|active|1)",
-                r'"bypass"\s*:\s*(?:true|1|"on"|"active")',
-                r'"manual_mode"\s*:\s*(?:true|1|"on")',
-                r"bypassEnabled.*?true",
-                r"bypass_active.*?true",
-                r"isManualMode.*?true",
+            positive_indicators = [
+                '"bypass":true',
+                '"bypass":1',
+                '"bypass":"on"',
+                '"bypass":"active"',
+                '"manual_mode":true',
+                '"manual_mode":"on"',
+                "bypassenabledtrue",
+                "bypass_activetrue",
+                "ismanualmodetrue",
             ]
 
-            for pattern in bypass_indicators:
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    _LOGGER.debug(
-                        f"Bypass detected as ON with pattern: {pattern} -> {matches}"
-                    )
-                    return True
+            if any(indicator in compact for indicator in positive_indicators):
+                _LOGGER.debug("Bypass detected as ON from indicators")
+                return True
 
-            # Negativní indikátory
             negative_indicators = [
-                r"bypass.*?(?:false|off|disabled|vypnuto|inactive|0)",
-                r"manual.*?mode.*?(?:false|off|disabled|vypnuto|inactive|0)",
-                r'"bypass"\s*:\s*(?:false|0|"off"|"inactive")',
-                r"bypassEnabled.*?false",
-                r"bypass_active.*?false",
-                r"isManualMode.*?false",
+                '"bypass":false',
+                '"bypass":0',
+                '"bypass":"off"',
+                '"bypass":"inactive"',
+                '"manual_mode":false',
+                "bypassenabledfalse",
+                "bypass_activefalse",
+                "ismanualmodefalse",
             ]
 
-            for pattern in negative_indicators:
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    _LOGGER.debug(
-                        f"Bypass detected as OFF with pattern: {pattern} -> {matches}"
-                    )
-                    return False
+            if any(indicator in compact for indicator in negative_indicators):
+                _LOGGER.debug("Bypass detected as OFF from indicators")
+                return False
 
-            # Pokud nenajdeme žádný specifický indikátor, předpokládáme OFF
             _LOGGER.debug("No bypass indicators found, assuming OFF")
             return False
 
@@ -515,110 +722,6 @@ class OigNotificationParser:
         except Exception as e:
             _LOGGER.warning(f"Error creating notification from data {data}: {e}")
             return None
-
-    def _parse_notifications_from_html(self, html_content: str) -> List[Dict[str, Any]]:
-        """Parse notifications from HTML content - optimized version using only row-2."""
-        notifications = []
-
-        try:
-            # Regex pattern pro folder div - používáme pouze row-2 pro obsah zprávy
-            folder_pattern = re.compile(
-                r'<div class="folder">.*?'
-                r'<div class="point level-(\d+)"></div>.*?'  # priority level
-                r'<div class="date">([^<]+)</div>.*?'  # date
-                r'<div class="row-2">([^<]+)</div>.*?'  # message content (only source we need)
-                r"</div>",
-                re.DOTALL | re.MULTILINE,
-            )
-
-            matches = folder_pattern.findall(html_content)
-            _LOGGER.debug(f"Found {len(matches)} HTML notification matches")
-
-            for match in matches:
-                try:
-                    priority_level, date_text, message_text = match
-
-                    # Clean up text content
-                    date_text = self._clean_html_text(date_text)
-                    message_text = self._clean_html_text(message_text)
-
-                    # Parse message content for device ID
-                    device_id = "unknown"
-                    content = message_text
-
-                    if " - " in message_text:
-                        # Split only on first occurrence
-                        device_part, content = message_text.split(" - ", 1)
-
-                        # Extract device ID from "**Box #XXXXXXXX**" format
-                        device_match = re.search(r"\*\*Box #(\w+)\*\*", device_part)
-                        device_id = device_match.group(1) if device_match else "unknown"
-
-                    # Parse priority level
-                    try:
-                        priority = int(priority_level)
-                    except (ValueError, TypeError):
-                        priority = 1
-
-                    # Parse Czech date format: "25. 6. 2025 | 8:13"
-                    try:
-                        date_clean = date_text.replace(" | ", " ").strip()
-                        parsed_date = datetime.strptime(date_clean, "%d. %m. %Y %H:%M")
-                        iso_date = parsed_date.isoformat()
-                    except ValueError as e:
-                        _LOGGER.warning(f"Could not parse date '{date_text}': {e}")
-                        parsed_date = datetime.now()
-                        iso_date = parsed_date.isoformat()
-
-                    notification = {
-                        "id": f"{device_id}_{int(parsed_date.timestamp())}",
-                        "device_id": device_id,
-                        "date": iso_date,
-                        "date_raw": date_text,
-                        "message": content,
-                        "priority": priority,
-                        "priority_name": self._get_priority_name(priority),
-                        "source": "html_regex_optimized",
-                    }
-
-                    notifications.append(notification)
-
-                except Exception as e:
-                    _LOGGER.warning(f"Error parsing individual notification: {e}")
-                    continue
-
-            _LOGGER.debug(f"Successfully parsed {len(notifications)} notifications")
-            return notifications
-
-        except Exception as e:
-            _LOGGER.error(f"Error parsing notifications HTML: {e}")
-            return []
-
-    def _clean_html_text(self, text: str) -> str:
-        """Clean HTML text content using regex."""
-        if not text:
-            return ""
-
-        # Remove HTML tags
-        text = re.sub(r"<[^>]+>", "", text)
-
-        # Replace HTML entities
-        html_entities = {
-            "&amp;": "&",
-            "&lt;": "<",
-            "&gt;": ">",
-            "&quot;": '"',
-            "&apos;": "'",
-            "&nbsp;": " ",
-            "<br>": "\n",
-            "<br/>": "\n",
-            "<br />": "\n",
-        }
-
-        for entity, replacement in html_entities.items():
-            text = text.replace(entity, replacement)
-
-        return text.strip()
 
     def _get_priority_name(self, priority: int) -> str:
         """Get priority name from level number."""

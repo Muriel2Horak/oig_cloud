@@ -2366,69 +2366,6 @@ class TimelineDialog {
 
             ${comparisonHtml}
         `;
-
-        const topMode = Object.entries(modeDistribution)
-            .sort((a, b) => b[1] - a[1])[0];
-        const topModeName = topMode ? topMode[0] : 'N/A';
-        const topModeCount = topMode ? topMode[1] : 0;
-        const topModePct = intervalCount > 0 ? ((topModeCount / intervalCount) * 100) : 0;
-
-        return `
-            <div class="today-header-cards">
-                <div class="header-progress-large">
-                    <div class="progress-bar-gradient">
-                        <div class="progress-fill-gradient" style="width: ${topModePct}%"></div>
-                        <div class="progress-label-overlay">${topModeName} ${topModePct.toFixed(0)}%</div>
-                    </div>
-                </div>
-
-                <div class="metric-cards-grid">
-                    <div class="metric-card card-completed">
-                        <div class="card-header">
-                            <span class="card-icon">💰</span>
-                            <span class="card-title">Plánované náklady</span>
-                        </div>
-                        <div class="card-body">
-                            <div class="card-main-value">${plannedCost.toFixed(2)} Kč</div>
-                            <div class="card-details">
-                                <span class="detail-item">${intervalCount} intervalů</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="metric-card card-active">
-                        <div class="card-header">
-                            <span class="card-icon">⚡</span>
-                            <span class="card-title">Dominantní režim</span>
-                        </div>
-                        <div class="card-body">
-                            <div class="card-main-value" style="font-size: 1.5rem;">${topModeName}</div>
-                            <div class="card-details">
-                                <span class="detail-item">${topModeCount} intervalů (${topModePct.toFixed(0)}%)</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="metric-card card-eod">
-                        <div class="card-header">
-                            <span class="card-icon">📊</span>
-                            <span class="card-title">Režimy celkem</span>
-                        </div>
-                        <div class="card-body">
-                            <div class="card-main-value">${Object.keys(modeDistribution).length}</div>
-                            <div class="card-details">
-                                <span class="detail-item">různých režimů</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tomorrow-intervals">
-                    <h4>📅 Plán intervalů</h4>
-                    ${this.renderTomorrowIntervals(intervals)}
-                </div>
-            </div>
-        `;
     }
 
     renderComparisonSection(comparison) {
@@ -3458,7 +3395,10 @@ class TimelineDialog {
 
         // Create chart
         const ctx = canvas.getContext('2d');
-        new Chart(ctx, {
+        if (this._costDeltaChart) {
+            this._costDeltaChart.destroy();
+        }
+        this._costDeltaChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,

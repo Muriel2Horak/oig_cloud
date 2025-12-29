@@ -713,19 +713,22 @@ class ChmuApi:
             # 5. Vybrat top lokální varování
             top_local = self._select_top_alert(local_alerts)
 
+            all_warnings_count = len(all_alerts)
+            local_warnings_count = len(local_alerts)
+            severity_level = top_local.get("severity_level", 0) if top_local else 0
+            highest_severity = max(
+                (a.get("severity_level", 0) for a in all_alerts), default=0
+            )
+
             # 6. Sestavit výsledek
             result = {
                 "all_warnings": all_alerts,
                 "local_warnings": local_alerts,
                 "top_local_warning": top_local,
-                "severity_level": (
-                    top_local.get("severity_level", 0) if top_local else 0
-                ),
-                "all_warnings_count": len(all_alerts),
-                "local_warnings_count": len(local_alerts),
-                "highest_severity_cz": max(
-                    (a.get("severity_level", 0) for a in all_alerts), default=0
-                ),
+                "severity_level": severity_level,
+                "all_warnings_count": all_warnings_count,
+                "local_warnings_count": local_warnings_count,
+                "highest_severity_cz": highest_severity,
                 "gps_location": {
                     "latitude": latitude,
                     "longitude": longitude,
@@ -740,10 +743,10 @@ class ChmuApi:
             self._cache_time = datetime.now(timezone.utc)
 
             _LOGGER.info(
-                f"ČHMÚ data aktualizována: "
-                f"{result['all_warnings_count']} celkem, "
-                f"{result['local_warnings_count']} lokálních, "
-                f"severity={result['severity_level']}"
+                "ČHMÚ data aktualizována: %s celkem, %s lokálních, severity=%s",
+                all_warnings_count,
+                local_warnings_count,
+                severity_level,
             )
 
             return result

@@ -97,6 +97,11 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 
 
+def _read_manifest_file(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
 def _ensure_data_source_option_defaults(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
@@ -290,7 +295,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         try:
             # OPRAVA: Použít async file read místo blocking open()
             manifest_data = await hass.async_add_executor_job(
-                lambda: open(manifest_path, "r").read()
+                _read_manifest_file, manifest_path
             )
             manifest = json.loads(manifest_data)
             version = manifest.get("version", "unknown")

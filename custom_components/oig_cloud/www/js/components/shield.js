@@ -190,9 +190,8 @@ function parseShieldActivity(activity) {
         return null;
     }
 
-    // Try to match pattern: "service_name: target_value"
-    const match = activity.match(/^(\w+):\s*(.+)$/);
-    if (!match) {
+    const separatorIndex = activity.indexOf(':');
+    if (separatorIndex === -1) {
         // Don't warn for known idle states
         if (!['idle', 'Idle', 'nečinný', 'Nečinný'].includes(activity)) {
             console.warn('[Shield] Cannot parse activity:', activity);
@@ -200,9 +199,15 @@ function parseShieldActivity(activity) {
         return null;
     }
 
+    const service = activity.slice(0, separatorIndex).trim();
+    const target = activity.slice(separatorIndex + 1).trim();
+    if (!service || !target) {
+        return null;
+    }
+
     return {
-        service: match[1],      // "set_box_mode"
-        target: match[2].trim() // "Home 5"
+        service: service,  // "set_box_mode"
+        target: target     // "Home 5"
     };
 }
 
@@ -654,25 +659,29 @@ function updateShieldQueue() {
             let changes = 'N/A';
             if (req.changes && Array.isArray(req.changes) && req.changes.length > 0) {
                 changes = req.changes.map(ch => {
-                    // Try to extract just the important part
-                    const match = ch.match(/:\s*'?([^'→]+)'?\s*→\s*'?([^'(]+)'?/);
-                    if (match) {
-                        let from = match[1].trim();
-                        let to = match[2].trim();
-
-                        // Mapování hodnot pro lepší čitelnost
-                        const valueMap = {
-                            'CBB': 'Inteligentní',
-                            'Manual': 'Manuální',
-                            'Manuální': 'Manuální'
-                        };
-
-                        from = valueMap[from] || from;
-                        to = valueMap[to] || to;
-
-                        return `${from} → ${to}`;
+                    const arrowIndex = ch.indexOf('→');
+                    if (arrowIndex === -1) {
+                        return ch;
                     }
-                    return ch;
+                    const left = ch.slice(0, arrowIndex).trim();
+                    const right = ch.slice(arrowIndex + 1).trim();
+                    const colonIndex = left.indexOf(':');
+                    const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
+
+                    let from = fromRaw.replaceAll("'", '').trim();
+                    let to = right.replaceAll("'", '').trim();
+
+                    // Mapování hodnot pro lepší čitelnost
+                    const valueMap = {
+                        'CBB': 'Inteligentní',
+                        'Manual': 'Manuální',
+                        'Manuální': 'Manuální'
+                    };
+
+                    from = valueMap[from] || from;
+                    to = valueMap[to] || to;
+
+                    return `${from} → ${to}`;
                 }).join('<br>');
             }
 
@@ -1788,7 +1797,7 @@ function setGridDeliveryLimit() {
         return;
     }
 
-    setGridDelivery(null, limit);
+    setGridDeliveryOld(null, limit);
 }
 
 // Set boiler mode

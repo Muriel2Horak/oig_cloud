@@ -375,5 +375,5 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Battery forecast coordinator není dostupný")
             return []
 
-        battery_data = battery_coordinator.data if battery_coordinator else None
+        battery_data = battery_coordinator.data
         return await self.planner.async_get_overflow_windows(battery_data)

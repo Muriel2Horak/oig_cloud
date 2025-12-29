@@ -21,8 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 NAMESPACE = "http://www.ote-cr.cz/schema/service/public"
 SOAPENV = "http://schemas.xmlsoap.org/soap/envelope/"
 
-# OTE používá HTTP endpoint (viz WSDL soap:address)
-OTE_PUBLIC_URL = "http://www.ote-cr.cz/services/PublicDataService"
+# OTE endpoint podporuje HTTPS (viz WSDL soap:address) - preferujeme zabezpečenou variantu
+OTE_PUBLIC_URL = "https://www.ote-cr.cz/services/PublicDataService"
 
 SOAP_ACTIONS = {
     "GetDamPricePeriodE": f"{NAMESPACE}/GetDamPricePeriodE",

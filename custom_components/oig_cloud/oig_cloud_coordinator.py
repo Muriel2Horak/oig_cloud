@@ -125,6 +125,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # NOVÉ: Sledování posledního stažení spotových cen
         self._last_spot_fetch: Optional[datetime] = None
         self._spot_retry_count: int = 0
+        self._spot_retry_task: Optional[asyncio.Task] = None
         self._max_spot_retries: int = 20  # 20 * 15min = 5 hodin retry
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
 
@@ -464,7 +465,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(30 * 60)  # 30 minutes
                 await self._update_spot_prices()
 
-            asyncio.create_task(retry_callback())
+            if self._spot_retry_task and not self._spot_retry_task.done():
+                self._spot_retry_task.cancel()
+            self._spot_retry_task = asyncio.create_task(retry_callback())
         else:
             if not is_important_time:
                 _LOGGER.info(
@@ -476,6 +479,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
 
             self._spot_retry_count = 0
+            if self._spot_retry_task and not self._spot_retry_task.done():
+                self._spot_retry_task.cancel()
+                self._spot_retry_task = None
             # Naplánujeme další pokus na zítra
             self._schedule_spot_price_update()
 

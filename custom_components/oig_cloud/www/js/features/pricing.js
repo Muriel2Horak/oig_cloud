@@ -172,7 +172,7 @@ function getPricingModeSegmentBounds(xScale, segment) {
 }
 
 function getTimelineCacheBucket(plan) {
-    const normalized = plan === 'hybrid' ? 'hybrid' : 'hybrid';
+    const normalized = plan || 'hybrid';
     if (!timelineDataCache.perPlan[normalized]) {
         timelineDataCache.perPlan[normalized] = { data: null, timestamp: null, chartsRendered: false, stale: true };
     }

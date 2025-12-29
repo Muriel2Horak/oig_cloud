@@ -446,10 +446,7 @@ class BatterySimulation:
                 return HOME_I
             else:
                 # Need charge: HOME III or UPS
-                if has_fve:
-                    return HOME_III
-                else:
-                    return HOME_UPS
+                return HOME_III
 
     def optimize_plan(
         self,
