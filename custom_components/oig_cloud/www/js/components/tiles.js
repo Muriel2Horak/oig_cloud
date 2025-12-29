@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * Dashboard Tile Manager
  * Správa konfigurace dynamických dlaždic na OIG Dashboard

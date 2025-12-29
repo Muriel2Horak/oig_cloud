@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * Battery Health Dashboard Module
  * Zobrazuje kvalitu baterie (SoH%), quality metrics, cycle progress

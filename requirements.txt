@@ -2,7 +2,7 @@
 # Runtime requirements are primarily managed by Home Assistant/HACS and
 # vendored libraries, but we keep explicit pins here for security tooling.
 
-homeassistant==2025.8.0
+homeassistant==2025.12.5
 aiodiscover==2.1.0
 pyspeex-noise==1.0.2
 opentelemetry-sdk==1.29.0

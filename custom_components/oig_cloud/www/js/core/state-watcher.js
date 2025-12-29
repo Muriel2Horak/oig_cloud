@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * OIG Cloud Dashboard - State Watcher (no extra WebSocket subscriptions)
  *

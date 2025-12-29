@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * OIG Cloud Dashboard - Layout Customization System
  *

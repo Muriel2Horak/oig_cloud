@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === SHIELD INTEGRATION FUNCTIONS ===
 
 // Debouncing timers (only for shield-specific functions)

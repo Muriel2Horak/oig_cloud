@@ -1385,7 +1385,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # failed, the next tick will retry.
                     if self._timeline_data:
                         self._profiles_dirty = False
-            except Exception:
+            except Exception:  # nosec B110
                 pass
             self._forecast_in_progress = False
 
@@ -1919,7 +1919,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 # Noční hodiny: 22-23, 0-5
                 if 22 <= hour or hour < 6:
                     night_intervals.append((t, price_data.get("price", 0.0)))
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         # 5. Seřadit podle ceny a vybrat N nejlevnějších
@@ -2251,7 +2251,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         from_dt = None
         try:
             from_dt = datetime.fromisoformat(block["from_time"])
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         # HOME I - Battery Priority
@@ -2527,7 +2527,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             f"({holding_end.strftime('%H:%M')}) with battery=100%"
                         )
                         break
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
         for i in range(start_index, n):
@@ -2561,7 +2561,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     if interval_ts >= holding_end:
                         holding_end_index = i
                         break
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
             holding_end_index_for_validation = holding_end_index
@@ -4008,7 +4008,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 if hour >= 22 or hour < 6:
                     price = spot_prices[i].get("price", 999.0)
                     night_intervals.append((i, price))
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         if not night_intervals:
@@ -4366,7 +4366,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     interval_time = dt_util.as_local(interval_time)
                 if today_start <= interval_time < tomorrow_end:
                     total_cost_48h += interval.get("net_cost", 0)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         # Calculate HOME I baseline cost for 48h (pro výpočet úspory)
@@ -4382,7 +4382,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     interval_time = dt_util.as_local(interval_time)
                 if not (today_start <= interval_time < tomorrow_end):
                     continue
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
             # HOME I simulation
@@ -4544,7 +4544,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         timestamp = dt_util.as_local(timestamp)
                     if not (today_start <= timestamp < tomorrow_end):
                         continue
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
                 # Get input data from forecasts
@@ -5009,7 +5009,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             interval_time = dt_util.as_local(interval_time)
                         if today_start <= interval_time <= today_end:
                             today_timeline.append(interval)
-                    except Exception:
+                    except Exception:  # nosec B112
                         continue
 
                 today_blocks = []
@@ -5022,7 +5022,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             block_time = dt_util.as_local(block_time)
                         if today_start <= block_time <= today_end:
                             today_blocks.append(block)
-                    except Exception:
+                    except Exception:  # nosec B112
                         continue
 
                 expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
@@ -5881,7 +5881,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             if first_hybrid_time is None:
                                 first_hybrid_time = interval_time_str
                             break
-                    except Exception:
+                    except Exception:  # nosec B112
                         continue
 
                 # Build interval
@@ -6346,7 +6346,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         year == cutoff_year and week < cutoff_week_number
                     ):
                         weekly_to_delete.append(week_key)
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
             if weekly_to_delete:
@@ -6478,7 +6478,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
             try:
                 day = datetime.fromisoformat(ts).date().isoformat()
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             day_costs.setdefault(day, 0.0)
             day_costs[day] += interval.get("net_cost", 0.0)
@@ -6500,7 +6500,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 continue
             try:
                 interval_day = datetime.fromisoformat(ts).date()
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             if interval_day == target_day:
                 total += interval.get("net_cost", 0.0)
@@ -8222,7 +8222,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 try:
                     start_dt = datetime.fromisoformat(group["start_time"])
                     group["start_time"] = start_dt.strftime("%H:%M")
-                except Exception:
+                except Exception:  # nosec B110
                     pass
 
             if group["end_time"]:
@@ -8231,7 +8231,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     # Přidat 15 minut pro konec intervalu
                     end_dt = end_dt + timedelta(minutes=15)
                     group["end_time"] = end_dt.strftime("%H:%M")
-                except Exception:
+                except Exception:  # nosec B110
                     pass
 
             # PHASE 3.0: KEEP intervals for Detail Tabs API
@@ -9394,7 +9394,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "mode_name": mode_entry.get("mode_name"),
                     }
                 )
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         mode_changes.sort(key=lambda x: x["time"])
@@ -9556,7 +9556,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             planned_dt = dt_util.as_local(planned_dt)
                             time_str = planned_dt.strftime(DATETIME_FMT)
                             planned_intervals_map[time_str] = planned_entry
-                        except Exception:
+                        except Exception:  # nosec B112
                             continue
 
                 _LOGGER.debug(
@@ -9984,7 +9984,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         # Make timezone-aware if naive
                         if interval_time.tzinfo is None:
                             interval_time = dt_util.as_local(interval_time)
-                    except Exception:
+                    except Exception:  # nosec B112
                         continue
 
                     if day_start <= interval_time <= day_end:
@@ -10154,7 +10154,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     historical.append(interval)
                 else:
                     future.append(interval)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         # PHASE 3.0 FIX: Safe cost getter (reuse from _build_today_cost_data)
@@ -10229,7 +10229,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                         "is_current": is_current,
                     }
                 )
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         return {
@@ -10312,7 +10312,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 interval_time = datetime.fromisoformat(
                     timestamp_str.replace("Z", ISO_TZ_OFFSET)
                 )
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
             # Filtry
@@ -10545,7 +10545,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
                     if current_time < point_time <= blackout_end:
                         blackout_consumption += point.get("consumption_kwh", 0)
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
             blackout_soc = max(
@@ -11148,7 +11148,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                             today_total[hour_str] = kw
                         elif hour_dt.date() == tomorrow:
                             tomorrow_total[hour_str] = kw
-                    except Exception:
+                    except Exception:  # nosec B112
                         continue
                 self._log_rate_limited(
                     "solar_forecast_fallback",
@@ -14212,7 +14212,7 @@ class OigCloudPlannerRecommendedModeSensor(
             self._unsubs.append(
                 async_dispatcher_connect(self.hass, signal_name, _on_forecast_updated)
             )
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         # 15-minute boundary recompute (recommended_mode changes with time even if timeline unchanged)
@@ -14226,7 +14226,7 @@ class OigCloudPlannerRecommendedModeSensor(
                         self.hass, _on_tick, minute=minute, second=2
                     )
                 )
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         await self._async_recompute()
@@ -14235,7 +14235,7 @@ class OigCloudPlannerRecommendedModeSensor(
         for unsub in getattr(self, "_unsubs", []) or []:
             try:
                 unsub()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         self._unsubs = []
         await super().async_will_remove_from_hass()

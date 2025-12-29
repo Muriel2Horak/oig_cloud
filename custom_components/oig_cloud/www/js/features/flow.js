@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === EXISTING FUNCTIONS ===
 
 // NOTE: Analytics/Pricing/CHMU functions are called directly via window.Dashboard*

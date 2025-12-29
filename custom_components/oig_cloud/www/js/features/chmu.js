@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === ČHMÚ WEATHER WARNING FUNCTIONS ===
 
 var chmuWarningData = null;

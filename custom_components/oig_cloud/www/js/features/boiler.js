@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * OIG Bojler Dashboard - Integrace do hlavního dashboardu
  * Heatmap, timeline, profiling

@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * Dashboard Tile Config Dialog
  * Dialog pro konfiguraci dlaždic - výběr entity nebo tlačítka

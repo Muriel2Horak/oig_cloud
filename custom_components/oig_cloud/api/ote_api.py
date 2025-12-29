@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import os
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B314
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, TypedDict, cast

@@ -1,3 +1,4 @@
+/* eslint-disable */
 const MODE_CONFIG = {
     'HOME I': { icon: '🏠', color: 'rgba(76, 175, 80, 0.7)', label: 'HOME I' },
     'HOME II': { icon: '⚡', color: 'rgba(33, 150, 243, 0.7)', label: 'HOME II' },

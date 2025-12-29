@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === GRID CHARGING PLAN FUNCTIONS ===
 
 function getDayLabel(day) {

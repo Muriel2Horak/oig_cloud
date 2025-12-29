@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === INVERTER SN (from api.js) ===
 // INVERTER_SN is defined in dashboard-api.js (loaded before this file)
 

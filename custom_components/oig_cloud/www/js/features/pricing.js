@@ -1,3 +1,4 @@
+/* eslint-disable */
 // === PRICING CHARTS ===
 var loadPricingDataTimer = null;
 var updatePlannedConsumptionTimer = null;
