@@ -5,7 +5,6 @@ import copy
 import hashlib
 import json
 import logging
-import math
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
@@ -42,6 +41,7 @@ from . import pricing as pricing_module
 from . import precompute as precompute_module
 from . import solar_forecast as solar_forecast_module
 from . import unified_cost_tile as unified_cost_tile_module
+from . import scenario_analysis as scenario_analysis_module
 from .strategy import BalancingPlan as StrategyBalancingPlan
 from .strategy import HybridStrategy
 from .timeline.planner import (
@@ -51,7 +51,6 @@ from .timeline.planner import (
 )
 from .timeline import extended as timeline_extended_module
 from ..const import DOMAIN  # PHASE 3: Import DOMAIN for BalancingManager access
-from ..physics import simulate_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1404,109 +1403,34 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     def _simulate_interval(
         self,
-        mode: int,  # 0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS
-        solar_kwh: float,  # FVE produkce (kWh/15min)
-        load_kwh: float,  # Spotřeba (kWh/15min)
-        battery_soc_kwh: float,  # Aktuální SoC (kWh)
-        capacity_kwh: float,  # Max kapacita (kWh)
-        hw_min_capacity_kwh: float,  # Fyzické minimum 20% (kWh) - INVERTOR LIMIT
-        spot_price_czk: float,  # Nákupní cena (Kč/kWh)
-        export_price_czk: float,  # Prodejní cena (Kč/kWh)
-        charge_efficiency: float = 0.95,  # AC→DC + DC→battery efficiency
-        discharge_efficiency: float = 0.95,  # battery→DC + DC→AC efficiency
-        home_charge_rate_kwh_15min: float = 0.7,  # HOME UPS: 2.8kW = 0.7kWh/15min
-        planning_min_capacity_kwh: float = None,  # Planning minimum (může být vyšší než hw_min)
+        mode: int,
+        solar_kwh: float,
+        load_kwh: float,
+        battery_soc_kwh: float,
+        capacity_kwh: float,
+        hw_min_capacity_kwh: float,
+        spot_price_czk: float,
+        export_price_czk: float,
+        charge_efficiency: float = 0.95,
+        discharge_efficiency: float = 0.95,
+        home_charge_rate_kwh_15min: float = 0.7,
+        planning_min_capacity_kwh: float = None,
     ) -> dict:
-        """
-        Simulovat jeden 15min interval s konkrétním CBB režimem.
-
-        ZDROJ PRAVDY: CBB_MODES_DEFINITIVE.md
-
-        DŮLEŽITÉ - Oddělení odpovědností:
-        - Tato funkce implementuje POUZE fyziku režimů měniče
-        - Zná pouze hw_min_capacity (invertor hardware limit = 20%)
-        - NEVÍ o planning_min_capacity (to řeší HYBRID plánovač)
-        - NEVÍ o target SoC (to řeší HYBRID plánovač)
-        - NEVÍ o cheap/expensive prices (to řeší HYBRID plánovač)
-
-        Režimy podle CBB_MODES_DEFINITIVE.md:
-
-        HOME I (0) - DEN: FVE → spotřeba → baterie, deficit vybíjí
-        HOME I (0) - NOC: Baterie → spotřeba (do hw_min), pak síť
-
-        HOME II (1) - DEN: FVE → spotřeba, přebytek → baterie, deficit → SÍŤ (NETOUCHED!)
-        HOME II (1) - NOC: Stejné jako HOME I (vybíjí do hw_min)
-
-        HOME III (2) - DEN: FVE → baterie, spotřeba → VŽDY SÍŤ
-        HOME III (2) - NOC: Stejné jako HOME I (vybíjí do hw_min)
-
-        HOME UPS (3): Nabíjení na 100% (FVE + síť), spotřeba → síť
-
-        Args:
-            mode: CBB režim (0-3)
-            solar_kwh: FVE produkce za 15min (kWh)
-            load_kwh: Spotřeba za 15min (kWh)
-            battery_soc_kwh: Aktuální stav baterie (kWh, NE %)
-            capacity_kwh: Max kapacita (kWh)
-            hw_min_capacity_kwh: HW minimum invertoru (kWh, typicky 20% = 3.07 kWh)
-            spot_price_czk: Nákupní cena (Kč/kWh)
-            export_price_czk: Prodejní cena (Kč/kWh)
-            charge_efficiency: Nabíjecí účinnost (default 0.95)
-            discharge_efficiency: Vybíjecí účinnost (default 0.95)
-            home_charge_rate_kwh_15min: Max nabíjení ze sítě pro HOME UPS (kWh/15min)
-
-        Returns:
-            dict:
-                new_soc_kwh: Nový SoC (kWh)
-                grid_import_kwh: Import ze sítě (kWh)
-                grid_export_kwh: Export do sítě (kWh)
-                battery_charge_kwh: Nabití baterie (kWh)
-                battery_discharge_kwh: Vybití baterie (kWh)
-                grid_cost_czk: Náklady na import (Kč)
-                export_revenue_czk: Příjem z exportu (Kč)
-                net_cost_czk: Čisté náklady (Kč)
-        """
-        effective_min = (
-            planning_min_capacity_kwh
-            if planning_min_capacity_kwh is not None
-            else hw_min_capacity_kwh
-        )
-
-        flows = simulate_interval(
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.simulate_interval(
             mode=mode,
             solar_kwh=solar_kwh,
             load_kwh=load_kwh,
             battery_soc_kwh=battery_soc_kwh,
             capacity_kwh=capacity_kwh,
-            hw_min_capacity_kwh=effective_min,
+            hw_min_capacity_kwh=hw_min_capacity_kwh,
+            spot_price_czk=spot_price_czk,
+            export_price_czk=export_price_czk,
             charge_efficiency=charge_efficiency,
             discharge_efficiency=discharge_efficiency,
             home_charge_rate_kwh_15min=home_charge_rate_kwh_15min,
+            planning_min_capacity_kwh=planning_min_capacity_kwh,
         )
-
-        grid_cost_czk = flows.grid_import_kwh * spot_price_czk
-        export_revenue_czk = flows.grid_export_kwh * export_price_czk
-        net_cost_czk = grid_cost_czk - export_revenue_czk
-
-        return {
-            "new_soc_kwh": flows.new_soc_kwh,
-            "grid_import_kwh": flows.grid_import_kwh,
-            "grid_export_kwh": flows.grid_export_kwh,
-            "battery_charge_kwh": flows.battery_charge_kwh,
-            "battery_discharge_kwh": flows.battery_discharge_kwh,
-            "grid_cost_czk": grid_cost_czk,
-            "export_revenue_czk": export_revenue_czk,
-            "net_cost_czk": net_cost_czk,
-        }
-
-    # =========================================================================
-    # STARÉ FUNKCE ODSTRANĚNY (TODO 6: Cleanup)
-    # =========================================================================
-    # _simulate_interval_with_mode() - SMAZÁNO (původně line 1296-1666, 370 řádků)
-    #   → Nahrazeno centrální funkcí _simulate_interval() (line 1026-1343)
-    #   → Všechna volání migrována v TODO 3 (lines 1790, 1995, 2125, 3836)
-    #   → Zdroj pravdy: CBB_MODES_DEFINITIVE.md
-    # =========================================================================
 
     def _calculate_interval_cost(
         self,
@@ -1515,48 +1439,13 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         export_price: float,
         time_of_day: str,
     ) -> Dict[str, Any]:
-        """
-        Vypočítat ekonomické náklady pro jeden interval.
-
-        Phase 2.5: Zahrnuje opportunity cost - cena za použití baterie TEĎ vs POZDĚJI.
-
-        Args:
-            simulation_result: Výsledek z _simulate_interval_with_mode()
-            spot_price: Spotová cena nákupu (Kč/kWh)
-            export_price: Prodejní cena exportu (Kč/kWh)
-            time_of_day: Časová kategorie ("night", "morning", "midday", "evening")
-
-        Returns:
-            Dict s náklady:
-                - direct_cost: Přímé náklady (grid_import * spot - grid_export * export)
-                - opportunity_cost: Oportunitní náklad použití baterie
-                - total_cost: Celkové náklady (direct + opportunity)
-        """
-        direct_cost = simulation_result["net_cost"]
-
-        # Opportunity cost: Kolik "stojí" vybít baterii TEĎ místo POZDĚJI
-        # Pokud vybíjíme baterii během dne, mohli bychom ji ušetřit na večerní peak
-        battery_discharge = simulation_result.get("battery_discharge", 0.0)
-
-        # Evening peak price assumption (můžeme použít max(spot_prices) nebo config)
-        # Pro začátek: pevná hodnota 6 Kč/kWh (typický večerní peak)
-        evening_peak_price = 6.0
-
-        opportunity_cost = 0.0
-        if battery_discharge > 0.001:
-            # Pokud vybíjíme během "cheap" období, ztrácíme možnost použít baterii večer
-            if time_of_day in ["night", "midday"]:
-                # Opportunity cost = kolik bychom ušetřili, kdybychom baterii použili večer
-                # Discharge now costs us: (evening_peak - spot_price) * discharge
-                opportunity_cost = (evening_peak_price - spot_price) * battery_discharge
-
-        total_cost = direct_cost + opportunity_cost
-
-        return {
-            "direct_cost": direct_cost,
-            "opportunity_cost": opportunity_cost,
-            "total_cost": total_cost,
-        }
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.calculate_interval_cost(
+            simulation_result,
+            spot_price,
+            export_price,
+            time_of_day,
+        )
 
     def _calculate_fixed_mode_cost(
         self,
@@ -1570,120 +1459,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         load_forecast: List[float],
         physical_min_capacity: float | None = None,
     ) -> float:
-        """
-        Vypočítat celkové náklady pokud by uživatel zůstal v jednom režimu celou dobu.
-
-        Phase 2.6: What-if Analysis - Srovnání s fixed-mode strategií.
-        Phase 2.7: Cache timeline for HOME I (for savings calculation).
-        Phase 2.10: 4-Baseline Comparison - Use physical minimum for baseline simulations.
-
-        Args:
-            fixed_mode: CBB režim (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
-            current_capacity: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh) - Planning minimum (33% = 5.07 kWh)
-            spot_prices: Timeline spot cen
-            export_prices: Timeline export cen
-            solar_forecast: Solární předpověď
-            load_forecast: Předpověď spotřeby (kWh per interval)
-            physical_min_capacity: Physical/HW minimum (20% = 3.07 kWh). If None, use min_capacity.
-                                   For baseline simulations, pass physical minimum.
-                                   For HYBRID optimization, pass None to use planning minimum.
-
-        Returns:
-            Dict s výsledky:
-                - total_cost: Celkové náklady v Kč
-                - grid_import_kwh: Celkový import ze sítě (kWh)
-                - final_battery_kwh: Finální stav baterie (kWh)
-                - penalty_cost: Penalizace za porušení planning minima (Kč)
-                - planning_violations: Počet intervalů pod planning minimem
-        """
-        # Use physical minimum for baselines, planning minimum for HYBRID
-        effective_min = (
-            physical_min_capacity if physical_min_capacity is not None else min_capacity
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.calculate_fixed_mode_cost(
+            self,
+            fixed_mode=fixed_mode,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            physical_min_capacity=physical_min_capacity,
         )
-
-        # Planning minimum penalty tracking
-        planning_minimum = min_capacity  # 33% = 5.07 kWh
-        penalty_cost = 0.0
-        planning_violations = 0
-        efficiency = self._get_battery_efficiency()
-
-        total_cost = 0.0
-        total_grid_import = 0.0
-        battery_soc = current_capacity
-        timeline_cache = []  # Phase 2.7: Cache for savings calculation
-
-        for t in range(len(spot_prices)):
-            timestamp_str = spot_prices[t].get("time", "")
-            spot_price = spot_prices[t].get("price", 0.0)
-            export_price = (
-                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-            )
-            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-            # Get solar
-            solar_kwh = 0.0
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                solar_kwh = get_solar_for_timestamp(
-                    timestamp,
-                    solar_forecast,
-                    log_rate_limited=self._log_rate_limited,
-                )
-            except Exception:
-                solar_kwh = 0.0
-
-            # Simulovat s fixed režimem - NOVÁ centrální funkce!
-            # PHASE 3: Přechod ze staré _simulate_interval_with_mode() na novou _simulate_interval()
-            sim_result = self._simulate_interval(
-                mode=fixed_mode,
-                solar_kwh=solar_kwh,
-                load_kwh=load_kwh,
-                battery_soc_kwh=battery_soc,  # NEW: explicit kwh suffix
-                capacity_kwh=max_capacity,  # NEW: explicit kwh suffix
-                hw_min_capacity_kwh=effective_min,  # NEW: hw_min instead of min_capacity
-                spot_price_czk=spot_price,  # NEW: explicit czk suffix
-                export_price_czk=export_price,  # NEW: explicit czk suffix
-                charge_efficiency=efficiency,
-                discharge_efficiency=efficiency,
-            )
-
-            total_cost += sim_result["net_cost_czk"]  # NEW: explicit czk suffix
-            total_grid_import += sim_result.get(
-                "grid_import_kwh", 0.0
-            )  # NEW: explicit kwh suffix
-            battery_soc = sim_result["new_soc_kwh"]  # NEW: explicit kwh suffix
-
-            # Planning minimum penalty: když baseline klesne pod planning minimum,
-            # penalizujeme je jako by museli tu energii koupit z gridu
-            if battery_soc < planning_minimum:
-                deficit = planning_minimum - battery_soc
-                # Penalty = deficit musí být pokryt z gridu (s efficiency losses)
-                interval_penalty = (deficit * spot_price) / efficiency
-                penalty_cost += interval_penalty
-                planning_violations += 1
-
-            # Phase 2.7: Cache timeline for HOME I (mode 0)
-            if fixed_mode == CBB_MODE_HOME_I:
-                timeline_cache.append(
-                    {
-                        "time": timestamp_str,
-                        "net_cost": sim_result["net_cost_czk"],
-                    }  # NEW: czk suffix
-                )
-
-        # Calculate adjusted total cost (includes penalty)
-        adjusted_total_cost = total_cost + penalty_cost
-
-        return {
-            "total_cost": round(total_cost, 2),
-            "grid_import_kwh": round(total_grid_import, 2),
-            "final_battery_kwh": round(battery_soc, 2),
-            "penalty_cost": round(penalty_cost, 2),
-            "planning_violations": planning_violations,
-            "adjusted_total_cost": round(adjusted_total_cost, 2),
-        }
 
     def _calculate_mode_baselines(
         self,
@@ -1695,90 +1483,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Vypočítat baseline scénáře pro všechny 4 CBB režimy.
-
-        ZDROJ PRAVDY:
-        - CBB_MODES_DEFINITIVE.md - chování režimů
-        - REFACTORING_IMPLEMENTATION_GUIDE.md - hw_min vs planning_min
-
-        Phase 2.10: 4-Baseline Comparison
-
-        Tato funkce simuluje co by se stalo kdyby uživatel zůstal celý den v jednom
-        z fixních CBB režimů (HOME I/II/III/UPS) bez využití HYBRID optimalizace.
-
-        DŮLEŽITÉ - Oddělení odpovědností:
-        - Baseline používá hw_min_capacity (20% fyzické minimum invertoru)
-        - HYBRID plánovač používá planning_min_capacity (33% user minimum)
-        - Všechna fyzika přes centrální _simulate_interval()
-
-        Args:
-            current_capacity: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            physical_min_capacity: Fyzické/HW minimum (20% = 3.07 kWh)
-            spot_prices: Timeline spot cen
-            export_prices: Timeline export cen
-            solar_forecast: Solární předpověď
-            load_forecast: Předpověď spotřeby (kWh per interval)
-
-        Returns:
-            Dict s baseline pro každý režim:
-            {
-                "HOME_I": {
-                    "total_cost": float,  # Kč
-                    "grid_import_kwh": float,  # kWh
-                    "final_battery_kwh": float,  # kWh
-                },
-                "HOME_II": {...},
-                "HOME_III": {...},
-                "HOME_UPS": {...},
-            }
-        """
-        baselines = {}
-
-        mode_mapping = [
-            (CBB_MODE_HOME_I, "HOME_I"),
-            (CBB_MODE_HOME_II, "HOME_II"),
-            (CBB_MODE_HOME_III, "HOME_III"),
-            (CBB_MODE_HOME_UPS, "HOME_UPS"),
-        ]
-
-        _LOGGER.debug(
-            f"🔍 Calculating 4 baselines: physical_min={physical_min_capacity:.2f} kWh "
-            f"({physical_min_capacity / max_capacity * 100:.0f}%)"
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.calculate_mode_baselines(
+            self,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            physical_min_capacity=physical_min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
         )
-
-        for mode_id, mode_name in mode_mapping:
-            result = self._calculate_fixed_mode_cost(
-                fixed_mode=mode_id,
-                current_capacity=current_capacity,
-                max_capacity=max_capacity,
-                min_capacity=physical_min_capacity,  # DUMMY - not used with physical_min
-                spot_prices=spot_prices,
-                export_prices=export_prices,
-                solar_forecast=solar_forecast,
-                load_forecast=load_forecast,
-                physical_min_capacity=physical_min_capacity,  # Use physical minimum!
-            )
-
-            baselines[mode_name] = result
-
-            # Log baseline s penalty informací
-            penalty_info = ""
-            if result["planning_violations"] > 0:
-                penalty_info = (
-                    f", penalty={result['penalty_cost']:.2f} Kč "
-                    f"({result['planning_violations']} violations)"
-                )
-
-            _LOGGER.debug(
-                f"  {mode_name}: cost={result['total_cost']:.2f} Kč{penalty_info}, "
-                f"grid_import={result['grid_import_kwh']:.2f} kWh, "
-                f"final_battery={result['final_battery_kwh']:.2f} kWh, "
-                f"adjusted_cost={result['adjusted_total_cost']:.2f} Kč"
-            )
-
-        return baselines
 
     def _calculate_do_nothing_cost(
         self,
@@ -1790,83 +1505,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
     ) -> float:
-        """
-        Vypočítat náklady pokud uživatel NIC NEZMĚNÍ.
-
-        Phase 2.6: What-if Analysis - DO NOTHING = současný režim bez změn.
-
-        OPRAVA 29.10.2025:
-        - PŘED: Simuloval HOME I jako "pasivní" režim (nesprávně)
-        - PO: Simuluje SOUČASNÝ CBB REŽIM po celý den BEZ ZMĚN
-
-        Logika:
-        - Načíst aktuální režim ze sensoru box_prms_mode
-        - Simulovat celých 24h s tímto režimem
-        - Uživatel vidí: "Co kdybyste nechali současný režim (HOME II) celý den?"
-
-        Args:
-            current_capacity: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh)
-            spot_prices: Timeline spot cen
-            export_prices: Timeline export cen
-            solar_forecast: Solární předpověď
-            load_forecast: Předpověď spotřeby (kWh per interval)
-
-        Returns:
-            Celkové náklady v Kč pokud uživatel nechá současný režim
-        """
-        # OPRAVA: Načíst současný režim místo fixed HOME I
-        current_mode = self._get_current_mode()
-        efficiency = self._get_battery_efficiency()
-
-        _LOGGER.debug(
-            f"[DO NOTHING] Calculating cost for current mode: {current_mode} "
-            f"({['HOME I', 'HOME II', 'HOME III', 'HOME UPS'][current_mode]})"
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.calculate_do_nothing_cost(
+            self,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
         )
-
-        total_cost = 0.0
-        battery_soc = current_capacity
-
-        for t in range(len(spot_prices)):
-            timestamp_str = spot_prices[t].get("time", "")
-            spot_price = spot_prices[t].get("price", 0.0)
-            export_price = (
-                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-            )
-            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-            # Get solar
-            solar_kwh = 0.0
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                solar_kwh = get_solar_for_timestamp(
-                    timestamp,
-                    solar_forecast,
-                    log_rate_limited=self._log_rate_limited,
-                )
-            except Exception:
-                solar_kwh = 0.0
-
-            # OPRAVA: Použít současný režim místo HOME I
-            # PHASE 3: Přechod na novou _simulate_interval()
-            sim_result = self._simulate_interval(
-                mode=current_mode,  # ← OPRAVA: Prostě nech to být!
-                solar_kwh=solar_kwh,
-                load_kwh=load_kwh,
-                battery_soc_kwh=battery_soc,  # NEW: explicit kwh
-                capacity_kwh=max_capacity,  # NEW: explicit kwh
-                hw_min_capacity_kwh=min_capacity,  # NEW: hw_min (here used as planning min - suboptimal but works)
-                spot_price_czk=spot_price,  # NEW: explicit czk
-                export_price_czk=export_price,  # NEW: explicit czk
-                charge_efficiency=efficiency,
-                discharge_efficiency=efficiency,
-            )
-
-            total_cost += sim_result["net_cost_czk"]  # NEW: czk suffix
-            battery_soc = sim_result["new_soc_kwh"]  # NEW: kwh suffix
-
-        return total_cost
 
     def _calculate_full_ups_cost(
         self,
@@ -1878,135 +1527,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
     ) -> float:
-        """
-        Vypočítat náklady pokud uživatel nabíjí baterii na 100% ASAP v nejlevnějších nočních intervalech.
-
-        Phase 2.6: What-if Analysis - Optimální noční nabíjení na 100%.
-
-        OPRAVA 29.10.2025:
-        - PŘED: Nabíjel celou noc (22-06h) bez ohledu na cenu (8 hodin)
-        - PO: Nabíjí ASAP v nejlevnějších nočních intervalech (pouze potřebný čas)
-
-        Logika:
-        1. Spočítat potřebu: needed_kwh = max_capacity - current_capacity
-        2. AC charging limit: 2.8 kW = 0.7 kWh/15min
-        3. Intervals needed: ceil(needed_kwh / 0.7)
-        4. Najít N nejlevnějších nočních intervalů (22-06h)
-        5. Nabít pouze v těchto intervalech
-        6. Zbytek dne: HOME I
-
-        Výsledek: Úspora vs nabíjení celou noc, lepší ekonomie
-
-        Args:
-            current_capacity: Aktuální SoC baterie (kWh)
-            max_capacity: Max kapacita baterie (kWh)
-            min_capacity: Min kapacita baterie (kWh)
-            spot_prices: Timeline spot cen
-            export_prices: Timeline export cen
-            solar_forecast: Solární předpověď
-            load_forecast: Předpověď spotřeby (kWh per interval)
-
-        Returns:
-            Celkové náklady v Kč s optimálním nočním nabíjením
-        """
-        # Get battery efficiency for calculations
-        efficiency = self._get_battery_efficiency()
-
-        # 1. Spočítat potřebu dobití
-        needed_kwh = max_capacity - current_capacity
-
-        # 2. AC charging limit per 15min interval
-        ac_charging_limit = 0.7  # kWh per 15min (2.8 kW AC path)
-
-        # 3. Kolik intervalů potřebujeme na dobití?
-        if needed_kwh > 0.001:
-            intervals_needed = int(math.ceil(needed_kwh / ac_charging_limit))
-        else:
-            intervals_needed = 0  # Battery už plná
-
-        _LOGGER.debug(
-            f"[FULL UPS] Need {needed_kwh:.2f} kWh to reach {max_capacity:.2f} kWh, "
-            f"requires {intervals_needed} intervals (×15min)"
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.calculate_full_ups_cost(
+            self,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
         )
-
-        # 4. Najít noční intervaly (22:00-06:00) a seřadit podle ceny
-        night_intervals = []
-        for t, price_data in enumerate(spot_prices):
-            timestamp_str = price_data.get("time", "")
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                hour = timestamp.hour
-
-                # Noční hodiny: 22-23, 0-5
-                if 22 <= hour or hour < 6:
-                    night_intervals.append((t, price_data.get("price", 0.0)))
-            except Exception:  # nosec B112
-                continue
-
-        # 5. Seřadit podle ceny a vybrat N nejlevnějších
-        night_sorted = sorted(
-            night_intervals, key=lambda x: x[1]
-        )  # Sort by price (ascending)
-        cheapest_intervals = set(
-            [idx for idx, price in night_sorted[:intervals_needed]]
-        )
-
-        if cheapest_intervals:
-            _LOGGER.debug(
-                f"[FULL UPS] Selected {len(cheapest_intervals)} cheapest night intervals "
-                f"from {len(night_intervals)} total night intervals"
-            )
-
-        # 6. Simulovat s optimálním nabíjením
-        total_cost = 0.0
-        battery_soc = current_capacity
-
-        for t in range(len(spot_prices)):
-            timestamp_str = spot_prices[t].get("time", "")
-            spot_price = spot_prices[t].get("price", 0.0)
-            export_price = (
-                export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-            )
-            load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-            # Get solar
-            solar_kwh = 0.0
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                solar_kwh = get_solar_for_timestamp(
-                    timestamp,
-                    solar_forecast,
-                    log_rate_limited=self._log_rate_limited,
-                )
-            except Exception:
-                solar_kwh = 0.0
-
-            # OPRAVA: Nabíjet pouze v nejlevnějších nočních intervalech
-            if t in cheapest_intervals and battery_soc < max_capacity:
-                # Optimální nabíjení v levném intervalu
-                mode = CBB_MODE_HOME_UPS  # 3 - Grid charging enabled
-            else:
-                # Normální provoz (nebo battery už plná)
-                mode = CBB_MODE_HOME_I  # 0 - Battery priority
-
-            # PHASE 3: Přechod na novou _simulate_interval()
-            sim_result = self._simulate_interval(
-                mode=mode,
-                solar_kwh=solar_kwh,
-                load_kwh=load_kwh,
-                battery_soc_kwh=battery_soc,  # NEW: kwh suffix
-                capacity_kwh=max_capacity,  # NEW: kwh suffix
-                hw_min_capacity_kwh=min_capacity,  # NEW: hw_min
-                spot_price_czk=spot_price,  # NEW: czk suffix
-                export_price_czk=export_price,  # NEW: czk suffix
-                charge_efficiency=efficiency,
-                discharge_efficiency=efficiency,
-            )
-
-            total_cost += sim_result["net_cost_czk"]  # NEW: czk suffix
-            battery_soc = sim_result["new_soc_kwh"]  # NEW: kwh suffix
-
-        return total_cost
 
     def _create_mode_recommendations(
         self, optimal_timeline: List[Dict[str, Any]], hours_ahead: int = 48
@@ -2031,164 +1562,17 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         max_capacity: float,
         efficiency: float,
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Generate what-if alternatives: what would cost be if we used only one mode all day?
-
-        Returns dict with structure:
-        {
-            "HOME I": {"cost_czk": 50.5, "delta_czk": 5.2},
-            "HOME II": {"cost_czk": 48.0, "delta_czk": 2.7},
-            ...
-        }
-        """
-        now = dt_util.now()
-        today_start = datetime.combine(now.date(), datetime.min.time())
-        today_start = dt_util.as_local(today_start)
-        tomorrow_end = today_start + timedelta(hours=48)
-
-        # Phase 2.7: Cache timeline for HOME I
-        home_i_timeline_cache = []
-
-        def simulate_mode(mode: int) -> float:
-            """Simulate 48h cost with fixed mode"""
-            battery = current_capacity
-            total_cost = 0.0
-
-            for i, price_data in enumerate(spot_prices):
-                timestamp_str = price_data.get("time", "")
-                if not timestamp_str:
-                    continue
-
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                    if timestamp.tzinfo is None:
-                        timestamp = dt_util.as_local(timestamp)
-                    if not (today_start <= timestamp < tomorrow_end):
-                        continue
-                except Exception:  # nosec B112
-                    continue
-
-                # Get input data from forecasts
-                try:
-                    solar_kwh = get_solar_for_timestamp(
-                        timestamp,
-                        solar_forecast,
-                        log_rate_limited=self._log_rate_limited,
-                    )
-                except Exception:
-                    solar_kwh = 0.0
-
-                load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-                price = price_data.get("price", 0)
-
-                grid_import = 0.0
-                grid_export = 0.0
-                net_cost = 0.0
-
-                # HOME I: Battery priority (NO GRID CHARGING - this is the baseline)
-                if mode == 0:
-                    if solar_kwh >= load_kwh:
-                        surplus = solar_kwh - load_kwh
-                        battery += surplus
-                        if battery > max_capacity:
-                            grid_export = battery - max_capacity
-                            battery = max_capacity
-                            net_cost = -grid_export * price
-                            total_cost += net_cost
-                    else:
-                        deficit = load_kwh - solar_kwh
-                        battery -= deficit / efficiency
-                        if battery < 0:
-                            grid_import = -battery * efficiency
-                            battery = 0
-                            net_cost = grid_import * price
-                            total_cost += net_cost
-
-                    # Phase 2.7: Cache timeline for HOME I
-                    home_i_timeline_cache.append(
-                        {"time": timestamp_str, "net_cost": net_cost}
-                    )
-
-                # HOME II: Grid supplements, battery saved
-                elif mode == 1:
-                    if solar_kwh >= load_kwh:
-                        surplus = solar_kwh - load_kwh
-                        battery += surplus
-                        if battery > max_capacity:
-                            grid_export = battery - max_capacity
-                            battery = max_capacity
-                            total_cost -= grid_export * price
-                    else:
-                        # Grid covers load, battery untouched
-                        grid_import = load_kwh - solar_kwh
-                        total_cost += grid_import * price
-
-                # HOME III: Max charge
-                elif mode == 2:
-                    battery += solar_kwh
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        total_cost -= grid_export * price
-                    # Load from grid
-                    grid_import = load_kwh
-                    total_cost += grid_import * price
-
-                # HOME UPS: Grid charging allowed
-                elif mode == 3:
-                    # Nabít baterii z gridu pokud je levné
-                    if price < 1.5:  # Threshold for charging
-                        charge_amount = min(2.8 / 4.0, max_capacity - battery)
-                        if charge_amount > 0:
-                            grid_import += charge_amount
-                            total_cost += charge_amount * price
-                            battery += charge_amount * efficiency
-
-                    # Stejná logika jako HOME I pro FVE
-                    if solar_kwh >= load_kwh:
-                        surplus = solar_kwh - load_kwh
-                        battery += surplus
-                        if battery > max_capacity:
-                            grid_export = battery - max_capacity
-                            battery = max_capacity
-                            total_cost -= grid_export * price
-                    else:
-                        deficit = load_kwh - solar_kwh
-                        battery -= deficit / efficiency
-                        if battery < 0:
-                            extra_import = -battery * efficiency
-                            battery = 0
-                            grid_import += extra_import
-                            total_cost += extra_import * price
-
-                battery = max(0, min(battery, max_capacity))
-
-            return total_cost
-
-        alternatives = {}
-        mode_names = {
-            0: "HOME I",
-            1: "HOME II",
-            2: "HOME III",
-            3: "HOME UPS",
-        }
-
-        for mode, name in mode_names.items():
-            cost = simulate_mode(mode)
-            delta = cost - optimal_cost_48h
-            alternatives[name] = {
-                "cost_czk": round(cost, 2),
-                "delta_czk": round(delta, 2),
-            }
-
-        # Add DO NOTHING (current optimized plan)
-        alternatives["DO NOTHING"] = {
-            "cost_czk": round(optimal_cost_48h, 2),
-            "delta_czk": 0.0,
-            "current_mode": "Optimized",
-        }
-
-        return alternatives
+        """Proxy to scenario analysis helpers."""
+        return scenario_analysis_module.generate_alternatives(
+            self,
+            spot_prices=spot_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            optimal_cost_48h=optimal_cost_48h,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            efficiency=efficiency,
+        )
 
     def _update_balancing_plan_snapshot(self, plan: Optional[Dict[str, Any]]) -> None:
         """Keep BalancingManager plan snapshot in sync with legacy plan handling."""
