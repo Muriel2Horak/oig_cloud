@@ -10,8 +10,6 @@ Architecture (NEW 3-layer design):
     battery_forecast/
     ├── __init__.py          # This file - exports
     ├── types.py             # TypedDicts, Enums, Constants
-    ├── config.py            # Configuration dataclasses (NEW)
-    ├── service.py           # Top-level orchestrator (NEW)
     ├── physics/             # Layer 1: Physics simulation (NEW)
     │   ├── __init__.py
     │   └── interval_simulator.py
@@ -19,47 +17,16 @@ Architecture (NEW 3-layer design):
     │   ├── __init__.py
     │   ├── balancing.py     # Balancing cycle planning
     │   └── hybrid.py        # Mode optimization
-    ├── optimizer/           # Legacy optimizer (deprecated)
-    │   ├── __init__.py
-    │   ├── base.py
-    │   ├── hybrid.py
-    │   └── modes.py
     ├── timeline/
     │   ├── __init__.py
-    │   ├── builder.py
-    │   └── simulator.py
+    │   └── planner.py
     ├── balancing/
     │   ├── __init__.py
     │   ├── executor.py
     │   └── constraints.py
-    └── utils/
-        ├── __init__.py
-        ├── solar.py
-        ├── prices.py
-        └── consumption.py
 """
 
-# NEW: 3-layer architecture exports
-from .config import (
-    BalancingConfig,
-    ChargingStrategy,
-    ForecastServiceConfig,
-    HybridConfig,
-    NegativePriceStrategy,
-    SimulatorConfig,
-    aggressive_charging_config,
-    battery_preservation_config,
-    default_config,
-    maximum_self_consumption_config,
-)
 from .physics import IntervalResult, IntervalSimulator
-from .service import (
-    BatteryForecastService,
-    ForecastInput,
-    ForecastOutput,
-    create_service,
-    create_service_from_ha,
-)
 from .strategy import (
     BalancingPlan as BalancingPlanNew,  # Avoid conflict with types.BalancingPlan
 )
@@ -92,25 +59,6 @@ from .types import (  # Mode constants; TypedDicts; Constants; Helper functions
     is_charging_mode,
 )
 
-_HAS_HOME_ASSISTANT = True
-try:
-    from .bridge import (
-        calculate_hybrid_with_new_module,
-        calculate_timeline_with_new_module,
-        simulate_interval_with_new_module,
-        validate_bridge_compatibility,
-    )
-    from .sensor import (
-        BatteryForecastOrchestrator,
-        ForecastConfig,
-        ForecastResult,
-        calculate_battery_forecast,
-    )
-except ModuleNotFoundError as exc:
-    if exc.name != "homeassistant":
-        raise
-    _HAS_HOME_ASSISTANT = False
-
 __all__ = [
     # Mode constants
     "CBBMode",
@@ -136,17 +84,6 @@ __all__ = [
     # Helper functions
     "get_mode_name",
     "is_charging_mode",
-    # NEW: Configuration
-    "SimulatorConfig",
-    "HybridConfig",
-    "BalancingConfig",
-    "ForecastServiceConfig",
-    "NegativePriceStrategy",
-    "ChargingStrategy",
-    "default_config",
-    "aggressive_charging_config",
-    "battery_preservation_config",
-    "maximum_self_consumption_config",
     # NEW: Physics layer
     "IntervalSimulator",
     "IntervalResult",
@@ -156,24 +93,4 @@ __all__ = [
     "BalancingResult",
     "HybridStrategy",
     "HybridResult",
-    # NEW: Service layer
-    "BatteryForecastService",
-    "ForecastInput",
-    "ForecastOutput",
-    "create_service",
-    "create_service_from_ha",
 ]
-
-if _HAS_HOME_ASSISTANT:
-    __all__ += [
-        # Orchestrator
-        "BatteryForecastOrchestrator",
-        "ForecastConfig",
-        "ForecastResult",
-        "calculate_battery_forecast",
-        # Bridge (legacy compatibility)
-        "calculate_hybrid_with_new_module",
-        "calculate_timeline_with_new_module",
-        "simulate_interval_with_new_module",
-        "validate_bridge_compatibility",
-    ]
