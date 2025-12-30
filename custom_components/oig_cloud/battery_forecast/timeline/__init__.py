@@ -1,6 +1,3 @@
-"""Timeline module for battery SoC simulation and timeline building."""
+"""Timeline helpers for planner output."""
 
-from .builder import TimelineBuilder
-from .simulator import SoCSimulator
-
-__all__ = ["TimelineBuilder", "SoCSimulator"]
+__all__: list[str] = []
