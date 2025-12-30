@@ -862,7 +862,7 @@ async def async_setup_entry(  # noqa: C901
 
     if battery_prediction_enabled:
         try:
-            from .oig_cloud_battery_forecast import OigCloudBatteryForecastSensor
+            from .battery_forecast.ha_sensor import OigCloudBatteryForecastSensor
 
             battery_forecast_sensors: List[Any] = []
             if SENSOR_TYPES:
