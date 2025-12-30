@@ -53,6 +53,8 @@ SERVICE_MODE_HOME_1 = "Home 1"
 SERVICE_MODE_HOME_2 = "Home 2"
 SERVICE_MODE_HOME_3 = "Home 3"
 SERVICE_MODE_HOME_UPS = "Home UPS"
+SERVICE_MODE_HOME_5 = "Home 5"
+SERVICE_MODE_HOME_6 = "Home 6"
 
 # Mapping to Home Assistant service names
 CBB_MODE_SERVICE_MAP: Dict[int, str] = {

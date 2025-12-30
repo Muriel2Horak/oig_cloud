@@ -24,7 +24,6 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from ..api.ote_api import OteApi
 from .config import HybridConfig, SimulatorConfig
 from .input import (
     get_load_avg_for_timestamp,
@@ -32,12 +31,16 @@ from .input import (
 )
 from .adaptive_consumption import AdaptiveConsumptionHelper
 from . import auto_switch as auto_switch_module
+from . import battery_state as battery_state_module
 from . import charging_plan as charging_plan_module
 from . import detail_tabs as detail_tabs_module
 from . import mode_guard as mode_guard_module
 from . import mode_recommendations as mode_recommendations_module
+from . import load_profiles as load_profiles_module
 from . import plan_storage as plan_storage_module
+from . import pricing as pricing_module
 from . import precompute as precompute_module
+from . import solar_forecast as solar_forecast_module
 from . import unified_cost_tile as unified_cost_tile_module
 from .strategy import BalancingPlan as StrategyBalancingPlan
 from .strategy import HybridStrategy
@@ -47,11 +50,7 @@ from .timeline.planner import (
     build_planner_timeline,
 )
 from .timeline import extended as timeline_extended_module
-from .utils_common import get_tariff_for_datetime
-from ..const import (  # PHASE 3: Import DOMAIN for BalancingManager access
-    DOMAIN,
-    OTE_SPOT_PRICE_CACHE_FILE,
-)
+from ..const import DOMAIN  # PHASE 3: Import DOMAIN for BalancingManager access
 from ..physics import simulate_interval
 
 _LOGGER = logging.getLogger(__name__)
@@ -2213,184 +2212,28 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                 self._active_charging_plan = None
 
     def _get_total_battery_capacity(self) -> Optional[float]:
-        """Získat CELKOVOU kapacitu baterie z API (box_prms.p_bat → kWh).
-
-        Toto je FYZICKÁ celková kapacita baterie (0-100%).
-        """
-        if not self._hass:
-            return None
-
-        # Prefer dedicated sensor (available in both cloud and local mode)
-        installed_sensor = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
-        installed_state = self._hass.states.get(installed_sensor)
-        if installed_state and installed_state.state not in [
-            "unknown",
-            "unavailable",
-            None,
-            "",
-        ]:
-            try:
-                # Stored as Wh (Wp) → convert to kWh
-                total_kwh = float(installed_state.state) / 1000.0
-                if total_kwh > 0:
-                    return total_kwh
-            except (ValueError, TypeError):
-                pass
-
-        # Zkusit získat z PV data (box_prms.p_bat)
-        pv_data_sensor = f"sensor.oig_{self._box_id}_pv_data"
-        state = self._hass.states.get(pv_data_sensor)
-
-        if state and hasattr(state, "attributes"):
-            try:
-                pv_data = state.attributes.get("data", {})
-                if isinstance(pv_data, dict):
-                    p_bat_wp = pv_data.get("box_prms", {}).get("p_bat")
-                    if p_bat_wp:
-                        total_kwh = float(p_bat_wp) / 1000.0
-                        _LOGGER.debug(
-                            f"Total battery capacity from API: {p_bat_wp} Wp = {total_kwh:.2f} kWh"
-                        )
-                        return total_kwh
-            except (KeyError, ValueError, TypeError) as e:
-                _LOGGER.debug(f"Error reading p_bat from pv_data: {e}")
-
-        # Fallback: vypočítat z usable_battery_capacity (backwards compatibility)
-        usable_sensor = f"sensor.oig_{self._box_id}_usable_battery_capacity"
-        usable_state = self._hass.states.get(usable_sensor)
-
-        if usable_state and usable_state.state not in ["unknown", "unavailable"]:
-            try:
-                usable_kwh = float(usable_state.state)
-                total_kwh = usable_kwh / 0.8  # Usable je 80% z total
-                _LOGGER.debug(
-                    f"Total battery capacity from usable: {usable_kwh:.2f} kWh × 1.25 = {total_kwh:.2f} kWh"
-                )
-                return total_kwh
-            except (ValueError, TypeError):
-                pass
-
-        self._log_rate_limited(
-            "battery_capacity_missing",
-            "debug",
-            "Battery total capacity not available yet; waiting for sensors",
-            cooldown_s=600.0,
-        )
-        return None
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_total_battery_capacity(self)
 
     def _get_current_battery_soc_percent(self) -> Optional[float]:
-        """Získat aktuální SoC v % z API (actual.bat_c).
-
-        Toto je SKUTEČNÝ SoC% vůči celkové kapacitě (0-100%).
-        """
-        if not self._hass:
-            return None
-
-        # Hlavní sensor: batt_bat_c (Battery Percent z API)
-        soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
-        state = self._hass.states.get(soc_sensor)
-
-        if state and state.state not in ["unknown", "unavailable"]:
-            try:
-                soc_percent = float(state.state)
-                _LOGGER.debug(f"Battery SoC from API: {soc_percent:.1f}%")
-                return soc_percent
-            except (ValueError, TypeError):
-                _LOGGER.debug(f"Invalid SoC value: {state.state}")
-
-        self._log_rate_limited(
-            "battery_soc_missing",
-            "debug",
-            "Battery SoC%% not available yet; waiting for sensors",
-            cooldown_s=600.0,
-        )
-        return None
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_current_battery_soc_percent(self)
 
     def _get_current_battery_capacity(self) -> Optional[float]:
-        """Získat aktuální kapacitu baterie v kWh.
-
-        NOVÝ VÝPOČET: total_capacity × soc_percent / 100
-        (místo remaining_usable_capacity computed sensoru)
-        """
-        total = self._get_total_battery_capacity()
-        soc_percent = self._get_current_battery_soc_percent()
-        if total is None or soc_percent is None:
-            return None
-        current_kwh = total * soc_percent / 100.0
-
-        _LOGGER.debug(
-            f"Current battery capacity: {total:.2f} kWh × {soc_percent:.1f}% = {current_kwh:.2f} kWh"
-        )
-        return current_kwh
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_current_battery_capacity(self)
 
     def _get_max_battery_capacity(self) -> Optional[float]:
-        """Získat maximální kapacitu baterie (= total capacity).
-
-        DEPRECATED: Kept for backwards compatibility.
-        Use _get_total_battery_capacity() instead.
-        """
-        return self._get_total_battery_capacity()
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_max_battery_capacity(self)
 
     def _get_min_battery_capacity(self) -> Optional[float]:
-        """Získat minimální kapacitu baterie z config flow.
-
-        NOVÝ VÝPOČET: min_percent × total_capacity
-        (místo min_percent × usable_capacity)
-        """
-        total = self._get_total_battery_capacity()
-        if total is None:
-            return None
-
-        if self._config_entry:
-            min_percent = (
-                self._config_entry.options.get("min_capacity_percent")
-                if self._config_entry.options
-                else self._config_entry.data.get("min_capacity_percent", 33.0)
-            )
-            if min_percent is None:
-                min_percent = 33.0
-            min_kwh = total * float(min_percent) / 100.0
-
-            _LOGGER.debug(
-                f"Min battery capacity: {min_percent:.0f}% × {total:.2f} kWh = {min_kwh:.2f} kWh "
-                f"(source={'options' if self._config_entry.options else 'data'})"
-            )
-            return min_kwh
-
-        # Default: 33% z total
-        return total * 0.33
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_min_battery_capacity(self)
 
     def _get_target_battery_capacity(self) -> Optional[float]:
-        """Získat cílovou kapacitu baterie z config flow.
-
-        Cílová kapacita (kWh) pro plánovač.
-        """
-        total = self._get_total_battery_capacity()
-        if total is None:
-            return None
-
-        if self._config_entry:
-            target_percent = (
-                self._config_entry.options.get("target_capacity_percent")
-                if self._config_entry.options
-                else self._config_entry.data.get("target_capacity_percent", 80.0)
-            )
-            if target_percent is None:
-                target_percent = 80.0
-            target_kwh = total * float(target_percent) / 100.0
-
-            _LOGGER.debug(
-                f"Target battery capacity: {target_percent:.0f}% × {total:.2f} kWh = {target_kwh:.2f} kWh "
-                f"(source={'options' if self._config_entry.options else 'data'})"
-            )
-            return target_kwh
-
-        # Default: 80% z total
-        return total * 0.80
-
-    # =========================================================================
-    # PHASE 2.9: DAILY PLAN TRACKING - Historie vs Plán
-    # =========================================================================
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_target_battery_capacity(self)
 
     async def _maybe_fix_daily_plan(self) -> None:  # noqa: C901
         """Proxy to plan storage helpers."""
@@ -2454,8 +2297,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _schedule_precompute(self, force: bool = False) -> None:
         """Schedule precompute job with throttling."""
         precompute_module.schedule_precompute(self, force=force)
-
-
 
     async def build_timeline_extended(self) -> Dict[str, Any]:
         """
@@ -2784,598 +2625,56 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         await plan_storage_module.backfill_daily_archive_from_storage(self)
 
     def _get_battery_efficiency(self) -> float:
-        """
-        Získat aktuální efektivitu baterie z battery_efficiency sensoru.
-
-        Returns:
-            Efektivita jako desetinné číslo (0.882 pro 88.2%)
-            Fallback na 0.882 pokud sensor není k dispozici
-        """
-        if not self._hass:
-            _LOGGER.debug("HASS not available, using fallback efficiency 0.882")
-            return 0.882
-
-        sensor_id = f"sensor.oig_{self._box_id}_battery_efficiency"
-        state = self._hass.states.get(sensor_id)
-
-        if not state or state.state in ["unknown", "unavailable"]:
-            # Zakomentováno: Spamuje logy během výpočtu
-            # _LOGGER.debug(
-            #     f"Battery efficiency sensor {sensor_id} not available, using fallback 0.882"
-            # )
-            return 0.882
-
-        try:
-            # State je v %, převést na desetinné číslo
-            efficiency_pct = float(state.state)
-            efficiency = efficiency_pct / 100.0
-
-            # Sanity check
-            if efficiency < 0.70 or efficiency > 1.0:
-                _LOGGER.warning(
-                    f"Unrealistic efficiency {efficiency:.3f} ({efficiency_pct}%), using fallback 0.882"
-                )
-                return 0.882
-
-            # Zakomentováno: Spamuje logy během výpočtu
-            # _LOGGER.debug(
-            #     f"Using battery efficiency: {efficiency:.3f} ({efficiency_pct}%)"
-            # )
-            return efficiency
-
-        except (ValueError, TypeError) as e:
-            _LOGGER.error(f"Error parsing battery efficiency: {e}")
-            return 0.882
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_battery_efficiency(self)
 
     def _get_ac_charging_limit_kwh_15min(self) -> float:
-        """
-        Získat AC charging limit pro 15min interval z configu.
-
-        Config obsahuje home_charge_rate v kW (hodinový výkon).
-        Pro 15min interval: kW / 4 = kWh per 15min
-
-        Example: home_charge_rate = 2.8 kW → 0.7 kWh/15min
-
-        Returns:
-            AC charging limit v kWh pro 15min interval
-            Default: 2.8 kW → 0.7 kWh/15min
-        """
-        config = self._config_entry.options if self._config_entry else {}
-        charging_power_kw = config.get("home_charge_rate", 2.8)
-
-        # Convert kW to kWh/15min
-        limit_kwh_15min = charging_power_kw / 4.0
-
-        # Zakomentováno: Spamuje logy během výpočtu
-        # _LOGGER.debug(
-        #     f"AC charging limit: {charging_power_kw} kW → {limit_kwh_15min} kWh/15min"
-        # )
-
-        return limit_kwh_15min
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_ac_charging_limit_kwh_15min(self)
 
     def _get_current_mode(self) -> int:
-        """
-        Získat aktuální CBB režim ze sensoru.
-
-        Čte: sensor.oig_{box_id}_box_prms_mode
-
-        Returns:
-            Mode number (0=HOME I, 1=HOME II, 2=HOME III, 3=HOME UPS)
-            Default: CBB_MODE_HOME_III (2) pokud sensor není k dispozici
-        """
-        if not self._hass:
-            _LOGGER.debug("HASS not available, using fallback mode HOME III")
-            return CBB_MODE_HOME_III
-
-        sensor_id = f"sensor.oig_{self._box_id}_box_prms_mode"
-        state = self._hass.states.get(sensor_id)
-
-        if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.debug(
-                f"Mode sensor {sensor_id} not available, using fallback HOME III"
-            )
-            return CBB_MODE_HOME_III
-
-        try:
-            # Sensor může vracet buď int (0-3) nebo string ("Home 1", "Home I", ...)
-            mode_value = state.state
-
-            # Pokud je to string, převést na int
-            if isinstance(mode_value, str):
-                # Mapování string → int (podporuje obě varianty: "Home 1" i "Home I")
-                mode_map = {
-                    MODE_LABEL_HOME_I: CBB_MODE_HOME_I,
-                    MODE_LABEL_HOME_II: CBB_MODE_HOME_II,
-                    MODE_LABEL_HOME_III: CBB_MODE_HOME_III,
-                    MODE_LABEL_HOME_UPS: CBB_MODE_HOME_UPS,
-                    SERVICE_MODE_HOME_1: CBB_MODE_HOME_I,
-                    SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,
-                    SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,
-                    SERVICE_MODE_HOME_5: CBB_MODE_HOME_I,
-                    SERVICE_MODE_HOME_6: CBB_MODE_HOME_I,
-                }
-
-                if mode_value in mode_map:
-                    mode = mode_map[mode_value]
-                else:
-                    # Zkusit parse jako int
-                    mode = int(mode_value)
-            else:
-                mode = int(mode_value)
-
-            # Validate mode range; Home 5/6 map to HOME I for simulation.
-            if mode in (4, 5):
-                return CBB_MODE_HOME_I
-            if mode not in (
-                CBB_MODE_HOME_I,
-                CBB_MODE_HOME_II,
-                CBB_MODE_HOME_III,
-                CBB_MODE_HOME_UPS,
-            ):
-                _LOGGER.warning(f"Invalid mode {mode}, using fallback HOME III")
-                return CBB_MODE_HOME_III
-
-            mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
-            _LOGGER.debug(f"Current CBB mode: {mode_name} ({mode})")
-
-            return mode
-
-        except (ValueError, TypeError) as e:
-            _LOGGER.error(f"Error parsing CBB mode from '{state.state}': {e}")
-            return CBB_MODE_HOME_III
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_current_mode(self)
 
     def _get_boiler_available_capacity(self) -> float:
-        """
-        Zjistit kolik kWh může bojler přijmout v 15min intervalu.
-
-        Phase 2.5: Boiler support pro přebytkovou energii.
-
-        Pokud je boiler_is_use=on, CBB firmware automaticky směřuje přebytky do bojleru
-        až do výše boiler_install_power (kW limit).
-
-        Returns:
-            kWh capacity for 15min interval (0 pokud bojler není aktivní)
-        """
-        if not self._hass:
-            return 0.0
-
-        # Check if boiler usage is enabled
-        boiler_use_sensor = f"sensor.oig_{self._box_id}_boiler_is_use"
-        state = self._hass.states.get(boiler_use_sensor)
-
-        if not state or state.state not in ["on", "1", "true"]:
-            # Boiler not active
-            return 0.0
-
-        # Get boiler power limit (kW)
-        boiler_power_sensor = f"sensor.oig_{self._box_id}_boiler_install_power"
-        power_state = self._hass.states.get(boiler_power_sensor)
-
-        if not power_state:
-            _LOGGER.warning(
-                f"Boiler is enabled but {boiler_power_sensor} not found, using default 2.8 kW"
-            )
-            # Default to typical 2.8 kW limit (same as AC charging)
-            return 0.7  # kWh/15min
-
-        try:
-            power_kw = float(power_state.state)
-            # Convert kW to kWh/15min
-            capacity_kwh_15min = power_kw / 4.0
-
-            _LOGGER.debug(
-                f"Boiler available: {power_kw} kW → {capacity_kwh_15min} kWh/15min"
-            )
-
-            return capacity_kwh_15min
-
-        except (ValueError, TypeError) as e:
-            _LOGGER.warning(f"Error parsing boiler power: {e}, using default 0.7 kWh")
-            return 0.7  # Fallback
+        """Proxy to battery state helpers."""
+        return battery_state_module.get_boiler_available_capacity(self)
 
     def _calculate_final_spot_price(
         self, raw_spot_price: float, target_datetime: datetime
     ) -> float:
-        """
-        Vypočítat finální spotovou cenu včetně obchodní přirážky, distribuce a DPH.
-
-        KRITICKÉ: Toto je STEJNÝ výpočet jako SpotPrice15MinSensor._calculate_final_price_15min()
-        Musí zůstat synchronizovaný!
-
-        Args:
-            raw_spot_price: Čistá spotová cena z OTE (Kč/kWh, bez přirážek)
-            target_datetime: Datetime pro určení tarifu (VT/NT)
-
-        Returns:
-            Finální cena včetně obchodní přirážky, distribuce a DPH (Kč/kWh)
-        """
-        config = (
-            self._config_entry.options
-            if self._config_entry.options
-            else self._config_entry.data
+        """Proxy to pricing helpers."""
+        return pricing_module.calculate_final_spot_price(
+            self, raw_spot_price, target_datetime
         )
-
-        # Parametry z konfigurace
-        pricing_model = config.get("spot_pricing_model", "percentage")
-        positive_fee_percent = config.get("spot_positive_fee_percent", 15.0)
-        negative_fee_percent = config.get("spot_negative_fee_percent", 9.0)
-        fixed_fee_mwh = config.get("spot_fixed_fee_mwh", 0.0)
-        distribution_fee_vt_kwh = config.get("distribution_fee_vt_kwh", 1.50)
-        distribution_fee_nt_kwh = config.get("distribution_fee_nt_kwh", 1.20)
-        vat_rate = config.get("vat_rate", 21.0)
-
-        # 1. Obchodní cena (spot + přirážka)
-        if pricing_model == "percentage":
-            if raw_spot_price >= 0:
-                commercial_price = raw_spot_price * (1 + positive_fee_percent / 100.0)
-            else:
-                commercial_price = raw_spot_price * (1 - negative_fee_percent / 100.0)
-        else:  # fixed
-            fixed_fee_kwh = fixed_fee_mwh / 1000.0
-            commercial_price = raw_spot_price + fixed_fee_kwh
-
-        # 2. Tarif pro distribuci (VT/NT)
-        current_tariff = get_tariff_for_datetime(target_datetime, config)
-
-        # 3. Distribuční poplatek
-        distribution_fee = (
-            distribution_fee_vt_kwh
-            if current_tariff == "VT"
-            else distribution_fee_nt_kwh
-        )
-
-        # 4. Cena bez DPH
-        price_without_vat = commercial_price + distribution_fee
-
-        # 5. Finální cena s DPH
-        final_price = price_without_vat * (1 + vat_rate / 100.0)
-
-        return round(final_price, 2)
 
     async def _get_spot_price_timeline(self) -> List[Dict[str, Any]]:
-        """
-        Získat timeline spotových cen z coordinator data.
-
-        KRITICKÝ FIX: Vrací FINÁLNÍ ceny včetně obchodní přirážky, distribuce a DPH!
-        PŘED: Vracelo jen čistou spot price (2.29 Kč/kWh)
-        PO: Vrací finální cenu (4.51 Kč/kWh) = spot + přirážka 15% + distribuce 1.50 Kč/kWh + DPH 21%
-
-        Phase 1.5: Spot prices jsou v coordinator.data["spot_prices"], ne v sensor attributes.
-        Sensor attributes obsahují jen summary (current_price, price_min/max/avg).
-
-        Returns:
-            List of dicts: [{"time": "2025-10-28T13:15:00", "price": 4.51}, ...]
-        """
-        if not self.coordinator:
-            _LOGGER.warning("Coordinator not available in _get_spot_price_timeline")
-            # Continue with fallbacks (sensor/OTE cache) if possible.
-            spot_data = {}
-        else:
-            # Read from coordinator data (Phase 1.5 - lean attributes)
-            spot_data = self.coordinator.data.get("spot_prices", {})  # type: ignore[union-attr]
-
-        if not spot_data:
-            spot_data = self._get_spot_data_from_price_sensor(price_type="spot") or {}
-
-        if not spot_data and self._hass:
-            spot_data = await self._get_spot_data_from_ote_cache() or {}
-
-        if not spot_data:
-            _LOGGER.warning("No spot price data available for forecast")
-            return []
-
-        # spot_data format: {"prices15m_czk_kwh": {"2025-10-28T13:45:00": 2.29, ...}}
-        # Toto je ČISTÁ spotová cena BEZ přirážek, distribuce a DPH!
-        raw_prices_dict = spot_data.get("prices15m_czk_kwh", {})
-
-        if not raw_prices_dict:
-            # Coordinator payload may contain only hourly prices; try fallbacks that are known
-            # to carry 15-minute data.
-            fallback = self._get_spot_data_from_price_sensor(price_type="spot") or {}
-            if not fallback and self._hass:
-                fallback = await self._get_spot_data_from_ote_cache() or {}
-            raw_prices_dict = fallback.get("prices15m_czk_kwh", {}) if fallback else {}
-            if not raw_prices_dict:
-                _LOGGER.warning("No prices15m_czk_kwh in spot price data")
-                return []
-
-        # Convert to timeline format WITH FINAL PRICES
-        timeline = []
-        for timestamp_str, raw_spot_price in sorted(raw_prices_dict.items()):
-            try:
-                # Validate and parse timestamp
-                target_datetime = datetime.fromisoformat(timestamp_str)
-
-                # KRITICKÝ FIX: Vypočítat FINÁLNÍ cenu včetně přirážky, distribuce a DPH
-                final_price = self._calculate_final_spot_price(
-                    raw_spot_price, target_datetime
-                )
-
-                timeline.append({"time": timestamp_str, "price": final_price})
-
-            except ValueError:
-                _LOGGER.warning(f"Invalid timestamp in spot prices: {timestamp_str}")
-                continue
-
-        _LOGGER.info(
-            f"Successfully loaded {len(timeline)} spot price points from coordinator "
-            f"(converted from raw spot to final price with distribution + VAT)"
-        )
-        return timeline
+        """Proxy to pricing helpers."""
+        return await pricing_module.get_spot_price_timeline(self)
 
     async def _get_export_price_timeline(self) -> List[Dict[str, Any]]:
-        """Získat timeline prodejních cen z coordinator data (Phase 1.5).
-
-        Export prices také v coordinator.data["spot_prices"], protože OTE API vrací obě ceny.
-        Sensor attributes obsahují jen summary (current_price, price_min/max/avg).
-
-        Returns:
-            List of dicts: [{"time": "2025-10-28T13:15:00", "price": 2.5}, ...]
-        """
-        if not self.coordinator:
-            _LOGGER.warning("Coordinator not available in _get_export_price_timeline")
-            spot_data = {}
-        else:
-            spot_data = self.coordinator.data.get("spot_prices", {})  # type: ignore[union-attr]
-
-        # Prefer coordinator, then sensor internals, then OTE cache.
-        if not spot_data:
-            spot_data = self._get_spot_data_from_price_sensor(price_type="export") or {}
-        if not spot_data:
-            spot_data = self._get_spot_data_from_price_sensor(price_type="spot") or {}
-        if not spot_data and self._hass:
-            spot_data = await self._get_spot_data_from_ote_cache() or {}
-
-        if not spot_data:
-            _LOGGER.warning("No spot price data available for export timeline")
-            return []
-
-        # Export prices jsou v "export_prices15m_czk_kwh" klíči (stejný formát jako spot)
-        # Pokud klíč neexistuje, zkusíme alternativní způsob výpočtu
-        export_prices_dict = spot_data.get("export_prices15m_czk_kwh", {})
-
-        if not export_prices_dict:
-            # Fallback: Vypočítat z spot prices podle config (percentage model)
-            _LOGGER.info("No direct export prices, calculating from spot prices")
-            spot_prices_dict = spot_data.get("prices15m_czk_kwh", {})
-
-            if not spot_prices_dict:
-                # Coordinator payload may carry only hourly prices; try 15m fallbacks.
-                fallback = (
-                    self._get_spot_data_from_price_sensor(price_type="spot") or {}
-                )
-                if not fallback and self._hass:
-                    fallback = await self._get_spot_data_from_ote_cache() or {}
-                spot_prices_dict = (
-                    fallback.get("prices15m_czk_kwh", {})
-                    if isinstance(fallback, dict)
-                    else {}
-                )
-                if not spot_prices_dict:
-                    _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
-                    return []
-
-            # Get export pricing config from coordinator
-            config_entry = self.coordinator.config_entry if self.coordinator else None
-            config = config_entry.options if config_entry else {}
-            export_model = config.get("export_pricing_model", "percentage")
-            export_fee = config.get("export_fee_percent", 15.0)
-
-            # Calculate export prices (spot price * (1 - fee/100))
-            export_prices_dict = {}
-            for timestamp_str, spot_price in spot_prices_dict.items():
-                if export_model == "percentage":
-                    export_price = spot_price * (1 - export_fee / 100)
-                else:
-                    # Fixed fee model
-                    export_price = max(0, spot_price - export_fee)
-                export_prices_dict[timestamp_str] = export_price
-
-        # Convert to timeline format
-        timeline = []
-        for timestamp_str, price in sorted(export_prices_dict.items()):
-            try:
-                # Validate timestamp
-                datetime.fromisoformat(timestamp_str)
-                timeline.append({"time": timestamp_str, "price": price})
-            except ValueError:
-                _LOGGER.warning(f"Invalid timestamp in export prices: {timestamp_str}")
-                continue
-
-        _LOGGER.info(
-            f"Successfully loaded {len(timeline)} export price points from coordinator"
-        )
-        return timeline
+        """Proxy to pricing helpers."""
+        return await pricing_module.get_export_price_timeline(self)
 
     def _get_spot_data_from_price_sensor(
         self, *, price_type: str
     ) -> Optional[Dict[str, Any]]:
-        """Read internal 15min spot data from the spot/export price sensor entity.
-
-        This is a robust fallback when coordinator doesn't carry spot_prices (e.g. pricing disabled).
-        """
-        hass = self._hass
-        if not hass:
-            return None
-
-        if price_type == "export":
-            sensor_id = f"sensor.oig_{self._box_id}_export_price_current_15min"
-        else:
-            sensor_id = f"sensor.oig_{self._box_id}_spot_price_current_15min"
-
-        try:
-            component = None
-            # HA 2024+: entity_components registry
-            entity_components = (
-                hass.data.get("entity_components")
-                if isinstance(hass.data, dict)
-                else None
-            )
-            if isinstance(entity_components, dict):
-                component = entity_components.get("sensor")
-
-            # Legacy fallback
-            if component is None:
-                component = (
-                    hass.data.get("sensor") if isinstance(hass.data, dict) else None
-                )
-
-            entity_obj = None
-            if component is not None:
-                get_entity = getattr(component, "get_entity", None)
-                if callable(get_entity):
-                    entity_obj = get_entity(sensor_id)
-
-            if entity_obj is None and component is not None:
-                entities = getattr(component, "entities", None)
-                if isinstance(entities, list):
-                    for ent in entities:
-                        if getattr(ent, "entity_id", None) == sensor_id:
-                            entity_obj = ent
-                            break
-
-            if entity_obj is None:
-                return None
-
-            spot_data = getattr(entity_obj, "_spot_data_15min", None)
-            if isinstance(spot_data, dict) and spot_data:
-                return spot_data
-        except Exception as err:
-            _LOGGER.debug("Failed to read spot data from %s: %s", sensor_id, err)
-
-        return None
-
-    async def _get_spot_data_from_ote_cache(self) -> Optional[Dict[str, Any]]:
-        """Fallback: load spot prices via OTE cache (shared `.storage` file)."""
-        hass = self._hass
-        if not hass:
-            return None
-        try:
-            cache_path = hass.config.path(".storage", OTE_SPOT_PRICE_CACHE_FILE)
-            ote = OteApi(cache_path=cache_path)
-            try:
-                await ote.async_load_cached_spot_prices()
-                data = await ote.get_spot_prices()
-                return data if isinstance(data, dict) and data else None
-            finally:
-                await ote.close()
-        except Exception as err:
-            _LOGGER.debug("Failed to load OTE spot prices from cache: %s", err)
-            return None
-
-    def _get_solar_forecast(self) -> Dict[str, Any]:
-        """Získat solární předpověď z solar_forecast senzoru."""
-        if not self._hass:
-            return {}
-
-        # If solar forecast feature is disabled, don't warn/log.
-        if not (
-            self._config_entry
-            and self._config_entry.options.get("enable_solar_forecast", False)
-        ):
-            return {}
-
-        sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
-        state = self._hass.states.get(sensor_id)
-
-        if not state:
-            # Entity may not be registered yet during startup.
-            # Fallback: use coordinator cached solar_forecast_data restored from storage.
-            cached = getattr(self.coordinator, "solar_forecast_data", None)
-            total_hourly = (
-                cached.get("total_hourly") if isinstance(cached, dict) else None
-            )
-            if isinstance(total_hourly, dict) and total_hourly:
-                today = dt_util.now().date()
-                tomorrow = today + timedelta(days=1)
-                today_total: Dict[str, float] = {}
-                tomorrow_total: Dict[str, float] = {}
-                for hour_str, watts in total_hourly.items():
-                    try:
-                        hour_dt = datetime.fromisoformat(hour_str)
-                        kw = round(float(watts) / 1000.0, 2)
-                        if hour_dt.date() == today:
-                            today_total[hour_str] = kw
-                        elif hour_dt.date() == tomorrow:
-                            tomorrow_total[hour_str] = kw
-                    except Exception:  # nosec B112
-                        continue
-                self._log_rate_limited(
-                    "solar_forecast_fallback",
-                    "debug",
-                    "Solar forecast entity missing; using coordinator cached data (%s)",
-                    sensor_id,
-                    cooldown_s=900.0,
-                )
-                return {"today": today_total, "tomorrow": tomorrow_total}
-
-            self._log_rate_limited(
-                "solar_forecast_missing",
-                "debug",
-                "Solar forecast sensor not found yet: %s",
-                sensor_id,
-                cooldown_s=900.0,
-            )
-            return {}
-
-        if not state.attributes:
-            self._log_rate_limited(
-                "solar_forecast_no_attrs",
-                "debug",
-                "Solar forecast sensor has no attributes yet: %s",
-                sensor_id,
-                cooldown_s=900.0,
-            )
-            return {}
-
-        # Načíst today a tomorrow data (správné názvy atributů)
-        today = state.attributes.get("today_hourly_total_kw", {})
-        tomorrow = state.attributes.get("tomorrow_hourly_total_kw", {})
-
-        self._log_rate_limited(
-            "solar_forecast_loaded",
-            "debug",
-            "Solar forecast loaded: today=%d tomorrow=%d (%s)",
-            len(today) if isinstance(today, dict) else 0,
-            len(tomorrow) if isinstance(tomorrow, dict) else 0,
-            sensor_id,
-            cooldown_s=1800.0,
+        """Proxy to pricing helpers."""
+        return pricing_module.get_spot_data_from_price_sensor(
+            self, price_type=price_type
         )
 
-        return {"today": today, "tomorrow": tomorrow}
+    async def _get_spot_data_from_ote_cache(self) -> Optional[Dict[str, Any]]:
+        """Proxy to pricing helpers."""
+        return await pricing_module.get_spot_data_from_ote_cache(self)
+
+    def _get_solar_forecast(self) -> Dict[str, Any]:
+        """Proxy to solar forecast helpers."""
+        return solar_forecast_module.get_solar_forecast(self)
 
     def _get_solar_forecast_strings(self) -> Dict[str, Any]:
-        """
-        Získat solární předpověď pro String1 a String2 samostatně.
-
-        Returns:
-            Dict ve formátu:
-            {
-                "today_string1_kw": {"2025-11-09T07:00:00": 0.5, ...},
-                "today_string2_kw": {"2025-11-09T07:00:00": 0.3, ...},
-                "tomorrow_string1_kw": {...},
-                "tomorrow_string2_kw": {...}
-            }
-        """
-        if not self._hass:
-            return {}
-
-        sensor_id = f"sensor.oig_{self._box_id}_solar_forecast"
-        state = self._hass.states.get(sensor_id)
-
-        if not state or not state.attributes:
-            return {}
-
-        return {
-            "today_string1_kw": state.attributes.get("today_hourly_string1_kw", {}),
-            "today_string2_kw": state.attributes.get("today_hourly_string2_kw", {}),
-            "tomorrow_string1_kw": state.attributes.get(
-                "tomorrow_hourly_string1_kw", {}
-            ),
-            "tomorrow_string2_kw": state.attributes.get(
-                "tomorrow_hourly_string2_kw", {}
-            ),
-        }
+        """Proxy to solar forecast helpers."""
+        return solar_forecast_module.get_solar_forecast_strings(self)
 
     def _get_balancing_plan(self) -> Optional[Dict[str, Any]]:
         """Získat plán balancování z battery_balancing senzoru."""
@@ -3472,84 +2771,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             }
 
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
-        """
-        Získat všechny load_avg senzory pro box.
-
-        Používá PŘÍMO konfiguraci ze SENSOR_TYPES_STATISTICS místo hledání v atributech.
-        Mapuje entity_id na tuple (start_hour, end_hour, day_type).
-
-        Returns:
-            Dict[entity_id] = {
-                "value": float,
-                "time_range": (start_hour, end_hour),  # tuple!
-                "day_type": "weekday" | "weekend"
-            }
-        """
-        if not self._hass:
-            _LOGGER.warning("_get_load_avg_sensors: hass not available")
-            return {}
-
-        from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
-
-        load_sensors = {}
-
-        # Projít všechny load_avg senzory z konfigurace
-        for sensor_type, config in SENSOR_TYPES_STATISTICS.items():
-            # Hledat jen load_avg_* senzory
-            if not sensor_type.startswith("load_avg_"):
-                continue
-
-            # Zkontrolovat jestli má time_range a day_type v konfiguraci
-            if "time_range" not in config or "day_type" not in config:
-                continue
-
-            # Sestavit entity_id
-            entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-
-            # Získat stav senzoru
-            state = self._hass.states.get(entity_id)
-            if not state:
-                _LOGGER.debug(f"Sensor {entity_id} not found in HA")
-                continue
-
-            if state.state in ["unknown", "unavailable"]:
-                _LOGGER.debug(f"Sensor {entity_id} is {state.state}")
-                continue
-
-            # Parsovat hodnotu
-            try:
-                value = float(state.state)
-            except (ValueError, TypeError) as e:
-                _LOGGER.warning(
-                    f"Failed to parse {entity_id} value '{state.state}': {e}"
-                )
-                continue
-
-            # Uložit s time_range jako TUPLE (ne string!)
-            time_range = config["time_range"]  # (6, 8)
-            day_type = config["day_type"]  # "weekday" | "weekend"
-
-            load_sensors[entity_id] = {
-                "value": value,
-                "time_range": time_range,  # TUPLE!
-                "day_type": day_type,
-            }
-
-        _LOGGER.info(f"Found {len(load_sensors)} valid load_avg sensors")
-        if load_sensors:
-            # Log prvního senzoru pro debugging
-            first_id = next(iter(load_sensors))
-            first = load_sensors[first_id]
-            _LOGGER.info(
-                f"Example: {first_id}, value={first['value']}W, "
-                f"range={first['time_range']}, day={first['day_type']}"
-            )
-
-        return load_sensors
-
-    # ========================================================================
-    # GRID CHARGING OPTIMIZATION METHODS
-    # ========================================================================
+        """Proxy to load profile helpers."""
+        return load_profiles_module.get_load_avg_sensors(self)
 
     def _economic_charging_plan(
         self,
