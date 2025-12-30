@@ -42,6 +42,7 @@ from . import precompute as precompute_module
 from . import solar_forecast as solar_forecast_module
 from . import unified_cost_tile as unified_cost_tile_module
 from . import scenario_analysis as scenario_analysis_module
+from . import interval_grouping as interval_grouping_module
 from .strategy import BalancingPlan as StrategyBalancingPlan
 from .strategy import HybridStrategy
 from .timeline.planner import (
@@ -1849,160 +1850,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _group_intervals_by_mode(
         self, intervals: List[Dict[str, Any]], data_type: str = "both"
     ) -> List[Dict[str, Any]]:
-        """
-        Seskupit intervaly podle režimu do časových bloků.
-
-        Args:
-            intervals: Seznam intervalů
-            data_type: "completed" (má actual), "planned" (jen plan), "both" (oboje)
-
-        Returns:
-            Seznam skupin [{mode, start_time, end_time, interval_count, costs...}]
-        """
-        if not intervals:
-            return []
-
-        groups = []
-        current_group = None
-
-        for interval in intervals:
-            # Skip None intervals
-            if interval is None:
-                continue
-
-            # Určit režim podle data_type
-            if data_type == "completed":
-                actual = interval.get("actual") or {}
-                planned = interval.get("planned") or {}
-                actual_mode = actual.get("mode")
-                planned_mode = planned.get("mode")
-                # Pro completed: použít actual mode, fallback na planned
-                if actual_mode is not None:
-                    mode = actual_mode
-                elif planned_mode is not None:
-                    mode = planned_mode
-                else:
-                    mode = "Unknown"
-                # Log prvních 3 intervalů pro debug
-                if len(groups) < 3:
-                    _LOGGER.info(
-                        f"[_group_intervals_by_mode] COMPLETED: time={interval.get('time', '?')[:16]}, "
-                        f"actual_mode={actual_mode}, planned_mode={planned_mode}, final_mode={mode}, "
-                        f"has_actual={bool(actual)}"
-                    )
-            elif data_type == "planned":
-                planned = interval.get("planned") or {}
-                mode = planned.get("mode", "Unknown")
-            else:  # both - priorita actual, fallback na planned
-                actual = interval.get("actual") or {}
-                planned = interval.get("planned") or {}
-                # POZOR: 0 je validní mode, nesmíme použít simple `or`!
-                actual_mode = actual.get("mode")
-                planned_mode = planned.get("mode")
-                if actual_mode is not None:
-                    mode = actual_mode
-                elif planned_mode is not None:
-                    mode = planned_mode
-                else:
-                    mode = "Unknown"
-                _LOGGER.debug(
-                    f"[_group_intervals_by_mode] data_type=both: "
-                    f"actual_mode={actual_mode}, planned_mode={planned_mode}, final_mode={mode}"
-                )
-
-            # Převést mode ID na jméno (mode může být int nebo string)
-            if isinstance(mode, int):
-                mode = CBB_MODE_NAMES.get(mode, f"Mode {mode}")
-            elif mode != "Unknown":
-                mode = str(mode).strip()
-
-            # Fallback pokud je mode prázdný
-            if not mode or mode == "":
-                mode = "Unknown"
-
-            # Nová skupina nebo pokračování?
-            if not current_group or current_group["mode"] != mode:
-                current_group = {
-                    "mode": mode,
-                    "start_time": interval.get("time", ""),
-                    "end_time": interval.get("time", ""),
-                    "intervals": [interval],
-                }
-                groups.append(current_group)
-            else:
-                current_group["intervals"].append(interval)
-                current_group["end_time"] = interval.get("time", "")
-
-        # Agregovat náklady pro každou skupinu
-        for group in groups:
-            interval_count = len(group["intervals"])
-            group["interval_count"] = interval_count
-
-            if data_type in ["completed", "both"]:
-                # Actual cost POUZE z intervalů, které už nastaly (mají actual data)
-                actual_cost = sum(
-                    iv.get("actual", {}).get("net_cost", 0)
-                    for iv in group["intervals"]
-                    if iv.get("actual") is not None
-                )
-                planned_cost = sum(
-                    (iv.get("planned") or {}).get("net_cost", 0)
-                    for iv in group["intervals"]
-                )
-                actual_savings = sum(
-                    iv.get("actual", {}).get("savings_vs_home_i", 0)
-                    for iv in group["intervals"]
-                    if iv.get("actual") is not None
-                )
-                planned_savings = sum(
-                    (iv.get("planned") or {}).get("savings_vs_home_i", 0)
-                    for iv in group["intervals"]
-                )
-                delta = actual_cost - planned_cost
-                delta_pct = (delta / planned_cost * 100) if planned_cost > 0 else 0.0
-
-                group["actual_cost"] = round(actual_cost, 2)
-                group["planned_cost"] = round(planned_cost, 2)
-                group["actual_savings"] = round(actual_savings, 2)
-                group["planned_savings"] = round(planned_savings, 2)
-                group["delta"] = round(delta, 2)
-                group["delta_pct"] = round(delta_pct, 1)
-
-            if data_type == "planned":
-                # Jen plánovaná data
-                planned_cost = sum(
-                    (iv.get("planned") or {}).get("net_cost", 0)
-                    for iv in group["intervals"]
-                )
-                planned_savings = sum(
-                    (iv.get("planned") or {}).get("savings_vs_home_i", 0)
-                    for iv in group["intervals"]
-                )
-                group["planned_cost"] = round(planned_cost, 2)
-                group["planned_savings"] = round(planned_savings, 2)
-
-            # Formátovat časy
-            if group["start_time"]:
-                try:
-                    start_dt = datetime.fromisoformat(group["start_time"])
-                    group["start_time"] = start_dt.strftime("%H:%M")
-                except Exception:  # nosec B110
-                    pass
-
-            if group["end_time"]:
-                try:
-                    end_dt = datetime.fromisoformat(group["end_time"])
-                    # Přidat 15 minut pro konec intervalu
-                    end_dt = end_dt + timedelta(minutes=15)
-                    group["end_time"] = end_dt.strftime("%H:%M")
-                except Exception:  # nosec B110
-                    pass
-
-            # PHASE 3.0: KEEP intervals for Detail Tabs API
-            # Původně se mazaly pro úsporu paměti, ale Detail Tabs je potřebuje
-            # del group["intervals"]
-
-        return groups
+        """Proxy to interval grouping helpers."""
+        return interval_grouping_module.group_intervals_by_mode(
+            intervals, data_type=data_type, mode_names=CBB_MODE_NAMES
+        )
 
     async def _backfill_daily_archive_from_storage(self) -> None:
         """Proxy to plan storage helpers."""
