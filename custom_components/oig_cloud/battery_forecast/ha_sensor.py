@@ -1,9 +1,7 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
 import asyncio
-import copy
 import logging
-import time
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
@@ -14,15 +12,14 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from . import auto_switch as auto_switch_module
+from . import balancing_helpers as balancing_helpers_module
 from . import battery_state as battery_state_module
-from . import charging_plan as charging_plan_module
+from . import charging_helpers as charging_helpers_module
 from . import detail_tabs as detail_tabs_module
 from . import mode_recommendations as mode_recommendations_module
 from . import load_profiles as load_profiles_module
@@ -36,7 +33,17 @@ from . import interval_grouping as interval_grouping_module
 from . import state_attributes as state_attributes_module
 from . import forecast_update as forecast_update_module
 from . import sensor_lifecycle as sensor_lifecycle_module
+from . import plan_tabs as plan_tabs_module
+from . import sensor_runtime as sensor_runtime_module
+from . import task_utils as task_utils_module
 from .timeline import extended as timeline_extended_module
+from .types import (
+    CBB_MODE_HOME_I,
+    CBB_MODE_HOME_II,
+    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_UPS,
+    CBB_MODE_NAMES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,78 +52,14 @@ AUTO_SWITCH_STARTUP_DELAY = timedelta(seconds=0)
 
 
 # CBB 3F Home Plus Premium - Mode Constants (Phase 2)
-# Mode definitions from sensor.oig_{box_id}_box_prms_mode
-CBB_MODE_HOME_I = 0  # Grid priority (cheap mode)
-CBB_MODE_HOME_II = 1  # Battery priority
-CBB_MODE_HOME_III = 2  # Solar priority (default)
-CBB_MODE_HOME_UPS = 3  # UPS mode (AC charging enabled)
-#
-# Note: The box also supports "Home 5" and "Home 6". We do not simulate these
-# modes; when they appear in history/current state, we map them to HOME I.
-
-# Mode names for display
-CBB_MODE_NAMES = {
-    CBB_MODE_HOME_I: "HOME I",
-    CBB_MODE_HOME_II: "HOME II",
-    CBB_MODE_HOME_III: "HOME III",
-    CBB_MODE_HOME_UPS: "HOME UPS",
-}
-
-# Mode transition costs (energy loss + time delay)
-MODE_LABEL_HOME_I = "Home I"
-MODE_LABEL_HOME_II = "Home II"
-MODE_LABEL_HOME_III = "Home III"
-MODE_LABEL_HOME_UPS = "Home UPS"
-
-SERVICE_MODE_HOME_1 = "Home 1"
-SERVICE_MODE_HOME_2 = "Home 2"
-SERVICE_MODE_HOME_3 = "Home 3"
-SERVICE_MODE_HOME_UPS = "Home UPS"
-SERVICE_MODE_HOME_5 = "Home 5"
-SERVICE_MODE_HOME_6 = "Home 6"
+# NOTE: Mode constants moved to battery_forecast.types.
 
 DATE_FMT = "%Y-%m-%d"
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
 ISO_TZ_OFFSET = "+00:00"
 
-TRANSITION_COSTS = {
-    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS): {
-        "energy_loss_kwh": 0.05,  # Energy loss when switching to UPS
-        "time_delay_intervals": 1,  # Delay in 15-min intervals
-    },
-    (MODE_LABEL_HOME_UPS, MODE_LABEL_HOME_I): {
-        "energy_loss_kwh": 0.02,  # Energy loss when switching from UPS
-        "time_delay_intervals": 0,
-    },
-    (MODE_LABEL_HOME_I, MODE_LABEL_HOME_II): {
-        "energy_loss_kwh": 0.0,  # No loss between Home modes
-        "time_delay_intervals": 0,
-    },
-    (MODE_LABEL_HOME_II, MODE_LABEL_HOME_I): {
-        "energy_loss_kwh": 0.0,
-        "time_delay_intervals": 0,
-    },
-}
-
-# Minimum mode duration (in 15-min intervals)
-MIN_MODE_DURATION = {
-    MODE_LABEL_HOME_UPS: 2,  # UPS must run at least 30 minutes (2×15min)
-    MODE_LABEL_HOME_I: 1,
-    MODE_LABEL_HOME_II: 1,
-}
-
 # Stabilizační guard po změně režimu (v minutách)
 MODE_GUARD_MINUTES = 60
-
-CBB_MODE_SERVICE_MAP = {
-    CBB_MODE_HOME_I: SERVICE_MODE_HOME_1,
-    CBB_MODE_HOME_II: SERVICE_MODE_HOME_2,
-    CBB_MODE_HOME_III: SERVICE_MODE_HOME_3,
-    CBB_MODE_HOME_UPS: SERVICE_MODE_HOME_UPS,
-}
-
-# AC Charging - modes where charging is DISABLED (only solar DC/DC allowed)
-AC_CHARGING_DISABLED_MODES = [CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III]
 
 # NOTE: AC charging limit and efficiency are now read from:
 # - Config: home_charge_rate (kW) - user configured max charging power
@@ -301,15 +244,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         *args: Any,
         cooldown_s: float = 300.0,
     ) -> None:
-        """Log at most once per cooldown_s for a given key."""
-        now_ts = time.time()
-        last = self._log_last_ts.get(key, 0.0)
-        if now_ts - last < cooldown_s:
-            return
-        self._log_last_ts[key] = now_ts
-        logger = getattr(_LOGGER, level, None)
-        if callable(logger):
-            logger(message, *args)
+        """Proxy to runtime helpers."""
+        sensor_runtime_module.log_rate_limited(
+            self, _LOGGER, key, level, message, *args, cooldown_s=cooldown_s
+        )
 
     async def async_added_to_hass(self) -> None:  # noqa: C901
         """Proxy to lifecycle helpers."""
@@ -319,18 +257,12 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
-        auto_switch_module.cancel_auto_switch_schedule(self)
-        auto_switch_module.stop_auto_switch_watchdog(self)
+        sensor_runtime_module.handle_will_remove(self)
         await super().async_will_remove_from_hass()
 
     def _get_config(self) -> Dict[str, Any]:
-        """Return config dict from config entry (options preferred, then data)."""
-        if not self._config_entry:
-            return {}
-        options = getattr(self._config_entry, "options", None)
-        if options:
-            return options
-        return self._config_entry.data or {}
+        """Proxy to runtime helpers."""
+        return sensor_runtime_module.get_config(self)
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update.
@@ -341,7 +273,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Manuálně přes service call
         """
         # Jen zavolat parent pro refresh HA state (rychlé)
-        super()._handle_coordinator_update()
+        sensor_runtime_module.handle_coordinator_update(self)
 
     @property
     def device_info(self) -> Optional[Dict[str, Any]]:
@@ -358,14 +290,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Returns:
             Current battery capacity (kWh) or 0 if no data
         """
-        if self._timeline_data and len(self._timeline_data) > 0:
-            # Try new format first (battery_soc from HYBRID)
-            capacity = self._timeline_data[0].get("battery_soc")
-            if capacity is None:
-                # Fallback: old format (battery_capacity_kwh)
-                capacity = self._timeline_data[0].get("battery_capacity_kwh", 0)
-            return round(capacity, 2)
-        return 0
+        return sensor_runtime_module.get_state(self)
 
     @property
     def available(self) -> bool:
@@ -375,11 +300,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         Sensor should always be available if it has run at least once (has timeline data).
         """
         # If we have timeline data from successful calculation, sensor is available
-        if hasattr(self, "_timeline_data") and self._timeline_data:
-            return True
-
-        # Otherwise use coordinator availability
-        return super().available
+        return sensor_runtime_module.is_available(self)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -571,25 +492,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         )
 
     def _update_balancing_plan_snapshot(self, plan: Optional[Dict[str, Any]]) -> None:
-        """Keep BalancingManager plan snapshot in sync with legacy plan handling."""
-
-        def _is_balancing_requester(requester: Optional[str]) -> bool:
-            if not requester:
-                return False
-            return requester.lower() in {"balancingmanager", "balancing_manager"}
-
-        self._balancing_plan_snapshot = plan
-
-        if plan:
-            if not self._active_charging_plan or _is_balancing_requester(
-                self._active_charging_plan.get("requester")
-            ):
-                self._active_charging_plan = plan
-        else:
-            if self._active_charging_plan and _is_balancing_requester(
-                self._active_charging_plan.get("requester")
-            ):
-                self._active_charging_plan = None
+        """Proxy to balancing helpers."""
+        balancing_helpers_module.update_balancing_plan_snapshot(self, plan)
 
     def _get_total_battery_capacity(self) -> Optional[float]:
         """Proxy to battery state helpers."""
@@ -719,87 +623,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         primary_plan: str,
         secondary_plan: str,
     ) -> Dict[str, Any]:
-        """Attach metadata and optional comparison blocks to plan tabs."""
-
-        result: Dict[str, Any] = {}
-
-        for key, tab_data in primary_tabs.items():
-            tab_copy = {
-                "date": tab_data.get("date"),
-                "mode_blocks": copy.deepcopy(tab_data.get("mode_blocks", [])),
-                "summary": copy.deepcopy(tab_data.get("summary", {})),
-                "intervals": copy.deepcopy(tab_data.get("intervals", [])),
-            }
-
-            metadata = tab_data.get("metadata", {}).copy()
-            metadata["active_plan"] = primary_plan
-            metadata["comparison_plan_available"] = (
-                secondary_plan if secondary_tabs.get(key) else None
-            )
-            tab_copy["metadata"] = metadata
-
-            comparison_source = secondary_tabs.get(key)
-            if comparison_source:
-                has_current = any(
-                    block.get("status") == "current"
-                    for block in tab_copy.get("mode_blocks", [])
-                )
-                if not has_current:
-                    comparison_blocks = [
-                        block
-                        for block in comparison_source.get("mode_blocks", [])
-                        if block.get("status") in ("current", "planned")
-                    ]
-                    if comparison_blocks:
-                        tab_copy["comparison"] = {
-                            "plan": secondary_plan,
-                            "mode_blocks": comparison_blocks,
-                        }
-
-            result[key] = tab_copy
-
-        return result
+        """Proxy to plan tab helpers."""
+        return plan_tabs_module.decorate_plan_tabs(
+            primary_tabs, secondary_tabs, primary_plan, secondary_plan
+        )
 
     def _schedule_forecast_retry(self, delay_seconds: float) -> None:
-        if not self._hass or delay_seconds <= 0:
-            return
-        if self._forecast_retry_unsub:
-            return
-
-        def _retry(now: datetime) -> None:
-            self._forecast_retry_unsub = None
-            self._create_task_threadsafe(self.async_update)
-
-        self._forecast_retry_unsub = async_call_later(self._hass, delay_seconds, _retry)
+        """Proxy to task helpers."""
+        task_utils_module.schedule_forecast_retry(self, delay_seconds)
 
     def _create_task_threadsafe(self, coro_func, *args) -> None:
-        """Create an HA task safely from any thread without leaking an un-awaited coroutine."""
-        hass = getattr(self, "_hass", None) or getattr(self, "hass", None)
-        if not hass:
-            return
-
-        def _runner() -> None:
-            try:
-                hass.async_create_task(coro_func(*args))
-            except Exception as err:  # pragma: no cover - defensive
-                _LOGGER.debug(
-                    "Failed to schedule task %s: %s",
-                    getattr(coro_func, "__name__", str(coro_func)),
-                    err,
-                )
-
-        try:
-            loop = hass.loop
-            try:
-                running = asyncio.get_running_loop()
-            except RuntimeError:
-                running = None
-            if running is loop:
-                _runner()
-            else:
-                loop.call_soon_threadsafe(_runner)
-        except Exception:  # pragma: no cover - defensive
-            _runner()
+        """Proxy to task helpers."""
+        task_utils_module.create_task_threadsafe(self, coro_func, *args)
 
     async def build_unified_cost_tile(self) -> Dict[str, Any]:
         """
@@ -907,30 +742,8 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         return solar_forecast_module.get_solar_forecast_strings(self)
 
     def _get_balancing_plan(self) -> Optional[Dict[str, Any]]:
-        """Získat plán balancování z battery_balancing senzoru."""
-        if not self._hass:
-            return None
-
-        sensor_id = f"sensor.oig_{self._box_id}_battery_balancing"
-        state = self._hass.states.get(sensor_id)
-
-        if not state or not state.attributes:
-            _LOGGER.debug(f"Battery balancing sensor {sensor_id} not available")
-            return None
-
-        # Načíst planned window z atributů
-        planned = state.attributes.get("planned")
-
-        if not planned:
-            _LOGGER.debug("No balancing window planned")
-            return None
-
-        _LOGGER.info(
-            f"Balancing plan: {planned.get('reason')} from {planned.get('holding_start')} "
-            f"to {planned.get('holding_end')}"
-        )
-
-        return planned
+        """Proxy to balancing helpers."""
+        return balancing_helpers_module.get_balancing_plan(self)
 
     async def plan_balancing(
         self,
@@ -939,66 +752,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         target_soc: float,
         mode: str,
     ) -> Dict[str, Any]:
-        """
-        Vypočítat balancing plán pro požadované okno.
-
-        KRITICKÉ - HLAVNÍ METODA PRO BALANCING:
-        - Balancing řekne: "Chci nabít na 100% od 00:00 do 03:00"
-        - Forecast vypočítá: "Ano/ne můžu" + vrátí skutečné intervaly
-
-        Args:
-            requested_start: Požadovaný start okna
-            requested_end: Požadovaný konec okna
-            target_soc: Cílový SoC (100% pro balancing)
-            mode: "forced" | "opportunistic"
-
-        Returns:
-            {
-                "can_do": bool,
-                "charging_intervals": [...],  # ISO timestampy
-                "actual_holding_start": str,
-                "actual_holding_end": str,
-                "reason": str,
-            }
-        """
-        try:
-            _LOGGER.info(
-                f"📋 Balancing REQUEST: {mode}, "
-                f"window={requested_start.strftime('%H:%M')}-{requested_end.strftime('%H:%M')}, "
-                f"target={target_soc}%"
-            )
-
-            # TODO: IMPLEMENTOVAT FYZIKU
-            # 1. Zjistit aktuální SoC
-            # 2. Vypočítat kolik energie potřebuju (target_soc - current_soc)
-            # 3. Zjistit spotřebu během okna z profilu
-            # 4. Vypočítat charging_intervals aby dosáhl target_soc
-            # 5. Vypočítat actual_holding_start/end (kdy začne držet 100%)
-
-            # DOČASNĚ: Vždycky vrať "můžu" s celým oknem
-            charging_intervals = []
-            current = requested_start
-            while current < requested_end:
-                charging_intervals.append(current.isoformat())
-                current += timedelta(minutes=15)
-
-            return {
-                "can_do": True,
-                "charging_intervals": charging_intervals,
-                "actual_holding_start": requested_start.isoformat(),
-                "actual_holding_end": requested_end.isoformat(),
-                "reason": "Temporary implementation - always accepts",
-            }
-
-        except Exception as e:
-            _LOGGER.error(f"❌ Failed to plan balancing: {e}", exc_info=True)
-            return {
-                "can_do": False,
-                "charging_intervals": [],
-                "actual_holding_start": None,
-                "actual_holding_end": None,
-                "reason": f"Error: {e}",
-            }
+        """Proxy to balancing helpers."""
+        return await balancing_helpers_module.plan_balancing(
+            self, requested_start, requested_end, target_soc, mode
+        )
 
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """Proxy to load profile helpers."""
@@ -1022,16 +779,11 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         weather_target_soc_percent: float,
         target_reason: str = "default",
     ) -> List[Dict[str, Any]]:
-        """Ekonomický plán nabíjení s forward simulací."""
-        config = self._config_entry.options or self._config_entry.data
-        min_capacity_percent = config.get("min_capacity_percent", 20.0)
-        min_capacity_floor = (min_capacity_percent / 100.0) * max_capacity
-        efficiency = self._get_battery_efficiency()
-
-        timeline, metrics = charging_plan_module.economic_charging_plan(
+        """Proxy to charging helpers."""
+        return charging_helpers_module.economic_charging_plan(
+            self,
             timeline_data=timeline_data,
             min_capacity_kwh=min_capacity_kwh,
-            min_capacity_floor=min_capacity_floor,
             effective_minimum_kwh=effective_minimum_kwh,
             target_capacity_kwh=target_capacity_kwh,
             max_charging_price=max_charging_price,
@@ -1044,17 +796,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             enable_weather_risk=enable_weather_risk,
             weather_risk_level=weather_risk_level,
             weather_target_soc_percent=weather_target_soc_percent,
-            target_reason=target_reason,
-            battery_efficiency=efficiency,
-            config=config,
             iso_tz_offset=ISO_TZ_OFFSET,
-            mode_label_home_ups=MODE_LABEL_HOME_UPS,
-            mode_label_home_i=MODE_LABEL_HOME_I,
+            target_reason=target_reason,
         )
-        if metrics:
-            self._charging_metrics = metrics
-
-        return timeline
 
     def _smart_charging_plan(
         self,
@@ -1066,8 +810,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         charging_power_kw: float,
         max_capacity: float,
     ) -> List[Dict[str, Any]]:
-        """Chytrý plán nabíjení - vybírá nejlevnější intervaly."""
-        timeline_result, metrics = charging_plan_module.smart_charging_plan(
+        """Proxy to charging helpers."""
+        return charging_helpers_module.smart_charging_plan(
+            self,
             timeline=timeline,
             min_capacity=min_capacity,
             target_capacity=target_capacity,
@@ -1075,11 +820,4 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             price_threshold=price_threshold,
             charging_power_kw=charging_power_kw,
             max_capacity=max_capacity,
-            efficiency=self._get_battery_efficiency(),
-            mode_label_home_ups=MODE_LABEL_HOME_UPS,
-            mode_label_home_i=MODE_LABEL_HOME_I,
         )
-        if metrics:
-            self._charging_metrics = metrics
-
-        return timeline_result
