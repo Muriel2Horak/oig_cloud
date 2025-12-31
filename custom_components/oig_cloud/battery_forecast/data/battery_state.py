@@ -24,6 +24,58 @@ from ..types import (
 
 _LOGGER = logging.getLogger(__name__)
 
+INVALID_STATES = {"unknown", "unavailable", None, ""}
+
+
+def _read_state_float(
+    sensor: Any, entity_id: str, *, scale: float = 1.0
+) -> Optional[float]:
+    if not sensor._hass:
+        return None
+    state = sensor._hass.states.get(entity_id)
+    if not state or state.state in INVALID_STATES:
+        return None
+    try:
+        return float(state.state) / scale
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_capacity_from_pv_data(sensor: Any) -> Optional[float]:
+    pv_data_sensor = f"sensor.oig_{sensor._box_id}_pv_data"
+    state = sensor._hass.states.get(pv_data_sensor) if sensor._hass else None
+    if not state or not hasattr(state, "attributes"):
+        return None
+    try:
+        pv_data = state.attributes.get("data", {})
+        if isinstance(pv_data, dict):
+            p_bat_wp = pv_data.get("box_prms", {}).get("p_bat")
+            if p_bat_wp:
+                total_kwh = float(p_bat_wp) / 1000.0
+                _LOGGER.debug(
+                    "Total battery capacity from API: %s Wp = %.2f kWh",
+                    p_bat_wp,
+                    total_kwh,
+                )
+                return total_kwh
+    except (KeyError, ValueError, TypeError) as err:
+        _LOGGER.debug("Error reading p_bat from pv_data: %s", err)
+    return None
+
+
+def _get_capacity_from_usable(sensor: Any) -> Optional[float]:
+    usable_sensor = f"sensor.oig_{sensor._box_id}_usable_battery_capacity"
+    usable_kwh = _read_state_float(sensor, usable_sensor, scale=1.0)
+    if usable_kwh is None:
+        return None
+    total_kwh = usable_kwh / 0.8
+    _LOGGER.debug(
+        "Total battery capacity from usable: %.2f kWh -> %.2f kWh",
+        usable_kwh,
+        total_kwh,
+    )
+    return total_kwh
+
 
 def get_total_battery_capacity(sensor: Any) -> Optional[float]:
     """Return total battery capacity in kWh."""
@@ -31,54 +83,17 @@ def get_total_battery_capacity(sensor: Any) -> Optional[float]:
         return None
 
     installed_sensor = f"sensor.oig_{sensor._box_id}_installed_battery_capacity_kwh"
-    installed_state = sensor._hass.states.get(installed_sensor)
-    if installed_state and installed_state.state not in [
-        "unknown",
-        "unavailable",
-        None,
-        "",
-    ]:
-        try:
-            total_kwh = float(installed_state.state) / 1000.0
-            if total_kwh > 0:
-                return total_kwh
-        except (ValueError, TypeError):
-            pass
+    total_kwh = _read_state_float(sensor, installed_sensor, scale=1000.0)
+    if total_kwh and total_kwh > 0:
+        return total_kwh
 
-    pv_data_sensor = f"sensor.oig_{sensor._box_id}_pv_data"
-    state = sensor._hass.states.get(pv_data_sensor)
+    total_kwh = _get_capacity_from_pv_data(sensor)
+    if total_kwh is not None:
+        return total_kwh
 
-    if state and hasattr(state, "attributes"):
-        try:
-            pv_data = state.attributes.get("data", {})
-            if isinstance(pv_data, dict):
-                p_bat_wp = pv_data.get("box_prms", {}).get("p_bat")
-                if p_bat_wp:
-                    total_kwh = float(p_bat_wp) / 1000.0
-                    _LOGGER.debug(
-                        "Total battery capacity from API: %s Wp = %.2f kWh",
-                        p_bat_wp,
-                        total_kwh,
-                    )
-                    return total_kwh
-        except (KeyError, ValueError, TypeError) as err:
-            _LOGGER.debug("Error reading p_bat from pv_data: %s", err)
-
-    usable_sensor = f"sensor.oig_{sensor._box_id}_usable_battery_capacity"
-    usable_state = sensor._hass.states.get(usable_sensor)
-
-    if usable_state and usable_state.state not in ["unknown", "unavailable"]:
-        try:
-            usable_kwh = float(usable_state.state)
-            total_kwh = usable_kwh / 0.8
-            _LOGGER.debug(
-                "Total battery capacity from usable: %.2f kWh -> %.2f kWh",
-                usable_kwh,
-                total_kwh,
-            )
-            return total_kwh
-        except (ValueError, TypeError):
-            pass
+    total_kwh = _get_capacity_from_usable(sensor)
+    if total_kwh is not None:
+        return total_kwh
 
     sensor._log_rate_limited(
         "battery_capacity_missing",
@@ -95,15 +110,10 @@ def get_current_battery_soc_percent(sensor: Any) -> Optional[float]:
         return None
 
     soc_sensor = f"sensor.oig_{sensor._box_id}_batt_bat_c"
-    state = sensor._hass.states.get(soc_sensor)
-
-    if state and state.state not in ["unknown", "unavailable"]:
-        try:
-            soc_percent = float(state.state)
-            _LOGGER.debug("Battery SOC from API: %.1f%%", soc_percent)
-            return soc_percent
-        except (ValueError, TypeError):
-            _LOGGER.debug("Invalid SOC value: %s", state.state)
+    soc_percent = _read_state_float(sensor, soc_sensor, scale=1.0)
+    if soc_percent is not None:
+        _LOGGER.debug("Battery SOC from API: %.1f%%", soc_percent)
+        return soc_percent
 
     sensor._log_rate_limited(
         "battery_soc_missing",

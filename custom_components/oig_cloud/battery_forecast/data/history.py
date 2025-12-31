@@ -23,8 +23,236 @@ from ..types import (
 
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
 DATE_FMT = "%Y-%m-%d"
+LOG_DATETIME_FMT = "%Y-%m-%d %H:%M"
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _as_utc(dt_value: datetime) -> datetime:
+    return dt_value.astimezone(timezone.utc) if dt_value.tzinfo else dt_value
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_history_entity_ids(box_id: str) -> list[str]:
+    return [
+        f"sensor.oig_{box_id}_ac_out_en_day",
+        f"sensor.oig_{box_id}_ac_in_ac_ad",
+        f"sensor.oig_{box_id}_ac_in_ac_pd",
+        f"sensor.oig_{box_id}_dc_in_fv_ad",
+        f"sensor.oig_{box_id}_batt_bat_c",
+        f"sensor.oig_{box_id}_box_prms_mode",
+        f"sensor.oig_{box_id}_spot_price_current_15min",
+        f"sensor.oig_{box_id}_export_price_current_15min",
+    ]
+
+
+def _select_interval_states(
+    entity_states: list[Any], start_time: datetime, end_time: datetime
+) -> list[Any]:
+    if not entity_states:
+        return []
+
+    start_utc = _as_utc(start_time)
+    end_utc = _as_utc(end_time)
+
+    interval_states = [
+        s
+        for s in entity_states
+        if start_utc <= s.last_updated.astimezone(timezone.utc) <= end_utc
+    ]
+    if interval_states:
+        return interval_states
+
+    before_states = [
+        s for s in entity_states if s.last_updated.astimezone(timezone.utc) < start_utc
+    ]
+    after_states = [
+        s for s in entity_states if s.last_updated.astimezone(timezone.utc) > end_utc
+    ]
+    if before_states and after_states:
+        return [before_states[-1], after_states[0]]
+    return []
+
+
+def _calc_delta_kwh(
+    entity_states: list[Any], start_time: datetime, end_time: datetime
+) -> float:
+    interval_states = _select_interval_states(entity_states, start_time, end_time)
+    if len(interval_states) < 2:
+        return 0.0
+
+    start_val = _safe_float(interval_states[0].state)
+    end_val = _safe_float(interval_states[-1].state)
+    if start_val is None or end_val is None:
+        return 0.0
+
+    delta_wh = end_val - start_val
+    if delta_wh < 0:
+        delta_wh = end_val
+    return delta_wh / 1000.0
+
+
+def _get_value_at_end(entity_states: list[Any], end_time: datetime) -> Any:
+    if not entity_states:
+        return None
+
+    end_utc = _as_utc(end_time)
+    closest_state = min(
+        entity_states,
+        key=lambda s: abs(
+            (s.last_updated.astimezone(timezone.utc) - end_utc).total_seconds()
+        ),
+    )
+    return closest_state.state
+
+
+def _get_last_value(entity_states: list[Any]) -> Any:
+    if not entity_states:
+        return None
+    return entity_states[-1].state
+
+
+def _parse_interval_start(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    start_dt = dt_util.parse_datetime(ts)
+    if start_dt is None:
+        try:
+            start_dt = datetime.fromisoformat(ts)
+        except Exception:
+            return None
+    if start_dt.tzinfo is None:
+        start_dt = dt_util.as_local(start_dt)
+    return start_dt
+
+
+def _build_actual_interval_entry(
+    interval_time: datetime, actual_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    return {
+        "time": interval_time.isoformat(),
+        "solar_kwh": round(actual_data.get("solar_kwh", 0), 4),
+        "consumption_kwh": round(actual_data.get("consumption_kwh", 0), 4),
+        "battery_soc": round(actual_data.get("battery_soc", 0), 2),
+        "battery_capacity_kwh": round(actual_data.get("battery_capacity_kwh", 0), 2),
+        "grid_import_kwh": round(actual_data.get("grid_import", 0), 4),
+        "grid_export_kwh": round(actual_data.get("grid_export", 0), 4),
+        "net_cost": round(actual_data.get("net_cost", 0), 2),
+        "spot_price": round(actual_data.get("spot_price", 0), 2),
+        "export_price": round(actual_data.get("export_price", 0), 2),
+        "mode": actual_data.get("mode", 0),
+        "mode_name": actual_data.get("mode_name", "N/A"),
+    }
+
+
+async def _patch_existing_actual(
+    sensor: Any, existing_actual: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    patched_existing: List[Dict[str, Any]] = []
+    for interval in existing_actual:
+        if interval.get("net_cost") is not None:
+            patched_existing.append(interval)
+            continue
+        start_dt = _parse_interval_start(interval.get("time"))
+        if start_dt is None:
+            patched_existing.append(interval)
+            continue
+        interval_end = start_dt + timedelta(minutes=15)
+        historical_patch = await fetch_interval_from_history(
+            sensor, start_dt, interval_end
+        )
+        if historical_patch:
+            interval = {
+                **interval,
+                "net_cost": round(historical_patch.get("net_cost", 0), 2),
+                "spot_price": round(historical_patch.get("spot_price", 0), 2),
+                "export_price": round(historical_patch.get("export_price", 0), 2),
+            }
+        patched_existing.append(interval)
+    return patched_existing
+
+
+async def _build_new_actual_intervals(
+    sensor: Any,
+    start_time: datetime,
+    now: datetime,
+    existing_times: set[str],
+) -> List[Dict[str, Any]]:
+    current_time = start_time
+    new_intervals: List[Dict[str, Any]] = []
+
+    while current_time <= now:
+        interval_time_str = current_time.isoformat()
+        if interval_time_str in existing_times:
+            current_time += timedelta(minutes=15)
+            continue
+
+        actual_data = await fetch_interval_from_history(
+            sensor, current_time, current_time + timedelta(minutes=15)
+        )
+        if actual_data:
+            new_intervals.append(
+                _build_actual_interval_entry(current_time, actual_data)
+            )
+
+        current_time += timedelta(minutes=15)
+    return new_intervals
+
+
+def _normalize_mode_history(mode_history: List[Dict[str, Any]]) -> list[dict[str, Any]]:
+    mode_changes: list[dict[str, Any]] = []
+    for mode_entry in mode_history:
+        time_key = mode_entry.get("time", "")
+        if not time_key:
+            continue
+        try:
+            dt_value = datetime.fromisoformat(time_key)
+            if dt_value.tzinfo is None:
+                dt_value = dt_util.as_local(dt_value)
+        except Exception:  # nosec B112
+            continue
+        mode_changes.append(
+            {
+                "time": dt_value,
+                "mode": mode_entry.get("mode"),
+                "mode_name": mode_entry.get("mode_name"),
+            }
+        )
+    mode_changes.sort(key=lambda x: x["time"])
+    return mode_changes
+
+
+def _expand_modes_to_intervals(
+    mode_changes: list[dict[str, Any]],
+    day_start: datetime,
+    fetch_end: datetime,
+) -> Dict[str, Dict[str, Any]]:
+    historical_modes_lookup: Dict[str, Dict[str, Any]] = {}
+    interval_time = day_start
+    while interval_time <= fetch_end:
+        active_mode = None
+        for change in mode_changes:
+            if change["time"] <= interval_time:
+                active_mode = change
+            else:
+                break
+
+        if active_mode:
+            interval_time_str = interval_time.strftime(DATETIME_FMT)
+            historical_modes_lookup[interval_time_str] = {
+                "time": interval_time_str,
+                "mode": active_mode["mode"],
+                "mode_name": active_mode["mode_name"],
+            }
+
+        interval_time += timedelta(minutes=15)
+    return historical_modes_lookup
 
 
 async def fetch_interval_from_history(  # noqa: C901
@@ -50,16 +278,7 @@ async def fetch_interval_from_history(  # noqa: C901
         from homeassistant.components.recorder.history import get_significant_states
 
         box_id = sensor._box_id  # pylint: disable=protected-access
-        entity_ids = [
-            f"sensor.oig_{box_id}_ac_out_en_day",
-            f"sensor.oig_{box_id}_ac_in_ac_ad",
-            f"sensor.oig_{box_id}_ac_in_ac_pd",
-            f"sensor.oig_{box_id}_dc_in_fv_ad",
-            f"sensor.oig_{box_id}_batt_bat_c",
-            f"sensor.oig_{box_id}_box_prms_mode",
-            f"sensor.oig_{box_id}_spot_price_current_15min",
-            f"sensor.oig_{box_id}_export_price_current_15min",
-        ]
+        entity_ids = _build_history_entity_ids(box_id)
 
         states = await sensor._hass.async_add_executor_job(  # pylint: disable=protected-access
             get_significant_states,
@@ -74,86 +293,28 @@ async def fetch_interval_from_history(  # noqa: C901
         if not states:
             return None
 
-        def get_delta(entity_id: str) -> float:
-            entity_states = states.get(entity_id, [])
-            if not entity_states:
-                return 0.0
+        def _states(entity_id: str) -> list[Any]:
+            return states.get(entity_id, [])
 
-            start_utc = (
-                start_time.astimezone(timezone.utc) if start_time.tzinfo else start_time
-            )
-            end_utc = end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
+        consumption_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_ac_out_en_day"), start_time, end_time
+        )
+        grid_import_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_ac_in_ac_ad"), start_time, end_time
+        )
+        grid_export_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_ac_in_ac_pd"), start_time, end_time
+        )
+        solar_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_dc_in_fv_ad"), start_time, end_time
+        )
 
-            interval_states = [
-                s
-                for s in entity_states
-                if start_utc <= s.last_updated.astimezone(timezone.utc) <= end_utc
-            ]
-
-            if not interval_states:
-                before_states = [
-                    s
-                    for s in entity_states
-                    if s.last_updated.astimezone(timezone.utc) < start_utc
-                ]
-                after_states = [
-                    s
-                    for s in entity_states
-                    if s.last_updated.astimezone(timezone.utc) > end_utc
-                ]
-                if before_states and after_states:
-                    interval_states = [before_states[-1], after_states[0]]
-                else:
-                    return 0.0
-
-            if len(interval_states) < 2:
-                return 0.0
-
-            try:
-                start_val = float(interval_states[0].state)
-                end_val = float(interval_states[-1].state)
-                delta_wh = end_val - start_val
-                if delta_wh < 0:
-                    delta_wh = end_val
-                return delta_wh / 1000.0
-            except (ValueError, AttributeError):
-                return 0.0
-
-        def get_value_at_end(entity_id: str) -> Any:
-            entity_states = states.get(entity_id, [])
-            if not entity_states:
-                return None
-
-            end_utc = end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
-
-            closest_state = min(
-                entity_states,
-                key=lambda s: abs(
-                    (s.last_updated.astimezone(timezone.utc) - end_utc).total_seconds()
-                ),
-            )
-
-            try:
-                return float(closest_state.state)
-            except (ValueError, AttributeError):
-                return None
-
-        def get_last_value(entity_id: str) -> Any:
-            entity_states = states.get(entity_id, [])
-            if not entity_states:
-                return None
-            try:
-                return float(entity_states[-1].state)
-            except (ValueError, AttributeError):
-                return None
-
-        consumption_kwh = get_delta(f"sensor.oig_{box_id}_ac_out_en_day")
-        grid_import_kwh = get_delta(f"sensor.oig_{box_id}_ac_in_ac_ad")
-        grid_export_kwh = get_delta(f"sensor.oig_{box_id}_ac_in_ac_pd")
-        solar_kwh = get_delta(f"sensor.oig_{box_id}_dc_in_fv_ad")
-
-        battery_soc = get_value_at_end(f"sensor.oig_{box_id}_batt_bat_c")
-        mode_raw = get_value_at_end(f"sensor.oig_{box_id}_box_prms_mode")
+        battery_soc = _safe_float(
+            _get_value_at_end(_states(f"sensor.oig_{box_id}_batt_bat_c"), end_time)
+        )
+        mode_raw = _get_value_at_end(
+            _states(f"sensor.oig_{box_id}_box_prms_mode"), end_time
+        )
 
         battery_kwh = 0.0
         if battery_soc is not None:
@@ -164,29 +325,31 @@ async def fetch_interval_from_history(  # noqa: C901
                 battery_kwh = (battery_soc / 100.0) * total_capacity
 
         spot_price = (
-            get_last_value(f"sensor.oig_{box_id}_spot_price_current_15min") or 0.0
+            _safe_float(
+                _get_last_value(
+                    _states(f"sensor.oig_{box_id}_spot_price_current_15min")
+                )
+            )
+            or 0.0
         )
         export_price = (
-            get_last_value(f"sensor.oig_{box_id}_export_price_current_15min") or 0.0
+            _safe_float(
+                _get_last_value(
+                    _states(f"sensor.oig_{box_id}_export_price_current_15min")
+                )
+            )
+            or 0.0
         )
 
         import_cost = grid_import_kwh * spot_price
         export_revenue = grid_export_kwh * export_price
         net_cost = import_cost - export_revenue
 
-        mode = CBB_MODE_HOME_I
-        if mode_raw is not None:
-            mode_str = str(mode_raw).strip()
-            if SERVICE_MODE_HOME_1 in mode_str or "HOME I" in mode_str:
-                mode = CBB_MODE_HOME_I
-            elif SERVICE_MODE_HOME_3 in mode_str or "HOME III" in mode_str:
-                mode = CBB_MODE_HOME_III
-            elif "UPS" in mode_str or SERVICE_MODE_HOME_UPS in mode_str:
-                mode = CBB_MODE_HOME_UPS
-            elif SERVICE_MODE_HOME_2 in mode_str or "HOME II" in mode_str:
-                mode = CBB_MODE_HOME_II
-            elif "HOME 5" in mode_str or "HOME 6" in mode_str:
-                mode = CBB_MODE_HOME_I
+        mode = (
+            map_mode_name_to_id(str(mode_raw))
+            if mode_raw is not None
+            else CBB_MODE_HOME_I
+        )
 
         mode_name = CBB_MODE_NAMES.get(mode, "HOME I")
 
@@ -209,7 +372,7 @@ async def fetch_interval_from_history(  # noqa: C901
                 "fetch_interval_sample",
                 "debug",
                 "[fetch_interval_from_history] sample %s -> soc=%s kwh=%.2f cons=%.3f net=%.2f",
-                start_time.strftime("%Y-%m-%d %H:%M"),
+                start_time.strftime(LOG_DATETIME_FMT),
                 battery_soc,
                 battery_kwh,
                 result["consumption_kwh"],
@@ -242,7 +405,6 @@ async def update_actual_from_history(sensor: Any) -> None:
         "actual": [],
     }
 
-    existing_actual: List[Dict[str, Any]] = []
     if (
         sensor._daily_plan_state and sensor._daily_plan_state.get("date") == today_str
     ):  # pylint: disable=protected-access
@@ -255,39 +417,7 @@ async def update_actual_from_history(sensor: Any) -> None:
 
     _LOGGER.info("📊 Updating actual values from history for %s...", today_str)
 
-    patched_existing: List[Dict[str, Any]] = []
-    for interval in existing_actual:
-        if interval.get("net_cost") is not None:
-            patched_existing.append(interval)
-            continue
-        ts = interval.get("time")
-        if not ts:
-            patched_existing.append(interval)
-            continue
-        start_dt = dt_util.parse_datetime(ts)
-        if start_dt is None:
-            try:
-                start_dt = datetime.fromisoformat(ts)
-            except Exception:
-                start_dt = None
-        if start_dt is None:
-            patched_existing.append(interval)
-            continue
-        if start_dt.tzinfo is None:
-            start_dt = dt_util.as_local(start_dt)
-        interval_end = start_dt + timedelta(minutes=15)
-        historical_patch = await fetch_interval_from_history(
-            sensor, start_dt, interval_end
-        )
-        if historical_patch:
-            interval = {
-                **interval,
-                "net_cost": round(historical_patch.get("net_cost", 0), 2),
-                "spot_price": round(historical_patch.get("spot_price", 0), 2),
-                "export_price": round(historical_patch.get("export_price", 0), 2),
-            }
-        patched_existing.append(interval)
-    existing_actual = patched_existing
+    existing_actual = await _patch_existing_actual(sensor, existing_actual)
     plan_data["actual"] = existing_actual
 
     existing_times = {interval.get("time") for interval in existing_actual}
@@ -295,41 +425,9 @@ async def update_actual_from_history(sensor: Any) -> None:
     _LOGGER.debug("Found %s existing actual intervals", len(existing_actual))
 
     start_time = dt_util.start_of_local_day(now)
-    current_time = start_time
-    new_intervals = []
-
-    while current_time <= now:
-        interval_time_str = current_time.isoformat()
-
-        if interval_time_str in existing_times:
-            current_time += timedelta(minutes=15)
-            continue
-
-        actual_data = await fetch_interval_from_history(
-            sensor, current_time, current_time + timedelta(minutes=15)
-        )
-
-        if actual_data:
-            new_intervals.append(
-                {
-                    "time": interval_time_str,
-                    "solar_kwh": round(actual_data.get("solar_kwh", 0), 4),
-                    "consumption_kwh": round(actual_data.get("consumption_kwh", 0), 4),
-                    "battery_soc": round(actual_data.get("battery_soc", 0), 2),
-                    "battery_capacity_kwh": round(
-                        actual_data.get("battery_capacity_kwh", 0), 2
-                    ),
-                    "grid_import_kwh": round(actual_data.get("grid_import", 0), 4),
-                    "grid_export_kwh": round(actual_data.get("grid_export", 0), 4),
-                    "net_cost": round(actual_data.get("net_cost", 0), 2),
-                    "spot_price": round(actual_data.get("spot_price", 0), 2),
-                    "export_price": round(actual_data.get("export_price", 0), 2),
-                    "mode": actual_data.get("mode", 0),
-                    "mode_name": actual_data.get("mode_name", "N/A"),
-                }
-            )
-
-        current_time += timedelta(minutes=15)
+    new_intervals = await _build_new_actual_intervals(
+        sensor, start_time, now, existing_times
+    )
 
     if new_intervals:
         plan_data["actual"] = existing_actual + new_intervals
@@ -403,8 +501,8 @@ async def fetch_mode_history_from_recorder(
             "📊 Fetched %s mode changes from Recorder for %s (%s - %s)",
             len(mode_intervals),
             sensor_id,
-            start_time.strftime("%Y-%m-%d %H:%M"),
-            end_time.strftime("%Y-%m-%d %H:%M"),
+            start_time.strftime(LOG_DATETIME_FMT),
+            end_time.strftime(LOG_DATETIME_FMT),
         )
 
         return mode_intervals
@@ -457,47 +555,10 @@ async def build_historical_modes_lookup(
         return {}
 
     mode_history = await fetch_mode_history_from_recorder(sensor, day_start, fetch_end)
-
-    mode_changes: list[dict[str, Any]] = []
-    for mode_entry in mode_history:
-        time_key = mode_entry.get("time", "")
-        if not time_key:
-            continue
-        try:
-            dt = datetime.fromisoformat(time_key)
-            if dt.tzinfo is None:
-                dt = dt_util.as_local(dt)
-            mode_changes.append(
-                {
-                    "time": dt,
-                    "mode": mode_entry.get("mode"),
-                    "mode_name": mode_entry.get("mode_name"),
-                }
-            )
-        except Exception:  # nosec B112
-            continue
-
-    mode_changes.sort(key=lambda x: x["time"])
-
-    historical_modes_lookup: Dict[str, Dict[str, Any]] = {}
-    interval_time = day_start
-    while interval_time <= fetch_end:
-        active_mode = None
-        for change in mode_changes:
-            if change["time"] <= interval_time:
-                active_mode = change
-            else:
-                break
-
-        if active_mode:
-            interval_time_str = interval_time.strftime(DATETIME_FMT)
-            historical_modes_lookup[interval_time_str] = {
-                "time": interval_time_str,
-                "mode": active_mode["mode"],
-                "mode_name": active_mode["mode_name"],
-            }
-
-        interval_time += timedelta(minutes=15)
+    mode_changes = _normalize_mode_history(mode_history)
+    historical_modes_lookup = _expand_modes_to_intervals(
+        mode_changes, day_start, fetch_end
+    )
 
     _LOGGER.debug(
         "📊 Loaded %s historical mode intervals from Recorder for %s (%s) "

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+
+UNKNOWN_PROFILE_LABEL = "Neznámý profil"
+NO_PROFILE_LABEL = "Žádný profil"
+SEASON_NAMES = {
+    "winter": "zimní",
+    "spring": "jarní",
+    "summer": "letní",
+    "autumn": "podzimní",
+}
+SIMILARITY_PARENS_RE = re.compile(r"\([^)]*(podobn|shoda)[^)]*\)", re.IGNORECASE)
 
 
 class AdaptiveConsumptionHelper:
@@ -26,6 +37,144 @@ class AdaptiveConsumptionHelper:
         self._box_id = box_id
         self._iso_tz_offset = iso_tz_offset
 
+    @staticmethod
+    def _strip_similarity_parens(value: str) -> str:
+        return SIMILARITY_PARENS_RE.sub("", value)
+
+    @classmethod
+    def _normalize_profile_name(cls, raw_name: Any) -> str:
+        cleaned = cls._strip_similarity_parens(str(raw_name)).strip()
+        if not cleaned:
+            cleaned = str(raw_name).strip()
+        return " ".join(cleaned.split())
+
+    @staticmethod
+    def _get_season_label(season: str) -> str:
+        return SEASON_NAMES.get(season, season)
+
+    @staticmethod
+    def _sum_profile_hours(hourly: Any, start_hour: int, start: int, end: int) -> float:
+        total = 0.0
+        if isinstance(hourly, list):
+            for hour in range(start, end):
+                index = hour - start_hour
+                if 0 <= index < len(hourly):
+                    total += hourly[index]
+        elif isinstance(hourly, dict):
+            for hour in range(start, end):
+                total += hourly.get(hour, 0.0)
+        return total
+
+    @classmethod
+    def _build_profile_suffix(
+        cls, profile: Dict[str, Any], ui: Dict[str, Any]
+    ) -> List[str]:
+        characteristics = profile.get("characteristics", {})
+        season_cz = cls._get_season_label(characteristics.get("season", ""))
+
+        day_count = ui.get("sample_count", profile.get("sample_count", 0))
+        try:
+            day_count_val = int(day_count) if day_count is not None else 0
+        except (TypeError, ValueError):
+            day_count_val = 0
+
+        similarity_score = ui.get("similarity_score")
+        try:
+            similarity_val = (
+                float(similarity_score) if similarity_score is not None else None
+            )
+        except (TypeError, ValueError):
+            similarity_val = None
+
+        suffix_parts: List[str] = []
+        if season_cz:
+            suffix_parts.append(str(season_cz))
+        if day_count_val > 0:
+            suffix_parts.append(f"{day_count_val} dnů")
+        if similarity_val is not None:
+            suffix_parts.append(f"shoda {similarity_val:.2f}")
+        return suffix_parts
+
+    @classmethod
+    def _build_dashboard_profile_details(
+        cls, today_profile: Dict[str, Any], match_score: float
+    ) -> str:
+        season_cz = cls._get_season_label(today_profile.get("season", ""))
+        day_count = today_profile.get("day_count", 0)
+
+        parts: List[str] = []
+        if season_cz:
+            parts.append(season_cz)
+        if day_count:
+            parts.append(f"{day_count} podobných dnů")
+
+        details = ", ".join(parts)
+        if match_score > 0:
+            score_text = f"{int(match_score)}% shoda"
+            return f"{details} • {score_text}" if details else score_text
+        return details
+
+    @staticmethod
+    def _calculate_charging_cost_today(
+        timeline_data: List[Dict[str, Any]],
+        today_date: datetime.date,
+        iso_tz_offset: str,
+    ) -> float:
+        total = 0.0
+        for entry in timeline_data:
+            timestamp_str = entry.get("timestamp")
+            if not timestamp_str:
+                continue
+            try:
+                entry_dt = datetime.fromisoformat(
+                    timestamp_str.replace("Z", iso_tz_offset)
+                )
+            except (ValueError, AttributeError):
+                continue
+            if entry_dt.date() != today_date:
+                continue
+            charging_kwh = entry.get("charging_kwh", 0)
+            spot_price = entry.get("spot_price_czk_per_kwh", 0)
+            if charging_kwh > 0 and spot_price > 0:
+                total += charging_kwh * spot_price
+        return total
+
+    @staticmethod
+    def _season_for_month(month: int) -> str:
+        if month in {12, 1, 2}:
+            return "winter"
+        if month in {3, 4, 5}:
+            return "spring"
+        if month in {6, 7, 8}:
+            return "summer"
+        return "autumn"
+
+    @staticmethod
+    def _transition_type(today_weekday: int, tomorrow_weekday: int) -> Optional[str]:
+        if today_weekday == 4 and tomorrow_weekday == 5:
+            return "friday_to_saturday"
+        if today_weekday == 6 and tomorrow_weekday == 0:
+            return "sunday_to_monday"
+        return None
+
+    @staticmethod
+    def _select_profile_by_prefix(
+        profiles: Dict[str, Any], prefix: str, *, prefer_typical: bool
+    ) -> Optional[Dict[str, Any]]:
+        best_match = None
+        for profile_id, profile in profiles.items():
+            if not profile_id.startswith(prefix):
+                continue
+            if not prefer_typical:
+                return profile
+            if (
+                not best_match
+                or "_typical" in profile_id
+                or len(profile_id.split("_")) == 2
+            ):
+                best_match = profile
+        return best_match
+
     def calculate_consumption_summary(
         self, adaptive_profiles: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -36,38 +185,19 @@ class AdaptiveConsumptionHelper:
         today_profile = adaptive_profiles.get("today_profile")
         current_hour = datetime.now().hour
         planned_today = 0.0
-
         if today_profile and isinstance(today_profile, dict):
             hourly = today_profile.get("hourly_consumption", [])
             start_hour = today_profile.get("start_hour", 0)
-
-            if isinstance(hourly, list):
-                for hour in range(current_hour, 24):
-                    index = hour - start_hour
-                    if 0 <= index < len(hourly):
-                        planned_today += hourly[index]
-            elif isinstance(hourly, dict):
-                for hour in range(current_hour, 24):
-                    planned_today += hourly.get(hour, 0.0)
+            planned_today = self._sum_profile_hours(
+                hourly, start_hour, current_hour, 24
+            )
 
         tomorrow_profile = adaptive_profiles.get("tomorrow_profile")
         planned_tomorrow = 0.0
-
         if tomorrow_profile and isinstance(tomorrow_profile, dict):
             hourly = tomorrow_profile.get("hourly_consumption", [])
             start_hour = tomorrow_profile.get("start_hour", 0)
-
-            if isinstance(hourly, list):
-                planned_tomorrow = sum(
-                    (
-                        hourly[h - start_hour]
-                        if 0 <= (h - start_hour) < len(hourly)
-                        else 0.0
-                    )
-                    for h in range(24)
-                )
-            elif isinstance(hourly, dict):
-                planned_tomorrow = sum(hourly.get(h, 0.0) for h in range(24))
+            planned_tomorrow = self._sum_profile_hours(hourly, start_hour, 0, 24)
 
         profile_today_text = self.format_profile_description(today_profile)
         profile_tomorrow_text = self.format_profile_description(tomorrow_profile)
@@ -89,65 +219,13 @@ class AdaptiveConsumptionHelper:
     def format_profile_description(profile: Optional[Dict[str, Any]]) -> str:
         """Vrátí lidsky čitelný popis profilu."""
         if not profile or not isinstance(profile, dict):
-            return "Žádný profil"
+            return NO_PROFILE_LABEL
 
         ui = profile.get("ui", {})
-        raw_name = ui.get("name", "Neznámý profil") or "Neznámý profil"
+        raw_name = ui.get("name", UNKNOWN_PROFILE_LABEL) or UNKNOWN_PROFILE_LABEL
+        cleaned_name = AdaptiveConsumptionHelper._normalize_profile_name(raw_name)
 
-        def _strip_similarity_parens(value: str) -> str:
-            out_chars: List[str] = []
-            i = 0
-            while i < len(value):
-                if value[i] == "(":
-                    end = value.find(")", i + 1)
-                    if end != -1:
-                        segment = value[i + 1 : end].lower()
-                        if "podobn" in segment or "shoda" in segment:
-                            while out_chars and out_chars[-1].isspace():
-                                out_chars.pop()
-                            i = end + 1
-                            continue
-                out_chars.append(value[i])
-                i += 1
-            return "".join(out_chars)
-
-        cleaned_name = _strip_similarity_parens(str(raw_name)).strip()
-        if not cleaned_name:
-            cleaned_name = str(raw_name).strip()
-        cleaned_name = " ".join(cleaned_name.split())
-
-        characteristics = profile.get("characteristics", {})
-        season = characteristics.get("season", "")
-
-        day_count = ui.get("sample_count", profile.get("sample_count", 0))
-        similarity_score = ui.get("similarity_score")
-
-        season_names = {
-            "winter": "zimní",
-            "spring": "jarní",
-            "summer": "letní",
-            "autumn": "podzimní",
-        }
-        season_cz = season_names.get(season, season)
-
-        suffix_parts: List[str] = []
-        if season_cz:
-            suffix_parts.append(str(season_cz))
-        try:
-            day_count_val = int(day_count) if day_count is not None else 0
-        except (TypeError, ValueError):
-            day_count_val = 0
-        if day_count_val > 0:
-            suffix_parts.append(f"{day_count_val} dnů")
-        try:
-            similarity_val = (
-                float(similarity_score) if similarity_score is not None else None
-            )
-        except (TypeError, ValueError):
-            similarity_val = None
-        if similarity_val is not None:
-            suffix_parts.append(f"shoda {similarity_val:.2f}")
-
+        suffix_parts = AdaptiveConsumptionHelper._build_profile_suffix(profile, ui)
         if suffix_parts:
             return f"{cleaned_name} ({', '.join(suffix_parts)})"
         return cleaned_name
@@ -166,58 +244,29 @@ class AdaptiveConsumptionHelper:
 
         now = datetime.now()
         current_hour = now.hour
-        remaining_kwh = 0.0
 
         today_profile = adaptive_profiles.get("today_profile")
+        remaining_kwh = 0.0
         if today_profile and "hourly_consumption" in today_profile:
             hourly = today_profile["hourly_consumption"]
-            if isinstance(hourly, list):
-                for hour in range(current_hour, 24):
-                    if hour < len(hourly):
-                        remaining_kwh += hourly[hour]
-            elif isinstance(hourly, dict):
-                for hour in range(current_hour, 24):
-                    remaining_kwh += hourly.get(hour, 0.0)
+            start_hour = today_profile.get("start_hour", 0)
+            remaining_kwh = self._sum_profile_hours(
+                hourly, start_hour, current_hour, 24
+            )
 
-        profile_name = adaptive_profiles.get("profile_name", "Neznámý profil")
+        profile_name = adaptive_profiles.get("profile_name", UNKNOWN_PROFILE_LABEL)
         match_score = adaptive_profiles.get("match_score", 0)
 
         profile_details = ""
         if today_profile:
-            season = today_profile.get("season", "")
-            day_count = today_profile.get("day_count", 0)
+            profile_details = self._build_dashboard_profile_details(
+                today_profile, match_score
+            )
 
-            season_names = {
-                "winter": "zimní",
-                "spring": "jarní",
-                "summer": "letní",
-                "autumn": "podzimní",
-            }
-            season_cz = season_names.get(season, season)
-
-            profile_details = f"{season_cz}, {day_count} podobných dnů"
-            if match_score > 0:
-                profile_details += f" • {int(match_score)}% shoda"
-
-        charging_cost_today = 0.0
         today_date = now.date()
-
-        for entry in timeline_data:
-            timestamp_str = entry.get("timestamp")
-            if not timestamp_str:
-                continue
-
-            try:
-                entry_dt = datetime.fromisoformat(
-                    timestamp_str.replace("Z", self._iso_tz_offset)
-                )
-                if entry_dt.date() == today_date:
-                    charging_kwh = entry.get("charging_kwh", 0)
-                    spot_price = entry.get("spot_price_czk_per_kwh", 0)
-                    if charging_kwh > 0 and spot_price > 0:
-                        charging_cost_today += charging_kwh * spot_price
-            except (ValueError, AttributeError):
-                continue
+        charging_cost_today = self._calculate_charging_cost_today(
+            timeline_data, today_date, self._iso_tz_offset
+        )
 
         return {
             "remaining_kwh": round(remaining_kwh, 1),
@@ -456,51 +505,35 @@ class AdaptiveConsumptionHelper:
             tomorrow_weekday = tomorrow.weekday()
             today_weekday = current_time.weekday()
 
-            month = tomorrow.month
-            if month in [12, 1, 2]:
-                season = "winter"
-            elif month in [3, 4, 5]:
-                season = "spring"
-            elif month in [6, 7, 8]:
-                season = "summer"
-            else:
-                season = "autumn"
-
-            transition_type = None
-
-            if today_weekday == 4 and tomorrow_weekday == 5:
-                transition_type = "friday_to_saturday"
-            elif today_weekday == 6 and tomorrow_weekday == 0:
-                transition_type = "sunday_to_monday"
-
+            season = AdaptiveConsumptionHelper._season_for_month(tomorrow.month)
+            transition_type = AdaptiveConsumptionHelper._transition_type(
+                today_weekday, tomorrow_weekday
+            )
             if transition_type:
                 transition_profile_id = f"{transition_type}_{season}"
-                for profile_id, profile in profiles.items():
-                    if profile_id.startswith(transition_profile_id):
-                        _LOGGER.debug(
-                            "Using transition profile for tomorrow: %s", profile_id
-                        )
-                        return profile
+                transition_profile = (
+                    AdaptiveConsumptionHelper._select_profile_by_prefix(
+                        profiles, transition_profile_id, prefer_typical=False
+                    )
+                )
+                if transition_profile:
+                    _LOGGER.debug(
+                        "Using transition profile for tomorrow: %s",
+                        transition_profile_id,
+                    )
+                    return transition_profile
 
             tomorrow_is_weekend = tomorrow_weekday >= 5
             day_type = "weekend" if tomorrow_is_weekend else "weekday"
             standard_profile_id = f"{day_type}_{season}"
 
-            best_match = None
-            for profile_id, profile in profiles.items():
-                if profile_id.startswith(standard_profile_id):
-                    if (
-                        not best_match
-                        or "_typical" in profile_id
-                        or len(profile_id.split("_")) == 2
-                    ):
-                        best_match = profile
-
+            best_match = AdaptiveConsumptionHelper._select_profile_by_prefix(
+                profiles, standard_profile_id, prefer_typical=True
+            )
             if best_match:
                 _LOGGER.debug(
                     "Using standard profile for tomorrow: %s_%s", day_type, season
                 )
-
             return best_match
 
         except Exception as e:

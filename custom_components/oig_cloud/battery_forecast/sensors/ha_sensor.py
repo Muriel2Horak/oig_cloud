@@ -635,7 +635,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
                     ts = datetime.fromisoformat(str(value))
                 except Exception:
                     return None
-                return dt_util.as_local(ts) if ts.tzinfo else dt_util.as_local(ts)
+                return dt_util.as_local(ts)
 
             spot_times: List[Optional[datetime]] = []
             index_by_minute: Dict[int, int] = {}
