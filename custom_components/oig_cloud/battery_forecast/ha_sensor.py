@@ -18,7 +18,7 @@ from . import charging_helpers as charging_helpers_module
 from . import detail_tabs as detail_tabs_module
 from . import mode_recommendations as mode_recommendations_module
 from . import load_profiles as load_profiles_module
-from . import plan_storage as plan_storage_module
+from . import storage as plan_storage_module
 from . import pricing as pricing_module
 from . import precompute as precompute_module
 from . import solar_forecast as solar_forecast_module
