@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from homeassistant.util import dt as dt_util
 
-from .timeline.planner import format_planner_reason
-from .utils_common import format_time_label, safe_nested_get
+from ..timeline.planner import format_planner_reason
+from ..utils_common import format_time_label, safe_nested_get
 
 _LOGGER = logging.getLogger(__name__)
 

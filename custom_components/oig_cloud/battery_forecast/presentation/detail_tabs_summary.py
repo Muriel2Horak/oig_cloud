@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .utils_common import safe_nested_get
+from ..utils_common import safe_nested_get
 
 
 def default_metrics_summary() -> Dict[str, Dict[str, Any]]:
