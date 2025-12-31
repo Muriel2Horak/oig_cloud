@@ -39,12 +39,12 @@ def get_candidate_intervals(
             continue
 
         interval_time_naive = (
-            interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+            interval_time.replace(tzinfo=None)
+            if interval_time.tzinfo
+            else interval_time
         )
         current_time_naive = (
-            current_time.replace(tzinfo=None)
-            if current_time.tzinfo
-            else current_time
+            current_time.replace(tzinfo=None) if current_time.tzinfo else current_time
         )
 
         if interval_time_naive <= current_time_naive:

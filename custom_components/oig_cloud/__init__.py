@@ -46,7 +46,8 @@ from .const import (
 )
 
 try:
-    from .data_source import (
+    from .core.coordinator import OigCloudCoordinator
+    from .core.data_source import (
         DATA_SOURCE_CLOUD_ONLY,
         DEFAULT_DATA_SOURCE_MODE,
         DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
@@ -55,7 +56,6 @@ try:
         get_data_source_state,
         init_data_source_state,
     )
-    from .oig_cloud_coordinator import OigCloudCoordinator
 except ModuleNotFoundError:  # pragma: no cover
     OigCloudCoordinator = Any  # type: ignore[misc,assignment]
     DataSourceController = Any  # type: ignore[misc,assignment]
@@ -263,7 +263,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         )
         if inverter_sn is None and coordinator_data:
             try:
-                from .oig_cloud_sensor import resolve_box_id
+                from .entities.base_sensor import resolve_box_id
 
                 resolved = resolve_box_id(coordinator_data)
                 if isinstance(resolved, str) and resolved.isdigit():
@@ -775,7 +775,7 @@ async def async_setup_entry(
 
     try:
         # Inicializujeme ServiceShield s entry parametrem
-        from .service_shield import ServiceShield
+        from .shield.core import ServiceShield
 
         service_shield = ServiceShield(hass, entry)
         await service_shield.start()
@@ -934,7 +934,7 @@ async def async_setup_entry(
         if enable_cloud_notifications and cloud_active_for_setup:
             try:
                 _LOGGER.debug("Initializing notification manager...")
-                from .oig_cloud_notification import OigNotificationManager
+                from .core.oig_cloud_notification import OigNotificationManager
 
                 # PROBLÉM: Ověříme, že používáme správný objekt
                 _LOGGER.debug(f"Using API object: {type(oig_api)}")
@@ -974,7 +974,7 @@ async def async_setup_entry(
                     # Inicializace Mode Transition Tracker
                     if service_shield:
                         try:
-                            from .service_shield import ModeTransitionTracker
+                            from .shield.core import ModeTransitionTracker
 
                             service_shield.mode_tracker = ModeTransitionTracker(
                                 hass, device_id
@@ -1040,7 +1040,7 @@ async def async_setup_entry(
         # Analytics device info (service device linked to the main box device)
         # NOTE: box_id musí být numerické a stabilní i v local_only režimu (bez cloud dat).
         try:
-            from .oig_cloud_sensor import resolve_box_id
+            from .entities.base_sensor import resolve_box_id
 
             box_id_for_devices = resolve_box_id(coordinator)
         except Exception:
@@ -1204,8 +1204,8 @@ async def async_setup_entry(
         # Local telemetry store (cloud-shaped payload for coordinator.data in local mode)
         telemetry_store = None
         try:
-            from .oig_cloud_sensor import resolve_box_id
-            from .telemetry_store import TelemetryStore
+            from .core.telemetry_store import TelemetryStore
+            from .entities.base_sensor import resolve_box_id
 
             store_box_id = entry.options.get("box_id") or entry.data.get("box_id")
             if not (isinstance(store_box_id, str) and store_box_id.isdigit()):
@@ -1264,7 +1264,7 @@ async def async_setup_entry(
 
             # Vytvoříme device info pro ServiceShield (per-box service device)
             try:
-                from .oig_cloud_sensor import resolve_box_id
+                from .entities.base_sensor import resolve_box_id
 
                 shield_box_id = resolve_box_id(coordinator)
             except Exception:
@@ -1422,35 +1422,14 @@ async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
             f"Telemetry identifiers - Email hash: {email_hash[:16]}..., HASS ID: {hass_id[:16]}..."
         )
 
-        # Přesuneme import do async executor aby neblokoval event loop
-        def _import_and_setup_telemetry() -> Any:
-            try:
-                _LOGGER.debug("Importing REST telemetry modules...")
-                from .shared.logging import setup_otel_logging
+        from .shared.logging import setup_simple_telemetry
 
-                _LOGGER.debug("Setting up REST telemetry logging...")
-                handler = setup_otel_logging(email_hash, hass_id)
-
-                # Přidáme handler do root loggeru pro OIG Cloud
-                oig_logger = logging.getLogger("custom_components.oig_cloud")
-                oig_logger.addHandler(handler)
-                oig_logger.setLevel(logging.DEBUG)
-
-                _LOGGER.debug(
-                    f"Telemetry handler attached to logger: {oig_logger.name}"
-                )
-                _LOGGER.info("REST telemetry successfully initialized")
-
-                return handler
-            except Exception as e:
-                _LOGGER.error(f"Error in telemetry setup executor: {e}", exc_info=True)
-                raise
-
-        await hass.async_add_executor_job(_import_and_setup_telemetry)
-        _LOGGER.debug("REST telemetry setup completed via executor")
-
-        # Test log pro ověření funkčnosti
-        _LOGGER.info("TEST: Telemetry test message - this should appear in New Relic")
+        telemetry = setup_simple_telemetry(email_hash, hass_id)
+        if telemetry:
+            hass.data.setdefault(DOMAIN, {})["telemetry"] = telemetry
+            _LOGGER.info("Telemetry initialized (simple mode)")
+        else:
+            _LOGGER.debug("Telemetry initialization skipped (no handler)")
 
     except Exception as e:
         _LOGGER.warning(f"Failed to setup telemetry: {e}", exc_info=True)

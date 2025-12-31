@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional
 
-from ..utils_common import get_tariff_for_datetime
 from ...api.ote_api import OteApi
 from ...const import OTE_SPOT_PRICE_CACHE_FILE
+from ..utils_common import get_tariff_for_datetime
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _round_czk(value: Decimal | float) -> float:
+    """Round CZK values to 2 decimals (half-up)."""
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
+    return float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def calculate_final_spot_price(
@@ -36,6 +44,11 @@ def calculate_final_spot_price(
             commercial_price = raw_spot_price * (1 + positive_fee_percent / 100.0)
         else:
             commercial_price = raw_spot_price * (1 - negative_fee_percent / 100.0)
+    elif pricing_model == "fixed_prices":
+        fixed_price_vt = config.get("fixed_commercial_price_vt", 4.50)
+        fixed_price_nt = config.get("fixed_commercial_price_nt", fixed_price_vt)
+        current_tariff = get_tariff_for_datetime(target_datetime, config)
+        commercial_price = fixed_price_vt if current_tariff == "VT" else fixed_price_nt
     else:
         fixed_fee_kwh = fixed_fee_mwh / 1000.0
         commercial_price = raw_spot_price + fixed_fee_kwh
@@ -43,14 +56,13 @@ def calculate_final_spot_price(
     current_tariff = get_tariff_for_datetime(target_datetime, config)
 
     distribution_fee = (
-        distribution_fee_vt_kwh
-        if current_tariff == "VT"
-        else distribution_fee_nt_kwh
+        distribution_fee_vt_kwh if current_tariff == "VT" else distribution_fee_nt_kwh
     )
 
-    price_without_vat = commercial_price + distribution_fee
-    final_price = price_without_vat * (1 + vat_rate / 100.0)
-    return round(final_price, 2)
+    price_without_vat = Decimal(str(commercial_price)) + Decimal(str(distribution_fee))
+    vat_multiplier = Decimal("1") + (Decimal(str(vat_rate)) / Decimal("100"))
+    final_price = price_without_vat * vat_multiplier
+    return _round_czk(final_price)
 
 
 async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
@@ -86,7 +98,9 @@ async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
     for timestamp_str, raw_spot_price in sorted(raw_prices_dict.items()):
         try:
             target_datetime = datetime.fromisoformat(timestamp_str)
-            final_price = calculate_final_spot_price(sensor, raw_spot_price, target_datetime)
+            final_price = calculate_final_spot_price(
+                sensor, raw_spot_price, target_datetime
+            )
             timeline.append({"time": timestamp_str, "price": final_price})
         except ValueError:
             _LOGGER.warning("Invalid timestamp in spot prices: %s", timestamp_str)
@@ -141,11 +155,14 @@ async def get_export_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
         config = config_entry.options if config_entry else {}
         export_model = config.get("export_pricing_model", "percentage")
         export_fee = config.get("export_fee_percent", 15.0)
+        export_fixed_price = config.get("export_fixed_price", 2.50)
 
         export_prices_dict = {}
         for timestamp_str, spot_price in spot_prices_dict.items():
             if export_model == "percentage":
                 export_price = spot_price * (1 - export_fee / 100)
+            elif export_model == "fixed_prices":
+                export_price = export_fixed_price
             else:
                 export_price = max(0, spot_price - export_fee)
             export_prices_dict[timestamp_str] = export_price
@@ -178,7 +195,9 @@ def get_spot_data_from_price_sensor(
 
     try:
         component = None
-        entity_components = hass.data.get("entity_components") if isinstance(hass.data, dict) else None
+        entity_components = (
+            hass.data.get("entity_components") if isinstance(hass.data, dict) else None
+        )
         if isinstance(entity_components, dict):
             component = entity_components.get("sensor")
 

@@ -6,10 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
-    OigCloudApi,
-    OigCloudApiError,
-    OigCloudAuthError,
-)
+    OigCloudApi, OigCloudApiError, OigCloudAuthError)
 
 
 def _make_response(

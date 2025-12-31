@@ -80,13 +80,9 @@ async def fetch_interval_from_history(  # noqa: C901
                 return 0.0
 
             start_utc = (
-                start_time.astimezone(timezone.utc)
-                if start_time.tzinfo
-                else start_time
+                start_time.astimezone(timezone.utc) if start_time.tzinfo else start_time
             )
-            end_utc = (
-                end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
-            )
+            end_utc = end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
 
             interval_states = [
                 s
@@ -128,16 +124,12 @@ async def fetch_interval_from_history(  # noqa: C901
             if not entity_states:
                 return None
 
-            end_utc = (
-                end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
-            )
+            end_utc = end_time.astimezone(timezone.utc) if end_time.tzinfo else end_time
 
             closest_state = min(
                 entity_states,
                 key=lambda s: abs(
-                    (
-                        s.last_updated.astimezone(timezone.utc) - end_utc
-                    ).total_seconds()
+                    (s.last_updated.astimezone(timezone.utc) - end_utc).total_seconds()
                 ),
             )
 
@@ -165,7 +157,9 @@ async def fetch_interval_from_history(  # noqa: C901
 
         battery_kwh = 0.0
         if battery_soc is not None:
-            total_capacity = sensor._get_total_battery_capacity() or 0.0  # pylint: disable=protected-access
+            total_capacity = (
+                sensor._get_total_battery_capacity() or 0.0
+            )  # pylint: disable=protected-access
             if total_capacity > 0:
                 battery_kwh = (battery_soc / 100.0) * total_capacity
 
@@ -235,7 +229,9 @@ async def update_actual_from_history(sensor: Any) -> None:
     now = dt_util.now()
     today_str = now.strftime(DATE_FMT)
 
-    plan_storage = await sensor._load_plan_from_storage(today_str)  # pylint: disable=protected-access
+    plan_storage = await sensor._load_plan_from_storage(
+        today_str
+    )  # pylint: disable=protected-access
     if not plan_storage:
         _LOGGER.debug("No plan in Storage for %s, skipping history update", today_str)
         return
@@ -247,8 +243,12 @@ async def update_actual_from_history(sensor: Any) -> None:
     }
 
     existing_actual: List[Dict[str, Any]] = []
-    if sensor._daily_plan_state and sensor._daily_plan_state.get("date") == today_str:  # pylint: disable=protected-access
-        existing_actual = copy.deepcopy(sensor._daily_plan_state.get("actual", []))  # pylint: disable=protected-access
+    if (
+        sensor._daily_plan_state and sensor._daily_plan_state.get("date") == today_str
+    ):  # pylint: disable=protected-access
+        existing_actual = copy.deepcopy(
+            sensor._daily_plan_state.get("actual", [])
+        )  # pylint: disable=protected-access
         plan_data["actual"] = existing_actual
     else:
         existing_actual = plan_data.get("actual", [])
@@ -355,7 +355,9 @@ async def fetch_mode_history_from_recorder(
         _LOGGER.warning("HASS not available, cannot fetch mode history")
         return []
 
-    sensor_id = f"sensor.oig_{sensor._box_id}_box_prms_mode"  # pylint: disable=protected-access
+    sensor_id = (
+        f"sensor.oig_{sensor._box_id}_box_prms_mode"  # pylint: disable=protected-access
+    )
 
     try:
         from homeassistant.components.recorder import history

@@ -35,9 +35,7 @@ def create_mode_recommendations(
             interval
             for interval in optimal_timeline
             if interval.get("time")
-            and current_time
-            <= datetime.fromisoformat(interval["time"])
-            <= tomorrow_end
+            and current_time <= datetime.fromisoformat(interval["time"]) <= tomorrow_end
         ]
 
         if not future_intervals:

@@ -4,34 +4,29 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from homeassistant.components.sensor import (
-    SensorEntity,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .. import storage as plan_storage_module
+from .. import task_utils as task_utils_module
 from ..balancing import helpers as balancing_helpers_module
 from ..data import battery_state as battery_state_module
-from ..planning import charging_helpers as charging_helpers_module
-from ..presentation import detail_tabs as detail_tabs_module
-from ..planning import mode_recommendations as mode_recommendations_module
 from ..data import load_profiles as load_profiles_module
-from .. import storage as plan_storage_module
 from ..data import pricing as pricing_module
-from ..presentation import precompute as precompute_module
 from ..data import solar_forecast as solar_forecast_module
-from ..presentation import unified_cost_tile as unified_cost_tile_module
-from ..planning import scenario_analysis as scenario_analysis_module
-from ..planning import interval_grouping as interval_grouping_module
-from ..presentation import state_attributes as state_attributes_module
+from ..planning import charging_helpers as charging_helpers_module
 from ..planning import forecast_update as forecast_update_module
-from . import sensor_lifecycle as sensor_lifecycle_module
+from ..planning import interval_grouping as interval_grouping_module
+from ..planning import mode_recommendations as mode_recommendations_module
+from ..planning import scenario_analysis as scenario_analysis_module
+from ..presentation import detail_tabs as detail_tabs_module
 from ..presentation import plan_tabs as plan_tabs_module
-from . import sensor_runtime as sensor_runtime_module
-from . import sensor_setup as sensor_setup_module
-from .. import task_utils as task_utils_module
+from ..presentation import precompute as precompute_module
+from ..presentation import state_attributes as state_attributes_module
+from ..presentation import unified_cost_tile as unified_cost_tile_module
 from ..timeline import extended as timeline_extended_module
 from ..types import (
     CBB_MODE_HOME_I,
@@ -40,12 +35,13 @@ from ..types import (
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
 )
+from . import sensor_lifecycle as sensor_lifecycle_module
+from . import sensor_runtime as sensor_runtime_module
+from . import sensor_setup as sensor_setup_module
 
 _LOGGER = logging.getLogger(__name__)
 
 AUTO_SWITCH_STARTUP_DELAY = timedelta(seconds=0)
-
-
 
 # CBB 3F Home Plus Premium - Mode Constants (Phase 2)
 # NOTE: Mode constants moved to battery_forecast.types.
@@ -610,6 +606,99 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _get_balancing_plan(self) -> Optional[Dict[str, Any]]:
         """Proxy to balancing helpers."""
         return balancing_helpers_module.get_balancing_plan(self)
+
+    def _build_strategy_balancing_plan(
+        self,
+        spot_prices: List[Dict[str, Any]],
+        plan: Optional[Any],
+    ) -> Optional[Any]:
+        """Build strategy-layer balancing plan from BalancingManager output."""
+        if not plan:
+            return None
+
+        try:
+            from datetime import datetime
+
+            from homeassistant.util import dt as dt_util
+
+            from ..strategy.balancing import StrategyBalancingPlan
+
+            def _get_plan_value(obj: Any, key: str, default: Any = None) -> Any:
+                if isinstance(obj, dict):
+                    return obj.get(key, default)
+                return getattr(obj, key, default)
+
+            def _parse_ts(value: Any) -> Optional[datetime]:
+                if not value:
+                    return None
+                try:
+                    ts = datetime.fromisoformat(str(value))
+                except Exception:
+                    return None
+                return dt_util.as_local(ts) if ts.tzinfo else dt_util.as_local(ts)
+
+            spot_times: List[Optional[datetime]] = []
+            index_by_minute: Dict[int, int] = {}
+            for idx, sp in enumerate(spot_prices):
+                ts = _parse_ts(sp.get("time"))
+                spot_times.append(ts)
+                if ts:
+                    index_by_minute[int(ts.timestamp() // 60)] = idx
+
+            def _find_index(ts: datetime) -> Optional[int]:
+                return index_by_minute.get(int(ts.timestamp() // 60))
+
+            is_active = bool(_get_plan_value(plan, "active", True))
+            if not is_active:
+                return None
+
+            charging_intervals: set[int] = set()
+            holding_intervals: set[int] = set()
+            mode_overrides: Dict[int, int] = {}
+
+            intervals = _get_plan_value(plan, "intervals", None)
+            if not intervals:
+                legacy = _get_plan_value(plan, "charging_intervals", []) or []
+                intervals = [{"ts": ts, "mode": CBB_MODE_HOME_UPS} for ts in legacy]
+
+            for interval in intervals:
+                ts_raw = (
+                    interval.get("ts")
+                    if isinstance(interval, dict)
+                    else getattr(interval, "ts", None)
+                )
+                mode_raw = (
+                    interval.get("mode")
+                    if isinstance(interval, dict)
+                    else getattr(interval, "mode", None)
+                )
+                ts = _parse_ts(ts_raw)
+                if ts is None or mode_raw is None:
+                    continue
+                idx = _find_index(ts)
+                if idx is None:
+                    continue
+                mode = int(mode_raw)
+                mode_overrides[idx] = mode
+                if mode == CBB_MODE_HOME_UPS:
+                    charging_intervals.add(idx)
+
+            holding_start = _parse_ts(_get_plan_value(plan, "holding_start"))
+            holding_end = _parse_ts(_get_plan_value(plan, "holding_end"))
+            if holding_start and holding_end:
+                for idx, ts in enumerate(spot_times):
+                    if ts and holding_start <= ts < holding_end:
+                        holding_intervals.add(idx)
+
+            return StrategyBalancingPlan(
+                charging_intervals=charging_intervals,
+                holding_intervals=holding_intervals,
+                mode_overrides=mode_overrides,
+                is_active=is_active,
+            )
+        except Exception as err:
+            _LOGGER.debug("Failed to build strategy balancing plan: %s", err)
+            return None
 
     async def plan_balancing(
         self,

@@ -6,13 +6,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from .charging_plan_adjustments import (
-    ensure_target_capacity_at_end,
-    find_cheapest_hour_before,
-    find_cheapest_suitable_hour,
-    find_first_minimum_violation,
-    fix_minimum_capacity_violations,
-)
 from .charging_plan_utils import (
     calculate_minimum_charge,
     calculate_protection_requirement,
@@ -22,6 +15,7 @@ from .charging_plan_utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 def economic_charging_plan(
     *,
@@ -256,9 +250,9 @@ def economic_charging_plan(
         "min_capacity_kwh": min_capacity_kwh,
         "target_achieved": target_achieved,
         "min_achieved": min_achieved,
-        "shortage_kwh": max(0, target_capacity_kwh - final_capacity)
-        if not target_achieved
-        else 0,
+        "shortage_kwh": (
+            max(0, target_capacity_kwh - final_capacity) if not target_achieved else 0
+        ),
         "protection_enabled": enable_blackout_protection or enable_weather_risk,
         "protection_soc_kwh": protection_soc_kwh,
         "optimal_target_info": {
@@ -500,9 +494,9 @@ def smart_charging_plan(
         "min_capacity_kwh": min_capacity,
         "target_achieved": target_achieved,
         "min_achieved": min_achieved,
-        "shortage_kwh": max(0, effective_target - final_capacity)
-        if not target_achieved
-        else 0,
+        "shortage_kwh": (
+            max(0, effective_target - final_capacity) if not target_achieved else 0
+        ),
     }
 
     return timeline, metrics

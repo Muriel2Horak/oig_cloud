@@ -111,9 +111,7 @@ def format_actual_data(
 def calculate_day_summary(intervals: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate summary for a day."""
     planned_cost = sum(
-        i.get("planned", {}).get("net_cost", 0)
-        for i in intervals
-        if i.get("planned")
+        i.get("planned", {}).get("net_cost", 0) for i in intervals if i.get("planned")
     )
     actual_cost = sum(
         i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual")

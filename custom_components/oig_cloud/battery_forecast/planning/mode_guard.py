@@ -295,9 +295,7 @@ def apply_guard_reasons_to_timeline(
                     f"{forced_name} do {guard_until_label}."
                 )
             else:
-                reason = (
-                    "Stabilizace: držíme potvrzený plán " f"{forced_name}."
-                )
+                reason = "Stabilizace: držíme potvrzený plán " f"{forced_name}."
         else:
             reason = "Stabilizace: držíme potvrzený plán."
 

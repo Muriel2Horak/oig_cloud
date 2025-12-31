@@ -23,7 +23,7 @@ def default_metrics_summary() -> Dict[str, Dict[str, Any]]:
 
 
 def aggregate_interval_metrics(
-    intervals: List[Dict[str, Any]]
+    intervals: List[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     """Aggregate plan vs actual metrics for summary tiles."""
 

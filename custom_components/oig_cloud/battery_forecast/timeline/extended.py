@@ -10,19 +10,16 @@ from homeassistant.util import dt as dt_util
 
 from ..data import history as history_module
 from .extended_summary import (
-    aggregate_cost_by_day,
-    get_day_cost_from_timeline,
-    format_planned_data,
-    format_actual_data,
-    calculate_day_summary,
     build_today_tile_summary,
-    get_empty_tile_summary,
+    calculate_day_summary,
+    format_planned_data,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 DATE_FMT = "%Y-%m-%d"
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
+
 
 async def build_timeline_extended(
     sensor: Any, *, mode_names: Optional[Dict[int, str]] = None
@@ -101,12 +98,14 @@ async def build_day_timeline(  # noqa: C901
     if source in ["historical_only", "mixed"] and self._hass:
         try:
             fetch_end = day_end if source == "historical_only" else now
-            historical_modes_lookup = await history_module.build_historical_modes_lookup(
-                self,
-                day_start=day_start,
-                fetch_end=fetch_end,
-                date_str=date_str,
-                source=source,
+            historical_modes_lookup = (
+                await history_module.build_historical_modes_lookup(
+                    self,
+                    day_start=day_start,
+                    fetch_end=fetch_end,
+                    date_str=date_str,
+                    source=source,
+                )
             )
         except Exception as e:
             _LOGGER.error(
@@ -200,9 +199,7 @@ async def build_day_timeline(  # noqa: C901
                     actual_data = {
                         "mode": mode_from_recorder.get("mode", 0),
                         "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                        "consumption_kwh": historical_metrics.get(
-                            "consumption_kwh", 0
-                        ),
+                        "consumption_kwh": historical_metrics.get("consumption_kwh", 0),
                         "solar_kwh": historical_metrics.get("solar_kwh", 0),
                         "battery_soc": historical_metrics.get("battery_soc", 0),
                         "battery_kwh": historical_metrics.get("battery_kwh", 0),
@@ -345,7 +342,9 @@ async def build_day_timeline(  # noqa: C901
             time_str = interval.get("time")
             if time_str:
                 try:
-                    interval_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                    interval_dt = datetime.fromisoformat(
+                        time_str.replace("Z", "+00:00")
+                    )
                     if interval_dt.date() == day:
                         future_planned.append(interval)
                     else:
@@ -370,9 +369,7 @@ async def build_day_timeline(  # noqa: C901
         )
 
         current_minute = (now.minute // 15) * 15
-        current_interval = now.replace(
-            minute=current_minute, second=0, microsecond=0
-        )
+        current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
         current_interval_naive = current_interval.replace(tzinfo=None)
 
         planned_lookup: Dict[str, Dict[str, Any]] = {}
@@ -384,7 +381,9 @@ async def build_day_timeline(  # noqa: C901
                     if "T" not in time_str:
                         time_str = f"{date_str}T{time_str}:00"
 
-                    interval_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                    interval_dt = datetime.fromisoformat(
+                        time_str.replace("Z", "+00:00")
+                    )
                     interval_dt_naive = (
                         interval_dt.replace(tzinfo=None)
                         if interval_dt.tzinfo
@@ -456,8 +455,10 @@ async def build_day_timeline(  # noqa: C901
                 mode_from_recorder = historical_modes_lookup.get(interval_time_str)
                 if mode_from_recorder:
                     interval_end = interval_time + timedelta(minutes=15)
-                    historical_metrics = await history_module.fetch_interval_from_history(
-                        self, interval_time, interval_end
+                    historical_metrics = (
+                        await history_module.fetch_interval_from_history(
+                            self, interval_time, interval_end
+                        )
                     )
 
                     if historical_metrics:
@@ -483,9 +484,9 @@ async def build_day_timeline(  # noqa: C901
                             "battery_soc": 0,
                             "grid_import_kwh": 0,
                             "grid_export_kwh": 0,
-                            "net_cost": planned_data.get("net_cost", 0)
-                            if planned_data
-                            else 0,
+                            "net_cost": (
+                                planned_data.get("net_cost", 0) if planned_data else 0
+                            ),
                             "savings": 0,
                         }
 

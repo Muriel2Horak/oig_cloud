@@ -56,7 +56,7 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
         # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
         try:
-            from ...oig_cloud_sensor import resolve_box_id
+            from ...entities.base_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(coordinator)
         except Exception:
@@ -431,7 +431,9 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
                 last_month_year, last_month, 1, 0, 0, 0, tzinfo=timezone.utc
             )
 
-            _LOGGER.debug("🔋 Looking for history between %s and %s", start_time, end_time)
+            _LOGGER.debug(
+                "🔋 Looking for history between %s and %s", start_time, end_time
+            )
 
             # Načíst historii pro monthly sensors
             charge_sensor = (

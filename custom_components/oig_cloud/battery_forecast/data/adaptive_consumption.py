@@ -242,7 +242,9 @@ class AdaptiveConsumptionHelper:
             attrs = profiles_state.attributes
 
             if "today_profile" not in attrs or "tomorrow_profile" not in attrs:
-                _LOGGER.debug("Adaptive sensor missing today_profile or tomorrow_profile")
+                _LOGGER.debug(
+                    "Adaptive sensor missing today_profile or tomorrow_profile"
+                )
                 return None
 
             result = {

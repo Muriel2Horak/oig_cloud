@@ -240,6 +240,8 @@
         "data": {
           "distribution_fee_nt_kwh": "Distribution fee LT (CZK/kWh)",
           "distribution_fee_vt_kwh": "Distribution fee HT (CZK/kWh)",
+          "fixed_price_nt_kwh": "Fixed purchase price LT (CZK/kWh)",
+          "fixed_price_vt_kwh": "Fixed purchase price HT (CZK/kWh)",
           "go_back": "⬅️ I want to go back (check + click Submit)",
           "tariff_count": "Number of tariffs",
           "tariff_nt_start_weekday": "LT start weekday (hour1,hour2)",
@@ -252,6 +254,8 @@
         "data_description": {
           "distribution_fee_nt_kwh": "Distribution fee LT (low tariff). E.g., 0.91 CZK/kWh",
           "distribution_fee_vt_kwh": "Distribution fee HT (high tariff). E.g., 1.42 CZK/kWh",
+          "fixed_price_nt_kwh": "Fixed purchase price LT without VAT and distribution.",
+          "fixed_price_vt_kwh": "Fixed purchase price HT without VAT and distribution.",
           "go_back": "Check this box and press 'Submit' - you will go back one step",
           "tariff_count": "💡 Click 'Submit' to show parameters according to number of tariffs",
           "tariff_nt_start_weekday": "LT start on weekday. Format: hour1,hour2 (e.g., '22,2' = 22:00 evening and 02:00 morning)",
@@ -663,6 +667,8 @@
         "data": {
           "distribution_fee_nt_kwh": "Distribution fee LT (CZK/kWh)",
           "distribution_fee_vt_kwh": "Distribution fee HT (CZK/kWh)",
+          "fixed_price_nt_kwh": "Fixed purchase price LT (CZK/kWh)",
+          "fixed_price_vt_kwh": "Fixed purchase price HT (CZK/kWh)",
           "go_back": "⬅️ I want to go back (check + click Submit)",
           "tariff_count": "Number of tariffs",
           "tariff_nt_start_weekday": "LT start weekday (hour1,hour2)",
@@ -675,6 +681,8 @@
         "data_description": {
           "distribution_fee_nt_kwh": "Distribution fee LT (low tariff). E.g., 0.91 CZK/kWh",
           "distribution_fee_vt_kwh": "Distribution fee HT (high tariff). E.g., 1.42 CZK/kWh",
+          "fixed_price_nt_kwh": "Fixed purchase price LT without VAT and distribution.",
+          "fixed_price_vt_kwh": "Fixed purchase price HT without VAT and distribution.",
           "go_back": "Check this box and press 'Submit' - you will go back one step",
           "tariff_count": "💡 Click 'Submit' to show parameters according to number of tariffs",
           "tariff_nt_start_weekday": "LT start on weekday. Format: hour1,hour2 (e.g., '22,2' = 22:00 evening and 02:00 morning)",

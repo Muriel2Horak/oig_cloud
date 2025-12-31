@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from custom_components.oig_cloud.battery_forecast.config import (
-    HybridConfig,
-    SimulatorConfig,
-)
-from custom_components.oig_cloud.battery_forecast.strategy.hybrid import HybridStrategy
+    HybridConfig, SimulatorConfig)
+from custom_components.oig_cloud.battery_forecast.strategy.hybrid import \
+    HybridStrategy
 from custom_components.oig_cloud.battery_forecast.types import (
-    CBB_MODE_HOME_I,
-    CBB_MODE_HOME_UPS,
-)
+    CBB_MODE_HOME_I, CBB_MODE_HOME_UPS)
 
 
 def _make_prices(n: int, price: float) -> list[dict]:

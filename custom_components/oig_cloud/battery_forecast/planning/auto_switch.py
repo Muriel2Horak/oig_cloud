@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -12,8 +11,8 @@ from homeassistant.util import dt as dt_util
 
 try:
     from homeassistant.helpers.event import (
-        async_track_time_interval as _async_track_time_interval,  # type: ignore
-    )
+        async_track_time_interval as _async_track_time_interval,
+    )  # type: ignore
 except Exception:  # pragma: no cover
     _async_track_time_interval = None
 
@@ -31,7 +30,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def auto_mode_switch_enabled(sensor: Any) -> bool:
-    options = (sensor._config_entry.options or {}) if sensor._config_entry else {}  # pylint: disable=protected-access
+    options = (
+        (sensor._config_entry.options or {}) if sensor._config_entry else {}
+    )  # pylint: disable=protected-access
     return bool(options.get(CONF_AUTO_MODE_SWITCH, False))
 
 
@@ -70,7 +71,9 @@ def normalize_service_mode(
 def get_current_box_mode(sensor: Any) -> Optional[str]:
     if not sensor._hass:  # pylint: disable=protected-access
         return None
-    entity_id = f"sensor.oig_{sensor._box_id}_box_prms_mode"  # pylint: disable=protected-access
+    entity_id = (
+        f"sensor.oig_{sensor._box_id}_box_prms_mode"  # pylint: disable=protected-access
+    )
     state = sensor._hass.states.get(entity_id)  # pylint: disable=protected-access
     if not state or not state.state:
         return None
@@ -117,14 +120,18 @@ def start_auto_switch_watchdog(sensor: Any) -> None:
     async def _tick(now: datetime) -> None:
         await auto_switch_watchdog_tick(sensor, now)
 
-    sensor._auto_switch_watchdog_unsub = _async_track_time_interval(  # pylint: disable=protected-access
-        sensor._hass,  # pylint: disable=protected-access
-        _tick,
-        sensor._auto_switch_watchdog_interval,  # pylint: disable=protected-access
+    sensor._auto_switch_watchdog_unsub = (
+        _async_track_time_interval(  # pylint: disable=protected-access
+            sensor._hass,  # pylint: disable=protected-access
+            _tick,
+            sensor._auto_switch_watchdog_interval,  # pylint: disable=protected-access
+        )
     )
     _LOGGER.debug(
         "[AutoModeSwitch] Watchdog started (interval=%ss)",
-        int(sensor._auto_switch_watchdog_interval.total_seconds()),  # pylint: disable=protected-access
+        int(
+            sensor._auto_switch_watchdog_interval.total_seconds()
+        ),  # pylint: disable=protected-access
     )
 
 
@@ -197,10 +204,14 @@ def schedule_auto_switch_retry(sensor: Any, delay_seconds: float) -> None:
 
     def _retry(now: datetime) -> None:
         sensor._auto_switch_retry_unsub = None  # pylint: disable=protected-access
-        sensor._create_task_threadsafe(update_auto_switch_schedule, sensor)  # pylint: disable=protected-access
+        sensor._create_task_threadsafe(
+            update_auto_switch_schedule, sensor
+        )  # pylint: disable=protected-access
 
-    sensor._auto_switch_retry_unsub = async_call_later(  # pylint: disable=protected-access
-        sensor._hass, delay_seconds, _retry  # pylint: disable=protected-access
+    sensor._auto_switch_retry_unsub = (
+        async_call_later(  # pylint: disable=protected-access
+            sensor._hass, delay_seconds, _retry  # pylint: disable=protected-access
+        )
     )
     log_rl = getattr(sensor, "_log_rate_limited", None)
     if log_rl:
@@ -213,10 +224,14 @@ def schedule_auto_switch_retry(sensor: Any, delay_seconds: float) -> None:
         )
 
 
-def get_mode_switch_offset(sensor: Any, from_mode: Optional[str], to_mode: str) -> float:
+def get_mode_switch_offset(
+    sensor: Any, from_mode: Optional[str], to_mode: str
+) -> float:
     """Return reaction-time offset based on shield tracker statistics."""
     fallback = 180.0
-    if sensor._config_entry and sensor._config_entry.options:  # pylint: disable=protected-access
+    if (
+        sensor._config_entry and sensor._config_entry.options
+    ):  # pylint: disable=protected-access
         fallback = float(
             sensor._config_entry.options.get(  # pylint: disable=protected-access
                 "auto_mode_switch_lead_seconds",
@@ -225,11 +240,15 @@ def get_mode_switch_offset(sensor: Any, from_mode: Optional[str], to_mode: str) 
                 ),
             )
         )
-    if not from_mode or not sensor._hass or not sensor._config_entry:  # pylint: disable=protected-access
+    if (
+        not from_mode or not sensor._hass or not sensor._config_entry
+    ):  # pylint: disable=protected-access
         return fallback
 
     try:
-        entry = sensor._hass.data.get(DOMAIN, {}).get(sensor._config_entry.entry_id, {})  # pylint: disable=protected-access
+        entry = sensor._hass.data.get(DOMAIN, {}).get(
+            sensor._config_entry.entry_id, {}
+        )  # pylint: disable=protected-access
         service_shield = entry.get("service_shield")
         mode_tracker = getattr(service_shield, "mode_tracker", None)
         if not mode_tracker:
@@ -255,12 +274,16 @@ def get_service_shield(sensor: Any) -> Optional[Any]:
     if not sensor._hass or not sensor._config_entry:  # pylint: disable=protected-access
         return None
 
-    entry = sensor._hass.data.get(DOMAIN, {}).get(sensor._config_entry.entry_id, {})  # pylint: disable=protected-access
+    entry = sensor._hass.data.get(DOMAIN, {}).get(
+        sensor._config_entry.entry_id, {}
+    )  # pylint: disable=protected-access
     return entry.get("service_shield")
 
 
 async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> None:
-    if not sensor._hass or not sensor._side_effects_enabled:  # pylint: disable=protected-access
+    if (
+        not sensor._hass or not sensor._side_effects_enabled
+    ):  # pylint: disable=protected-access
         return
 
     now = dt_util.now()
@@ -276,8 +299,10 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
 
     if (
         sensor._last_auto_switch_request  # pylint: disable=protected-access
-        and sensor._last_auto_switch_request[0] == target_mode  # pylint: disable=protected-access
-        and (now - sensor._last_auto_switch_request[1]).total_seconds() < 90  # pylint: disable=protected-access
+        and sensor._last_auto_switch_request[0]
+        == target_mode  # pylint: disable=protected-access
+        and (now - sensor._last_auto_switch_request[1]).total_seconds()
+        < 90  # pylint: disable=protected-access
     ):
         _LOGGER.debug(
             "[AutoModeSwitch] Skipping duplicate request for %s (%s)",
@@ -296,7 +321,10 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
             },
             blocking=False,
         )
-        sensor._last_auto_switch_request = (target_mode, now)  # pylint: disable=protected-access
+        sensor._last_auto_switch_request = (
+            target_mode,
+            now,
+        )  # pylint: disable=protected-access
         _LOGGER.info("[AutoModeSwitch] Requested mode '%s' (%s)", target_mode, reason)
     except Exception as err:
         _LOGGER.error(
@@ -329,7 +357,9 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
     """Sync scheduled set_box_mode calls with planned timeline."""
     cancel_auto_switch_schedule(sensor)
 
-    if not sensor._hass or not auto_mode_switch_enabled(sensor):  # pylint: disable=protected-access
+    if not sensor._hass or not auto_mode_switch_enabled(
+        sensor
+    ):  # pylint: disable=protected-access
         _LOGGER.debug("[AutoModeSwitch] Auto mode switching disabled")
         stop_auto_switch_watchdog(sensor)
         return
@@ -404,14 +434,14 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
         if adjusted_when <= now:
             adjusted_when = now + timedelta(seconds=1)
 
-        async def _callback(
-            event_time: datetime, desired_mode: str = mode
-        ) -> None:
+        async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
             await execute_mode_change(
                 sensor, desired_mode, f"scheduled {event_time.isoformat()}"
             )
 
-        unsub = async_track_point_in_time(sensor._hass, _callback, adjusted_when)  # pylint: disable=protected-access
+        unsub = async_track_point_in_time(
+            sensor._hass, _callback, adjusted_when
+        )  # pylint: disable=protected-access
         sensor._auto_switch_handles.append(unsub)  # pylint: disable=protected-access
         _LOGGER.info(
             "[AutoModeSwitch] Scheduled switch to %s at %s",

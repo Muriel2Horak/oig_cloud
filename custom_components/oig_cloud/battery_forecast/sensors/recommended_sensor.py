@@ -45,7 +45,7 @@ class OigCloudPlannerRecommendedModeSensor(
         self._config = SENSOR_TYPES.get(sensor_type, {})
 
         try:
-            from ...oig_cloud_sensor import resolve_box_id
+            from ...entities.base_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(coordinator)
         except Exception:

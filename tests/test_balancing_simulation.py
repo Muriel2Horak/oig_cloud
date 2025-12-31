@@ -13,14 +13,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from custom_components.oig_cloud.battery_forecast.optimizer.hybrid import (
-    HybridOptimizer,
-)
+from custom_components.oig_cloud.battery_forecast.config import (
+    HybridConfig, SimulatorConfig)
+from custom_components.oig_cloud.battery_forecast.strategy import \
+    StrategyBalancingPlan
+from custom_components.oig_cloud.battery_forecast.strategy.hybrid import (
+    HybridResult, HybridStrategy)
 from custom_components.oig_cloud.battery_forecast.types import (
-    CBB_MODE_HOME_I,
-    CBB_MODE_HOME_UPS,
-    get_mode_name,
-)
+    CBB_MODE_HOME_UPS, get_mode_name)
 
 TZ = ZoneInfo("Europe/Prague")
 
@@ -29,8 +29,8 @@ def create_spot_prices(
     start: datetime,
     n_intervals: int = 96,
     base_price: float = 3.5,
-    cheap_hours: List[int] = None,
-    expensive_hours: List[int] = None,
+    cheap_hours: List[int] | None = None,
+    expensive_hours: List[int] | None = None,
 ) -> List[Dict[str, Any]]:
     """Vytvoří spot ceny pro simulaci."""
     if cheap_hours is None:
@@ -85,12 +85,12 @@ def create_load_forecast(n_intervals: int = 96) -> List[float]:
 
 
 def print_result_summary(
-    result: Dict[str, Any],
+    result: HybridResult,
     spot_prices: List[Dict[str, Any]],
     title: str,
 ) -> None:
     """Vytiskne souhrn výsledku."""
-    modes = result["modes"]
+    modes = result.modes
     n = len(modes)
 
     print(f"\n{'=' * 60}")
@@ -98,23 +98,21 @@ def print_result_summary(
     print(f"{'=' * 60}")
 
     print("\n📈 Souhrn:")
-    print(f"   Celková cena: {result.get('total_cost_czk', 0):.2f} Kč")
-    print(f"   Baseline cena: {result.get('baseline_cost_czk', 0):.2f} Kč")
-    savings = result.get("baseline_cost_czk", 0) - result.get("total_cost_czk", 0)
+    print(f"   Celková cena: {result.total_cost_czk:.2f} Kč")
+    print(f"   Baseline cena: {result.baseline_cost_czk:.2f} Kč")
+    savings = result.baseline_cost_czk - result.total_cost_czk
     print(f"   Úspory: {savings:.2f} Kč")
-    print(f"   Finální baterie: {result.get('final_battery_kwh', 0):.2f} kWh")
+    print(f"   Finální baterie: {result.final_battery_kwh:.2f} kWh")
 
     print("\n📋 Distribuce módů:")
-    dist = result.get("modes_distribution", {})
+    dist = result.mode_counts
     for mode_name, count in dist.items():
         pct = count / n * 100 if n > 0 else 0
         print(f"   {mode_name}: {count} ({pct:.1f}%)")
 
-    if result.get("is_balancing_mode"):
+    if result.balancing_applied:
         print("\n🔋 BALANCING AKTIVNÍ:")
-        print(f"   Deadline: {result.get('balancing_deadline', 'N/A')}")
-        print(f"   Holding start: {result.get('balancing_holding_start', 'N/A')}")
-        print(f"   Holding end: {result.get('balancing_holding_end', 'N/A')}")
+        print(f"   UPS intervaly: {result.ups_intervals}")
 
     # UPS intervaly
     ups_intervals = [i for i, m in enumerate(modes) if m == CBB_MODE_HOME_UPS]
@@ -130,27 +128,42 @@ def print_result_summary(
             print(f"   {hour:02d}:00 - {count} intervalů")
 
 
+def _interval_index(base: datetime, ts: datetime) -> int:
+    """Return 15-min interval index for a timestamp."""
+    return int((ts - base).total_seconds() // 900)
+
+
+def _window_indices(base: datetime, start: datetime, end: datetime, n: int) -> set[int]:
+    indices: set[int] = set()
+    for i in range(n):
+        ts = base + timedelta(minutes=i * 15)
+        if start <= ts < end:
+            indices.add(i)
+    return indices
+
+
 class TestBalancingSimulation:
     """Testy pro simulaci balancing scénářů."""
 
     @pytest.fixture
-    def optimizer(self) -> HybridOptimizer:
-        """Vytvoří optimizer s typickými parametry."""
-        return HybridOptimizer(
-            max_capacity=15.36,
-            min_capacity=3.07,
-            target_capacity=12.0,
+    def optimizer(self) -> HybridStrategy:
+        """Vytvoří hybridní strategii s typickými parametry."""
+        config = HybridConfig(planning_min_percent=20.0, target_percent=78.0)
+        sim_config = SimulatorConfig(
+            max_capacity_kwh=15.36,
+            min_capacity_kwh=3.07,
             charge_rate_kw=2.8,
-            efficiency=0.88,
+            dc_ac_efficiency=0.88,
         )
+        return HybridStrategy(config, sim_config)
 
-    def test_interval_balancing_7th_day(self, optimizer: HybridOptimizer) -> None:
+    def test_interval_balancing_7th_day(self, optimizer: HybridStrategy) -> None:
         """
         SCÉNÁŘ 1: Interval Balancing (7. den)
 
         Situace: Je 7. den od posledního balancingu, SoC=45%, musíme nabít na 100%
         Očekávání:
-        - is_balancing_mode = True
+        - balancing_applied = True
         - Více UPS intervalů (nabíjení)
         - Baterie na konci blízko max_capacity
         """
@@ -168,37 +181,38 @@ class TestBalancingSimulation:
         holding_start = now.replace(hour=21, minute=0)
         holding_end = now.replace(hour=23, minute=59)
 
-        balancing_plan = {
-            "reason": "interval",
-            "holding_start": holding_start.isoformat(),
-            "holding_end": holding_end.isoformat(),
-            "charging_intervals": [],
-        }
+        holding_intervals = _window_indices(
+            now, holding_start, holding_end, len(spot_prices)
+        )
+        balancing_plan = StrategyBalancingPlan(
+            charging_intervals=set(),
+            holding_intervals=holding_intervals,
+            mode_overrides={},
+            is_active=True,
+        )
 
-        print(f"\nBalancing plán:")
+        print("\nBalancing plán:")
         print(
             f"  Holding: {holding_start.strftime('%H:%M')} - {holding_end.strftime('%H:%M')}"
         )
         print(f"  Deadline: {holding_start.strftime('%H:%M')}")
 
         result = optimizer.optimize(
-            current_capacity=6.9,  # ~45% SoC
+            initial_battery_kwh=6.9,  # ~45% SoC
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
+            consumption_forecast=load,
             balancing_plan=balancing_plan,
         )
 
         print_result_summary(result, spot_prices, "Interval Balancing")
 
         # Assertions
-        assert result["is_balancing_mode"] is True, "Měl by být v balancing módu"
-        assert (
-            result["ups_intervals_count"] > 10
-        ), "Mělo by být mnoho UPS intervalů pro nabíjení"
+        assert result.balancing_applied is True, "Měl by být v balancing módu"
+        assert result.ups_intervals > 10, "Mělo by být mnoho UPS intervalů pro nabíjení"
 
         # Spočítáme UPS intervaly v holding period (21:00-24:00)
-        modes = result["modes"]
+        modes = result.modes
         holding_ups = sum(
             1
             for i, m in enumerate(modes)
@@ -208,13 +222,13 @@ class TestBalancingSimulation:
             holding_ups > 0
         ), f"Měly by být UPS intervaly v holding period, ale je {holding_ups}"
 
-    def test_opportunistic_balancing(self, optimizer: HybridOptimizer) -> None:
+    def test_opportunistic_balancing(self, optimizer: HybridStrategy) -> None:
         """
         SCÉNÁŘ 2: Opportunistic Balancing
 
         Situace: SoC=85%, velmi levné ceny nadcházející noc - dobrá příležitost
         Očekávání:
-        - is_balancing_mode = True
+        - balancing_applied = True
         - UPS preferovaně v levných hodinách
         """
         print("\n" + "=" * 60)
@@ -242,37 +256,44 @@ class TestBalancingSimulation:
                 ts = now.replace(hour=h, minute=q * 15)
                 preferred.append({"timestamp": ts.isoformat()})
 
-        balancing_plan = {
-            "reason": "opportunistic",
-            "holding_start": holding_start.isoformat(),
-            "holding_end": holding_end.isoformat(),
-            "charging_intervals": preferred,
+        preferred_indices = {
+            _interval_index(now, datetime.fromisoformat(p["timestamp"]))
+            for p in preferred
         }
+        holding_intervals = _window_indices(
+            now, holding_start, holding_end, len(spot_prices)
+        )
+        balancing_plan = StrategyBalancingPlan(
+            charging_intervals=preferred_indices,
+            holding_intervals=holding_intervals,
+            mode_overrides={},
+            is_active=True,
+        )
 
-        print(f"\nBalancing plán:")
-        print(f"  Důvod: Opportunistic (levné ceny)")
+        print("\nBalancing plán:")
+        print("  Důvod: Opportunistic (levné ceny)")
         print(f"  Holding: {holding_start.strftime('%H:%M')} - 02:00")
         print(f"  Preferované intervaly: {len(preferred)}")
 
         result = optimizer.optimize(
-            current_capacity=13.06,  # ~85% SoC
+            initial_battery_kwh=13.06,  # ~85% SoC
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
+            consumption_forecast=load,
             balancing_plan=balancing_plan,
         )
 
         print_result_summary(result, spot_prices, "Opportunistic Balancing")
 
-        assert result["is_balancing_mode"] is True
+        assert result.balancing_applied is True
 
-    def test_normal_operation_no_balancing(self, optimizer: HybridOptimizer) -> None:
+    def test_normal_operation_no_balancing(self, optimizer: HybridStrategy) -> None:
         """
         SCÉNÁŘ 3: Normální provoz bez balancingu
 
         Situace: 3. den od balancingu, SoC=50%, normální optimalizace
         Očekávání:
-        - is_balancing_mode = False
+        - balancing_applied = False
         - Méně UPS intervalů (jen pro arbitráž)
         """
         print("\n" + "=" * 60)
@@ -287,20 +308,20 @@ class TestBalancingSimulation:
         load = create_load_forecast()
 
         result = optimizer.optimize(
-            current_capacity=7.68,  # 50% SoC
+            initial_battery_kwh=7.68,  # 50% SoC
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
+            consumption_forecast=load,
             balancing_plan=None,
         )
 
         print_result_summary(result, spot_prices, "Normální provoz")
 
-        assert result["is_balancing_mode"] is False
+        assert result.balancing_applied is False
         # V normálním režimu by mělo být méně UPS intervalů
-        assert result["ups_intervals_count"] < 30, "Normální provoz nemá tolik UPS"
+        assert result.ups_intervals < 30, "Normální provoz nemá tolik UPS"
 
-    def test_compare_balancing_vs_normal(self, optimizer: HybridOptimizer) -> None:
+    def test_compare_balancing_vs_normal(self, optimizer: HybridStrategy) -> None:
         """
         Porovnání: Stejné podmínky, s balancing vs bez.
         """
@@ -316,10 +337,10 @@ class TestBalancingSimulation:
 
         # Bez balancingu
         result_normal = optimizer.optimize(
-            current_capacity=7.68,
+            initial_battery_kwh=7.68,
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
+            consumption_forecast=load,
             balancing_plan=None,
         )
 
@@ -327,34 +348,39 @@ class TestBalancingSimulation:
         holding_start = now.replace(hour=21, minute=0)
         holding_end = now.replace(hour=23, minute=59)
 
+        holding_intervals = _window_indices(
+            now, holding_start, holding_end, len(spot_prices)
+        )
         result_balancing = optimizer.optimize(
-            current_capacity=7.68,
+            initial_battery_kwh=7.68,
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
-            balancing_plan={
-                "reason": "interval",
-                "holding_start": holding_start.isoformat(),
-                "holding_end": holding_end.isoformat(),
-                "charging_intervals": [],
-            },
+            consumption_forecast=load,
+            balancing_plan=StrategyBalancingPlan(
+                charging_intervals=set(),
+                holding_intervals=holding_intervals,
+                mode_overrides={},
+                is_active=True,
+            ),
         )
 
         print(f"\n{'Metrika':<25} {'Normální':>12} {'Balancing':>12} {'Rozdíl':>12}")
         print("-" * 65)
 
-        cost_n = result_normal.get("total_cost_czk", 0)
-        cost_b = result_balancing.get("total_cost_czk", 0)
+        cost_n = result_normal.total_cost_czk
+        cost_b = result_balancing.total_cost_czk
         print(
             f"{'Celková cena (Kč)':<25} {cost_n:>12.2f} {cost_b:>12.2f} {cost_b - cost_n:>+12.2f}"
         )
 
-        ups_n = result_normal.get("ups_intervals_count", 0)
-        ups_b = result_balancing.get("ups_intervals_count", 0)
-        print(f"{'UPS intervaly':<25} {ups_n:>12} {ups_b:>12} {ups_b - ups_n:>+12}")
+        ups_n = result_normal.ups_intervals
+        ups_b = result_balancing.ups_intervals
+        print(
+            f"{'UPS intervaly':<25} {ups_n:>12} {ups_b:>12} {ups_b - ups_n:>+12}"
+        )
 
-        bat_n = result_normal.get("final_battery_kwh", 0)
-        bat_b = result_balancing.get("final_battery_kwh", 0)
+        bat_n = result_normal.final_battery_kwh
+        bat_b = result_balancing.final_battery_kwh
         print(
             f"{'Finální baterie (kWh)':<25} {bat_n:>12.2f} {bat_b:>12.2f} {bat_b - bat_n:>+12.2f}"
         )
@@ -362,11 +388,10 @@ class TestBalancingSimulation:
         print(f"\n💡 Balancing navíc stojí: {cost_b - cost_n:.2f} Kč")
         print("   Ale zajistí vyrovnání článků baterie")
 
-        # V balancing mode je cílem dosáhnout 100% před deadline, ne držet ji na konci
-        # Assertion změněna - balancing by měl mít více UPS intervalů
+        # Balancing by měl mít více UPS intervalů
         assert ups_b > ups_n, "Balancing by měl mít více UPS intervalů"
 
-    def test_balancing_deadline_reached(self, optimizer: HybridOptimizer) -> None:
+    def test_balancing_deadline_reached(self, optimizer: HybridStrategy) -> None:
         """
         Test že baterie dosáhne 100% před deadline.
         """
@@ -383,25 +408,28 @@ class TestBalancingSimulation:
         holding_start = now.replace(hour=18, minute=0)  # Deadline v 18:00
         holding_end = now.replace(hour=21, minute=0)
 
+        holding_intervals = _window_indices(
+            now, holding_start, holding_end, len(spot_prices)
+        )
         result = optimizer.optimize(
-            current_capacity=5.0,  # ~33% SoC - nízká
+            initial_battery_kwh=5.0,  # ~33% SoC - nízká
             spot_prices=spot_prices,
             solar_forecast=solar,
-            load_forecast=load,
-            balancing_plan={
-                "reason": "interval",
-                "holding_start": holding_start.isoformat(),
-                "holding_end": holding_end.isoformat(),
-                "charging_intervals": [],
-            },
+            consumption_forecast=load,
+            balancing_plan=StrategyBalancingPlan(
+                charging_intervals=set(),
+                holding_intervals=holding_intervals,
+                mode_overrides={},
+                is_active=True,
+            ),
         )
 
         print_result_summary(result, spot_prices, "Deadline Test")
 
-        assert result["is_balancing_mode"] is True
+        assert result.balancing_applied is True
 
         # Spočítáme UPS intervaly před deadline (8:00-18:00 = 40 intervalů)
-        modes = result["modes"]
+        modes = result.modes
         ups_before_deadline = sum(
             1 for i, m in enumerate(modes) if m == CBB_MODE_HOME_UPS and i < 40
         )

@@ -27,7 +27,9 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
     try:
         plan = await load_plan_from_storage(sensor, date_str)
         if not plan:
-            _LOGGER.warning("No detailed plan found for %s, skipping aggregation", date_str)
+            _LOGGER.warning(
+                "No detailed plan found for %s, skipping aggregation", date_str
+            )
             return False
 
         intervals = plan.get("intervals", [])
@@ -136,7 +138,9 @@ async def aggregate_weekly(
             current += timedelta(days=1)
 
         if not week_days:
-            _LOGGER.warning("No daily plans found for %s, skipping aggregation", week_str)
+            _LOGGER.warning(
+                "No daily plans found for %s, skipping aggregation", week_str
+            )
             return False
 
         total_cost = sum(
@@ -204,9 +208,7 @@ async def aggregate_weekly(
         current_year_week = datetime.now().isocalendar()[:2]
         cutoff_week_number = current_year_week[1] - 52
         cutoff_year = (
-            current_year_week[0]
-            if cutoff_week_number > 0
-            else current_year_week[0] - 1
+            current_year_week[0] if cutoff_week_number > 0 else current_year_week[0] - 1
         )
 
         weekly_to_delete = []

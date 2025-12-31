@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 
 from ..config import NegativePriceStrategy
 from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_UPS
-from ..balancing import BalancingPlan
+from .balancing import StrategyBalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def plan_charging_intervals(
     prices: List[float],
     solar_forecast: List[float],
     consumption_forecast: List[float],
-    balancing_plan: Optional[BalancingPlan] = None,
+    balancing_plan: Optional[StrategyBalancingPlan] = None,
     negative_price_intervals: Optional[List[int]] = None,
 ) -> Tuple[set[int], Optional[str], set[int]]:
     """Plan charging intervals with planning-min enforcement and price guard."""
@@ -47,8 +47,7 @@ def plan_charging_intervals(
     # Respect negative price strategy (only force UPS when configured)
     if (
         negative_price_intervals
-        and strategy.config.negative_price_strategy
-        == NegativePriceStrategy.CHARGE_GRID
+        and strategy.config.negative_price_strategy == NegativePriceStrategy.CHARGE_GRID
     ):
         for idx in negative_price_intervals:
             if 0 <= idx < n and idx not in blocked_indices:
@@ -85,12 +84,12 @@ def plan_charging_intervals(
                     "Battery below planning minimum at start; "
                     f"interval {i} exceeds max_ups_price_czk={strategy.config.max_ups_price_czk}"
                 )
-            add_ups_interval(i, allow_expensive=price > strategy.config.max_ups_price_czk)
+            add_ups_interval(
+                i, allow_expensive=price > strategy.config.max_ups_price_czk
+            )
 
             solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
-            load = (
-                consumption_forecast[i] if i < len(consumption_forecast) else 0.125
-            )
+            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
             res = strategy.simulator.simulate(
                 battery_start=soc,
                 mode=CBB_MODE_HOME_UPS,
@@ -105,9 +104,7 @@ def plan_charging_intervals(
 
         if soc < strategy._planning_min - eps_kwh:
             if infeasible_reason is None:
-                infeasible_reason = (
-                    "Battery below planning minimum at start and could not recover within planning horizon"
-                )
+                infeasible_reason = "Battery below planning minimum at start and could not recover within planning horizon"
             return charging_intervals, infeasible_reason, price_band_intervals
     else:
         recovery_index = 0
@@ -201,9 +198,7 @@ def plan_charging_intervals(
     for i in range(start_idx, len(final_trajectory)):
         if final_trajectory[i] < strategy._planning_min - eps_kwh:
             if infeasible_reason is None:
-                infeasible_reason = (
-                    f"Planner could not satisfy planning minimum (first violation at index {i})"
-                )
+                infeasible_reason = f"Planner could not satisfy planning minimum (first violation at index {i})"
             break
 
     if not recovery_mode:

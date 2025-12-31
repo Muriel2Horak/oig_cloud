@@ -49,9 +49,7 @@ async def build_unified_cost_tile(
         }
 
     try:
-        yesterday_data = get_yesterday_cost_from_archive(
-            self, mode_names=mode_names
-        )
+        yesterday_data = get_yesterday_cost_from_archive(self, mode_names=mode_names)
     except Exception as e:
         _LOGGER.error("Failed to get yesterday cost data: %s", e, exc_info=True)
         yesterday_data = {
@@ -63,9 +61,7 @@ async def build_unified_cost_tile(
         }
 
     try:
-        tomorrow_data = await build_tomorrow_cost_data(
-            self, mode_names=mode_names
-        )
+        tomorrow_data = await build_tomorrow_cost_data(self, mode_names=mode_names)
     except Exception as e:
         _LOGGER.error("Failed to build tomorrow cost data: %s", e, exc_info=True)
         tomorrow_data = {

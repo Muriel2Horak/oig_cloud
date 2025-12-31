@@ -10,13 +10,13 @@ from typing import Any, Dict, List
 from homeassistant.util import dt as dt_util
 
 from ..data.input import get_solar_for_timestamp
+from ..physics import simulate_interval as physics_simulate_interval
 from ..types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
 )
-from ..physics import simulate_interval as physics_simulate_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -326,7 +326,9 @@ def calculate_full_ups_cost(
     efficiency = sensor._get_battery_efficiency()
     needed_kwh = max_capacity - current_capacity
     ac_charging_limit = 0.7
-    intervals_needed = int(math.ceil(needed_kwh / ac_charging_limit)) if needed_kwh > 0.001 else 0
+    intervals_needed = (
+        int(math.ceil(needed_kwh / ac_charging_limit)) if needed_kwh > 0.001 else 0
+    )
 
     _LOGGER.debug(
         "[FULL UPS] Need %.2f kWh to reach %.2f kWh, requires %s intervals",

@@ -85,7 +85,9 @@ def get_load_avg_for_timestamp(
 ) -> float:
     """Get load average for a timestamp (kWh per 15min)."""
     if not load_avg_sensors:
-        if state is not None and not getattr(state, "_empty_load_sensors_logged", False):
+        if state is not None and not getattr(
+            state, "_empty_load_sensors_logged", False
+        ):
             _LOGGER.debug(
                 "load_avg_sensors dictionary is empty - using fallback 500W (statistics sensors may not be available yet)"
             )

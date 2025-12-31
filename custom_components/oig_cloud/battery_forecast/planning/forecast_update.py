@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import copy
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, List
 
 from homeassistant.util import dt as dt_util
 
-from ..data.adaptive_consumption import AdaptiveConsumptionHelper
+from ...const import DOMAIN
 from ..config import HybridConfig, SimulatorConfig
+from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
 from ..strategy import HybridStrategy
 from ..timeline.planner import (
@@ -18,12 +18,13 @@ from ..timeline.planner import (
     attach_planner_reasons,
     build_planner_timeline,
 )
-from ...const import DOMAIN
+from ..types import CBB_MODE_NAMES
 from . import auto_switch as auto_switch_module
-from . import charging_plan as charging_plan_module
 from . import mode_guard as mode_guard_module
 
 _LOGGER = logging.getLogger(__name__)
+ISO_TZ_OFFSET = "+00:00"
+MODE_GUARD_MINUTES = 60
 
 
 async def async_update(sensor: Any) -> None:  # noqa: C901
@@ -33,15 +34,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         mark_bucket_done = False
         now_aware = dt_util.now()
         bucket_minute = (now_aware.minute // 15) * 15
-        bucket_start = now_aware.replace(
-            minute=bucket_minute, second=0, microsecond=0
-        )
-
-        previous_timeline = (
-            copy.deepcopy(sensor._timeline_data)
-            if getattr(sensor, "_timeline_data", None)
-            else None
-        )
+        bucket_start = now_aware.replace(minute=bucket_minute, second=0, microsecond=0)
 
         # Enforce single in-flight computation.
         if sensor._forecast_in_progress:
@@ -224,9 +217,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
                         )
 
                     hour = timestamp.hour
-                    start_hour = profile.get(
-                        "start_hour", 0
-                    )  # Default 0 for tomorrow
+                    start_hour = profile.get("start_hour", 0)  # Default 0 for tomorrow
 
                     # Mapovani absolutni hodiny na index v poli
                     # today_profile: start_hour=14  hour=14  index=0, hour=15  index=1

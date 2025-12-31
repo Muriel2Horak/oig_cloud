@@ -8,9 +8,7 @@ from typing import Any, Dict, Optional
 from homeassistant.util import dt as dt_util
 
 
-def safe_nested_get(
-    obj: Optional[Dict[str, Any]], *keys: str, default: Any = 0
-) -> Any:
+def safe_nested_get(obj: Optional[Dict[str, Any]], *keys: str, default: Any = 0) -> Any:
     """Safely get nested dict values, handling None at any level."""
     current = obj
     for key in keys:

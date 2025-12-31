@@ -156,4 +156,3 @@ class BalancingConfig:
         """Get deadline time (for compatibility)."""
         _ = day_offset
         return self.deadline_time
-

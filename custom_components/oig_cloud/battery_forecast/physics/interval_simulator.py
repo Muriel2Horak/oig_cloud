@@ -30,10 +30,7 @@ from typing import Tuple
 
 from ...physics import simulate_interval
 from ..config import SimulatorConfig
-from ..types import (
-    CBB_MODE_HOME_I,
-    CBB_MODE_HOME_II,
-)
+from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_II
 
 
 @dataclass(frozen=True)

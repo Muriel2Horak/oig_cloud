@@ -63,7 +63,9 @@ async def create_baseline_plan(sensor: Any, date_str: str) -> bool:  # noqa: C90
                     if archive_day.get("plan"):
                         fallback_intervals = archive_day.get("plan") or []
                     if not fallback_intervals:
-                        detailed_day = storage_plans.get("detailed", {}).get(date_str, {})
+                        detailed_day = storage_plans.get("detailed", {}).get(
+                            date_str, {}
+                        )
                         if detailed_day.get("intervals"):
                             fallback_intervals = detailed_day.get("intervals") or []
                 except Exception as err:
@@ -97,7 +99,9 @@ async def create_baseline_plan(sensor: Any, date_str: str) -> bool:  # noqa: C90
                         {"baseline": True, "filled_intervals": None},
                     )
 
-            _LOGGER.warning("No HYBRID timeline available - cannot create baseline plan")
+            _LOGGER.warning(
+                "No HYBRID timeline available - cannot create baseline plan"
+            )
             return False
 
         _LOGGER.debug("Using HYBRID timeline with %s intervals", len(hybrid_timeline))
@@ -179,9 +183,7 @@ async def create_baseline_plan(sensor: Any, date_str: str) -> bool:  # noqa: C90
                         ),
                         "mode": historical_data.get("mode", 2),
                         "mode_name": historical_data.get("mode_name", "HOME III"),
-                        "spot_price": round(
-                            historical_data.get("spot_price", 3.45), 2
-                        ),
+                        "spot_price": round(historical_data.get("spot_price", 3.45), 2),
                         "net_cost": round(historical_data.get("net_cost", 0), 2),
                     }
                     filled_count += 1

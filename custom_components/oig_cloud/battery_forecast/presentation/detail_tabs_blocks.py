@@ -137,9 +137,7 @@ def summarize_block_reason(
     dominant_code = Counter(reason_codes).most_common(1)[0][0] if reason_codes else None
 
     def _mean(values: List[Optional[float]]) -> Optional[float]:
-        vals = [
-            v for v in values if isinstance(v, (int, float)) and not math.isnan(v)
-        ]
+        vals = [v for v in values if isinstance(v, (int, float)) and not math.isnan(v)]
         if not vals:
             return None
         return sum(vals) / len(vals)
@@ -183,7 +181,9 @@ def summarize_block_reason(
         else None
     )
 
-    opts = sensor._config_entry.options if getattr(sensor, "_config_entry", None) else {}
+    opts = (
+        sensor._config_entry.options if getattr(sensor, "_config_entry", None) else {}
+    )
     max_ups_price = float(opts.get("max_ups_price_czk", 10.0))
     efficiency = float(sensor._get_battery_efficiency() or 0.0)
     if 0 < efficiency <= 1.0:
@@ -283,8 +283,7 @@ def summarize_block_reason(
                     f"je nad limitem UPS {max_ups_price:.2f} Kč/kWh."
                 )
             return (
-                "Vybíjíme baterii (-"
-                f"{abs(delta_kwh):.2f} kWh) místo odběru ze sítě."
+                "Vybíjíme baterii (-" f"{abs(delta_kwh):.2f} kWh) místo odběru ze sítě."
             )
         if delta_kwh is not None and delta_kwh > 0.05:
             return (
@@ -328,7 +327,9 @@ def build_mode_blocks_for_tab(  # noqa: C901
     else:
         data_type = "planned"
 
-    mode_groups = sensor._group_intervals_by_mode(intervals, data_type)  # pylint: disable=protected-access
+    mode_groups = sensor._group_intervals_by_mode(
+        intervals, data_type
+    )  # pylint: disable=protected-access
 
     _LOGGER.info(
         "[build_mode_blocks_for_tab] tab=%s, data_type=%s, intervals_count=%s, mode_groups_count=%s",
@@ -338,12 +339,16 @@ def build_mode_blocks_for_tab(  # noqa: C901
         len(mode_groups),
     )
 
-    total_capacity = sensor._get_total_battery_capacity() or 0.0  # pylint: disable=protected-access
+    total_capacity = (
+        sensor._get_total_battery_capacity() or 0.0
+    )  # pylint: disable=protected-access
 
     def _extract_soc_payload(
         interval_entry: Dict[str, Any], branch: str
     ) -> Tuple[float, float]:
-        source = interval_entry.get(branch) if isinstance(interval_entry, dict) else None
+        source = (
+            interval_entry.get(branch) if isinstance(interval_entry, dict) else None
+        )
         if not isinstance(source, dict):
             return (0.0, 0.0)
 
@@ -373,12 +378,16 @@ def build_mode_blocks_for_tab(  # noqa: C901
     def _interval_net(interval_entry: Dict[str, Any], branch: str) -> Optional[float]:
         if not isinstance(interval_entry.get(branch), dict):
             return None
-        import_val = safe_nested_get(interval_entry, branch, "grid_import", default=None)
+        import_val = safe_nested_get(
+            interval_entry, branch, "grid_import", default=None
+        )
         if import_val is None:
             import_val = safe_nested_get(
                 interval_entry, branch, "grid_import_kwh", default=None
             )
-        export_val = safe_nested_get(interval_entry, branch, "grid_export", default=None)
+        export_val = safe_nested_get(
+            interval_entry, branch, "grid_export", default=None
+        )
         if export_val is None:
             export_val = safe_nested_get(
                 interval_entry, branch, "grid_export_kwh", default=None
@@ -416,7 +425,9 @@ def build_mode_blocks_for_tab(  # noqa: C901
             historical_mode = get_mode_from_intervals(
                 group_intervals, "actual", mode_names
             )
-            planned_mode = get_mode_from_intervals(group_intervals, "planned", mode_names)
+            planned_mode = get_mode_from_intervals(
+                group_intervals, "planned", mode_names
+            )
             block["mode_historical"] = historical_mode or "Unknown"
             block["mode_planned"] = planned_mode or "Unknown"
             block["mode_match"] = historical_mode == planned_mode
@@ -429,7 +440,9 @@ def build_mode_blocks_for_tab(  # noqa: C901
         last_interval = group_intervals[-1]
 
         if data_type in ["completed", "both"]:
-            start_soc_pct, start_soc_kwh = _extract_soc_payload(first_interval, "actual")
+            start_soc_pct, start_soc_kwh = _extract_soc_payload(
+                first_interval, "actual"
+            )
             end_soc_pct, end_soc_kwh = _extract_soc_payload(last_interval, "actual")
         else:
             start_soc_pct, start_soc_kwh = _extract_soc_payload(

@@ -37,7 +37,9 @@ def get_load_avg_sensors(sensor: Any) -> Dict[str, Any]:
         try:
             value = float(state.state)
         except (ValueError, TypeError) as err:
-            _LOGGER.warning("Failed to parse %s value '%s': %s", entity_id, state.state, err)
+            _LOGGER.warning(
+                "Failed to parse %s value '%s': %s", entity_id, state.state, err
+            )
             continue
 
         load_sensors[entity_id] = {

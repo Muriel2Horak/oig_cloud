@@ -111,7 +111,9 @@ def ensure_target_capacity_at_end(
         shortage = target_capacity - final_capacity
         _LOGGER.debug("Target capacity shortage: %.2fkWh", shortage)
 
-        charging_index = find_cheapest_suitable_hour(timeline, max_price, price_threshold)
+        charging_index = find_cheapest_suitable_hour(
+            timeline, max_price, price_threshold
+        )
 
         if charging_index is None:
             _LOGGER.warning(

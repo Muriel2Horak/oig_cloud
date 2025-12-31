@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import logging
@@ -38,7 +37,9 @@ def build_extra_state_attributes(
         ),
         "max_capacity_kwh": sensor._get_max_battery_capacity(),
         "min_capacity_kwh": sensor._get_min_battery_capacity(),
-        "timeline_points_count": len(sensor._timeline_data) if sensor._timeline_data else 0,
+        "timeline_points_count": (
+            len(sensor._timeline_data) if sensor._timeline_data else 0
+        ),
         "timeline_horizon_hours": (
             round((len(sensor._timeline_data) * 15 / 60), 1)
             if sensor._timeline_data
@@ -70,7 +71,10 @@ def build_extra_state_attributes(
 
     attrs["plan_status"] = getattr(sensor, "_plan_status", "none")
 
-    if hasattr(sensor, "_mode_optimization_result") and sensor._mode_optimization_result:
+    if (
+        hasattr(sensor, "_mode_optimization_result")
+        and sensor._mode_optimization_result
+    ):
         mo = sensor._mode_optimization_result
         attrs["mode_optimization"] = {
             "total_cost_czk": round(mo.get("total_cost_48h", 0), 2),

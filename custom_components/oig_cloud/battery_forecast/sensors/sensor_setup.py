@@ -37,7 +37,7 @@ def initialize_sensor(
 
     # Resolve box id for stable entity identifiers.
     try:
-        from ...oig_cloud_sensor import resolve_box_id
+        from ...entities.base_sensor import resolve_box_id
 
         sensor._box_id = resolve_box_id(coordinator)
     except Exception:
@@ -147,4 +147,6 @@ def initialize_sensor(
             sensor._box_id,
         )
     else:
-        _LOGGER.debug("Precomputed storage will be initialized in async_added_to_hass()")
+        _LOGGER.debug(
+            "Precomputed storage will be initialized in async_added_to_hass()"
+        )

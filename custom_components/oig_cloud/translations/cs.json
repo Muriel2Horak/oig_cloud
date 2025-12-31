@@ -240,6 +240,8 @@
         "data": {
           "distribution_fee_nt_kwh": "Poplatek za distribuci NT (CZK/kWh)",
           "distribution_fee_vt_kwh": "Poplatek za distribuci VT (CZK/kWh)",
+          "fixed_price_nt_kwh": "Fixní nákupní cena NT (CZK/kWh)",
+          "fixed_price_vt_kwh": "Fixní nákupní cena VT (CZK/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "tariff_count": "Počet tarifů",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
@@ -252,6 +254,8 @@
         "data_description": {
           "distribution_fee_nt_kwh": "Distribuční poplatek NT (nízký tarif). Např. 0.91 CZK/kWh",
           "distribution_fee_vt_kwh": "Distribuční poplatek VT (vysoký tarif). Např. 1.42 CZK/kWh",
+          "fixed_price_nt_kwh": "Fixní nákupní cena NT bez DPH a distribuce.",
+          "fixed_price_vt_kwh": "Fixní nákupní cena VT bez DPH a distribuce.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "tariff_count": "💡 Klikněte 'Odeslat' pro zobrazení parametrů podle počtu tarifů",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",
@@ -543,6 +547,8 @@
         "data": {
           "distribution_fee_nt_kwh": "Poplatek za distribuci NT (CZK/kWh)",
           "distribution_fee_vt_kwh": "Poplatek za distribuci VT (CZK/kWh)",
+          "fixed_price_nt_kwh": "Fixní nákupní cena NT (CZK/kWh)",
+          "fixed_price_vt_kwh": "Fixní nákupní cena VT (CZK/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "tariff_count": "Počet tarifů",
           "tariff_nt_start_weekday": "NT začátek pracovní den (hodina1,hodina2)",
@@ -555,6 +561,8 @@
         "data_description": {
           "distribution_fee_nt_kwh": "Distribuční poplatek NT (nízký tarif). Např. 0.91 CZK/kWh",
           "distribution_fee_vt_kwh": "Distribuční poplatek VT (vysoký tarif). Např. 1.42 CZK/kWh",
+          "fixed_price_nt_kwh": "Fixní nákupní cena NT bez DPH a distribuce.",
+          "fixed_price_vt_kwh": "Fixní nákupní cena VT bez DPH a distribuce.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "tariff_count": "💡 Klikněte 'Odeslat' pro zobrazení parametrů podle počtu tarifů",
           "tariff_nt_start_weekday": "Začátek NT v pracovní den. Formát: hodina1,hodina2 (např. '22,2' = 22:00 večer a 02:00 ráno)",

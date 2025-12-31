@@ -8,8 +8,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .oig_cloud_data_source_sensor import OigCloudDataSourceSensor
-from .oig_cloud_sensor import resolve_box_id
+from .entities.base_sensor import resolve_box_id
+from .entities.data_source_sensor import OigCloudDataSourceSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -489,7 +489,7 @@ async def async_setup_entry(  # noqa: C901
 
         for sensor_type, config in data_sensors.items():
             try:
-                from .oig_cloud_data_sensor import OigCloudDataSensor
+                from .entities.data_sensor import OigCloudDataSensor
 
                 sensor = OigCloudDataSensor(coordinator, sensor_type)
 
@@ -543,7 +543,7 @@ async def async_setup_entry(  # noqa: C901
 
             for sensor_type, config in computed_sensor_types.items():
                 try:
-                    from .oig_cloud_computed_sensor import OigCloudComputedSensor
+                    from .entities.computed_sensor import OigCloudComputedSensor
 
                     sensor = OigCloudComputedSensor(coordinator, sensor_type)
 
@@ -604,7 +604,7 @@ async def async_setup_entry(  # noqa: C901
 
                 for sensor_type, config in extended_sensor_types.items():
                     try:
-                        from .oig_cloud_data_sensor import OigCloudDataSensor
+                        from .entities.data_sensor import OigCloudDataSensor
 
                         # OPRAVA: Odstraňujeme _ext suffix - extended už je v názvu sensor_type
                         extended_sensor = OigCloudDataSensor(
@@ -657,7 +657,7 @@ async def async_setup_entry(  # noqa: C901
     if statistics_enabled:
         try:
             if coordinator.data is not None and SENSOR_TYPES:
-                from .oig_cloud_statistics import OigCloudStatisticsSensor
+                from .entities.statistics_sensor import OigCloudStatisticsSensor
 
                 statistics_sensors: List[Any] = []
 
@@ -707,7 +707,7 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     if entry.options.get("enable_solar_forecast", False):
         try:
-            from .oig_cloud_solar_forecast import OigCloudSolarForecastSensor
+            from .entities.solar_forecast_sensor import OigCloudSolarForecastSensor
 
             solar_sensors: List[Any] = []
             if SENSOR_TYPES:
@@ -749,7 +749,7 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     try:
         if coordinator.data is not None and SENSOR_TYPES:
-            from .oig_cloud_shield_sensor import OigCloudShieldSensor
+            from .entities.shield_sensor import OigCloudShieldSensor
 
             shield_sensors: List[Any] = []
             for sensor_type, config in SENSOR_TYPES.items():
@@ -799,7 +799,7 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     try:
         if coordinator.data is not None and SENSOR_TYPES:
-            from .oig_cloud_data_sensor import OigCloudDataSensor
+            from .entities.data_sensor import OigCloudDataSensor
 
             notification_sensors: List[Any] = []
             notification_sensor_types = {
@@ -862,7 +862,9 @@ async def async_setup_entry(  # noqa: C901
 
     if battery_prediction_enabled:
         try:
-            from .battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
+            from .battery_forecast.sensors.ha_sensor import (
+                OigCloudBatteryForecastSensor,
+            )
 
             battery_forecast_sensors: List[Any] = []
             if SENSOR_TYPES:
@@ -920,7 +922,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Přidat Battery Health sensor (SoH monitoring)
                 try:
-                    from .oig_cloud_battery_health import BatteryHealthSensor
+                    from .entities.battery_health_sensor import BatteryHealthSensor
 
                     health_sensor = BatteryHealthSensor(
                         coordinator,
@@ -936,7 +938,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Battery balancing sensor - displays BalancingManager state
                 try:
-                    from .oig_cloud_battery_balancing import (
+                    from .entities.battery_balancing_sensor import (
                         OigCloudBatteryBalancingSensor,
                     )
 
@@ -1053,7 +1055,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Přidat také adaptive load profiles sensor
                 try:
-                    from .oig_cloud_adaptive_load_profiles import (
+                    from .entities.adaptive_load_profiles_sensor import (
                         OigCloudAdaptiveLoadProfilesSensor,
                     )
 
@@ -1103,9 +1105,12 @@ async def async_setup_entry(  # noqa: C901
         try:
             _LOGGER.info("💰 Creating analytics sensors for pricing and spot prices")
 
-            from .oig_cloud_analytics_sensor import OigCloudAnalyticsSensor
+            from .entities.analytics_sensor import OigCloudAnalyticsSensor
+            from .pricing.spot_price_sensor import (
+                ExportPrice15MinSensor,
+                SpotPrice15MinSensor,
+            )
             from .sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
-            from .spot_price_sensor import ExportPrice15MinSensor, SpotPrice15MinSensor
 
             analytics_sensors: List[Any] = []
 
@@ -1188,7 +1193,7 @@ async def async_setup_entry(  # noqa: C901
         try:
             _LOGGER.info("🌦️ Creating ČHMÚ weather warning sensors")
 
-            from .oig_cloud_chmu_sensor import OigCloudChmuSensor
+            from .entities.chmu_sensor import OigCloudChmuSensor
             from .sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
 
             chmu_sensors: List[Any] = []

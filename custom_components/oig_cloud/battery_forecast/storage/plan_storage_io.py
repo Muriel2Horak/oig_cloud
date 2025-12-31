@@ -11,7 +11,9 @@ from homeassistant.util import dt as dt_util
 _LOGGER = logging.getLogger(__name__)
 
 
-async def load_plan_from_storage(sensor: Any, date_str: str) -> Optional[Dict[str, Any]]:
+async def load_plan_from_storage(
+    sensor: Any, date_str: str
+) -> Optional[Dict[str, Any]]:
     """Load a plan from Storage Helper for a given date."""
     if not sensor._plans_store:
         _LOGGER.error("Storage Helper not initialized")
@@ -131,6 +133,7 @@ async def save_plan_to_storage(
         )
 
         if sensor._hass:
+
             async def retry_save(now):
                 _LOGGER.info("Retrying Storage save for %s...", date_str)
                 cached_plan = sensor._in_memory_plan_cache.get(date_str)

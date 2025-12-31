@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
+from datetime import timedelta
 
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -12,6 +14,7 @@ from homeassistant.util import dt as dt_util
 from ..planning import auto_switch as auto_switch_module
 
 _LOGGER = logging.getLogger(__name__)
+DATE_FMT = "%Y-%m-%d"
 
 
 async def async_added_to_hass(sensor):  # noqa: C901
@@ -112,9 +115,7 @@ async def async_added_to_hass(sensor):  # noqa: C901
                     f" Restored daily plans archive from storage: {len(sensor._daily_plans_archive)} days"
                 )
             else:
-                _LOGGER.info(
-                    "No daily archive in storage - will backfill from history"
-                )
+                _LOGGER.info("No daily archive in storage - will backfill from history")
         except Exception as e:
             _LOGGER.warning(f"Failed to load daily plans archive from storage: {e}")
 
@@ -221,9 +222,7 @@ async def async_added_to_hass(sensor):  # noqa: C901
                     break
                 await asyncio.sleep(1)
             else:
-                _LOGGER.info(
-                    "Profiles not ready after 60s - starting forecast anyway"
-                )
+                _LOGGER.info("Profiles not ready after 60s - starting forecast anyway")
 
             # Now run forecast
             await sensor.async_update()

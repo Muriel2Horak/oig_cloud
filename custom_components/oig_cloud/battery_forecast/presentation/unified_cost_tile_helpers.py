@@ -62,7 +62,10 @@ def build_baseline_comparison(sensor: Any, hybrid_cost: float) -> Dict[str, Any]
 
 
 def analyze_today_variance(
-    sensor: Any, intervals: List[Dict[str, Any]], plan_total: float, predicted_total: float
+    sensor: Any,
+    intervals: List[Dict[str, Any]],
+    plan_total: float,
+    predicted_total: float,
 ) -> str:
     """Analyze today's variance from plan and generate explanation."""
     _ = sensor
@@ -75,19 +78,11 @@ def analyze_today_variance(
             "Den právě začal, zatím žádná data."
         )
 
-    total_plan_solar = sum(
-        i.get("planned", {}).get("solar_kwh", 0) for i in completed
-    )
-    total_actual_solar = sum(
-        i.get("actual", {}).get("solar_kwh", 0) for i in completed
-    )
+    total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in completed)
+    total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in completed)
 
-    total_plan_load = sum(
-        i.get("planned", {}).get("load_kwh", 0) for i in completed
-    )
-    total_actual_load = sum(
-        i.get("actual", {}).get("load_kwh", 0) for i in completed
-    )
+    total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in completed)
+    total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in completed)
 
     solar_diff = total_actual_solar - total_plan_solar
     load_diff = total_actual_load - total_plan_load
@@ -149,23 +144,17 @@ async def analyze_yesterday_performance(sensor: Any) -> str:
     if not intervals:
         return "Včera: Žádné intervaly."
 
-    total_plan_solar = sum(
-        i.get("planned", {}).get("solar_kwh", 0) for i in intervals
-    )
+    total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in intervals)
     total_actual_solar = sum(
         i.get("actual", {}).get("solar_kwh", 0) for i in intervals if i.get("actual")
     )
 
-    total_plan_load = sum(
-        i.get("planned", {}).get("load_kwh", 0) for i in intervals
-    )
+    total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in intervals)
     total_actual_load = sum(
         i.get("actual", {}).get("load_kwh", 0) for i in intervals if i.get("actual")
     )
 
-    total_plan_cost = sum(
-        i.get("planned", {}).get("net_cost", 0) for i in intervals
-    )
+    total_plan_cost = sum(i.get("planned", {}).get("net_cost", 0) for i in intervals)
     total_actual_cost = sum(
         i.get("actual", {}).get("net_cost", 0) for i in intervals if i.get("actual")
     )
@@ -318,9 +307,7 @@ async def build_today_cost_data(sensor: Any) -> Dict[str, Any]:  # noqa: C901
 
         if timeline:
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = now.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
             for sp in timeline:
                 sp_time_str = sp.get("time", "")
@@ -365,9 +352,7 @@ async def build_today_cost_data(sensor: Any) -> Dict[str, Any]:  # noqa: C901
     active = None
 
     current_minute = (now.minute // 15) * 15
-    current_interval_time = now.replace(
-        minute=current_minute, second=0, microsecond=0
-    )
+    current_interval_time = now.replace(minute=current_minute, second=0, microsecond=0)
 
     end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
@@ -389,7 +374,9 @@ async def build_today_cost_data(sensor: Any) -> Dict[str, Any]:  # noqa: C901
             continue
 
         interval_time_naive = (
-            interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+            interval_time.replace(tzinfo=None)
+            if interval_time.tzinfo
+            else interval_time
         )
         current_interval_naive = (
             current_interval_time.replace(tzinfo=None)
@@ -851,9 +838,7 @@ async def build_tomorrow_cost_data(
         dominant_mode_name = dominant_mode[0]
         dominant_mode_count = dominant_mode[1]
         dominant_mode_pct = (
-            (dominant_mode_count / len(intervals) * 100)
-            if len(intervals) > 0
-            else 0.0
+            (dominant_mode_count / len(intervals) * 100) if len(intervals) > 0 else 0.0
         )
     else:
         dominant_mode_name = "Unknown"

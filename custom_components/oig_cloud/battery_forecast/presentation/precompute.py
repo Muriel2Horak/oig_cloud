@@ -33,7 +33,9 @@ async def precompute_ui_data(sensor: Any) -> None:
 
         unified_cost_tile = await sensor.build_unified_cost_tile()
 
-        timeline = copy.deepcopy(sensor._timeline_data or [])  # pylint: disable=protected-access
+        timeline = copy.deepcopy(
+            sensor._timeline_data or []
+        )  # pylint: disable=protected-access
 
         precomputed_data = {
             "detail_tabs": detail_tabs,
@@ -48,8 +50,12 @@ async def precompute_ui_data(sensor: Any) -> None:
             "version": 3,  # Single-planner architecture
         }
 
-        await sensor._precomputed_store.async_save(precomputed_data)  # pylint: disable=protected-access
-        sensor._last_precompute_hash = sensor._data_hash  # pylint: disable=protected-access
+        await sensor._precomputed_store.async_save(
+            precomputed_data
+        )  # pylint: disable=protected-access
+        sensor._last_precompute_hash = (
+            sensor._data_hash
+        )  # pylint: disable=protected-access
 
         if sensor.hass:
             from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -74,7 +80,9 @@ async def precompute_ui_data(sensor: Any) -> None:
 
 def schedule_precompute(sensor: Any, *, force: bool = False) -> None:
     """Schedule precompute job with throttling."""
-    if not sensor.hass or not sensor._precomputed_store:  # pylint: disable=protected-access
+    if (
+        not sensor.hass or not sensor._precomputed_store
+    ):  # pylint: disable=protected-access
         return
 
     now = dt_util.now()
@@ -86,11 +94,15 @@ def schedule_precompute(sensor: Any, *, force: bool = False) -> None:
     ):
         _LOGGER.debug(
             "[Precompute] Skipping (last run %ss ago)",
-            (now - sensor._last_precompute_at).total_seconds(),  # pylint: disable=protected-access
+            (
+                now - sensor._last_precompute_at
+            ).total_seconds(),  # pylint: disable=protected-access
         )
         return
 
-    if sensor._precompute_task and not sensor._precompute_task.done():  # pylint: disable=protected-access
+    if (
+        sensor._precompute_task and not sensor._precompute_task.done()
+    ):  # pylint: disable=protected-access
         _LOGGER.debug("[Precompute] Job already running, skipping")
         return
 
@@ -102,4 +114,6 @@ def schedule_precompute(sensor: Any, *, force: bool = False) -> None:
         finally:
             sensor._precompute_task = None  # pylint: disable=protected-access
 
-    sensor._precompute_task = sensor.hass.async_create_task(_runner())  # pylint: disable=protected-access
+    sensor._precompute_task = sensor.hass.async_create_task(
+        _runner()
+    )  # pylint: disable=protected-access

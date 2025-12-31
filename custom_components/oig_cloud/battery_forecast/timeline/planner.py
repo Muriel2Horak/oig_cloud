@@ -10,7 +10,6 @@ from homeassistant.util import dt as dt_util
 from ...physics import simulate_interval
 from ..data.input import get_solar_for_timestamp
 from ..types import (
-    CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,

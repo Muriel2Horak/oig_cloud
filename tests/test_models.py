@@ -6,24 +6,10 @@ from datetime import datetime
 from unittest.mock import Mock
 
 from custom_components.oig_cloud.lib.oig_cloud_client.models import (
-    AcInBData,
-    AcInData,
-    AcOutData,
-    ActualData,
-    BatteryData,
-    BatteryParams,
-    BoilerData,
-    BoilerParams,
-    BoxData,
-    BoxParams,
-    BoxParams2,
-    DcInData,
-    DeviceData,
-    InvertorParams,
-    InvertorParams1,
-    OigCloudData,
-    OigCloudDeviceData,
-)
+    AcInBData, AcInData, AcOutData, ActualData, BatteryData, BatteryParams,
+    BoilerData, BoilerParams, BoxData, BoxParams, BoxParams2, DcInData,
+    DeviceData, InvertorParams, InvertorParams1, OigCloudData,
+    OigCloudDeviceData)
 
 
 class TestModels(unittest.TestCase):

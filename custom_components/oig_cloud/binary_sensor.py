@@ -25,7 +25,7 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         try:
-            from .oig_cloud_sensor import resolve_box_id
+            from .entities.base_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(self.coordinator)
             _LOGGER.debug(

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from . import charging_plan as charging_plan_module
 from ..types import MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS
+from . import charging_plan as charging_plan_module
 
 
 def economic_charging_plan(

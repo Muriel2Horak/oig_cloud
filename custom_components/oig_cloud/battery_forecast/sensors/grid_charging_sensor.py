@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from homeassistant.components.sensor import (
@@ -43,7 +43,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         self._config = SENSOR_TYPES.get(sensor_type, {})
 
         try:
-            from ...oig_cloud_sensor import resolve_box_id
+            from ...entities.base_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(coordinator)
         except Exception:

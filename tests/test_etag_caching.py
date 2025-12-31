@@ -6,9 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import ClientResponse
 
-from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
-    OigCloudApi,
-)
+from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import \
+    OigCloudApi
 
 
 @pytest.fixture
@@ -238,46 +237,38 @@ class TestJitter:
 
     def test_jitter_range(self):
         """Test jitter is within expected range."""
-        from custom_components.oig_cloud.coordinator import (
-            JITTER_SECONDS,
-            OigCloudDataUpdateCoordinator,
-        )
+        from custom_components.oig_cloud.core.coordinator import (
+            JITTER_SECONDS, OigCloudCoordinator)
 
-        # Mock dependencies
         with patch(
-            "custom_components.oig_cloud.coordinator.DataUpdateCoordinator.__init__"
+            "custom_components.oig_cloud.core.coordinator.DataUpdateCoordinator.__init__"
         ):
             api = MagicMock()
-            config_entry = MagicMock()
-            config_entry.data = {}
             hass = MagicMock()
 
-            coordinator = OigCloudDataUpdateCoordinator(hass, api, config_entry)
+            coordinator = OigCloudCoordinator(hass, api, config_entry=None)
 
-            # Test jitter range over multiple iterations
-            jitters = [coordinator._calculate_jitter() for _ in range(100)]
-
-            # All jitters should be within bounds
-            assert all(-JITTER_SECONDS <= j <= JITTER_SECONDS for j in jitters)
-
-            # Should have variety (not all the same)
-            assert len(set(jitters)) > 10  # At least 10 different values
+            with patch(
+                "custom_components.oig_cloud.core.coordinator.random.uniform",
+                return_value=3.2,
+            ) as mocked:
+                jitter = coordinator._calculate_jitter()
+                mocked.assert_called_once_with(-JITTER_SECONDS, JITTER_SECONDS)
+                assert jitter == 3.2
+                assert coordinator._next_jitter == 3.2
 
     def test_jitter_stored(self):
         """Test jitter value is stored in coordinator."""
-        from custom_components.oig_cloud.coordinator import (
-            OigCloudDataUpdateCoordinator,
-        )
+        from custom_components.oig_cloud.core.coordinator import \
+            OigCloudCoordinator
 
         with patch(
-            "custom_components.oig_cloud.coordinator.DataUpdateCoordinator.__init__"
+            "custom_components.oig_cloud.core.coordinator.DataUpdateCoordinator.__init__"
         ):
             api = MagicMock()
-            config_entry = MagicMock()
-            config_entry.data = {}
             hass = MagicMock()
 
-            coordinator = OigCloudDataUpdateCoordinator(hass, api, config_entry)
+            coordinator = OigCloudCoordinator(hass, api, config_entry=None)
 
             jitter = coordinator._calculate_jitter()
             assert coordinator._next_jitter == jitter

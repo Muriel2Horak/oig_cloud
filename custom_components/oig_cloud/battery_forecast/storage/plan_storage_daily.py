@@ -33,7 +33,9 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
             )
             baseline_created = await create_baseline_plan(sensor, today_str)
             if baseline_created:
-                _LOGGER.info("Baseline plan created in Storage Helper for %s", today_str)
+                _LOGGER.info(
+                    "Baseline plan created in Storage Helper for %s", today_str
+                )
             else:
                 _LOGGER.warning("Failed to create baseline plan for %s", today_str)
         else:
@@ -51,10 +53,15 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         )
         return
 
-    if sensor._daily_plan_state is None or sensor._daily_plan_state.get("date") != today_str:
+    if (
+        sensor._daily_plan_state is None
+        or sensor._daily_plan_state.get("date") != today_str
+    ):
         if sensor._daily_plan_state:
             yesterday_date = sensor._daily_plan_state.get("date")
-            sensor._daily_plans_archive[yesterday_date] = sensor._daily_plan_state.copy()
+            sensor._daily_plans_archive[yesterday_date] = (
+                sensor._daily_plan_state.copy()
+            )
 
             cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
             sensor._daily_plans_archive = {
@@ -85,7 +92,10 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
                         exc_info=True,
                     )
 
-        if hasattr(sensor, "_mode_optimization_result") and sensor._mode_optimization_result:
+        if (
+            hasattr(sensor, "_mode_optimization_result")
+            and sensor._mode_optimization_result
+        ):
             optimal_timeline = getattr(sensor, "_timeline_data", [])
             if not optimal_timeline:
                 optimal_timeline = sensor._mode_optimization_result.get(

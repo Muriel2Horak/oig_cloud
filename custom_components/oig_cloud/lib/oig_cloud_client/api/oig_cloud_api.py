@@ -8,13 +8,9 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 import certifi
-from aiohttp import (
-    ClientConnectorError,
-    ClientResponseError,
-    ClientTimeout,
-    ServerTimeoutError,
-    TCPConnector,
-)
+from aiohttp import (ClientConnectorError, ClientResponseError, ClientTimeout,
+                     ServerTimeoutError, TCPConnector)
+
 from ..models import OigCloudData
 
 # Conditional import of opentelemetry

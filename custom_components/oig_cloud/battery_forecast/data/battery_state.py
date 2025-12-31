@@ -232,7 +232,9 @@ def get_current_mode(sensor: Any) -> int:
     state = sensor._hass.states.get(sensor_id)
 
     if not state or state.state in ["unknown", "unavailable"]:
-        _LOGGER.debug("Mode sensor %s not available, using fallback HOME III", sensor_id)
+        _LOGGER.debug(
+            "Mode sensor %s not available, using fallback HOME III", sensor_id
+        )
         return CBB_MODE_HOME_III
 
     try:

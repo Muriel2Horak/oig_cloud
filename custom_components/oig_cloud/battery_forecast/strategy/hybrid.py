@@ -16,17 +16,10 @@ from typing import Dict, List, Optional, Tuple
 
 from ..config import HybridConfig, SimulatorConfig
 from ..physics import IntervalSimulator
-from ..types import (
-    CBB_MODE_HOME_I,
-    CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
-    CBB_MODE_HOME_UPS,
-    CBB_MODE_NAMES,
-    SpotPrice,
-)
-from ..balancing import BalancingPlan
+from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_UPS, CBB_MODE_NAMES, SpotPrice
 from . import hybrid_planning as hybrid_planning_module
 from . import hybrid_scoring as hybrid_scoring_module
+from .balancing import StrategyBalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -169,7 +162,7 @@ class HybridStrategy:
         spot_prices: List[SpotPrice],
         solar_forecast: List[float],
         consumption_forecast: List[float],
-        balancing_plan: Optional[BalancingPlan] = None,
+        balancing_plan: Optional[StrategyBalancingPlan] = None,
         export_prices: Optional[List[float]] = None,
     ) -> HybridResult:
         """Optimize mode selection using backward propagation algorithm.
@@ -353,7 +346,7 @@ class HybridStrategy:
         prices: List[float],
         solar_forecast: List[float],
         consumption_forecast: List[float],
-        balancing_plan: Optional[BalancingPlan] = None,
+        balancing_plan: Optional[StrategyBalancingPlan] = None,
         negative_price_intervals: Optional[List[int]] = None,
     ) -> Tuple[set[int], Optional[str], set[int]]:
         """Proxy to planning helpers."""
