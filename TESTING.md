@@ -42,6 +42,22 @@ pytest tests/ -v
 
 Testy se automaticky spustí při push/PR do `main` branch.
 
+### 4. ✅ Hassfest (lokálně)
+
+Hassfest je součást Home Assistant Core. Nejjednodušší je použít náš skript:
+
+```bash
+./scripts/run_hassfest.sh
+```
+
+Skript si stáhne HA Core do `local_dev/ha-core`, vytvoří venv a spustí:
+`python -m script.hassfest --integration-path custom_components/oig_cloud`.
+
+Volitelné proměnné:
+
+- `HA_CORE_DIR=/cesta/k/ha-core` (přesměruje umístění core)
+- `INTEGRATION_PATH=/cesta/k/custom_components/oig_cloud`
+
 ## 📋 Test Struktura
 
 ```
