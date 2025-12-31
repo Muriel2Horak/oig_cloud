@@ -1,21 +1,16 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
-import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
-    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from . import balancing_helpers as balancing_helpers_module
 from . import battery_state as battery_state_module
@@ -35,6 +30,7 @@ from . import forecast_update as forecast_update_module
 from . import sensor_lifecycle as sensor_lifecycle_module
 from . import plan_tabs as plan_tabs_module
 from . import sensor_runtime as sensor_runtime_module
+from . import sensor_setup as sensor_setup_module
 from . import task_utils as task_utils_module
 from .timeline import extended as timeline_extended_module
 from .types import (
@@ -92,146 +88,16 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """Initialize the battery forecast sensor."""
         super().__init__(coordinator)
 
-        self._sensor_type = sensor_type
-        self._config_entry = config_entry
-        self._device_info = device_info
-
-        # Nastavit hass - priorita: parametr > coordinator.hass
-        self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
-        # Guard side effects (service calls, timers) for temp instances created by coordinator.
-        self._side_effects_enabled: bool = bool(side_effects_enabled)
-
-        # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
-        try:
-            from ..oig_cloud_sensor import resolve_box_id
-
-            self._box_id = resolve_box_id(coordinator)
-        except Exception:
-            self._box_id = "unknown"
-
-        if self._box_id == "unknown":
-            _LOGGER.warning(
-                "Battery forecast sensor: unable to resolve box_id, using 'unknown' (sensor will be unstable)"
-            )
-
-        # Nastavit atributy senzoru - STEJNĚ jako OigCloudStatisticsSensor
-        # Unique ID má formát oig_cloud_{boxId}_{sensor} pro konzistenci
-        self._attr_unique_id = f"oig_cloud_{self._box_id}_{sensor_type}"
-        self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-        self._attr_icon = "mdi:battery-charging-60"
-        self._attr_native_unit_of_measurement = "kWh"
-        self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
-        # Represents current/forecasted battery capacity; not strictly increasing.
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = None
-
-        # Načíst název ze sensor types
-        from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
-
-        sensor_config = SENSOR_TYPES_STATISTICS.get(sensor_type, {})
-        name_cs = sensor_config.get("name_cs")
-        name_en = sensor_config.get("name")
-        self._attr_name = name_cs or name_en or sensor_type
-
-        # Timeline data cache
-        # Throttling: forecast should be computed at most once per 15-minute interval.
-        self._last_forecast_bucket: Optional[datetime] = None
-        self._forecast_in_progress: bool = False
-        self._profiles_dirty: bool = False
-        self._plan_lock_until: Optional[datetime] = None
-        self._plan_lock_modes: Dict[str, int] = {}
-        self._timeline_data: List[Dict[str, Any]] = (
-            []
-        )  # ACTIVE timeline (with applied plan)
-        self._baseline_timeline: List[Dict[str, Any]] = []  # CLEAN baseline (no plan)
-        self._last_update: Optional[datetime] = None
-        self._charging_metrics: Dict[str, Any] = {}
-        self._adaptive_consumption_data: Dict[str, Any] = {}  # DEPRECATED
-        self._consumption_summary: Dict[str, Any] = (
-            {}
-        )  # NOVÉ: pro dashboard (4 hodnoty)
-        self._first_update: bool = True  # Flag pro první update (setup)
-        self._auto_switch_handles: List[Any] = []
-        self._last_auto_switch_request: Optional[Tuple[str, datetime]] = None
-        self._auto_switch_ready_at: Optional[datetime] = (
-            dt_util.now() + AUTO_SWITCH_STARTUP_DELAY
+        sensor_setup_module.initialize_sensor(
+            self,
+            coordinator,
+            sensor_type,
+            config_entry,
+            device_info,
+            hass,
+            side_effects_enabled=side_effects_enabled,
+            auto_switch_startup_delay=AUTO_SWITCH_STARTUP_DELAY,
         )
-        self._auto_switch_retry_unsub: Optional[Callable[[], None]] = None
-        self._auto_switch_watchdog_unsub: Optional[Callable[[], None]] = None
-        self._auto_switch_watchdog_interval: timedelta = timedelta(seconds=30)
-        self._forecast_retry_unsub: Optional[Callable[[], None]] = None
-
-        # Log throttling to prevent HA "logging too frequently" warnings
-        self._log_last_ts = self._GLOBAL_LOG_LAST_TS
-
-        # Planner result snapshot (legacy attribute schema name: mode_optimization)
-        self._mode_optimization_result: Optional[Dict[str, Any]] = None
-
-        # Phase 2.8: Mode recommendations (DNES + ZÍTRA) for API
-        self._mode_recommendations: List[Dict[str, Any]] = []
-
-        # Phase 2.9: Daily plans archive (včera, předevčírem, ...)
-        self._daily_plans_archive: Dict[str, Dict[str, Any]] = {}  # {date: plan_state}
-
-        # Phase 2.9: Current daily plan state (will be restored from HA storage)
-        self._daily_plan_state: Optional[Dict[str, Any]] = None
-        self._baseline_repair_attempts: set[str] = set()
-
-        # Phase 1.5: Hash-based change detection
-        self._data_hash: Optional[str] = (
-            None  # MD5 hash of timeline_data for efficient change detection
-        )
-
-        # Unified charging planner - aktivní plán
-        self._active_charging_plan: Optional[Dict[str, Any]] = None
-        self._plan_status: str = "none"  # none | pending | active | completed
-        self._balancing_plan_snapshot: Optional[Dict[str, Any]] = None
-
-        # Phase 2.9: Hourly history update tracking
-        self._last_history_update_hour: Optional[int] = None
-        self._initial_history_update_done: bool = False
-
-        # Phase 3.0: Storage Helper for persistent battery plans
-        # Storage path: /var/lib/homeassistant/homeassistant/config/.storage/
-        # File: oig_cloud.battery_plans_{box_id}
-        # Version: 1 (structure compatible with future migrations)
-        self._plans_store: Optional[Store] = None
-        if self._hass:
-            self._plans_store = Store(
-                self._hass,
-                version=1,
-                key=f"oig_cloud.battery_plans_{self._box_id}",
-            )
-            _LOGGER.debug(
-                f"✅ Initialized Storage Helper: oig_cloud.battery_plans_{self._box_id}"
-            )
-        else:
-            _LOGGER.warning(
-                "⚠️ Cannot initialize Storage Helper - hass not available yet. "
-                "Will retry in async_added_to_hass()"
-            )
-
-        # Phase 3.5: Storage Helper for precomputed UI data (timeline_extended + unified_cost_tile)
-        # File: oig_cloud.precomputed_data_{box_id}
-        # Updated every 15 min by coordinator → instant API responses
-        self._precomputed_store: Optional[Store] = None
-        self._precompute_interval = timedelta(minutes=15)
-        self._last_precompute_at: Optional[datetime] = None
-        self._last_precompute_hash: Optional[str] = None
-        self._precompute_task: Optional[asyncio.Task] = None
-        if self._hass:
-            self._precomputed_store = Store(
-                self._hass,
-                version=1,
-                key=f"oig_cloud.precomputed_data_{self._box_id}",
-            )
-            _LOGGER.debug(
-                f"✅ Initialized Precomputed Data Storage: oig_cloud.precomputed_data_{self._box_id}"
-            )
-        else:
-            _LOGGER.debug(
-                "⚠️ Precomputed storage will be initialized in async_added_to_hass()"
-            )
 
     # Legacy attributes kept for backward compatibility (single planner only).
     # NOTE: Single planner only.
