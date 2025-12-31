@@ -14,7 +14,7 @@ def get_load_avg_sensors(sensor: Any) -> Dict[str, Any]:
         _LOGGER.warning("get_load_avg_sensors: hass not available")
         return {}
 
-    from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
+    from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
     load_sensors: Dict[str, Any] = {}
 

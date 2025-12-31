@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from .. import history as history_module
+from ..data import history as history_module
 from .extended_summary import (
     aggregate_cost_by_day,
     get_day_cost_from_timeline,

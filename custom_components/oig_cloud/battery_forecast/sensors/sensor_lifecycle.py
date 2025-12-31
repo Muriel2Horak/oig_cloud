@@ -9,7 +9,7 @@ import logging
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .. import auto_switch as auto_switch_module
+from ..planning import auto_switch as auto_switch_module
 
 _LOGGER = logging.getLogger(__name__)
 

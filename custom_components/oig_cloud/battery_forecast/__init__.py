@@ -6,23 +6,22 @@ This module provides:
 - Balancing plan execution
 - Mode management (HOME I/II/III/UPS)
 
-Architecture (NEW 3-layer design):
+Architecture (modular layout):
     battery_forecast/
     ├── __init__.py          # This file - exports
     ├── types.py             # TypedDicts, Enums, Constants
-    ├── physics/             # Layer 1: Physics simulation (NEW)
-    │   ├── __init__.py
-    │   └── interval_simulator.py
-    ├── strategy/            # Layer 2: Optimization strategies (NEW)
-    │   ├── __init__.py
-    │   └── hybrid.py        # Mode optimization
+    ├── config.py            # Planner configuration
+    ├── utils_common.py      # Shared helpers
+    ├── task_utils.py        # Async/task helpers
+    ├── data/                # Inputs (history, pricing, solar, profiles)
+    ├── planning/            # Planning + guard logic
+    ├── presentation/        # Detail tabs + UI payloads
+    ├── storage/             # Storage helpers for plans
+    ├── sensors/             # HA entity adapters
+    ├── physics/             # Physics simulation
+    ├── strategy/            # Optimization strategies
     ├── timeline/
-    │   ├── __init__.py
-    │   └── planner.py
-    ├── balancing/
-    │   ├── __init__.py
-    │   ├── executor.py
-    │   └── constraints.py
+    ├── balancing/           # Balancing logic
 """
 
 from .physics import IntervalResult, IntervalSimulator

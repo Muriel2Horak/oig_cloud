@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ..physics import simulate_interval
-from .utils_common import format_time_label, parse_timeline_timestamp
+from ..utils_common import format_time_label, parse_timeline_timestamp
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from homeassistant.util import dt as dt_util
 
-from .presentation import detail_tabs as detail_tabs_module
+from . import detail_tabs as detail_tabs_module
 
 _LOGGER = logging.getLogger(__name__)
 

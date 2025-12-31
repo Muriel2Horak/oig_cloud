@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from .types import (
+from ..types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,

@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from . import history as history_module
+from ..data import history as history_module
 from .plan_storage_io import plan_exists_in_storage, save_plan_to_storage
 
 DATE_FMT = "%Y-%m-%d"
