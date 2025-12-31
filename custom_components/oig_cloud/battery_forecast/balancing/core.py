@@ -24,7 +24,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..const import HOME_UPS
+from ...const import HOME_UPS
 from .plan import (
     BalancingInterval,
     BalancingPlan,

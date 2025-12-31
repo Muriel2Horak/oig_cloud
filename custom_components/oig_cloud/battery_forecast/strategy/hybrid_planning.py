@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 
 from ..config import NegativePriceStrategy
 from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_UPS
-from .balancing import BalancingPlan
+from ..balancing import BalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 

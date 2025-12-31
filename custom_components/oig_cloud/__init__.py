@@ -73,7 +73,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
 try:
-    from .balancing import BalancingManager
+    from .battery_forecast.balancing import BalancingManager
 
     _LOGGER_TEMP = logging.getLogger(__name__)
     _LOGGER_TEMP.debug("oig_cloud: BalancingManager import OK")

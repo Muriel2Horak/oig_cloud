@@ -24,7 +24,7 @@ from ..types import (
     CBB_MODE_NAMES,
     SpotPrice,
 )
-from .balancing import BalancingPlan
+from ..balancing import BalancingPlan
 from . import hybrid_planning as hybrid_planning_module
 from . import hybrid_scoring as hybrid_scoring_module
 
