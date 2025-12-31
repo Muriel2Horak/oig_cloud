@@ -15,7 +15,6 @@ Architecture (NEW 3-layer design):
     │   └── interval_simulator.py
     ├── strategy/            # Layer 2: Optimization strategies (NEW)
     │   ├── __init__.py
-    │   ├── balancing.py     # Balancing cycle planning
     │   └── hybrid.py        # Mode optimization
     ├── timeline/
     │   ├── __init__.py
@@ -27,15 +26,7 @@ Architecture (NEW 3-layer design):
 """
 
 from .physics import IntervalResult, IntervalSimulator
-from .strategy import (
-    BalancingPlan as BalancingPlanNew,  # Avoid conflict with types.BalancingPlan
-)
-from .strategy import (
-    BalancingResult,
-    BalancingStrategy,
-    HybridResult,
-    HybridStrategy,
-)
+from .strategy import HybridResult, HybridStrategy
 from .types import (  # Mode constants; TypedDicts; Constants; Helper functions
     AC_CHARGING_DISABLED_MODES,
     CBB_MODE_HOME_I,
@@ -88,9 +79,6 @@ __all__ = [
     "IntervalSimulator",
     "IntervalResult",
     # NEW: Strategy layer
-    "BalancingStrategy",
-    "BalancingPlanNew",
-    "BalancingResult",
     "HybridStrategy",
     "HybridResult",
 ]
