@@ -16,6 +16,9 @@ from homeassistant.util.dt import now as dt_now
 
 from .const import DOMAIN
 from .shared.logging import setup_simple_telemetry
+from . import service_shield_dispatch as shield_dispatch
+from . import service_shield_queue as shield_queue
+from . import service_shield_validation as shield_validation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -188,16 +191,7 @@ class ServiceShield:
 
     def _values_match(self, current_value: Any, expected_value: Any) -> bool:
         """Porovná dvě hodnoty s normalizací."""
-        try:
-            # Pro číselné hodnoty
-            if str(expected_value).replace(".", "").replace("-", "").isdigit():
-                return float(current_value or 0) == float(expected_value)
-            # Pro textové hodnoty
-            return self._normalize_value(current_value) == self._normalize_value(
-                expected_value
-            )
-        except (ValueError, TypeError):
-            return str(current_value) == str(expected_value)
+        return shield_validation.values_match(current_value, expected_value)
 
     async def start(self) -> None:
         _LOGGER.debug("[OIG Shield] Inicializace – čištění fronty")
@@ -317,227 +311,39 @@ class ServiceShield:
 
     async def _handle_shield_status(self, call: Any) -> None:
         """Handle shield status service call."""
-        status = self.get_shield_status()
-        _LOGGER.info(f"[OIG Shield] Current status: {status}")
-
-        # Emit event with status
-        self.hass.bus.async_fire(
-            "oig_cloud_shield_status",
-            {"status": status, "timestamp": dt_now().isoformat()},
-        )
+        await shield_queue.handle_shield_status(self, call)
 
     async def _handle_queue_info(self, call: Any) -> None:
         """Handle queue info service call."""
-        queue_info = self.get_queue_info()
-        _LOGGER.info(f"[OIG Shield] Queue info: {queue_info}")
-
-        # Emit event with queue info
-        self.hass.bus.async_fire(
-            "oig_cloud_shield_queue_info",
-            {**queue_info, "timestamp": dt_now().isoformat()},
-        )
+        await shield_queue.handle_queue_info(self, call)
 
     async def _handle_remove_from_queue(self, call: Any) -> None:
         """Handle remove from queue service call."""
-        position = call.data.get("position")
-
-        # OPRAVA: Position může být:
-        # - 1 = running služba (v self.pending)
-        # - 2+ = čekající služby (v self.queue)
-        total_items = len(self.pending) + len(self.queue)
-
-        if position < 1 or position > total_items:
-            _LOGGER.error(
-                f"[OIG Shield] Neplatná pozice: {position} (pending: {len(self.pending)}, queue: {len(self.queue)})"
-            )
-            return
-
-        # Position 1 = running služba
-        if position == 1 and len(self.pending) > 0:
-            # Nemůžeme smazat RUNNING službu - ta už běží v API!
-            _LOGGER.warning(
-                f"[OIG Shield] Nelze smazat běžící službu na pozici 1 (running: {self.running})"
-            )
-            return
-
-        # Position 2+ = čekající ve frontě
-        # Pozice je 1-based (1=running, 2=queue[0], 3=queue[1], ...)
-        # Pro queue potřebujeme position-2 (protože position 1 je running)
-        queue_index = position - 1 - len(self.pending)
-
-        if queue_index < 0 or queue_index >= len(self.queue):
-            _LOGGER.error(
-                f"[OIG Shield] Chyba výpočtu indexu: position={position}, queue_index={queue_index}, queue_len={len(self.queue)}"
-            )
-            return
-
-        removed_item = self.queue[queue_index]
-        service_name = removed_item[0]
-        params = removed_item[1]
-        expected_entities = removed_item[2]
-
-        # Smažeme položku z fronty
-        del self.queue[queue_index]
-
-        # Smažeme i metadata
-        self.queue_metadata.pop((service_name, str(params)), None)
-
-        _LOGGER.info(
-            f"[OIG Shield] Odstraněna položka z fronty na pozici {position}: {service_name}"
-        )
-
-        # LOGBOOK: Zapíšeme informaci o zrušení služby
-        await self._log_event(
-            "cancelled",
-            service_name,
-            {
-                "params": params,
-                "entities": expected_entities,
-            },
-            reason=f"Uživatel zrušil požadavek z fronty (pozice {position})",
-            context=call.context,
-        )
-
-        # KRITICKÉ: Notifikuj senzory o změně
-        self._notify_state_change()
-
-        # Fire event
-        self.hass.bus.async_fire(
-            "oig_cloud_shield_queue_removed",
-            {
-                "position": position,
-                "service": service_name,
-                "remaining": len(self.queue),
-                "timestamp": dt_now().isoformat(),
-            },
-        )
+        await shield_queue.handle_remove_from_queue(self, call)
 
     def get_shield_status(self) -> str:
         """Vrací aktuální stav ServiceShield."""
-        if self.running:
-            return f"Běží: {self.running}"
-        elif self.queue:
-            return f"Ve frontě: {len(self.queue)} služeb"
-        else:
-            return "Neaktivní"
+        return shield_queue.get_shield_status(self)
 
     def get_queue_info(self) -> Dict[str, Any]:
         """Vrací informace o frontě."""
-        return {
-            "running": self.running,
-            "queue_length": len(self.queue),
-            "pending_count": len(self.pending),
-            "queue_services": [item[0] for item in self.queue],
-        }
+        return shield_queue.get_queue_info(self)
 
     def has_pending_mode_change(self, target_mode: Optional[str] = None) -> bool:
         """Zjistí, jestli už probíhá nebo čeká service set_box_mode."""
-
-        def _matches_target(entities: Dict[str, str]) -> bool:
-            if not entities:
-                return False
-            if not target_mode:
-                return True
-
-            normalized_target = self._normalize_value(target_mode)
-            for value in entities.values():
-                if self._normalize_value(value) == normalized_target:
-                    return True
-            return False
-
-        # Pending (běžící) služby
-        for service_name, info in self.pending.items():
-            if service_name == SERVICE_SET_BOX_MODE and _matches_target(
-                info.get("entities", {})
-            ):
-                return True
-
-        # Queue (čekající) služby
-        for service_name, _params, expected_entities, *_ in self.queue:
-            if service_name == SERVICE_SET_BOX_MODE and _matches_target(
-                expected_entities
-            ):
-                return True
-
-        # Běží, ale pending záznam není? (defenzivní kontrola)
-        if self.running == SERVICE_SET_BOX_MODE:
-            return True
-
-        return False
+        return shield_queue.has_pending_mode_change(self, target_mode)
 
     def _normalize_value(self, val: Any) -> str:
-        val = (
-            str(val or "")
-            .strip()
-            .lower()
-            .replace(" ", "")
-            .replace("/", "")
-            .replace("_", "")
-        )
-        mapping = {
-            "vypnutoon": "vypnuto",
-            "vypnuto": "vypnuto",
-            "off": "vypnuto",
-            "zapnutoon": "zapnuto",
-            "zapnuto": "zapnuto",
-            "on": "zapnuto",
-            "somezenimlimited": "omezeno",
-            "limited": "omezeno",
-            "omezeno": "omezeno",
-            "manuální": "manualni",
-            "manual": "manualni",
-            "cbb": "cbb",
-        }
-        return mapping.get(val, val)
+        return shield_validation.normalize_value(val)
 
     def _get_entity_state(self, entity_id: str) -> Optional[str]:
-        state = self.hass.states.get(entity_id)
-        return state.state if state else None
+        return shield_validation.get_entity_state(self.hass, entity_id)
 
     def _extract_api_info(
         self, service_name: str, params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Extract API call information from service parameters."""
-        api_info = {}
-
-        if service_name == "oig_cloud.set_boiler_mode":
-            mode = params.get("mode")
-            mode_key = str(mode or "").strip().lower()
-            api_info = {
-                "api_endpoint": "Device.Set.Value.php",
-                "api_table": "boiler_prms",
-                "api_column": "manual",
-                "api_value": 1 if mode_key in {"manual", "manuální"} else 0,
-                "api_description": f"Set boiler mode to {mode}",
-            }
-        elif service_name == SERVICE_SET_BOX_MODE:
-            mode = params.get("mode")
-            api_info = {
-                "api_endpoint": "Device.Set.Value.php",
-                "api_table": "box_prms",
-                "api_column": "mode",
-                "api_value": mode,
-                "api_description": f"Set box mode to {mode}",
-            }
-        elif service_name == "oig_cloud.set_grid_delivery":
-            if "limit" in params:
-                api_info = {
-                    "api_endpoint": "Device.Set.Value.php",
-                    "api_table": "invertor_prm1",
-                    "api_column": "p_max_feed_grid",
-                    "api_value": params["limit"],
-                    "api_description": f"Set grid delivery limit to {params['limit']}W",
-                }
-            elif "mode" in params:
-                api_info = {
-                    "api_endpoint": "Device.Set.Value.php",
-                    "api_table": "invertor_prms",
-                    "api_column": "to_grid",
-                    "api_value": params["mode"],
-                    "api_description": f"Set grid delivery mode to {params['mode']}",
-                }
-
-        return api_info
+        return shield_validation.extract_api_info(service_name, params)
 
     async def intercept_service_call(
         self,
@@ -548,294 +354,15 @@ class ServiceShield:
         blocking: bool,
         context: Optional[Context],
     ) -> None:
-        service_name = f"{domain}.{service}"
-        params = data["params"]
-        trace_id = str(uuid.uuid4())[:8]
-
-        # SPECIÁLNÍ LOGIKA: set_grid_delivery s mode + limit současně
-        # Rozdělíme na 2 samostatné volání (serializace)
-        if (
-            service_name == "oig_cloud.set_grid_delivery"
-            and "mode" in params
-            and "limit" in params
-        ):
-            _LOGGER.info(
-                "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
-            )
-
-            # Vytvoříme 2 samostatné volání
-            # 1. Mode (pokud se liší od aktuálního)
-            mode_params = {k: v for k, v in params.items() if k != "limit"}
-            # 2. Limit (pokud se liší od aktuálního)
-            limit_params = {k: v for k, v in params.items() if k != "mode"}
-
-            # Zavoláme intercept rekurzivně pro každý parametr
-            _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
-            await self.intercept_service_call(
-                domain,
-                service,
-                {"params": mode_params},
-                original_call,
-                blocking,
-                context,
-            )
-
-            _LOGGER.info("[Grid Delivery] Step 2/2: Processing limit change")
-            await self.intercept_service_call(
-                domain,
-                service,
-                {"params": limit_params},
-                original_call,
-                blocking,
-                context,
-            )
-
-            _LOGGER.info("[Grid Delivery] Both calls queued successfully")
-            return
-
-        expected_entities = self.extract_expected_entities(service_name, params)
-        api_info = self._extract_api_info(service_name, params)
-
-        _LOGGER.debug("Intercept service: %s", service_name)
-        _LOGGER.debug("Intercept expected entities: %s", expected_entities)
-        _LOGGER.debug("Intercept queue length: %s", len(self.queue))
-        _LOGGER.debug("Intercept running: %s", self.running)
-
-        # OPRAVA: Pouze security event, ne telemetrie na začátku
-        self._log_security_event(
-            "SERVICE_INTERCEPTED",
-            {
-                "task_id": trace_id,
-                "service": service_name,
-                "params": str(params),
-                "expected_entities": str(expected_entities),
-            },
+        await shield_dispatch.intercept_service_call(
+            self,
+            domain,
+            service,
+            data,
+            original_call,
+            blocking,
+            context,
         )
-
-        if not expected_entities:
-            _LOGGER.debug("Intercept: no expected entities; returning early")
-            await self._log_event(
-                "skipped",
-                service_name,
-                {"params": params, "entities": {}},
-                reason="Není co měnit – požadované hodnoty již nastaveny",
-                context=context,
-            )
-            return
-
-        new_expected_set = frozenset(expected_entities.items())
-
-        # Debug: Vypsat frontu a pending před kontrolou deduplikace
-        _LOGGER.debug("Dedup: checking for duplicates")
-        _LOGGER.debug("Dedup: new service=%s", service_name)
-        _LOGGER.debug("Dedup: new params=%s", params)
-        _LOGGER.debug("Dedup: new expected=%s", expected_entities)
-        _LOGGER.debug("Dedup: queue length=%s", len(self.queue))
-        _LOGGER.debug("Dedup: pending length=%s", len(self.pending))
-        for i, q in enumerate(self.queue):
-            _LOGGER.debug(
-                "Dedup: queue[%s] service=%s params=%s expected=%s", i, q[0], q[1], q[2]
-            )
-        for service_key, pending_info in self.pending.items():
-            _LOGGER.debug(
-                "Dedup: pending service=%s entities=%s",
-                service_key,
-                pending_info.get("entities", {}),
-            )
-
-        # Čeká už ve frontě nebo běží v pending stejná služba se stejným cílem?
-        # OPRAVA: Kontrolujeme jak queue, tak pending
-        duplicate_found = False
-        duplicate_location = None
-        new_params_set = frozenset(params.items()) if params else frozenset()
-
-        # 1. Kontrola QUEUE (čekající služby)
-        for q in self.queue:
-            queue_service = q[0]
-            queue_params = q[1]
-            queue_expected = q[2]
-
-            queue_params_set = (
-                frozenset(queue_params.items()) if queue_params else frozenset()
-            )
-            queue_expected_set = frozenset(queue_expected.items())
-
-            # Duplikát = stejná služba + stejné parametry + stejný očekávaný výsledek
-            if (
-                queue_service == service_name
-                and queue_params_set == new_params_set
-                and queue_expected_set == new_expected_set
-            ):
-                duplicate_found = True
-                duplicate_location = "queue"
-                _LOGGER.debug("Dedup: duplicate found in queue")
-                _LOGGER.debug(
-                    "Dedup: matching service=%s params=%s expected=%s", q[0], q[1], q[2]
-                )
-                break
-
-        # 2. Kontrola PENDING (běžící služby) - pouze pokud nebyl nalezen v queue
-        if not duplicate_found:
-            for pending_service_key, pending_info in self.pending.items():
-                pending_entities = pending_info.get("entities", {})
-                pending_expected_set = frozenset(pending_entities.items())
-
-                # Duplikát v pending = stejná služba + stejný očekávaný výsledek
-                # (parametry u pending nemáme uložené, takže kontrolujeme jen expected entities)
-                if (
-                    pending_service_key == service_name
-                    and pending_expected_set == new_expected_set
-                ):
-                    duplicate_found = True
-                    duplicate_location = "pending"
-                    _LOGGER.debug("Dedup: duplicate found in pending")
-                    _LOGGER.debug(
-                        "Dedup: matching service=%s expected=%s",
-                        pending_service_key,
-                        pending_entities,
-                    )
-                    break
-
-        if duplicate_found:
-            _LOGGER.debug(
-                "Intercept: service already in %s; returning early", duplicate_location
-            )
-            await self._log_event(
-                "ignored",
-                service_name,
-                {"params": params, "entities": expected_entities},
-                reason=f"Ignorováno – služba se stejným efektem je již {'ve frontě' if duplicate_location == 'queue' else 'spuštěna'}",
-                context=context,
-            )
-            await self._log_telemetry(
-                "ignored",
-                service_name,
-                {
-                    "params": params,
-                    "entities": expected_entities,
-                    "reason": f"duplicate_in_{duplicate_location}",
-                },
-            )
-            return
-
-        # ✅ Není co frontovat, ale už hotovo?
-        all_ok = True
-        for entity_id, expected_value in expected_entities.items():
-            state = self.hass.states.get(entity_id)
-            current = self._normalize_value(state.state if state else None)
-            expected = self._normalize_value(expected_value)
-            _LOGGER.debug(
-                "Intercept: entity=%s current=%r expected=%r",
-                entity_id,
-                current,
-                expected,
-            )
-            if current != expected:
-                all_ok = False
-                break
-
-        if all_ok:
-            _LOGGER.debug("Intercept: all entities already match; returning early")
-            # OPRAVA: Logujeme telemetrii i pro skipped požadavky
-            await self._log_telemetry(
-                "skipped",
-                service_name,
-                {
-                    "trace_id": trace_id,
-                    "params": params,
-                    "entities": expected_entities,
-                    "reason": "already_completed",
-                    **api_info,
-                },
-            )
-            await self._log_event(
-                "skipped",
-                service_name,
-                {"params": params, "entities": expected_entities},
-                reason="Změna již provedena – není co volat",
-                context=context,
-            )
-            return
-
-        # ߚࠓpustíme hned
-        _LOGGER.debug("Intercept: will execute service; logging telemetry")
-        # TELEMETRIE: Zde se odešle telemetrie při skutečném volání služby
-        await self._log_telemetry(
-            "change_requested",
-            service_name,
-            {
-                "trace_id": trace_id,
-                "params": params,
-                "entities": expected_entities,
-                **api_info,  # Přidáme API informace
-            },
-        )
-
-        # KRITICKÁ OPRAVA: Kontrola, jestli už něco běží
-        # Shield NESMÍ pouštět služby paralelně!
-        if self.running is not None:
-            # Už něco běží → přidáme do FRONTY
-            _LOGGER.info(
-                f"[OIG Shield] Služba {service_name} přidána do fronty (běží: {self.running})"
-            )
-            self.queue.append(
-                (
-                    service_name,
-                    params,
-                    expected_entities,
-                    original_call,
-                    domain,
-                    service,
-                    blocking,
-                    context,
-                )
-            )
-            # OPRAVA: Uložíme metadata s trace_id A časem zařazení pro live duration
-            self.queue_metadata[(service_name, str(params))] = {
-                "trace_id": trace_id,
-                "queued_at": datetime.now(),
-            }
-
-            # Track mode transition pokud je to set_box_mode
-            if service_name == "set_box_mode" and self.mode_tracker:
-                from_mode = params.get("current_value")
-                to_mode = params.get("value")
-                if from_mode and to_mode:
-                    self.mode_tracker.track_request(trace_id, from_mode, to_mode)
-
-            # Notifikuj senzory o nové položce ve frontě
-            self._notify_state_change()
-
-            await self._log_event(
-                "queued",
-                service_name,
-                {"params": params, "entities": expected_entities},
-                reason=f"Přidáno do fronty (běží: {self.running})",
-                context=context,
-            )
-        else:
-            # Nic neběží → spustíme HNED
-            _LOGGER.info(
-                f"[OIG Shield] Spouštím službu {service_name} (fronta prázdná)"
-            )
-
-            # Track mode transition pokud je to set_box_mode
-            if service_name == "set_box_mode" and self.mode_tracker:
-                from_mode = params.get("current_value")
-                to_mode = params.get("value")
-                if from_mode and to_mode:
-                    self.mode_tracker.track_request(trace_id, from_mode, to_mode)
-
-            await self._start_call(
-                service_name,
-                params,
-                expected_entities,
-                original_call,
-                domain,
-                service,
-                blocking,
-                context,
-            )
 
     async def _start_call(
         self,
@@ -848,155 +375,17 @@ class ServiceShield:
         blocking: bool,
         context: Optional[Context],
     ) -> None:
-        # OPRAVA: Uložíme původní stavy entit před změnou
-        original_states = {}
-        for entity_id in expected_entities.keys():
-            state = self.hass.states.get(entity_id)
-            original_states[entity_id] = state.state if state else None
-
-        # Příprava power monitoring pro set_box_mode
-        power_monitor = None
-        if service_name == SERVICE_SET_BOX_MODE:
-            # Získat box_id z konfigurace
-            box_id = None
-            if self.hass.data.get("oig_cloud"):
-                for entry_id, entry_data in self.hass.data["oig_cloud"].items():
-                    if entry_data.get("service_shield") == self:
-                        coordinator = entry_data.get("coordinator")
-                        if coordinator:
-                            try:
-                                from .oig_cloud_sensor import resolve_box_id
-
-                                box_id = resolve_box_id(coordinator)
-                            except Exception:
-                                box_id = None
-                            break
-
-            if not box_id:
-                _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
-            else:
-                power_entity = f"sensor.oig_{box_id}_actual_aci_wtotal"
-                power_state = self.hass.states.get(power_entity)
-
-                if not power_state:
-                    _LOGGER.warning(
-                        f"[OIG Shield] Power monitor: entita {power_entity} neexistuje!"
-                    )
-                elif power_state.state in ["unknown", "unavailable"]:
-                    _LOGGER.warning(
-                        f"[OIG Shield] Power monitor: entita {power_entity} je {power_state.state}"
-                    )
-                else:
-                    try:
-                        current_power = float(power_state.state)
-                        target_mode = data.get("value", "").upper()
-
-                        power_monitor = {
-                            "entity_id": power_entity,
-                            "baseline_power": current_power,
-                            "last_power": current_power,
-                            "target_mode": target_mode,
-                            "is_going_to_home_ups": "HOME UPS" in target_mode,
-                            "threshold_kw": 2.5,
-                            "started_at": datetime.now(),
-                        }
-                        _LOGGER.info(
-                            f"[OIG Shield] Power monitor aktivní pro {service_name}: "
-                            f"baseline={current_power}W, target={target_mode}, "
-                            f"going_to_ups={power_monitor['is_going_to_home_ups']}"
-                        )
-                    except (ValueError, TypeError) as e:
-                        _LOGGER.warning(
-                            f"[OIG Shield] Nelze inicializovat power monitor: {e}"
-                        )
-
-        # OPRAVA: Přidáme do pending PŘED voláním API, aby se okamžitě zobrazilo ve frontě
-        self.pending[service_name] = {
-            "entities": expected_entities,
-            "original_states": original_states,
-            "params": data,
-            "called_at": datetime.now(),
-            "power_monitor": power_monitor,  # Nový field pro sledování výkonu
-        }
-
-        # OPRAVA: Nastavíme running AŽ NYNÍ, aby se okamžitě zobrazilo
-        self.running = service_name
-
-        # Odstraňme metadata z fronty
-        self.queue_metadata.pop((service_name, str(data)), None)
-
-        # OPRAVA: Fire event pro okamžitou aktualizaci UI
-        self.hass.bus.async_fire(
-            "oig_cloud_shield_queue_info",
-            {
-                "running": self.running,
-                "queue_length": len(self.queue),
-                "pending_count": len(self.pending),
-                "queue_services": [item[0] for item in self.queue],
-                "timestamp": dt_now().isoformat(),
-            },
-        )
-
-        # Notifikuj senzory o změně stavu
-        self._notify_state_change()
-
-        await self._log_event(
-            "change_requested",
+        await shield_dispatch.start_call(
+            self,
             service_name,
-            {
-                "params": data,
-                "entities": expected_entities,
-                "original_states": original_states,
-            },
-            reason="Požadavek odeslán do API",
-            context=context,
+            data,
+            expected_entities,
+            original_call,
+            domain,
+            service,
+            blocking,
+            context,
         )
-
-        await self._log_event(
-            "started",
-            service_name,
-            {
-                "params": data,
-                "entities": expected_entities,
-                "original_states": original_states,
-            },
-            context=context,
-        )
-
-        # OPRAVA: Volání API až NYNÍ, když už je služba v pending a UI se aktualizovalo
-        await original_call(
-            domain, service, service_data=data, blocking=blocking, context=context
-        )
-
-        # KRITICKÁ OPRAVA: Po API volání OKAMŽITĚ refreshneme coordinator
-        # Bez toho by Shield čekal na další scheduled update (30-120s)!
-        try:
-            from .const import DOMAIN
-
-            coordinator = (
-                self.hass.data.get(DOMAIN, {})
-                .get(self.entry.entry_id, {})
-                .get("coordinator")
-            )
-            if coordinator:
-                _LOGGER.debug(
-                    f"[OIG Shield] Vynucuji okamžitou aktualizaci coordinatoru po API volání pro {service_name}"
-                )
-                await coordinator.async_request_refresh()
-                _LOGGER.debug(
-                    "[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
-                )
-            else:
-                _LOGGER.warning(
-                    "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
-                )
-        except Exception as e:
-            _LOGGER.error(
-                f"[OIG Shield] Chyba při refreshu coordinatoru: {e}", exc_info=True
-            )
-
-        # Po volání služby nastavíme state listener pro sledování změn
-        self._setup_state_listener()
 
     @callback
     async def _check_loop(self, _now: datetime) -> None:  # noqa: C901
@@ -2018,6 +1407,18 @@ class ServiceShield:
                 )
                 # OPRAVA: Přidání spánku při chybě, aby se předešlo opakovanému selhání
                 await asyncio.sleep(5)
+
+
+# Delegated methods (queue/validation/dispatch)
+ServiceShield.extract_expected_entities = shield_validation.extract_expected_entities
+ServiceShield._check_entity_state_change = shield_validation.check_entity_state_change
+ServiceShield._log_event = shield_dispatch.log_event
+ServiceShield._safe_call_service = shield_dispatch.safe_call_service
+ServiceShield._start_monitoring_task = shield_queue.start_monitoring_task
+ServiceShield._check_entities_periodically = shield_queue.check_entities_periodically
+ServiceShield._check_loop = shield_queue.check_loop
+ServiceShield.start_monitoring = shield_queue.start_monitoring
+ServiceShield._async_check_loop = shield_queue.async_check_loop
 
 
 class ModeTransitionTracker:
