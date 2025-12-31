@@ -2,6 +2,7 @@
 
 from .core import BalancingManager
 from .executor import BalancingExecutor
+from .helpers import get_balancing_plan, plan_balancing, update_balancing_plan_snapshot
 from .plan import (
     BalancingInterval,
     BalancingMode,
@@ -15,6 +16,9 @@ from .plan import (
 __all__ = [
     "BalancingManager",
     "BalancingExecutor",
+    "get_balancing_plan",
+    "plan_balancing",
+    "update_balancing_plan_snapshot",
     "BalancingPlan",
     "BalancingInterval",
     "BalancingMode",

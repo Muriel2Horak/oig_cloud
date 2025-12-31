@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import balancing_helpers as balancing_helpers_module
+from .balancing import helpers as balancing_helpers_module
 from . import battery_state as battery_state_module
 from . import charging_helpers as charging_helpers_module
 from . import detail_tabs as detail_tabs_module
