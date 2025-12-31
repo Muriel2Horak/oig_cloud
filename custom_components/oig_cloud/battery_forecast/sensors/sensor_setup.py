@@ -37,7 +37,7 @@ def initialize_sensor(
 
     # Resolve box id for stable entity identifiers.
     try:
-        from ..oig_cloud_sensor import resolve_box_id
+        from ...oig_cloud_sensor import resolve_box_id
 
         sensor._box_id = resolve_box_id(coordinator)
     except Exception:
@@ -57,7 +57,7 @@ def initialize_sensor(
     sensor._attr_state_class = SensorStateClass.MEASUREMENT
     sensor._attr_entity_category = None
 
-    from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
+    from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
     sensor_config = SENSOR_TYPES_STATISTICS.get(sensor_type, {})
     name_cs = sensor_config.get("name_cs")

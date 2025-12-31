@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Union
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import auto_switch as auto_switch_module
+from .. import auto_switch as auto_switch_module
 
 
 def log_rate_limited(

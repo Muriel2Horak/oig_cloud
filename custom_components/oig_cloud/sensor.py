@@ -862,7 +862,7 @@ async def async_setup_entry(  # noqa: C901
 
     if battery_prediction_enabled:
         try:
-            from .battery_forecast.ha_sensor import OigCloudBatteryForecastSensor
+            from .battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
 
             battery_forecast_sensors: List[Any] = []
             if SENSOR_TYPES:
@@ -966,7 +966,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Přidat také grid charging plan sensor
                 try:
-                    from .battery_forecast.grid_charging_sensor import (
+                    from .battery_forecast.sensors.grid_charging_sensor import (
                         OigCloudGridChargingPlanSensor,
                     )
 
@@ -994,7 +994,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Přidat také battery efficiency sensor
                 try:
-                    from .battery_forecast.efficiency_sensor import (
+                    from .battery_forecast.sensors.efficiency_sensor import (
                         OigCloudBatteryEfficiencySensor,
                     )
 
@@ -1024,7 +1024,7 @@ async def async_setup_entry(  # noqa: C901
 
                 # Přidat také planner status sensor (recommended mode)
                 try:
-                    from .battery_forecast.recommended_sensor import (
+                    from .battery_forecast.sensors.recommended_sensor import (
                         OigCloudPlannerRecommendedModeSensor,
                     )
 

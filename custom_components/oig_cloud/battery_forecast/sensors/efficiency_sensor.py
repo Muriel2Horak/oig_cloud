@@ -56,7 +56,7 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
         # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
         try:
-            from ..oig_cloud_sensor import resolve_box_id
+            from ...oig_cloud_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(coordinator)
         except Exception:
@@ -74,7 +74,7 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
         # Načíst název ze sensor types
-        from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
+        from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
         sensor_config = SENSOR_TYPES_STATISTICS.get(sensor_type, {})
         name_cs = sensor_config.get("name_cs")

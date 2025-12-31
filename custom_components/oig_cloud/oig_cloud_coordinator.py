@@ -909,7 +909,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 return
 
             # Importujeme battery forecast třídu
-            from .battery_forecast.ha_sensor import OigCloudBatteryForecastSensor
+            from .battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
 
             # Získat inverter_sn deterministicky (config entry → numerické klíče v self.data)
             inverter_sn: Optional[str] = None

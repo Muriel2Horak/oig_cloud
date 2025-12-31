@@ -16,7 +16,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from ..const import DOMAIN
+from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,12 +40,12 @@ class OigCloudPlannerRecommendedModeSensor(
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
         self._attr_device_info = device_info
 
-        from ..sensor_types import SENSOR_TYPES
+        from ...sensor_types import SENSOR_TYPES
 
         self._config = SENSOR_TYPES.get(sensor_type, {})
 
         try:
-            from ..oig_cloud_sensor import resolve_box_id
+            from ...oig_cloud_sensor import resolve_box_id
 
             self._box_id = resolve_box_id(coordinator)
         except Exception:
