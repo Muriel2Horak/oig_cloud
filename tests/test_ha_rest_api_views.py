@@ -352,6 +352,16 @@ async def test_balancing_decisions_view_missing_entity():
 
 
 @pytest.mark.asyncio
+async def test_balancing_decisions_view_missing_component():
+    hass = DummyHass()
+    hass.data["entity_components"] = {}
+    view = api_module.OIGCloudBalancingDecisionsView()
+    view.hass = hass
+    response = await view.get(DummyRequest(hass), "123")
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
 async def test_planner_settings_view_get_and_post():
     entry = SimpleNamespace(
         entry_id="entry1",

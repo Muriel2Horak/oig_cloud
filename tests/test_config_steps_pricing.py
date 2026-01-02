@@ -1,3 +1,7 @@
+from types import SimpleNamespace
+
+import pytest
+
 from custom_components.oig_cloud.config.steps import WizardMixin
 
 
@@ -99,3 +103,69 @@ def test_map_backend_to_frontend():
     assert frontend["tariff_count"] == "dual"
     assert frontend["tariff_weekend_same_as_weekday"] is False
     assert frontend["vat_rate"] == 19.0
+
+
+class DummyWizard(WizardMixin):
+    def __init__(self):
+        super().__init__()
+        self.hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
+
+    def async_show_form(self, **kwargs):
+        return {"type": "form", **kwargs}
+
+    async def async_step_wizard_summary(self, user_input=None):
+        return {"type": "summary", "data": dict(self._wizard_data)}
+
+    def _get_next_step(self, current_step: str) -> str:
+        return "wizard_summary"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_scenario_switch():
+    flow = DummyWizard()
+    flow._wizard_data = {"import_pricing_scenario": "spot_percentage"}
+
+    result = await flow.async_step_wizard_pricing_import(
+        {"import_pricing_scenario": "fix_price"}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_invalid_fee():
+    flow = DummyWizard()
+    flow._wizard_data = {"import_pricing_scenario": "spot_fixed"}
+
+    result = await flow.async_step_wizard_pricing_import(
+        {"import_pricing_scenario": "spot_fixed", "spot_fixed_fee_kwh": 20.0}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["spot_fixed_fee_kwh"] == "invalid_fee"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_invalid_price():
+    flow = DummyWizard()
+    flow._wizard_data = {"export_pricing_scenario": "fix_price"}
+
+    result = await flow.async_step_wizard_pricing_export(
+        {"export_pricing_scenario": "fix_price", "export_fixed_price_kwh": 20.0}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["export_fixed_price_kwh"] == "invalid_price"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_success():
+    flow = DummyWizard()
+    flow._wizard_data = {"import_pricing_scenario": "fix_price"}
+
+    result = await flow.async_step_wizard_pricing_import(
+        {"import_pricing_scenario": "fix_price", "fixed_price_kwh": 4.5}
+    )
+
+    assert result["type"] == "summary"
