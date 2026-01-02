@@ -80,8 +80,7 @@ async def test_build_day_timeline_mixed_rebuild(monkeypatch):
     today = date.today()
     date_str = today.strftime(extended_module.DATE_FMT)
     storage_plans = {"detailed": {date_str: {"intervals": [], "invalid": True}}}
-    plans_store = DummyStore(storage_plans)
-    sensor = DummySensor(hass=SimpleNamespace(), plans_store=plans_store)
+    sensor = DummySensor(hass=SimpleNamespace(), plans_store=None)
     sensor._daily_plan_state = {
         "date": date_str,
         "plan": [
@@ -107,6 +106,11 @@ async def test_build_day_timeline_mixed_rebuild(monkeypatch):
             "net_cost": 1.2,
         }
     ]
+
+    fixed_now = datetime.combine(today, datetime.min.time()) + timedelta(hours=1)
+    monkeypatch.setattr(extended_module.dt_util, "now", lambda: fixed_now)
+    monkeypatch.setattr(extended_module.dt_util, "as_local", lambda dt: dt)
+
 
     async def _mock_build_modes(*_args, **_kwargs):
         ts = dt_util.as_local(datetime.combine(today, datetime.min.time()))

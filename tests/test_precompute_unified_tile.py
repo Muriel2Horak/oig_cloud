@@ -65,6 +65,34 @@ async def test_precompute_ui_data_saves_payload(monkeypatch):
     assert sensor._last_precompute_at is not None
 
 
+@pytest.mark.asyncio
+async def test_precompute_ui_data_skips_without_store():
+    sensor = DummySensor()
+    sensor._precomputed_store = None
+
+    await precompute_module.precompute_ui_data(sensor)
+
+    assert sensor._last_precompute_at is None
+
+
+@pytest.mark.asyncio
+async def test_precompute_ui_data_handles_detail_tabs_error(monkeypatch):
+    sensor = DummySensor()
+
+    async def _fail_detail_tabs(_sensor, plan="active"):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.presentation.detail_tabs.build_detail_tabs",
+        _fail_detail_tabs,
+    )
+
+    await precompute_module.precompute_ui_data(sensor)
+
+    assert sensor._precomputed_store.saved is not None
+    assert sensor._precomputed_store.saved["detail_tabs"] == {}
+
+
 def test_schedule_precompute_skips_recent():
     sensor = DummySensor()
     sensor.hass = DummyHass()

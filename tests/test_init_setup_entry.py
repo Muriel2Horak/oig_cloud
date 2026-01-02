@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+import custom_components.oig_cloud as init_module
+from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
+
+
+class DummyConfigEntries:
+    def __init__(self):
+        self.updated = []
+        self.forwarded = []
+        self.unloaded = []
+
+    def async_update_entry(self, entry, options=None):
+        entry.options = options or {}
+        self.updated.append(entry)
+
+    async def async_forward_entry_setups(self, entry, platforms):
+        self.forwarded.append((entry, platforms))
+
+    async def async_unload_platforms(self, entry, platforms):
+        self.unloaded.append((entry, platforms))
+        return True
+
+
+class DummyHass:
+    def __init__(self):
+        self.data = {}
+        self.states = SimpleNamespace(get=lambda _eid: None)
+        self.config_entries = DummyConfigEntries()
+        self.loop = None
+
+    def async_create_task(self, coro):
+        if hasattr(coro, "close"):
+            coro.close()
+
+
+class DummyEntry:
+    def __init__(self, entry_id="entry1", data=None, options=None, title="OIG 123"):
+        self.entry_id = entry_id
+        self.data = data or {}
+        self.options = options or {}
+        self.title = title
+        self._unload = []
+        self._listener = None
+
+    def async_on_unload(self, func):
+        self._unload.append(func)
+        return func
+
+    def add_update_listener(self, func):
+        self._listener = func
+        return func
+
+
+class DummyShield:
+    def __init__(self, hass, entry):
+        self.hass = hass
+        self.entry = entry
+        self.pending = []
+        self.queue = []
+        self.running = False
+        self.telemetry_handler = None
+
+    async def start(self):
+        return None
+
+    def get_shield_status(self):
+        return {"status": "ok"}
+
+    def get_queue_info(self):
+        return {"pending": 0}
+
+
+class DummyApi:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+
+class DummySessionManager:
+    def __init__(self, api):
+        self.api = api
+
+    async def _ensure_auth(self):
+        return None
+
+    async def close(self):
+        return None
+
+
+class DummyCoordinator:
+    def __init__(self, hass, session_manager, *_args, **_kwargs):
+        self.hass = hass
+        self.session_manager = session_manager
+        self.data = {"123": {}}
+
+    async def async_config_entry_first_refresh(self):
+        return None
+
+
+class DummyDataSourceController:
+    def __init__(self, hass, entry, coordinator, telemetry_store=None):
+        self.hass = hass
+        self.entry = entry
+        self.coordinator = coordinator
+        self.telemetry_store = telemetry_store
+
+    async def async_start(self):
+        return None
+
+    async def async_stop(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_missing_credentials(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(data={}, options={})
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_success_local(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={
+            "enable_cloud_notifications": False,
+            "enable_solar_forecast": False,
+            "enable_pricing": False,
+            "enable_boiler": False,
+            "enable_dashboard": False,
+            "balancing_enabled": False,
+            "standard_scan_interval": 30,
+            "extended_scan_interval": 300,
+        },
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert "coordinator" in hass.data[DOMAIN][entry.entry_id]
+    assert hass.config_entries.forwarded

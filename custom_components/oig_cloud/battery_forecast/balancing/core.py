@@ -261,15 +261,11 @@ class BalancingManager:
             # Ensure holding_start is datetime (might be string from old storage)
             holding_start = self._active_plan.holding_start
             if isinstance(holding_start, str):
-                from datetime import datetime
-
                 holding_start = datetime.fromisoformat(holding_start)
 
             # Ensure holding_end is datetime too
             holding_end = self._active_plan.holding_end
             if isinstance(holding_end, str):
-                from datetime import datetime
-
                 holding_end = datetime.fromisoformat(holding_end)
 
             # Ensure timezone aware for comparison
