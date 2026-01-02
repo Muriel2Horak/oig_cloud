@@ -169,3 +169,65 @@ def test_process_forecast_data_combines_strings():
     assert result["string2_today_kwh"] == 0.5
     assert result["total_today_kwh"] == 1.5
     assert result["total_hourly"]
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_schedules_fetch(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "daily"})
+
+    class DummyHass:
+        def __init__(self):
+            self.created = []
+
+        def async_create_task(self, coro):
+            self.created.append(coro)
+
+    sensor.hass = DummyHass()
+
+    async def _load():
+        sensor._last_forecast_data = None
+        sensor._last_api_call = 0
+
+    async def _delayed():
+        return None
+
+    monkeypatch.setattr(sensor, "_load_persistent_data", _load)
+    monkeypatch.setattr(sensor, "_should_fetch_data", lambda: True)
+    monkeypatch.setattr(sensor, "_delayed_initial_fetch", _delayed)
+    monkeypatch.setattr(
+        sensor_module,
+        "async_track_time_interval",
+        lambda *_args, **_kwargs: "remover",
+    )
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._update_interval_remover == "remover"
+    assert sensor.hass.created
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_uses_cached_data(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "manual"})
+    coordinator = sensor.coordinator
+
+    class DummyHass:
+        def __init__(self):
+            self.created = []
+
+        def async_create_task(self, coro):
+            self.created.append(coro)
+
+    sensor.hass = DummyHass()
+
+    async def _load():
+        sensor._last_forecast_data = {"k": 1}
+        sensor._last_api_call = 1234.0
+
+    monkeypatch.setattr(sensor, "_load_persistent_data", _load)
+    monkeypatch.setattr(sensor, "_should_fetch_data", lambda: False)
+
+    await sensor.async_added_to_hass()
+
+    assert coordinator.solar_forecast_data == {"k": 1}
+    assert not sensor.hass.created
