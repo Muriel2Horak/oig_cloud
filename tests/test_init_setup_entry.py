@@ -6,6 +6,7 @@ import pytest
 
 import custom_components.oig_cloud as init_module
 from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
+from homeassistant.exceptions import ConfigEntryNotReady
 
 
 class DummyConfigEntries:
@@ -329,3 +330,242 @@ async def test_async_setup_entry_success_cloud(monkeypatch):
         hass.data[DOMAIN][entry.entry_id]["notification_manager"],
         DummyNotificationManager,
     )
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_migrates_spot_prices_flag(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={"enable_spot_prices": True},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert hass.config_entries.updated
+    assert entry.options.get("enable_pricing") is True
+    assert "enable_spot_prices" not in entry.options
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_infers_box_id_from_proxy(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    class ProxyState:
+        def __init__(self, state):
+            self.state = state
+
+    hass = DummyHass()
+
+    def _get_state(entity_id):
+        if entity_id == "sensor.oig_local_oig_proxy_proxy_status_box_device_id":
+            return ProxyState("456")
+        return None
+
+    hass.states = SimpleNamespace(get=_get_state)
+
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert entry.options.get("box_id") == "456"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_service_shield_failure(monkeypatch):
+    def _raise(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", _raise
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert hass.data[DOMAIN][entry.entry_id]["service_shield"] is None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_cloud_missing_live_data(monkeypatch):
+    class DummyApiMissingActual:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def get_stats(self):
+            return {"123": {"settings": {}}}
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApiMissingActual)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            configured_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+        ),
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    with pytest.raises(ConfigEntryNotReady):
+        await init_module.async_setup_entry(hass, entry)

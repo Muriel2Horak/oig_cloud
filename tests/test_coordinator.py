@@ -1,6 +1,6 @@
 """Tests for the OIG Cloud Data Update Coordinator."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict
 from unittest.mock import AsyncMock, Mock, patch
@@ -224,3 +224,244 @@ async def test_extended_data_enabled(
     assert result.get("extended_fve") == {}
     assert result.get("extended_grid") == {}
     assert result.get("extended_load") == {}
+
+
+def _make_simple_hass():
+    def _async_create_task(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        return coro
+
+    return SimpleNamespace(
+        config=SimpleNamespace(path=lambda *_a: "/tmp/ote_cache.json"),
+        async_create_task=_async_create_task,
+        loop=SimpleNamespace(call_later=lambda *_a, **_k: None),
+        data={},
+    )
+
+
+def test_schedule_spot_price_update_before_13(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    captured = {}
+
+    def _track(_hass, _cb, when):
+        captured["when"] = when
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.async_track_point_in_time",
+        _track,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    coordinator._schedule_spot_price_update()
+
+    assert captured["when"].hour == 13
+    assert captured["when"].minute == 5
+    assert captured["when"].day == 1
+
+
+def test_schedule_spot_price_update_after_13(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    captured = {}
+
+    def _track(_hass, _cb, when):
+        captured["when"] = when
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.async_track_point_in_time",
+        _track,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: datetime(2025, 1, 1, 14, 0, tzinfo=timezone.utc),
+    )
+
+    coordinator._schedule_spot_price_update()
+
+    assert captured["when"].day == 2
+    assert captured["when"].hour == 13
+    assert captured["when"].minute == 5
+
+
+@pytest.mark.asyncio
+async def test_hourly_fallback_updates_cache(monkeypatch):
+    class DummyOteApi:
+        async def get_spot_prices(self):
+            return {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}, "hours_count": 1}
+
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+    coordinator.ote_api = DummyOteApi()
+    coordinator.data = {"spot_prices": {"prices_czk_kwh": {}}}
+
+    called = {"scheduled": 0}
+
+    def _schedule():
+        called["scheduled"] += 1
+
+    monkeypatch.setattr(coordinator, "_schedule_hourly_fallback", _schedule)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    await coordinator._hourly_fallback_check()
+
+    assert coordinator._spot_prices_cache
+    assert coordinator.data["spot_prices"]["prices_czk_kwh"]
+    assert called["scheduled"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_spot_prices_success(monkeypatch):
+    class DummyOteApi:
+        async def get_spot_prices(self):
+            return {"prices_czk_kwh": {"2025-01-01T00:00:00": 2.0}, "hours_count": 1}
+
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+    coordinator.ote_api = DummyOteApi()
+    coordinator.data = {}
+    coordinator._spot_retry_count = 2
+    coordinator._hourly_fallback_active = True
+
+    scheduled = {"count": 0}
+
+    def _schedule():
+        scheduled["count"] += 1
+
+    monkeypatch.setattr(coordinator, "_schedule_spot_price_update", _schedule)
+
+    await coordinator._update_spot_prices()
+
+    assert coordinator._spot_prices_cache
+    assert coordinator._spot_retry_count == 0
+    assert coordinator._hourly_fallback_active is False
+    assert scheduled["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_spot_prices_failure_calls_retry(monkeypatch):
+    class DummyOteApi:
+        async def get_spot_prices(self):
+            return {}
+
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+    coordinator.ote_api = DummyOteApi()
+
+    called = {"retry": 0}
+
+    def _handle_retry():
+        called["retry"] += 1
+
+    monkeypatch.setattr(coordinator, "_handle_spot_retry", _handle_retry)
+
+    await coordinator._update_spot_prices()
+
+    assert called["retry"] == 1
+
+
+def test_handle_spot_retry_outside_important(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    scheduled = {"count": 0}
+
+    def _schedule():
+        scheduled["count"] += 1
+
+    monkeypatch.setattr(coordinator, "_schedule_spot_price_update", _schedule)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+    )
+
+    coordinator._spot_retry_count = 0
+    coordinator._handle_spot_retry()
+
+    assert coordinator._spot_retry_count == 0
+    assert scheduled["count"] == 1
+
+
+def test_handle_spot_retry_inside_important(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    created = {"count": 0}
+
+    def _create_task(coro):
+        created["count"] += 1
+        if hasattr(coro, "close"):
+            coro.close()
+        return SimpleNamespace(done=lambda: False)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: datetime(2025, 1, 1, 13, 0, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.asyncio.create_task",
+        _create_task,
+    )
+
+    coordinator._spot_retry_count = 0
+    coordinator._handle_spot_retry()
+
+    assert created["count"] == 1
