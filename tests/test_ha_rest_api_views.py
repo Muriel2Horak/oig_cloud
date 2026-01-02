@@ -250,6 +250,190 @@ async def test_detail_tabs_view_precomputed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_consumption_profiles_view_missing_component():
+    hass = DummyHass()
+    view = api_module.OIGCloudConsumptionProfilesView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 500
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_consumption_profiles_view_missing_entity():
+    hass = DummyHass()
+    hass.data["sensor"] = DummyComponent([])
+    view = api_module.OIGCloudConsumptionProfilesView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 404
+    assert "not found" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_consumption_profiles_view_ok():
+    class ProfileEntity:
+        def __init__(self):
+            self.entity_id = "sensor.oig_123_adaptive_load_profiles"
+            self._last_profile_created = "2025-01-01T00:00:00+00:00"
+            self._profiling_status = "ok"
+            self._data_hash = "hash"
+
+        def get_current_prediction(self):
+            return {"predicted_total_kwh": 12.3}
+
+    hass = DummyHass()
+    hass.data["sensor"] = DummyComponent([ProfileEntity()])
+    view = api_module.OIGCloudConsumptionProfilesView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["current_prediction"]["predicted_total_kwh"] == 12.3
+    assert payload["metadata"]["profiling_status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_balancing_decisions_view_missing_component():
+    hass = DummyHass()
+    hass.data["entity_components"] = {}
+    view = api_module.OIGCloudBalancingDecisionsView()
+    view.hass = hass
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_balancing_decisions_view_missing_entity():
+    hass = DummyHass()
+    hass.data["entity_components"] = {"sensor": DummyComponent([])}
+    view = api_module.OIGCloudBalancingDecisionsView()
+    view.hass = hass
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 404
+    assert "not found" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_balancing_decisions_view_ok():
+    class BalancingEntity:
+        def __init__(self):
+            self.entity_id = "sensor.oig_123_battery_balancing"
+            self._last_balancing_profile_created = datetime(
+                2025, 1, 1, tzinfo=timezone.utc
+            )
+            self._balancing_profiling_status = "ok"
+
+        async def _find_best_matching_balancing_pattern(self):
+            return {"predicted_balancing_hours": 3}
+
+    hass = DummyHass()
+    hass.data["entity_components"] = {"sensor": DummyComponent([BalancingEntity()])}
+    view = api_module.OIGCloudBalancingDecisionsView()
+    view.hass = hass
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["current_prediction"]["predicted_balancing_hours"] == 3
+    assert payload["metadata"]["profiling_status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_planner_settings_view_get_and_post(monkeypatch):
+    entry = DummyEntry(entry_id="entry1", options={CONF_AUTO_MODE_SWITCH: False})
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+
+    view = api_module.OIGCloudPlannerSettingsView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "123")
+    payload = json.loads(response.text)
+    assert payload["auto_mode_switch_enabled"] is False
+
+    response = await view.post(
+        DummyJsonRequest(hass, payload={"auto_mode_switch_enabled": True}), "123"
+    )
+    payload = json.loads(response.text)
+
+    assert payload["updated"] is True
+    assert entry.options[CONF_AUTO_MODE_SWITCH] is True
+
+
+@pytest.mark.asyncio
+async def test_planner_settings_view_invalid_payload():
+    entry = DummyEntry(entry_id="entry1", options={CONF_AUTO_MODE_SWITCH: False})
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+
+    view = api_module.OIGCloudPlannerSettingsView()
+    response = await view.post(DummyJsonRequest(hass, raise_json=True), "123")
+
+    assert response.status == 400
+
+    response = await view.post(DummyJsonRequest(hass, payload=[]), "123")
+    assert response.status == 400
+
+
+@pytest.mark.asyncio
+async def test_dashboard_modules_view():
+    entry = DummyEntry(entry_id="entry1", options={"enable_boiler": True})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    view = api_module.OIGCloudDashboardModulesView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "entry1")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["enable_boiler"] is True
+    assert payload["enable_auto"] is False
+
+
+@pytest.mark.asyncio
+async def test_dashboard_modules_view_missing():
+    hass = DummyHass(config_entries=DummyConfigEntries([]))
+    view = api_module.OIGCloudDashboardModulesView()
+
+    response = await view.get(DummyRequest(hass), "missing")
+    assert response.status == 404
+
+
+def test_setup_api_endpoints_registers_views():
+    registered = []
+
+    class DummyHttp:
+        def register_view(self, view):
+            registered.append(type(view).__name__)
+
+    hass = SimpleNamespace(http=DummyHttp())
+
+    api_module.setup_api_endpoints(hass)
+
+    assert "OIGCloudBatteryTimelineView" in registered
+    assert "OIGCloudBalancingDecisionsView" in registered
+
+
+@pytest.mark.asyncio
 async def test_analytics_view_ok():
     hass = DummyHass()
     entity = DummyEntity(
