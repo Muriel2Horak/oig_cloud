@@ -542,7 +542,11 @@ async def test_check_loop_power_monitor_completion(monkeypatch):
             completed["done"] = True
 
     shield._log_event = _log_event
-    shield._log_telemetry = lambda *_a, **_k: None
+
+    async def _log_telemetry(*_args, **_kwargs):
+        return None
+
+    shield._log_telemetry = _log_telemetry
     shield._notify_state_change = lambda: None
     shield._setup_state_listener = lambda: None
 

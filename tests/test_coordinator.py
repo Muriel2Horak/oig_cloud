@@ -1,6 +1,7 @@
 """Tests for the OIG Cloud Data Update Coordinator."""
 
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any, Dict
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -83,7 +84,10 @@ async def test_coordinator_init_pricing_enables_ote(monkeypatch):
     entry.options = {"enable_pricing": True, "enable_chmu_warnings": False}
 
     monkeypatch.setattr(
-        "custom_components.oig_cloud.core.coordinator.OteApi", DummyOteApi
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ote_api.OteApi", DummyOteApi
     )
     monkeypatch.setattr(
         OigCloudCoordinator, "_schedule_hourly_fallback", lambda self: None
@@ -91,14 +95,19 @@ async def test_coordinator_init_pricing_enables_ote(monkeypatch):
     monkeypatch.setattr(
         OigCloudCoordinator, "_schedule_spot_price_update", lambda self: None
     )
+    async def _update_spot_prices(_self):
+        return None
+
     monkeypatch.setattr(
-        OigCloudCoordinator, "_update_spot_prices", AsyncMock()
+        OigCloudCoordinator, "_update_spot_prices", _update_spot_prices
     )
 
     coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
 
     assert coordinator.ote_api is not None
     await tasks[0]
+    for task in tasks[1:]:
+        task.close()
     assert coordinator._spot_prices_cache == coordinator.ote_api._last_data
 
 
@@ -118,7 +127,10 @@ async def test_coordinator_init_chmu_enabled(monkeypatch):
     entry.options = {"enable_pricing": False, "enable_chmu_warnings": True}
 
     monkeypatch.setattr(
-        "custom_components.oig_cloud.core.coordinator.ChmuApi", DummyChmuApi
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.api_chmu.ChmuApi", DummyChmuApi
     )
 
     coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
