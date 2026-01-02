@@ -57,6 +57,76 @@ def coordinator(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_init_pricing_enables_ote(monkeypatch):
+    class DummyOteApi:
+        def __init__(self, cache_path=None):
+            self.cache_path = cache_path
+            self._last_data = {"hours_count": 2, "prices_czk_kwh": {"t": 1.0}}
+
+        async def async_load_cached_spot_prices(self):
+            return None
+
+    tasks = []
+
+    def _async_create_task(coro):
+        tasks.append(coro)
+        return coro
+
+    hass = SimpleNamespace(
+        config=SimpleNamespace(path=lambda *_a: "/tmp/ote_cache.json"),
+        async_create_task=_async_create_task,
+        loop=SimpleNamespace(call_later=lambda *_a, **_k: None),
+    )
+
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": True, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.OteApi", DummyOteApi
+    )
+    monkeypatch.setattr(
+        OigCloudCoordinator, "_schedule_hourly_fallback", lambda self: None
+    )
+    monkeypatch.setattr(
+        OigCloudCoordinator, "_schedule_spot_price_update", lambda self: None
+    )
+    monkeypatch.setattr(
+        OigCloudCoordinator, "_update_spot_prices", AsyncMock()
+    )
+
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    assert coordinator.ote_api is not None
+    await tasks[0]
+    assert coordinator._spot_prices_cache == coordinator.ote_api._last_data
+
+
+@pytest.mark.asyncio
+async def test_coordinator_init_chmu_enabled(monkeypatch):
+    class DummyChmuApi:
+        pass
+
+    hass = SimpleNamespace(
+        config=SimpleNamespace(path=lambda *_a: "/tmp/ote_cache.json"),
+        async_create_task=lambda coro: coro,
+        loop=SimpleNamespace(call_later=lambda *_a, **_k: None),
+    )
+
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": True}
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.ChmuApi", DummyChmuApi
+    )
+
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    assert coordinator.chmu_api is not None
+
+
+@pytest.mark.asyncio
 async def test_coordinator_initialization(
     mock_hass: Mock, mock_api: Mock, mock_config_entry: Mock
 ) -> None:
