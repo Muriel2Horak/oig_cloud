@@ -226,6 +226,45 @@ async def test_extended_data_enabled(
     assert result.get("extended_load") == {}
 
 
+@pytest.mark.asyncio
+async def test_async_update_data_startup_grace_includes_cache(
+    coordinator: OigCloudCoordinator, mock_api: Mock
+) -> None:
+    mock_api.get_stats = AsyncMock(return_value={"device1": {"box_prms": {"mode": 1}}})
+    coordinator._startup_grace_start = datetime.now(timezone.utc)
+    coordinator._startup_grace_seconds = 60
+    coordinator._spot_prices_cache = {"prices_czk_kwh": {"t": 1.0}}
+
+    with patch(
+        "custom_components.oig_cloud.core.coordinator.random.uniform", return_value=-1
+    ):
+        result = await coordinator._async_update_data()
+
+    assert result.get("spot_prices") == coordinator._spot_prices_cache
+
+
+@pytest.mark.asyncio
+async def test_async_update_data_initial_spot_fetch(
+    coordinator: OigCloudCoordinator, mock_api: Mock
+) -> None:
+    class DummyOteApi:
+        async def get_spot_prices(self):
+            return {"hours_count": 2, "prices_czk_kwh": {"t": 1.0}}
+
+    mock_api.get_stats = AsyncMock(return_value={"device1": {"box_prms": {"mode": 1}}})
+    coordinator._startup_grace_seconds = 0
+    coordinator._spot_prices_cache = None
+    coordinator.ote_api = DummyOteApi()
+
+    with patch(
+        "custom_components.oig_cloud.core.coordinator.random.uniform", return_value=-1
+    ):
+        result = await coordinator._async_update_data()
+
+    assert result.get("spot_prices") is not None
+    assert coordinator._spot_prices_cache is not None
+
+
 def _make_simple_hass():
     def _async_create_task(coro):
         if hasattr(coro, "close"):
