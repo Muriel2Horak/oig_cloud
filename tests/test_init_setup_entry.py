@@ -244,6 +244,10 @@ async def test_async_setup_entry_success_local(monkeypatch):
     assert result is True
     assert "coordinator" in hass.data[DOMAIN][entry.entry_id]
     assert hass.config_entries.forwarded
+    assert (
+        hass.data[DOMAIN][entry.entry_id]["coordinator"].session_manager.ensure_called
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -329,6 +333,10 @@ async def test_async_setup_entry_success_cloud(monkeypatch):
     assert isinstance(
         hass.data[DOMAIN][entry.entry_id]["notification_manager"],
         DummyNotificationManager,
+    )
+    assert (
+        hass.data[DOMAIN][entry.entry_id]["coordinator"].session_manager.ensure_called
+        is True
     )
 
 
@@ -466,6 +474,160 @@ async def test_async_setup_entry_infers_box_id_from_proxy(monkeypatch):
 
     assert result is True
     assert entry.options.get("box_id") == "456"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_infers_box_id_from_registry(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    class DummyCoordinatorNoData(DummyCoordinator):
+        def __init__(self, hass, session_manager, *_args, **_kwargs):
+            super().__init__(hass, session_manager, *_args, **_kwargs)
+            self.data = {}
+
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinatorNoData)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    monkeypatch.setattr(init_module, "_infer_box_id_from_local_entities", lambda *_a: "789")
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert entry.options.get("box_id") == "789"
+
+
+def test_infer_box_id_from_local_entities(monkeypatch):
+    class DummyRegistry:
+        def __init__(self):
+            self.entities = {
+                "sensor.oig_local_789_box_prms_mode": SimpleNamespace(
+                    entity_id="sensor.oig_local_789_box_prms_mode"
+                )
+            }
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: DummyRegistry(),
+    )
+
+    hass = DummyHass()
+
+    assert init_module._infer_box_id_from_local_entities(hass) is None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_cloud_empty_stats(monkeypatch):
+    class DummyApiEmptyStats:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def get_stats(self):
+            return {}
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApiEmptyStats)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            configured_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
 
 
 @pytest.mark.asyncio
