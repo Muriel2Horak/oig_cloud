@@ -17,6 +17,9 @@ class DummyCoordinator:
     def __init__(self):
         self.forced_box_id = "123"
 
+    def async_add_listener(self, *_args, **_kwargs):
+        return lambda: None
+
 
 class DummyConfigEntry:
     def __init__(self, options):
@@ -181,6 +184,7 @@ async def test_async_added_to_hass_schedules_fetch(monkeypatch):
 
         def async_create_task(self, coro):
             self.created.append(coro)
+            coro.close()
 
     sensor.hass = DummyHass()
 
@@ -217,6 +221,7 @@ async def test_async_added_to_hass_uses_cached_data(monkeypatch):
 
         def async_create_task(self, coro):
             self.created.append(coro)
+            coro.close()
 
     sensor.hass = DummyHass()
 
