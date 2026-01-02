@@ -39,6 +39,14 @@ async def test_step_user_quick_setup():
 
 
 @pytest.mark.asyncio
+async def test_step_user_wizard():
+    flow = DummyConfigFlow()
+    result = await flow.async_step_user({"setup_type": "wizard"})
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_welcome"
+
+
+@pytest.mark.asyncio
 async def test_quick_setup_requires_live_data():
     flow = DummyConfigFlow()
     result = await flow.async_step_quick_setup(

@@ -539,6 +539,33 @@ async def test_unified_cost_tile_view_build_from_entity(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_unified_cost_tile_view_missing_build_method(monkeypatch):
+    hass = DummyHass()
+
+    class EmptyStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    class BareEntity(DummyEntity):
+        pass
+
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", EmptyStore)
+    hass.data["sensor"] = DummyComponent([BareEntity("sensor.oig_123_battery_forecast")])
+
+    view = api_module.OIGCloudUnifiedCostTileView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 500
+    assert "build_unified_cost_tile" in payload["error"]
+
+
+@pytest.mark.asyncio
 async def test_planner_settings_view_missing_entry():
     hass = DummyHass()
     view = api_module.OIGCloudPlannerSettingsView()
@@ -557,6 +584,53 @@ async def test_dashboard_modules_view_wrong_domain():
     response = await view.get(DummyRequest(hass), "entry1")
 
     assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_detail_tabs_view_missing_component(monkeypatch):
+    hass = DummyHass()
+
+    class EmptyStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", EmptyStore)
+
+    view = api_module.OIGCloudDetailTabsView()
+    response = await view.get(DummyRequest(hass), "123")
+    assert response.status == 503
+
+
+@pytest.mark.asyncio
+async def test_detail_tabs_view_missing_build_method(monkeypatch):
+    hass = DummyHass()
+
+    class EmptyStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    class BareEntity(DummyEntity):
+        pass
+
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", EmptyStore)
+    hass.data["sensor"] = DummyComponent([BareEntity("sensor.oig_123_battery_forecast")])
+
+    view = api_module.OIGCloudDetailTabsView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 500
+    assert "build_detail_tabs method not found" in payload["error"]
 
 
 def test_setup_api_endpoints_registers_views():
