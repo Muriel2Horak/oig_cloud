@@ -11,9 +11,13 @@ from custom_components.oig_cloud.shield import core as core_module
 class DummyServices:
     def __init__(self):
         self.calls = []
+        self.service_calls = []
 
     def async_register(self, domain, service, handler, schema=None):
         self.calls.append((domain, service))
+
+    async def async_call(self, domain, service, service_data, blocking=False):
+        self.service_calls.append((domain, service, service_data, blocking))
 
 
 class DummyHass:
@@ -21,6 +25,7 @@ class DummyHass:
         self.services = DummyServices()
         self.created = []
         self.data = {"core.uuid": "uuid"}
+        self.states = DummyStatesCollection([])
 
     def async_create_task(self, coro):
         self.created.append(coro)
@@ -474,3 +479,179 @@ def test_check_entity_state_change_grid_limit_numeric():
     assert shield._check_entity_state_change(
         "sensor.oig_123_invertor_prm1_p_max_feed_grid", 4500
     )
+
+
+@pytest.mark.asyncio
+async def test_check_loop_completes_and_starts_queue(monkeypatch):
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(
+        [DummyEntityState("sensor.oig_123_box_prms_mode", "Home 2")]
+    )
+    entry = SimpleNamespace(options={"no_telemetry": True}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    events = []
+
+    async def _log_event(event_type, *_args, **_kwargs):
+        events.append(event_type)
+
+    async def _log_telemetry(*_args, **_kwargs):
+        return None
+
+    started = {}
+
+    async def _start_call(*_args, **_kwargs):
+        started["called"] = True
+
+    shield._log_event = _log_event
+    shield._log_telemetry = _log_telemetry
+    shield._start_call = _start_call
+    shield._notify_state_change = lambda: events.append("notified")
+    shield._setup_state_listener = lambda: None
+
+    shield.pending["svc"] = {
+        "called_at": datetime.now(),
+        "params": {},
+        "entities": {"sensor.oig_123_box_prms_mode": "Home 2"},
+        "original_states": {},
+    }
+    shield.queue.append(("next", {}, {}, lambda: None, "d", "s", False, None))
+
+    await shield._check_loop(datetime.now())
+
+    assert "completed" in events
+    assert "released" in events
+    assert "notified" in events
+    assert "svc" not in shield.pending
+    assert started["called"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_loop_power_monitor_completion(monkeypatch):
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(
+        [DummyEntityState("sensor.oig_123_power", "3000")]
+    )
+    entry = SimpleNamespace(options={"no_telemetry": True}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    completed = {"done": False}
+
+    async def _log_event(event_type, *_args, **_kwargs):
+        if event_type == "completed":
+            completed["done"] = True
+
+    shield._log_event = _log_event
+    shield._log_telemetry = lambda *_a, **_k: None
+    shield._notify_state_change = lambda: None
+    shield._setup_state_listener = lambda: None
+
+    shield.pending["svc"] = {
+        "called_at": datetime.now(),
+        "params": {},
+        "entities": {"sensor.oig_123_box_prms_mode": "Home UPS"},
+        "original_states": {},
+        "power_monitor": {
+            "entity_id": "sensor.oig_123_power",
+            "last_power": 0.0,
+            "threshold_kw": 2.5,
+            "is_going_to_home_ups": True,
+        },
+    }
+
+    await shield._check_loop(datetime.now())
+
+    assert completed["done"] is True
+    assert "svc" not in shield.pending
+
+
+@pytest.mark.asyncio
+async def test_safe_call_service_boiler_mode():
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(
+        [DummyEntityState("sensor.oig_123_boiler_manual_mode", "Manuální")]
+    )
+    entry = SimpleNamespace(options={"no_telemetry": True}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    ok = await shield._safe_call_service(
+        "set_boiler_mode", {"mode": "Manual"}
+    )
+
+    assert ok is True
+    assert hass.services.service_calls
+
+
+@pytest.mark.asyncio
+async def test_safe_call_service_entity_mode():
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(
+        [DummyEntityState("sensor.oig_123_box_prms_mode", "Home 2")]
+    )
+    entry = SimpleNamespace(options={"no_telemetry": True}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    ok = await shield._safe_call_service(
+        "set_box_mode",
+        {"entity_id": "sensor.oig_123_box_prms_mode", "mode": "Home 2"},
+    )
+
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_check_entities_periodically_success(monkeypatch):
+    hass = DummyHass()
+    entry = SimpleNamespace(options={"no_telemetry": True}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    logged = []
+
+    def _log_security_event(event_type, *_args, **_kwargs):
+        logged.append(event_type)
+
+    shield._log_security_event = _log_security_event
+    shield._get_entity_state = lambda _eid: "on"
+    shield._values_match = lambda current, expected: current == expected
+
+    shield._start_monitoring_task("task1", {"sensor.x": "on"}, timeout=5)
+
+    await shield._check_entities_periodically("task1")
+
+    assert "MONITORING_SUCCESS" in logged
+
+
+def test_mode_transition_tracker_records_transition(monkeypatch):
+    class DummyTrackerHass:
+        def __init__(self):
+            self._listeners = []
+
+        def async_add_executor_job(self, func, *args):
+            return func(*args)
+
+    hass = DummyTrackerHass()
+    tracker = core_module.ModeTransitionTracker(hass, "123")
+
+    fixed_now = datetime(2025, 1, 1, 12, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.dt_now", lambda: fixed_now
+    )
+
+    tracker.track_request("t1", "Home 1", "Home UPS")
+
+    event = SimpleNamespace(
+        data={
+            "old_state": SimpleNamespace(state="Home 1", last_changed=fixed_now),
+            "new_state": SimpleNamespace(state="Home UPS", last_changed=fixed_now),
+        }
+    )
+
+    tracker._async_mode_changed(event)
+
+    stats = tracker.get_statistics()
+    assert "Home 1→Home UPS" in stats
+
+
+def test_mode_transition_tracker_offset_fallback():
+    tracker = core_module.ModeTransitionTracker(SimpleNamespace(), "123")
+    assert tracker.get_offset_for_scenario("Home 1", "Home UPS") == 10.0
