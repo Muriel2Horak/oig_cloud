@@ -71,3 +71,28 @@ async def test_quick_setup_success(monkeypatch):
     assert result["type"] == "create_entry"
     assert result["data"]["username"] == "demo"
     assert result["options"]["data_source_mode"] == "cloud_only"
+
+
+@pytest.mark.asyncio
+async def test_import_yaml_not_implemented():
+    flow = DummyConfigFlow()
+    result = await flow.async_step_import_yaml({})
+    assert result["type"] == "abort"
+    assert result["reason"] == "not_implemented"
+
+
+@pytest.mark.asyncio
+async def test_wizard_summary_creates_entry():
+    flow = DummyConfigFlow()
+    flow._wizard_data = {
+        "username": "demo",
+        "password": "pass",
+        "enable_pricing": True,
+        "enable_battery_prediction": True,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["username"] == "demo"
+    assert result["options"]["enable_pricing"] is True
