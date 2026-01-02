@@ -20,9 +20,18 @@ class DummyServices:
         self.service_calls.append((domain, service, service_data, blocking))
 
 
+class DummyBus:
+    def __init__(self):
+        self.events = []
+
+    def async_fire(self, event, data, context=None):
+        self.events.append((event, data, context))
+
+
 class DummyHass:
     def __init__(self):
         self.services = DummyServices()
+        self.bus = DummyBus()
         self.created = []
         self.data = {"core.uuid": "uuid"}
         self.states = DummyStatesCollection([])
@@ -39,13 +48,14 @@ class DummyEvent:
 
 
 class DummyState:
-    def __init__(self, state):
+    def __init__(self, state, attributes=None):
         self.state = state
+        self.attributes = attributes or {}
 
 
 class DummyEntityState(DummyState):
-    def __init__(self, entity_id, state):
-        super().__init__(state)
+    def __init__(self, entity_id, state, attributes=None):
+        super().__init__(state, attributes=attributes)
         self.entity_id = entity_id
 
 
@@ -217,6 +227,132 @@ def test_setup_telemetry_initializes_handler(monkeypatch):
     shield = core_module.ServiceShield(hass, entry)
 
     assert shield.telemetry_handler is not None
+
+
+def _make_shield_with_states(states, options=None):
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(states)
+    entry = SimpleNamespace(
+        options={"no_telemetry": True, "box_id": "123", **(options or {})},
+        data={},
+    )
+    return core_module.ServiceShield(hass, entry)
+
+
+def test_extract_expected_entities_formating_mode_fake_entity():
+    shield = _make_shield_with_states([])
+
+    result = shield.extract_expected_entities("oig_cloud.set_formating_mode", {})
+
+    assert len(result) == 1
+    entity_id = next(iter(result.keys()))
+    assert entity_id.startswith("fake_formating_mode_")
+
+
+def test_extract_expected_entities_box_mode_mismatch():
+    shield = _make_shield_with_states(
+        [DummyEntityState("sensor.oig_123_box_prms_mode", "Home 2")]
+    )
+
+    result = shield.extract_expected_entities(
+        "oig_cloud.set_box_mode", {"mode": "Home 1"}
+    )
+
+    assert result == {"sensor.oig_123_box_prms_mode": "Home 1"}
+    assert shield.last_checked_entity_id == "sensor.oig_123_box_prms_mode"
+
+
+def test_extract_expected_entities_boiler_mode_mapping():
+    shield = _make_shield_with_states(
+        [DummyEntityState("sensor.oig_123_boiler_manual_mode", "CBB")]
+    )
+
+    result = shield.extract_expected_entities(
+        "oig_cloud.set_boiler_mode", {"mode": "Manual"}
+    )
+
+    assert result
+    value = result["sensor.oig_123_boiler_manual_mode"]
+    assert value.lower().startswith("man")
+    assert value != "Manual"
+
+
+def test_extract_expected_entities_grid_delivery_limit_only():
+    shield = _make_shield_with_states(
+        [DummyEntityState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "5000")]
+    )
+
+    result = shield.extract_expected_entities(
+        "oig_cloud.set_grid_delivery", {"limit": 5300}
+    )
+
+    assert result == {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "5300"}
+
+
+def test_extract_expected_entities_grid_delivery_mode_only():
+    shield = _make_shield_with_states(
+        [DummyEntityState("sensor.oig_123_invertor_prms_to_grid", "Vypnuto")]
+    )
+
+    result = shield.extract_expected_entities(
+        "oig_cloud.set_grid_delivery", {"mode": "limited"}
+    )
+
+    assert result == {"sensor.oig_123_invertor_prms_to_grid": "Omezeno"}
+
+
+def test_check_entity_state_change_variants():
+    shield = _make_shield_with_states(
+        [
+            DummyEntityState("sensor.oig_123_boiler_manual_mode", "CBB"),
+            DummyEntityState("sensor.oig_123_box_prms_mode", "Home UPS"),
+            DummyEntityState("binary_sensor.oig_123_invertor_prms_to_grid", "Zapnuto"),
+            DummyEntityState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "5000"),
+        ]
+    )
+
+    assert shield._check_entity_state_change(
+        "sensor.oig_123_boiler_manual_mode", 0
+    )
+    assert shield._check_entity_state_change("sensor.oig_123_box_prms_mode", 3)
+    assert shield._check_entity_state_change(
+        "binary_sensor.oig_123_invertor_prms_to_grid", "omezeno"
+    )
+    assert shield._check_entity_state_change(
+        "sensor.oig_123_invertor_prm1_p_max_feed_grid", 5000
+    )
+
+
+@pytest.mark.asyncio
+async def test_log_event_uses_main_entity_for_limit():
+    hass = DummyHass()
+    hass.states = DummyStatesCollection(
+        [
+            DummyEntityState(
+                "sensor.oig_123_invertor_prms_to_grid",
+                "Omezeno",
+                attributes={"friendly_name": "Pretoky"},
+            ),
+            DummyEntityState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "5000"),
+        ]
+    )
+    entry = SimpleNamespace(options={"no_telemetry": True, "box_id": "123"}, data={})
+    shield = core_module.ServiceShield(hass, entry)
+
+    await shield._log_event(
+        "completed",
+        "oig_cloud.set_grid_delivery",
+        {
+            "params": {"limit": 5300},
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "5300"},
+            "original_states": {},
+        },
+    )
+
+    events = [evt for evt in hass.bus.events if evt[0] == "logbook_entry"]
+    assert events
+    assert events[-1][1]["entity_id"] == "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+    assert "limit nastaven na 5300W" in events[-1][1]["message"]
 
 
 @pytest.mark.asyncio
