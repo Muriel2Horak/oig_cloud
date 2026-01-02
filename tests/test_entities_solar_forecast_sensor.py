@@ -175,6 +175,203 @@ def test_process_forecast_data_combines_strings():
 
 
 @pytest.mark.asyncio
+async def test_periodic_update_daily_optimized_triggers(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "daily_optimized"})
+    sensor._last_api_call = 0
+    sensor._min_api_interval = 0
+
+    async_fetch = pytest.raises  # placeholder
+
+    async def _fetch():
+        sensor._called = True
+
+    sensor._called = False
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 20000.0,
+    )
+
+    now = datetime(2025, 1, 1, 6, 0)
+    await sensor._periodic_update(now)
+
+    assert sensor._called is True
+
+
+@pytest.mark.asyncio
+async def test_periodic_update_daily_optimized_skips_recent(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "daily_optimized"})
+    sensor._last_api_call = 1000.0
+    sensor._min_api_interval = 0
+    sensor._called = False
+
+    async def _fetch():
+        sensor._called = True
+
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 1000.0 + 3600.0,
+    )
+
+    now = datetime(2025, 1, 1, 6, 0)
+    await sensor._periodic_update(now)
+
+    assert sensor._called is False
+
+
+@pytest.mark.asyncio
+async def test_periodic_update_daily_calls(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "daily"})
+    sensor._min_api_interval = 0
+    sensor._called = False
+
+    async def _fetch():
+        sensor._called = True
+
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 20000.0,
+    )
+
+    now = datetime(2025, 1, 1, 6, 0)
+    await sensor._periodic_update(now)
+
+    assert sensor._called is True
+
+
+@pytest.mark.asyncio
+async def test_async_fetch_forecast_data_rate_limit(monkeypatch):
+    sensor = _make_sensor({})
+    sensor._min_api_interval = 300
+    sensor._last_api_call = 1000.0
+    sensor._processed = False
+
+    async def _save():
+        sensor._saved = True
+
+    monkeypatch.setattr(sensor, "_save_persistent_data", _save)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 1005.0,
+    )
+
+    await sensor.async_fetch_forecast_data()
+
+    assert sensor._last_api_call == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_async_fetch_forecast_data_string1_only(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string2_enabled": False,
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+        }
+    )
+    sensor._min_api_interval = 0
+
+    class DummyResponse:
+        def __init__(self, status, payload):
+            self.status = status
+            self._payload = payload
+
+        async def json(self):
+            return self._payload
+
+        async def text(self):
+            return "ok"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class DummySession:
+        def __init__(self, response):
+            self._response = response
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return self._response
+
+    dummy_payload = {"result": {"watts": {}, "watt_hours_day": {}}}
+    monkeypatch.setattr(
+        sensor_module.aiohttp,
+        "ClientSession",
+        lambda: DummySession(DummyResponse(200, dummy_payload)),
+    )
+
+    async def _save():
+        sensor._saved = True
+
+    async def _broadcast():
+        sensor._broadcasted = True
+
+    monkeypatch.setattr(sensor, "_save_persistent_data", _save)
+    monkeypatch.setattr(sensor, "_broadcast_forecast_data", _broadcast)
+    monkeypatch.setattr(sensor, "_process_forecast_data", lambda *_a: {"ok": True})
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 20000.0,
+    )
+    sensor.async_write_ha_state = lambda: None
+
+    await sensor.async_fetch_forecast_data()
+
+    assert sensor._last_forecast_data == {"ok": True}
+    assert sensor.coordinator.solar_forecast_data == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_broadcast_forecast_data_triggers_updates(monkeypatch):
+    sensor = _make_sensor({})
+    sensor.hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda _eid: True),
+        services=SimpleNamespace(async_call=lambda *_a, **_k: None),
+        async_create_task=lambda coro: coro,
+    )
+
+    class DummyEntityEntry:
+        def __init__(self, entity_id, device_id):
+            self.entity_id = entity_id
+            self.device_id = device_id
+
+    entity_entries = [
+        DummyEntityEntry("sensor.x_solar_forecast_string1", "dev1"),
+        DummyEntityEntry("sensor.x_solar_forecast_string2", "dev1"),
+    ]
+
+    class DummyEntityRegistry:
+        def async_get(self, _entity_id):
+            return DummyEntityEntry("sensor.x_solar_forecast", "dev1")
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: DummyEntityRegistry(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_entries_for_device",
+        lambda _reg, _device_id: entity_entries,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: SimpleNamespace(),
+    )
+
+    await sensor._broadcast_forecast_data()
+
+
+@pytest.mark.asyncio
 async def test_async_added_to_hass_schedules_fetch(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily"})
 
