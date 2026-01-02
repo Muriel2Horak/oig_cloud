@@ -145,3 +145,41 @@ def test_calculate_profile_similarity():
 
     mismatch = sensor._calculate_profile_similarity([1.0], [1.0, 2.0])
     assert mismatch == 0.0
+
+
+def test_extra_state_attributes_with_prediction(monkeypatch):
+    sensor = _make_sensor()
+    fixed_now = datetime(2025, 1, 2, 20, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        lambda: fixed_now,
+    )
+
+    sensor._profiling_status = "ok"
+    sensor._profiling_error = None
+    sensor._last_profile_reason = "matched"
+    sensor._last_profile_created = fixed_now - timedelta(hours=1)
+
+    predicted = [0.5] * 10
+    sensor._current_prediction = {
+        "similarity_score": 0.82,
+        "predicted_consumption": predicted,
+        "predicted_total_kwh": sum(predicted),
+        "predicted_avg_kwh": 0.5,
+        "sample_count": 3,
+        "match_hours": 6,
+        "predict_hours": len(predicted),
+        "matched_profile_full": [0.2] * 72,
+        "data_source": "sensor.oig_123_ac_out_en_day",
+        "floor_applied": 2,
+        "interpolated_hours": 1,
+    }
+
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["profiling_status"] == "ok"
+    assert "today_profile" in attrs
+    assert "tomorrow_profile" in attrs
+    assert attrs["today_profile"]["start_hour"] == 20
+    assert len(attrs["today_profile"]["hourly_consumption"]) == 4
+    assert len(attrs["tomorrow_profile"]["hourly_consumption"]) == 24

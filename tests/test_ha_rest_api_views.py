@@ -468,3 +468,97 @@ async def test_detail_tabs_view_fallback(monkeypatch):
 
     assert response.status == 200
     assert "today" in payload
+
+
+@pytest.mark.asyncio
+async def test_battery_timeline_view_entity_fallback(monkeypatch):
+    hass = DummyHass()
+
+    class EmptyStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", EmptyStore)
+
+    entity = DummyEntity("sensor.oig_123_battery_forecast")
+    entity._timeline_data = [{"t": 1}]
+    entity._last_update = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    hass.data["sensor"] = DummyComponent([entity])
+
+    view = api_module.OIGCloudBatteryTimelineView()
+    response = await view.get(DummyRequest(hass, {"type": "active"}), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["active"] == [{"t": 1}]
+    assert payload["metadata"]["points_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unified_cost_tile_view_build_from_entity(monkeypatch):
+    hass = DummyHass()
+
+    class EmptyStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    class TileEntity(DummyEntity):
+        async def build_unified_cost_tile(self):
+            return {"today": {"plan_total_cost": 12.5}}
+
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", EmptyStore)
+
+    hass.data["sensor"] = DummyComponent([TileEntity("sensor.oig_123_battery_forecast")])
+    view = api_module.OIGCloudUnifiedCostTileView()
+
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["today"]["plan_total_cost"] == 12.5
+
+
+@pytest.mark.asyncio
+async def test_planner_settings_view_missing_entry():
+    hass = DummyHass()
+    view = api_module.OIGCloudPlannerSettingsView()
+
+    response = await view.get(DummyRequest(hass), "missing")
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_dashboard_modules_view_wrong_domain():
+    entry = SimpleNamespace(entry_id="entry1", domain="other", options={})
+    hass = DummyHass()
+    hass.config_entries = DummyConfigEntries([entry])
+
+    view = api_module.OIGCloudDashboardModulesView()
+    response = await view.get(DummyRequest(hass), "entry1")
+
+    assert response.status == 404
+
+
+def test_setup_api_endpoints_registers_views():
+    registered = []
+
+    class DummyHttp:
+        def register_view(self, view):
+            registered.append(type(view).__name__)
+
+    hass = SimpleNamespace(http=DummyHttp())
+
+    api_module.setup_api_endpoints(hass)
+
+    assert "OIGCloudBatteryTimelineView" in registered
+    assert "OIGCloudDetailTabsView" in registered
