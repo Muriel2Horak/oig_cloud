@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.oig_cloud.entities.adaptive_load_profiles_sensor import (
     OigCloudAdaptiveLoadProfilesSensor,
     _generate_profile_name,
@@ -183,3 +185,112 @@ def test_extra_state_attributes_with_prediction(monkeypatch):
     assert attrs["today_profile"]["start_hour"] == 20
     assert len(attrs["today_profile"]["hourly_consumption"]) == 4
     assert len(attrs["tomorrow_profile"]["hourly_consumption"]) == 24
+
+
+def test_fill_missing_values_hour_median_fallback():
+    sensor = _make_sensor()
+    filled, interpolated = sensor._fill_missing_values(
+        [None, None],
+        hour_medians={0: 1.0, 1: 2.0},
+        day_avg=1.5,
+        global_median=1.0,
+    )
+    assert filled == [1.0, 2.0]
+    assert interpolated == 2
+
+
+def test_fill_missing_values_global_fallback():
+    sensor = _make_sensor()
+    filled, interpolated = sensor._fill_missing_values(
+        [None],
+        hour_medians={},
+        day_avg=None,
+        global_median=0.7,
+    )
+    assert filled == [0.7]
+    assert interpolated == 1
+
+
+def test_build_daily_profiles_skips_missing_days():
+    sensor = _make_sensor()
+    day1 = datetime(2025, 1, 1)
+    day2 = datetime(2025, 1, 2)
+    hourly_series = []
+
+    # Day1 has too many missing hours (only 10 values)
+    for hour in range(10):
+        hourly_series.append((day1.replace(hour=hour), 1.0))
+    # Day2 complete
+    for hour in range(24):
+        hourly_series.append((day2.replace(hour=hour), 2.0))
+
+    profiles, _medians, _interpolated = sensor._build_daily_profiles(hourly_series)
+    assert list(profiles.keys()) == [day2.date()]
+
+
+@pytest.mark.asyncio
+async def test_find_best_matching_profile_no_hourly_data(monkeypatch):
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace()
+
+    async def _empty_series(*_a, **_k):
+        return []
+
+    monkeypatch.setattr(sensor, "_load_hourly_series", _empty_series)
+
+    result = await sensor._find_best_matching_profile_for_sensor(
+        "sensor.oig_123_ac_out_en_day", value_field="sum", days_back=3
+    )
+    assert result is None
+    assert sensor._last_profile_reason == "no_hourly_stats"
+
+
+@pytest.mark.asyncio
+async def test_find_best_matching_profile_not_enough_days(monkeypatch):
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace()
+
+    async def _series(*_a, **_k):
+        base = datetime(2025, 1, 1)
+        return [
+            (base.replace(hour=hour), 1.0) for hour in range(24)
+        ] + [
+            (base.replace(day=2, hour=hour), 2.0) for hour in range(24)
+        ]
+
+    monkeypatch.setattr(sensor, "_load_hourly_series", _series)
+
+    result = await sensor._find_best_matching_profile_for_sensor(
+        "sensor.oig_123_ac_out_en_day", value_field="sum", days_back=3
+    )
+    assert result is None
+    assert sensor._last_profile_reason.startswith("not_enough_daily_profiles_")
+
+
+@pytest.mark.asyncio
+async def test_find_best_matching_profile_success(monkeypatch):
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace()
+    fixed_now = datetime(2025, 1, 4, 5, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        lambda: fixed_now,
+    )
+
+    async def _series(*_a, **_k):
+        base = datetime(2025, 1, 1)
+        series = []
+        for day in range(4):
+            for hour in range(24):
+                series.append(
+                    (base + timedelta(days=day, hours=hour), 1.0 + day + (hour % 3) * 0.1)
+                )
+        return series
+
+    monkeypatch.setattr(sensor, "_load_hourly_series", _series)
+
+    result = await sensor._find_best_matching_profile_for_sensor(
+        "sensor.oig_123_ac_out_en_day", value_field="sum", days_back=5
+    )
+    assert result is not None
+    assert result["predicted_total_kwh"] > 0

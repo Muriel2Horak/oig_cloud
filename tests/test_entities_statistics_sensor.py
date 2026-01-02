@@ -82,12 +82,25 @@ class DummyStates:
     def get(self, entity_id):
         return self._map.get(entity_id)
 
+class DummyOptions(dict):
+    def __getattr__(self, name):
+        if name in self:
+            return self[name]
+        raise AttributeError(name)
 
-def _make_sensor(sensor_type="battery_load_median"):
+
+def _make_sensor(sensor_type="battery_load_median", state_map=None, options=None):
     coordinator = DummyCoordinator()
+    if options is None:
+        options = DummyOptions()
+    elif isinstance(options, dict):
+        options = DummyOptions(options)
+    elif not hasattr(options, "get"):
+        options = DummyOptions(options.__dict__)
+    coordinator.config_entry = SimpleNamespace(options=options)
     device_info = {"identifiers": {("oig_cloud", "123")}}
     sensor = OigCloudStatisticsSensor(coordinator, sensor_type, device_info)
-    sensor.hass = SimpleNamespace(states=DummyStates({}))
+    sensor.hass = SimpleNamespace(states=DummyStates(state_map or {}))
     sensor.async_write_ha_state = lambda: None
     return sensor
 
@@ -218,6 +231,111 @@ async def test_check_hourly_end_updates(monkeypatch):
 
     assert sensor._saved is True
     assert sensor._current_hourly_value == 1.234
+
+
+def test_available_disabled_statistics():
+    options = {"enable_statistics": False}
+    sensor = _make_sensor(options=options)
+    sensor._sampling_data = [(datetime.now(), 1.0)]
+    assert sensor.available is False
+
+
+def test_available_hourly_with_source_entity():
+    source_state = SimpleNamespace(
+        state="1.0",
+        attributes={"unit_of_measurement": "kWh"},
+        last_updated=datetime.now(),
+        last_changed=datetime.now(),
+    )
+    sensor = _make_sensor(
+        sensor_type="hourly_test", state_map={"sensor.oig_123_source": source_state}
+    )
+    sensor._source_entity_id = "sensor.oig_123_source"
+    assert sensor.available is True
+
+
+@pytest.mark.asyncio
+async def test_calculate_hourly_energy_diff_kwh():
+    source_state = SimpleNamespace(
+        state="10.0",
+        attributes={"unit_of_measurement": "kWh"},
+        last_updated=datetime.now(),
+        last_changed=datetime.now(),
+    )
+    sensor = _make_sensor(
+        sensor_type="hourly_test", state_map={"sensor.oig_123_source": source_state}
+    )
+    sensor._sensor_config = {"hourly_data_type": "energy_diff"}
+    sensor._source_entity_id = "sensor.oig_123_source"
+    sensor._last_source_value = 5.0
+    result = await sensor._calculate_hourly_energy()
+    assert result == 5.0
+
+
+@pytest.mark.asyncio
+async def test_calculate_hourly_energy_diff_wh():
+    source_state = SimpleNamespace(
+        state="2000",
+        attributes={"unit_of_measurement": "Wh"},
+        last_updated=datetime.now(),
+        last_changed=datetime.now(),
+    )
+    sensor = _make_sensor(
+        sensor_type="hourly_test", state_map={"sensor.oig_123_source": source_state}
+    )
+    sensor._sensor_config = {"hourly_data_type": "energy_diff"}
+    sensor._source_entity_id = "sensor.oig_123_source"
+    sensor._last_source_value = 1000.0
+    result = await sensor._calculate_hourly_energy()
+    assert result == 1.0
+
+
+@pytest.mark.asyncio
+async def test_calculate_hourly_energy_power_integral_w():
+    source_state = SimpleNamespace(
+        state="1200",
+        attributes={"unit_of_measurement": "W"},
+        last_updated=datetime.now(),
+        last_changed=datetime.now(),
+    )
+    sensor = _make_sensor(
+        sensor_type="hourly_test", state_map={"sensor.oig_123_source": source_state}
+    )
+    sensor._sensor_config = {"hourly_data_type": "power_integral"}
+    sensor._source_entity_id = "sensor.oig_123_source"
+    result = await sensor._calculate_hourly_energy()
+    assert result == 1.2
+
+
+def test_calculate_statistics_value_interval_median():
+    sensor = _make_sensor(sensor_type="interval_test")
+    sensor._interval_data = {"2025-01-01": [1.0, 2.0], "2025-01-02": [3.0]}
+    sensor._time_range = (6, 8)
+    assert sensor._calculate_statistics_value() == 2.0
+
+
+def test_calculate_statistics_value_uses_all_samples_when_stale():
+    sensor = _make_sensor(sensor_type="battery_load_median")
+    sensor._sampling_minutes = 5
+    sensor._sampling_data = [
+        (datetime.now() - timedelta(minutes=30), 1.0),
+        (datetime.now() - timedelta(minutes=20), 3.0),
+    ]
+    assert sensor._calculate_statistics_value() == 2.0
+
+
+def test_extra_state_attributes_hourly_totals():
+    now = datetime.now()
+    yesterday = (now - timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+    today = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    sensor = _make_sensor(sensor_type="hourly_test")
+    sensor._hourly_data = [
+        {"datetime": yesterday.isoformat(), "value": 1.5},
+        {"datetime": today.isoformat(), "value": 2.0},
+    ]
+    attrs = sensor.extra_state_attributes
+    assert attrs["today_total"] == 2.0
+    assert attrs["yesterday_total"] == 1.5
     assert sensor._hourly_data
 
 
