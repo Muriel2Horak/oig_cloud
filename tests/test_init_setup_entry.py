@@ -79,12 +79,17 @@ class DummyApi:
     def __init__(self, *_args, **_kwargs):
         pass
 
+    async def get_stats(self):
+        return {"123": {"actual": {}}}
+
 
 class DummySessionManager:
     def __init__(self, api):
         self.api = api
+        self.ensure_called = False
 
     async def _ensure_auth(self):
+        self.ensure_called = True
         return None
 
     async def close(self):
@@ -96,6 +101,7 @@ class DummyCoordinator:
         self.hass = hass
         self.session_manager = session_manager
         self.data = {"123": {}}
+        self.api = session_manager
 
     async def async_config_entry_first_refresh(self):
         return None
@@ -112,6 +118,34 @@ class DummyDataSourceController:
         return None
 
     async def async_stop(self):
+        return None
+
+
+class DummyNotificationManager:
+    def __init__(self, hass, api, base_url):
+        self.hass = hass
+        self.api = api
+        self.base_url = base_url
+        self.device_id = None
+        self.updated = False
+
+    def set_device_id(self, device_id):
+        self.device_id = device_id
+
+    async def update_from_api(self):
+        self.updated = True
+
+
+class DummyModeTracker:
+    def __init__(self, hass, box_id):
+        self.hass = hass
+        self.box_id = box_id
+        self.setup_called = False
+
+    async def async_setup(self):
+        self.setup_called = True
+
+    async def cleanup(self):
         return None
 
 
@@ -209,3 +243,89 @@ async def test_async_setup_entry_success_local(monkeypatch):
     assert result is True
     assert "coordinator" in hass.data[DOMAIN][entry.entry_id]
     assert hass.config_entries.forwarded
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_success_cloud(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            configured_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.oig_cloud_notification.OigNotificationManager",
+        DummyNotificationManager,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ModeTransitionTracker",
+        DummyModeTracker,
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_call_later",
+        lambda *_a, **_k: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={
+            "enable_cloud_notifications": True,
+            "enable_solar_forecast": False,
+            "enable_pricing": False,
+            "enable_boiler": False,
+            "enable_dashboard": False,
+            "balancing_enabled": False,
+            "standard_scan_interval": 30,
+            "extended_scan_interval": 300,
+        },
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert "coordinator" in hass.data[DOMAIN][entry.entry_id]
+    assert isinstance(
+        hass.data[DOMAIN][entry.entry_id]["notification_manager"],
+        DummyNotificationManager,
+    )
