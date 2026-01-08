@@ -169,3 +169,57 @@ async def test_sensor_async_setup_entry(monkeypatch):
 
     assert added
     assert entry.options.get("box_id") == "123"
+
+
+@pytest.mark.asyncio
+async def test_sensor_async_setup_entry_from_title(monkeypatch):
+    entry = DummyEntry()
+    entry.title = "OIG 987654"
+    entry.options = {
+        "enable_extended_sensors": False,
+        "enable_pricing": False,
+        "enable_battery_prediction": False,
+        "enable_solar_forecast": False,
+        "enable_chmu_warnings": False,
+    }
+    hass = DummyHass(entry.entry_id)
+
+    import re
+
+    monkeypatch.setattr(sensor_module, "SENSOR_TYPES", {})
+    monkeypatch.setattr(sensor_module, "resolve_box_id", lambda _c: "unknown")
+    monkeypatch.setattr(sensor_module, "OigCloudDataSourceSensor", DummySensor)
+    monkeypatch.setattr(
+        re,
+        "search",
+        lambda _pattern, _string: SimpleNamespace(group=lambda _i: "987654"),
+    )
+
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    await sensor_module.async_setup_entry(hass, entry, _add_entities)
+
+    assert entry.options.get("box_id") == "987654"
+    assert added
+
+
+@pytest.mark.asyncio
+async def test_sensor_async_setup_entry_no_box_id(monkeypatch):
+    entry = DummyEntry()
+    entry.title = "OIG"
+    entry.options = {}
+    hass = DummyHass(entry.entry_id)
+
+    monkeypatch.setattr(sensor_module, "resolve_box_id", lambda _c: "unknown")
+
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    await sensor_module.async_setup_entry(hass, entry, _add_entities)
+
+    assert not added

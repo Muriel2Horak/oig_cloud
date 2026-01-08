@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -30,6 +30,12 @@ def _make_sensor(options):
     coordinator = DummyCoordinator()
     entry = DummyConfigEntry(options)
     return OigCloudSolarForecastSensor(coordinator, "solar_forecast", entry, {})
+
+
+def _make_sensor_type(options, sensor_type):
+    coordinator = DummyCoordinator()
+    entry = DummyConfigEntry(options)
+    return OigCloudSolarForecastSensor(coordinator, sensor_type, entry, {})
 
 
 def test_parse_forecast_hour():
@@ -433,3 +439,118 @@ async def test_async_added_to_hass_uses_cached_data(monkeypatch):
 
     assert coordinator.solar_forecast_data == {"k": 1}
     assert not sensor.hass.created
+
+
+def test_state_uses_coordinator_and_availability(monkeypatch):
+    sensor = _make_sensor_type({"enable_solar_forecast": False}, "solar_forecast")
+    sensor.coordinator.solar_forecast_data = {"total_today_kwh": 4.2}
+    assert sensor.state is None
+
+    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast")
+    sensor.coordinator.solar_forecast_data = {"total_today_kwh": 4.2}
+    assert sensor.state == 4.2
+
+
+def test_state_and_attributes_all_sensors(monkeypatch):
+    fixed_now = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+    today_key = fixed_now.isoformat()
+    tomorrow_key = (fixed_now + timedelta(days=1)).isoformat()
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz:
+                return fixed_now.astimezone(tz)
+            return fixed_now
+
+        @classmethod
+        def fromtimestamp(cls, ts, tz=None):
+            return datetime.fromtimestamp(ts, tz)
+
+        @classmethod
+        def fromisoformat(cls, date_string):
+            return datetime.fromisoformat(date_string)
+
+    monkeypatch.setattr(sensor_module, "datetime", FixedDatetime)
+
+    data = {
+        "response_time": "2025-01-01T09:00:00",
+        "total_today_kwh": 5.5,
+        "string1_today_kwh": 3.0,
+        "string2_today_kwh": 2.5,
+        "total_hourly": {today_key: 1000, tomorrow_key: 2000},
+        "string1_hourly": {today_key: 600, tomorrow_key: 900},
+        "string2_hourly": {today_key: 400, tomorrow_key: 1100},
+    }
+
+    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast")
+    sensor._last_forecast_data = data
+    assert sensor.state == 5.5
+    attrs = sensor.extra_state_attributes
+    assert attrs["today_total_kwh"] == 5.5
+    assert attrs["current_hour_kw"] == 1.0
+    assert attrs["today_total_sum_kw"] == 1.0
+    assert attrs["tomorrow_total_sum_kw"] == 2.0
+
+    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast_string1")
+    sensor._last_forecast_data = data
+    assert sensor.state == 3.0
+    attrs = sensor.extra_state_attributes
+    assert attrs["today_kwh"] == 3.0
+    assert attrs["today_sum_kw"] == 0.6
+
+    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast_string2")
+    sensor._last_forecast_data = data
+    assert sensor.state == 2.5
+    attrs = sensor.extra_state_attributes
+    assert attrs["today_kwh"] == 2.5
+    assert attrs["today_sum_kw"] == 0.4
+
+
+@pytest.mark.asyncio
+async def test_periodic_update_every_4h_and_hourly(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_mode": "every_4h"})
+    sensor._min_api_interval = 0
+    sensor._last_api_call = 1000.0
+    sensor._called = False
+
+    async def _fetch():
+        sensor._called = True
+
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 1000.0 + 15000.0,
+    )
+
+    await sensor._periodic_update(datetime(2025, 1, 1, 8, 0))
+    assert sensor._called is True
+
+    sensor = _make_sensor({"solar_forecast_mode": "hourly"})
+    sensor._min_api_interval = 0
+    sensor._last_api_call = 1000.0
+    sensor._called = False
+
+    async def _fetch_hourly():
+        sensor._called = True
+
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch_hourly)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
+        lambda: 1000.0 + 4000.0,
+    )
+
+    await sensor._periodic_update(datetime(2025, 1, 1, 8, 0))
+    assert sensor._called is True
+
+
+@pytest.mark.asyncio
+async def test_manual_update_handles_failure(monkeypatch):
+    sensor = _make_sensor({})
+
+    async def _raise():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sensor, "async_fetch_forecast_data", _raise)
+
+    assert await sensor.async_manual_update() is False

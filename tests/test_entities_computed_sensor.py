@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -36,6 +37,10 @@ class DummyStates:
 class DummyHass:
     def __init__(self, mapping):
         self.states = DummyStates(mapping)
+        self._write_calls = 0
+
+    def async_write(self):
+        self._write_calls += 1
 
 
 class DummyStore:
@@ -193,3 +198,139 @@ def test_accumulate_energy_charging(monkeypatch):
 
     assert value is not None
     assert sensor._energy["charge_today"] > 0
+
+
+def test_state_totals_from_entities():
+    sensor = _make_sensor()
+    sensor._sensor_type = "ac_in_aci_wtotal"
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_ac_in_aci_wr": DummyState("1.5"),
+            "sensor.oig_123_ac_in_aci_ws": DummyState("2.5"),
+            "sensor.oig_123_ac_in_aci_wt": DummyState("3.0"),
+        }
+    )
+    assert sensor.state == 7.0
+
+    sensor._sensor_type = "actual_fv_total"
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_actual_fv_p1": DummyState("10"),
+            "sensor.oig_123_actual_fv_p2": DummyState("5"),
+        }
+    )
+    assert sensor.state == 15.0
+
+
+def test_boiler_current_manual_and_auto_modes():
+    sensor = _make_sensor()
+    sensor._sensor_type = "boiler_current_w"
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_actual_fv_p1": DummyState("1000"),
+            "sensor.oig_123_actual_fv_p2": DummyState("1000"),
+            "sensor.oig_123_actual_aco_p": DummyState("500"),
+            "sensor.oig_123_actual_aci_wr": DummyState("0"),
+            "sensor.oig_123_actual_aci_ws": DummyState("0"),
+            "sensor.oig_123_actual_aci_wt": DummyState("0"),
+            "sensor.oig_123_boiler_install_power": DummyState("1200"),
+            "sensor.oig_123_batt_batt_comp_p": DummyState("0"),
+            "sensor.oig_123_boiler_manual_mode": DummyState("Zapnuto"),
+        }
+    )
+    assert sensor.state == 1200.0
+
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_actual_fv_p1": DummyState("1000"),
+            "sensor.oig_123_actual_fv_p2": DummyState("0"),
+            "sensor.oig_123_actual_aco_p": DummyState("100"),
+            "sensor.oig_123_actual_aci_wr": DummyState("0"),
+            "sensor.oig_123_actual_aci_ws": DummyState("0"),
+            "sensor.oig_123_actual_aci_wt": DummyState("0"),
+            "sensor.oig_123_boiler_install_power": DummyState("900"),
+            "sensor.oig_123_batt_batt_comp_p": DummyState("500"),
+            "sensor.oig_123_boiler_manual_mode": DummyState("off"),
+        }
+    )
+    assert sensor.state == 0.0
+
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_actual_fv_p1": DummyState("1500"),
+            "sensor.oig_123_actual_fv_p2": DummyState("0"),
+            "sensor.oig_123_actual_aco_p": DummyState("200"),
+            "sensor.oig_123_actual_aci_wr": DummyState("100"),
+            "sensor.oig_123_actual_aci_ws": DummyState("0"),
+            "sensor.oig_123_actual_aci_wt": DummyState("0"),
+            "sensor.oig_123_boiler_install_power": DummyState("1200"),
+            "sensor.oig_123_batt_batt_comp_p": DummyState("-50"),
+            "sensor.oig_123_boiler_manual_mode": DummyState("off"),
+        }
+    )
+    assert sensor.state == 1200.0
+
+
+@pytest.mark.asyncio
+async def test_reset_daily_resets_periods(monkeypatch):
+    sensor = _make_sensor()
+    sensor._energy["charge_today"] = 10.0
+    sensor._energy["charge_month"] = 20.0
+    sensor._energy["charge_year"] = 30.0
+
+    fixed_now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def utcnow(cls):
+            return fixed_now
+
+    monkeypatch.setattr(module, "datetime", FixedDatetime)
+    saved = {"count": 0}
+
+    async def _save(force=False):
+        saved["count"] += 1
+
+    sensor._save_energy_to_storage = _save
+
+    await sensor._reset_daily()
+
+    assert sensor._energy["charge_today"] == 0.0
+    assert sensor._energy["charge_month"] == 0.0
+    assert sensor._energy["charge_year"] == 0.0
+    assert saved["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_restores_from_state(monkeypatch):
+    sensor = _make_sensor()
+    sensor.hass = DummyHass({})
+
+    module._energy_data_cache.clear()
+    module._energy_cache_loaded.clear()
+
+    async def _load_storage():
+        return False
+
+    sensor._load_energy_from_storage = _load_storage
+    sensor._save_energy_to_storage = AsyncMock()
+
+    old_state = SimpleNamespace(
+        state="12.5",
+        attributes={
+            "charge_today": 1.0,
+            "charge_month": 2.0,
+            "charge_year": 3.0,
+        },
+    )
+    sensor.async_get_last_state = AsyncMock(return_value=old_state)
+    sensor.async_write_ha_state = lambda: None
+
+    monkeypatch.setattr(
+        module, "async_track_time_change", lambda *_a, **_k: (lambda: None)
+    )
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._energy["charge_today"] == 1.0
+    assert module._energy_cache_loaded.get(sensor._box_id) is True

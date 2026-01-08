@@ -346,3 +346,89 @@ def test_get_actual_load_value():
     sensor.hass = hass
 
     assert sensor._get_actual_load_value() == 123.0
+
+
+@pytest.mark.asyncio
+async def test_daily_statistics_update_saves(monkeypatch):
+    sensor = _make_sensor(sensor_type="interval_test")
+    sensor._time_range = (6, 8)
+    sensor._interval_data = {}
+    sensor._max_age_days = 3
+    sensor.async_write_ha_state = lambda: None
+
+    async def _calc():
+        return 5.5
+
+    async def _save():
+        sensor._saved = True
+
+    sensor._saved = False
+    monkeypatch.setattr(sensor, "_calculate_interval_statistics_from_history", _calc)
+    monkeypatch.setattr(sensor, "_save_statistics_data", _save)
+
+    await sensor._daily_statistics_update(None)
+
+    assert sensor._saved is True
+    assert sensor._interval_data
+
+
+@pytest.mark.asyncio
+async def test_calculate_interval_statistics_from_history_cross_midnight(monkeypatch):
+    sensor = _make_sensor(sensor_type="interval_test")
+    sensor._time_range = (22, 6)
+    sensor._day_type = "weekday"
+    sensor._max_age_days = 2
+
+    class DummyState:
+        def __init__(self, state, last_updated):
+            self.state = state
+            self.last_updated = last_updated
+
+    fixed_now = datetime(2025, 1, 3, 12, 0)
+
+    class FixedDatetime(datetime):
+        min = datetime.min
+
+        @classmethod
+        def now(cls):
+            return fixed_now
+
+        @classmethod
+        def combine(cls, date, time_obj):
+            return datetime.combine(date, time_obj)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.statistics_sensor.datetime", FixedDatetime
+    )
+
+    def _history_period(_hass, _start, _end, entity_id):
+        day1 = datetime(2025, 1, 2, 23, 0)
+        day2 = datetime(2025, 1, 3, 1, 0)
+        day2_late = datetime(2025, 1, 3, 23, 0)
+        return {
+            entity_id: [
+                DummyState("10", day1),
+                DummyState("20", day2),
+                DummyState("30", day2_late),
+            ]
+        }
+
+    async def _exec(func, *args):
+        return func(*args)
+
+    sensor.hass = SimpleNamespace(async_add_executor_job=_exec)
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.state_changes_during_period",
+        _history_period,
+    )
+
+    value = await sensor._calculate_interval_statistics_from_history()
+    assert value == 17.5
+
+
+def test_state_hourly_without_coordinator_data():
+    sensor = _make_sensor(sensor_type="hourly_test")
+    sensor._sensor_type = "hourly_test"
+    sensor._coordinator.data = None
+    sensor._current_hourly_value = 1.5
+    assert sensor.state == 1.5

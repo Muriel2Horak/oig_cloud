@@ -13,6 +13,7 @@ class DummyCoordinator:
         self.data = {}
         self.forced_box_id = "123"
         self.hass = None
+        self.last_update_success = True
 
     def async_add_listener(self, *_args, **_kwargs):
         return lambda: None
@@ -284,3 +285,122 @@ def test_calculate_tariff_intervals_dual_tariff_weekend():
 
     assert intervals["NT"]
     assert intervals["VT"]
+
+
+def test_available_pricing_disabled():
+    sensor = _make_sensor({"enable_pricing": False}, sensor_type="spot_price_today_avg")
+    assert sensor.available is False
+
+
+def test_state_current_tariff_and_spot_price(monkeypatch):
+    sensor = _make_sensor({"enable_pricing": True}, sensor_type="current_tariff")
+    fixed = datetime(2025, 1, 1, 7, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.analytics_sensor.dt_util.now",
+        lambda: fixed,
+    )
+    assert sensor.state == "VT"
+
+    sensor = _make_sensor(
+        {
+            "enable_pricing": True,
+            "spot_pricing_model": "percentage",
+            "spot_positive_fee_percent": 0.0,
+            "spot_negative_fee_percent": 0.0,
+            "distribution_fee_vt_kwh": 0.0,
+            "distribution_fee_nt_kwh": 0.0,
+            "dual_tariff_enabled": False,
+            "vat_rate": 0.0,
+        },
+        sensor_type="spot_price_current_czk_kwh",
+    )
+    fixed_now = datetime(2025, 1, 1, 10, 0, 0)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.analytics_sensor.datetime",
+        FixedDatetime,
+    )
+    sensor.coordinator.data = {
+        "spot_prices": {
+            "prices_czk_kwh": {"2025-01-01T10:00:00": 2.5}
+        }
+    }
+    assert sensor.state == 2.5
+
+
+def test_extra_state_attributes_current_tariff(monkeypatch):
+    sensor = _make_sensor({"enable_pricing": True}, sensor_type="current_tariff")
+    fixed = datetime(2025, 1, 1, 7, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.analytics_sensor.dt_util.now",
+        lambda: fixed,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs["current_tariff"] in ("VT", "NT")
+    assert "nt_intervals" in attrs
+    assert "vt_intervals" in attrs
+
+
+def test_extra_state_attributes_hourly_fixed_prices(monkeypatch):
+    options = {
+        "enable_pricing": True,
+        "spot_pricing_model": "fixed_prices",
+        "fixed_commercial_price_vt": 4.0,
+        "fixed_commercial_price_nt": 2.0,
+        "distribution_fee_vt_kwh": 1.0,
+        "distribution_fee_nt_kwh": 0.5,
+        "dual_tariff_enabled": True,
+        "vat_rate": 0.0,
+    }
+    sensor = _make_sensor(options, sensor_type="spot_price_hourly_all")
+    sensor.coordinator.data = {"spot_prices": {"prices_czk_kwh": {}}}
+
+    fixed_now = datetime(2025, 1, 1, 10, 0, 0)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.analytics_sensor.datetime",
+        FixedDatetime,
+    )
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["hours_count"] == 48
+    assert attrs["date_range"]["start"] == "2025-01-01"
+    assert attrs["date_range"]["end"] == "2025-01-02"
+    assert "hourly_final_prices" in attrs
+
+
+def test_extra_state_attributes_hourly_dynamic(monkeypatch):
+    options = {
+        "enable_pricing": True,
+        "spot_pricing_model": "percentage",
+        "spot_positive_fee_percent": 0.0,
+        "spot_negative_fee_percent": 0.0,
+        "distribution_fee_vt_kwh": 0.0,
+        "distribution_fee_nt_kwh": 0.0,
+        "dual_tariff_enabled": False,
+        "vat_rate": 0.0,
+    }
+    sensor = _make_sensor(options, sensor_type="spot_price_hourly_all")
+    sensor.coordinator.data = {
+        "spot_prices": {
+            "prices_czk_kwh": {
+                "2025-01-01T00:00:00": 1.0,
+                "2025-01-02T01:00:00": 2.0,
+            }
+        }
+    }
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["hours_count"] == 2
+    assert attrs["date_range"]["start"] == "2025-01-01"
+    assert attrs["date_range"]["end"] == "2025-01-02"

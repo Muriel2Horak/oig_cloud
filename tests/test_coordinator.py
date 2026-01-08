@@ -11,7 +11,11 @@ from homeassistant.helpers import frame as frame_helper
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.oig_cloud.const import DEFAULT_UPDATE_INTERVAL, DOMAIN
-from custom_components.oig_cloud.core.coordinator import OigCloudCoordinator
+from custom_components.oig_cloud.core.coordinator import (
+    COORDINATOR_CACHE_MAX_LIST_ITEMS,
+    COORDINATOR_CACHE_MAX_STR_LEN,
+    OigCloudCoordinator,
+)
 from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import \
     OigCloudApiError
 
@@ -504,3 +508,118 @@ def test_handle_spot_retry_inside_important(monkeypatch):
     coordinator._handle_spot_retry()
 
     assert created["count"] == 1
+
+
+def test_prune_for_cache_limits_payload(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    oversized = "x" * (COORDINATOR_CACHE_MAX_STR_LEN + 10)
+    data = {
+        "timeline_data": [1, 2, 3],
+        "str": oversized,
+        "list": list(range(COORDINATOR_CACHE_MAX_LIST_ITEMS + 5)),
+        "tuple": tuple(range(COORDINATOR_CACHE_MAX_LIST_ITEMS + 2)),
+        "when": datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+        "nested": {"deep": {"deeper": {"leaf": "ok"}}},
+    }
+
+    pruned = coordinator._prune_for_cache(data)
+
+    assert "timeline_data" not in pruned
+    assert len(pruned["str"]) == COORDINATOR_CACHE_MAX_STR_LEN
+    assert len(pruned["list"]) == COORDINATOR_CACHE_MAX_LIST_ITEMS
+    assert len(pruned["tuple"]) == COORDINATOR_CACHE_MAX_LIST_ITEMS
+    assert pruned["when"] == "2025-01-01T10:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_maybe_schedule_cache_save(monkeypatch, coordinator):
+    saved = []
+    tasks = []
+
+    async def _async_save(snapshot):
+        saved.append(snapshot)
+
+    class DummyStore:
+        async_save = AsyncMock(side_effect=_async_save)
+
+    def _create_task(coro):
+        tasks.append(coro)
+        return coro
+
+    monkeypatch.setattr(coordinator, "_cache_store", DummyStore())
+    monkeypatch.setattr(coordinator.hass, "async_create_task", _create_task)
+
+    coordinator._maybe_schedule_cache_save({"device": {"value": 1}})
+
+    assert tasks
+    await tasks[0]
+    assert saved
+    assert saved[0]["data"]["device"]["value"] == 1
+
+    coordinator._last_cache_save_ts = coordinator._utcnow()
+    coordinator._maybe_schedule_cache_save({"device": {"value": 2}})
+    assert len(tasks) == 1
+
+
+def test_update_intervals_triggers_refresh(monkeypatch, coordinator):
+    created = []
+
+    def _create_task(coro):
+        created.append(coro)
+        return coro
+
+    monkeypatch.setattr(coordinator.hass, "async_create_task", _create_task)
+    monkeypatch.setattr(coordinator, "async_request_refresh", AsyncMock())
+
+    coordinator.update_intervals(10, 20)
+
+    assert coordinator.update_interval == timedelta(seconds=10)
+    assert coordinator.extended_interval == 20
+    assert created
+    if hasattr(created[0], "close"):
+        created[0].close()
+
+
+@pytest.mark.asyncio
+async def test_fill_config_nodes_from_cloud(monkeypatch, coordinator):
+    coordinator.config_entry.options["box_id"] = "123"
+    stats = {"123": {"box_prms": {}, "batt_prms": {}}}
+    cloud = {
+        "123": {
+            "box_prms": {"mode": 2},
+            "invertor_prms": {"param": 1},
+            "boiler_prms": {"limit": 10},
+        }
+    }
+    coordinator.api.get_stats = AsyncMock(return_value=cloud)
+
+    await coordinator._maybe_fill_config_nodes_from_cloud(stats)
+
+    assert stats["123"]["box_prms"]["mode"] == 2
+    assert stats["123"]["invertor_prms"]["param"] == 1
+    assert stats["123"]["boiler_prms"]["limit"] == 10
+
+
+def test_should_update_extended_handles_timezone(monkeypatch, coordinator):
+    fixed_now = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+    coordinator.extended_interval = 60
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.dt_util.now",
+        lambda: fixed_now,
+    )
+
+    coordinator._last_extended_update = fixed_now - timedelta(seconds=120)
+    assert coordinator._should_update_extended() is True
+
+    coordinator._last_extended_update = fixed_now - timedelta(seconds=30)
+    assert coordinator._should_update_extended() is False

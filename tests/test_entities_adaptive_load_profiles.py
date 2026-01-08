@@ -22,6 +22,14 @@ class DummyCoordinator:
         return lambda: None
 
 
+class DummyStates:
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def get(self, entity_id):
+        return self._mapping.get(entity_id)
+
+
 def _make_sensor():
     coordinator = DummyCoordinator()
     entry = SimpleNamespace()
@@ -294,3 +302,97 @@ async def test_find_best_matching_profile_success(monkeypatch):
     )
     assert result is not None
     assert result["predicted_total_kwh"] > 0
+
+
+def test_native_value_no_data_and_with_prediction():
+    sensor = _make_sensor()
+    assert sensor.native_value == "no_data"
+
+    sensor._current_prediction = {"predicted_total_kwh": 12.34}
+    assert sensor.native_value == "12.3 kWh"
+
+
+def test_get_energy_unit_factor():
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace(
+        states=DummyStates(
+            {
+                "sensor.oig_123_ac_out_en_day": SimpleNamespace(
+                    attributes={"unit_of_measurement": "kWh"}
+                )
+            }
+        )
+    )
+    assert sensor._get_energy_unit_factor("sensor.oig_123_ac_out_en_day") == 1.0
+
+    sensor._hass = SimpleNamespace(states=DummyStates({}))
+    assert sensor._get_energy_unit_factor("sensor.oig_123_ac_out_en_day") == 0.001
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_profile_warming_up(monkeypatch):
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace()
+    sensor.async_write_ha_state = lambda: None
+
+    async def _no_profile(*_a, **_k):
+        sensor._last_profile_reason = "no_hourly_stats"
+        return None
+
+    monkeypatch.setattr(sensor, "_find_best_matching_profile", _no_profile)
+
+    await sensor._create_and_update_profile()
+
+    assert sensor._profiling_status == "warming_up"
+    assert sensor._profiling_error == "no_hourly_stats"
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_profile_sends_signal(monkeypatch):
+    sensor = _make_sensor()
+    sensor._hass = SimpleNamespace()
+    sensor.async_write_ha_state = lambda: None
+
+    prediction = {"predicted_total_kwh": 5.0}
+
+    async def _profile(*_a, **_k):
+        return prediction
+
+    sent = {"signal": None}
+
+    def _send(_hass, signal):
+        sent["signal"] = signal
+
+    monkeypatch.setattr(sensor, "_find_best_matching_profile", _profile)
+    monkeypatch.setattr(
+        "homeassistant.helpers.dispatcher.async_dispatcher_send", _send
+    )
+
+    await sensor._create_and_update_profile()
+
+    assert sensor._profiling_status == "ok"
+    assert sensor._current_prediction == prediction
+    assert sent["signal"] == "oig_cloud_123_profiles_updated"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_next_profile_window(monkeypatch):
+    sensor = _make_sensor()
+    fixed_now = datetime(2025, 1, 2, 0, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        lambda: fixed_now,
+    )
+    waited = {"seconds": 0}
+
+    async def _sleep(seconds):
+        waited["seconds"] = seconds
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.asyncio.sleep",
+        _sleep,
+    )
+
+    await sensor._wait_for_next_profile_window()
+
+    assert waited["seconds"] == 1800.0

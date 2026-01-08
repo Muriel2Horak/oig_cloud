@@ -96,3 +96,45 @@ def test_get_box_id_device_missing(monkeypatch):
     )
 
     assert get_box_id_from_device(hass, "missing", entry.entry_id) == "777"
+
+
+def test_get_box_id_from_entry_data_inverter_sn(monkeypatch):
+    entry = SimpleNamespace(
+        entry_id="entry", options={}, data={"inverter_sn": "123456"}
+    )
+    coordinator = DummyCoordinator(data={}, entry=entry)
+    hass, device_registry = _make_hass(entry, coordinator)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    assert get_box_id_from_device(hass, None, entry.entry_id) == "123456"
+
+
+def test_get_box_id_from_device_identifier_missing_domain(monkeypatch):
+    entry = SimpleNamespace(entry_id="entry", options={}, data={})
+    coordinator = DummyCoordinator(data={"999": {}}, entry=entry)
+    device = DummyDevice(identifiers={("other", "abc")})
+    hass, device_registry = _make_hass(entry, coordinator, device)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    assert get_box_id_from_device(hass, "device-id", entry.entry_id) == "999"
+
+
+def test_get_box_id_none_when_unavailable(monkeypatch):
+    entry = SimpleNamespace(entry_id="entry", options={}, data={})
+    coordinator = DummyCoordinator(data={}, entry=entry)
+    hass, device_registry = _make_hass(entry, coordinator)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    assert get_box_id_from_device(hass, None, entry.entry_id) is None
