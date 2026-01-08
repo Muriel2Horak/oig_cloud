@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,9 @@ class DummyHass:
     def __init__(self, loop):
         self.loop = loop
         self.created = []
+        self.components = SimpleNamespace(
+            persistent_notification=SimpleNamespace(create=lambda *_a, **_k: None)
+        )
 
     def async_create_task(self, coro):
         coro.close()
@@ -52,6 +56,7 @@ class DummySensor:
     def __init__(self, hass=None):
         self._hass = hass
         self._forecast_retry_unsub = None
+        self._in_memory_plan_cache = {}
 
     async def async_update(self):
         return None
@@ -128,6 +133,100 @@ async def test_save_plan_storage_failure_creates_cache():
 
 
 @pytest.mark.asyncio
+async def test_save_plan_storage_creates_cache_attr():
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore(fail_save=True)
+    delattr(sensor, "_in_memory_plan_cache")
+
+    await plan_storage_io.save_plan_to_storage(
+        sensor, "2025-01-02", [{"time": "t"}], {"baseline": False}
+    )
+    assert sensor._in_memory_plan_cache["2025-01-02"]["intervals"]
+
+
+@pytest.mark.asyncio
+async def test_save_plan_storage_no_store():
+    sensor = DummySensor()
+    sensor._plans_store = None
+    ok = await plan_storage_io.save_plan_to_storage(sensor, "2025-01-05", [], None)
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_save_plan_storage_failure_with_retry(monkeypatch):
+    loop = asyncio.get_running_loop()
+    sensor = DummySensor(hass=DummyHass(loop))
+    sensor._plans_store = DummyStore(fail_save=True)
+
+    called = {}
+
+    def _fake_call_later(_hass, _delay, callback):
+        called["cb"] = callback
+        return lambda: None
+
+    monkeypatch.setattr(plan_storage_io, "async_call_later", _fake_call_later)
+
+    ok = await plan_storage_io.save_plan_to_storage(
+        sensor, "2025-01-06", [{"time": "t"}], {"baseline": True}
+    )
+    assert ok is False
+    assert "cb" in called
+
+    retry_cb = called["cb"]
+    await retry_cb(None)
+    sensor._plans_store.fail_save = False
+    await retry_cb(None)
+
+
+@pytest.mark.asyncio
+async def test_load_plan_storage_empty_and_missing_plan():
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore(data={})
+    sensor._in_memory_plan_cache["2025-01-07"] = {"intervals": [{"time": "cached"}]}
+    loaded = await plan_storage_io.load_plan_from_storage(sensor, "2025-01-07")
+    assert loaded["intervals"][0]["time"] == "cached"
+
+    sensor._plans_store = DummyStore(data={"detailed": {}})
+    loaded = await plan_storage_io.load_plan_from_storage(sensor, "2025-01-07")
+    assert loaded["intervals"][0]["time"] == "cached"
+
+    sensor._in_memory_plan_cache = {}
+    assert await plan_storage_io.load_plan_from_storage(sensor, "2025-01-07") is None
+
+    sensor._plans_store = DummyStore(data={})
+    assert await plan_storage_io.load_plan_from_storage(sensor, "2025-01-07") is None
+
+
+@pytest.mark.asyncio
+async def test_load_plan_storage_error_fallback():
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore(fail_load=True)
+    sensor._in_memory_plan_cache["2025-01-08"] = {"intervals": [{"time": "cached"}]}
+    loaded = await plan_storage_io.load_plan_from_storage(sensor, "2025-01-08")
+    assert loaded["intervals"][0]["time"] == "cached"
+
+    sensor._in_memory_plan_cache = {}
+    loaded = await plan_storage_io.load_plan_from_storage(sensor, "2025-01-08")
+    assert loaded is None
+
+
+@pytest.mark.asyncio
+async def test_plan_exists_in_storage():
+    sensor = DummySensor()
+    sensor._plans_store = None
+    assert await plan_storage_io.plan_exists_in_storage(sensor, "2025-01-01") is False
+
+    sensor._plans_store = DummyStore(data={})
+    assert await plan_storage_io.plan_exists_in_storage(sensor, "2025-01-01") is False
+
+    sensor._plans_store = DummyStore(data={"detailed": {"2025-01-01": {}}})
+    assert await plan_storage_io.plan_exists_in_storage(sensor, "2025-01-01") is True
+
+    sensor._plans_store = DummyStore(fail_load=True)
+    assert await plan_storage_io.plan_exists_in_storage(sensor, "2025-01-01") is False
+
+
+@pytest.mark.asyncio
 async def test_load_plan_storage_fallback_cache():
     sensor = DummySensor()
     sensor._plans_store = None
@@ -135,3 +234,10 @@ async def test_load_plan_storage_fallback_cache():
 
     loaded = await plan_storage_io.load_plan_from_storage(sensor, "2025-01-03")
     assert loaded["intervals"][0]["time"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_load_plan_storage_no_cache():
+    sensor = DummySensor()
+    sensor._plans_store = None
+    assert await plan_storage_io.load_plan_from_storage(sensor, "2025-01-04") is None

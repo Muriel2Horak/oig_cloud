@@ -62,7 +62,7 @@ def normalize_service_mode(
         return legacy_map[upper]
 
     title = mode_str.title()
-    if title in legacy_map.values():
+    if title in legacy_map.values():  # pragma: no cover - unreachable with current map
         return title
 
     return None
