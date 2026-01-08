@@ -1,4 +1,6 @@
 import asyncio
+import sys
+import types
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, Mock
 
@@ -10,6 +12,30 @@ try:
     _HAS_HA_PLUGIN = True
 except ImportError:
     _HAS_HA_PLUGIN = False
+
+
+if "opentelemetry" not in sys.modules:
+    otel = types.ModuleType("opentelemetry")
+    trace = types.ModuleType("opentelemetry.trace")
+
+    def _get_tracer(*_args, **_kwargs):
+        class _DummyTracer:
+            def start_as_current_span(self, *_a, **_k):
+                class _DummySpan:
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *_exc):
+                        return False
+
+                return _DummySpan()
+
+        return _DummyTracer()
+
+    trace.get_tracer = _get_tracer
+    otel.trace = trace
+    sys.modules["opentelemetry"] = otel
+    sys.modules["opentelemetry.trace"] = trace
 
 
 @pytest.fixture(autouse=True)
