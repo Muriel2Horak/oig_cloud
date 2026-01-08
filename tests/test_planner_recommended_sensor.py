@@ -35,6 +35,11 @@ class DummyStore:
         return self._data
 
 
+class BoomStore:
+    async def async_load(self):
+        raise RuntimeError("boom")
+
+
 def test_compute_state_and_attrs_with_detail_tabs(monkeypatch):
     monkeypatch.setattr(
         "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
@@ -94,6 +99,29 @@ def test_compute_state_and_attrs_with_detail_tabs(monkeypatch):
     assert (next_change - effective_from).total_seconds() == 180.0
 
 
+def test_init_with_entity_category_and_resolve_error(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {"planner_recommended_mode": {"name": "Recommended", "entity_category": "diagnostic"}},
+    )
+
+    def boom(_coord):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        boom,
+    )
+    sensor = recommended_sensor.OigCloudPlannerRecommendedModeSensor(
+        DummyCoordinator(),
+        "planner_recommended_mode",
+        DummyConfigEntry({}),
+        device_info={},
+        hass=None,
+    )
+    assert sensor._box_id == "unknown"
+
+
 def _make_sensor(monkeypatch, hass=None, options=None):
     monkeypatch.setattr(
         "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
@@ -135,6 +163,7 @@ def test_parse_interval_time(monkeypatch):
     dt_val = sensor._parse_interval_time("12:15", date_hint)
     assert dt_val is not None
     assert sensor._parse_interval_time("bad", date_hint) is None
+    assert sensor._parse_interval_time(None, date_hint) is None
 
 
 def test_get_auto_switch_lead_seconds(monkeypatch):
@@ -154,6 +183,9 @@ def test_get_auto_switch_lead_seconds(monkeypatch):
         }
     }
     assert sensor._get_auto_switch_lead_seconds("Home 1", "Home 2") == 120.0
+
+    hass.data["oig_cloud"]["entry-id"]["service_shield"] = SimpleNamespace(mode_tracker=SimpleNamespace(get_offset_for_scenario=lambda *_a: None))
+    assert sensor._get_auto_switch_lead_seconds("Home 1", "Home 2") == 90.0
 
 
 def test_compute_state_and_attrs_no_payload(monkeypatch):
@@ -180,6 +212,13 @@ def test_compute_state_and_attrs_timeline_only(monkeypatch):
     assert attrs["next_mode_change_at"]
 
 
+def test_get_forecast_payload_from_coordinator(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor.coordinator.battery_forecast_data = {"timeline_data": [{"time": dt_util.now().isoformat(), "mode": 0}]}
+    payload = sensor._get_forecast_payload()
+    assert payload is not None
+
+
 @pytest.mark.asyncio
 async def test_async_refresh_precomputed_payload(monkeypatch):
     sensor = _make_sensor(monkeypatch)
@@ -196,6 +235,13 @@ async def test_async_refresh_precomputed_payload(monkeypatch):
     )
     await sensor._async_refresh_precomputed_payload()
     assert sensor._precomputed_payload["timeline_data"]
+
+    sensor._precomputed_store = DummyStore("bad")
+    await sensor._async_refresh_precomputed_payload()
+    assert sensor._precomputed_payload["timeline_data"]
+
+    sensor._precomputed_store = BoomStore()
+    await sensor._async_refresh_precomputed_payload()
 
 
 @pytest.mark.asyncio

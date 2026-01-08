@@ -212,6 +212,57 @@ def test_calculate_attributes_empty(monkeypatch):
     assert sensor._calculate_attributes() == {}
 
 
+@pytest.mark.asyncio
+async def test_fetch_with_retry_schedules(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    async def fake_do():
+        return False
+
+    called = {"scheduled": False}
+
+    def fake_schedule(_coro):
+        called["scheduled"] = True
+
+    monkeypatch.setattr(sensor, "_do_fetch_15min_data", fake_do)
+    monkeypatch.setattr(sensor, "_schedule_retry", fake_schedule)
+
+    await sensor._fetch_spot_data_with_retry()
+    assert called["scheduled"] is True
+
+
+@pytest.mark.asyncio
+async def test_restore_data_invalid(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    class DummyState:
+        attributes = {"last_update": "bad"}
+
+    async def fake_last_state():
+        return DummyState()
+
+    monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
+    await sensor._restore_data()
+
+
+@pytest.mark.asyncio
+async def test_async_will_remove_from_hass(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    removed = {"daily": 0, "interval": 0}
+
+    def _rm_daily():
+        removed["daily"] += 1
+
+    def _rm_interval():
+        removed["interval"] += 1
+
+    sensor._track_time_interval_remove = _rm_daily
+    sensor._track_15min_remove = _rm_interval
+    await sensor.async_will_remove_from_hass()
+    assert removed["daily"] == 1
+    assert removed["interval"] == 1
+
+
 def test_cancel_retry_timer(monkeypatch):
     sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
 

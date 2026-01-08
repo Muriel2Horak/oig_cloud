@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -32,6 +33,12 @@ def test_parse_period_interval_dst_suffix():
     assert dt_utc.minute == 1
 
 
+def test_parse_period_interval_first_occurrence():
+    api = OteApi()
+    dt_utc = api._parse_period_interval(date(2025, 10, 26), "02a:00-02a:15")
+    assert dt_utc.minute == 0
+
+
 def test_aggregate_quarter_to_hour():
     api = OteApi()
     base = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
@@ -61,6 +68,23 @@ def test_is_cache_valid_requires_tomorrow_after_13(monkeypatch):
 
     api._last_data["prices_czk_kwh"]["2025-01-02T10:00:00"] = 1.1
     assert api._is_cache_valid() is True
+
+
+def test_cache_helpers(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    api = OteApi(cache_path=str(cache_file))
+    api._last_data = {"prices_czk_kwh": {"2025-01-01T10:00:00": 1.0}}
+    api._cache_time = datetime(2025, 1, 1, 12, 0, 0, tzinfo=api.timezone)
+    api._persist_cache_sync()
+    assert cache_file.exists()
+
+    api2 = OteApi(cache_path=str(cache_file))
+    api2._load_cached_spot_prices_sync()
+    assert api2._last_data
+
+    api3 = OteApi(cache_path=str(tmp_path / "missing.json"))
+    api3._load_cached_spot_prices_sync()
+    assert api3._last_data == {}
 
 
 @pytest.mark.asyncio
@@ -221,6 +245,36 @@ async def test_get_spot_prices_fetch_and_fallback(monkeypatch):
     monkeypatch.setattr(api, "_get_dam_period_prices", fake_qh)
     result = await api.get_spot_prices()
     assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_spot_prices_fallback_to_cache_on_error(monkeypatch):
+    api = OteApi()
+    api._last_data = {"prices_czk_kwh": {"2025-01-01T10:00:00": 1.0}}
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(api, "_get_dam_period_prices", boom)
+    result = await api.get_spot_prices()
+    assert result == api._last_data
+
+
+@pytest.mark.asyncio
+async def test_cnb_rate_retries(monkeypatch):
+    rate = CnbRate()
+
+    calls = {"count": 0}
+
+    async def fake_download(day):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ote_module.InvalidDateError("bad")
+        return {"rates": [{"currencyCode": "EUR", "rate": 25.0}]}
+
+    monkeypatch.setattr(rate, "download_rates", fake_download)
+    rates = await rate.get_day_rates(date(2025, 1, 1))
+    assert rates["EUR"] == 25
 
 
 @pytest.mark.asyncio

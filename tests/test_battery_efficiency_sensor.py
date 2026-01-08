@@ -37,6 +37,8 @@ class DummyHass:
     def __init__(self):
         self.states = DummyStates()
         self.created = []
+        self.data = {}
+        self.config = SimpleNamespace(config_dir="/tmp")
 
     def async_create_task(self, coro):
         coro.close()
@@ -51,6 +53,10 @@ class DummyCoordinator:
     def __init__(self, hass):
         self.hass = hass
         self.config_entry = SimpleNamespace(entry_id="entry")
+        self.last_update_success = True
+
+    def async_add_listener(self, *_args, **_kwargs):
+        return lambda: None
 
 
 def _make_sensor(monkeypatch, hass):
@@ -231,3 +237,132 @@ async def test_try_load_last_month_from_history_success(monkeypatch):
 
     await sensor._try_load_last_month_from_history()
     assert sensor._last_month_data.get("charge_kwh") == 1.0
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_restores_state(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    class DummyState:
+        state = "88.5"
+        attributes = {
+            "_battery_kwh_month_start": 3.5,
+            "_current_month_partial": {"charge": 1.0},
+            "_last_month_data": {"charge_kwh": 4.0},
+        }
+
+    async def fake_last_state():
+        return DummyState()
+
+    monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_utc_time_change",
+        lambda *_a, **_k: lambda: None,
+    )
+    await sensor.async_added_to_hass()
+
+    assert sensor._efficiency_last_month == 88.5
+    assert sensor._battery_kwh_month_start == 3.5
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_initializes_mid_month(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 10, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(eff_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_utc_time_change",
+        lambda *_a, **_k: lambda: None,
+    )
+    await sensor.async_added_to_hass()
+    assert sensor._battery_kwh_month_start is not None
+
+
+def test_update_extra_state_attributes_without_efficiency(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    sensor._battery_kwh_month_start = 5.0
+    sensor._current_month_partial = {}
+    sensor._efficiency_last_month = None
+    sensor._last_month_data = {}
+    sensor._loading_history = True
+
+    sensor._update_extra_state_attributes()
+    assert sensor._attr_extra_state_attributes["losses_last_month_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_no_last_state_beginning_month(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    async def fake_last_state():
+        return None
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 1, 12, 0, 0, tzinfo=tz)
+
+    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 5.0)
+    monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
+    monkeypatch.setattr(eff_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_utc_time_change",
+        lambda *_a, **_k: lambda: None,
+    )
+    await sensor.async_added_to_hass()
+    assert sensor._battery_kwh_month_start == 5.0
+
+
+@pytest.mark.asyncio
+async def test_monthly_calculation_wrong_day(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    sensor._efficiency_last_month = 50.0
+    await sensor._monthly_calculation(datetime(2025, 2, 2, 0, 10, tzinfo=timezone.utc))
+    assert sensor._efficiency_last_month == 50.0
+
+
+def test_get_sensor_invalid_state(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", "bad")
+    assert sensor._get_sensor("remaining_usable_capacity") is None
+
+
+@pytest.mark.asyncio
+async def test_try_load_last_month_from_history_no_history(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    def fake_get_significant_states(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.get_significant_states",
+        fake_get_significant_states,
+    )
+    await sensor._try_load_last_month_from_history()
+
+
+@pytest.mark.asyncio
+async def test_try_load_last_month_from_history_incomplete(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    def fake_get_significant_states(_hass, _start, _end, entity_ids):
+        return {entity_ids[0]: [{"state": "unknown"}]}
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.get_significant_states",
+        fake_get_significant_states,
+    )
+    await sensor._try_load_last_month_from_history()
