@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+
+import pytest
 from types import SimpleNamespace
 
 from custom_components.oig_cloud.pricing import spot_price_export_15min as export_module
@@ -47,6 +50,13 @@ class DummyCoordinator:
         self.hass = DummyHass()
         self.data = {}
         self.forced_box_id = "123"
+        self.refresh_called = False
+
+    def async_add_listener(self, *_args, **_kwargs):
+        return lambda: None
+
+    async def async_request_refresh(self):
+        self.refresh_called = True
 
 
 def _make_sensor(monkeypatch, options=None):
@@ -62,12 +72,15 @@ def _make_sensor(monkeypatch, options=None):
         {"spot_export_15m": {"name": "Export 15m"}},
     )
 
-    return export_module.ExportPrice15MinSensor(
+    sensor = export_module.ExportPrice15MinSensor(
         coordinator,
         entry,
         "spot_export_15m",
         device_info,
     )
+    sensor.hass = coordinator.hass
+    sensor.async_write_ha_state = lambda *args, **kwargs: None
+    return sensor
 
 
 def test_export_price_calculation(monkeypatch):
@@ -112,3 +125,107 @@ def test_export_attributes_and_state(monkeypatch):
     assert attrs["price_min"] == 2.12
     assert attrs["price_max"] == 2.55
     assert attrs["price_avg"] == 2.33
+
+
+def test_handle_coordinator_update(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor.coordinator.data = {
+        "spot_prices": {"prices15m_czk_kwh": {"2025-01-01T12:00:00": 2.0}}
+    }
+    sensor._handle_coordinator_update()
+    assert sensor._spot_data_15min
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_initial_fetch(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    called = {"fetch": 0}
+
+    async def fake_fetch():
+        called["fetch"] += 1
+
+    async def fake_restore():
+        return None
+
+    def fake_daily():
+        return None
+
+    def fake_15min():
+        return None
+
+    monkeypatch.setattr(sensor, "_fetch_spot_data_with_retry", fake_fetch)
+    monkeypatch.setattr(sensor, "_restore_data", fake_restore)
+    monkeypatch.setattr(sensor, "_setup_daily_tracking", fake_daily)
+    monkeypatch.setattr(sensor, "_setup_15min_tracking", fake_15min)
+    monkeypatch.setattr(export_module, "dt_now", lambda: datetime(2025, 1, 1, 10, 0, 0))
+
+    await sensor.async_added_to_hass()
+    assert called["fetch"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_current_interval_triggers_refresh(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {
+        "prices15m_czk_kwh": {"2025-01-01T12:00:00": 2.0}
+    }
+    sensor.hass.async_create_task = lambda coro: asyncio.create_task(coro)
+    await sensor._update_current_interval()
+    await asyncio.sleep(0)
+    assert sensor.coordinator.refresh_called is True
+
+
+@pytest.mark.asyncio
+async def test_do_fetch_15min_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    async def fake_get():
+        return {"prices15m_czk_kwh": {"2025-01-01T12:00:00": 2.0}}
+
+    async def fake_get_empty():
+        return {}
+
+    sensor._ote_api._is_cache_valid = lambda: True
+    monkeypatch.setattr(sensor._ote_api, "get_spot_prices", fake_get)
+    result = await sensor._do_fetch_15min_data()
+    assert result is True
+
+    sensor._ote_api._is_cache_valid = lambda: False
+    result = await sensor._do_fetch_15min_data()
+    assert result is False
+
+    monkeypatch.setattr(sensor._ote_api, "get_spot_prices", fake_get_empty)
+    result = await sensor._do_fetch_15min_data()
+    assert result is False
+
+
+def test_calculate_current_state_no_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {}
+    assert sensor._calculate_current_state() is None
+
+
+def test_calculate_attributes_empty(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {}
+    assert sensor._calculate_attributes() == {}
+
+
+def test_cancel_retry_timer(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    class DummyTask:
+        def __init__(self, done=False):
+            self._done = done
+            self.cancelled = False
+
+        def done(self):
+            return self._done
+
+        def cancel(self):
+            self.cancelled = True
+
+    sensor._retry_remove = DummyTask()
+    sensor._cancel_retry_timer()
+    assert sensor._retry_remove is None
