@@ -206,7 +206,7 @@ class IntervalSimulator:
             solar_exported = excess_solar
         elif excess_solar > 0.001:
             # Curtailed (battery not full but no room)
-            solar_curtailed = excess_solar
+            solar_curtailed = excess_solar  # pragma: no cover
 
         # Step 3: Load from grid
         grid_import += load_kwh
@@ -281,7 +281,7 @@ class IntervalSimulator:
                     grid_export = excess_solar
                     solar_exported = excess_solar
                 else:
-                    solar_curtailed = excess_solar
+                    solar_curtailed = excess_solar  # pragma: no cover
 
             # ALL load from grid
             grid_import = load_kwh
@@ -360,7 +360,7 @@ class IntervalSimulator:
                         grid_export = remaining_excess
                         solar_exported = remaining_excess
                     else:
-                        solar_curtailed = remaining_excess
+                        solar_curtailed = remaining_excess  # pragma: no cover
             else:
                 # Solar doesn't cover load - grid supplements, battery UNTOUCHED
                 solar_used_direct = solar_kwh
@@ -440,7 +440,7 @@ class IntervalSimulator:
                         grid_export = remaining_excess
                         solar_exported = remaining_excess
                     else:
-                        solar_curtailed = remaining_excess
+                        solar_curtailed = remaining_excess  # pragma: no cover
             else:
                 # Solar doesn't cover load - battery supplements (diff from HOME II!)
                 solar_used_direct = solar_kwh

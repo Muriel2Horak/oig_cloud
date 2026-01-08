@@ -302,7 +302,6 @@ class OigCloudSessionManager:
                     f"❌ Request #{request_num}: Unexpected error in {method.__name__}: {e}"
                 )
                 raise
-                raise
 
     # Wrapped API methods - delegate to underlying API with retry logic
 

@@ -56,6 +56,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
     if (
         sensor._daily_plan_state is None
         or sensor._daily_plan_state.get("date") != today_str
+        or not sensor._daily_plan_state.get("plan", [])
     ):
         if sensor._daily_plan_state:
             yesterday_date = sensor._daily_plan_state.get("date")
