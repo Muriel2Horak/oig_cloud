@@ -910,19 +910,6 @@ async function renderBoilerHeatmap() {
     }
 }
 
-function toggleBoilerControlPanel() {
-    const panel = document.getElementById('boiler-control-panel');
-    const icon = document.getElementById('boiler-panel-toggle-icon');
-
-    if (panel.classList.contains('minimized')) {
-        panel.classList.remove('minimized');
-        icon.textContent = '−';
-    } else {
-        panel.classList.add('minimized');
-        icon.textContent = '+';
-    }
-}
-
 // Removed duplicate showNotification - using DashboardUtils.showNotification instead
 
 

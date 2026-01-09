@@ -14,6 +14,7 @@ exclude =
     .ha-env,
     .pyenv,
     local_dev,
+    node_modules,
     tests,
     htmlcov,
     build,

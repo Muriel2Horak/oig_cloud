@@ -123,6 +123,7 @@ celerybeat.pid
 # Environments
 .env
 .ha-env/
+.ha-env-313/
 .venv
 env/
 venv/
@@ -181,6 +182,8 @@ blueprints/
 /wslvenv
 custom_components/oig_cloud/sensor_dump.json
 .DS_Store
+.npmrc
+node_modules/
 
 # Development and deployment scripts (local only)
 backup_from_ha.sh

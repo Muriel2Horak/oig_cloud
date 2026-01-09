@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import time
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -13,7 +11,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
-from ..const import DOMAIN
 from ..shared.logging import setup_simple_telemetry
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
@@ -430,7 +427,6 @@ class ServiceShield:
                 self._logger.debug(f"Error cleaning up telemetry: {e}")
 
         self._logger.debug("[OIG Shield] ServiceShield cleaned up")
-
 
 
 # Delegated methods (queue/validation/dispatch)
