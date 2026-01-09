@@ -129,6 +129,13 @@ def test_handle_coordinator_update(monkeypatch):
     assert sensor._spot_data["hours_count"] == 10
 
 
+def test_handle_coordinator_update_no_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor.coordinator.data = {}
+    sensor._handle_coordinator_update()
+    assert sensor._spot_data == {}
+
+
 @pytest.mark.asyncio
 async def test_async_added_to_hass_initial_fetch(monkeypatch):
     sensor = _make_sensor(monkeypatch)
@@ -156,6 +163,25 @@ async def test_async_added_to_hass_initial_fetch(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_async_added_to_hass_fetch_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor.hass = sensor.coordinator.hass
+
+    async def fake_fetch():
+        raise RuntimeError("boom")
+
+    async def fake_restore():
+        return None
+
+    monkeypatch.setattr(sensor, "_fetch_spot_data_with_retry", fake_fetch)
+    monkeypatch.setattr(sensor, "_restore_data", fake_restore)
+    monkeypatch.setattr(sensor, "_setup_time_tracking", lambda: None)
+    monkeypatch.setattr(hourly_module, "dt_now", lambda: datetime(2025, 1, 1, 10, 0, 0))
+
+    await sensor.async_added_to_hass()
+
+
+@pytest.mark.asyncio
 async def test_restore_data_invalid_timestamp(monkeypatch):
     sensor = _make_sensor(monkeypatch)
 
@@ -167,6 +193,21 @@ async def test_restore_data_invalid_timestamp(monkeypatch):
 
     monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
     await sensor._restore_data()
+
+
+@pytest.mark.asyncio
+async def test_restore_data_valid_timestamp(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    class DummyState:
+        attributes = {"last_update": "2025-01-01T10:00:00"}
+
+    async def fake_last_state():
+        return DummyState()
+
+    monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
+    await sensor._restore_data()
+    assert sensor._last_update is not None
 
 
 def test_do_fetch_spot_data_paths(monkeypatch):
@@ -189,6 +230,29 @@ def test_do_fetch_spot_data_paths(monkeypatch):
     assert result is False
 
     monkeypatch.setattr(sensor._ote_api, "get_spot_prices", fake_get_empty)
+    result = asyncio.run(sensor._do_fetch_spot_data())
+    assert result is False
+
+
+def test_do_fetch_spot_data_invalid(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    async def fake_get():
+        return {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+
+    monkeypatch.setattr(sensor._ote_api, "get_spot_prices", fake_get)
+    monkeypatch.setattr(sensor, "_validate_spot_data", lambda *_a, **_k: False)
+    result = asyncio.run(sensor._do_fetch_spot_data())
+    assert result is False
+
+
+def test_do_fetch_spot_data_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    async def boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sensor._ote_api, "get_spot_prices", boom)
     result = asyncio.run(sensor._do_fetch_spot_data())
     assert result is False
 
@@ -221,6 +285,17 @@ def test_state_branches(monkeypatch):
     sensor._sensor_type = "spot_price_hourly_all"
     assert sensor.state == 3.3
 
+    sensor._sensor_type = "unknown_type"
+    assert sensor.state is None
+
+    sensor._sensor_type = "spot_price_current_czk_kwh"
+    monkeypatch.setattr(
+        sensor,
+        "_get_current_price_czk_kwh",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    assert sensor.state is None
+
 
 def test_hourly_prices_empty(monkeypatch):
     sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh")
@@ -228,6 +303,69 @@ def test_hourly_prices_empty(monkeypatch):
     assert sensor._get_hourly_prices() == {}
     assert sensor._get_all_hourly_prices() == {}
 
+
+def test_validate_spot_data_empty(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    assert sensor._validate_spot_data({}) is False
+
+
+def test_validate_spot_data_missing_prices(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    assert sensor._validate_spot_data({"prices_czk_kwh": {}}) is False
+
+
+def test_validate_spot_data_too_few_hours(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    monkeypatch.setattr(hourly_module, "dt_now", lambda: datetime(2025, 1, 1, 10, 0, 0))
+    data = {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+    assert sensor._validate_spot_data(data) is False
+
+
+def test_validate_spot_data_invalid_prices(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    monkeypatch.setattr(hourly_module, "dt_now", lambda: datetime(2025, 1, 1, 10, 0, 0))
+    prices = {f"2025-01-01T{hour:02d}:00:00": 0.0 for hour in range(12)}
+    data = {"prices_czk_kwh": prices}
+    assert sensor._validate_spot_data(data) is False
+
+
+def test_setup_time_tracking_after_daily(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    monkeypatch.setattr(hourly_module, "dt_now", lambda: datetime(2025, 1, 1, 14, 0, 0))
+    monkeypatch.setattr(hourly_module, "async_track_time_change", lambda *_a, **_k: lambda: None)
+    called = {"task": 0}
+
+    def fake_task(coro):
+        called["task"] += 1
+        coro.close()
+        return object()
+
+    sensor.hass.async_create_task = fake_task
+    sensor._setup_time_tracking()
+    assert called["task"] == 1
+
+
+def test_get_helpers_missing_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    assert sensor._get_current_price_czk_kwh() is None
+    assert sensor._get_current_price_eur_mwh() is None
+    assert sensor._get_tomorrow_average() is None
+    assert sensor._get_today_average() is None
+    assert sensor._get_today_min() is None
+    assert sensor._get_today_max() is None
+    assert sensor._get_next_hour_price() is None
+
+
+def test_fetch_spot_data_legacy(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    called = {"fetch": 0}
+
+    async def fake_fetch():
+        called["fetch"] += 1
+
+    monkeypatch.setattr(sensor, "_fetch_spot_data_with_retry", fake_fetch)
+    asyncio.run(sensor._fetch_spot_data())
+    assert called["fetch"] == 1
 
 def test_retry_timer_cancel(monkeypatch):
     sensor = _make_sensor(monkeypatch)
@@ -246,6 +384,24 @@ def test_retry_timer_cancel(monkeypatch):
     sensor._retry_remove = DummyTask()
     sensor._cancel_retry_timer()
     assert sensor._retry_remove is None
+
+
+@pytest.mark.asyncio
+async def test_schedule_retry_executes(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    called = {"fetch": 0}
+
+    async def fake_fetch():
+        called["fetch"] += 1
+
+    async def fake_sleep(_delay):
+        return None
+
+    sensor.hass.async_create_task = lambda coro: asyncio.create_task(coro)
+    monkeypatch.setattr(hourly_module.asyncio, "sleep", fake_sleep)
+    sensor._schedule_retry(fake_fetch)
+    await sensor._retry_remove
+    assert called["fetch"] == 1
 
 
 @pytest.mark.asyncio
@@ -282,6 +438,26 @@ async def test_fetch_with_retry_schedules(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fetch_with_retry_success(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._retry_attempt = 2
+    called = {"cancel": 0}
+
+    async def fake_do():
+        return True
+
+    def fake_cancel():
+        called["cancel"] += 1
+
+    monkeypatch.setattr(sensor, "_do_fetch_spot_data", fake_do)
+    monkeypatch.setattr(sensor, "_cancel_retry_timer", fake_cancel)
+
+    await sensor._fetch_spot_data_with_retry()
+    assert sensor._retry_attempt == 0
+    assert called["cancel"] == 1
+
+
+@pytest.mark.asyncio
 async def test_async_will_remove_from_hass(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     removed = {"daily": 0}
@@ -294,6 +470,63 @@ async def test_async_will_remove_from_hass(monkeypatch):
     assert removed["daily"] == 1
 
 
+def test_properties(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        lambda _coord: "123",
+    )
+    sensor = _make_sensor(monkeypatch)
+    sensor._sensor_config = {
+        "name": "Spot",
+        "icon": "mdi:flash",
+        "unit_of_measurement": "CZK/kWh",
+        "device_class": "monetary",
+        "state_class": "measurement",
+    }
+    assert sensor.name.startswith("OIG")
+    assert sensor.icon == "mdi:flash"
+    assert sensor.unit_of_measurement == "CZK/kWh"
+    assert sensor.device_class == "monetary"
+    assert sensor.state_class == "measurement"
+    assert sensor.unique_id == "oig_cloud_123_spot_price_current_czk_kwh"
+    assert "Battery Box" in sensor.device_info["name"]
+    assert sensor.should_poll is False
+
+
+def test_get_hourly_prices_rollover(monkeypatch):
+    sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh")
+    fixed_now = datetime(2025, 1, 1, 23, 0, 0)
+    monkeypatch.setattr(hourly_module, "dt_now", lambda: fixed_now)
+    sensor._spot_data = {
+        "prices_czk_kwh": {
+            "2025-01-01T23:00:00": 3.0,
+            "2025-01-02T00:00:00": 4.0,
+        }
+    }
+    attrs = sensor._get_hourly_prices()
+    assert attrs["today_prices"]["23:00"] == 3.0
+    assert "00:00" in attrs["tomorrow_prices"]
+
+
+def test_get_all_hourly_prices_empty_prices(monkeypatch):
+    sensor = _make_sensor(monkeypatch, "spot_price_hourly_all")
+    sensor._spot_data = {"prices_czk_kwh": {}}
+    assert sensor._get_all_hourly_prices() == {}
+
+
+@pytest.mark.asyncio
+async def test_async_update(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    called = {"write": 0}
+
+    def fake_write():
+        called["write"] += 1
+
+    sensor.async_write_ha_state = fake_write
+    await sensor.async_update()
+    assert called["write"] == 1
+
+
 def test_spot_price_shared_helpers(monkeypatch):
     hass = DummyHass()
 
@@ -303,3 +536,12 @@ def test_spot_price_shared_helpers(monkeypatch):
         forced_box_id = "777"
 
     assert shared_module._resolve_box_id_from_coordinator(DummyCoordinator()) == "777"
+
+    def boom(_coord):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        boom,
+    )
+    assert shared_module._resolve_box_id_from_coordinator(DummyCoordinator()) == "unknown"

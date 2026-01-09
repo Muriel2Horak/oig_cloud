@@ -136,6 +136,15 @@ def test_handle_coordinator_update(monkeypatch):
     assert sensor._spot_data_15min
 
 
+def test_handle_coordinator_update_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor.coordinator.data = {"spot_prices": {"prices15m_czk_kwh": {}}}
+    monkeypatch.setattr(
+        sensor, "_refresh_cached_state_and_attributes", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    sensor._handle_coordinator_update()
+
+
 @pytest.mark.asyncio
 async def test_async_added_to_hass_initial_fetch(monkeypatch):
     sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
@@ -162,6 +171,64 @@ async def test_async_added_to_hass_initial_fetch(monkeypatch):
 
     await sensor.async_added_to_hass()
     assert called["fetch"] == 1
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_initial_fetch_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    async def fake_fetch():
+        raise RuntimeError("boom")
+
+    async def fake_restore():
+        return None
+
+    monkeypatch.setattr(sensor, "_fetch_spot_data_with_retry", fake_fetch)
+    monkeypatch.setattr(sensor, "_restore_data", fake_restore)
+    monkeypatch.setattr(sensor, "_setup_daily_tracking", lambda: None)
+    monkeypatch.setattr(sensor, "_setup_15min_tracking", lambda: None)
+    monkeypatch.setattr(export_module, "dt_now", lambda: datetime(2025, 1, 1, 10, 0, 0))
+
+    await sensor.async_added_to_hass()
+
+
+@pytest.mark.asyncio
+async def test_restore_data_valid(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    class DummyState:
+        attributes = {"last_update": "2025-01-01T10:00:00"}
+
+    async def fake_last_state():
+        return DummyState()
+
+    monkeypatch.setattr(sensor, "async_get_last_state", fake_last_state)
+    await sensor._restore_data()
+    assert sensor._last_update is not None
+
+
+def test_setup_daily_tracking(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    monkeypatch.setattr(export_module, "dt_now", lambda: datetime(2025, 1, 1, 14, 0, 0))
+    monkeypatch.setattr(export_module, "async_track_time_change", lambda *_a, **_k: lambda: None)
+
+    called = {"task": 0}
+
+    def fake_task(coro):
+        called["task"] += 1
+        coro.close()
+        return object()
+
+    sensor.hass.async_create_task = fake_task
+    sensor._setup_daily_tracking()
+    assert called["task"] == 1
+
+
+def test_setup_15min_tracking(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    monkeypatch.setattr(export_module, "async_track_time_change", lambda *_a, **_k: lambda: None)
+    sensor._setup_15min_tracking()
+    assert sensor._track_15min_remove is not None
 
 
 @pytest.mark.asyncio
@@ -200,15 +267,83 @@ async def test_do_fetch_15min_data(monkeypatch):
     assert result is False
 
 
+@pytest.mark.asyncio
+async def test_do_fetch_15min_data_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+
+    async def boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sensor._ote_api, "get_spot_prices", boom)
+    result = await sensor._do_fetch_15min_data()
+    assert result is False
+
+
 def test_calculate_current_state_no_data(monkeypatch):
     sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
     sensor._spot_data_15min = {}
     assert sensor._calculate_current_state() is None
 
 
+def test_calculate_current_state_no_price(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {"prices15m_czk_kwh": {"2025-01-01T10:00:00": 2.0}}
+    assert sensor._calculate_current_state() is None
+
+
+def test_calculate_current_state_exception(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {
+        "prices15m_czk_kwh": {"2025-01-01T12:00:00": 2.0}
+    }
+    monkeypatch.setattr(
+        sensor,
+        "_calculate_export_price_15min",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    assert sensor._calculate_current_state() is None
+
+
 def test_calculate_attributes_empty(monkeypatch):
     sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
     sensor._spot_data_15min = {}
+    assert sensor._calculate_attributes() == {}
+
+
+def test_calculate_attributes_invalid_interval(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    fixed_now = datetime(2025, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(export_module, "dt_now", lambda: fixed_now)
+    sensor._spot_data_15min = {
+        "prices15m_czk_kwh": {
+            "bad": 2.0,
+            "2025-01-01T12:00:00": 2.5,
+        }
+    }
+    attrs = sensor._calculate_attributes()
+    assert attrs["intervals_count"] >= 1
+
+
+def test_calculate_attributes_rollover(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    fixed_now = datetime(2025, 1, 1, 23, 59, 0)
+    monkeypatch.setattr(export_module, "dt_now", lambda: fixed_now)
+    monkeypatch.setattr(sensor, "_get_current_interval_index", lambda _now: 95)
+    sensor._spot_data_15min = {
+        "prices15m_czk_kwh": {
+            "2025-01-01T23:45:00": 2.0,
+        }
+    }
+    attrs = sensor._calculate_attributes()
+    assert "next_update" in attrs
+
+
+def test_calculate_attributes_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._spot_data_15min = {"prices15m_czk_kwh": {"2025-01-01T12:00:00": 2.0}}
+    monkeypatch.setattr(
+        sensor, "_get_current_interval_index", lambda _now: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     assert sensor._calculate_attributes() == {}
 
 
@@ -229,6 +364,26 @@ async def test_fetch_with_retry_schedules(monkeypatch):
 
     await sensor._fetch_spot_data_with_retry()
     assert called["scheduled"] is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_with_retry_success(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._retry_attempt = 2
+    called = {"cancel": 0}
+
+    async def fake_do():
+        return True
+
+    def fake_cancel():
+        called["cancel"] += 1
+
+    monkeypatch.setattr(sensor, "_do_fetch_15min_data", fake_do)
+    monkeypatch.setattr(sensor, "_cancel_retry_timer", fake_cancel)
+
+    await sensor._fetch_spot_data_with_retry()
+    assert sensor._retry_attempt == 0
+    assert called["cancel"] == 1
 
 
 @pytest.mark.asyncio
@@ -280,3 +435,32 @@ def test_cancel_retry_timer(monkeypatch):
     sensor._retry_remove = DummyTask()
     sensor._cancel_retry_timer()
     assert sensor._retry_remove is None
+
+
+@pytest.mark.asyncio
+async def test_schedule_retry_executes(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    called = {"fetch": 0}
+
+    async def fake_fetch():
+        called["fetch"] += 1
+
+    async def fake_sleep(_delay):
+        return None
+
+    sensor.hass.async_create_task = lambda coro: asyncio.create_task(coro)
+    monkeypatch.setattr(export_module.asyncio, "sleep", fake_sleep)
+    sensor._schedule_retry(fake_fetch)
+    await sensor._retry_remove
+    assert called["fetch"] == 1
+
+
+def test_properties(monkeypatch):
+    sensor = _make_sensor(monkeypatch, {"export_pricing_model": "percentage"})
+    sensor._cached_state = 1.23
+    sensor._cached_attributes = {"foo": "bar"}
+    assert sensor.state == 1.23
+    assert sensor.extra_state_attributes["foo"] == "bar"
+    assert sensor.unique_id == "oig_cloud_123_spot_export_15m"
+    assert sensor.device_info == {"identifiers": {("oig_cloud", "123")}}
+    assert sensor.should_poll is False

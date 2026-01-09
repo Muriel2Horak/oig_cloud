@@ -138,12 +138,12 @@ class OigCloudPlannerRecommendedModeSensor(
             upper = str(mode_name).strip().upper()
             if "UPS" in upper:
                 return "Home UPS"
-            if "HOME I" in upper or upper == "HOME 1":
-                return "Home 1"
-            if "HOME II" in upper or upper == "HOME 2":
-                return "Home 2"
-            if "HOME III" in upper or upper == "HOME 3":
+            if "HOME III" in upper:
                 return "Home 3"
+            if "HOME II" in upper:
+                return "Home 2"
+            if "HOME I" in upper:
+                return "Home 1"
             if upper in {"HOME 1", "HOME 2", "HOME 3", "HOME UPS"}:
                 return str(mode_name).title()
 

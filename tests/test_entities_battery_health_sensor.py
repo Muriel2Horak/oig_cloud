@@ -48,6 +48,14 @@ class DummyStore:
         self.saved = data
 
 
+class BoomStore:
+    async def async_load(self):
+        raise RuntimeError("boom")
+
+    async def async_save(self, _data):
+        raise RuntimeError("boom")
+
+
 @pytest.mark.asyncio
 async def test_find_monotonic_charging_intervals(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
@@ -164,6 +172,16 @@ async def test_storage_load_and_save(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_storage_load_and_save_errors(monkeypatch):
+    monkeypatch.setattr(module, "Store", lambda *_a, **_k: BoomStore())
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=10.0)
+
+    await tracker.async_load_from_storage()
+    await tracker.async_save_to_storage()
+
+
+@pytest.mark.asyncio
 async def test_analyze_last_10_days_no_history(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
@@ -197,6 +215,41 @@ async def test_analyze_last_10_days_missing_sensors(monkeypatch):
     assert result == []
 
 
+@pytest.mark.asyncio
+async def test_analyze_last_10_days_happy_path(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    hass = DummyHass(
+        DummyStates({"sensor.oig_123_battery_efficiency": DummyState("90", t0)})
+    )
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=15.3)
+
+    soc_states = [
+        DummyState("10", t0),
+        DummyState("70", t0 + timedelta(hours=1)),
+        DummyState("60", t0 + timedelta(hours=2)),
+    ]
+    charge_states = [
+        DummyState("1000", t0),
+        DummyState("8000", t0 + timedelta(hours=1)),
+    ]
+
+    class DummyInstance:
+        async def async_add_executor_job(self, _func, *_args, **_kwargs):
+            return {
+                "sensor.oig_123_batt_bat_c": soc_states,
+                "sensor.oig_123_computed_batt_charge_energy_month": charge_states,
+            }
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.get_instance", lambda *_a, **_k: DummyInstance()
+    )
+    result = await tracker.analyze_last_10_days()
+
+    assert result
+    assert tracker._last_analysis is not None
+
+
 def test_find_monotonic_intervals_ignores_unknown(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
@@ -227,6 +280,30 @@ def test_calculate_capacity_rejects_invalid(monkeypatch):
     assert tracker._calculate_capacity(t0, t1, 0, 60, charge_states) is None
 
 
+def test_calculate_capacity_missing_charge_values(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=10.0)
+    t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(hours=1)
+
+    assert tracker._calculate_capacity(t0, t1, 0, 60, []) is None
+
+
+def test_calculate_capacity_efficiency_invalid(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(hours=1)
+    hass = DummyHass(
+        DummyStates({"sensor.oig_123_battery_efficiency": DummyState("bad", t0)})
+    )
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=12.0)
+
+    charge_states = [DummyState("0", t0), DummyState("6000", t1)]
+    measurement = tracker._calculate_capacity(t0, t1, 0, 60, charge_states)
+    assert measurement is not None
+
+
 def test_calculate_capacity_soh_limits(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
@@ -238,11 +315,30 @@ def test_calculate_capacity_soh_limits(monkeypatch):
     assert tracker._calculate_capacity(t0, t1, 0, 60, charge_states) is None
 
 
+def test_calculate_capacity_soh_too_low(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=50.0)
+    t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(hours=1)
+
+    charge_states = [DummyState("0", t0), DummyState("10000", t1)]
+    assert tracker._calculate_capacity(t0, t1, 0, 60, charge_states) is None
+
+
 def test_get_value_at_time_empty(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
     tracker = module.BatteryHealthTracker(hass, "123")
     assert tracker._get_value_at_time([], datetime.now(timezone.utc)) is None
+
+
+def test_current_soh_and_capacity_empty(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123")
+    assert tracker.get_current_soh() is None
+    assert tracker.get_current_capacity() is None
 
 
 @pytest.mark.asyncio
@@ -272,3 +368,93 @@ async def test_battery_health_sensor_lifecycle(monkeypatch):
 
     assert sensor.device_info == {}
     assert sensor.extra_state_attributes["nominal_capacity_kwh"] == 15.3
+
+
+def test_battery_health_sensor_resolve_box_id_error(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+
+    def boom(_coord):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        boom,
+    )
+    hass = DummyHass(DummyStates({}))
+    coordinator = SimpleNamespace(
+        hass=hass, last_update_success=True, async_add_listener=lambda *_a, **_k: lambda: None
+    )
+    sensor = module.BatteryHealthSensor(
+        coordinator, "battery_health", SimpleNamespace(), {}, hass
+    )
+    assert sensor._box_id == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_battery_health_sensor_remove_and_initial_analysis(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    coordinator = SimpleNamespace(
+        hass=hass, last_update_success=True, async_add_listener=lambda *_a, **_k: lambda: None
+    )
+    sensor = module.BatteryHealthSensor(
+        coordinator, "battery_health", SimpleNamespace(), {}, hass
+    )
+    sensor.hass = hass
+    called = {"sleep": 0, "analyze": 0, "daily": 0}
+
+    async def fake_sleep(_delay):
+        called["sleep"] += 1
+
+    async def fake_analyze():
+        called["analyze"] += 1
+
+    sensor._tracker = SimpleNamespace(analyze_last_10_days=fake_analyze)
+    sensor.async_write_ha_state = lambda *args, **kwargs: None
+    sensor._daily_unsub = lambda: called.__setitem__("daily", called["daily"] + 1)
+
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+    await sensor._initial_analysis()
+    await sensor.async_will_remove_from_hass()
+
+    assert called["sleep"] == 1
+    assert called["analyze"] == 1
+    assert called["daily"] == 1
+
+
+def test_battery_health_sensor_native_value_and_attrs(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    coordinator = SimpleNamespace(
+        hass=hass, last_update_success=True, async_add_listener=lambda *_a, **_k: lambda: None
+    )
+    sensor = module.BatteryHealthSensor(
+        coordinator, "battery_health", SimpleNamespace(), {}, hass
+    )
+
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes["nominal_capacity_kwh"] == 15.3
+
+    tracker = SimpleNamespace(
+        _measurements=[
+            CapacityMeasurement(
+                timestamp="2025-01-01T00:00:00+00:00",
+                start_soc=0.0,
+                end_soc=50.0,
+                delta_soc=50.0,
+                charge_energy_wh=5000.0,
+                capacity_kwh=10.0,
+                soh_percent=88.8,
+                duration_hours=1.0,
+            )
+        ],
+        _last_analysis=datetime(2025, 1, 2, 0, 0, tzinfo=timezone.utc),
+        get_current_soh=lambda: 88.84,
+        get_current_capacity=lambda: 10.25,
+    )
+    sensor._tracker = tracker
+
+    assert sensor.native_value == 88.8
+    attrs = sensor.extra_state_attributes
+    assert attrs["measurement_count"] == 1
+    assert attrs["current_capacity_kwh"] == 10.25
