@@ -65,6 +65,15 @@ async def test_pricing_distribution_weekend_toggle_rerender():
 
 
 @pytest.mark.asyncio
+async def test_pricing_distribution_initial_form():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_distribution()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_distribution"
+
+
+@pytest.mark.asyncio
 async def test_pricing_distribution_invalid_hours():
     flow = DummyWizard()
     flow._wizard_data = {
@@ -83,6 +92,54 @@ async def test_pricing_distribution_invalid_hours():
 
     assert result["type"] == "form"
     assert result["errors"]["tariff_vt_start_weekday"] == "invalid_hour_format"
+
+
+@pytest.mark.asyncio
+async def test_pricing_distribution_invalid_weekend_hours():
+    flow = DummyWizard()
+    flow._wizard_data = {
+        "tariff_count": "dual",
+        "tariff_weekend_same_as_weekday": False,
+    }
+
+    result = await flow.async_step_wizard_pricing_distribution(
+        {
+            "tariff_count": "dual",
+            "tariff_weekend_same_as_weekday": False,
+            "tariff_vt_start_weekday": "6",
+            "tariff_nt_start_weekday": "22,2",
+            "tariff_vt_start_weekend": "bad",
+            "tariff_nt_start_weekend": "0",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["tariff_vt_start_weekend"] == "invalid_hour_format"
+
+
+@pytest.mark.asyncio
+async def test_pricing_distribution_back_button():
+    flow = DummyWizard()
+    flow._step_history = ["wizard_pricing_export", "wizard_pricing_distribution"]
+    result = await flow.async_step_wizard_pricing_distribution({"go_back": True})
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_export"
+
+
+def test_pricing_distribution_schema_weekend_diff_defaults():
+    flow = DummyWizard()
+    schema = flow._get_pricing_distribution_schema(
+        {
+            "tariff_count": "dual",
+            "tariff_weekend_same_as_weekday": None,
+            "tariff_vt_start_weekday": "6",
+            "tariff_nt_start_weekday": "22,2",
+            "tariff_vt_start_weekend": "8",
+            "tariff_nt_start_weekend": "20",
+        }
+    )
+    keys = _schema_keys(schema)
+    assert "tariff_weekend_same_as_weekday" in keys
 
 
 @pytest.mark.asyncio

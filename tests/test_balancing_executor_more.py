@@ -67,3 +67,47 @@ def test_get_balancing_indices_and_costs():
     )
     assert charging_cost > 0
     assert holding_cost > 0
+
+
+def test_parse_plan_datetime_objects_and_invalid_interval():
+    executor = BalancingExecutor(max_capacity=10)
+    plan = {
+        "holding_start": datetime(2025, 1, 1, 1, 0, 0),
+        "holding_end": datetime(2025, 1, 1, 2, 0, 0),
+        "charging_intervals": [{"timestamp": None}],
+        "mode": "forced",
+    }
+    parsed = executor.parse_plan(plan)
+    assert parsed is not None
+    assert parsed.mode == "forced"
+
+
+def test_apply_balancing_uses_preferred_and_cheapest():
+    executor = BalancingExecutor(max_capacity=5, charge_rate_kw=2.0, efficiency=1.0)
+    modes = [0, 0, 0]
+    spot_prices = [
+        {"time": "2025-01-01T00:00:00", "price": 5.0},
+        {"time": "2025-01-01T00:15:00", "price": 1.0},
+        {"time": "2025-01-01T00:30:00", "price": 2.0},
+    ]
+    plan = {
+        "holding_start": "2025-01-01T00:30:00",
+        "holding_end": "2025-01-01T00:45:00",
+        "charging_intervals": ["2025-01-01T00:00:00"],
+    }
+    result = executor.apply_balancing(modes, spot_prices, 0.0, plan)
+    assert result.charging_intervals
+    assert result.holding_intervals
+
+
+def test_get_balancing_indices_handles_bad_time():
+    executor = BalancingExecutor(max_capacity=10)
+    plan = {
+        "holding_start": "2025-01-01T00:15:00",
+        "holding_end": "2025-01-01T00:45:00",
+    }
+    charging, holding = executor.get_balancing_indices(
+        [{"time": None, "price": 1.0}], plan
+    )
+    assert charging == set()
+    assert holding == set()

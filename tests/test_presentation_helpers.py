@@ -62,6 +62,15 @@ def test_build_extra_state_attributes():
     assert attrs["mode_optimization"]["best_baseline"] == "HOME_I"
 
 
+def test_build_extra_state_attributes_uses_balancing_snapshot():
+    sensor = DummySensor()
+    sensor._balancing_plan_snapshot = {"requester": "balancing"}
+    attrs = state_attributes.build_extra_state_attributes(
+        sensor, debug_expose_baseline_timeline=False
+    )
+    assert "active_plan_data" in attrs
+
+
 def test_calculate_data_hash():
     assert state_attributes.calculate_data_hash([]) == "empty"
     value = state_attributes.calculate_data_hash([{"time": "2025-01-01T00:00:00"}])

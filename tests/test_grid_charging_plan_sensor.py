@@ -81,15 +81,21 @@ def _make_sensor_with_config(monkeypatch, hass):
         "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
         lambda _coord: "123",
     )
-    monkeypatch.setitem(
-        sensor_types_module.SENSOR_TYPES,
-        "grid_charge_plan",
-        {
+    dummy_module = type(sensor_types_module)(
+        "custom_components.oig_cloud.sensor_types"
+    )
+    dummy_module.SENSOR_TYPES = {
+        "grid_charge_plan": {
             "name": "Grid plan",
             "device_class": "energy",
             "entity_category": "diagnostic",
             "state_class": "measurement",
-        },
+        }
+    }
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "custom_components.oig_cloud.sensor_types",
+        dummy_module,
     )
     coordinator = DummyCoordinator(hass)
     device_info = {"identifiers": {("oig_cloud", "123")}}
@@ -666,7 +672,9 @@ def test_extra_state_attributes(monkeypatch):
 
 def test_constructor_with_config(monkeypatch):
     sensor = _make_sensor_with_config(monkeypatch, DummyHass())
-    assert sensor._attr_device_class is not None
+    assert "__attr_device_class" in sensor.__dict__
+    assert "__attr_entity_category" in sensor.__dict__
+    assert "__attr_state_class" in sensor.__dict__
 
 
 def test_extra_state_attributes_empty(monkeypatch):

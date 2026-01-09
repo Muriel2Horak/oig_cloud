@@ -73,3 +73,38 @@ async def test_calculate_interval_statistics_no_history(monkeypatch):
     )
 
     assert await sensor._calculate_interval_statistics_from_history() is None
+
+
+@pytest.mark.asyncio
+async def test_calculate_interval_statistics_with_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._time_range = (6, 8)
+    sensor._max_age_days = 2
+
+    class DummyState:
+        def __init__(self, state, last_updated):
+            self.state = state
+            self.last_updated = last_updated
+
+    end_time = datetime.now()
+    day0 = end_time.replace(hour=6, minute=30, second=0, microsecond=0)
+    day1 = (end_time - timedelta(days=1)).replace(
+        hour=6, minute=45, second=0, microsecond=0
+    )
+
+    def _history(_hass, _start, _end, entity_id):
+        return {
+            entity_id: [
+                DummyState("100", day0),
+                DummyState("200", day0 + timedelta(minutes=15)),
+                DummyState("150", day1),
+            ]
+        }
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.state_changes_during_period",
+        _history,
+    )
+
+    result = await sensor._calculate_interval_statistics_from_history()
+    assert result == 150.0

@@ -77,3 +77,15 @@ def test_get_solar_forecast_no_attrs():
 def test_get_solar_forecast_strings_missing():
     sensor = DummySensor(DummyHass({}))
     assert solar_forecast.get_solar_forecast_strings(sensor) == {}
+
+
+def test_get_solar_forecast_missing_state_no_cache():
+    hass = DummyHass({})
+    sensor = DummySensor(hass)
+    sensor.coordinator.solar_forecast_data = {"total_hourly": {}}
+    assert solar_forecast.get_solar_forecast(sensor) == {}
+
+
+def test_get_solar_forecast_strings_no_hass():
+    sensor = DummySensor(None)
+    assert solar_forecast.get_solar_forecast_strings(sensor) == {}

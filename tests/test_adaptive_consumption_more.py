@@ -369,6 +369,11 @@ def test_get_load_avg_fallback_variants(monkeypatch):
     helper = module.AdaptiveConsumptionHelper(hass, "123")
     assert helper.get_load_avg_fallback() > 0
 
+    monkeypatch.setattr(module.dt_util, "now", lambda: datetime(2025, 1, 1, 9, 0))
+    hass = DummyHass({"sensor.oig_123_load_avg_8_12_weekday": DummyStateValue("1000")})
+    helper = module.AdaptiveConsumptionHelper(hass, "123")
+    assert helper.get_load_avg_fallback() > 0
+
     monkeypatch.setattr(module.dt_util, "now", lambda: datetime(2025, 1, 1, 18, 0))
     hass = DummyHass({"sensor.oig_123_load_avg_16_22_weekday": DummyStateValue("1000")})
     helper = module.AdaptiveConsumptionHelper(hass, "123")

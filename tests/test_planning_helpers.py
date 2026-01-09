@@ -381,6 +381,58 @@ def test_group_intervals_by_mode_completed_and_planned():
     assert planned_groups[0]["planned_cost"] == 2.4
 
 
+def test_group_intervals_by_mode_handles_unknowns_and_invalid_times():
+    intervals = [
+        None,
+        {
+            "time": "bad-time",
+            "actual": {"mode": None, "net_cost": 1.0, "savings_vs_home_i": 0.1},
+            "planned": {"mode": None, "net_cost": 0.0, "savings_vs_home_i": 0.0},
+        },
+        {
+            "time": "2025-01-01T01:00:00",
+            "actual": {"mode": 2, "net_cost": 2.0},
+            "planned": {"mode": 3, "net_cost": 1.0},
+        },
+        {
+            "time": "2025-01-01T01:15:00",
+            "actual": {"mode": "  ", "net_cost": 0.5},
+            "planned": {"mode": "Home", "net_cost": 0.5},
+        },
+    ]
+
+    groups = interval_grouping.group_intervals_by_mode(intervals, "both", {})
+
+    assert [group["mode"] for group in groups] == ["Unknown", "Mode 2", "Unknown"]
+    assert groups[0]["start_time"] == "bad-time"
+    assert groups[1]["end_time"] == "01:15"
+    assert groups[0]["delta_pct"] == 0.0
+
+
+def test_group_intervals_by_mode_empty_returns_empty():
+    assert interval_grouping.group_intervals_by_mode([], "planned", {}) == []
+
+
+def test_group_intervals_by_mode_completed_unknown_mode():
+    intervals = [
+        {"time": "2025-01-01T00:00:00", "actual": {}, "planned": {}},
+    ]
+
+    groups = interval_grouping.group_intervals_by_mode(intervals, "completed", {})
+
+    assert groups[0]["mode"] == "Unknown"
+
+
+def test_group_intervals_by_mode_both_uses_planned_when_actual_missing():
+    intervals = [
+        {"time": "2025-01-01T00:00:00", "planned": {"mode": 1, "net_cost": 1.0}},
+    ]
+
+    groups = interval_grouping.group_intervals_by_mode(intervals, "both", {1: "Home 2"})
+
+    assert groups[0]["mode"] == "Home 2"
+
+
 def test_create_mode_recommendations_split_midnight():
     now = datetime(2025, 1, 1, 22, 0, 0)
     timeline = [

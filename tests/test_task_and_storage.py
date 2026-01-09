@@ -99,8 +99,32 @@ def test_schedule_forecast_retry(monkeypatch):
     task_utils.schedule_forecast_retry(sensor, 10.0)
 
     assert sensor._forecast_retry_unsub is not None
+    called["cb"](datetime.now())
     task_utils.schedule_forecast_retry(sensor, 10.0)
     assert sensor._forecast_retry_unsub is not None
+
+
+def test_schedule_forecast_retry_early_exit():
+    sensor = DummySensor(hass=None)
+    task_utils.schedule_forecast_retry(sensor, 10.0)
+    assert sensor._forecast_retry_unsub is None
+
+    sensor = DummySensor(hass=object())
+    task_utils.schedule_forecast_retry(sensor, 0.0)
+    assert sensor._forecast_retry_unsub is None
+
+    sensor._forecast_retry_unsub = lambda: None
+    task_utils.schedule_forecast_retry(sensor, 10.0)
+    assert sensor._forecast_retry_unsub is not None
+
+
+def test_create_task_threadsafe_no_hass():
+    sensor = DummySensor(hass=None)
+
+    async def _coro():
+        return 1
+
+    task_utils.create_task_threadsafe(sensor, _coro)
 
 
 @pytest.mark.asyncio

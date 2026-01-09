@@ -147,6 +147,50 @@ async def test_pricing_import_invalid_fee():
 
 
 @pytest.mark.asyncio
+async def test_pricing_import_invalid_negative_fee():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_import(
+        {
+            "import_pricing_scenario": "spot_percentage",
+            "spot_positive_fee_percent": 15.0,
+            "spot_negative_fee_percent": 150.0,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["spot_negative_fee_percent"] == "invalid_percentage"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_invalid_fixed_price():
+    flow = DummyWizard()
+    flow._wizard_data = {"import_pricing_scenario": "fix_price"}
+    result = await flow.async_step_wizard_pricing_import(
+        {"import_pricing_scenario": "fix_price", "fixed_price_kwh": 50.0}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["fixed_price_kwh"] == "invalid_price"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_back_button():
+    flow = DummyWizard()
+    flow._step_history = ["wizard_battery", "wizard_pricing_import"]
+    result = await flow.async_step_wizard_pricing_import({"go_back": True})
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_battery"
+
+
+@pytest.mark.asyncio
+async def test_pricing_import_initial_form():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_import()
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
 async def test_pricing_export_invalid_price():
     flow = DummyWizard()
     flow._wizard_data = {"export_pricing_scenario": "fix_price"}
@@ -157,6 +201,93 @@ async def test_pricing_export_invalid_price():
 
     assert result["type"] == "form"
     assert result["errors"]["export_fixed_price_kwh"] == "invalid_price"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_invalid_percent():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_export(
+        {"export_pricing_scenario": "spot_percentage", "export_fee_percent": 80.0}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["export_fee_percent"] == "invalid_percentage"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_invalid_fixed_fee():
+    flow = DummyWizard()
+    flow._wizard_data = {"export_pricing_scenario": "spot_fixed"}
+    result = await flow.async_step_wizard_pricing_export(
+        {"export_pricing_scenario": "spot_fixed", "export_fixed_fee_czk": 10.0}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["export_fixed_fee_czk"] == "invalid_fee"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_scenario_change():
+    flow = DummyWizard()
+    flow._wizard_data = {"export_pricing_scenario": "spot_percentage"}
+    result = await flow.async_step_wizard_pricing_export(
+        {"export_pricing_scenario": "spot_fixed"}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_export"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_back_button():
+    flow = DummyWizard()
+    flow._step_history = ["wizard_pricing_import", "wizard_pricing_export"]
+    result = await flow.async_step_wizard_pricing_export({"go_back": True})
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_initial_form():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_export()
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_pricing_export"
+
+
+def test_pricing_export_schema_for_scenarios():
+    flow = DummyWizard()
+    spot_schema = flow._get_pricing_export_schema({"export_pricing_scenario": "spot_percentage"})
+    fixed_schema = flow._get_pricing_export_schema({"export_pricing_scenario": "spot_fixed"})
+    price_schema = flow._get_pricing_export_schema({"export_pricing_scenario": "fix_price"})
+
+    assert "export_fee_percent" in spot_schema.schema
+    assert "export_fixed_fee_czk" in fixed_schema.schema
+    assert "export_fixed_price_kwh" in price_schema.schema
+
+
+def test_pricing_import_schema_defaults_from_wizard_data():
+    flow = DummyWizard()
+    flow._wizard_data = {"import_pricing_scenario": "spot_fixed"}
+    schema = flow._get_pricing_import_schema()
+    assert "spot_fixed_fee_kwh" in schema.schema
+
+
+def test_pricing_export_schema_defaults_from_wizard_data():
+    flow = DummyWizard()
+    flow._wizard_data = {"export_pricing_scenario": "spot_percentage"}
+    schema = flow._get_pricing_export_schema()
+    assert "export_fee_percent" in schema.schema
+
+
+@pytest.mark.asyncio
+async def test_pricing_export_success():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_pricing_export(
+        {"export_pricing_scenario": "spot_percentage", "export_fee_percent": 10.0}
+    )
+
+    assert result["type"] == "summary"
 
 
 @pytest.mark.asyncio

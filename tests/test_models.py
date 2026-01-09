@@ -507,6 +507,53 @@ class TestModels(unittest.TestCase):
         self.assertEqual(model.batt.bat_v, 0)
         self.assertEqual(model.batt.power, 0)
 
+    def test_oig_cloud_device_data_battery_and_boiler_dict(self):
+        """Test batt parsing with full fields and boiler dict handling."""
+        device_data = {
+            "ac_in": {
+                "aci_vr": 230.0,
+                "aci_vs": 230.0,
+                "aci_vt": 230.0,
+                "aci_wr": 100.0,
+                "aci_ws": 100.0,
+                "aci_wt": 100.0,
+                "aci_f": 50.0,
+            },
+            "ac_out": {"aco_p": 1500.0},
+            "actual": {
+                "aci_wr": 100.0,
+                "aci_ws": 100.0,
+                "aci_wt": 100.0,
+                "aco_p": 1500.0,
+                "fv_p1": 2000.0,
+                "fv_p2": 3000.0,
+                "bat_p": 1000.0,
+                "bat_c": 85.0,
+                "viz": 1,
+            },
+            "batt": {"bat_c": 85.0, "bat_i": 1.2, "bat_v": 48.0},
+            "dc_in": {"fv_p1": 2000.0, "fv_p2": 3000.0},
+            "box_prms": {
+                "bat_ac": 0,
+                "p_fve": 5000.0,
+                "p_bat": 2500.0,
+                "mode": 1,
+                "mode1": 2,
+                "crct": 123456,
+                "crcte": 654321,
+            },
+            "invertor_prms": {"to_grid": 1},
+            "invertor_prm1": {"p_max_feed_grid": 5000},
+            "boiler": {"p": 750.0, "ssr1": 1},
+        }
+
+        model = OigCloudDeviceData.from_dict(device_data)
+
+        self.assertIsInstance(model.batt, BatteryData)
+        self.assertEqual(model.batt.bat_i, 1.2)
+        self.assertIsInstance(model.boiler, BoilerData)
+        self.assertEqual(model.boiler.p, 750.0)
+
     def test_oig_cloud_data_from_dict(self):
         """Test OigCloudData.from_dict method."""
         data = self.raw_data

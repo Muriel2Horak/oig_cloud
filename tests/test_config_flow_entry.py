@@ -104,3 +104,29 @@ async def test_wizard_summary_creates_entry():
     assert result["type"] == "create_entry"
     assert result["data"]["username"] == "demo"
     assert result["options"]["enable_pricing"] is True
+
+
+@pytest.mark.asyncio
+async def test_wizard_summary_back_button():
+    flow = DummyConfigFlow()
+    flow._step_history = ["wizard_summary"]
+    result = await flow.async_step_wizard_summary({"go_back": True})
+    assert result["type"] == "form"
+
+
+@pytest.mark.asyncio
+async def test_wizard_summary_form():
+    flow = DummyConfigFlow()
+    flow._wizard_data = {
+        "username": "demo",
+        "password": "pass",
+    }
+    result = await flow.async_step_wizard_summary()
+    assert result["type"] == "form"
+    assert "summary" in result["description_placeholders"]
+
+
+def test_async_get_options_flow_handler():
+    flow = DummyConfigFlow()
+    handler = flow.async_get_options_flow(SimpleNamespace(options={}, data={}))
+    assert handler is not None

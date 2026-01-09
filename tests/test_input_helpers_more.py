@@ -63,3 +63,41 @@ def test_empty_load_avg_state_flag():
     now = datetime.now()
     assert input_module.get_load_avg_for_timestamp(now, {}, state=state) == 0.125
     assert getattr(state, "_empty_load_sensors_logged", False) is True
+
+
+def test_get_solar_for_timestamp_logs_lookup_and_value():
+    now = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+    hour_key = now.replace(minute=0, second=0, microsecond=0).isoformat()
+    calls = []
+
+    def _log_rate_limited(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    class BadLenDict(dict):
+        def __len__(self):
+            raise RuntimeError("bad len")
+
+    input_module._log_solar_lookup(
+        timestamp=now,
+        hour_key=hour_key,
+        data=BadLenDict({hour_key: 1.0}),
+        hourly_kw=1.0,
+        log_rate_limited=_log_rate_limited,
+    )
+    input_module._log_solar_value(
+        timestamp=now.replace(hour=14),
+        hour_key=hour_key,
+        hourly_kw=2.0,
+        log_rate_limited=_log_rate_limited,
+    )
+
+    assert calls
+
+
+def test_get_load_avg_for_timestamp_midnight_wrap_and_day_type_skip():
+    now = datetime(2025, 1, 1, 0, 0, 0)
+    load_avg_sensors = {
+        "sensor.weekend": {"day_type": "weekend", "time_range": (22, 6), "value": 600},
+        "sensor.weekday": {"day_type": "weekday", "time_range": (22, 6), "value": 800},
+    }
+    assert input_module.get_load_avg_for_timestamp(now, load_avg_sensors) == 0.2

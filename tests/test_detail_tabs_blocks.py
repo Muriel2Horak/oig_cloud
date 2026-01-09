@@ -344,6 +344,16 @@ def test_summarize_block_reason_modes():
     assert blocks_module.summarize_block_reason(sensor, group_intervals, block) == "Custom reason"
 
 
+def test_summarize_block_reason_no_reason():
+    sensor = SimpleNamespace(
+        _config_entry=SimpleNamespace(options={"max_ups_price_czk": 4.0}),
+        _get_battery_efficiency=lambda: 0.9,
+    )
+    block = {"mode_planned": "Other"}
+    group_intervals = [{"planned": {"solar_kwh": 0.1, "consumption_kwh": 0.2}}]
+    assert blocks_module.summarize_block_reason(sensor, group_intervals, block) is None
+
+
 def test_summarize_block_reason_actual_only():
     sensor = SimpleNamespace(
         _config_entry=SimpleNamespace(options={"max_ups_price_czk": 4.0}),
