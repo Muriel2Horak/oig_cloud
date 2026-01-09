@@ -41,13 +41,33 @@ def test_parse_dt_variants():
     assert iso is not None
 
     assert module._parse_dt("unknown") is None
+    assert module._parse_dt("not-a-date") is None
+    assert module._parse_dt("9999999999999999999999999") is None
+
+    dt = datetime(2025, 1, 1)
+    assert module._parse_dt(dt) is not None
+    assert module._parse_dt(1e30) is None
+    assert module._parse_dt(object()) is None
 
 
 def test_coerce_box_id_variants():
     assert module._coerce_box_id("2206237016") == "2206237016"
     assert module._coerce_box_id(123456) == "123456"
+    assert module._coerce_box_id(123456.7) == "123456"
+    assert module._coerce_box_id(-1) is None
     assert module._coerce_box_id("box 987654") == "987654"
     assert module._coerce_box_id("bad") is None
+
+    assert module._coerce_box_id(float("nan")) is None
+    assert module._coerce_box_id([]) is None
+
+
+def test_coerce_box_id_regex_error(monkeypatch):
+    def _raise(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(module.re, "search", _raise)
+    assert module._coerce_box_id("box 123456") is None
 
 
 def test_get_configured_mode_mapping():
@@ -71,6 +91,20 @@ def test_get_data_source_state_default():
     assert state.configured_mode == module.DEFAULT_DATA_SOURCE_MODE
 
 
+def test_get_effective_mode():
+    hass = DummyHass()
+    hass.data[module.DOMAIN]["entry"] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=None,
+            reason="local_ok",
+        )
+    }
+    assert module.get_effective_mode(hass, "entry") == module.DATA_SOURCE_LOCAL_ONLY
+
+
 def test_get_latest_local_entity_update():
     now = datetime(2025, 1, 1, tzinfo=timezone.utc)
     states = [
@@ -80,3 +114,24 @@ def test_get_latest_local_entity_update():
     hass = DummyHass(states)
     latest = module._get_latest_local_entity_update(hass, "2206237016")
     assert latest is not None
+    assert module._get_latest_local_entity_update(hass, "bad") is None
+
+
+def test_get_latest_local_entity_update_skips_unknown():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_ac_out", "unknown", last_updated=now),
+        DummyState("binary_sensor.oig_local_2206237016_tbl", "on", last_updated=None),
+    ]
+    hass = DummyHass(states)
+    assert module._get_latest_local_entity_update(hass, "2206237016") is None
+
+
+def test_get_latest_local_entity_update_exception(monkeypatch):
+    class BadStates(DummyStates):
+        def async_all(self, _domain):
+            raise RuntimeError("boom")
+
+    hass = DummyHass()
+    hass.states = BadStates([])
+    assert module._get_latest_local_entity_update(hass, "2206237016") is None
