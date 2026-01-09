@@ -116,3 +116,29 @@ def test_plan_charging_intervals_price_band_extension(monkeypatch):
     assert reason is None
     assert price_band == {1}
     assert 1 in charging
+
+
+def test_extend_ups_blocks_by_price_band_gap_fill_and_second_pass():
+    strategy = DummyStrategy()
+    strategy.config.max_ups_price_czk = 2.0
+
+    class FlakyBlocked:
+        def __init__(self):
+            self._seen = {}
+
+        def __contains__(self, item):
+            count = self._seen.get(item, 0)
+            self._seen[item] = count + 1
+            return count == 0
+
+    blocked = FlakyBlocked()
+
+    extended = module.extend_ups_blocks_by_price_band(
+        strategy,
+        charging_intervals={0, 2},
+        prices=[0.5, 0.5, 0.5, 0.5],
+        blocked_indices=blocked,
+    )
+
+    assert 1 in extended
+    assert 3 in extended

@@ -25,6 +25,9 @@ class DummyEntity:
     def __init__(self, entity_id):
         self.entity_id = entity_id
 
+    async def build_detail_tabs(self, *_a, **_k):
+        return {"today": {"ok": True}, "tomorrow": {}, "yesterday": {}}
+
 
 class DummyConfigEntries:
     def __init__(self, entries=None):
@@ -219,6 +222,83 @@ async def test_balancing_decisions_exception():
     view.hass = SimpleNamespace(data=None)
     response = await view.get(DummyRequest(DummyHass()), "123")
     assert response.status == 500
+
+
+@pytest.mark.asyncio
+async def test_detail_tabs_store_load_error_and_fallback(monkeypatch):
+    class BadStore:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            raise RuntimeError("boom")
+
+    hass = DummyHass()
+    hass.data["sensor"] = DummyComponent([DummyEntity("sensor.oig_123_battery_forecast")])
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", BadStore)
+
+    view = api_module.OIGCloudDetailTabsView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+    assert payload["today"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_detail_tabs_precomputed_missing_detail_tabs_fallback(monkeypatch):
+    class Store:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    class PrecomputedStore:
+        async def async_load(self):
+            return {"other": 1}
+
+    entity = DummyEntity("sensor.oig_123_battery_forecast")
+    entity._precomputed_store = PrecomputedStore()
+
+    hass = DummyHass()
+    hass.data["sensor"] = DummyComponent([entity])
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", Store)
+
+    view = api_module.OIGCloudDetailTabsView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+    assert payload["today"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_detail_tabs_precomputed_tab_filter(monkeypatch):
+    class Store:
+        def __init__(self, hass, version, key):
+            self.hass = hass
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            return None
+
+    class PrecomputedStore:
+        async def async_load(self):
+            return {"detail_tabs": {"today": {"from_store": True}}}
+
+    entity = DummyEntity("sensor.oig_123_battery_forecast")
+    entity._precomputed_store = PrecomputedStore()
+
+    hass = DummyHass()
+    hass.data["sensor"] = DummyComponent([entity])
+    monkeypatch.setattr("homeassistant.helpers.storage.Store", Store)
+
+    view = api_module.OIGCloudDetailTabsView()
+    response = await view.get(DummyRequest(hass, {"tab": "today"}), "123")
+    payload = json.loads(response.text)
+    assert payload == {"today": {"from_store": True}}
 
 
 @pytest.mark.asyncio

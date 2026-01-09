@@ -15,11 +15,12 @@ fi
 
 VENV_PY="$HA_CORE_DIR/.venv/bin/python"
 VENV_PIP="$HA_CORE_DIR/.venv/bin/pip"
+export PATH="$HA_CORE_DIR/.venv/bin:$PATH"
 
 "$VENV_PIP" install --upgrade pip
 
 (
   cd "$HA_CORE_DIR"
-  "$VENV_PIP" install -e . -r requirements_test_all.txt colorlog
+  "$VENV_PIP" install -e . -r requirements_test_pre_commit.txt -r requirements_test.txt colorlog
   "$VENV_PY" -m script.hassfest --integration-path "$INTEGRATION_PATH"
 )

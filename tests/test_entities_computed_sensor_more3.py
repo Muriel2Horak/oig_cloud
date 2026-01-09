@@ -392,3 +392,138 @@ def test_real_data_changes_exception():
     sensor._monitored_sensors = {"bat_p": 0}
     pv_data = {"actual": {"bat_p": object()}}
     assert sensor._check_for_real_data_changes(pv_data) is False
+
+
+@pytest.mark.asyncio
+async def test_load_energy_from_storage_no_store(monkeypatch):
+    sensor = _make_sensor()
+    monkeypatch.setattr(sensor, "_get_energy_store", lambda: None)
+    loaded = await sensor._load_energy_from_storage()
+    assert loaded is False
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_restore_invalid_state_warns(monkeypatch, caplog):
+    sensor = _make_sensor()
+    sensor._sensor_type = "computed_batt_charge_energy_today"
+    sensor._box_id = "123"
+    sensor.hass = SimpleNamespace()
+    sensor.async_write_ha_state = lambda: None
+
+    async def _no_storage():
+        return False
+
+    async def _get_last_state():
+        return SimpleNamespace(state="bad", attributes={"charge_today": "bad"})
+
+    monkeypatch.setattr(sensor, "_load_energy_from_storage", _no_storage)
+    monkeypatch.setattr(sensor, "async_get_last_state", _get_last_state)
+    monkeypatch.setattr(module, "async_track_time_change", lambda *_a, **_k: lambda: None)
+    monkeypatch.setattr(sensor, "_get_energy_store", lambda: DummyStore())
+    module._energy_data_cache.pop(sensor._box_id, None)
+    module._energy_cache_loaded.pop(sensor._box_id, None)
+
+    caplog.set_level("WARNING")
+    await sensor.async_added_to_hass()
+    assert "Restore state has zeroed/invalid data" in caplog.text
+
+
+def test_state_missing_inputs_return_none():
+    sensor = _make_sensor("ac_in_aci_wtotal")
+    sensor._box_id = "123"
+    sensor._get_oig_number = lambda _k: None
+    assert sensor.state is None
+
+    sensor._sensor_type = "actual_aci_wtotal"
+    assert sensor.state is None
+
+    sensor._sensor_type = "dc_in_fv_total"
+    assert sensor.state is None
+
+    sensor._sensor_type = "actual_fv_total"
+    assert sensor.state is None
+
+    sensor._sensor_type = "batt_batt_comp_p_charge"
+    assert sensor.state is None
+
+    sensor._sensor_type = "batt_batt_comp_p_discharge"
+    assert sensor.state is None
+
+
+def test_time_to_full_and_empty_variants():
+    sensor = _make_sensor("time_to_full")
+    sensor._box_id = "123"
+
+    values = {
+        "installed_battery_capacity_kwh": 10000,
+        "batt_bat_min": 20,
+        "batt_bat_c": 100,
+        "batt_batt_comp_p": 0,
+    }
+    sensor._get_oig_number = lambda key: values.get(key)
+    assert sensor.state == "Nabito"
+
+    values["batt_bat_c"] = 50
+    assert sensor.state == "Vybíjí se"
+
+    sensor._sensor_type = "time_to_empty"
+    values["batt_bat_c"] = 100
+    assert sensor.state == "Nabito"
+
+
+def test_state_exception_returns_none():
+    sensor = _make_sensor("time_to_full")
+    sensor._box_id = "123"
+
+    def _raise(_k):
+        raise RuntimeError("boom")
+
+    sensor._get_oig_number = _raise
+    assert sensor.state is None
+
+
+def test_boiler_consumption_wrapper(monkeypatch):
+    sensor = _make_sensor("boiler_current_w")
+    monkeypatch.setattr(sensor, "_get_boiler_consumption_from_entities", lambda: 12.5)
+    assert sensor._get_boiler_consumption({}) == 12.5
+
+
+def test_extended_fve_current_2_variants():
+    sensor = _make_sensor()
+    coordinator = SimpleNamespace(
+        data={"extended_fve_power_2": 100, "extended_fve_voltage_2": 0}
+    )
+    assert sensor._get_extended_fve_current_2(coordinator) == 0.0
+
+    coordinator = SimpleNamespace(data={"extended_fve_power_2": None})
+    assert sensor._get_extended_fve_current_2(coordinator) is None
+
+
+@pytest.mark.asyncio
+async def test_async_update_requests_refresh():
+    calls = {"count": 0}
+
+    class DummyCoordinator:
+        async def async_request_refresh(self):
+            calls["count"] += 1
+
+    sensor = _make_sensor()
+    sensor.coordinator = DummyCoordinator()
+    await sensor.async_update()
+    assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_daily_uses_now(monkeypatch):
+    sensor = _make_sensor("computed_batt_charge_energy_today")
+    sensor._energy["charge_today"] = 5.0
+    sensor._energy["charge_month"] = 6.0
+    sensor._energy["charge_year"] = 7.0
+
+    class SavingStore(DummyStore):
+        async def async_save(self, data):
+            self.saved = data
+
+    monkeypatch.setattr(sensor, "_get_energy_store", lambda: SavingStore())
+    await sensor._reset_daily()
+    assert sensor._energy["charge_today"] == 0.0

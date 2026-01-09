@@ -60,6 +60,49 @@ def test_analyze_today_variance_small_cost_and_solar_impact():
 
 
 @pytest.mark.asyncio
+async def test_build_today_cost_data_naive_times_and_non_dict_cost(monkeypatch):
+    class DictLike:
+        def __init__(self, data):
+            self._data = data
+
+        def get(self, key, default=None):
+            return self._data.get(key, default)
+
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore()
+
+    fixed_now = dt_util.as_local(datetime(2025, 1, 1, 12, 0, 0))
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.presentation.unified_cost_tile_helpers.dt_util.now",
+        lambda: fixed_now,
+    )
+
+    past_time = (fixed_now - timedelta(minutes=15)).replace(tzinfo=None).isoformat()
+    active_time = fixed_now.replace(tzinfo=None).isoformat()
+
+    async def _timeline(_day, *_a, **_k):
+        return {
+            "intervals": [
+                {
+                    "time": past_time,
+                    "planned": DictLike({"net_cost": 1, "mode": "home_i"}),
+                    "actual": {"net_cost": 1, "solar_kwh": 0.0, "load_kwh": 0.5},
+                },
+                {
+                    "time": active_time,
+                    "planned": {"net_cost": 2, "savings": 0, "mode": "home_i"},
+                    "actual": {"net_cost": 1},
+                },
+            ]
+        }
+
+    sensor._build_day_timeline = _timeline
+
+    data = await helpers.build_today_cost_data(sensor)
+    assert "active_interval" in data
+
+
+@pytest.mark.asyncio
 async def test_analyze_yesterday_performance_on_plan(monkeypatch):
     sensor = DummySensor()
 

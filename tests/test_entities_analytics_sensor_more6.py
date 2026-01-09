@@ -21,6 +21,10 @@ def _make_sensor(monkeypatch, sensor_type, options=None, data=None):
     coord = DummyCoordinator(data=data)
     monkeypatch.setattr(module, "resolve_box_id", lambda *_a, **_k: "123")
     monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        lambda *_a, **_k: "123",
+    )
+    monkeypatch.setattr(
         "custom_components.oig_cloud.sensors.SENSOR_TYPES_SPOT.SENSOR_TYPES_SPOT",
         {sensor_type: {"name_cs": "Senzor"}},
     )
@@ -44,6 +48,22 @@ def test_calculate_current_tariff_yesterday(monkeypatch):
     sensor = _make_sensor(monkeypatch, "current_tariff", options)
     now = datetime(2025, 1, 6, 1, 0, 0)  # Monday, yesterday was weekend
     monkeypatch.setattr(module.dt_util, "now", lambda: now)
+    assert sensor._calculate_current_tariff() in ("NT", "VT")
+
+
+def test_calculate_current_tariff_uses_yesterday_times(monkeypatch):
+    options = {
+        "dual_tariff_enabled": True,
+        "tariff_nt_start_weekday": "",
+        "tariff_vt_start_weekday": "",
+        "tariff_nt_start_weekend": "0",
+        "tariff_vt_start_weekend": "1",
+    }
+    sensor = _make_sensor(monkeypatch, "current_tariff", options)
+    now = datetime(2025, 1, 6, 1, 0, 0)  # Monday, yesterday was weekend
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+
+    monkeypatch.setattr(sensor, "_parse_tariff_times", lambda *_a, **_k: [])
     assert sensor._calculate_current_tariff() in ("NT", "VT")
 
 
@@ -87,6 +107,18 @@ def test_fixed_price_value_variants(monkeypatch):
     assert sensor._get_fixed_price_value() is None
 
 
+def test_fixed_price_value_single_tariff_max(monkeypatch):
+    options = {"spot_pricing_model": "fixed_prices", "dual_tariff_enabled": False}
+    sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh", options)
+    assert sensor._get_fixed_price_value() is not None
+
+    sensor = _make_sensor(monkeypatch, "spot_price_today_max", options)
+    assert sensor._get_fixed_price_value() is not None
+
+    sensor = _make_sensor(monkeypatch, "eur_czk_exchange_rate", options)
+    assert sensor._get_fixed_price_value() is None
+
+
 def test_calculate_fixed_daily_average_single_tariff(monkeypatch):
     options = {"dual_tariff_enabled": False}
     sensor = _make_sensor(monkeypatch, "spot_price_today_avg", options)
@@ -108,6 +140,21 @@ def test_final_price_with_fees_fixed_model(monkeypatch):
 def test_get_today_extreme_price_invalid_key(monkeypatch):
     sensor = _make_sensor(monkeypatch, "spot_price_today_min")
     assert sensor._get_today_extreme_price({"prices_czk_kwh": {"bad": 1.0}}, True) is None
+
+
+def test_get_today_extreme_price_skips_none(monkeypatch):
+    sensor = _make_sensor(monkeypatch, "spot_price_today_min")
+    today = datetime.now().strftime("%Y-%m-%dT00:00:00")
+    data = {"prices_czk_kwh": {today: 1.0, f"{today}Z": 2.0}}
+
+    calls = {"count": 0}
+
+    def _final_price(_price, *_a):
+        calls["count"] += 1
+        return None if calls["count"] == 1 else 2.0
+
+    monkeypatch.setattr(sensor, "_final_price_with_fees", _final_price)
+    assert sensor._get_today_extreme_price(data, True) == 2.0
 
 
 def test_extra_state_attributes_hourly_fixed_and_percentage(monkeypatch):
@@ -176,7 +223,78 @@ def test_extra_state_attributes_pricing_details(monkeypatch):
     assert attrs.get("pricing_model")
 
 
+def test_extra_state_attributes_fixed_prices_nt(monkeypatch):
+    class WeirdType:
+        def __eq__(self, other):
+            return other == "spot_price_hourly_all"
+
+        def __contains__(self, item):
+            return item == "czk"
+
+        def __repr__(self):
+            return "spot_price_hourly_all"
+
+    options = {
+        "enable_pricing": True,
+        "spot_pricing_model": "fixed_prices",
+        "dual_tariff_enabled": True,
+        "fixed_commercial_price_nt": 3.0,
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "spot_price_current_czk_kwh",
+        options,
+        data={"spot_prices": {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}},
+    )
+    data = {"spot_prices": {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}}
+    sensor.coordinator = SimpleNamespace(data=data, last_update_success=True)
+    sensor._coordinator = sensor.coordinator
+    sensor._sensor_type = WeirdType()
+    attrs = sensor.extra_state_attributes
+    assert attrs.get("fixed_commercial_price_nt") == 3.0
+
+
+def test_extra_state_attributes_percentage_fees(monkeypatch):
+    class WeirdType:
+        def __eq__(self, other):
+            return other == "spot_price_hourly_all"
+
+        def __contains__(self, item):
+            return item == "czk"
+
+        def __repr__(self):
+            return "spot_price_hourly_all"
+
+    options = {
+        "enable_pricing": True,
+        "spot_pricing_model": "percentage",
+        "dual_tariff_enabled": True,
+        "spot_positive_fee_percent": 12.0,
+        "spot_negative_fee_percent": 6.0,
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "spot_price_current_czk_kwh",
+        options,
+        data={"spot_prices": {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}},
+    )
+    data = {"spot_prices": {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}}
+    sensor.coordinator = SimpleNamespace(data=data, last_update_success=True)
+    sensor._coordinator = sensor.coordinator
+    sensor._sensor_type = WeirdType()
+    attrs = sensor.extra_state_attributes
+    assert attrs.get("positive_fee_percent") == 12.0
+    assert attrs.get("negative_fee_percent") == 6.0
+
+
 def test_state_unavailable(monkeypatch):
     options = {"enable_pricing": False}
     sensor = _make_sensor(monkeypatch, "spot_price_today_avg", options)
     assert sensor.state is None
+
+
+def test_state_returns_none_and_sensor_type(monkeypatch):
+    options = {"enable_pricing": True}
+    sensor = _make_sensor(monkeypatch, "unknown_sensor", options)
+    assert sensor.state is None
+    assert sensor.sensor_type == "unknown_sensor"

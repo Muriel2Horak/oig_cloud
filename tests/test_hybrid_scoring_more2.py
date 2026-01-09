@@ -72,6 +72,22 @@ def test_analyze_future_prices_profitable_and_night():
     assert analysis[0]["should_charge"] is True
 
 
+def test_analyze_future_prices_night_preparation():
+    strategy = DummyStrategy()
+    strategy.LOOKAHEAD_INTERVALS = 10
+    strategy.MIN_PRICE_SPREAD_PERCENT = 200
+
+    prices = [1.0] * 50 + [1.0] + [2.0] * 9
+    analysis = module.analyze_future_prices(
+        strategy,
+        prices=prices,
+        export_prices=[0.0] * len(prices),
+        consumption_forecast=[0.1] * len(prices),
+    )
+
+    assert analysis[50]["charge_reason"] == "night_preparation"
+
+
 def test_select_best_mode_reason_branches(monkeypatch):
     strategy = DummyStrategy()
 

@@ -144,6 +144,18 @@ def test_name_fallback_and_metadata(monkeypatch):
     assert sensor.state_class == "measurement"
 
 
+def test_entity_category_unique_id_and_poll(monkeypatch):
+    monkeypatch.setattr(
+        runtime_module,
+        "get_sensor_definition",
+        lambda _t: {"entity_category": "diagnostic"},
+    )
+    sensor = DummySensor(DummyCoordinator({"123": {}}), DummyHass(), "any")
+    assert sensor.entity_category == "diagnostic"
+    assert sensor.unique_id == "oig_cloud_123_any"
+    assert sensor.should_poll is False
+
+
 def test_get_node_value_variants():
     coordinator = DummyCoordinator({"123": {"box_prms": {"mode": 2}}})
     sensor = DummySensor(coordinator, DummyHass(), "test_sensor")
@@ -157,6 +169,35 @@ def test_get_node_value_variants():
     sensor._box_id = "123"
     sensor.coordinator.data = {"123": {"box_prms": {}}}
     assert sensor.get_node_value() is None
+
+    sensor._node_id = None
+    assert sensor.get_node_value() is None
+
+
+def test_async_update_calls_super():
+    class Base:
+        def __init__(self):
+            self.updated = False
+
+        async def async_update(self):
+            self.updated = True
+
+    class Sensor(Base, runtime_module.OigCloudSensorRuntimeMixin):
+        def __init__(self):
+            super().__init__()
+            self.coordinator = DummyCoordinator({"123": {}})
+            self.hass = DummyHass()
+            self._sensor_type = "test"
+            self._box_id = "123"
+            self._node_id = None
+            self._node_key = None
+            self.entity_id = "sensor.oig_123_test"
+
+    sensor = Sensor()
+    import asyncio
+
+    asyncio.run(sensor.async_update())
+    assert sensor.updated is True
 
     sensor.coordinator.data = {"123": {"box_prms": "bad"}}
     assert sensor.get_node_value() is None

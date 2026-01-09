@@ -44,3 +44,14 @@ def test_base_sensor_service_shield_logs_warning(monkeypatch, caplog):
     module.OigCloudSensor(DummyCoordinator(), "service_shield_test")
 
     assert "ServiceShield" in caplog.text
+
+
+def test_base_sensor_unknown_box_id_warning(monkeypatch, caplog):
+    monkeypatch.setattr(module, "resolve_box_id", lambda _coord: "unknown")
+    monkeypatch.setattr(module, "get_sensor_definition", lambda _sensor_type: {})
+
+    caplog.set_level("WARNING")
+    sensor = module.OigCloudSensor(DummyCoordinator(), "dummy_sensor")
+
+    assert sensor._box_id == "unknown"
+    assert "fallback 'unknown'" in caplog.text

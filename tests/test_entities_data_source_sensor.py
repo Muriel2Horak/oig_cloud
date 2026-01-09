@@ -90,6 +90,17 @@ def test_extra_state_attributes(monkeypatch):
     assert attrs["last_local_data"] == last_dt.isoformat()
 
 
+def test_unique_id_and_device_info(monkeypatch):
+    hass = DummyHass()
+    coordinator = DummyCoordinator(box_id="999")
+    entry = _make_entry()
+    sensor = OigCloudDataSourceSensor(hass, coordinator, entry)
+
+    assert sensor.unique_id == "oig_cloud_999_data_source"
+    info = sensor.device_info
+    assert ("oig_cloud", "999") in info["identifiers"]
+
+
 @pytest.mark.asyncio
 async def test_async_added_and_removed(monkeypatch):
     hass = DummyHass()
@@ -119,4 +130,20 @@ async def test_async_added_and_removed(monkeypatch):
 
     await sensor.async_will_remove_from_hass()
     assert calls["unsubs"] == 2
+    assert sensor._unsubs == []
+
+
+@pytest.mark.asyncio
+async def test_async_will_remove_handles_unsub_error(monkeypatch):
+    hass = DummyHass()
+    coordinator = DummyCoordinator()
+    entry = _make_entry()
+    sensor = OigCloudDataSourceSensor(hass, coordinator, entry)
+
+    def _bad_unsub():
+        raise RuntimeError("boom")
+
+    sensor._unsubs = [_bad_unsub]
+
+    await sensor.async_will_remove_from_hass()
     assert sensor._unsubs == []
