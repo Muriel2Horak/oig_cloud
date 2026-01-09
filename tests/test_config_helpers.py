@@ -46,7 +46,7 @@ def test_map_pricing_to_backend_fixed_price():
     assert backend["export_pricing_model"] == "fixed"
 
 
-def test_validate_tariff_hours():
+def test_validate_tariff_hours(monkeypatch):
     ok, err = schema_module.validate_tariff_hours("6", "22,2")
     assert ok is True
     assert err is None
@@ -54,6 +54,22 @@ def test_validate_tariff_hours():
     ok, err = schema_module.validate_tariff_hours("x", "22")
     assert ok is False
     assert err == "invalid_hour_format"
+
+    ok, err = schema_module.validate_tariff_hours("24", "22")
+    assert ok is False
+    assert err == "invalid_hour_range"
+
+    ok, err = schema_module.validate_tariff_hours("", "", allow_single_tariff=False)
+    assert ok is False
+    assert err == "tariff_gaps"
+
+    ok, err = schema_module.validate_tariff_hours("6", "", allow_single_tariff=True)
+    assert ok is True
+    assert err is None
+
+    ok, err = schema_module.validate_tariff_hours("6", "12")
+    assert ok is True
+    assert err is None
 
 
 @pytest.mark.asyncio

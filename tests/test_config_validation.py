@@ -101,3 +101,65 @@ async def test_validate_solar_forecast_api_key_unauthorized(monkeypatch):
     )
 
     assert await validation_module.validate_solar_forecast_api_key("token") is False
+
+
+@pytest.mark.asyncio
+async def test_validate_solar_forecast_api_key_rate_limited(monkeypatch):
+    monkeypatch.setattr(
+        validation_module.aiohttp, "ClientSession", lambda: DummySession(429)
+    )
+    assert await validation_module.validate_solar_forecast_api_key("token") is True
+
+
+@pytest.mark.asyncio
+async def test_validate_solar_forecast_api_key_other_error(monkeypatch):
+    monkeypatch.setattr(
+        validation_module.aiohttp, "ClientSession", lambda: DummySession(500)
+    )
+    assert await validation_module.validate_solar_forecast_api_key("token") is False
+
+
+@pytest.mark.asyncio
+async def test_validate_solar_forecast_api_key_empty():
+    assert await validation_module.validate_solar_forecast_api_key(" ") is True
+
+
+@pytest.mark.asyncio
+async def test_validate_solar_forecast_api_key_client_error(monkeypatch):
+    class BadSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            raise validation_module.aiohttp.ClientError("boom")
+
+    monkeypatch.setattr(validation_module.aiohttp, "ClientSession", lambda: BadSession())
+    assert await validation_module.validate_solar_forecast_api_key("token") is False
+
+
+@pytest.mark.asyncio
+async def test_validate_solar_forecast_api_key_timeout(monkeypatch):
+    class TimeoutSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            class _Ctx:
+                async def __aenter__(self_inner):
+                    raise validation_module.asyncio.TimeoutError()
+
+                async def __aexit__(self_inner, *_args):
+                    return False
+
+            return _Ctx()
+
+    monkeypatch.setattr(
+        validation_module.aiohttp, "ClientSession", lambda: TimeoutSession()
+    )
+    assert await validation_module.validate_solar_forecast_api_key("token") is False
