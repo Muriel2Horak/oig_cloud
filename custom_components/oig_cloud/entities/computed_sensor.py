@@ -1,7 +1,8 @@
 """Computed sensor implementation for OIG Cloud integration."""
 
+import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Union
 
 from homeassistant.helpers.event import async_track_time_change
@@ -171,7 +172,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     async def _save_energy_to_storage(self, force: bool = False) -> None:
         """Save energy data to persistent storage (throttled to every 5 min unless forced)."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Throttle saves unless forced
         if not force and self._last_storage_save:
@@ -286,8 +287,9 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         # aby se uživatelům neukazovala dočasná nula po restartu.
         self.async_write_ha_state()
 
-    async def _reset_daily(self, *_: Any) -> None:
-        now = datetime.utcnow()
+    async def _reset_daily(self, now: Optional[datetime] = None, *_: Any) -> None:
+        if now is None:
+            now = dt_util.now()
         _LOGGER.debug(f"[{self.entity_id}] Resetting daily energy")
         for key in self._energy:
             if key.endswith("today"):
@@ -425,7 +427,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 _energy_data_cache[self._box_id] = self._energy
 
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             bat_power_val = self._get_oig_number("batt_batt_comp_p")
             if bat_power_val is None:
@@ -489,7 +491,10 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
             # Periodic save to persistent storage (throttled)
             if hasattr(self, "hass") and self.hass:
-                self.hass.async_create_task(self._save_energy_to_storage())
+                coro = self._save_energy_to_storage()
+                task = self.hass.async_create_task(coro)
+                if task is None or asyncio.iscoroutine(task) or not asyncio.isfuture(task):
+                    coro.close()
 
             return self._get_energy_value()
 

@@ -42,7 +42,8 @@ if "opentelemetry" not in sys.modules:
 def enable_event_loop_debug() -> None:
     """Compatibility override for pytest-homeassistant-custom-component on Python 3.13+."""
     try:
-        asyncio.get_event_loop().set_debug(True)
+        loop = asyncio.get_running_loop()
+        loop.set_debug(True)
     except RuntimeError:
         # pytest-asyncio will create/set the loop later for async tests.
         pass
@@ -52,7 +53,7 @@ def enable_event_loop_debug() -> None:
 def verify_cleanup(expected_lingering_tasks: bool, expected_lingering_timers: bool):
     """Compatibility override for pytest-homeassistant-custom-component on Python 3.13+."""
     try:
-        asyncio.get_event_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         yield
         return

@@ -255,7 +255,7 @@ async def intercept_service_call(
             "queued_at": datetime.now(),
         }
 
-        if service_name == "set_box_mode" and shield.mode_tracker:
+        if service_name == SERVICE_SET_BOX_MODE and shield.mode_tracker:
             from_mode = params.get("current_value")
             to_mode = params.get("value")
             if from_mode and to_mode:
@@ -273,7 +273,7 @@ async def intercept_service_call(
     else:
         _LOGGER.info("[OIG Shield] Spouštím službu %s (fronta prázdná)", service_name)
 
-        if service_name == "set_box_mode" and shield.mode_tracker:
+        if service_name == SERVICE_SET_BOX_MODE and shield.mode_tracker:
             from_mode = params.get("current_value")
             to_mode = params.get("value")
             if from_mode and to_mode:

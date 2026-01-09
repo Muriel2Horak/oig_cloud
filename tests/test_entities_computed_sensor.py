@@ -166,12 +166,6 @@ def test_accumulate_energy_charging(monkeypatch):
 
     fixed_now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
 
-    class FixedDatetime(datetime):
-        @classmethod
-        def utcnow(cls):
-            return fixed_now
-
-    monkeypatch.setattr(module, "datetime", FixedDatetime)
 
     module._energy_last_update_cache.clear()
     module._energy_data_cache.clear()
@@ -293,7 +287,7 @@ async def test_reset_daily_resets_periods(monkeypatch):
 
     sensor._save_energy_to_storage = _save
 
-    await sensor._reset_daily()
+    await sensor._reset_daily(fixed_now)
 
     assert sensor._energy["charge_today"] == 0.0
     assert sensor._energy["charge_month"] == 0.0

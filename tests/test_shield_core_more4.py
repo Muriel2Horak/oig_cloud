@@ -23,6 +23,7 @@ class DummyHass:
         self._tasks = []
 
     def async_create_task(self, coro):
+        coro.close()
         self._tasks.append(coro)
 
 

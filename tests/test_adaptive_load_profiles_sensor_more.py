@@ -344,6 +344,10 @@ async def test_load_hourly_series_and_earliest_start(monkeypatch):
 async def test_find_best_matching_profile_paths(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     sensor._hass = SimpleNamespace()
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.np.corrcoef",
+        lambda *_a, **_k: [[1.0, 1.0], [1.0, 1.0]],
+    )
     now = datetime(2025, 1, 2, 6, tzinfo=timezone.utc)
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",

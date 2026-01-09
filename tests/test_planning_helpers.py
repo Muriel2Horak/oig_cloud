@@ -81,6 +81,31 @@ def test_enforce_min_mode_duration_replaces_short_block():
     assert result == [0, 0, 0, 0]
 
 
+def test_enforce_min_mode_duration_empty():
+    result = mode_guard.enforce_min_mode_duration(
+        [], mode_names={}, min_mode_duration={}
+    )
+    assert result == []
+
+
+def test_enforce_min_mode_duration_end_block_replacement():
+    modes = [1, 2]
+    mode_names = {1: "Home 1", 2: "Home 2"}
+    min_mode_duration = {"Home 1": 2}
+    result = mode_guard.enforce_min_mode_duration(
+        modes, mode_names=mode_names, min_mode_duration=min_mode_duration
+    )
+    assert result == [2, 2]
+
+    modes = [0, 1]
+    mode_names = {0: "Home 1", 1: "Home 2"}
+    min_mode_duration = {"Home 2": 2}
+    result = mode_guard.enforce_min_mode_duration(
+        modes, mode_names=mode_names, min_mode_duration=min_mode_duration
+    )
+    assert result == [0, 0]
+
+
 def test_get_mode_guard_context_active():
     last_changed = dt_util.now() - timedelta(minutes=10)
     hass = DummyHass(
@@ -97,6 +122,71 @@ def test_get_mode_guard_context_active():
     assert mode == 0
     assert guard_until is not None
     assert guard_until > dt_util.now()
+
+
+def test_get_mode_guard_context_missing_or_invalid():
+    mode, guard_until = mode_guard.get_mode_guard_context(
+        hass=None,
+        box_id="123",
+        mode_guard_minutes=30,
+        get_current_mode=lambda: 0,
+    )
+    assert mode is None
+    assert guard_until is None
+
+    hass = DummyHass({"sensor.oig_123_box_prms_mode": DummyState("unknown", None)})
+    mode, guard_until = mode_guard.get_mode_guard_context(
+        hass=hass,
+        box_id="123",
+        mode_guard_minutes=30,
+        get_current_mode=lambda: 1,
+    )
+    assert mode is None
+    assert guard_until is None
+
+    hass = DummyHass({"sensor.oig_123_box_prms_mode": DummyState("Home 1", "bad")})
+    mode, guard_until = mode_guard.get_mode_guard_context(
+        hass=hass,
+        box_id="123",
+        mode_guard_minutes=30,
+        get_current_mode=lambda: 2,
+    )
+    assert mode == 2
+    assert guard_until is None
+
+
+def test_get_mode_guard_context_expired_guard():
+    last_changed = dt_util.now() - timedelta(minutes=31)
+    hass = DummyHass(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed)}
+    )
+
+    mode, guard_until = mode_guard.get_mode_guard_context(
+        hass=hass,
+        box_id="123",
+        mode_guard_minutes=30,
+        get_current_mode=lambda: 0,
+    )
+
+    assert mode == 0
+    assert guard_until is None
+
+
+def test_get_mode_guard_context_naive_last_changed():
+    last_changed = dt_util.now().replace(tzinfo=None)
+    hass = DummyHass(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed)}
+    )
+
+    mode, guard_until = mode_guard.get_mode_guard_context(
+        hass=hass,
+        box_id="123",
+        mode_guard_minutes=30,
+        get_current_mode=lambda: 0,
+    )
+
+    assert mode == 0
+    assert guard_until is not None
 
 
 def test_build_plan_lock():
@@ -117,6 +207,63 @@ def test_build_plan_lock():
 
     assert lock_until is not None
     assert len(lock_modes) == 2
+
+
+def test_build_plan_lock_reuse_and_fallback():
+    now = dt_util.now()
+    lock_until = now + timedelta(minutes=30)
+    lock_modes = {"2025-01-01T00:00:00": 1}
+
+    reused_until, reused_modes = mode_guard.build_plan_lock(
+        now=now,
+        spot_prices=[],
+        modes=[],
+        mode_guard_minutes=30,
+        plan_lock_until=lock_until,
+        plan_lock_modes=lock_modes,
+    )
+    assert reused_until == lock_until
+    assert reused_modes == lock_modes
+
+    lock_until, lock_modes = mode_guard.build_plan_lock(
+        now=now,
+        spot_prices=[{"time": None}],
+        modes=[0],
+        mode_guard_minutes=15,
+        plan_lock_until=None,
+        plan_lock_modes=None,
+    )
+    assert lock_until is not None
+    assert lock_modes == {}
+
+
+def test_build_plan_lock_modes_shorter_than_prices():
+    now = dt_util.now()
+    lock_until, lock_modes = mode_guard.build_plan_lock(
+        now=now,
+        spot_prices=[
+            {"time": (now + timedelta(minutes=15 * i)).isoformat()} for i in range(3)
+        ],
+        modes=[1],
+        mode_guard_minutes=30,
+        plan_lock_until=None,
+        plan_lock_modes=None,
+    )
+    assert len(lock_modes) == 1
+
+
+def test_build_plan_lock_disabled():
+    now = dt_util.now()
+    lock_until, lock_modes = mode_guard.build_plan_lock(
+        now=now,
+        spot_prices=[],
+        modes=[],
+        mode_guard_minutes=0,
+        plan_lock_until=None,
+        plan_lock_modes=None,
+    )
+    assert lock_until is None
+    assert lock_modes == {}
 
 
 def test_apply_mode_guard_lock_and_exception():
@@ -162,6 +309,133 @@ def test_apply_mode_guard_lock_and_exception():
     assert overrides[0]["type"] == "guard_exception_soc"
 
 
+def test_apply_mode_guard_noop_conditions():
+    guarded, overrides, guard_until = mode_guard.apply_mode_guard(
+        modes=[],
+        spot_prices=[],
+        solar_kwh_list=[],
+        load_forecast=[],
+        current_capacity=0.0,
+        max_capacity=1.0,
+        hw_min_capacity=0.0,
+        efficiency=1.0,
+        home_charge_rate_kw=0.0,
+        planning_min_kwh=0.0,
+        lock_modes={},
+        guard_until=None,
+    )
+    assert guarded == []
+    assert overrides == []
+    assert guard_until is None
+
+
+def test_apply_mode_guard_breaks_on_guard_until_and_bad_timestamp(monkeypatch):
+    now = dt_util.now()
+    called = {"sim": 0}
+
+    def _simulate(*_a, **_k):
+        called["sim"] += 1
+
+        class Res:
+            new_soc_kwh = 5.0
+
+        return Res()
+
+    monkeypatch.setattr(mode_guard, "simulate_interval", _simulate)
+
+    guarded, overrides, guard_until = mode_guard.apply_mode_guard(
+        modes=[CBB_MODE_HOME_UPS, CBB_MODE_HOME_UPS],
+        spot_prices=[{"time": "bad"}],
+        solar_kwh_list=[0.0],
+        load_forecast=[0.0],
+        current_capacity=5.0,
+        max_capacity=10.0,
+        hw_min_capacity=1.0,
+        efficiency=1.0,
+        home_charge_rate_kw=2.0,
+        planning_min_kwh=2.0,
+        lock_modes={"bad": CBB_MODE_HOME_I},
+        guard_until=now,
+    )
+
+    assert guarded == [CBB_MODE_HOME_UPS, CBB_MODE_HOME_UPS]
+    assert overrides == []
+    assert guard_until == now
+    assert called["sim"] == 0
+
+
+def test_apply_mode_guard_breaks_on_spot_price_length(monkeypatch):
+    now = dt_util.now()
+    called = {"sim": 0}
+
+    def _simulate(*_a, **_k):
+        called["sim"] += 1
+
+        class Res:
+            new_soc_kwh = 5.0
+
+        return Res()
+
+    monkeypatch.setattr(mode_guard, "simulate_interval", _simulate)
+
+    guarded, overrides, _ = mode_guard.apply_mode_guard(
+        modes=[CBB_MODE_HOME_UPS, CBB_MODE_HOME_UPS],
+        spot_prices=[{"time": (now + timedelta(minutes=15)).isoformat()}],
+        solar_kwh_list=[0.0],
+        load_forecast=[0.0],
+        current_capacity=5.0,
+        max_capacity=10.0,
+        hw_min_capacity=1.0,
+        efficiency=1.0,
+        home_charge_rate_kw=2.0,
+        planning_min_kwh=2.0,
+        lock_modes={(now + timedelta(minutes=15)).isoformat(): CBB_MODE_HOME_UPS},
+        guard_until=now + timedelta(minutes=30),
+    )
+
+    assert guarded == [CBB_MODE_HOME_UPS, CBB_MODE_HOME_UPS]
+    assert overrides == []
+    assert called["sim"] == 1
+
+
+def test_apply_mode_guard_uses_log_rate_limited(monkeypatch):
+    now = dt_util.now()
+    spot_prices = [{"time": (now + timedelta(minutes=15 * i)).isoformat()} for i in range(1)]
+    modes = [CBB_MODE_HOME_UPS]
+    called = {"log": 0}
+
+    def _simulate(*_a, **_k):
+        class Res:
+            new_soc_kwh = 10.0
+
+        return Res()
+
+    def _log(*_a, **_k):
+        called["log"] += 1
+
+    monkeypatch.setattr(mode_guard, "simulate_interval", _simulate)
+
+    guarded, overrides, _ = mode_guard.apply_mode_guard(
+        modes=modes,
+        spot_prices=spot_prices,
+        solar_kwh_list=[0.0],
+        load_forecast=[0.0],
+        current_capacity=5.0,
+        max_capacity=10.0,
+        hw_min_capacity=1.0,
+        efficiency=1.0,
+        home_charge_rate_kw=2.0,
+        planning_min_kwh=2.0,
+        lock_modes={spot_prices[0]["time"]: CBB_MODE_HOME_I},
+        guard_until=now + timedelta(minutes=30),
+        log_rate_limited=_log,
+    )
+
+    assert guarded[0] == CBB_MODE_HOME_I
+    assert overrides
+    assert called["log"] == 1
+
+
 def test_apply_guard_reasons_to_timeline():
     timeline = [{"planner_reason": "base"}]
     overrides = [
@@ -184,6 +458,97 @@ def test_apply_guard_reasons_to_timeline():
     assert "Stabilizace" in timeline[0]["planner_reason"]
 
 
+def test_apply_guard_reasons_to_timeline_unknown_and_missing_label():
+    timeline = [{"planner_reason": "base", "reason": "orig"}]
+    overrides = [
+        {
+            "idx": 0,
+            "type": "unknown",
+            "planned_mode": 1,
+            "forced_mode": 2,
+        }
+    ]
+    mode_guard.apply_guard_reasons_to_timeline(
+        timeline,
+        overrides,
+        guard_until=None,
+        current_mode=None,
+        mode_names={},
+    )
+
+    assert "Stabilizace" in timeline[0]["planner_reason"]
+    assert timeline[0]["reason"] == "Stabilizace: držíme potvrzený plán."
+
+
+def test_apply_guard_reasons_to_timeline_early_returns():
+    mode_guard.apply_guard_reasons_to_timeline(
+        [],
+        overrides=[{"idx": 0}],
+        guard_until=None,
+        current_mode=None,
+        mode_names={},
+    )
+
+    mode_guard.apply_guard_reasons_to_timeline(
+        [{"planner_reason": "base"}],
+        overrides=[],
+        guard_until=None,
+        current_mode=None,
+        mode_names={},
+    )
+
+
+def test_apply_guard_reasons_to_timeline_idx_out_of_range():
+    timeline = [{"planner_reason": "base"}]
+    mode_guard.apply_guard_reasons_to_timeline(
+        timeline,
+        overrides=[{"idx": 2, "type": "guard_exception_soc"}],
+        guard_until=None,
+        current_mode=None,
+        mode_names={},
+    )
+    assert timeline[0]["planner_reason"] == "base"
+
+
+def test_apply_guard_reasons_to_timeline_exception_and_locked():
+    timeline = [{}]
+    overrides = [
+        {
+            "idx": 0,
+            "type": "guard_exception_soc",
+            "planned_mode": 1,
+            "forced_mode": 1,
+        }
+    ]
+    mode_guard.apply_guard_reasons_to_timeline(
+        timeline,
+        overrides,
+        guard_until=None,
+        current_mode=1,
+        mode_names={1: "Home 2"},
+    )
+    assert "Výjimka guardu" in timeline[0]["planner_reason"]
+    assert "reason" not in timeline[0]
+
+    timeline = [{}]
+    overrides = [
+        {
+            "idx": 0,
+            "type": "guard_locked_plan",
+            "planned_mode": 1,
+            "forced_mode": 1,
+        }
+    ]
+    mode_guard.apply_guard_reasons_to_timeline(
+        timeline,
+        overrides,
+        guard_until=None,
+        current_mode=None,
+        mode_names={1: "Home 2"},
+    )
+    assert "Stabilizace" in timeline[0]["planner_reason"]
+
+
 def test_get_candidate_intervals_filters_and_sorts():
     now = dt_util.now()
     timeline = [
@@ -201,6 +566,25 @@ def test_get_candidate_intervals_filters_and_sorts():
     )
 
     assert [c["price"] for c in candidates] == [1, 2]
+
+
+def test_get_candidate_intervals_default_now_and_invalid_timestamp(monkeypatch):
+    fixed_now = datetime(2025, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.charging_plan_utils.dt_util.now",
+        lambda: fixed_now,
+    )
+
+    timeline = [
+        {"timestamp": "bad", "spot_price_czk": 1.0},
+        {"timestamp": "2025-01-01T12:15:00", "spot_price_czk": 5.0},
+    ]
+
+    candidates = charging_plan_utils.get_candidate_intervals(
+        timeline, max_charging_price=1.0
+    )
+
+    assert candidates == []
 
 
 def test_simulate_forward_death_valley():
@@ -238,6 +622,19 @@ def test_simulate_forward_death_valley():
     assert result["death_valley_reached"] is True
 
 
+def test_simulate_forward_start_index_out_of_range():
+    result = charging_plan_utils.simulate_forward(
+        timeline=[],
+        start_index=1,
+        charge_now=False,
+        charge_amount_kwh=0.0,
+        horizon_hours=1,
+        effective_minimum_kwh=1.0,
+        efficiency=1.0,
+    )
+    assert result["death_valley_reached"] is True
+
+
 def test_calculate_minimum_charge_and_protection():
     assert charging_plan_utils.calculate_minimum_charge(3.0, 4.0, 1.0) == 1.0
     assert charging_plan_utils.calculate_minimum_charge(5.0, 4.0, 1.0) == 0
@@ -264,6 +661,24 @@ def test_calculate_minimum_charge_and_protection():
     )
 
     assert required == 6.0
+
+
+def test_calculate_protection_requirement_invalid_timestamp_returns_none(monkeypatch):
+    now = datetime(2025, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.charging_plan_utils.dt_util.now",
+        lambda: now,
+    )
+    timeline = [{"timestamp": "bad", "consumption_kwh": 2.0}]
+    required = charging_plan_utils.calculate_protection_requirement(
+        timeline,
+        max_capacity=10.0,
+        config={
+            "enable_blackout_protection": True,
+            "blackout_target_soc_percent": 0.0,
+        },
+    )
+    assert required is None
 
 
 def test_recalculate_timeline_from_index_updates_soc_and_mode():
@@ -295,6 +710,38 @@ def test_recalculate_timeline_from_index_updates_soc_and_mode():
     )
 
     assert timeline[1]["battery_capacity_kwh"] == 1.5
+    assert timeline[1]["mode"] == "Home 1"
+
+
+def test_recalculate_timeline_from_index_solar_surplus():
+    timeline = [
+        {
+            "battery_capacity_kwh": 1.0,
+            "solar_production_kwh": 0.0,
+            "consumption_kwh": 0.0,
+            "grid_charge_kwh": 0.0,
+            "reason": "normal",
+        },
+        {
+            "battery_capacity_kwh": 1.0,
+            "solar_production_kwh": 2.0,
+            "consumption_kwh": 1.0,
+            "grid_charge_kwh": 0.0,
+            "reason": "normal",
+        },
+    ]
+
+    charging_plan_utils.recalculate_timeline_from_index(
+        timeline,
+        1,
+        max_capacity=10.0,
+        min_capacity=0.0,
+        efficiency=1.0,
+        mode_label_home_ups="Home UPS",
+        mode_label_home_i="Home 1",
+    )
+
+    assert timeline[1]["battery_capacity_kwh"] == 2.0
     assert timeline[1]["mode"] == "Home 1"
 
 

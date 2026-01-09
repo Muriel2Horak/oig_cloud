@@ -45,6 +45,28 @@ def test_available_when_data_present():
     assert sensor.available is True
 
 
+def test_available_false_variants():
+    coordinator = DummyCoordinator({"123": {"box_prms": {"mode": 1}}})
+    sensor = DummySensor(coordinator, DummyHass(), "test_sensor")
+    sensor._node_id = "box_prms"
+    sensor._node_key = "mode"
+
+    sensor.coordinator.last_update_success = False
+    assert sensor.available is False
+
+    sensor.coordinator.last_update_success = True
+    sensor.coordinator.data = None
+    assert sensor.available is False
+
+    sensor.coordinator.data = {"123": {"box_prms": {"mode": 1}}}
+    sensor._box_id = "unknown"
+    assert sensor.available is False
+
+    sensor._box_id = "123"
+    sensor.coordinator.data = {"123": {"other": {}}}
+    assert sensor.available is False
+
+
 def test_device_info_categories(monkeypatch):
     def _fake_def(sensor_type):
         if sensor_type == "shield_sensor":
@@ -71,6 +93,24 @@ def test_device_info_categories(monkeypatch):
     assert "Battery Box" in main_sensor.device_info["model"]
 
 
+def test_device_info_queen_and_non_dict_data(monkeypatch):
+    monkeypatch.setattr(
+        runtime_module,
+        "get_sensor_definition",
+        lambda _t: {"sensor_type_category": "main", "name": "Main"},
+    )
+    coordinator = DummyCoordinator("not-a-dict")
+    sensor = DummySensor(coordinator, DummyHass(), "main_sensor")
+    info = sensor.device_info
+    assert "Home" in info["model"]
+
+    coordinator = DummyCoordinator({"123": {"queen": True, "box_prms": {"sw": "2.0"}}})
+    sensor = DummySensor(coordinator, DummyHass(), "main_sensor")
+    info = sensor.device_info
+    assert "Queen" in info["model"]
+    assert info["sw_version"] == "2.0"
+
+
 def test_name_uses_language(monkeypatch):
     monkeypatch.setattr(
         runtime_module,
@@ -82,3 +122,41 @@ def test_name_uses_language(monkeypatch):
     assert sensor.name == "Napeti"
     sensor.hass = DummyHass(language="en")
     assert sensor.name == "Voltage"
+
+
+def test_name_fallback_and_metadata(monkeypatch):
+    monkeypatch.setattr(
+        runtime_module,
+        "get_sensor_definition",
+        lambda _t: {
+            "name": "Voltage",
+            "options": ["a", "b"],
+            "icon": "mdi:flash",
+            "device_class": "voltage",
+            "state_class": "measurement",
+        },
+    )
+    sensor = DummySensor(DummyCoordinator({"123": {}}), DummyHass(language="cs"), "v")
+    assert sensor.name == "Voltage"
+    assert sensor.options == ["a", "b"]
+    assert sensor.icon == "mdi:flash"
+    assert sensor.device_class == "voltage"
+    assert sensor.state_class == "measurement"
+
+
+def test_get_node_value_variants():
+    coordinator = DummyCoordinator({"123": {"box_prms": {"mode": 2}}})
+    sensor = DummySensor(coordinator, DummyHass(), "test_sensor")
+    sensor._node_id = "box_prms"
+    sensor._node_key = "mode"
+    assert sensor.get_node_value() == 2
+
+    sensor._box_id = "unknown"
+    assert sensor.get_node_value() is None
+
+    sensor._box_id = "123"
+    sensor.coordinator.data = {"123": {"box_prms": {}}}
+    assert sensor.get_node_value() is None
+
+    sensor.coordinator.data = {"123": {"box_prms": "bad"}}
+    assert sensor.get_node_value() is None

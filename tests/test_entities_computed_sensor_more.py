@@ -36,6 +36,7 @@ class DummyStates:
 class DummyHass:
     def __init__(self, mapping):
         self.states = DummyStates(mapping)
+        self.data = {}
 
     def async_create_task(self, coro):
         coro.close()
@@ -123,6 +124,9 @@ async def test_save_energy_to_storage_throttled(monkeypatch):
         @classmethod
         def utcnow(cls):
             return fixed_now
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz else fixed_now.replace(tzinfo=None)
 
     monkeypatch.setattr(module, "datetime", FixedDatetime)
     sensor._last_storage_save = fixed_now - timedelta(minutes=1)

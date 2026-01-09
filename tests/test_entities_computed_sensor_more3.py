@@ -310,7 +310,7 @@ def test_accumulate_energy_fv_low_updates_grid():
     sensor._energy = {k: 0.0 for k in sensor._energy}
     module._energy_last_update_cache.pop(sensor._box_id, None)
     module._energy_data_cache.pop(sensor._box_id, None)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     sensor._last_update = now - timedelta(hours=1)
     module._energy_last_update_cache[sensor._box_id] = sensor._last_update
 

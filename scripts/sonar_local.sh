@@ -87,9 +87,26 @@ scan() {
     coverage
   fi
 
+  if command -v sonar-scanner >/dev/null 2>&1; then
+    sonar-scanner \
+      -Dsonar.host.url="${SONAR_HOST_URL}" \
+      -Dsonar.login="${SONAR_TOKEN}" \
+      -Dsonar.projectKey="${SONAR_PROJECT_KEY}"
+    echo "Scan submitted. Check: ${SONAR_HOST_URL}"
+    return 0
+  fi
+
   # Use host.docker.internal for Docker Desktop (macOS/Windows), fallback to localhost otherwise.
   scanner_host="http://host.docker.internal:${SONAR_PORT}"
+  scanner_platform="${SONAR_SCANNER_PLATFORM:-}"
+  if [[ -z "$scanner_platform" ]]; then
+    if [[ "$(uname -m)" == "arm64" ]]; then
+      echo "Note: sonar-scanner image is amd64-only; using emulation on arm64."
+      scanner_platform="linux/amd64"
+    fi
+  fi
   docker run --rm \
+    ${scanner_platform:+--platform "${scanner_platform}"} \
     -e "SONAR_HOST_URL=${scanner_host}" \
     -e "SONAR_TOKEN=${SONAR_TOKEN}" \
     -v "$PWD:/usr/src" \
