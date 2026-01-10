@@ -100,6 +100,62 @@ async def test_manager_update_from_api_missing_method(monkeypatch):
     assert await mgr.update_from_api() is False
 
 
+@pytest.mark.asyncio
+async def test_manager_update_from_api_error_no_cache(monkeypatch):
+    api = DummyApi({"error": "bad"})
+    mgr = module.OigNotificationManager(DummyHass(), api, "http://x")
+    mgr.set_device_id("123")
+
+    store = DummyStore()
+    store.data = {"notifications": []}
+    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+
+    assert await mgr.update_from_api() is False
+
+
+@pytest.mark.asyncio
+async def test_manager_update_from_api_exception_uses_cache_with_data(monkeypatch):
+    class BoomApi:
+        async def get_notifications(self, _device_id):
+            raise RuntimeError("boom")
+
+    mgr = module.OigNotificationManager(DummyHass(), BoomApi(), "http://x")
+    mgr.set_device_id("123")
+
+    store = DummyStore()
+    store.data = {
+        "notifications": [
+            {
+                "id": "1",
+                "type": "info",
+                "message": "cached",
+                "timestamp": datetime.now().isoformat(),
+            }
+        ]
+    }
+    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+
+    assert await mgr.update_from_api() is True
+    assert mgr.get_latest_notification() is not None
+
+
+def test_manager_get_latest_notification_with_data():
+    mgr = module.OigNotificationManager(
+        DummyHass(), DummyApi({"status": "success", "content": ""}), "http://x"
+    )
+    mgr._notifications = [
+        module.OigNotification(
+            id="1",
+            type="info",
+            message="latest",
+            timestamp=datetime.now(),
+            device_id=None,
+            severity=1,
+        )
+    ]
+    assert mgr.get_latest_notification().message == "latest"
+
+
 def test_create_notification_from_html_bypass():
     parser = module.OigNotificationParser()
     notif = parser._create_notification_from_html(

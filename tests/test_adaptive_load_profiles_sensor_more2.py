@@ -176,6 +176,12 @@ def test_calculate_profile_similarity_mismatch_and_zero_total():
     assert score >= 0.0
 
 
+def test_calculate_profile_similarity_exception(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    monkeypatch.setattr(module.np, "corrcoef", lambda *_a, **_k: 1 / 0)
+    assert sensor._calculate_profile_similarity([1.0, 2.0], [1.0, 2.0]) == 0.0
+
+
 @pytest.mark.asyncio
 async def test_find_best_matching_profile_error(monkeypatch):
     sensor = _make_sensor(monkeypatch)

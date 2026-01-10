@@ -740,9 +740,12 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             profile = np.array(profile_data)
 
             # 1. Correlation coefficient (50%)
-            correlation = np.corrcoef(current, profile)[0, 1]
-            # Normalize to 0-1 (correlation je -1 až 1, chceme jen pozitivní podobnost)
-            correlation_score = max(0.0, correlation)
+            if np.std(current) == 0 or np.std(profile) == 0:
+                correlation_score = 0.0
+            else:
+                correlation = np.corrcoef(current, profile)[0, 1]
+                # Normalize to 0-1 (correlation je -1 až 1, chceme jen pozitivní podobnost)
+                correlation_score = max(0.0, correlation)
 
             # 2. RMSE (30%) - lower is better, normalize to 0-1
             rmse = np.sqrt(np.mean((current - profile) ** 2))

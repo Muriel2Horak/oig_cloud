@@ -118,6 +118,51 @@ def test_determine_notification_type_keywords():
     assert parser._determine_notification_type("anything", "3") == "error"
 
 
+def test_parse_html_notifications_error_path(monkeypatch):
+    class BoomParser:
+        def __init__(self):
+            self.items = []
+
+        def feed(self, _content):
+            raise RuntimeError("boom")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(notif_module, "_NotificationHtmlParser", BoomParser)
+    parser = notif_module.OigNotificationParser()
+    assert parser._parse_html_notifications("<div>bad</div>") == []
+
+
+def test_determine_notification_type_fallback_warning():
+    parser = notif_module.OigNotificationParser()
+    assert parser._determine_notification_type("neutral message", "2") == "warning"
+
+
+def test_create_notification_from_json_time_invalid():
+    parser = notif_module.OigNotificationParser()
+    notif = parser._create_notification_from_json({"type": "info", "time": "bad"})
+    assert notif is not None
+
+
+def test_create_notification_from_html_fallback_warning():
+    parser = notif_module.OigNotificationParser()
+    notif = parser._create_notification_from_html(
+        "2",
+        "1. 1. 2025 | 01:00",
+        "Box #1",
+        "short",
+        "neutral message",
+    )
+    assert notif is not None
+    assert notif.type == "warning"
+
+
+def test_determine_notification_type_css_level_zero():
+    parser = notif_module.OigNotificationParser()
+    assert parser._determine_notification_type("neutral message", "0") == "warning"
+
+
 def test_clean_json_string_fixes_formatting():
     parser = notif_module.OigNotificationParser()
     dirty = "{'type':'info', 'message':'ok',}//comment"

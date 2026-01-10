@@ -488,8 +488,20 @@ def test_boiler_consumption_wrapper(monkeypatch):
     assert sensor._get_boiler_consumption({}) == 12.5
 
 
+def test_state_computed_batt_calls_accumulate(monkeypatch):
+    sensor = _make_sensor("computed_batt_charge_energy_today")
+    sensor._box_id = "123"
+    monkeypatch.setattr(sensor, "_accumulate_energy", lambda: 1.23)
+    assert sensor.state == 1.23
+
+
 def test_extended_fve_current_2_variants():
     sensor = _make_sensor()
+    coordinator = SimpleNamespace(
+        data={"extended_fve_power_2": 200, "extended_fve_voltage_2": 100}
+    )
+    assert sensor._get_extended_fve_current_2(coordinator) == 2.0
+
     coordinator = SimpleNamespace(
         data={"extended_fve_power_2": 100, "extended_fve_voltage_2": 0}
     )

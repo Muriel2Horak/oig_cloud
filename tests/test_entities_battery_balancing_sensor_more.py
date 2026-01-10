@@ -110,6 +110,25 @@ def test_update_from_manager_active_plan_balancing(hass, monkeypatch):
     assert sensor.extra_state_attributes["current_state"] == "balancing"
 
 
+def test_update_from_manager_active_plan_ok(hass, monkeypatch):
+    now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=module.dt_util.DEFAULT_TIME_ZONE)
+    plan = DummyPlan(
+        holding_start=now + timedelta(hours=2),
+        holding_end=now + timedelta(hours=3),
+        mode="auto",
+        priority="low",
+    )
+    manager = DummyManager(attrs={"days_since_last": 1}, plan=plan)
+    hass.data[DOMAIN] = {"entry1": {"balancing_manager": manager}}
+    sensor = _make_sensor(hass, options={"balancing_enabled": True})
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.battery_balancing_sensor.dt_util.now",
+        lambda: now,
+    )
+    sensor._update_from_manager()
+    assert sensor.native_value == "ok"
+
+
 def test_update_from_manager_overdue(hass):
     manager = DummyManager(attrs={"days_since_last": 10})
     hass.data[DOMAIN] = {"entry1": {"balancing_manager": manager}}

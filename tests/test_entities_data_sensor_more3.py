@@ -168,6 +168,14 @@ def test_state_coordinator_missing_data_fallback():
     assert sensor.state == "fallback"
 
 
+def test_state_coordinator_data_none_fallback():
+    coordinator = DummyCoordinator({})
+    coordinator.data = None
+    sensor = _make_sensor("box_prms_mode", coordinator)
+    sensor._last_state = "fallback"
+    assert sensor.state == "fallback"
+
+
 def test_state_raw_value_none_fallback():
     coordinator = DummyCoordinator({"123": {"node": {"val": 1}}})
     sensor = _make_sensor("box_prms_mode", coordinator)
@@ -198,6 +206,34 @@ def test_get_extended_value_missing_data():
     coordinator = DummyCoordinator({})
     sensor = _make_sensor("extended_grid_voltage", coordinator)
     assert sensor._get_extended_value("extended_grid", "extended_grid_voltage") is None
+
+
+def test_get_extended_value_missing_extended_block():
+    coordinator = DummyCoordinator({"extended_grid": {}})
+    sensor = _make_sensor("extended_grid_voltage", coordinator)
+    assert sensor._get_extended_value("extended_grid", "extended_grid_voltage") is None
+
+
+def test_get_local_value_for_sensor_type_exception(monkeypatch):
+    sensor = _make_sensor("box_prms_mode")
+    import custom_components.oig_cloud.sensor_types as sensor_types
+
+    monkeypatch.setattr(sensor_types, "SENSOR_TYPES", None)
+    assert sensor._get_local_value_for_sensor_type("box_prms_crct") is None
+
+
+def test_get_node_value_unhashable_node_id():
+    coordinator = DummyCoordinator({"123": {"node": {"val": 1}}})
+    sensor = _make_sensor("box_prms_mode", coordinator)
+    sensor._sensor_config = {"node_id": [], "node_key": "val"}
+    assert sensor.get_node_value() is None
+
+
+def test_get_node_value_index_error():
+    coordinator = DummyCoordinator({"123": {"node": None}})
+    sensor = _make_sensor("box_prms_mode", coordinator)
+    sensor._sensor_config = {"node_id": "node", "node_key": "val"}
+    assert sensor.get_node_value() is None
 
     coordinator = DummyCoordinator({"extended_grid": {"items": []}})
     sensor = _make_sensor("extended_grid_voltage", coordinator)

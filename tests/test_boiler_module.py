@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -24,10 +25,17 @@ from custom_components.oig_cloud.boiler.profiler import (
     _get_profile_category,
 )
 from custom_components.oig_cloud.boiler.sensors import (
+    BoilerAltEnergySensor,
+    BoilerAvgTempSensor,
     BoilerChargingRecommendedSensor,
+    BoilerEnergyNeededSensor,
+    BoilerFVEEnergySensor,
+    BoilerGridEnergySensor,
+    BoilerLowerZoneTempSensor,
     BoilerPlanEstimatedCostSensor,
     BoilerProfileConfidenceSensor,
     BoilerRecommendedSourceSensor,
+    BoilerTotalEnergySensor,
     BoilerUpperZoneTempSensor,
     get_boiler_sensors,
 )
@@ -37,6 +45,7 @@ from custom_components.oig_cloud.boiler.utils import (
     estimate_residual_energy,
     validate_temperature_sensor,
 )
+from custom_components.oig_cloud.boiler.const import PROFILE_CATEGORIES
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_ENERGY_SENSOR,
     CONF_BOILER_SPOT_PRICE_SENSOR,
@@ -119,6 +128,65 @@ def test_boiler_models_profile_and_plan():
 
 
 @pytest.mark.asyncio
+async def test_boiler_profile_view_entry_and_module_errors():
+    hass = SimpleNamespace(data={}, http=DummyHttp())
+    view = BoilerProfileView(hass)
+    response = await view.get(None, "missing")
+    assert response.status == 404
+    assert _response_json(response)["error"] == "Entry not found"
+
+    hass = SimpleNamespace(data={DOMAIN: {"entry1": {"enabled": True}}}, http=DummyHttp())
+    view = BoilerProfileView(hass)
+    response = await view.get(None, "entry1")
+    assert response.status == 404
+    assert _response_json(response)["error"] == "Boiler module not enabled"
+
+
+@pytest.mark.asyncio
+async def test_boiler_profile_view_exception():
+    class BadProfiler:
+        def get_all_profiles(self):
+            raise RuntimeError("boom")
+
+    coordinator = SimpleNamespace(profiler=BadProfiler(), _current_profile=None)
+    hass = SimpleNamespace(data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}}, http=DummyHttp())
+    view = BoilerProfileView(hass)
+    response = await view.get(None, "entry1")
+    assert response.status == 500
+    assert _response_json(response)["error"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_boiler_plan_view_module_and_plan_errors():
+    hass = SimpleNamespace(data={DOMAIN: {"entry1": {"enabled": True}}}, http=DummyHttp())
+    view = BoilerPlanView(hass)
+    response = await view.get(None, "entry1")
+    assert response.status == 404
+    assert _response_json(response)["error"] == "Boiler module not enabled"
+
+    coordinator = SimpleNamespace(_current_plan=None)
+    hass = SimpleNamespace(data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}}, http=DummyHttp())
+    view = BoilerPlanView(hass)
+    response = await view.get(None, "entry1")
+    assert response.status == 404
+    assert _response_json(response)["error"] == "No plan available yet"
+
+
+@pytest.mark.asyncio
+async def test_boiler_plan_view_exception():
+    class BadCoordinator:
+        @property
+        def _current_plan(self):
+            raise RuntimeError("boom")
+
+    hass = SimpleNamespace(data={DOMAIN: {"entry1": {"boiler_coordinator": BadCoordinator()}}}, http=DummyHttp())
+    view = BoilerPlanView(hass)
+    response = await view.get(None, "entry1")
+    assert response.status == 500
+    assert _response_json(response)["error"] == "boom"
+
+
+@pytest.mark.asyncio
 async def test_boiler_profiler_update_profiles(monkeypatch, hass):
     profiler = BoilerProfiler(hass, "sensor.boiler_energy", lookback_days=1)
     now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -148,6 +216,27 @@ def test_boiler_profiler_get_profile_for_datetime_low_confidence():
         sample_count={12: 1},
     )
     assert profiler.get_profile_for_datetime(datetime(2025, 1, 2, 12, 0)) is None
+
+
+def test_boiler_profiler_get_profile_for_datetime_missing_and_valid():
+    profiler = BoilerProfiler(SimpleNamespace(), "sensor.boiler_energy")
+    assert profiler.get_profile_for_datetime(datetime(2025, 1, 2, 12, 0)) is None
+
+    category = _get_profile_category(datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc))
+    profile = BoilerProfile(
+        category=category,
+        hourly_avg={12: 0.5},
+        confidence={12: 0.9},
+        sample_count={12: 5},
+    )
+    profiler._profiles[category] = profile
+    assert profiler.get_profile_for_datetime(datetime(2025, 1, 2, 12, 0)) is profile
+
+
+def test_boiler_profiler_get_all_profiles():
+    profiler = BoilerProfiler(SimpleNamespace(), "sensor.boiler_energy")
+    profiler._profiles["x"] = BoilerProfile(category="x")
+    assert profiler.get_all_profiles()["x"].category == "x"
 
 
 @pytest.mark.asyncio
@@ -185,6 +274,60 @@ async def test_boiler_profiler_fetch_history_handles_instance(monkeypatch, hass)
             "value_wh": 1000.0,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_boiler_profiler_update_profiles_fetch_error(monkeypatch, hass):
+    profiler = BoilerProfiler(hass, "sensor.boiler_energy", lookback_days=1)
+
+    async def _fetch_history(_start, _end):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(profiler, "_fetch_history", _fetch_history)
+    profiles = await profiler.async_update_profiles()
+    assert profiles
+
+
+def test_boiler_profiler_process_history_short_and_branches(monkeypatch):
+    profiler = BoilerProfiler(SimpleNamespace(), "sensor.boiler_energy")
+    profiler._profiles = {
+        cat: BoilerProfile(category=cat, hourly_avg={}, confidence={}, sample_count={})
+        for cat in PROFILE_CATEGORIES
+    }
+
+    profiler._process_history_data(
+        [{"timestamp": datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc), "value_wh": 1000}]
+    )
+
+    history_data = [
+        {"timestamp": datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc), "value_wh": 2000},
+        {"timestamp": datetime(2025, 1, 1, 1, 0, tzinfo=timezone.utc), "value_wh": 1000},
+        {"timestamp": datetime(2025, 1, 1, 4, 0, tzinfo=timezone.utc), "value_wh": 2000},
+        {"timestamp": datetime(2025, 1, 2, 0, 0, tzinfo=timezone.utc), "value_wh": 1500},
+    ]
+
+    class _FakeDefaultDict(dict):
+        def __init__(self, default_factory=None):
+            super().__init__()
+            self.default_factory = default_factory
+            if default_factory is not list:
+                empty_hours = defaultdict(list)
+                empty_hours[0] = []
+                self["workday_spring"] = empty_hours
+
+        def __getitem__(self, key):
+            if key not in self:
+                if self.default_factory is None:
+                    raise KeyError(key)
+                self[key] = self.default_factory()
+            return dict.__getitem__(self, key)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.profiler.defaultdict",
+        _FakeDefaultDict,
+    )
+
+    profiler._process_history_data(history_data)
 
 
 def test_boiler_planner_spot_price_and_recommendations():
@@ -277,6 +420,62 @@ async def test_boiler_coordinator_spot_prices_and_overflow(hass):
     hass.data[DOMAIN] = {"battery_forecast_coordinator": SimpleNamespace(data=None)}
     windows = await coordinator._get_overflow_windows()
     assert windows == []
+
+
+@pytest.mark.asyncio
+async def test_boiler_sensor_values_full(hass):
+    coordinator = BoilerCoordinator(hass, {})
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    slot = BoilerSlot(
+        start=now,
+        end=now + timedelta(minutes=15),
+        avg_consumption_kwh=0.4,
+        confidence=0.8,
+        recommended_source=EnergySource.GRID,
+        spot_price_kwh=3.0,
+        overflow_available=False,
+    )
+    plan = BoilerPlan(
+        created_at=now,
+        valid_until=now + timedelta(days=1),
+        slots=[slot],
+        total_consumption_kwh=1.2,
+        estimated_cost_czk=3.2,
+        fve_kwh=0.5,
+        grid_kwh=0.6,
+        alt_kwh=0.1,
+    )
+    profile = BoilerProfile(
+        category="workday_winter",
+        hourly_avg={12: 0.5},
+        confidence={12: 0.6},
+        sample_count={12: 3},
+        last_updated=now,
+    )
+    coordinator.data = {
+        "temperatures": {"upper_zone": 55.0, "lower_zone": 45.0},
+        "energy_state": {"avg_temp": 50.0, "energy_needed_kwh": 1.5},
+        "energy_tracking": {
+            "total_kwh": 2.5,
+            "fve_kwh": 1.0,
+            "grid_kwh": 1.2,
+            "alt_kwh": 0.3,
+            "current_source": "grid",
+        },
+        "recommended_source": "alternative",
+        "charging_recommended": True,
+        "current_slot": slot,
+        "plan": plan,
+        "profile": profile,
+    }
+
+    assert BoilerLowerZoneTempSensor(coordinator).native_value == 45.0
+    assert BoilerAvgTempSensor(coordinator).native_value == 50.0
+    assert BoilerEnergyNeededSensor(coordinator).native_value == 1.5
+    assert BoilerTotalEnergySensor(coordinator).native_value == 2.5
+    assert BoilerFVEEnergySensor(coordinator).native_value == 1.0
+    assert BoilerGridEnergySensor(coordinator).native_value == 1.2
+    assert BoilerAltEnergySensor(coordinator).native_value == 0.3
 
 
 @pytest.mark.asyncio

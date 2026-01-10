@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from homeassistant.helpers import frame
 from homeassistant.util import dt as dt_util
 
 from custom_components.oig_cloud.api import ha_rest_api as api_module
@@ -339,6 +340,11 @@ def test_schema_edge_cases():
 def test_local_mapper_edge_cases():
     assert local_mapper._normalize_domains([]) == ("sensor",)
     assert local_mapper._normalize_value_map({}) is None
+
+
+@pytest.fixture(autouse=True)
+def _disable_frame_report(monkeypatch):
+    monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
 
 
 @pytest.mark.asyncio

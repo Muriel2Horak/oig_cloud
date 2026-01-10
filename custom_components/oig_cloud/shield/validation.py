@@ -308,9 +308,6 @@ def extract_expected_entities(
 
         return {}
 
-    if service_name == "oig_cloud.set_formating_mode":
-        return {}
-
     return {}
 
 

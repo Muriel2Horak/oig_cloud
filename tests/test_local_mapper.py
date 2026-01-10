@@ -11,11 +11,16 @@ def test_coerce_and_normalize_box_mode():
     assert local_mapper._coerce_number("10") == 10
     assert local_mapper._coerce_number("1.5") == 1.5
     assert local_mapper._coerce_number("unknown") is None
+    assert local_mapper._coerce_number("nope") == "nope"
 
     assert local_mapper._normalize_box_mode(2) == 2
     assert local_mapper._normalize_box_mode("HOME 2") == 1
     assert local_mapper._normalize_box_mode("Home UPS") == 3
+    assert local_mapper._normalize_box_mode("home") is None
     assert local_mapper._normalize_box_mode("unknown") is None
+    assert local_mapper._normalize_box_mode("   ") is None
+    assert local_mapper._normalize_box_mode(["bad"]) is None
+    assert local_mapper._normalize_box_mode(float("nan")) is None
 
 
 def test_normalize_domains_and_value_map():
@@ -24,11 +29,13 @@ def test_normalize_domains_and_value_map():
         "binary_sensor",
         "sensor",
     )
+    assert local_mapper._normalize_domains([1, "sensor"]) == ("sensor",)
 
     value_map = local_mapper._normalize_value_map({"On": 1, "Off": 0})
     assert value_map["on"] == 1
     assert local_mapper._apply_value_map("On", value_map) == 1
     assert local_mapper._apply_value_map("10", None) == 10
+    assert local_mapper._normalize_value_map({1: "x"}) is None
 
 
 def test_as_utc():
@@ -37,3 +44,13 @@ def test_as_utc():
 
     assert local_mapper._as_utc(naive).tzinfo is not None
     assert local_mapper._as_utc(aware).tzinfo is not None
+    assert local_mapper._as_utc(None) is None
+
+
+def test_as_utc_error(monkeypatch):
+    def _boom(_dt):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(local_mapper.dt_util, "as_utc", _boom)
+    aware = dt_util.as_local(datetime(2025, 1, 1, 12, 0, 0))
+    assert local_mapper._as_utc(aware) is None

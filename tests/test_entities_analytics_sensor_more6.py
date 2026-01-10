@@ -67,6 +67,52 @@ def test_calculate_current_tariff_uses_yesterday_times(monkeypatch):
     assert sensor._calculate_current_tariff() in ("NT", "VT")
 
 
+def test_calculate_current_tariff_yesterday_weekend(monkeypatch):
+    options = {
+        "dual_tariff_enabled": True,
+        "tariff_nt_start_weekday": "",
+        "tariff_vt_start_weekday": "",
+        "tariff_nt_start_weekend": "0",
+        "tariff_vt_start_weekend": "1",
+    }
+    sensor = _make_sensor(monkeypatch, "current_tariff", options)
+    now = datetime(2025, 1, 6, 1, 0, 0)  # Monday, yesterday was weekend
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+
+    calls = {"count": 0}
+
+    def _parse(_value):
+        calls["count"] += 1
+        if calls["count"] <= 2:
+            return []
+        if calls["count"] == 3:
+            return [0]
+        return [1]
+
+    monkeypatch.setattr(sensor, "_parse_tariff_times", _parse)
+    assert sensor._calculate_current_tariff() in ("NT", "VT")
+
+
+def test_get_tariff_for_datetime_uses_weekend_yesterday(monkeypatch):
+    options = {
+        "dual_tariff_enabled": True,
+        "tariff_nt_start_weekday": "",
+        "tariff_vt_start_weekday": "",
+        "tariff_nt_start_weekend": "0",
+        "tariff_vt_start_weekend": "1",
+    }
+    sensor = _make_sensor(monkeypatch, "current_tariff", options)
+
+    def _parse(value):
+        if value in ("", None):
+            return []
+        return [0] if value == "0" else [1]
+
+    monkeypatch.setattr(sensor, "_parse_tariff_times", _parse)
+    monday = datetime(2025, 1, 6, 1, 0, 0)
+    assert sensor._get_tariff_for_datetime(monday) in ("NT", "VT")
+
+
 def test_get_next_tariff_change_disabled(monkeypatch):
     sensor = _make_sensor(monkeypatch, "current_tariff", {"dual_tariff_enabled": False})
     current = datetime(2025, 1, 1, 10, 0, 0)
@@ -107,6 +153,27 @@ def test_fixed_price_value_variants(monkeypatch):
     assert sensor._get_fixed_price_value() is None
 
 
+def test_fixed_price_value_uses_current_tariff_when_now_none(monkeypatch):
+    options = {"spot_pricing_model": "fixed_prices", "dual_tariff_enabled": True}
+    sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh", options)
+    monkeypatch.setattr(
+        module,
+        "datetime",
+        type("FixedDatetime", (datetime,), {"now": classmethod(lambda cls, tz=None: None)}),
+    )
+    monkeypatch.setattr(sensor, "_calculate_current_tariff", lambda: "NT")
+    assert sensor._get_fixed_price_value() is not None
+
+    options = {"spot_pricing_model": "fixed_prices", "dual_tariff_enabled": False}
+    sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh", options)
+    monkeypatch.setattr(
+        module,
+        "datetime",
+        type("FixedDatetime2", (datetime,), {"now": classmethod(lambda cls, tz=None: None)}),
+    )
+    assert sensor._get_fixed_price_value() is not None
+
+
 def test_fixed_price_value_single_tariff_max(monkeypatch):
     options = {"spot_pricing_model": "fixed_prices", "dual_tariff_enabled": False}
     sensor = _make_sensor(monkeypatch, "spot_price_current_czk_kwh", options)
@@ -129,6 +196,12 @@ def test_calculate_fixed_daily_average_single_tariff(monkeypatch):
 def test_get_dynamic_spot_price_value_unknown(monkeypatch):
     sensor = _make_sensor(monkeypatch, "unknown_sensor")
     assert sensor._get_dynamic_spot_price_value({"prices_czk_kwh": {}}) is None
+
+
+def test_fixed_price_value_unknown_sensor(monkeypatch):
+    options = {"spot_pricing_model": "fixed_prices"}
+    sensor = _make_sensor(monkeypatch, "unknown_sensor", options)
+    assert sensor._get_fixed_price_value() is None
 
 
 def test_final_price_with_fees_fixed_model(monkeypatch):

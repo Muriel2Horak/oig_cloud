@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.oig_cloud.entities import sensor_runtime as runtime_module
 
 
@@ -197,6 +199,31 @@ def test_async_update_calls_super():
     import asyncio
 
     asyncio.run(sensor.async_update())
+    assert sensor.updated is True
+
+
+@pytest.mark.asyncio
+async def test_async_update_calls_super_async():
+    class Base:
+        def __init__(self):
+            self.updated = False
+
+        async def async_update(self):
+            self.updated = True
+
+    class Sensor(runtime_module.OigCloudSensorRuntimeMixin, Base):
+        def __init__(self):
+            super().__init__()
+            self.coordinator = DummyCoordinator({"123": {}})
+            self.hass = DummyHass()
+            self._sensor_type = "test"
+            self._box_id = "123"
+            self._node_id = None
+            self._node_key = None
+            self.entity_id = "sensor.oig_123_test"
+
+    sensor = Sensor()
+    await sensor.async_update()
     assert sensor.updated is True
 
     sensor.coordinator.data = {"123": {"box_prms": "bad"}}

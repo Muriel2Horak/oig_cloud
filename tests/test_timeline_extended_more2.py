@@ -95,6 +95,38 @@ async def test_build_day_timeline_historical_archive_save_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_build_day_timeline_historical_archive_save_success(monkeypatch):
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore()
+    sensor._hass = SimpleNamespace()
+    saved = {}
+
+    async def _save(*_a, **_k):
+        saved["ok"] = True
+
+    sensor._save_plan_to_storage = _save
+
+    monkeypatch.setattr(
+        module.history_module,
+        "build_historical_modes_lookup",
+        lambda *_a, **_k: {},
+    )
+
+    fixed_now = dt_util.as_local(datetime(2025, 1, 2, 0, 5, 0))
+    monkeypatch.setattr(module.dt_util, "now", lambda: fixed_now)
+
+    storage_plans = {
+        "daily_archive": {
+            "2025-01-01": {"plan": [{"time": "00:00"}]}
+        }
+    }
+    day = dt_util.as_local(datetime(2025, 1, 1)).date()
+    data = await module.build_day_timeline(sensor, day, storage_plans)
+    assert data["date"] == "2025-01-01"
+    assert saved["ok"] is True
+
+
+@pytest.mark.asyncio
 async def test_build_day_timeline_historical_archive_invalid(monkeypatch):
     sensor = DummySensor()
     sensor._hass = SimpleNamespace()
@@ -145,6 +177,50 @@ async def test_build_day_timeline_mixed_repair_and_parse_errors(monkeypatch):
     )
 
     fixed_now = dt_util.as_local(datetime(2025, 1, 2, 0, 5, 0))
+    monkeypatch.setattr(module.dt_util, "now", lambda: fixed_now)
+
+    data = await module.build_day_timeline(sensor, fixed_now.date(), {})
+    assert data["intervals"]
+
+
+@pytest.mark.asyncio
+async def test_build_day_timeline_mixed_invalid_storage_warning(monkeypatch):
+    sensor = DummySensor()
+    sensor._hass = SimpleNamespace()
+    sensor._is_baseline_plan_invalid = lambda *_a, **_k: True
+
+    monkeypatch.setattr(
+        module.history_module,
+        "build_historical_modes_lookup",
+        lambda *_a, **_k: {},
+    )
+
+    fixed_now = dt_util.as_local(datetime(2025, 1, 2, 12, 5, 0))
+    monkeypatch.setattr(module.dt_util, "now", lambda: fixed_now)
+
+    storage_plans = {
+        "detailed": {"2025-01-02": {"intervals": [{"time": "00:00"}]}}
+    }
+    data = await module.build_day_timeline(sensor, fixed_now.date(), storage_plans)
+    assert data["intervals"]
+
+
+@pytest.mark.asyncio
+async def test_build_day_timeline_mixed_future_skip_and_parse_error(monkeypatch):
+    sensor = DummySensor()
+    sensor._hass = SimpleNamespace()
+    sensor._timeline_data = [
+        {"time": "2025-01-02T10:00:00"},
+        {"time": "2025-01-02T11:00:00Z"},
+    ]
+
+    monkeypatch.setattr(
+        module.history_module,
+        "build_historical_modes_lookup",
+        lambda *_a, **_k: {},
+    )
+
+    fixed_now = dt_util.as_local(datetime(2025, 1, 2, 12, 5, 0))
     monkeypatch.setattr(module.dt_util, "now", lambda: fixed_now)
 
     data = await module.build_day_timeline(sensor, fixed_now.date(), {})

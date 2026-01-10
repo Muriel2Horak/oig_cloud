@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from homeassistant.helpers import frame
 
 from custom_components.oig_cloud.boiler import coordinator as module
 from custom_components.oig_cloud.boiler.models import BoilerProfile, EnergySource
@@ -53,6 +54,11 @@ class DummyPlanner:
 
     async def async_get_overflow_windows(self, _data):
         return self._overflow
+
+
+@pytest.fixture(autouse=True)
+def _disable_frame_report(monkeypatch):
+    monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
 
 
 @pytest.mark.asyncio
@@ -226,3 +232,52 @@ async def test_overflow_windows_missing_and_present(monkeypatch):
     coordinator.planner._overflow = [(datetime(2025, 1, 1), datetime(2025, 1, 2))]
     windows = await coordinator._get_overflow_windows()
     assert windows
+
+
+@pytest.mark.asyncio
+async def test_track_energy_sources_alt_invalid(monkeypatch):
+    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
+    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+
+    hass = DummyHass({"sensor.alt": DummyState("bad")})
+    config = {module.CONF_BOILER_ALT_ENERGY_SENSOR: "sensor.alt"}
+    coordinator = module.BoilerCoordinator(hass, config)
+    data = await coordinator._track_energy_sources()
+    assert data["alt_kwh"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_update_plan_error(monkeypatch):
+    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
+    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+
+    coordinator = module.BoilerCoordinator(DummyHass(), {})
+    coordinator._current_profile = BoilerProfile(category="test")
+
+    async def _fail_plan(**_kwargs):
+        raise RuntimeError("boom")
+
+    async def _empty_prices():
+        return {}
+
+    async def _empty_windows():
+        return []
+
+    monkeypatch.setattr(coordinator, "_get_spot_prices", _empty_prices)
+    monkeypatch.setattr(coordinator, "_get_overflow_windows", _empty_windows)
+    monkeypatch.setattr(coordinator.planner, "async_create_plan", _fail_plan)
+
+    await coordinator._update_plan()
+    assert coordinator._current_plan is None
+
+
+@pytest.mark.asyncio
+async def test_get_spot_prices_missing_state(monkeypatch):
+    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
+    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+
+    hass = DummyHass()
+    config = {module.CONF_BOILER_SPOT_PRICE_SENSOR: "sensor.spot"}
+    coordinator = module.BoilerCoordinator(hass, config)
+    prices = await coordinator._get_spot_prices()
+    assert prices == {}

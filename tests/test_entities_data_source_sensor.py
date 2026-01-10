@@ -88,6 +88,7 @@ def test_extra_state_attributes(monkeypatch):
     assert attrs["effective_mode"] == "cloud_only"
     assert attrs["local_available"] is False
     assert attrs["last_local_data"] == last_dt.isoformat()
+    assert attrs["reason"] == "test"
 
 
 def test_unique_id_and_device_info(monkeypatch):
@@ -131,6 +132,37 @@ async def test_async_added_and_removed(monkeypatch):
     await sensor.async_will_remove_from_hass()
     assert calls["unsubs"] == 2
     assert sensor._unsubs == []
+
+
+@pytest.mark.asyncio
+async def test_async_added_refresh_callback(monkeypatch):
+    hass = DummyHass()
+    coordinator = DummyCoordinator()
+    entry = _make_entry()
+    sensor = OigCloudDataSourceSensor(hass, coordinator, entry)
+
+    called = {"refresh": False}
+
+    def _track_state(_hass, _entity_id, cb):
+        called["cb"] = cb
+        return lambda: None
+
+    def _track_time(_hass, _cb, _interval):
+        return lambda: None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.data_source_sensor.async_track_state_change_event",
+        _track_state,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.data_source_sensor.async_track_time_interval",
+        _track_time,
+    )
+    monkeypatch.setattr(sensor, "async_write_ha_state", lambda: called.__setitem__("refresh", True))
+
+    await sensor.async_added_to_hass()
+    called["cb"]()
+    assert called["refresh"] is True
 
 
 @pytest.mark.asyncio
