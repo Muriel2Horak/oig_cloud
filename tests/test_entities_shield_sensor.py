@@ -54,6 +54,7 @@ class DummyState:
 def test_extract_param_type():
     assert _extract_param_type("sensor.oig_123_p_max_feed_grid") == "limit"
     assert _extract_param_type("sensor.oig_123_box_prms_mode") == "mode"
+    assert _extract_param_type("sensor.oig_123_boiler_manual_mode") == "mode"
     assert _extract_param_type("sensor.oig_123_formating_mode") == "level"
     assert _extract_param_type("sensor.oig_123_prms_to_grid") == "mode"
     assert _extract_param_type("sensor.oig_123_other") == "value"
@@ -90,6 +91,29 @@ def test_shield_sensor_state_unavailable():
     assert sensor.state == "nedostupný"
 
 
+def test_shield_sensor_should_poll_and_metadata(monkeypatch):
+    coordinator = DummyCoordinator()
+    sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
+    sensor.hass = DummyHass(DummyShield())
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.shield_sensor._get_sensor_definition",
+        lambda _t: {
+            "name": "Shield Status",
+            "name_cs": "Stav stitu",
+            "icon": "mdi:shield-check",
+            "unit_of_measurement": "units",
+            "device_class": "problem",
+        },
+    )
+
+    assert sensor.should_poll is False
+    assert sensor.name == "Stav stitu"
+    assert sensor.icon == "mdi:shield-check"
+    assert sensor.unit_of_measurement == "units"
+    assert sensor.device_class == "problem"
+
+
 def test_shield_sensor_state_mode_reaction_time():
     shield = DummyShield()
     shield.mode_tracker = SimpleNamespace(
@@ -104,6 +128,16 @@ def test_shield_sensor_state_mode_reaction_time():
     sensor.hass = hass
 
     assert sensor.state == 1.5
+
+
+def test_shield_sensor_state_mode_reaction_time_empty_stats():
+    shield = DummyShield()
+    shield.mode_tracker = SimpleNamespace(get_statistics=lambda: {})
+    hass = DummyHass(shield)
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "mode_reaction_time")
+    sensor.hass = hass
+
+    assert sensor.state is None
 
 
 def test_shield_sensor_state_activity_and_idle():
@@ -135,6 +169,34 @@ def test_shield_sensor_state_activity_fallback():
     sensor.hass = hass
 
     assert sensor.state == "set_box_mode"
+
+
+def test_shield_sensor_state_unknown():
+    shield = DummyShield()
+    hass = DummyHass(shield)
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "some_other_state")
+    sensor.hass = hass
+
+    assert sensor.state == "neznámý"
+
+
+def test_shield_sensor_state_error_branch(monkeypatch):
+    shield = DummyShield()
+    hass = DummyHass(shield)
+    coordinator = DummyCoordinator()
+    sensor = OigCloudShieldSensor(coordinator, "service_shield_activity")
+    sensor.hass = hass
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.shield_sensor.translate_shield_state",
+        lambda value: f"translated-{value}",
+    )
+
+    def _boom():
+        raise RuntimeError("boom")
+
+    sensor.hass.data = SimpleNamespace()
+    assert sensor.state == "translated-error"
 
 
 def test_shield_sensor_state_changed_callback():
@@ -226,6 +288,86 @@ def test_shield_sensor_extra_state_attributes():
     assert attrs["queued_requests"][0]["trace_id"] == "abc"
 
 
+def test_shield_sensor_extra_state_attributes_grid_limit_running():
+    now = datetime.now()
+    shield = DummyShield()
+    shield.running = "oig_cloud.set_grid_limit"
+    shield.pending = {
+        "oig_cloud.set_grid_limit": {
+            "entities": {"sensor.oig_123_prm1_p_max_feed_grid": "3"},
+            "original_states": {"sensor.oig_123_prm1_p_max_feed_grid": "2"},
+            "called_at": now - timedelta(seconds=5),
+        }
+    }
+    shield.queue = []
+    hass = DummyHass(shield)
+    hass.states = DummyStates({"sensor.oig_123_prm1_p_max_feed_grid": DummyState("2")})
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_activity")
+    sensor.hass = hass
+
+    attrs = sensor.extra_state_attributes
+    changes = attrs["running_requests"][0]["changes"][0]
+    assert "prm1_p_max_feed_grid" in changes
+
+
+def test_shield_sensor_extra_state_attributes_legacy_queue_meta():
+    now = datetime.now()
+    shield = DummyShield()
+    shield.queue = [
+        (
+            "oig_cloud.set_box_mode",
+            {"mode": "Home 2"},
+            {"sensor.oig_123_box_prms_mode": "Home 2"},
+        )
+    ]
+    shield.queue_metadata = {("oig_cloud.set_box_mode", str({"mode": "Home 2"})): "trace"}
+    hass = DummyHass(shield)
+    hass.states = DummyStates({"sensor.oig_123_box_prms_mode": DummyState("Home 1")})
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_activity")
+    sensor.hass = hass
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["queued_requests"][0]["trace_id"] == "trace"
+    assert attrs["queued_requests"][0]["queued_at"] is None
+
+
+def test_shield_sensor_extra_state_attributes_queue_no_targets():
+    shield = DummyShield()
+    shield.queue = [("oig_cloud.formating_mode", {"mode": "fast"}, {})]
+    hass = DummyHass(shield)
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_activity")
+    sensor.hass = hass
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["queued_requests"][0]["description"].startswith("Změna")
+
+
+def test_shield_sensor_extra_state_attributes_mode_reaction():
+    shield = DummyShield()
+    shield.queue = []
+    shield.pending = {}
+    shield.mode_tracker = SimpleNamespace(
+        get_statistics=lambda: {"a": {"samples": 2}, "b": {"samples": 3}}
+    )
+    hass = DummyHass(shield)
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "mode_reaction_time")
+    sensor.hass = hass
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["total_samples"] == 5
+    assert attrs["tracked_scenarios"] == 2
+
+
+def test_shield_sensor_extra_state_attributes_error():
+    hass = DummyHass(DummyShield())
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_activity")
+    sensor.hass = hass
+    sensor.hass.data = {}
+
+    attrs = sensor.extra_state_attributes
+    assert "error" in attrs
+
+
 def test_shield_sensor_unique_id_device_info_available():
     coordinator = SimpleNamespace(forced_box_id="654321")
     sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
@@ -234,3 +376,41 @@ def test_shield_sensor_unique_id_device_info_available():
     assert "654321" in sensor.unique_id
     assert sensor.device_info["model"] == "Shield"
     assert sensor.available is True
+
+
+def test_shield_sensor_resolve_box_id_from_title(monkeypatch):
+    coordinator = SimpleNamespace(
+        forced_box_id="unknown", config_entry=SimpleNamespace(title="Box \\dddddd")
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.shield_sensor.resolve_box_id",
+        lambda *_a, **_k: "unknown",
+    )
+    sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
+    sensor.hass = DummyHass(DummyShield())
+    assert "dddddd" in sensor.unique_id
+
+
+def test_shield_sensor_resolve_box_id_regex_error(monkeypatch):
+    class BadEntry:
+        @property
+        def title(self):
+            raise RuntimeError("boom")
+
+    coordinator = SimpleNamespace(
+        forced_box_id="unknown", config_entry=BadEntry()
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.shield_sensor.resolve_box_id",
+        lambda *_a, **_k: "unknown",
+    )
+    sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
+    sensor.hass = DummyHass(DummyShield())
+
+    assert sensor.unique_id.endswith("_unknown_service_shield_status_v2")
+
+
+def test_shield_sensor_available_false():
+    sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_status")
+    sensor.hass = DummyHass(None)
+    assert sensor.available is False

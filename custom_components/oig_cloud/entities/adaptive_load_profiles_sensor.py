@@ -500,9 +500,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             day_map[day][hour] = float(value)
             all_values.append(float(value))
 
-        if not all_values:
-            return {}, {}, {}
-
         hour_medians: Dict[int, float] = {}
         for hour in range(24):
             values = [v.get(hour) for v in day_map.values() if hour in v]
@@ -527,8 +524,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 continue
 
             available = [v for v in day_values if v is not None]
-            if not available:
-                continue
 
             day_avg = float(np.mean(available)) if available else global_median
             filled, interpolated = self._fill_missing_hours(
@@ -644,9 +639,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             day_map[day][hour] = float(value)
             all_values.append(float(value))
 
-        if not all_values:
-            return None
-
         global_median = float(np.median(all_values)) if all_values else 0.0
         match: List[float] = []
 
@@ -662,8 +654,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return None
 
         y_available = [v for v in yesterday_values if v is not None]
-        if not y_available:
-            return None
         y_avg = float(np.mean(y_available))
         y_filled, _ = self._fill_missing_values(
             yesterday_values, hour_medians, y_avg, global_median, hour_offset=0
@@ -680,9 +670,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         today_values: List[Optional[float]] = [
             today_hours.get(h) for h in range(current_hour)
         ]
-        if not today_values:
-            return match
-
         missing_t = sum(1 for v in today_values if v is None)
         if missing_t > MAX_MISSING_HOURS_PER_DAY:
             return None

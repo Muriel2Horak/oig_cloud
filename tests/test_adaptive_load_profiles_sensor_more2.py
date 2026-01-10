@@ -107,6 +107,392 @@ def test_get_energy_unit_factor_no_hass(monkeypatch):
     assert sensor._get_energy_unit_factor("sensor.test") == 0.001
 
 
+def test_generate_profile_name_spikes():
+    data = [0.1] * 24
+    for i in range(6, 12):
+        data[i] = 2.0
+    name = module._generate_profile_name(data, "spring", False)
+    assert "ranní špička" in name
+
+    data = [0.1] * 24
+    for i in range(12, 18):
+        data[i] = 2.0
+    name = module._generate_profile_name(data, "spring", True)
+    assert "polední špička" in name
+
+
+def test_build_daily_profiles_missing_and_empty(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    profiles, _, _ = sensor._build_daily_profiles([])
+    assert profiles == {}
+
+    base = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    series = [(base + timedelta(hours=i), 1.0) for i in range(4)]
+    profiles, _, _ = sensor._build_daily_profiles(series)
+    assert profiles == {}
+
+
+def test_build_current_match_variants(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    now = datetime(2025, 1, 2, 0, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+
+    yesterday = now.date() - timedelta(days=1)
+    series = [
+        (
+            datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=i),
+            1.0,
+        )
+        for i in range(24)
+    ]
+    hour_medians = {i: 1.0 for i in range(24)}
+    assert sensor._build_current_match(series, hour_medians)
+
+    now = datetime(2025, 1, 2, 10, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+    assert sensor._build_current_match(series, hour_medians) is None
+
+
+def test_apply_floor_to_prediction():
+    sensor = _make_sensor(__import__("pytest").MonkeyPatch())
+    predicted, applied = sensor._apply_floor_to_prediction([], 0, {}, [])
+    assert predicted == []
+    assert applied == 0
+
+    predicted = [0.1, 0.1]
+    floor, applied = sensor._apply_floor_to_prediction(
+        predicted, 0, {0: 1.0, 1: 1.0}, [1.0] * 24
+    )
+    assert applied == 2
+    assert floor[0] >= 0.3
+
+
+def test_calculate_profile_similarity_mismatch_and_zero_total():
+    sensor = _make_sensor(__import__("pytest").MonkeyPatch())
+    assert sensor._calculate_profile_similarity([1.0], [1.0, 2.0]) == 0.0
+
+    score = sensor._calculate_profile_similarity([1.0, 1.0], [0.0, 0.0])
+    assert score >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_find_best_matching_profile_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sensor, "_load_hourly_series", _boom)
+    result = await sensor._find_best_matching_profile_for_sensor(
+        "sensor.test", value_field="sum"
+    )
+    assert result is None
+    assert sensor._last_profile_reason == "error"
+
+
+def test_prediction_accessors(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    assert sensor.get_current_prediction() is None
+    assert sensor.device_info["identifiers"]
+
+
+@pytest.mark.asyncio
+async def test_profiling_loop_runs_once(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor.hass = SimpleNamespace(async_create_task=lambda *_a, **_k: None)
+
+    calls = {"sleep": 0, "created": 0}
+
+    async def _sleep(_seconds):
+        calls["sleep"] += 1
+        if calls["sleep"] == 3:
+            raise asyncio.CancelledError()
+
+    async def _create():
+        calls["created"] += 1
+
+    monkeypatch.setattr(module.asyncio, "sleep", _sleep)
+    sensor._create_and_update_profile = _create
+
+    with pytest.raises(asyncio.CancelledError):
+        await sensor._profiling_loop()
+
+    assert calls["created"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_profiling_loop_fatal_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor.hass = SimpleNamespace(async_create_task=lambda *_a, **_k: None)
+
+    async def _sleep(_seconds):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(module.asyncio, "sleep", _sleep)
+    await sensor._profiling_loop()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_next_profile_window_after_midnight(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    now = datetime(2025, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+    calls = {}
+
+    async def _sleep(seconds):
+        calls["seconds"] = seconds
+
+    monkeypatch.setattr(module.asyncio, "sleep", _sleep)
+    await sensor._wait_for_next_profile_window()
+    assert calls["seconds"] > 0
+
+
+@pytest.mark.asyncio
+async def test_load_hourly_series_no_hass(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = None
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="sum",
+    )
+    assert series == []
+
+
+@pytest.mark.asyncio
+async def test_load_hourly_series_empty_rows(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return []
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="sum",
+    )
+    assert series == []
+
+
+@pytest.mark.asyncio
+async def test_load_hourly_series_value_filters(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return [
+                (None, None, None, 1),
+                (None, None, None, 2),
+                (1.0, 2.0, None, 3),
+            ]
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="mean",
+    )
+    assert series == [(datetime(1970, 1, 1, 0, 0, 3, tzinfo=timezone.utc), 0.002)]
+
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="sum",
+    )
+    assert series == [(datetime(1970, 1, 1, 0, 0, 3, tzinfo=timezone.utc), 0.001)]
+
+
+@pytest.mark.asyncio
+async def test_load_hourly_series_error(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="sum",
+    )
+    assert series == []
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_no_hass(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = None
+    assert await sensor._get_earliest_statistics_start("sensor.test") is None
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_no_data(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return None
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    assert await sensor._get_earliest_statistics_start("sensor.test") is None
+
+
+def test_build_72h_profiles_gaps_and_length(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    daily_profiles = {
+        datetime(2025, 1, 1).date(): [1.0] * 24,
+        datetime(2025, 1, 3).date(): [1.0] * 24,
+        datetime(2025, 1, 4).date(): [1.0] * 24,
+    }
+    assert sensor._build_72h_profiles(daily_profiles) == []
+
+    daily_profiles = {
+        datetime(2025, 1, 1).date(): [1.0] * 23,
+        datetime(2025, 1, 2).date(): [1.0] * 24,
+        datetime(2025, 1, 3).date(): [1.0] * 24,
+    }
+    assert sensor._build_72h_profiles(daily_profiles) == []
+
+
+def test_build_current_match_edge_cases(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    assert sensor._build_current_match([], {}) is None
+
+    now = datetime(2025, 1, 2, 10, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+    yesterday = now.date() - timedelta(days=1)
+    series = [
+        (
+            datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=i),
+            1.0,
+        )
+        for i in range(24)
+    ]
+    series.append((now, 1.0))
+    hour_medians = {i: 1.0 for i in range(24)}
+    assert sensor._build_current_match(series, hour_medians) is None
+
+
+@pytest.mark.asyncio
+async def test_load_hourly_series_filters_out_of_range(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return [
+                (1.0, None, None, 1),
+                (None, None, None, 2),
+                (-1.0, None, None, 3),
+                (20001.0, None, None, 4),
+                (1.0, None, None, 5),
+            ]
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+
+    series = await sensor._load_hourly_series(
+        "sensor.test",
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, tzinfo=timezone.utc),
+        value_field="sum",
+    )
+    assert series == [
+        (datetime(1970, 1, 1, 0, 0, 1, tzinfo=timezone.utc), 0.001),
+        (datetime(1970, 1, 1, 0, 0, 5, tzinfo=timezone.utc), 0.001),
+    ]
+
+
+def test_build_current_match_missing_today_values(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    class FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 2, 2, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        FakeDT.now,
+    )
+
+    series = [
+        (datetime(2025, 1, 1, 0, tzinfo=timezone.utc), 1.0),
+        (datetime(2025, 1, 1, 1, tzinfo=timezone.utc), 1.2),
+        (datetime(2025, 1, 2, 0, tzinfo=timezone.utc), 0.8),
+    ]
+    assert sensor._build_current_match(series, {}) is None
+
+
+def test_build_current_match_missing_today_hours(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    class FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 2, 10, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        FakeDT.now,
+    )
+
+    series = [
+        (datetime(2025, 1, 1, 0, tzinfo=timezone.utc), 1.0),
+        (datetime(2025, 1, 1, 1, tzinfo=timezone.utc), 1.2),
+    ]
+    assert sensor._build_current_match(series, {}) is None
+
+
+def test_build_current_match_empty_today_values(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    class FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 2, 3, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.adaptive_load_profiles_sensor.dt_util.now",
+        FakeDT.now,
+    )
+
+    series = [
+        *[
+            (datetime(2025, 1, 1, hour, tzinfo=timezone.utc), 1.0)
+            for hour in range(24)
+        ],
+        (datetime(2025, 1, 2, 3, tzinfo=timezone.utc), 0.9),
+    ]
+    assert sensor._build_current_match(series, {}) is None
+
+
 @pytest.mark.asyncio
 async def test_load_hourly_series_no_recorder(monkeypatch):
     sensor = _make_sensor(monkeypatch)
