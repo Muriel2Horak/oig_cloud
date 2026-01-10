@@ -225,6 +225,8 @@ docs/**
 
 # Docker volumes
 config/
+!custom_components/oig_cloud/config/
+!custom_components/oig_cloud/config/**
 
 # Legacy config flow (backup)
 custom_components/oig_cloud/config_flow_legacy.py
