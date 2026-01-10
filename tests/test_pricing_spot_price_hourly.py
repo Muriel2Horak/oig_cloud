@@ -535,6 +535,10 @@ def test_spot_price_shared_helpers(monkeypatch):
     class DummyCoordinator:
         forced_box_id = "777"
 
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        lambda _coord: "777",
+    )
     assert shared_module._resolve_box_id_from_coordinator(DummyCoordinator()) == "777"
 
     def boom(_coord):

@@ -187,7 +187,7 @@ async def test_calculate_interval_statistics_day_type_skip(monkeypatch, caplog):
         last_updated=datetime(2025, 1, 6, 7, tzinfo=timezone.utc), state="100"
     )
     async def _async_job(*_a, **_k):
-        return {"sensor.oig_unknown_actual_aco_p": [state]}
+        return {f"sensor.oig_{sensor._data_key}_actual_aco_p": [state]}
 
     sensor.hass = SimpleNamespace(async_add_executor_job=_async_job)
     assert await sensor._calculate_interval_statistics_from_history() is None
@@ -215,7 +215,7 @@ async def test_calculate_interval_statistics_outside_normal_interval(monkeypatch
         last_updated=datetime(2025, 1, 6, 9, tzinfo=timezone.utc), state="100"
     )
     async def _async_job(*_a, **_k):
-        return {"sensor.oig_unknown_actual_aco_p": [state]}
+        return {f"sensor.oig_{sensor._data_key}_actual_aco_p": [state]}
 
     sensor.hass = SimpleNamespace(async_add_executor_job=_async_job)
     assert await sensor._calculate_interval_statistics_from_history() is None
@@ -243,7 +243,7 @@ async def test_calculate_interval_statistics_outside_overnight_interval(monkeypa
         last_updated=datetime(2025, 1, 6, 12, tzinfo=timezone.utc), state="100"
     )
     async def _async_job(*_a, **_k):
-        return {"sensor.oig_unknown_actual_aco_p": [state]}
+        return {f"sensor.oig_{sensor._data_key}_actual_aco_p": [state]}
 
     sensor.hass = SimpleNamespace(async_add_executor_job=_async_job)
     assert await sensor._calculate_interval_statistics_from_history() is None

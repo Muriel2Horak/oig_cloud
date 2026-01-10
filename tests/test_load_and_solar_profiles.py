@@ -47,7 +47,11 @@ class DummySensor:
         return None
 
 
-def test_get_load_avg_sensors():
+def test_get_load_avg_sensors(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensors.SENSOR_TYPES_STATISTICS.SENSOR_TYPES_STATISTICS",
+        {"load_avg_6_8_weekday": {"time_range": (6, 8), "day_type": "weekday"}},
+    )
     entity_id = "sensor.oig_123_load_avg_6_8_weekday"
     hass = DummyHass({entity_id: DummyState("150")})
     sensor = DummySensor(hass)

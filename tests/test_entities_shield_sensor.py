@@ -368,8 +368,12 @@ def test_shield_sensor_extra_state_attributes_error():
     assert "error" in attrs
 
 
-def test_shield_sensor_unique_id_device_info_available():
+def test_shield_sensor_unique_id_device_info_available(monkeypatch):
     coordinator = SimpleNamespace(forced_box_id="654321")
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        lambda *_a, **_k: "654321",
+    )
     sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
     sensor.hass = DummyHass(DummyShield())
 
@@ -383,7 +387,7 @@ def test_shield_sensor_resolve_box_id_from_title(monkeypatch):
         forced_box_id="unknown", config_entry=SimpleNamespace(title="Box \\dddddd")
     )
     monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.shield_sensor.resolve_box_id",
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
         lambda *_a, **_k: "unknown",
     )
     sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
@@ -401,7 +405,7 @@ def test_shield_sensor_resolve_box_id_regex_error(monkeypatch):
         forced_box_id="unknown", config_entry=BadEntry()
     )
     monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.shield_sensor.resolve_box_id",
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
         lambda *_a, **_k: "unknown",
     )
     sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
