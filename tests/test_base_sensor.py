@@ -20,7 +20,7 @@ def test_base_sensor_import_error_uses_empty_config(monkeypatch):
     original_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "custom_components.oig_cloud.sensor_types":
+        if name.endswith("sensor_types"):
             raise ImportError("blocked")
         return original_import(name, *args, **kwargs)
 

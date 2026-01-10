@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import types
 
 import pytest
@@ -70,6 +71,105 @@ def test_validate_tariff_hours(monkeypatch):
     ok, err = schema_module.validate_tariff_hours("6", "12")
     assert ok is True
     assert err is None
+
+
+def test_validate_tariff_hours_extra_branches(monkeypatch):
+    ok, err = schema_module.validate_tariff_hours("6", "25")
+    assert ok is False
+    assert err == "invalid_hour_range"
+
+    ok, err = schema_module.validate_tariff_hours("6", "x")
+    assert ok is False
+    assert err == "invalid_hour_format"
+
+    ok, err = schema_module.validate_tariff_hours("6", "")
+    assert ok is False
+    assert err == "tariff_gaps"
+
+    ok, err = schema_module.validate_tariff_hours("22", "6")
+    assert ok is True
+    assert err is None
+
+
+def test_validate_tariff_hours_sorted_index_error(monkeypatch):
+    class BadList(list):
+        def index(self, *_args, **_kwargs):
+            raise ValueError("boom")
+
+    def _sorted(values):
+        return BadList(values)
+
+    monkeypatch.setattr(builtins, "sorted", _sorted)
+    ok, err = schema_module.validate_tariff_hours("1", "2")
+    assert ok is False
+    assert err == "tariff_gaps"
+
+
+def test_validate_tariff_hours_break_on_overflow(monkeypatch):
+    class BadList(list):
+        def index(self, *_args, **_kwargs):
+            return 0
+
+        def __getitem__(self, _idx):
+            return 99
+
+    def _sorted(values):
+        if len(values) == 1:
+            return list(values)
+        return BadList(values)
+
+    monkeypatch.setattr(builtins, "sorted", _sorted)
+    ok, err = schema_module.validate_tariff_hours("1", "2")
+    assert ok is False
+    assert err == "overlapping_tariffs"
+
+
+def test_validate_tariff_hours_break_on_overflow_nt(monkeypatch):
+    call_count = {"n": 0}
+
+    class BadList(list):
+        def index(self, *_args, **_kwargs):
+            return 0
+
+        def __getitem__(self, _idx):
+            if call_count["n"] == 1:
+                return 1
+            return 99
+
+    def _sorted(values):
+        if len(values) == 1:
+            return list(values)
+        call_count["n"] += 1
+        return BadList(values)
+
+    monkeypatch.setattr(builtins, "sorted", _sorted)
+    ok, err = schema_module.validate_tariff_hours("1", "2")
+    assert ok is False
+    assert err == "overlapping_tariffs"
+
+
+def test_validate_tariff_hours_overlap_forced(monkeypatch):
+    call_count = {"n": 0}
+
+    class BadList(list):
+        def index(self, *_args, **_kwargs):
+            return 0
+
+        def __getitem__(self, _idx):
+            if call_count["n"] == 1:
+                return 10
+            return 0
+
+    def _sorted(values):
+        if len(values) == 1:
+            return list(values)
+        call_count["n"] += 1
+        return BadList(values)
+
+    monkeypatch.setattr(builtins, "sorted", _sorted)
+    ok, err = schema_module.validate_tariff_hours("5", "5")
+    assert ok is False
+    assert err == "overlapping_tariffs"
 
 
 @pytest.mark.asyncio

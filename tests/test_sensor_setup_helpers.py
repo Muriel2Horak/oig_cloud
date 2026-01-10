@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import sys
 from types import SimpleNamespace
 
 from custom_components.oig_cloud.entities import sensor_setup as module
@@ -86,6 +87,36 @@ def test_resolve_box_id_hass_state_and_registry(monkeypatch):
     assert module.resolve_box_id(coordinator) == "888888"
 
 
+def test_resolve_box_id_hass_state_errors(monkeypatch):
+    class BadStates:
+        def get(self, _entity_id):
+            raise RuntimeError("boom")
+
+    hass = SimpleNamespace(states=BadStates())
+    coordinator = SimpleNamespace(hass=hass)
+    assert module.resolve_box_id(coordinator) == "unknown"
+
+    def _bad_registry(_hass):
+        raise RuntimeError("boom")
+
+    hass = SimpleNamespace(states=DummyStates(None))
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        _bad_registry,
+    )
+    coordinator = SimpleNamespace(hass=hass)
+    assert module.resolve_box_id(coordinator) == "unknown"
+
+
+def test_resolve_box_id_outer_exception(monkeypatch):
+    class BadCoordinator:
+        @property
+        def data(self):
+            raise RuntimeError("boom")
+
+    assert module.resolve_box_id(BadCoordinator()) == "unknown"
+
+
 def test_get_sensor_definition_import_error(monkeypatch):
     original_import = builtins.__import__
 
@@ -94,5 +125,25 @@ def test_get_sensor_definition_import_error(monkeypatch):
             raise ImportError("blocked")
         return original_import(name, *args, **kwargs)
 
+    monkeypatch.setattr(sys, "modules", dict(sys.modules))
+    sys.modules.pop("custom_components.oig_cloud.sensor_types", None)
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert module.get_sensor_definition("missing")["sensor_type_category"] == "unknown"
+
+
+def test_get_sensor_definition_forced_import_error(monkeypatch):
+    def _always_fail(_name, *_args, **_kwargs):
+        raise ImportError("blocked")
+
+    monkeypatch.setattr(builtins, "__import__", _always_fail)
+    assert module.get_sensor_definition("missing")["sensor_type_category"] == "unknown"
+
+
+def test_get_sensor_definition_sets_unit_from_unit_of_measurement(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "custom_components.oig_cloud.sensor_types",
+        SimpleNamespace(SENSOR_TYPES={"sensor_x": {"name": "X", "unit_of_measurement": "kWh"}}),
+    )
+    definition = module.get_sensor_definition("sensor_x")
+    assert definition["unit"] == "kWh"

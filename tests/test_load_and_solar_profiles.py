@@ -50,7 +50,10 @@ class DummySensor:
 def test_get_load_avg_sensors(monkeypatch):
     monkeypatch.setattr(
         "custom_components.oig_cloud.sensors.SENSOR_TYPES_STATISTICS.SENSOR_TYPES_STATISTICS",
-        {"load_avg_6_8_weekday": {"time_range": (6, 8), "day_type": "weekday"}},
+        {
+            "load_avg_6_8_weekday": {"time_range": (6, 8), "day_type": "weekday"},
+            "other_sensor": {"time_range": (1, 2), "day_type": "weekday"},
+        },
     )
     entity_id = "sensor.oig_123_load_avg_6_8_weekday"
     hass = DummyHass({entity_id: DummyState("150")})
@@ -59,6 +62,32 @@ def test_get_load_avg_sensors(monkeypatch):
     result = load_profiles.get_load_avg_sensors(sensor)
     assert entity_id in result
     assert result[entity_id]["value"] == 150.0
+
+
+def test_get_load_avg_sensors_invalid_and_missing(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensors.SENSOR_TYPES_STATISTICS.SENSOR_TYPES_STATISTICS",
+        {
+            "load_avg_6_8_weekday": {"time_range": (6, 8), "day_type": "weekday"},
+            "other_sensor": {"time_range": (1, 2), "day_type": "weekday"},
+            "load_avg_1_2": {"time_range": (1, 2)},
+        },
+    )
+    sensor = DummySensor(None)
+    assert load_profiles.get_load_avg_sensors(sensor) == {}
+
+    entity_id = "sensor.oig_123_load_avg_6_8_weekday"
+    hass = DummyHass({entity_id: DummyState("unknown")})
+    sensor = DummySensor(hass)
+    assert load_profiles.get_load_avg_sensors(sensor) == {}
+
+    hass = DummyHass({entity_id: DummyState("bad")})
+    sensor = DummySensor(hass)
+    assert load_profiles.get_load_avg_sensors(sensor) == {}
+
+    hass = DummyHass({})
+    sensor = DummySensor(hass)
+    assert load_profiles.get_load_avg_sensors(sensor) == {}
 
 
 def test_get_solar_forecast_from_attributes():

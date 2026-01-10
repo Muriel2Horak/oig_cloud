@@ -103,3 +103,44 @@ def test_seed_from_existing_local_states(monkeypatch):
         "binary_sensor.oig_local_123_b",
         "sensor.oig_local_123_a",
     ]
+
+
+def test_set_cloud_payload_non_dict(monkeypatch):
+    monkeypatch.setattr(store_module, "LocalUpdateApplier", DummyApplier)
+    hass = DummyHass(DummyStates())
+    store = store_module.TelemetryStore(hass, box_id="123")
+    store.set_cloud_payload("bad")
+    assert store._updated_at is None
+
+
+def test_apply_local_events_handles_error(monkeypatch):
+    class BadApplier(DummyApplier):
+        def apply_state(self, *_args, **_kwargs):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(store_module, "LocalUpdateApplier", BadApplier)
+    states = DummyStates({"sensor.oig_local_123_a": DummyState("sensor.oig_local_123_a", "on")})
+    hass = DummyHass(states)
+    store = store_module.TelemetryStore(hass, box_id="123")
+    assert store.apply_local_events(["sensor.oig_local_123_a"]) is False
+
+
+def test_apply_local_events_skips_missing_state(monkeypatch):
+    monkeypatch.setattr(store_module, "LocalUpdateApplier", DummyApplier)
+    hass = DummyHass(DummyStates({}))
+    store = store_module.TelemetryStore(hass, box_id="123")
+    assert store.apply_local_events(["sensor.oig_local_123_a"]) is False
+
+
+def test_get_snapshot_sets_updated_at(monkeypatch):
+    monkeypatch.setattr(store_module, "LocalUpdateApplier", DummyApplier)
+    hass = DummyHass(DummyStates())
+    store = store_module.TelemetryStore(hass, box_id="123")
+    snapshot = store.get_snapshot()
+    assert snapshot.updated_at is not None
+
+
+def test_utcnow_fallback(monkeypatch):
+    monkeypatch.setattr(store_module.dt_util, "utcnow", None)
+    now = store_module._utcnow()
+    assert now.tzinfo is not None
