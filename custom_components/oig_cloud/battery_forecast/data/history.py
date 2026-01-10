@@ -399,10 +399,15 @@ async def update_actual_from_history(sensor: Any) -> None:
         _LOGGER.debug("No plan in Storage for %s, skipping history update", today_str)
         return
 
+    locked = False
+    if sensor._daily_plan_state and sensor._daily_plan_state.get("date") == today_str:
+        locked = bool(sensor._daily_plan_state.get("locked", False))
+
     plan_data = {
         "date": today_str,
         "plan": plan_storage.get("intervals", []),
         "actual": [],
+        "locked": locked,
     }
 
     if (

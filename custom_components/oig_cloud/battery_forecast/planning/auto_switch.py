@@ -27,6 +27,29 @@ from ..types import (
 from ..utils_common import parse_timeline_timestamp
 
 _LOGGER = logging.getLogger(__name__)
+MIN_AUTO_SWITCH_INTERVAL_MINUTES = 30
+
+
+def _get_last_mode_change_time(sensor: Any) -> Optional[datetime]:
+    if not sensor._hass:  # pylint: disable=protected-access
+        return None
+    if not hasattr(sensor._hass, "states"):  # pylint: disable=protected-access
+        return None
+    entity_id = (
+        f"sensor.oig_{sensor._box_id}_box_prms_mode"  # pylint: disable=protected-access
+    )
+    state = sensor._hass.states.get(entity_id)  # pylint: disable=protected-access
+    if not state:
+        return None
+    try:
+        dt = state.last_changed or state.last_updated
+        if not isinstance(dt, datetime):
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=dt_util.UTC)
+        return dt_util.as_local(dt)
+    except Exception:
+        return None
 
 
 def auto_mode_switch_enabled(sensor: Any) -> bool:
@@ -342,6 +365,16 @@ async def ensure_current_mode(sensor: Any, desired_mode: str, reason: str) -> No
             "[AutoModeSwitch] Mode already %s (%s), no action", desired_mode, reason
         )
         return
+    last_changed = _get_last_mode_change_time(sensor)
+    if last_changed:
+        now = dt_util.now()
+        if (now - last_changed) < timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES):
+            _LOGGER.info(
+                "[AutoModeSwitch] Skipping mode change to %s (%s) - min interval not met",
+                desired_mode,
+                reason,
+            )
+            return
     await execute_mode_change(sensor, desired_mode, reason)
 
 
@@ -365,6 +398,12 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
         return
 
     now = dt_util.now()
+    last_mode_change = _get_last_mode_change_time(sensor)
+    if last_mode_change:
+        _LOGGER.debug(
+            "[AutoModeSwitch] Last mode change at %s",
+            last_mode_change.isoformat(),
+        )
     if sensor._auto_switch_ready_at:  # pylint: disable=protected-access
         if now < sensor._auto_switch_ready_at:  # pylint: disable=protected-access
             wait_seconds = (
@@ -395,6 +434,7 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
     current_mode: Optional[str] = None
     last_mode: Optional[str] = None
     scheduled_events: List[Tuple[datetime, str, Optional[str]]] = []
+    last_switch_time = last_mode_change or now
 
     for interval in timeline:
         timestamp = interval.get("time") or interval.get("timestamp")
@@ -413,11 +453,33 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
             last_mode = mode_label
             continue
 
+        if (
+            last_mode_change
+            and isinstance(start_dt, datetime)
+            and start_dt
+            < (
+                last_mode_change
+                + timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES)
+            )
+        ):
+            current_mode = mode_label
+            last_mode = mode_label
+            continue
+
         if mode_label == last_mode:
             continue
 
         previous_mode = last_mode
+        try:
+            if (start_dt - last_switch_time) < timedelta(
+                minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES
+            ):
+                continue
+        except Exception:
+            pass
+
         last_mode = mode_label
+        last_switch_time = start_dt
         scheduled_events.append((start_dt, mode_label, previous_mode))
 
     if current_mode:

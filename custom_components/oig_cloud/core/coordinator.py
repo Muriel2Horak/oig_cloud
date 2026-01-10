@@ -742,7 +742,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             # Aktualizuj battery forecast pokud je povolen
             if self.config_entry and self.config_entry.options.get(
-                "enable_battery_prediction", True
+                "enable_battery_prediction", False
             ):
                 # Do not block coordinator update/startup; run in background
                 if (

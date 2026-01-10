@@ -119,4 +119,30 @@ def test_optimize_reason_branches(monkeypatch):
     assert reasons[2] == "balancing_charge"
     assert reasons[3] == "negative"
     assert reasons[4] == "price_band_hold"
-    assert reasons[5] == "default_discharge"
+    assert reasons[5] in ("default_discharge", "smoothing_merged")
+
+
+def test_optimize_applies_smoothing(monkeypatch):
+    config = HybridConfig(min_mode_duration_intervals=2)
+    sim_config = SimulatorConfig()
+    strategy = HybridStrategy(config, sim_config)
+    strategy.simulator = DummySimulator()
+
+    called = {"count": 0}
+
+    def _smooth(self, decisions, **_kwargs):
+        called["count"] += 1
+        return decisions
+
+    monkeypatch.setattr(HybridStrategy, "_apply_smoothing", _smooth, raising=False)
+
+    strategy.optimize(
+        initial_battery_kwh=5.0,
+        spot_prices=[{"price": 1.0}] * 4,
+        solar_forecast=[0.0] * 4,
+        consumption_forecast=[0.0] * 4,
+        balancing_plan=None,
+        export_prices=[0.0] * 4,
+    )
+
+    assert called["count"] == 1

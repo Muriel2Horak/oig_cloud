@@ -199,6 +199,29 @@ async def test_ensure_auth_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ensure_auth_success_updates_session(monkeypatch):
+    api = DummyApi()
+    manager = OigCloudSessionManager(api)
+    assert manager._last_auth_time is None
+
+    await manager._ensure_auth()
+
+    assert manager._last_auth_time is not None
+    api.authenticate.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_auth_skips_when_session_valid(monkeypatch):
+    api = DummyApi()
+    manager = OigCloudSessionManager(api)
+    manager._last_auth_time = datetime.now()
+
+    await manager._ensure_auth()
+
+    api.authenticate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_wrapper_methods_cover_args(monkeypatch):
     api = DummyApi()
     manager = OigCloudSessionManager(api)

@@ -324,8 +324,14 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
                 dc_ac_efficiency=efficiency,
                 ac_dc_efficiency=efficiency,
             )
+            disable_planning_min_guard = bool(
+                opts.get("disable_planning_min_guard", False)
+            )
+            planning_min_percent = float(opts.get("min_capacity_percent", 33.0))
+            if disable_planning_min_guard:
+                planning_min_percent = 0.0
             hybrid_config = HybridConfig(
-                planning_min_percent=float(opts.get("min_capacity_percent", 33.0)),
+                planning_min_percent=planning_min_percent,
                 target_percent=float(opts.get("target_capacity_percent", 80.0)),
                 max_ups_price_czk=max_ups_price_czk,
             )

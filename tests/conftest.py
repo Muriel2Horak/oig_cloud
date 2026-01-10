@@ -106,6 +106,7 @@ def mock_api() -> Mock:
     api.set_ssr_rele_3 = AsyncMock(return_value=True)
     api.set_grid_delivery = AsyncMock(return_value=True)
     api.set_battery_formating = AsyncMock(return_value=True)
+    api.set_formating_mode = AsyncMock(return_value=True)
 
     api.box_id = "test_device_id"
     api.last_state = None

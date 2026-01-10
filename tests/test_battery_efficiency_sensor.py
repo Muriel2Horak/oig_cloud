@@ -111,6 +111,25 @@ async def test_daily_update_computes_partial_efficiency(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_daily_update_low_efficiency_hides_state(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    hass.states.async_set("sensor.oig_123_computed_batt_charge_energy_month", 10000)
+    hass.states.async_set(
+        "sensor.oig_123_computed_batt_discharge_energy_month", 5000
+    )
+    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 5.0)
+
+    sensor._battery_kwh_month_start = 5.0
+
+    await sensor._daily_update()
+
+    assert sensor._current_month_partial["efficiency"] == 50.0
+    assert sensor._attr_native_value is None
+
+
+@pytest.mark.asyncio
 async def test_monthly_calculation_sets_last_month(monkeypatch):
     hass = DummyHass()
     sensor = _make_sensor(monkeypatch, hass)

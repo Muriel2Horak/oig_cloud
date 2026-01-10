@@ -46,3 +46,18 @@ def test_get_tariff_for_datetime_variants():
 
     weekend = datetime(2025, 1, 4, 10, 0, 0)
     assert utils_common.get_tariff_for_datetime(weekend, config) == "NT"
+
+
+def test_get_tariff_for_datetime_midnight_split():
+    config = {
+        "dual_tariff_enabled": True,
+        "tariff_nt_start_weekday": "22,2",
+        "tariff_vt_start_weekday": "6",
+    }
+    late = datetime(2025, 1, 1, 23, 0, 0)
+    early = datetime(2025, 1, 2, 1, 0, 0)
+    morning = datetime(2025, 1, 2, 7, 0, 0)
+
+    assert utils_common.get_tariff_for_datetime(late, config) == "NT"
+    assert utils_common.get_tariff_for_datetime(early, config) == "NT"
+    assert utils_common.get_tariff_for_datetime(morning, config) == "VT"

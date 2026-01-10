@@ -23,6 +23,7 @@ _energy_stores: Dict[str, Store] = {}
 _energy_data_cache: Dict[str, Dict[str, float]] = {}
 _energy_last_update_cache: Dict[str, datetime] = {}
 _energy_cache_loaded: Dict[str, bool] = {}
+PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 
 _LANGS: Dict[str, Dict[str, str]] = {
     "on": {"en": "On", "cs": "Zapnuto"},
@@ -107,12 +108,64 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if not st:
             return None
         try:
+            dt = st.last_changed
+            if dt is None:
+                return None
+            return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+        except Exception:
+            return None
+
+    def _get_entity_timestamp(self, entity_id: str) -> Optional[datetime]:
+        if not getattr(self, "hass", None):
+            return None
+        st = self.hass.states.get(entity_id)
+        if not st or st.state in (None, "unknown", "unavailable", ""):
+            return None
+        if isinstance(st.state, str):
+            try:
+                parsed = dt_util.parse_datetime(st.state) or datetime.fromisoformat(
+                    st.state
+                )
+                if parsed is not None:
+                    return (
+                        dt_util.as_utc(parsed)
+                        if parsed.tzinfo
+                        else parsed.replace(tzinfo=dt_util.UTC)
+                    )
+            except Exception:
+                pass
+        try:
             dt = st.last_updated or st.last_changed
             if dt is None:
                 return None
             return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
         except Exception:
             return None
+
+    def _get_latest_oig_entity_update(self) -> Optional[datetime]:
+        if not getattr(self, "hass", None):
+            return None
+        box = self._box_id
+        if not (isinstance(box, str) and box.isdigit()):
+            return None
+        states_obj = getattr(self.hass, "states", None)
+        async_all = getattr(states_obj, "async_all", None)
+        if not callable(async_all):
+            return None
+        latest: Optional[datetime] = None
+        for domain in ("sensor", "binary_sensor"):
+            prefix = f"{domain}.oig_{box}_"
+            for st in async_all(domain):
+                if not getattr(st, "entity_id", "").startswith(prefix):
+                    continue
+                if st.state in (None, "unknown", "unavailable", ""):
+                    continue
+                dt = st.last_changed
+                if dt is None:
+                    continue
+                dt_utc = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                latest = dt_utc if latest is None else max(latest, dt_utc)
+        return latest
 
     def _get_energy_store(self) -> Optional[Store]:
         """Get or create the shared energy store for this box."""
@@ -317,12 +370,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             return None
 
         if self._sensor_type == "real_data_update":
-            dt = (
-                self._get_oig_last_updated("batt_batt_comp_p")
-                or self._get_oig_last_updated("batt_bat_c")
-                or self._get_oig_last_updated("device_lastcall")
-            )
-            return dt_util.as_local(dt).isoformat() if dt else None
+            candidates = [
+                self._get_oig_last_updated("batt_batt_comp_p"),
+                self._get_oig_last_updated("batt_bat_c"),
+                self._get_oig_last_updated("device_lastcall"),
+                self._get_entity_timestamp(PROXY_LAST_DATA_ENTITY_ID),
+                self._get_latest_oig_entity_update(),
+            ]
+            latest = max((dt for dt in candidates if dt), default=None)
+            return dt_util.as_local(latest).isoformat() if latest else None
 
         if self._sensor_type == "ac_in_aci_wtotal":
             wr = self._get_oig_number("ac_in_aci_wr")

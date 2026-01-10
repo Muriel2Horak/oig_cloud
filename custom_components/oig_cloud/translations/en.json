@@ -94,6 +94,7 @@
           "go_back": "⬅️ I want to go back (check + click Submit)",
           "home_charge_rate": "Charging power from grid (kW)",
           "min_capacity_percent": "Minimum battery capacity (%)",
+          "disable_planning_min_guard": "Disable planning minimum guard",
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "target_capacity_percent": "Target battery capacity (%)"
         },
@@ -108,6 +109,7 @@
           "go_back": "Check this box and press 'Submit' - you will go back one step",
           "home_charge_rate": "Maximum charging power from grid (typically 2-3 kW)",
           "min_capacity_percent": "If capacity drops below this value, charging starts",
+          "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "target_capacity_percent": "Optimal capacity to charge to"
         },
@@ -415,6 +417,7 @@
           "home_charge_rate": "Grid charging power (kW)",
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "min_capacity_percent": "Minimum battery capacity (%)",
+          "disable_planning_min_guard": "Disable planning minimum guard",
           "total_hours": "Prediction hours"
         },
         "data_description": {
@@ -424,6 +427,7 @@
           "home_charge_rate": "Maximum charging power of your system from grid",
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "min_capacity_percent": "Below this level, grid charging starts (recommended 15-25%)",
+          "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
           "total_hours": "How far into future to plan charging (recommended 24-48h)"
         },
         "description": "Currently {current_state}. Min. capacity: {min_capacity}%, Charging power: {charge_rate}W",
@@ -538,6 +542,7 @@
           "home_charge_rate": "Charging power from grid (kW)",
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "min_capacity_percent": "Minimum battery capacity (%)",
+          "disable_planning_min_guard": "Disable planning minimum guard",
           "target_capacity_percent": "Target battery capacity (%)"
         },
         "data_description": {
@@ -550,6 +555,7 @@
           "home_charge_rate": "Maximum charging power from grid (typically 2-3 kW)",
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "min_capacity_percent": "If capacity drops below this value, charging starts",
+          "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
           "target_capacity_percent": "Optimal capacity to charge to"
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",

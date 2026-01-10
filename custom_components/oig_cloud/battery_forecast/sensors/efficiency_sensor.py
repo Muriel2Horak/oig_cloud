@@ -304,8 +304,12 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         if self._efficiency_last_month is not None:
             self._attr_native_value = self._efficiency_last_month
         else:
-            # Fallback na current month pokud nemáme last month
-            self._attr_native_value = self._current_month_partial.get("efficiency")
+            # Fallback na current month pouze pokud je v realistickém pásmu.
+            current_eff = self._current_month_partial.get("efficiency")
+            if current_eff is not None and current_eff >= 70.0:
+                self._attr_native_value = current_eff
+            else:
+                self._attr_native_value = None
 
         self.async_write_ha_state()
 

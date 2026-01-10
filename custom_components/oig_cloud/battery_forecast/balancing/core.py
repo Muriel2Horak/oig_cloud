@@ -85,6 +85,8 @@ class BalancingManager:
         # Current state
         self._last_balancing_ts: Optional[datetime] = None
         self._active_plan: Optional[BalancingPlan] = None
+        self._last_plan_ts: Optional[datetime] = None
+        self._last_plan_mode: Optional[str] = None
         self._forecast_sensor = None  # Reference to forecast sensor for timeline access
         self._coordinator = None  # Reference to coordinator for refresh triggers
 
@@ -139,6 +141,13 @@ class BalancingManager:
         except Exception:
             return 30
 
+    def _is_plan_cooldown_active(self, cooldown_hours: float) -> bool:
+        """Return True if we recently created a balancing plan."""
+        if not self._last_plan_ts or cooldown_hours <= 0:
+            return False
+        delta = dt_util.now() - self._last_plan_ts
+        return delta.total_seconds() < (cooldown_hours * 3600.0)
+
     async def async_setup(self) -> None:
         """Load balancing state from storage - MUST be fast and safe."""
         _LOGGER.info("BalancingManager: async_setup() start")
@@ -167,6 +176,9 @@ class BalancingManager:
                     )
                 if data.get("active_plan"):
                     self._active_plan = BalancingPlan.from_dict(data["active_plan"])
+                if data.get("last_plan_ts"):
+                    self._last_plan_ts = datetime.fromisoformat(data["last_plan_ts"])
+                self._last_plan_mode = data.get("last_plan_mode")
 
             _LOGGER.info(
                 f"BalancingManager: State loaded. Last balancing: {self._last_balancing_ts}"
@@ -186,6 +198,10 @@ class BalancingManager:
                 self._last_balancing_ts.isoformat() if self._last_balancing_ts else None
             ),
             "active_plan": self._active_plan.to_dict() if self._active_plan else None,
+            "last_plan_ts": self._last_plan_ts.isoformat()
+            if self._last_plan_ts
+            else None,
+            "last_plan_mode": self._last_plan_mode,
         }
         await self._store.async_save(data)
 
@@ -306,6 +322,8 @@ class BalancingManager:
             if forced_plan:
                 _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
                 self._active_plan = forced_plan
+                self._last_plan_ts = dt_util.now()
+                self._last_plan_mode = forced_plan.mode.value
                 await self._save_state()
                 return forced_plan
             else:
@@ -328,6 +346,8 @@ class BalancingManager:
             _LOGGER.info("✓ Natural balancing detected in HYBRID forecast")
             self._active_plan = natural_plan
             self._last_balancing_ts = datetime.fromisoformat(natural_plan.holding_end)
+            self._last_plan_ts = dt_util.now()
+            self._last_plan_mode = natural_plan.mode.value
             await self._save_state()
             return natural_plan
 
@@ -340,6 +360,8 @@ class BalancingManager:
                     "Health priority over cost."
                 )
                 self._active_plan = forced_plan
+                self._last_plan_ts = dt_util.now()
+                self._last_plan_mode = forced_plan.mode.value
                 await self._save_state()
                 return forced_plan
 
@@ -349,12 +371,22 @@ class BalancingManager:
             _LOGGER.debug(
                 f"Checking Opportunistic balancing (hours={hours_since_last:.1f})..."
             )
-            opportunistic_plan = await self._create_opportunistic_plan()
+            if self._is_plan_cooldown_active(cooldown_hours):
+                _LOGGER.info(
+                    "Opportunistic balancing cooldown active (last_plan=%s, %sh)",
+                    self._last_plan_mode or "unknown",
+                    cooldown_hours,
+                )
+                opportunistic_plan = None
+            else:
+                opportunistic_plan = await self._create_opportunistic_plan()
             if opportunistic_plan:
                 _LOGGER.info(
                     f"⚡ Opportunistic balancing planned after {hours_since_last:.1f} hours"
                 )
                 self._active_plan = opportunistic_plan
+                self._last_plan_ts = dt_util.now()
+                self._last_plan_mode = opportunistic_plan.mode.value
                 await self._save_state()
                 return opportunistic_plan
 

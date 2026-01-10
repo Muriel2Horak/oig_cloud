@@ -94,6 +94,7 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
+          "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
@@ -108,6 +109,7 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
+          "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
@@ -416,6 +418,7 @@
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
+          "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
           "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
@@ -429,6 +432,7 @@
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
+          "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },

@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+MIN_RECOMMENDED_INTERVAL_MINUTES = 30
 
 
 class OigCloudPlannerRecommendedModeSensor(
@@ -340,6 +341,13 @@ class OigCloudPlannerRecommendedModeSensor(
                     )
                     if not start:
                         continue
+                    if (
+                        isinstance(current_start, datetime)
+                        and start
+                        < current_start
+                        + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
+                    ):
+                        continue
                     planned = item.get("planned") or {}
                     candidate = self._normalize_mode_label(
                         planned.get("mode_name"), planned.get("mode")
@@ -359,6 +367,13 @@ class OigCloudPlannerRecommendedModeSensor(
                         item.get("time") or item.get("timestamp")
                     )
                     if not start:
+                        continue
+                    if (
+                        isinstance(current_start, datetime)
+                        and start
+                        < current_start
+                        + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
+                    ):
                         continue
                     candidate = self._normalize_mode_label(
                         item.get("mode_name"), item.get("mode")

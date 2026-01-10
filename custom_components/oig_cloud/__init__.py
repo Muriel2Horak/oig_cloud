@@ -155,6 +155,8 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         # Planner parameters (percentages are of max capacity).
         "min_capacity_percent": 33.0,
         "target_capacity_percent": 80.0,
+        # Allow disabling planning-min guard if the user wants more aggressive optimization.
+        "disable_planning_min_guard": False,
         # Hard cap for UPS charging (CZK/kWh).
         "max_ups_price_czk": 10.0,
         # AC charging power (kW) used for UPS mode simulation.
@@ -1105,6 +1107,12 @@ async def async_setup_entry(
 
         # PHASE 3: Inicializace Balancing Manager (refactored - no physics)
         balancing_enabled = entry.options.get("balancing_enabled", True)
+        battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
+        if balancing_enabled and not battery_prediction_enabled:
+            _LOGGER.info(
+                "oig_cloud: balancing disabled because battery prediction is off"
+            )
+            balancing_enabled = False
         _LOGGER.info("oig_cloud: balancing_enabled=%s", balancing_enabled)
 
         balancing_manager = None

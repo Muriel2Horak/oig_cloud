@@ -309,13 +309,14 @@ async def build_day_timeline(  # noqa: C901
             and self._daily_plan_state.get("date") == date_str
         ):
             plan_intervals = self._daily_plan_state.get("plan", [])
+            plan_locked = bool(self._daily_plan_state.get("locked", False))
             if plan_intervals:
                 past_planned = plan_intervals
                 _LOGGER.info(
                     "Using in-memory daily plan for %s (baseline invalid)",
                     date_str,
                 )
-            else:
+            elif not plan_locked:
                 actual_intervals = self._daily_plan_state.get("actual", [])
                 for interval in actual_intervals:
                     if interval.get("time"):

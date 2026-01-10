@@ -316,6 +316,56 @@ class HybridStrategy:
             total_export += result.grid_export
             mode_counts[CBB_MODE_NAMES.get(mode, "HOME III")] += 1
 
+        # Apply smoothing to avoid rapid mode changes (recompute outputs after changes).
+        smoothed = self._apply_smoothing(
+            decisions=decisions,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            prices=prices,
+            export_prices=exports,
+        )
+
+        if smoothed is not decisions:
+            decisions = smoothed
+
+        # Recompute totals with smoothed modes to keep metrics consistent.
+        battery = initial_battery_kwh
+        total_cost = 0.0
+        total_import = 0.0
+        total_export = 0.0
+        mode_counts = {
+            "HOME I": 0,
+            "HOME II": 0,
+            "HOME III": 0,
+            "HOME UPS": 0,
+        }
+        for i, decision in enumerate(decisions):
+            solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
+            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
+            price = prices[i]
+            export_price = exports[i]
+
+            result = self.simulator.simulate(
+                battery_start=battery,
+                mode=decision.mode,
+                solar_kwh=solar,
+                load_kwh=load,
+                force_charge=(decision.mode == CBB_MODE_HOME_UPS)
+                and (decision.is_balancing or decision.is_holding),
+            )
+            cost = self.simulator.calculate_cost(result, price, export_price)
+
+            decision.battery_end = result.battery_end
+            decision.grid_import = result.grid_import
+            decision.grid_export = result.grid_export
+            decision.cost_czk = cost
+
+            battery = result.battery_end
+            total_cost += cost
+            total_import += result.grid_import
+            total_export += result.grid_export
+            mode_counts[CBB_MODE_NAMES.get(decision.mode, "HOME III")] += 1
+
         # Calculate baseline (HOME I only)
         baseline_cost = self._calculate_baseline_cost(
             initial_battery_kwh, solar_forecast, consumption_forecast, prices, exports

@@ -176,6 +176,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
         # Procházíme všechny config entries
         for entry_id in hass.data.get(DOMAIN, {}):
             entry_data = hass.data[DOMAIN][entry_id]
+            if not isinstance(entry_data, dict):
+                continue
 
             # Kontrolujeme, zda má coordinator a solar_forecast
             if "coordinator" in entry_data and hasattr(

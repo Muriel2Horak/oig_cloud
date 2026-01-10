@@ -255,6 +255,16 @@ def extend_ups_blocks_by_price_band(
         if 0 <= idx < n:
             ups_flags[idx] = True
 
+    lookahead = 4  # 1h window (4x 15min) to avoid holding through a price drop.
+
+    def _has_cheaper_ahead(current_idx: int) -> bool:
+        current_price = prices[current_idx]
+        limit = min(n, current_idx + lookahead + 1)
+        for future_idx in range(current_idx + 1, limit):
+            if prices[future_idx] < current_price * (1.0 - delta_pct):
+                return True
+        return False
+
     def _can_extend(prev_idx: int, idx: int) -> bool:
         if idx in blocked_indices:
             return False
@@ -263,6 +273,8 @@ def extend_ups_blocks_by_price_band(
             return False
         price = prices[idx]
         if price > max_price:
+            return False
+        if _has_cheaper_ahead(idx):
             return False
         return price <= prev_price * (1.0 + delta_pct)
 

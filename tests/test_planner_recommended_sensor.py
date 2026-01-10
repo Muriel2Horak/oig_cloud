@@ -65,7 +65,7 @@ def test_compute_state_and_attrs_with_detail_tabs(monkeypatch):
     current_start = now.replace(
         minute=(now.minute // 15) * 15, second=0, microsecond=0
     )
-    next_start = current_start + timedelta(minutes=15)
+    next_start = current_start + timedelta(minutes=45)
 
     intervals = [
         {
@@ -229,7 +229,7 @@ def test_compute_state_and_attrs_timeline_only(monkeypatch):
     timeline = [
         {"time": (now - timedelta(minutes=15)).isoformat(), "mode": 0},
         {"time": now.isoformat(), "mode": 1},
-        {"time": (now + timedelta(minutes=15)).isoformat(), "mode": 3},
+        {"time": (now + timedelta(minutes=45)).isoformat(), "mode": 3},
     ]
     sensor._precomputed_payload = {
         "timeline_data": timeline,
@@ -360,6 +360,25 @@ def test_compute_state_and_attrs_next_mode_invalid_time_timeline(monkeypatch):
 
     assert value == "Home 1"
     assert attrs["next_mode_change_at"] is None
+
+
+def test_compute_state_and_attrs_min_recommended_interval(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    fixed_now = datetime(2025, 1, 1, 10, 5, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    monkeypatch.setattr(recommended_sensor.dt_util, "now", lambda: fixed_now)
+    timeline = [
+        {"time": "2025-01-01T10:00:00+00:00", "mode": 0},
+        {"time": "2025-01-01T10:15:00+00:00", "mode": 1},
+        {"time": "2025-01-01T10:30:00+00:00", "mode": 2},
+        {"time": "2025-01-01T10:45:00+00:00", "mode": 3},
+    ]
+    sensor._precomputed_payload = {
+        "timeline_data": timeline,
+    }
+
+    _value, attrs, _sig = sensor._compute_state_and_attrs()
+
+    assert attrs["next_mode_change_at"] == "2025-01-01T10:30:00+00:00"
 
 
 def test_compute_state_and_attrs_lead_seconds_zero(monkeypatch):

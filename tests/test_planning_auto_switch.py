@@ -39,6 +39,13 @@ class DummyStates:
         return self._state_map.get(entity_id)
 
 
+class DummyState:
+    def __init__(self, state, last_changed=None, last_updated=None):
+        self.state = state
+        self.last_changed = last_changed
+        self.last_updated = last_updated or last_changed
+
+
 class DummyServices:
     def __init__(self):
         self.calls = []
@@ -373,6 +380,31 @@ async def test_ensure_current_mode(monkeypatch):
     assert called["ok"] is True
 
 
+@pytest.mark.asyncio
+async def test_ensure_current_mode_min_interval(monkeypatch):
+    sensor = DummySensor({})
+    now = dt_util.now()
+    sensor._hass = DummyHass(
+        DummyStates(
+            {
+                "sensor.oig_123_box_prms_mode": DummyState(
+                    "Home 2", last_changed=now
+                )
+            }
+        )
+    )
+
+    called = {}
+
+    async def _execute(_s, _mode, _reason):
+        called["ok"] = True
+
+    monkeypatch.setattr(auto_switch, "get_current_box_mode", lambda _s: "Home 2")
+    monkeypatch.setattr(auto_switch, "execute_mode_change", _execute)
+    await auto_switch.ensure_current_mode(sensor, "Home 1", "reason")
+    assert "ok" not in called
+
+
 def test_get_mode_switch_timeline():
     sensor = DummySensor({})
     sensor._timeline_data = []
@@ -414,7 +446,7 @@ async def test_update_auto_switch_schedule(monkeypatch):
     timeline = [
         {"time": (now - timedelta(minutes=15)).isoformat(), "mode_name": "Home 1"},
         {"time": (now + timedelta(minutes=15)).isoformat(), "mode_name": "Home UPS"},
-        {"time": (now + timedelta(minutes=30)).isoformat(), "mode_name": "Home UPS"},
+        {"time": (now + timedelta(minutes=45)).isoformat(), "mode_name": "Home UPS"},
         {"time": "bad", "mode_name": "Home 1"},
         {"time": (now + timedelta(minutes=45)).isoformat()},
     ]

@@ -86,6 +86,21 @@ async def intercept_service_call(
     )
 
     if not expected_entities:
+        if getattr(shield, "_expected_entity_missing", False):
+            _LOGGER.debug(
+                "Intercept: expected entities missing; calling original service without state verification"
+            )
+            await original_call(
+                domain, service, service_data=params, blocking=blocking, context=context
+            )
+            await shield._log_event(
+                "change_requested",
+                service_name,
+                {"params": params, "entities": {}},
+                reason="Entita nenalezena – volám službu bez state validace",
+                context=context,
+            )
+            return
         _LOGGER.debug("Intercept: no expected entities; returning early")
         await shield._log_event(
             "skipped",

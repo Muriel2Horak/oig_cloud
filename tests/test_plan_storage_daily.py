@@ -37,6 +37,7 @@ async def test_maybe_fix_daily_plan_keeps_existing(monkeypatch):
         "date": "2025-01-02",
         "plan": [{"time": "2025-01-02T00:00:00"}],
         "actual": [],
+        "locked": True,
     }
 
     fixed_now = datetime(2025, 1, 2, 1, 0, tzinfo=timezone.utc)

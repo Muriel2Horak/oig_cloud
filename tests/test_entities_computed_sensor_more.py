@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.oig_cloud.entities import computed_sensor as module
 from custom_components.oig_cloud.entities.computed_sensor import OigCloudComputedSensor
+from homeassistant.util import dt as dt_util
 
 
 class DummyCoordinator:
@@ -19,10 +20,11 @@ class DummyCoordinator:
 
 
 class DummyState:
-    def __init__(self, state, last_updated=None, last_changed=None):
+    def __init__(self, state, last_updated=None, last_changed=None, entity_id=None):
         self.state = state
         self.last_updated = last_updated
         self.last_changed = last_changed or last_updated
+        self.entity_id = entity_id
 
 
 class DummyStates:
@@ -31,6 +33,16 @@ class DummyStates:
 
     def get(self, entity_id):
         return self._mapping.get(entity_id)
+
+    def async_all(self, domain=None):
+        items = []
+        for entity_id, state in self._mapping.items():
+            if domain and not entity_id.startswith(f"{domain}."):
+                continue
+            if not getattr(state, "entity_id", None):
+                state.entity_id = entity_id
+            items.append(state)
+        return items
 
 
 class DummyHass:
@@ -145,6 +157,39 @@ def test_state_real_data_update():
         }
     )
     assert sensor.state is not None
+
+
+def test_state_real_data_update_proxy_fallback():
+    sensor = _make_sensor()
+    sensor._sensor_type = "real_data_update"
+    ts = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    sensor.hass = DummyHass(
+        {
+            module.PROXY_LAST_DATA_ENTITY_ID: DummyState(ts.isoformat()),
+        }
+    )
+    value = sensor.state
+    assert value is not None
+    parsed = dt_util.parse_datetime(value)
+    assert parsed is not None
+    assert parsed.astimezone(timezone.utc) == ts
+
+
+def test_state_real_data_update_uses_latest_cloud_entity():
+    sensor = _make_sensor()
+    sensor._sensor_type = "real_data_update"
+    ts_old = datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc)
+    ts_new = datetime(2025, 1, 1, 12, 30, tzinfo=timezone.utc)
+    sensor.hass = DummyHass(
+        {
+            "sensor.oig_123_batt_batt_comp_p": DummyState("1", ts_old),
+            "sensor.oig_123_some_other_sensor": DummyState("2", ts_new),
+        }
+    )
+    value = sensor.state
+    parsed = dt_util.parse_datetime(value)
+    assert parsed is not None
+    assert parsed.astimezone(timezone.utc) == ts_new
 
 
 def test_state_various_aggregations():

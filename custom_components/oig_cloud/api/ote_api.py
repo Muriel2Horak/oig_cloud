@@ -506,6 +506,12 @@ class OteApi:
             qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
             if not qh_eur_kwh:
                 _LOGGER.warning("No DAM PT15M data found.")
+                if self._last_data:
+                    _LOGGER.warning(
+                        "OTE returned no data - using cached prices from %s",
+                        self._cache_time.isoformat() if self._cache_time else "unknown",
+                    )
+                    return self._last_data
                 return {}
 
             hourly_eur_kwh = self._aggregate_quarter_to_hour(qh_eur_kwh)
@@ -529,10 +535,52 @@ class OteApi:
             )
 
             if data:
-                self._last_data = data
-                self._cache_time = datetime.now(self.timezone)
-                await self.async_persist_cache()
-                return data
+                if not force_today_only and now.hour >= 13:
+                    tomorrow = date.date() + timedelta(days=1)
+                    tomorrow_prefix = tomorrow.strftime("%Y-%m-%d")
+                    prices = data.get("prices_czk_kwh", {})
+                    has_tomorrow = any(
+                        key.startswith(tomorrow_prefix) for key in prices.keys()
+                    )
+                    if not has_tomorrow:
+                        _LOGGER.warning(
+                            "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
+                        )
+                        try:
+                            qh_eur_kwh_tomorrow = await self._get_dam_period_prices(
+                                tomorrow, tomorrow
+                            )
+                            if qh_eur_kwh_tomorrow:
+                                qh_eur_kwh.update(qh_eur_kwh_tomorrow)
+                                hourly_eur_kwh = self._aggregate_quarter_to_hour(
+                                    qh_eur_kwh
+                                )
+                                qh_czk_kwh = {
+                                    dt: float(val) * eur_czk_rate
+                                    for dt, val in qh_eur_kwh.items()
+                                }
+                                hourly_czk_kwh = {
+                                    dt: float(val) * eur_czk_rate
+                                    for dt, val in hourly_eur_kwh.items()
+                                }
+                                data = await self._format_spot_data(
+                                    hourly_czk_kwh,
+                                    hourly_eur_kwh,
+                                    eur_czk_rate,
+                                    date,
+                                    qh_rates_czk=qh_czk_kwh,
+                                    qh_rates_eur=qh_eur_kwh,
+                                )
+                        except Exception as err:
+                            _LOGGER.warning(
+                                "Retry for tomorrow data failed: %s", err
+                            )
+
+                if data:
+                    self._last_data = data
+                    self._cache_time = datetime.now(self.timezone)
+                    await self.async_persist_cache()
+                    return data
 
         except Exception as e:
             _LOGGER.error(f"Error fetching spot prices from OTE: {e}", exc_info=True)

@@ -1298,6 +1298,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 default=defaults.get("min_capacity_percent", 20.0),
             ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
             vol.Optional(
+                "disable_planning_min_guard",
+                default=defaults.get("disable_planning_min_guard", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
                 "target_capacity_percent",
                 default=defaults.get("target_capacity_percent", 80.0),
             ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=100.0)),

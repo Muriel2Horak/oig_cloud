@@ -105,6 +105,7 @@ def extract_expected_entities(
 ) -> Dict[str, str]:
     """Extract expected entities and target values."""
     shield.last_checked_entity_id = None
+    shield._expected_entity_missing = False
 
     def find_entity(suffix: str) -> str | None:
         _LOGGER.info("[FIND ENTITY] Hledám cloud entitu se suffixem: %s", suffix)
@@ -140,6 +141,7 @@ def extract_expected_entities(
                 "[FIND ENTITY] box_id nelze určit, cloud entitu pro suffix '%s' nelze vybrat",
                 suffix,
             )
+            shield._expected_entity_missing = True
             return None
 
         prefix = f"sensor.oig_{box_id}_"
@@ -155,6 +157,7 @@ def extract_expected_entities(
             return entity_id
 
         _LOGGER.warning("[FIND ENTITY] NENALEZENA cloud entita %s*%s", prefix, suffix)
+        shield._expected_entity_missing = True
         return None
 
     if service_name == "oig_cloud.set_formating_mode":

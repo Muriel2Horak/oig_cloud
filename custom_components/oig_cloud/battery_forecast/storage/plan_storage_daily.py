@@ -45,9 +45,10 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         sensor._daily_plan_state
         and sensor._daily_plan_state.get("date") == today_str
         and len(sensor._daily_plan_state.get("plan", [])) > 0
+        and sensor._daily_plan_state.get("locked", False)
     ):
         _LOGGER.debug(
-            "Daily plan for %s already in memory with %s intervals, keeping it",
+            "Daily plan for %s already locked with %s intervals, keeping it",
             today_str,
             len(sensor._daily_plan_state.get("plan", [])),
         )
@@ -177,6 +178,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
                 "created_at": now.isoformat(),
                 "plan": plan_intervals,
                 "actual": existing_actual,
+                "locked": True,
             }
 
             _LOGGER.info(

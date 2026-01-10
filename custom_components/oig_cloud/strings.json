@@ -120,6 +120,7 @@
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "data": {
           "min_capacity_percent": "Minimální kapacita baterie (%)",
+          "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
           "target_capacity_percent": "Cílová kapacita baterie (%)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
@@ -129,6 +130,7 @@
         },
         "data_description": {
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
+          "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
@@ -401,6 +403,7 @@
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "data": {
           "min_capacity_percent": "Minimální kapacita baterie (%)",
+          "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
           "target_capacity_percent": "Cílová kapacita baterie (%)",
           "home_charge_rate": "Nabíjecí výkon ze sítě (kW)",
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
@@ -410,6 +413,7 @@
         },
         "data_description": {
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
+          "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
           "home_charge_rate": "Maximální výkon nabíjení ze sítě (typicky 2-3 kW)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",

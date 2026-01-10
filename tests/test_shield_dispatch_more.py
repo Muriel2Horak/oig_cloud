@@ -90,6 +90,30 @@ async def test_intercept_service_call_skips_when_no_expected():
 
 
 @pytest.mark.asyncio
+async def test_intercept_service_call_calls_original_when_entity_missing():
+    hass = DummyHass({})
+    shield = DummyShield(hass)
+    shield._expected_entity_missing = True
+
+    called = {"count": 0}
+
+    async def _orig_call(*_args, **_kwargs):
+        called["count"] += 1
+
+    await module.intercept_service_call(
+        shield,
+        "oig_cloud",
+        "set_box_mode",
+        {"params": {"mode": "Home 1"}},
+        _orig_call,
+        False,
+        None,
+    )
+
+    assert called["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_intercept_service_call_dedup_queue(monkeypatch):
     hass = DummyHass({"sensor.x": SimpleNamespace(state="off")})
     shield = DummyShield(hass)
