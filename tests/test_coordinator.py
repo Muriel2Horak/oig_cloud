@@ -1695,6 +1695,35 @@ async def test_async_update_data_battery_forecast_task_running(
 
 
 @pytest.mark.asyncio
+async def test_async_update_data_battery_forecast_task_created(
+    monkeypatch, coordinator
+):
+    class DummyTask:
+        def done(self):
+            return True
+
+    coordinator._battery_forecast_task = None
+    coordinator.config_entry.options["enable_battery_prediction"] = True
+    coordinator._startup_grace_seconds = 0
+    monkeypatch.setattr(coordinator, "_try_get_stats", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.random.uniform",
+        lambda *_a, **_k: -1,
+    )
+    monkeypatch.setattr(coordinator, "_update_battery_forecast", AsyncMock())
+
+    def _create_task(coro, *_a, **_k):
+        coro.close()
+        return DummyTask()
+
+    monkeypatch.setattr(coordinator.hass, "async_create_task", _create_task)
+
+    await coordinator._async_update_data()
+
+    assert coordinator._battery_forecast_task is not None
+
+
+@pytest.mark.asyncio
 async def test_async_update_data_includes_spot_prices_cache(
     monkeypatch, coordinator
 ):

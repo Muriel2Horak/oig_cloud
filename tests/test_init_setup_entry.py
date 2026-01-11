@@ -2356,7 +2356,7 @@ async def test_async_setup_entry_balancing_manager_callbacks(monkeypatch):
     hass.config_entries.async_update_entry = lambda *_a, **_k: None
     entry = DummyEntry(
         data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
-        options=Options({"balancing_enabled": True}),
+        options=Options({"balancing_enabled": True, "enable_battery_prediction": True}),
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
@@ -2453,7 +2453,7 @@ async def test_async_setup_entry_balancing_manager_initial_plan(monkeypatch):
     hass.config = SimpleNamespace(path=lambda *_a, **_k: "/tmp")
     entry = DummyEntry(
         data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
-        options={"balancing_enabled": True},
+        options={"balancing_enabled": True, "enable_battery_prediction": True},
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
@@ -2462,6 +2462,190 @@ async def test_async_setup_entry_balancing_manager_initial_plan(monkeypatch):
     assert result is True
     for task in tasks:
         await task
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_balancing_manager_no_plan(monkeypatch):
+    class DummyBalancingManager:
+        def __init__(self, hass, box_id, storage_path, entry):
+            self.hass = hass
+            self.box_id = box_id
+            self.storage_path = storage_path
+            self.entry = entry
+
+        async def async_setup(self):
+            return None
+
+        async def check_balancing(self):
+            return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+    monkeypatch.setattr(init_module, "BalancingManager", DummyBalancingManager)
+
+    tasks = []
+
+    def fake_track_interval(_hass, callback, _delta):
+        tasks.append(asyncio.create_task(callback(None)))
+        return lambda: None
+
+    def fake_call_later(_hass, _delay, callback):
+        tasks.append(asyncio.create_task(callback(None)))
+        return lambda: None
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        fake_track_interval,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_call_later",
+        fake_call_later,
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+
+    hass = DummyHass()
+    hass.config = SimpleNamespace(path=lambda *_a, **_k: "/tmp")
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={"balancing_enabled": True, "enable_battery_prediction": True},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    for task in tasks:
+        await task
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_balancing_manager_box_id_error(monkeypatch):
+    class Options(dict):
+        def get(self, key, default=None):
+            if key == "box_id":
+                raise RuntimeError("boom")
+            return super().get(key, default)
+
+    class DummyBalancingManager:
+        def __init__(self, hass, box_id, storage_path, entry):
+            self.hass = hass
+            self.box_id = box_id
+            self.storage_path = storage_path
+            self.entry = entry
+
+        async def async_setup(self):
+            return None
+
+        async def check_balancing(self):
+            return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+    monkeypatch.setattr(init_module, "BalancingManager", DummyBalancingManager)
+
+    def fake_track_interval(_hass, _callback, _delta):
+        return lambda: None
+
+    def fake_call_later(_hass, _delay, _callback):
+        return lambda: None
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        fake_track_interval,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_call_later",
+        fake_call_later,
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+
+    hass = DummyHass()
+    hass.config = SimpleNamespace(path=lambda *_a, **_k: "/tmp")
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options=Options({"balancing_enabled": True, "enable_battery_prediction": True}),
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
 
 
 @pytest.mark.asyncio

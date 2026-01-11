@@ -80,6 +80,54 @@ def test_normalize_service_mode():
     assert auto_switch.normalize_service_mode(sensor, "  ") is None
 
 
+def test_get_last_mode_change_time_branches():
+    sensor = DummySensor({})
+    sensor._hass = None
+    assert auto_switch._get_last_mode_change_time(sensor) is None
+
+    sensor._hass = SimpleNamespace()
+    assert auto_switch._get_last_mode_change_time(sensor) is None
+
+    now = dt_util.now()
+    states = DummyStates(
+        {
+            "sensor.oig_123_box_prms_mode": DummyState(
+                "Home 1", last_changed="bad"
+            )
+        }
+    )
+    sensor._hass = DummyHass(states=states)
+    assert auto_switch._get_last_mode_change_time(sensor) is None
+
+    states = DummyStates(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed=now)}
+    )
+    sensor._hass = DummyHass(states=states)
+    assert auto_switch._get_last_mode_change_time(sensor) is not None
+
+    naive = datetime(2025, 1, 1, 10, 0, 0)
+    states = DummyStates(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed=naive)}
+    )
+    sensor._hass = DummyHass(states=states)
+    assert auto_switch._get_last_mode_change_time(sensor) is not None
+
+
+def test_get_last_mode_change_time_exception(monkeypatch):
+    sensor = DummySensor({})
+    now = dt_util.now()
+    states = DummyStates(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed=now)}
+    )
+    sensor._hass = DummyHass(states=states)
+
+    def _boom(_dt):
+        raise ValueError("bad tz")
+
+    monkeypatch.setattr(auto_switch.dt_util, "as_local", _boom)
+    assert auto_switch._get_last_mode_change_time(sensor) is None
+
+
 def test_get_planned_mode_for_time():
     sensor = DummySensor({})
     base = dt_util.now().replace(minute=0, second=0, microsecond=0)
@@ -488,6 +536,48 @@ async def test_update_auto_switch_schedule(monkeypatch):
     )
     await auto_switch.update_auto_switch_schedule(sensor)
     assert sensor._auto_switch_handles == []
+
+
+@pytest.mark.asyncio
+async def test_update_auto_switch_schedule_guard_and_repeat(monkeypatch):
+    sensor = DummySensor({CONF_AUTO_MODE_SWITCH: True})
+    now = dt_util.now()
+    states = DummyStates(
+        {"sensor.oig_123_box_prms_mode": DummyState("Home 1", last_changed=now)}
+    )
+    sensor._hass = DummyHass(states=states)
+    sensor._auto_switch_ready_at = None
+    sensor._auto_switch_handles = []
+    sensor._auto_switch_watchdog_unsub = None
+
+    timeline = [
+        {"time": (now + timedelta(minutes=10)).isoformat(), "mode_name": "Home 1"},
+        {"time": (now + timedelta(minutes=40)).isoformat(), "mode_name": "Home 2"},
+        {"time": (now + timedelta(minutes=80)).isoformat(), "mode_name": "Home 2"},
+    ]
+
+    monkeypatch.setattr(
+        auto_switch,
+        "async_track_point_in_time",
+        lambda *_a, **_k: (lambda: None),
+    )
+    monkeypatch.setattr(
+        auto_switch,
+        "get_mode_switch_timeline",
+        lambda _s: (timeline, "hybrid"),
+    )
+    monkeypatch.setattr(
+        auto_switch,
+        "start_auto_switch_watchdog",
+        lambda *_a, **_k: None,
+    )
+    async def _ensure(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(auto_switch, "ensure_current_mode", _ensure)
+
+    await auto_switch.update_auto_switch_schedule(sensor)
+    assert sensor._auto_switch_handles
 
 
 @pytest.mark.asyncio

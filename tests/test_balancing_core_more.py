@@ -52,6 +52,62 @@ def test_days_and_hours_since_last_balancing(monkeypatch):
     assert manager._get_hours_since_last_balancing() == pytest.approx(51.0)
 
 
+def test_get_economic_price_threshold_invalid():
+    hass = DummyHass()
+    manager = _make_manager(hass, options={"balancing_economic_threshold": "bad"})
+    assert manager._get_economic_price_threshold() == 2.5
+
+
+def test_plan_cooldown_active(monkeypatch):
+    hass = DummyHass()
+    manager = _make_manager(hass)
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    manager._last_plan_ts = now - timedelta(hours=1)
+    monkeypatch.setattr(core_module.dt_util, "now", lambda: now)
+    assert manager._is_plan_cooldown_active(2.0) is True
+
+
+@pytest.mark.asyncio
+async def test_load_state_safe_sets_last_plan_ts(monkeypatch):
+    hass = DummyHass()
+    manager = _make_manager(hass)
+
+    class DummyStore:
+        async def async_load(self):
+            return {"last_plan_ts": "2025-01-01T00:00:00+00:00"}
+
+    manager._store = DummyStore()
+    await manager._load_state_safe()
+    assert manager._last_plan_ts is not None
+
+
+@pytest.mark.asyncio
+async def test_check_balancing_opportunistic_cooldown(monkeypatch):
+    hass = DummyHass()
+    manager = _make_manager(hass)
+    manager._forecast_sensor = SimpleNamespace()
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    manager._last_plan_ts = now
+    manager._last_plan_mode = "Home 1"
+
+    monkeypatch.setattr(core_module.dt_util, "now", lambda: now)
+    async def _check():
+        return False, None
+
+    async def _natural():
+        return None
+
+    monkeypatch.setattr(manager, "_check_if_balancing_occurred", _check)
+    monkeypatch.setattr(manager, "_check_natural_balancing", _natural)
+    monkeypatch.setattr(manager, "_get_days_since_last_balancing", lambda: 1)
+    monkeypatch.setattr(manager, "_get_cycle_days", lambda: 10)
+    monkeypatch.setattr(manager, "_get_cooldown_hours", lambda: 1.0)
+    monkeypatch.setattr(manager, "_get_hours_since_last_balancing", lambda: 10.0)
+
+    result = await manager.check_balancing()
+    assert result is None
+
+
 @pytest.mark.asyncio
 async def test_check_if_balancing_occurred_detects_completion(monkeypatch):
     hass = DummyHass()

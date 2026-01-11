@@ -204,6 +204,201 @@ async def test_async_fetch_string2_error_status(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_async_fetch_solcast_provider_calls_fetch(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_provider": "solcast"})
+    called = {"ok": False}
+
+    async def _fetch(_now):
+        called["ok"] = True
+
+    monkeypatch.setattr(module.time, "time", lambda: 12345.0)
+    monkeypatch.setattr(sensor, "_fetch_solcast_data", _fetch)
+
+    await sensor.async_fetch_forecast_data()
+    assert called["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_missing_api_key(monkeypatch):
+    sensor = _make_sensor({"solar_forecast_provider": "solcast"})
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_requires_kwp(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": False,
+            "solar_forecast_string2_enabled": False,
+        }
+    )
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_auth_failed(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        }
+    )
+    session = DummySession([DummyResponse(401)])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_rate_limited(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        }
+    )
+    session = DummySession([DummyResponse(429)])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_other_error(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        }
+    )
+    session = DummySession([DummyResponse(500, text="boom")])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_no_forecasts(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        }
+    )
+    session = DummySession([DummyResponse(200, payload={"forecasts": []})])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_success(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+            "solar_forecast_string2_enabled": True,
+            "solar_forecast_string2_kwp": 2.0,
+        }
+    )
+    payload = {
+        "forecasts": [
+            {"period_end": "2025-01-01T10:00:00+00:00", "ghi": 500, "period": "PT30M"}
+        ]
+    }
+    session = DummySession([DummyResponse(200, payload=payload)])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+
+    async def _save():
+        return None
+
+    async def _broadcast():
+        return None
+
+    sensor._save_persistent_data = _save
+    sensor._broadcast_forecast_data = _broadcast
+    sensor.async_write_ha_state = lambda *args, **kwargs: None
+    sensor.hass.data = {}
+    sensor.coordinator.solar_forecast_data = {}
+
+    await sensor._fetch_solcast_data(1000.0)
+    assert sensor._last_forecast_data is not None
+    assert sensor.coordinator.solar_forecast_data is sensor._last_forecast_data
+
+
+@pytest.mark.asyncio
+async def test_fetch_solcast_success_sets_attr(monkeypatch):
+    sensor = _make_sensor(
+        {
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        }
+    )
+    payload = {
+        "forecasts": [
+            {"period_end": "2025-01-01T10:00:00+00:00", "ghi": 500, "period": "PT30M"}
+        ]
+    }
+    session = DummySession([DummyResponse(200, payload=payload)])
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+
+    async def _save():
+        return None
+
+    async def _broadcast():
+        return None
+
+    sensor._save_persistent_data = _save
+    sensor._broadcast_forecast_data = _broadcast
+    sensor.async_write_ha_state = lambda *args, **kwargs: None
+    sensor.hass.data = {}
+
+    await sensor._fetch_solcast_data(1000.0)
+    assert hasattr(sensor.coordinator, "solar_forecast_data")
+
+
+def test_process_solcast_data_skips_invalid_entries():
+    sensor = _make_sensor({"solar_forecast_provider": "solcast"})
+    forecasts = [
+        {"period_end": None, "ghi": 100, "period": "PT30M"},
+        {"period_end": "2025-01-01T10:00:00+00:00", "ghi": None, "period": "PT30M"},
+        {"period_end": "2025-01-01T11:00:00+00:00", "ghi": "bad", "period": "PT30M"},
+        {"period_end": "2025-01-01T12:00:00+00:00", "ghi": 500, "period": "PT1H"},
+    ]
+    data = sensor._process_solcast_data(forecasts, 1.0, 0.0)
+    assert "total_hourly" in data
+    assert data["provider"] == "solcast"
+
+
+def test_parse_solcast_period_hours_invalid_minutes():
+    assert OigCloudSolarForecastSensor._parse_solcast_period_hours("PTbadM") == 0.5
+
+
+def test_parse_solcast_period_hours_invalid_hours():
+    assert OigCloudSolarForecastSensor._parse_solcast_period_hours("PTbadH") == 0.5
+
+
+def test_parse_solcast_period_hours_default():
+    assert OigCloudSolarForecastSensor._parse_solcast_period_hours("bad") == 0.5
+
+
+@pytest.mark.asyncio
 async def test_async_fetch_exception_uses_cached(monkeypatch):
     sensor = _make_sensor({"enable_solar_forecast": True})
     sensor._last_forecast_data = {"total_today_kwh": 1.0}

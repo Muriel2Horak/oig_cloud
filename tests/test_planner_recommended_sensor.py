@@ -381,6 +381,25 @@ def test_compute_state_and_attrs_min_recommended_interval(monkeypatch):
     assert attrs["next_mode_change_at"] == "2025-01-01T10:30:00+00:00"
 
 
+def test_compute_state_and_attrs_min_interval_detail_intervals(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    fixed_now = datetime(2025, 1, 1, 10, 5, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    monkeypatch.setattr(recommended_sensor.dt_util, "now", lambda: fixed_now)
+    intervals = [
+        {"time": "10:00", "planned": {"mode": 0, "mode_name": "HOME 1"}},
+        {"time": "10:10", "planned": {"mode": 1, "mode_name": "HOME 2"}},
+        {"time": "10:45", "planned": {"mode": 2, "mode_name": "HOME 3"}},
+    ]
+    sensor._precomputed_payload = {
+        "timeline_data": [],
+        "detail_tabs": {"today": {"date": "2025-01-01", "intervals": intervals}},
+    }
+
+    _value, attrs, _sig = sensor._compute_state_and_attrs()
+
+    assert attrs["next_mode_change_at"] == "2025-01-01T10:45:00+00:00"
+
+
 def test_compute_state_and_attrs_lead_seconds_zero(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     fixed_now = datetime(2025, 1, 1, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)

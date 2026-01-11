@@ -99,6 +99,65 @@ def test_get_oig_last_updated_naive_time():
     assert updated.tzinfo is not None
 
 
+def test_get_oig_last_updated_exception(monkeypatch):
+    sensor = _make_sensor()
+    aware = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    sensor.hass = DummyHass({"sensor.oig_123_batt_bat_c": DummyState("50", aware)})
+
+    def _boom(_dt):
+        raise ValueError("bad tz")
+
+    monkeypatch.setattr(dt_util, "as_utc", _boom)
+    assert sensor._get_oig_last_updated("batt_bat_c") is None
+
+
+def test_get_entity_timestamp_parse_fallback():
+    sensor = _make_sensor()
+    sensor.hass = None
+    assert sensor._get_entity_timestamp("sensor.test") is None
+    sensor.hass = DummyHass({"sensor.test": DummyState("bad")})
+    assert sensor._get_entity_timestamp("sensor.test") is None
+
+
+def test_get_entity_timestamp_exception(monkeypatch):
+    sensor = _make_sensor()
+    aware = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    sensor.hass = DummyHass({"sensor.test": DummyState("ok", aware)})
+
+    def _boom(_dt):
+        raise ValueError("bad tz")
+
+    monkeypatch.setattr(dt_util, "as_utc", _boom)
+    assert sensor._get_entity_timestamp("sensor.test") is None
+
+
+def test_get_latest_oig_entity_update_guard_clauses():
+    sensor = _make_sensor()
+    assert sensor._get_latest_oig_entity_update() is None
+
+    sensor.hass = DummyHass({})
+    sensor._box_id = "bad"
+    assert sensor._get_latest_oig_entity_update() is None
+
+    class DummyStatesNoAsync:
+        def get(self, _entity_id):
+            return None
+
+    sensor._box_id = "123"
+    sensor.hass = SimpleNamespace(states=DummyStatesNoAsync())
+    assert sensor._get_latest_oig_entity_update() is None
+
+
+def test_get_latest_oig_entity_update_skips_invalid():
+    sensor = _make_sensor()
+    mapping = {
+        "sensor.oig_123_a": DummyState("unknown", datetime.now(timezone.utc)),
+        "sensor.oig_123_b": DummyState("ok", None, None),
+    }
+    sensor.hass = DummyHass(mapping)
+    assert sensor._get_latest_oig_entity_update() is None
+
+
 @pytest.mark.asyncio
 async def test_load_energy_from_storage_non_numeric(monkeypatch):
     dummy_store = DummyStore()

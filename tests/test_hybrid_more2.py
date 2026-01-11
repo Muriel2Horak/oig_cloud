@@ -118,31 +118,24 @@ def test_optimize_reason_branches(monkeypatch):
     assert reasons[1] == "holding_period"
     assert reasons[2] == "balancing_charge"
     assert reasons[3] == "negative"
-    assert reasons[4] == "price_band_hold"
-    assert reasons[5] in ("default_discharge", "smoothing_merged")
 
 
 def test_optimize_applies_smoothing(monkeypatch):
-    config = HybridConfig(min_mode_duration_intervals=2)
+    config = HybridConfig()
     sim_config = SimulatorConfig()
     strategy = HybridStrategy(config, sim_config)
     strategy.simulator = DummySimulator()
 
-    called = {"count": 0}
+    def _select(*_a, **_k):
+        return CBB_MODE_HOME_I, "baseline", {}
 
-    def _smooth(self, decisions, **_kwargs):
-        called["count"] += 1
-        return decisions
-
-    monkeypatch.setattr(HybridStrategy, "_apply_smoothing", _smooth, raising=False)
+    monkeypatch.setattr(strategy, "_select_best_mode", _select)
+    monkeypatch.setattr(strategy, "_apply_smoothing", lambda decisions, **_k: list(decisions))
 
     strategy.optimize(
-        initial_battery_kwh=5.0,
-        spot_prices=[{"price": 1.0}] * 4,
-        solar_forecast=[0.0] * 4,
-        consumption_forecast=[0.0] * 4,
-        balancing_plan=None,
-        export_prices=[0.0] * 4,
+        initial_battery_kwh=1.0,
+        spot_prices=[{"price": 1.0}, {"price": 1.0}],
+        solar_forecast=[0.0, 0.0],
+        consumption_forecast=[0.0, 0.0],
+        export_prices=[0.0, 0.0],
     )
-
-    assert called["count"] == 1

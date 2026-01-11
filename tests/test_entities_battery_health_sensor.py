@@ -341,6 +341,96 @@ def test_current_soh_and_capacity_empty(monkeypatch):
     assert tracker.get_current_capacity() is None
 
 
+def test_current_soh_and_capacity_short(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123")
+    tracker._measurements = [
+        CapacityMeasurement(
+            timestamp="2025-01-01T00:00:00+00:00",
+            start_soc=0.0,
+            end_soc=50.0,
+            delta_soc=50.0,
+            charge_energy_wh=5000.0,
+            capacity_kwh=10.0,
+            soh_percent=90.0,
+            duration_hours=1.0,
+        )
+    ]
+    assert tracker.get_current_soh() is None
+    assert tracker.get_current_capacity() is None
+
+
+def test_current_soh_and_capacity_outliers(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123")
+    tracker._measurements = [
+        CapacityMeasurement(
+            timestamp="2025-01-01T00:00:00+00:00",
+            start_soc=0.0,
+            end_soc=50.0,
+            delta_soc=50.0,
+            charge_energy_wh=5000.0,
+            capacity_kwh=0.0,
+            soh_percent=0.0,
+            duration_hours=1.0,
+        ),
+        CapacityMeasurement(
+            timestamp="2025-01-02T00:00:00+00:00",
+            start_soc=50.0,
+            end_soc=100.0,
+            delta_soc=50.0,
+            charge_energy_wh=5000.0,
+            capacity_kwh=10.0,
+            soh_percent=100.0,
+            duration_hours=1.0,
+        ),
+    ]
+    assert tracker.get_current_soh() == 50.0
+    assert tracker.get_current_capacity() == 5.0
+
+
+def test_current_soh_and_capacity_median_odd(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123")
+    tracker._measurements = [
+        CapacityMeasurement(
+            timestamp="2025-01-01T00:00:00+00:00",
+            start_soc=0.0,
+            end_soc=50.0,
+            delta_soc=50.0,
+            charge_energy_wh=5000.0,
+            capacity_kwh=9.0,
+            soh_percent=85.0,
+            duration_hours=1.0,
+        ),
+        CapacityMeasurement(
+            timestamp="2025-01-02T00:00:00+00:00",
+            start_soc=50.0,
+            end_soc=100.0,
+            delta_soc=50.0,
+            charge_energy_wh=5000.0,
+            capacity_kwh=10.0,
+            soh_percent=90.0,
+            duration_hours=1.0,
+        ),
+        CapacityMeasurement(
+            timestamp="2025-01-03T00:00:00+00:00",
+            start_soc=20.0,
+            end_soc=80.0,
+            delta_soc=60.0,
+            charge_energy_wh=6000.0,
+            capacity_kwh=11.0,
+            soh_percent=95.0,
+            duration_hours=1.0,
+        ),
+    ]
+    assert tracker.get_current_soh() == 90.0
+    assert tracker.get_current_capacity() == 10.0
+
+
 @pytest.mark.asyncio
 async def test_battery_health_sensor_lifecycle(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)

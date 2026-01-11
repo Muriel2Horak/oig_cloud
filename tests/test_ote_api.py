@@ -627,6 +627,68 @@ async def test_get_spot_prices_retry_tomorrow_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_spot_prices_no_data_uses_cache(monkeypatch):
+    api = OteApi()
+    api._last_data = {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+    api._cache_time = datetime(2025, 1, 1, tzinfo=api.timezone)
+
+    async def fake_rate():
+        return 25.0
+
+    async def fake_qh(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(api, "get_cnb_exchange_rate", fake_rate)
+    monkeypatch.setattr(api, "_get_dam_period_prices", fake_qh)
+
+    result = await api.get_spot_prices(
+        date=datetime(2025, 1, 1, tzinfo=api.timezone),
+        force_today_only=False,
+    )
+    assert result == api._last_data
+
+
+@pytest.mark.asyncio
+async def test_get_spot_prices_retry_tomorrow_error(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 1, 1, 14, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(ote_module, "datetime", FixedDateTime)
+    api = OteApi()
+
+    async def fake_rate():
+        return 25.0
+
+    async def fake_qh(*_args, **_kwargs):
+        base = datetime(2025, 1, 1, 0, 0, tzinfo=api.utc)
+        return {base: Decimal("0.1")}
+
+    calls = {"count": 0}
+
+    async def fake_format(*_args, **_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+        raise RuntimeError("bad retry")
+
+    async def fake_persist():
+        return None
+
+    monkeypatch.setattr(api, "get_cnb_exchange_rate", fake_rate)
+    monkeypatch.setattr(api, "_get_dam_period_prices", fake_qh)
+    monkeypatch.setattr(api, "_format_spot_data", fake_format)
+    monkeypatch.setattr(api, "async_persist_cache", fake_persist)
+
+    result = await api.get_spot_prices(
+        date=datetime(2025, 1, 1, tzinfo=api.timezone),
+        force_today_only=False,
+    )
+    assert result["prices_czk_kwh"]
+
+
+@pytest.mark.asyncio
 async def test_get_spot_prices_full_success(monkeypatch):
     api = OteApi()
     base = datetime(2025, 1, 1, 0, 0, tzinfo=api.utc)

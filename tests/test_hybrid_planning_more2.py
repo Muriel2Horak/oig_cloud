@@ -57,6 +57,17 @@ def test_extend_ups_blocks_by_price_band_blocked():
     assert extended == set()
 
 
+def test_extend_ups_blocks_by_price_band_cheaper_ahead():
+    strategy = DummyStrategy()
+    extended = module.extend_ups_blocks_by_price_band(
+        strategy,
+        charging_intervals={0},
+        prices=[1.0, 1.0, 0.8],
+        blocked_indices=set(),
+    )
+    assert extended == set()
+
+
 def test_plan_charging_intervals_recovery_infeasible():
     strategy = DummyStrategy()
     strategy.config.max_ups_price_czk = 0.1
