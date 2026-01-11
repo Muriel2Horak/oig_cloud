@@ -53,7 +53,7 @@ class ChmuApi:
     """API klient pro ČHMÚ CAP XML bulletiny."""
 
     _AUTO_INDEX_RE = re.compile(
-        r'href="(?P<file>alert_cap_(?P<series>\d+)_\d+\.xml)".*?\s(?P<dt>\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2})\s+\d+',
+        r'href="(?P<file>alert_cap_(?P<series>\d+)_\d+\.xml)".*?\s(?P<dt>\d{2}-[A-Z]{3}-\d{4} \d{2}:\d{2})\s+\d+',
         re.IGNORECASE,
     )
 
@@ -476,44 +476,38 @@ class ChmuApi:
         local_alerts = []
         filter_method = "no_filter"
 
+        point = (latitude, longitude)
         for alert in alerts:
-            # Zkusíme všechny oblasti
-            matched = False
             for area in alert.get("areas", []):
-                # 1. Polygon match
-                if area.get("polygon"):
-                    if self._point_in_polygon((latitude, longitude), area["polygon"]):
-                        local_alerts.append(alert)
-                        filter_method = "polygon_match"
-                        matched = True
-                        break
-
-                # 2. Circle match
-                if not matched and area.get("circle"):
-                    circle = area["circle"]
-                    if self._point_in_circle(
-                        (latitude, longitude),
-                        (circle["center_lat"], circle["center_lon"]),
-                        circle["radius_km"],
-                    ):
-                        local_alerts.append(alert)
-                        filter_method = "circle_match"
-                        matched = True
-                        break
-
-                # 3. Geocode fallback (jednoduché substring match)
-                # NOTE: Implementovat přesnější geocode matching s databází ORP/NUTS
-                if not matched and area.get("geocodes"):
-                    # Prozatím vše prochází (fallback)
-                    # V produkci by zde bylo mapování GPS -> ORP/NUTS kód
+                matched, method = self._match_area(area, point)
+                if matched:
                     local_alerts.append(alert)
-                    filter_method = "geocode_fallback"
-                    matched = True
+                    filter_method = method
                     break
 
             # Pokračujeme dále - chceme projít VŠECHNY výstrahy, ne jen první match
 
         return local_alerts, filter_method
+
+    def _match_area(
+        self, area: Dict[str, Any], point: Tuple[float, float]
+    ) -> Tuple[bool, str]:
+        if area.get("polygon"):
+            if self._point_in_polygon(point, area["polygon"]):
+                return True, "polygon_match"
+
+        circle = area.get("circle")
+        if circle and self._point_in_circle(
+            point,
+            (circle["center_lat"], circle["center_lon"]),
+            circle["radius_km"],
+        ):
+            return True, "circle_match"
+
+        if area.get("geocodes"):
+            return True, "geocode_fallback"
+
+        return False, "no_filter"
 
     def _point_in_polygon(
         self, point: Tuple[float, float], polygon: List[Tuple[float, float]]
@@ -535,23 +529,32 @@ class ChmuApi:
         p1_lat, p1_lon = polygon[0]
         for i in range(1, n + 1):
             p2_lat, p2_lon = polygon[i % n]
-
-            if lon > min(p1_lon, p2_lon):
-                if lon <= max(p1_lon, p2_lon):
-                    if lat <= max(p1_lat, p2_lat):
-                        x_intersection = None
-                        if p1_lon != p2_lon:
-                            x_intersection = (lon - p1_lon) * (p2_lat - p1_lat) / (
-                                p2_lon - p1_lon
-                            ) + p1_lat
-                        if p1_lat == p2_lat or (
-                            x_intersection and lat <= x_intersection
-                        ):
-                            inside = not inside
-
+            if self._ray_intersects(lat, lon, p1_lat, p1_lon, p2_lat, p2_lon):
+                inside = not inside
             p1_lat, p1_lon = p2_lat, p2_lon
 
         return inside
+
+    @staticmethod
+    def _ray_intersects(
+        lat: float,
+        lon: float,
+        p1_lat: float,
+        p1_lon: float,
+        p2_lat: float,
+        p2_lon: float,
+    ) -> bool:
+        if lon <= min(p1_lon, p2_lon) or lon > max(p1_lon, p2_lon):
+            return False
+        if lat > max(p1_lat, p2_lat):
+            return False
+        if p1_lon == p2_lon:
+            x_intersection = p1_lat
+        else:
+            x_intersection = (lon - p1_lon) * (p2_lat - p1_lat) / (
+                p2_lon - p1_lon
+            ) + p1_lat
+        return p1_lat == p2_lat or lat <= x_intersection
 
     def _point_in_circle(
         self, point: Tuple[float, float], center: Tuple[float, float], radius_km: float
