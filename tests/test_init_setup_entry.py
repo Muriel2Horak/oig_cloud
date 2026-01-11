@@ -2151,7 +2151,7 @@ async def test_async_setup_entry_balancing_manager_no_box_id(monkeypatch):
     hass.config = SimpleNamespace(path=lambda *_a, **_k: "/tmp")
     entry = DummyEntry(
         data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
-        options={"balancing_enabled": True},
+        options={"balancing_enabled": True, "enable_battery_prediction": True},
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
@@ -2253,7 +2253,7 @@ async def test_async_setup_entry_balancing_manager_executes(monkeypatch):
     hass.config = SimpleNamespace(path=lambda *_a, **_k: "/tmp")
     entry = DummyEntry(
         data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
-        options={"balancing_enabled": True},
+        options={"balancing_enabled": True, "enable_battery_prediction": True},
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
