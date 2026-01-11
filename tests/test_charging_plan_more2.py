@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from custom_components.oig_cloud.battery_forecast.planning import charging_plan
+from custom_components.oig_cloud.battery_forecast.planning.charging_plan import (
+    EconomicChargingPlanConfig,
+)
 
 
 def _timeline_point(ts: str, battery: float, price: float = 2.0):
@@ -13,6 +16,27 @@ def _timeline_point(ts: str, battery: float, price: float = 2.0):
         "grid_charge_kwh": 0.0,
         "reason": "normal",
     }
+
+
+def _make_plan(**overrides) -> EconomicChargingPlanConfig:
+    base = dict(
+        min_capacity_kwh=1.0,
+        min_capacity_floor=0.5,
+        effective_minimum_kwh=1.0,
+        target_capacity_kwh=2.0,
+        max_charging_price=5.0,
+        min_savings_margin=0.1,
+        charging_power_kw=2.0,
+        max_capacity=10.0,
+        battery_efficiency=1.0,
+        config={},
+        iso_tz_offset="+00:00",
+        mode_label_home_ups="UPS",
+        mode_label_home_i="I",
+        target_reason="test",
+    )
+    base.update(overrides)
+    return EconomicChargingPlanConfig(**base)
 
 
 def test_economic_charging_plan_skip_low_savings(monkeypatch):
@@ -37,26 +61,7 @@ def test_economic_charging_plan_skip_low_savings(monkeypatch):
 
     result_timeline, _ = charging_plan.economic_charging_plan(
         timeline_data=timeline,
-        min_capacity_kwh=1.0,
-        min_capacity_floor=0.5,
-        effective_minimum_kwh=1.0,
-        target_capacity_kwh=2.0,
-        max_charging_price=5.0,
-        min_savings_margin=0.5,
-        charging_power_kw=2.0,
-        max_capacity=10.0,
-        enable_blackout_protection=False,
-        blackout_protection_hours=2,
-        blackout_target_soc_percent=20.0,
-        enable_weather_risk=False,
-        weather_risk_level="low",
-        weather_target_soc_percent=30.0,
-        target_reason="test",
-        battery_efficiency=1.0,
-        config={},
-        iso_tz_offset="+00:00",
-        mode_label_home_ups="UPS",
-        mode_label_home_i="I",
+        plan=_make_plan(min_savings_margin=0.5),
     )
 
     assert result_timeline[0]["grid_charge_kwh"] == 0.0
@@ -72,26 +77,7 @@ def test_economic_charging_plan_protection_no_candidates(monkeypatch):
 
     result_timeline, metrics = charging_plan.economic_charging_plan(
         timeline_data=timeline,
-        min_capacity_kwh=1.0,
-        min_capacity_floor=0.5,
-        effective_minimum_kwh=1.0,
-        target_capacity_kwh=2.0,
-        max_charging_price=5.0,
-        min_savings_margin=0.1,
-        charging_power_kw=2.0,
-        max_capacity=10.0,
-        enable_blackout_protection=True,
-        blackout_protection_hours=2,
-        blackout_target_soc_percent=20.0,
-        enable_weather_risk=False,
-        weather_risk_level="low",
-        weather_target_soc_percent=30.0,
-        target_reason="test",
-        battery_efficiency=1.0,
-        config={},
-        iso_tz_offset="+00:00",
-        mode_label_home_ups="UPS",
-        mode_label_home_i="I",
+        plan=_make_plan(config={"enable_blackout_protection": True}),
     )
 
     assert metrics == {}
@@ -119,26 +105,10 @@ def test_economic_charging_plan_protection_breaks_early(monkeypatch):
 
     charging_plan.economic_charging_plan(
         timeline_data=timeline,
-        min_capacity_kwh=1.0,
-        min_capacity_floor=0.5,
-        effective_minimum_kwh=1.0,
-        target_capacity_kwh=2.0,
-        max_charging_price=5.0,
-        min_savings_margin=0.1,
-        charging_power_kw=1.0,
-        max_capacity=10.0,
-        enable_blackout_protection=True,
-        blackout_protection_hours=2,
-        blackout_target_soc_percent=20.0,
-        enable_weather_risk=False,
-        weather_risk_level="low",
-        weather_target_soc_percent=30.0,
-        target_reason="test",
-        battery_efficiency=1.0,
-        config={},
-        iso_tz_offset="+00:00",
-        mode_label_home_ups="UPS",
-        mode_label_home_i="I",
+        plan=_make_plan(
+            charging_power_kw=1.0,
+            config={"enable_blackout_protection": True},
+        ),
     )
 
 
@@ -165,7 +135,6 @@ def test_smart_charging_plan_target_loop_and_filters(monkeypatch):
         min_capacity=2.0,
         target_capacity=10.0,
         max_price=5.0,
-        price_threshold=4.0,
         charging_power_kw=2.0,
         max_capacity=10.0,
         efficiency=1.0,
@@ -199,7 +168,6 @@ def test_smart_charging_plan_hits_max_iterations(monkeypatch):
         min_capacity=0.5,
         target_capacity=10.0,
         max_price=5.0,
-        price_threshold=4.0,
         charging_power_kw=2.0,
         max_capacity=10.0,
         efficiency=1.0,

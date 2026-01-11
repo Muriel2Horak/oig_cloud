@@ -20,6 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 async def handle_shield_status(shield: Any, call: Any) -> None:
     """Handle shield status service call."""
     await asyncio.sleep(0)
+    _ = call
     status = get_shield_status(shield)
     _LOGGER.info("[OIG Shield] Current status: %s", status)
 
@@ -32,6 +33,7 @@ async def handle_shield_status(shield: Any, call: Any) -> None:
 async def handle_queue_info(shield: Any, call: Any) -> None:
     """Handle queue info service call."""
     await asyncio.sleep(0)
+    _ = call
     queue_info = get_queue_info(shield)
     _LOGGER.info("[OIG Shield] Queue info: %s", queue_info)
 

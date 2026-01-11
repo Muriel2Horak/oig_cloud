@@ -138,10 +138,10 @@ def test_proxy_methods_sync(monkeypatch):
     assert sensor._get_solar_forecast() == {"solar": True}
     assert sensor._get_solar_forecast_strings() == {"solar": "ok"}
     assert sensor._get_balancing_plan() == {"plan": True}
-    assert sensor._economic_charging_plan([], 1.0, 1.0, 1.0, 1.0, 0.1, 1.0, 1.0, False, 1, 1.0, False, "low", 1.0) == [
+    assert sensor._economic_charging_plan([], 1.0, 1.0, 1.0, 1.0, 0.1, 1.0, 1.0) == [
         {"grid_charge_kwh": 1.0}
     ]
-    assert sensor._smart_charging_plan([], 1.0, 1.0, 1.0, 0.1, 1.0, 1.0) == [
+    assert sensor._smart_charging_plan([], 1.0, 1.0, 1.0, 1.0, 1.0) == [
         {"grid_charge_kwh": 2.0}
     ]
 

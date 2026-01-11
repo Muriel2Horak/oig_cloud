@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from ..types import MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS
 from . import charging_plan as charging_plan_module
+from .charging_plan import EconomicChargingPlanConfig
 
 
 def economic_charging_plan(
@@ -19,12 +20,6 @@ def economic_charging_plan(
     min_savings_margin: float,
     charging_power_kw: float,
     max_capacity: float,
-    enable_blackout_protection: bool,
-    blackout_protection_hours: int,
-    blackout_target_soc_percent: float,
-    enable_weather_risk: bool,
-    weather_risk_level: str,
-    weather_target_soc_percent: float,
     iso_tz_offset: str,
     target_reason: str = "default",
 ) -> List[Dict[str, Any]]:
@@ -34,8 +29,7 @@ def economic_charging_plan(
     min_capacity_floor = (min_capacity_percent / 100.0) * max_capacity
     efficiency = sensor._get_battery_efficiency()
 
-    timeline, metrics = charging_plan_module.economic_charging_plan(
-        timeline_data=timeline_data,
+    plan = EconomicChargingPlanConfig(
         min_capacity_kwh=min_capacity_kwh,
         min_capacity_floor=min_capacity_floor,
         effective_minimum_kwh=effective_minimum_kwh,
@@ -44,18 +38,17 @@ def economic_charging_plan(
         min_savings_margin=min_savings_margin,
         charging_power_kw=charging_power_kw,
         max_capacity=max_capacity,
-        enable_blackout_protection=enable_blackout_protection,
-        blackout_protection_hours=blackout_protection_hours,
-        blackout_target_soc_percent=blackout_target_soc_percent,
-        enable_weather_risk=enable_weather_risk,
-        weather_risk_level=weather_risk_level,
-        weather_target_soc_percent=weather_target_soc_percent,
-        target_reason=target_reason,
         battery_efficiency=efficiency,
         config=config,
         iso_tz_offset=iso_tz_offset,
         mode_label_home_ups=MODE_LABEL_HOME_UPS,
         mode_label_home_i=MODE_LABEL_HOME_I,
+        target_reason=target_reason,
+    )
+
+    timeline, metrics = charging_plan_module.economic_charging_plan(
+        timeline_data=timeline_data,
+        plan=plan,
     )
     if metrics:
         sensor._charging_metrics = metrics
@@ -70,7 +63,6 @@ def smart_charging_plan(
     min_capacity: float,
     target_capacity: float,
     max_price: float,
-    price_threshold: float,
     charging_power_kw: float,
     max_capacity: float,
 ) -> List[Dict[str, Any]]:
@@ -80,7 +72,6 @@ def smart_charging_plan(
         min_capacity=min_capacity,
         target_capacity=target_capacity,
         max_price=max_price,
-        price_threshold=price_threshold,
         charging_power_kw=charging_power_kw,
         max_capacity=max_capacity,
         efficiency=sensor._get_battery_efficiency(),

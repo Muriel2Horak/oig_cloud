@@ -138,6 +138,7 @@ def calculate_tab_summary(
     sensor: Any, mode_blocks: List[Dict[str, Any]], intervals: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Calculate summary for a tab."""
+    _ = sensor
     if not mode_blocks:
         return {
             "total_cost": 0.0,

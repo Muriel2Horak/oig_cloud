@@ -24,6 +24,7 @@ def create_mode_recommendations(
         return []
 
     try:
+        _ = hours_ahead
         current_time = now or datetime.now()
 
         # Mode recommendations: only future intervals (today from now, tomorrow full day).

@@ -394,7 +394,7 @@ async def test_schedule_retry_executes(monkeypatch):
         called["fetch"] += 1
         return None
 
-    def fake_schedule(_hass, fetch_coro, _delay, _logger, _entity_id, _label):
+    def fake_schedule(_hass, fetch_coro, _delay, _logger, _entity_id):
         return asyncio.create_task(fetch_coro())
 
     monkeypatch.setattr(hourly_module, "schedule_retry_task", fake_schedule)

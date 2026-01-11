@@ -109,6 +109,7 @@ def calculate_interval_cost(
     time_of_day: str,
 ) -> Dict[str, Any]:
     """Calculate direct and opportunity cost for one interval."""
+    _ = export_price
     direct_cost = simulation_result["net_cost"]
 
     battery_discharge = simulation_result.get("battery_discharge", 0.0)

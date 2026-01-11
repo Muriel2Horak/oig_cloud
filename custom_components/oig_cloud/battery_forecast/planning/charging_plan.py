@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -17,41 +18,40 @@ from .charging_plan_utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class EconomicChargingPlanConfig:
+    min_capacity_kwh: float
+    min_capacity_floor: float
+    effective_minimum_kwh: float
+    target_capacity_kwh: float
+    max_charging_price: float
+    min_savings_margin: float
+    charging_power_kw: float
+    max_capacity: float
+    battery_efficiency: float
+    config: Dict[str, Any]
+    iso_tz_offset: str
+    mode_label_home_ups: str
+    mode_label_home_i: str
+    target_reason: str = "default"
+
+
 def economic_charging_plan(
     *,
     timeline_data: List[Dict[str, Any]],
-    min_capacity_kwh: float,
-    min_capacity_floor: float,
-    effective_minimum_kwh: float,
-    target_capacity_kwh: float,
-    max_charging_price: float,
-    min_savings_margin: float,
-    charging_power_kw: float,
-    max_capacity: float,
-    enable_blackout_protection: bool,
-    blackout_protection_hours: int,
-    blackout_target_soc_percent: float,
-    enable_weather_risk: bool,
-    weather_risk_level: str,
-    weather_target_soc_percent: float,
-    target_reason: str,
-    battery_efficiency: float,
-    config: Dict[str, Any],
-    iso_tz_offset: str,
-    mode_label_home_ups: str,
-    mode_label_home_i: str,
+    plan: EconomicChargingPlanConfig,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Economic charging plan with forward simulation."""
     timeline = [dict(point) for point in timeline_data]
 
-    charge_per_interval = charging_power_kw / 4.0
+    charge_per_interval = plan.charging_power_kw / 4.0
     current_time = datetime.now()
 
     protection_soc_kwh = calculate_protection_requirement(
         timeline,
-        max_capacity,
-        config=config,
-        iso_tz_offset=iso_tz_offset,
+        plan.max_capacity,
+        config=plan.config,
+        iso_tz_offset=plan.iso_tz_offset,
     )
 
     if protection_soc_kwh is not None:
@@ -68,15 +68,15 @@ def economic_charging_plan(
 
             candidates = get_candidate_intervals(
                 timeline,
-                max_charging_price,
+                plan.max_charging_price,
                 current_time=current_time,
-                iso_tz_offset=iso_tz_offset,
+                iso_tz_offset=plan.iso_tz_offset,
             )
 
             if not candidates:
                 _LOGGER.error(
                     "PROTECTION FAILED: No charging candidates under max_price=%sCZK",
-                    max_charging_price,
+                    plan.max_charging_price,
                 )
             else:
                 charged = 0.0
@@ -101,11 +101,11 @@ def economic_charging_plan(
                     recalculate_timeline_from_index(
                         timeline,
                         idx,
-                        max_capacity=max_capacity,
-                        min_capacity=min_capacity_floor,
-                        efficiency=battery_efficiency,
-                        mode_label_home_ups=mode_label_home_ups,
-                        mode_label_home_i=mode_label_home_i,
+                        max_capacity=plan.max_capacity,
+                        min_capacity=plan.min_capacity_floor,
+                        efficiency=plan.battery_efficiency,
+                        mode_label_home_ups=plan.mode_label_home_ups,
+                        mode_label_home_i=plan.mode_label_home_i,
                     )
 
                 _LOGGER.info(
@@ -116,15 +116,15 @@ def economic_charging_plan(
 
     candidates = get_candidate_intervals(
         timeline,
-        max_charging_price,
+        plan.max_charging_price,
         current_time=current_time,
-        iso_tz_offset=iso_tz_offset,
+        iso_tz_offset=plan.iso_tz_offset,
     )
 
     if not candidates:
         _LOGGER.warning(
             "No economic charging candidates under max_price=%sCZK",
-            max_charging_price,
+            plan.max_charging_price,
         )
         return timeline, {}
 
@@ -143,8 +143,8 @@ def economic_charging_plan(
             charge_now=True,
             charge_amount_kwh=charge_per_interval,
             horizon_hours=horizon_hours,
-            effective_minimum_kwh=effective_minimum_kwh,
-            efficiency=battery_efficiency,
+            effective_minimum_kwh=plan.effective_minimum_kwh,
+            efficiency=plan.battery_efficiency,
         )
         cost_charge = result_charge["total_charging_cost"]
 
@@ -154,20 +154,20 @@ def economic_charging_plan(
             charge_now=False,
             charge_amount_kwh=0,
             horizon_hours=horizon_hours,
-            effective_minimum_kwh=effective_minimum_kwh,
-            efficiency=battery_efficiency,
+            effective_minimum_kwh=plan.effective_minimum_kwh,
+            efficiency=plan.battery_efficiency,
         )
         cost_wait = result_wait["total_charging_cost"]
         min_soc_wait = result_wait["min_soc"]
         death_valley_wait = result_wait["death_valley_reached"]
 
         if death_valley_wait:
-            shortage = effective_minimum_kwh - min_soc_wait
+            shortage = plan.effective_minimum_kwh - min_soc_wait
 
             if shortage > 0:
                 min_charge = calculate_minimum_charge(
                     scenario_wait_min_soc=min_soc_wait,
-                    effective_minimum_kwh=effective_minimum_kwh,
+                    effective_minimum_kwh=plan.effective_minimum_kwh,
                     max_charge_per_interval=charge_per_interval,
                 )
 
@@ -176,7 +176,7 @@ def economic_charging_plan(
                     timestamp,
                     min_charge,
                     min_soc_wait,
-                    effective_minimum_kwh,
+                    plan.effective_minimum_kwh,
                 )
 
                 old_charge = timeline[idx].get("grid_charge_kwh", 0)
@@ -187,11 +187,11 @@ def economic_charging_plan(
                 recalculate_timeline_from_index(
                     timeline,
                     idx,
-                    max_capacity=max_capacity,
-                    min_capacity=min_capacity_floor,
-                    efficiency=battery_efficiency,
-                    mode_label_home_ups=mode_label_home_ups,
-                    mode_label_home_i=mode_label_home_i,
+                    max_capacity=plan.max_capacity,
+                    min_capacity=plan.min_capacity_floor,
+                    efficiency=plan.battery_efficiency,
+                    mode_label_home_ups=plan.mode_label_home_ups,
+                    mode_label_home_i=plan.mode_label_home_i,
                 )
 
                 _LOGGER.info(
@@ -205,7 +205,7 @@ def economic_charging_plan(
 
         savings_per_kwh = (cost_wait - cost_charge) / charge_per_interval
 
-        if savings_per_kwh >= min_savings_margin:
+        if savings_per_kwh >= plan.min_savings_margin:
             old_charge = timeline[idx].get("grid_charge_kwh", 0)
             timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
             if timeline[idx].get("reason") == "normal":
@@ -214,11 +214,11 @@ def economic_charging_plan(
             recalculate_timeline_from_index(
                 timeline,
                 idx,
-                max_capacity=max_capacity,
-                min_capacity=min_capacity_floor,
-                efficiency=battery_efficiency,
-                mode_label_home_ups=mode_label_home_ups,
-                mode_label_home_i=mode_label_home_i,
+                max_capacity=plan.max_capacity,
+                min_capacity=plan.min_capacity_floor,
+                efficiency=plan.battery_efficiency,
+                mode_label_home_ups=plan.mode_label_home_ups,
+                mode_label_home_i=plan.mode_label_home_i,
             )
 
             _LOGGER.info(
@@ -227,7 +227,7 @@ def economic_charging_plan(
                 timestamp,
                 price,
                 savings_per_kwh,
-                min_savings_margin,
+                plan.min_savings_margin,
             )
         else:
             _LOGGER.debug(
@@ -235,37 +235,38 @@ def economic_charging_plan(
                 timestamp,
                 price,
                 savings_per_kwh,
-                min_savings_margin,
+                plan.min_savings_margin,
             )
 
     final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
-    target_achieved = final_capacity >= target_capacity_kwh
-    min_achieved = final_capacity >= min_capacity_kwh
+    target_achieved = final_capacity >= plan.target_capacity_kwh
+    min_achieved = final_capacity >= plan.min_capacity_kwh
 
     metrics = {
         "algorithm": "economic",
-        "target_capacity_kwh": target_capacity_kwh,
-        "effective_minimum_kwh": effective_minimum_kwh,
+        "target_capacity_kwh": plan.target_capacity_kwh,
+        "effective_minimum_kwh": plan.effective_minimum_kwh,
         "final_capacity_kwh": final_capacity,
-        "min_capacity_kwh": min_capacity_kwh,
+        "min_capacity_kwh": plan.min_capacity_kwh,
         "target_achieved": target_achieved,
         "min_achieved": min_achieved,
         "shortage_kwh": (
-            max(0, target_capacity_kwh - final_capacity) if not target_achieved else 0
+            max(0, plan.target_capacity_kwh - final_capacity) if not target_achieved else 0
         ),
-        "protection_enabled": enable_blackout_protection or enable_weather_risk,
+        "protection_enabled": plan.config.get("enable_blackout_protection", False)
+        or plan.config.get("enable_weather_risk", False),
         "protection_soc_kwh": protection_soc_kwh,
         "optimal_target_info": {
-            "target_kwh": target_capacity_kwh,
-            "target_percent": (target_capacity_kwh / max_capacity * 100),
-            "reason": target_reason,
+            "target_kwh": plan.target_capacity_kwh,
+            "target_percent": (plan.target_capacity_kwh / plan.max_capacity * 100),
+            "reason": plan.target_reason,
         },
     }
 
     _LOGGER.info(
         "Economic charging complete: final=%.2fkWh, target=%.2fkWh, achieved=%s",
         final_capacity,
-        target_capacity_kwh,
+        plan.target_capacity_kwh,
         target_achieved,
     )
 
@@ -278,7 +279,6 @@ def smart_charging_plan(
     min_capacity: float,
     target_capacity: float,
     max_price: float,
-    price_threshold: float,
     charging_power_kw: float,
     max_capacity: float,
     efficiency: float,

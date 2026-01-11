@@ -68,6 +68,7 @@ async def plan_balancing(
 ) -> Dict[str, Any]:
     """Compute balancing plan for requested window."""
     await asyncio.sleep(0)
+    _ = sensor
     try:
         _LOGGER.info(
             "Balancing request: %s window=%s-%s target=%s%%",

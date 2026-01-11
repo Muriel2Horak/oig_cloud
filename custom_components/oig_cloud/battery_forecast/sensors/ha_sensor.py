@@ -726,12 +726,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_savings_margin: float,
         charging_power_kw: float,
         max_capacity: float,
-        enable_blackout_protection: bool,
-        blackout_protection_hours: int,
-        blackout_target_soc_percent: float,
-        enable_weather_risk: bool,
-        weather_risk_level: str,
-        weather_target_soc_percent: float,
         target_reason: str = "default",
     ) -> List[Dict[str, Any]]:
         """Proxy to charging helpers."""
@@ -745,12 +739,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_savings_margin=min_savings_margin,
             charging_power_kw=charging_power_kw,
             max_capacity=max_capacity,
-            enable_blackout_protection=enable_blackout_protection,
-            blackout_protection_hours=blackout_protection_hours,
-            blackout_target_soc_percent=blackout_target_soc_percent,
-            enable_weather_risk=enable_weather_risk,
-            weather_risk_level=weather_risk_level,
-            weather_target_soc_percent=weather_target_soc_percent,
             iso_tz_offset=ISO_TZ_OFFSET,
             target_reason=target_reason,
         )
@@ -761,7 +749,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         min_capacity: float,
         target_capacity: float,
         max_price: float,
-        price_threshold: float,
         charging_power_kw: float,
         max_capacity: float,
     ) -> List[Dict[str, Any]]:
@@ -772,7 +759,6 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             min_capacity=min_capacity,
             target_capacity=target_capacity,
             max_price=max_price,
-            price_threshold=price_threshold,
             charging_power_kw=charging_power_kw,
             max_capacity=max_capacity,
         )

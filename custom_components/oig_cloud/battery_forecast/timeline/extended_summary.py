@@ -140,6 +140,7 @@ def build_today_tile_summary(
     sensor: Any, intervals: List[Dict[str, Any]], now: datetime
 ) -> Dict[str, Any]:
     """Build summary for the today tile."""
+    _ = sensor
     if not intervals:
         return get_empty_tile_summary(now)
 

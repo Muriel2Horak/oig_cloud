@@ -53,6 +53,6 @@ def test_schedule_retry_task_dispatches(monkeypatch):
         def info(self, *_args, **_kwargs):
             return None
 
-    task = shared.schedule_retry_task(hass, fake_fetch, 1, DummyLogger(), "id", "label")
+    task = shared.schedule_retry_task(hass, fake_fetch, 1, DummyLogger(), "id")
     assert task is not None
     assert hass.created == 1

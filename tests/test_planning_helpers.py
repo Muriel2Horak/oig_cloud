@@ -12,6 +12,9 @@ from custom_components.oig_cloud.battery_forecast.planning import (
     mode_guard,
     mode_recommendations,
 )
+from custom_components.oig_cloud.battery_forecast.planning.charging_plan import (
+    EconomicChargingPlanConfig,
+)
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
@@ -955,12 +958,6 @@ def test_charging_helpers_store_metrics(monkeypatch):
         min_savings_margin=0.1,
         charging_power_kw=4.0,
         max_capacity=10.0,
-        enable_blackout_protection=False,
-        blackout_protection_hours=12,
-        blackout_target_soc_percent=60.0,
-        enable_weather_risk=False,
-        weather_risk_level="low",
-        weather_target_soc_percent=50.0,
         iso_tz_offset="+00:00",
     )
 
@@ -973,7 +970,6 @@ def test_charging_helpers_store_metrics(monkeypatch):
         min_capacity=1.0,
         target_capacity=2.0,
         max_price=5.0,
-        price_threshold=5.0,
         charging_power_kw=4.0,
         max_capacity=10.0,
     )
@@ -988,30 +984,26 @@ def test_economic_charging_plan_death_valley():
 
     timeline, metrics = charging_plan.economic_charging_plan(
         timeline_data=timeline,
-        min_capacity_kwh=1.0,
-        min_capacity_floor=0.5,
-        effective_minimum_kwh=2.0,
-        target_capacity_kwh=4.0,
-        max_charging_price=10.0,
-        min_savings_margin=0.5,
-        charging_power_kw=4.0,
-        max_capacity=10.0,
-        enable_blackout_protection=True,
-        blackout_protection_hours=12,
-        blackout_target_soc_percent=60.0,
-        enable_weather_risk=False,
-        weather_risk_level="low",
-        weather_target_soc_percent=50.0,
-        target_reason="test",
-        battery_efficiency=1.0,
-        config={
-            "enable_blackout_protection": True,
-            "blackout_protection_hours": 12,
-            "blackout_target_soc_percent": 60.0,
-        },
-        iso_tz_offset="+00:00",
-        mode_label_home_ups="Home UPS",
-        mode_label_home_i="Home 1",
+        plan=EconomicChargingPlanConfig(
+            min_capacity_kwh=1.0,
+            min_capacity_floor=0.5,
+            effective_minimum_kwh=2.0,
+            target_capacity_kwh=4.0,
+            max_charging_price=10.0,
+            min_savings_margin=0.5,
+            charging_power_kw=4.0,
+            max_capacity=10.0,
+            battery_efficiency=1.0,
+            config={
+                "enable_blackout_protection": True,
+                "blackout_protection_hours": 12,
+                "blackout_target_soc_percent": 60.0,
+            },
+            iso_tz_offset="+00:00",
+            mode_label_home_ups="Home UPS",
+            mode_label_home_i="Home 1",
+            target_reason="test",
+        ),
     )
 
     assert metrics["algorithm"] == "economic"
@@ -1045,7 +1037,6 @@ def test_smart_charging_plan_adds_charge():
         min_capacity=1.0,
         target_capacity=2.0,
         max_price=5.0,
-        price_threshold=5.0,
         charging_power_kw=4.0,
         max_capacity=10.0,
         efficiency=1.0,
