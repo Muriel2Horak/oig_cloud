@@ -37,6 +37,21 @@ def test_normalize_profile_name_fallback():
     assert module.AdaptiveConsumptionHelper._normalize_profile_name(None) == "None"
 
 
+def test_normalize_profile_name_strips_similarity_marker():
+    name = "Profil A (podobne)"
+    assert module.AdaptiveConsumptionHelper._normalize_profile_name(name) == "Profil A"
+
+
+def test_normalize_profile_name_handles_unclosed_paren():
+    name = "Profil B (shoda"
+    assert module.AdaptiveConsumptionHelper._normalize_profile_name(name) == "Profil B (shoda"
+
+
+def test_normalize_profile_name_keeps_non_similarity_parens():
+    name = "Profil C (extra)"
+    assert module.AdaptiveConsumptionHelper._normalize_profile_name(name) == "Profil C (extra)"
+
+
 def test_build_profile_suffix_invalid_values():
     profile = {"characteristics": {"season": "winter"}, "sample_count": "bad"}
     ui = {"sample_count": "bad", "similarity_score": "oops"}

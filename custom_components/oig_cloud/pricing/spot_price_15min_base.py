@@ -158,9 +158,9 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
         if self._track_15min_remove:
             self._track_15min_remove()
         self._cancel_retry_timer()
-        await self._on_remove()
+        await self._on_remove_hook()
 
-    async def _on_remove(self) -> None:
+    async def _on_remove_hook(self) -> None:
         """Optional hook for subclasses."""
 
     async def _fetch_spot_data_with_retry(self, *_: Any) -> None:

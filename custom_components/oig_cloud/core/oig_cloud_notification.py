@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 import aiohttp
 from homeassistant.core import HomeAssistant
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 from homeassistant.helpers.storage import Store

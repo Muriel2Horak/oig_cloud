@@ -192,6 +192,60 @@ def _get_latest_local_entity_update(
         return None
 
 
+def _evaluate_local_state(
+    *,
+    configured: str,
+    expected_box_id: Optional[str],
+    proxy_box_id: Optional[str],
+    proxy_last_dt: Optional[dt_util.dt.datetime],
+    proxy_entity_dt: Optional[dt_util.dt.datetime],
+    local_entities_dt: Optional[dt_util.dt.datetime],
+    now: dt_util.dt.datetime,
+    stale_minutes: int,
+) -> tuple[bool, Optional[dt_util.dt.datetime], str, str]:
+    candidates: list[tuple[str, dt_util.dt.datetime]] = []
+    if proxy_last_dt:
+        candidates.append(("proxy_last_data", proxy_last_dt))
+    if proxy_entity_dt:
+        candidates.append(("proxy_entity_updated", proxy_entity_dt))
+    if local_entities_dt:
+        candidates.append(("local_entities", local_entities_dt))
+
+    source = "none"
+    last_dt: Optional[dt_util.dt.datetime] = None
+    if candidates:
+        source, last_dt = max(candidates, key=lambda item: item[1])
+
+    local_available = False
+    reason = "local_missing"
+    if last_dt:
+        age = (now - last_dt).total_seconds()
+        if age <= stale_minutes * 60:
+            local_available = True
+            reason = f"local_ok_{source}"
+        else:
+            reason = f"local_stale_{int(age)}s_{source}"
+
+    if local_available and expected_box_id:
+        # Extra safety: if proxy reports a box_id, it must match the configured one.
+        if proxy_box_id is None:
+            # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
+            # exist for the configured box id.
+            if local_entities_dt is None:
+                local_available = False
+                reason = "proxy_box_id_missing"
+        elif proxy_box_id != expected_box_id:
+            local_available = False
+            reason = "proxy_box_id_mismatch"
+
+    if configured == DATA_SOURCE_CLOUD_ONLY:
+        effective = DATA_SOURCE_CLOUD_ONLY
+    else:
+        effective = configured if local_available else DATA_SOURCE_CLOUD_ONLY
+
+    return local_available, last_dt, reason, effective
+
+
 def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourceState:
     """Initialize (or refresh) data source state early during setup.
 
@@ -229,46 +283,17 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
         else None
     )
 
-    candidates: list[tuple[str, dt_util.dt.datetime]] = []
-    if proxy_last_dt:
-        candidates.append(("proxy_last_data", proxy_last_dt))
-    if proxy_entity_dt:
-        candidates.append(("proxy_entity_updated", proxy_entity_dt))
-    if local_entities_dt:
-        candidates.append(("local_entities", local_entities_dt))
-
-    source = "none"
-    last_dt: Optional[dt_util.dt.datetime] = None
-    if candidates:
-        source, last_dt = max(candidates, key=lambda item: item[1])
     now = dt_util.utcnow()
-
-    local_available = False
-    reason = "local_missing"
-    if last_dt:
-        age = (now - last_dt).total_seconds()
-        if age <= stale_minutes * 60:
-            local_available = True
-            reason = f"local_ok_{source}"
-        else:
-            reason = f"local_stale_{int(age)}s_{source}"
-
-    if local_available and expected_box_id:
-        # Extra safety: if proxy reports a box_id, it must match the configured one.
-        if proxy_box_id is None:
-            # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
-            # exist for the configured box id.
-            if local_entities_dt is None:
-                local_available = False
-                reason = "proxy_box_id_missing"
-        elif proxy_box_id != expected_box_id:
-            local_available = False
-            reason = "proxy_box_id_mismatch"
-
-    if configured == DATA_SOURCE_CLOUD_ONLY:
-        effective = DATA_SOURCE_CLOUD_ONLY
-    else:
-        effective = configured if local_available else DATA_SOURCE_CLOUD_ONLY
+    local_available, last_dt, reason, effective = _evaluate_local_state(
+        configured=configured,
+        expected_box_id=expected_box_id,
+        proxy_box_id=proxy_box_id,
+        proxy_last_dt=proxy_last_dt,
+        proxy_entity_dt=proxy_entity_dt,
+        local_entities_dt=local_entities_dt,
+        now=now,
+        stale_minutes=stale_minutes,
+    )
 
     state = DataSourceState(
         configured_mode=configured,
@@ -525,46 +550,16 @@ class DataSourceController:
                 self.hass, box_id_for_scan
             )
 
-        candidates: list[tuple[str, dt_util.dt.datetime]] = []
-        if proxy_last_dt:
-            candidates.append(("proxy_last_data", proxy_last_dt))
-        if proxy_entity_dt:
-            candidates.append(("proxy_entity_updated", proxy_entity_dt))
-        if local_entities_dt:
-            candidates.append(("local_entities", local_entities_dt))
-
-        source = "none"
-        last_dt: Optional[dt_util.dt.datetime] = None
-        if candidates:
-            source, last_dt = max(candidates, key=lambda item: item[1])
-
-        local_available = False
-        reason = "local_missing"
-        if last_dt:
-            age = (now - last_dt).total_seconds()
-            if age <= stale_minutes * 60:
-                local_available = True
-                reason = f"local_ok_{source}"
-            else:
-                reason = f"local_stale_{int(age)}s_{source}"
-
-        # Require proxy box id to match configured box id (prevents cross-device wiring).
-        if local_available and expected_box_id:
-            # Extra safety: if proxy reports a box_id, it must match the configured one.
-            if proxy_box_id is None:
-                # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
-                # exist for the configured box id.
-                if local_entities_dt is None:
-                    local_available = False
-                    reason = "proxy_box_id_missing"
-            elif proxy_box_id != expected_box_id:
-                local_available = False
-                reason = "proxy_box_id_mismatch"
-
-        if configured == DATA_SOURCE_CLOUD_ONLY:
-            effective = DATA_SOURCE_CLOUD_ONLY
-        else:
-            effective = configured if local_available else DATA_SOURCE_CLOUD_ONLY
+        local_available, last_dt, reason, effective = _evaluate_local_state(
+            configured=configured,
+            expected_box_id=expected_box_id,
+            proxy_box_id=proxy_box_id,
+            proxy_last_dt=proxy_last_dt,
+            proxy_entity_dt=proxy_entity_dt,
+            local_entities_dt=local_entities_dt,
+            now=now,
+            stale_minutes=stale_minutes,
+        )
 
         prev = get_data_source_state(self.hass, entry_id)
         changed = force or (

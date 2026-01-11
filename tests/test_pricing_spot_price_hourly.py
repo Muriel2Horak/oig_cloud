@@ -332,17 +332,16 @@ def test_validate_spot_data_invalid_prices(monkeypatch):
 def test_setup_time_tracking_after_daily(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     monkeypatch.setattr(hourly_module, "dt_now", lambda: datetime(2025, 1, 1, 14, 0, 0))
-    monkeypatch.setattr(hourly_module, "async_track_time_change", lambda *_a, **_k: lambda: None)
-    called = {"task": 0}
+    called = {"scheduled": 0}
 
-    def fake_task(coro):
-        called["task"] += 1
-        coro.close()
-        return object()
+    def fake_schedule(hass, fetch_coro):
+        called["scheduled"] += 1
+        hass.async_create_task(fetch_coro())
+        return lambda: None
 
-    sensor.hass.async_create_task = fake_task
+    monkeypatch.setattr(hourly_module, "schedule_daily_fetch", fake_schedule)
     sensor._setup_time_tracking()
-    assert called["task"] == 1
+    assert called["scheduled"] == 1
 
 
 def test_get_helpers_missing_data(monkeypatch):
@@ -393,12 +392,12 @@ async def test_schedule_retry_executes(monkeypatch):
 
     async def fake_fetch():
         called["fetch"] += 1
-
-    async def fake_sleep(_delay):
         return None
 
-    sensor.hass.async_create_task = lambda coro: asyncio.create_task(coro)
-    monkeypatch.setattr(hourly_module.asyncio, "sleep", fake_sleep)
+    def fake_schedule(_hass, fetch_coro, _delay, _logger, _entity_id, _label):
+        return asyncio.create_task(fetch_coro())
+
+    monkeypatch.setattr(hourly_module, "schedule_retry_task", fake_schedule)
     sensor._schedule_retry(fake_fetch)
     await sensor._retry_remove
     assert called["fetch"] == 1

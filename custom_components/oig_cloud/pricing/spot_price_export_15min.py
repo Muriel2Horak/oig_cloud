@@ -25,7 +25,7 @@ class ExportPrice15MinSensor(BasePrice15MinSensor):
     ) -> None:
         super().__init__(coordinator, entry, sensor_type, device_info)
 
-    async def _on_remove(self) -> None:
+    async def _on_remove_hook(self) -> None:
         await self._ote_api.close()
 
     def _calculate_interval_price(

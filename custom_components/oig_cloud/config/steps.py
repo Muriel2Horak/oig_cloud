@@ -23,7 +23,7 @@ from .schema import (CONF_SOLAR_FORECAST_API_KEY,
 from .validation import (CannotConnect, InvalidAuth, LiveDataNotEnabled,
                          validate_input)
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     pass
 
 _LOGGER = logging.getLogger(__name__)

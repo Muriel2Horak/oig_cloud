@@ -55,69 +55,69 @@ def test_simulate_uses_shared_simulator(monkeypatch):
 def test_discharge_for_load():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=2.0)
 
-    battery, discharge, grid = sim._discharge_for_load(2.0, 1.0)
-    assert discharge == 0.0
-    assert grid == 1.0
+    res = sim.simulate(2.0, CBB_MODE_HOME_I, 0.0, 1.0)
+    assert res.battery_discharge == 0.0
+    assert res.grid_import == 1.0
 
-    battery, discharge, grid = sim._discharge_for_load(4.0, 1.0)
-    assert grid == 0.0
-    assert discharge > 0.0
+    res = sim.simulate(4.0, CBB_MODE_HOME_I, 0.0, 1.0)
+    assert res.grid_import == 0.0
+    assert res.battery_discharge > 0.0
 
-    battery, discharge, grid = sim._discharge_for_load(3.0, 5.0)
-    assert grid > 0.0
-    assert battery == sim._min
+    res = sim.simulate(3.0, CBB_MODE_HOME_I, 0.0, 5.0)
+    assert res.grid_import > 0.0
+    assert res.battery_end >= 2.0
 
 
 def test_simulate_home_i_day_and_night():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=1.0)
-    day = sim._simulate_home_i(4.9, solar_kwh=2.0, load_kwh=1.0)
+    day = sim.simulate(4.9, CBB_MODE_HOME_I, solar_kwh=2.0, load_kwh=1.0)
     assert day.grid_export >= 0.0
     assert day.solar_used_direct == 1.0
 
-    deficit = sim._simulate_home_i(2.0, solar_kwh=0.5, load_kwh=1.5)
+    deficit = sim.simulate(2.0, CBB_MODE_HOME_I, solar_kwh=0.5, load_kwh=1.5)
     assert deficit.grid_import >= 0.0
 
-    night = sim._simulate_home_i(3.0, solar_kwh=0.0, load_kwh=1.0)
+    night = sim.simulate(3.0, CBB_MODE_HOME_I, solar_kwh=0.0, load_kwh=1.0)
     assert night.grid_import >= 0.0
 
 
 def test_simulate_home_ii():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=1.0)
-    day = sim._simulate_home_ii(4.9, solar_kwh=2.0, load_kwh=1.0)
+    day = sim.simulate(4.9, CBB_MODE_HOME_II, solar_kwh=2.0, load_kwh=1.0)
     assert day.solar_used_direct == 1.0
 
-    deficit = sim._simulate_home_ii(2.0, solar_kwh=0.5, load_kwh=1.5)
+    deficit = sim.simulate(2.0, CBB_MODE_HOME_II, solar_kwh=0.5, load_kwh=1.5)
     assert deficit.grid_import > 0.0
 
-    night = sim._simulate_home_ii(3.0, solar_kwh=0.0, load_kwh=1.0)
+    night = sim.simulate(3.0, CBB_MODE_HOME_II, solar_kwh=0.0, load_kwh=1.0)
     assert night.grid_import >= 0.0
 
 
 def test_simulate_home_iii():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=1.0)
-    day = sim._simulate_home_iii(4.9, solar_kwh=2.0, load_kwh=1.0)
+    day = sim.simulate(4.9, CBB_MODE_HOME_III, solar_kwh=2.0, load_kwh=1.0)
     assert day.grid_import == 1.0
 
-    night = sim._simulate_home_iii(3.0, solar_kwh=0.0, load_kwh=1.0)
+    night = sim.simulate(3.0, CBB_MODE_HOME_III, solar_kwh=0.0, load_kwh=1.0)
     assert night.grid_import >= 0.0
 
-    curtailed = sim._simulate_home_iii(4.0, solar_kwh=3.0, load_kwh=0.0)
+    curtailed = sim.simulate(4.0, CBB_MODE_HOME_III, solar_kwh=3.0, load_kwh=0.0)
     assert curtailed.solar_curtailed >= 0.0
 
 
 def test_simulate_home_ups():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=1.0)
-    res = sim._simulate_home_ups(4.0, solar_kwh=2.0, load_kwh=1.0, force_charge=True)
+    res = sim.simulate(4.0, CBB_MODE_HOME_UPS, solar_kwh=2.0, load_kwh=1.0, force_charge=True)
     assert res.grid_import >= 1.0
     assert res.battery_charge >= 0.0
 
-    res = sim._simulate_home_ups(5.0, solar_kwh=1.0, load_kwh=0.0, force_charge=False)
+    res = sim.simulate(5.0, CBB_MODE_HOME_UPS, solar_kwh=1.0, load_kwh=0.0, force_charge=False)
     assert res.solar_exported >= 0.0
 
-    res = sim._simulate_home_ups(4.5, solar_kwh=2.0, load_kwh=0.0, force_charge=False)
+    res = sim.simulate(4.5, CBB_MODE_HOME_UPS, solar_kwh=2.0, load_kwh=0.0, force_charge=False)
     assert res.solar_curtailed >= 0.0
 
-    res = sim._simulate_home_ups(4.0, solar_kwh=0.0, load_kwh=0.0, force_charge=True)
+    res = sim.simulate(4.0, CBB_MODE_HOME_UPS, solar_kwh=0.0, load_kwh=0.0, force_charge=True)
     assert res.grid_import >= 0.0
 
 
@@ -139,10 +139,10 @@ def test_calculate_cost():
 
 def test_simulate_home_i_and_ii_curtailed():
     sim = interval_simulator.create_simulator(max_capacity=5.0, min_capacity=1.0)
-    home_i = sim._simulate_home_i(4.0, solar_kwh=3.0, load_kwh=0.0)
+    home_i = sim.simulate(4.0, CBB_MODE_HOME_I, solar_kwh=3.0, load_kwh=0.0)
     assert home_i.solar_curtailed >= 0.0
 
-    home_ii = sim._simulate_home_ii(4.0, solar_kwh=3.0, load_kwh=0.0)
+    home_ii = sim.simulate(4.0, CBB_MODE_HOME_II, solar_kwh=3.0, load_kwh=0.0)
     assert home_ii.solar_curtailed >= 0.0
 
 

@@ -62,6 +62,23 @@ class FakeEntityId:
         return False
 
 
+class PrefixSensitiveEntityId:
+    def __init__(self, after_prefix: str) -> None:
+        self._after_prefix = after_prefix
+
+    def split(self, _sep: str):
+        return ["sensor.oig", "box", "extra"]
+
+    def startswith(self, prefix: str) -> bool:
+        return prefix != "sensor.oig_bojler"
+
+    def __getitem__(self, _key):
+        return self._after_prefix
+
+    def __contains__(self, _item: str) -> bool:
+        return False
+
+
 class DummyEntityRegistry:
     def __init__(self) -> None:
         self.removed: list[str] = []
@@ -356,6 +373,23 @@ async def test_cleanup_renamed_sensors_parts_after_empty(monkeypatch):
         er,
         "async_entries_for_config_entry",
         lambda *_a, **_k: [DummyEntityEntry(FakeEntityId("boxonly"))],
+    )
+
+    removed = await sensor_module._cleanup_renamed_sensors(entity_reg, entry, set())
+    assert removed == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_renamed_sensors_parts_after_empty_prefix_sensitive(monkeypatch):
+    entry = DummyEntry()
+    entity_reg = DummyEntityRegistry()
+
+    from homeassistant.helpers import entity_registry as er
+
+    monkeypatch.setattr(
+        er,
+        "async_entries_for_config_entry",
+        lambda *_a, **_k: [DummyEntityEntry(PrefixSensitiveEntityId("boxonly"))],
     )
 
     removed = await sensor_module._cleanup_renamed_sensors(entity_reg, entry, set())
