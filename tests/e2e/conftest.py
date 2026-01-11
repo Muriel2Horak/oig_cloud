@@ -30,7 +30,7 @@ def e2e_entry_options() -> Dict[str, Any]:
     }
 
 
-async def _setup_entry(hass, mock_api, entry_options):
+async def _setup_entry(hass, mock_api, entry_options, monkeypatch):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
@@ -67,12 +67,16 @@ async def _setup_entry(hass, mock_api, entry_options):
 
     hass.config_entries.async_forward_entry_setups = _forward_entry_setups
 
-    init_module.OigCloudApi = lambda *_a, **_k: mock_api
-    init_module.OigCloudCoordinator = DummyCoordinator
-    init_module.get_data_source_state = _data_source_state
-    init_module._setup_frontend_panel = _setup_frontend
-    init_module.setup_planning_api_views = lambda *_a, **_k: None
-    init_module.setup_api_endpoints = lambda *_a, **_k: None
+    monkeypatch.setattr(init_module, "OigCloudApi", lambda *_a, **_k: mock_api)
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "get_data_source_state", _data_source_state)
+    monkeypatch.setattr(init_module, "_setup_frontend_panel", _setup_frontend)
+    monkeypatch.setattr(
+        init_module, "setup_planning_api_views", lambda *_a, **_k: None, raising=False
+    )
+    monkeypatch.setattr(
+        init_module, "setup_api_endpoints", lambda *_a, **_k: None, raising=False
+    )
 
     hass.http = SimpleNamespace(register_view=lambda *_a, **_k: None)
 
@@ -93,13 +97,13 @@ async def _setup_entry(hass, mock_api, entry_options):
 
 
 @pytest.fixture
-async def e2e_setup(hass, mock_api, e2e_entry_options):
-    return await _setup_entry(hass, mock_api, e2e_entry_options)
+async def e2e_setup(hass, mock_api, e2e_entry_options, monkeypatch):
+    return await _setup_entry(hass, mock_api, e2e_entry_options, monkeypatch)
 
 
 @pytest.fixture
-async def e2e_setup_with_options(hass, mock_api):
+async def e2e_setup_with_options(hass, mock_api, monkeypatch):
     async def _factory(entry_options: Dict[str, Any]):
-        return await _setup_entry(hass, mock_api, entry_options)
+        return await _setup_entry(hass, mock_api, entry_options, monkeypatch)
 
     return _factory

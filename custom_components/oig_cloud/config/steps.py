@@ -12,8 +12,10 @@ from ..const import (CONF_AUTO_MODE_SWITCH, CONF_PASSWORD, CONF_USERNAME,
                      DEFAULT_NAME, DOMAIN)
 from ..core.data_source import (PROXY_BOX_ID_ENTITY_ID,
                                 PROXY_LAST_DATA_ENTITY_ID)
-from .schema import (CONF_SOLAR_FORECAST_API_KEY, CONF_SOLAR_FORECAST_LATITUDE,
+from .schema import (CONF_SOLAR_FORECAST_API_KEY,
+                     CONF_SOLAR_FORECAST_LATITUDE,
                      CONF_SOLAR_FORECAST_LONGITUDE,
+                     CONF_SOLAR_FORECAST_PROVIDER, CONF_SOLCAST_API_KEY,
                      CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
                      CONF_SOLAR_FORECAST_STRING1_DECLINATION,
                      CONF_SOLAR_FORECAST_STRING1_ENABLED,
@@ -1055,12 +1057,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
             errors = {}
 
+            provider = user_input.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
             # Validace API klíče podle módu
             api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
             mode = user_input.get("solar_forecast_mode", "daily_optimized")
 
-            if mode in ["every_4h", "hourly"] and not api_key:
-                errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
+            if provider == "forecast_solar":
+                if mode in ["every_4h", "hourly"] and not api_key:
+                    errors[
+                        "solar_forecast_mode"
+                    ] = "api_key_required_for_frequent_updates"
+            else:
+                solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
+                if not solcast_api_key:
+                    errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
 
             # Validace GPS souřadnic
             try:
@@ -1153,11 +1163,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         ha_latitude = self.hass.config.latitude if self.hass else 50.0
         ha_longitude = self.hass.config.longitude if self.hass else 14.0
 
+        provider = defaults.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+
         schema_fields = {
             vol.Optional(
-                CONF_SOLAR_FORECAST_API_KEY,
-                default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
-            ): str,
+                CONF_SOLAR_FORECAST_PROVIDER,
+                default=provider,
+            ): vol.In(
+                {
+                    "forecast_solar": "Forecast.Solar",
+                    "solcast": "Solcast",
+                }
+            ),
             vol.Optional(
                 "solar_forecast_mode",
                 default=defaults.get("solar_forecast_mode", "daily_optimized"),
@@ -1182,6 +1199,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 default=defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True),
             ): bool,
         }
+
+        if provider == "forecast_solar":
+            schema_fields[vol.Optional(
+                CONF_SOLAR_FORECAST_API_KEY,
+                default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
+            )] = str
+        else:
+            schema_fields[vol.Optional(
+                CONF_SOLCAST_API_KEY,
+                default=defaults.get(CONF_SOLCAST_API_KEY, ""),
+            )] = str
 
         # String 1 parametry - zobrazit jen když je povolen
         if defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True):
@@ -2281,11 +2309,17 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     # Extended sensors (single toggle)
                     # (Per-category sub-toggles were removed; they were unused in runtime.)
                     # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
+                    CONF_SOLAR_FORECAST_PROVIDER: self._wizard_data.get(
+                        CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
+                    ),
                     "solar_forecast_mode": self._wizard_data.get(
                         "solar_forecast_mode", "daily_optimized"
                     ),
                     CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
                         CONF_SOLAR_FORECAST_API_KEY, ""
+                    ),
+                    CONF_SOLCAST_API_KEY: self._wizard_data.get(
+                        CONF_SOLCAST_API_KEY, ""
                     ),
                     CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
                         CONF_SOLAR_FORECAST_LATITUDE, 50.0
@@ -2572,12 +2606,16 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 # Extended sensors (single toggle)
                 # (Per-category sub-toggles were removed; they were unused in runtime.)
                 # Solar forecast - použít všechny parametry stejně jako v ConfigFlow
+                CONF_SOLAR_FORECAST_PROVIDER: self._wizard_data.get(
+                    CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
+                ),
                 "solar_forecast_mode": self._wizard_data.get(
                     "solar_forecast_mode", "daily_optimized"
                 ),
                 CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
                     CONF_SOLAR_FORECAST_API_KEY, ""
                 ),
+                CONF_SOLCAST_API_KEY: self._wizard_data.get(CONF_SOLCAST_API_KEY, ""),
                 CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
                     CONF_SOLAR_FORECAST_LATITUDE, 50.0
                 ),

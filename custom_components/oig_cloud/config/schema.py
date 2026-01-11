@@ -14,7 +14,9 @@ CONF_EXTENDED_SCAN_INTERVAL = "extended_scan_interval"
 
 # Solar Forecast constants
 CONF_SOLAR_FORECAST_ENABLED = "solar_forecast_enabled"
+CONF_SOLAR_FORECAST_PROVIDER = "solar_forecast_provider"
 CONF_SOLAR_FORECAST_API_KEY = "solar_forecast_api_key"
+CONF_SOLCAST_API_KEY = "solcast_api_key"
 CONF_SOLAR_FORECAST_LATITUDE = "solar_forecast_latitude"
 CONF_SOLAR_FORECAST_LONGITUDE = "solar_forecast_longitude"
 CONF_SOLAR_FORECAST_INTERVAL = "solar_forecast_interval"

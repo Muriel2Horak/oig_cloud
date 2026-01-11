@@ -6,6 +6,7 @@
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ Pro aktualizaci každé 4 hodiny nebo každou hodinu je vyžadován API klíč z Forecast.Solar",
+      "solcast_api_key_required": "⚠️ Je vyžadován API klíč pro Solcast",
       "cannot_connect": "Nepodařilo se připojit k OIG Cloud API",
       "dashboard_requires_all": "⚠️ Dashboard vyžaduje všechny ostatní moduly (Statistiky, Solární předpověď, Predikce baterie, Cenové senzory, Spotové ceny, Rozšířené senzory)",
       "endpoint_must_start_with_slash": "⚠️ Endpoint musí začínat lomítkem (/)",
@@ -311,7 +312,9 @@
       "wizard_solar": {
         "data": {
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "solar_forecast_provider": "Poskytovatel předpovědi",
           "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solcast_api_key": "Solcast API klíč",
           "solar_forecast_latitude": "GPS šířka instalace",
           "solar_forecast_longitude": "GPS délka instalace",
           "solar_forecast_mode": "Režim aktualizace předpovědi",
@@ -326,7 +329,9 @@
         },
         "data_description": {
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "solar_forecast_provider": "Vyberte zdroj dat pro solární předpověď",
           "solar_forecast_api_key": "Nepovinné pro ZDARMA režimy. Povinné pro časté aktualizace (4h, 1h)",
+          "solcast_api_key": "Povinné pro Solcast",
           "solar_forecast_latitude": "Rozsah: -90° až 90° (Střední Evropa cca 48-51°)",
           "solar_forecast_longitude": "Rozsah: -180° až 180° (Střední Evropa cca 12-19°)",
           "solar_forecast_mode": "🎯 Optimalizovaný = 3× denně v 6:00, 12:00, 16:00 (DOPORUČENO)\n🌅 Denní = 1× denně v 6:00\n🕐 4h/⚡1h = vyžaduje API klíč",

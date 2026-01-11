@@ -22,6 +22,7 @@ FORECAST_SOLAR_API_URL = (
     "https://api.forecast.solar/estimate/{lat}/{lon}/{declination}/{azimuth}/{kwp}"
 )
 FORECAST_SOLAR_API_URL_WITH_KEY = "https://api.forecast.solar/{api_key}/estimate/{lat}/{lon}/{declination}/{azimuth}/{kwp}"
+SOLCAST_API_URL = "https://api.solcast.com.au/world_radiation/forecasts"
 
 
 def _parse_forecast_hour(hour_str: str) -> Optional[datetime]:
@@ -347,6 +348,13 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 )
                 return
 
+            provider = self._config_entry.options.get(
+                "solar_forecast_provider", "forecast_solar"
+            )
+            if provider == "solcast":
+                await self._fetch_solcast_data(current_time)
+                return
+
             # Konfigurační parametry
             lat = self._config_entry.options.get("solar_forecast_latitude", 50.1219800)
             lon = self._config_entry.options.get("solar_forecast_longitude", 13.9373742)
@@ -541,6 +549,157 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                     f"[{self.entity_id}] Using cached solar forecast data from previous successful fetch"
                 )
             # else: necháváme _last_forecast_data = None
+
+    async def _fetch_solcast_data(self, current_time: float) -> None:
+        """Fetch forecast data from Solcast API and map to unified structure."""
+        lat = self._config_entry.options.get("solar_forecast_latitude", 50.1219800)
+        lon = self._config_entry.options.get("solar_forecast_longitude", 13.9373742)
+        api_key = self._config_entry.options.get("solcast_api_key", "").strip()
+
+        if not api_key:
+            _LOGGER.error("🌞 Solcast API key missing")
+            return
+
+        string1_enabled = self._config_entry.options.get(
+            "solar_forecast_string1_enabled", True
+        )
+        string2_enabled = self._config_entry.options.get(
+            "solar_forecast_string2_enabled", False
+        )
+
+        kwp1 = (
+            float(self._config_entry.options.get("solar_forecast_string1_kwp", 0))
+            if string1_enabled
+            else 0.0
+        )
+        kwp2 = (
+            float(self._config_entry.options.get("solar_forecast_string2_kwp", 0))
+            if string2_enabled
+            else 0.0
+        )
+        total_kwp = kwp1 + kwp2
+        if total_kwp <= 0:
+            _LOGGER.error("🌞 Solcast requires at least one enabled string with kWp")
+            return
+
+        url = (
+            f"{SOLCAST_API_URL}?latitude={lat}&longitude={lon}"
+            f"&format=json&api_key={api_key}"
+        )
+        _LOGGER.info(f"🌞 Calling Solcast API: {url}")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                elif response.status in (401, 403):
+                    _LOGGER.error("🌞 Solcast authorization failed")
+                    return
+                elif response.status == 429:
+                    _LOGGER.warning("🌞 Solcast rate limited")
+                    return
+                else:
+                    error_text = await response.text()
+                    _LOGGER.error(
+                        f"🌞 Solcast API error {response.status}: {error_text}"
+                    )
+                    return
+
+        forecasts = data.get("forecasts", [])
+        if not forecasts:
+            _LOGGER.error("🌞 Solcast response has no forecasts")
+            return
+
+        self._last_forecast_data = self._process_solcast_data(
+            forecasts, kwp1, kwp2
+        )
+        self._last_api_call = current_time
+
+        await self._save_persistent_data()
+
+        if hasattr(self.coordinator, "solar_forecast_data"):
+            self.coordinator.solar_forecast_data = self._last_forecast_data
+        else:
+            setattr(self.coordinator, "solar_forecast_data", self._last_forecast_data)
+
+        _LOGGER.info(
+            f"🌞 Solcast forecast data updated - last API call: {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        self.async_write_ha_state()
+        await self._broadcast_forecast_data()
+
+    def _process_solcast_data(
+        self, forecasts: list[Dict[str, Any]], kwp1: float, kwp2: float
+    ) -> Dict[str, Any]:
+        """Transform Solcast forecasts into unified solar forecast structure."""
+        total_kwp = kwp1 + kwp2
+        ratio1 = (kwp1 / total_kwp) if total_kwp else 0.0
+        ratio2 = (kwp2 / total_kwp) if total_kwp else 0.0
+
+        watts_data: Dict[str, float] = {}
+        daily_kwh: Dict[str, float] = {}
+
+        for entry in forecasts:
+            period_end = entry.get("period_end")
+            ghi = entry.get("ghi")
+            if not period_end or ghi is None:
+                continue
+
+            period_hours = self._parse_solcast_period_hours(entry.get("period"))
+            try:
+                ghi_value = float(ghi)
+            except (TypeError, ValueError):
+                continue
+
+            pv_estimate_kw = total_kwp * (ghi_value / 1000.0)
+            watts_data[period_end] = pv_estimate_kw * 1000.0
+
+            day_key = period_end.split("T")[0]
+            daily_kwh[day_key] = daily_kwh.get(day_key, 0.0) + (
+                pv_estimate_kw * period_hours
+            )
+
+        total_hourly = self._convert_to_hourly(watts_data)
+        total_daily = daily_kwh
+
+        string1_hourly = {k: v * ratio1 for k, v in total_hourly.items()}
+        string2_hourly = {k: v * ratio2 for k, v in total_hourly.items()}
+        string1_daily = {k: v * ratio1 for k, v in total_daily.items()}
+        string2_daily = {k: v * ratio2 for k, v in total_daily.items()}
+
+        return {
+            "response_time": datetime.now().isoformat(),
+            "provider": "solcast",
+            "string1_hourly": string1_hourly,
+            "string1_daily": string1_daily,
+            "string1_today_kwh": next(iter(string1_daily.values()), 0),
+            "string2_hourly": string2_hourly,
+            "string2_daily": string2_daily,
+            "string2_today_kwh": next(iter(string2_daily.values()), 0),
+            "total_hourly": total_hourly,
+            "total_daily": total_daily,
+            "total_today_kwh": next(iter(total_daily.values()), 0),
+            "solcast_raw_data": forecasts,
+        }
+
+    @staticmethod
+    def _parse_solcast_period_hours(period: Optional[str]) -> float:
+        """Parse Solcast period into hours. Defaults to 0.5h."""
+        if not period:
+            return 0.5
+        if period.startswith("PT") and period.endswith("M"):
+            try:
+                minutes = float(period[2:-1])
+                return minutes / 60.0
+            except ValueError:
+                return 0.5
+        if period.startswith("PT") and period.endswith("H"):
+            try:
+                hours = float(period[2:-1])
+                return hours
+            except ValueError:
+                return 0.5
+        return 0.5
 
     async def _broadcast_forecast_data(self) -> None:
         """Pošle signál ostatním solar forecast sensorům o nových datech."""

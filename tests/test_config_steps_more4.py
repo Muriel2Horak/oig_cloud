@@ -228,6 +228,28 @@ async def test_wizard_solar_string_param_errors():
 
 
 @pytest.mark.asyncio
+async def test_wizard_solar_solcast_requires_key():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_solar(
+        {
+            "solar_forecast_provider": "solcast",
+            "solar_forecast_mode": "daily",
+            "solcast_api_key": "",
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 5.0,
+            "solar_forecast_string1_declination": 35,
+            "solar_forecast_string1_azimuth": 0,
+            "solar_forecast_string2_enabled": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["solcast_api_key"] == "solcast_api_key_required"
+
+
+@pytest.mark.asyncio
 async def test_wizard_solar_initial_form():
     flow = DummyWizard()
     result = await flow.async_step_wizard_solar()

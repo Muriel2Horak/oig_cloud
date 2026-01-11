@@ -138,8 +138,10 @@ async def test_wizard_summary_full_option_mapping():
         "enable_extended_sensors": False,
         "enable_chmu_warnings": True,
         "enable_dashboard": True,
+        "solar_forecast_provider": "forecast_solar",
         "solar_forecast_mode": "hourly",
         "solar_forecast_api_key": "key",
+        "solcast_api_key": "",
         "solar_forecast_latitude": 50.5,
         "solar_forecast_longitude": 14.5,
         "solar_forecast_string1_enabled": True,
@@ -208,6 +210,7 @@ async def test_wizard_summary_full_option_mapping():
     assert options["local_event_debounce_ms"] == 150
     assert options["enable_extended_sensors"] is False
     assert options["enable_chmu_warnings"] is True
+    assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "hourly"
     assert options["solar_forecast_string2_enabled"] is True
     assert options["min_capacity_percent"] == 25.0
@@ -248,6 +251,7 @@ async def test_wizard_summary_defaults_for_optional_sections():
 
     assert result["type"] == "create_entry"
     options = result["options"]
+    assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "daily_optimized"
     assert options["min_capacity_percent"] == 20.0
     assert options["target_capacity_percent"] == 80.0
@@ -272,8 +276,10 @@ async def test_wizard_summary_defaults_for_solar_and_battery():
 
     assert result["type"] == "create_entry"
     options = result["options"]
+    assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "daily_optimized"
     assert options["solar_forecast_api_key"] == ""
+    assert options["solcast_api_key"] == ""
     assert options["solar_forecast_latitude"] == 50.0
     assert options["solar_forecast_longitude"] == 14.0
     assert options["solar_forecast_string1_enabled"] is True

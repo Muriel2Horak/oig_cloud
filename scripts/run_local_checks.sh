@@ -19,8 +19,10 @@ echo "==> Installing security tools (pip-audit, safety)"
 echo "==> Installing dev dependencies"
 "$PIP_BIN" install -q -r requirements-dev.txt
 
-echo "==> Running pip-audit"
-"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements.txt -r requirements-dev.txt
+echo "==> Running pip-audit (requirements.txt)"
+"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements.txt
+echo "==> Running pip-audit (requirements-dev.txt)"
+"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements-dev.txt
 
 echo "==> Running safety"
 if [[ -n "${SAFETY_API_KEY:-}" ]]; then

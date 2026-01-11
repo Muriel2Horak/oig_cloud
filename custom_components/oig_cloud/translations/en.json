@@ -6,6 +6,7 @@
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ For updates every 4 hours or every hour, API key from Forecast.Solar is required",
+      "solcast_api_key_required": "⚠️ Solcast API key is required"
       "cannot_connect": "Failed to connect to OIG Cloud API",
       "dashboard_requires_all": "⚠️ Dashboard requires all other modules (Statistics, Solar forecast, Battery prediction, Price sensors, Spot prices, Extended sensors)",
       "endpoint_must_start_with_slash": "⚠️ Endpoint must start with slash (/)",
@@ -311,7 +312,9 @@
       "wizard_solar": {
         "data": {
           "go_back": "⬅️ I want to go back (check + click Submit)",
+          "solar_forecast_provider": "Forecast provider",
           "solar_forecast_api_key": "Forecast.Solar API key",
+          "solcast_api_key": "Solcast API key",
           "solar_forecast_latitude": "Installation GPS latitude",
           "solar_forecast_longitude": "Installation GPS longitude",
           "solar_forecast_mode": "Forecast update mode",
@@ -326,7 +329,9 @@
         },
         "data_description": {
           "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "solar_forecast_provider": "Select the solar forecast data provider",
           "solar_forecast_api_key": "Optional for FREE modes. Required for frequent updates (4h, 1h)",
+          "solcast_api_key": "Required for Solcast requests",
           "solar_forecast_latitude": "Range: -90° to 90° (Central Europe approx 48-51°)",
           "solar_forecast_longitude": "Range: -180° to 180° (Central Europe approx 12-19°)",
           "solar_forecast_mode": "🎯 Optimized = 3x daily at 6:00, 12:00, 16:00 (RECOMMENDED)\n🌅 Daily = 1x daily at 6:00\n🕐 4h/⚡1h = requires API key",

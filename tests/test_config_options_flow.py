@@ -185,6 +185,7 @@ async def test_options_flow_summary_maps_selected_fields():
         "enable_extended_sensors": True,
         "enable_dashboard": True,
         "data_source_mode": "hybrid",
+        "solar_forecast_provider": "forecast_solar",
         "solar_forecast_mode": "hourly",
         "solar_forecast_string2_enabled": True,
         "min_capacity_percent": 25.0,
@@ -204,6 +205,7 @@ async def test_options_flow_summary_maps_selected_fields():
     assert result["type"] == "abort"
     options = flow.hass.config_entries.updated[0][1]
     assert options["data_source_mode"] == "local_only"
+    assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "hourly"
     assert options["solar_forecast_string2_enabled"] is True
     assert options["min_capacity_percent"] == 25.0
@@ -259,8 +261,10 @@ async def test_options_flow_summary_solar_battery_defaults():
 
     assert result["type"] == "abort"
     options = flow.hass.config_entries.updated[0][1]
+    assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "daily_optimized"
     assert options["solar_forecast_api_key"] == ""
+    assert options["solcast_api_key"] == ""
     assert options["solar_forecast_string1_enabled"] is True
     assert options["solar_forecast_string2_enabled"] is False
     assert options["min_capacity_percent"] == 20.0

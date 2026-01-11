@@ -220,6 +220,28 @@ async def test_async_fetch_exception_uses_cached(monkeypatch):
     assert sensor._last_forecast_data["total_today_kwh"] == 1.0
 
 
+def test_process_solcast_data_splits_strings():
+    sensor = _make_sensor({"enable_solar_forecast": True})
+    forecasts = [
+        {
+            "period_end": "2025-01-01T10:00:00+00:00",
+            "ghi": 500,
+            "period": "PT30M",
+        }
+    ]
+    result = sensor._process_solcast_data(forecasts, kwp1=4.0, kwp2=2.0)
+    assert result["total_today_kwh"] == pytest.approx(1.5)
+    assert result["string1_today_kwh"] == pytest.approx(1.0)
+    assert result["string2_today_kwh"] == pytest.approx(0.5)
+
+
+def test_parse_solcast_period_hours():
+    sensor = _make_sensor({"enable_solar_forecast": True})
+    assert sensor._parse_solcast_period_hours("PT30M") == pytest.approx(0.5)
+    assert sensor._parse_solcast_period_hours("PT1H") == pytest.approx(1.0)
+    assert sensor._parse_solcast_period_hours(None) == pytest.approx(0.5)
+
+
 def test_device_info_property():
     sensor = _make_sensor({"enable_solar_forecast": True})
     assert sensor.device_info == {}

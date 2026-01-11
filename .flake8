@@ -12,6 +12,8 @@ exclude =
     .ruff_cache,
     .dev_docs,
     .ha-env,
+    .ha-env-313,
+    .ha-env-*,
     .pyenv,
     local_dev,
     node_modules,
