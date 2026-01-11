@@ -820,7 +820,7 @@ async def _init_session_manager_and_coordinator(
     no_telemetry: bool,
     standard_scan_interval: int,
     extended_scan_interval: int,
-) -> tuple[OigCloudCoordinator, Any]:
+) -> tuple[OigCloudCoordinator, Any, OigCloudApi]:
     oig_api = OigCloudApi(username, password, no_telemetry)
 
     from .api.oig_cloud_session_manager import OigCloudSessionManager
@@ -864,7 +864,7 @@ async def _init_session_manager_and_coordinator(
     except Exception as err:
         _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
 
-    return coordinator, session_manager
+    return coordinator, session_manager, oig_api
 
 
 def _resolve_entry_box_id(entry: ConfigEntry, coordinator: OigCloudCoordinator | None) -> str | None:
@@ -931,7 +931,7 @@ async def async_setup_entry(
 
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
-        coordinator, session_manager = await _init_session_manager_and_coordinator(
+        coordinator, session_manager, oig_api = await _init_session_manager_and_coordinator(
             hass,
             entry,
             username,
@@ -1151,7 +1151,9 @@ async def async_setup_entry(
                     try:
                         await balancing_manager.check_balancing()
                     except Exception as e:
-                    _LOGGER.error("Error checking balancing: %s", e, exc_info=True)
+                        _LOGGER.error(
+                            "Error checking balancing: %s", e, exc_info=True
+                        )
 
                 # Aktualizace každých 30 minut
                 entry.async_on_unload(
