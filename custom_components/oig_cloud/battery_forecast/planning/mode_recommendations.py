@@ -229,63 +229,96 @@ def add_block_details(
     load_kw = block["avg_load_kw"]
     spot_price = block["avg_spot_price"]
 
+    block["rationale"] = _build_mode_rationale(
+        mode=mode,
+        solar_kw=solar_kw,
+        load_kw=load_kw,
+        spot_price=spot_price,
+        mode_home_i=mode_home_i,
+        mode_home_ii=mode_home_ii,
+        mode_home_iii=mode_home_iii,
+        mode_home_ups=mode_home_ups,
+    )
+
+
+def _build_mode_rationale(
+    *,
+    mode: int,
+    solar_kw: float,
+    load_kw: float,
+    spot_price: float,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> str:
     if mode == mode_home_i:
-        if solar_kw > load_kw + 0.1:
-            surplus_kw = solar_kw - load_kw
-            block["rationale"] = (
-                "Nabíjíme baterii z FVE přebytku "
-                f"({surplus_kw:.1f} kW) - ukládáme levnou energii na později"
-            )
-        elif solar_kw > 0.2:
-            deficit_kw = load_kw - solar_kw
-            block["rationale"] = (
-                f"FVE pokrývá část spotřeby ({solar_kw:.1f} kW), "
-                f"baterie doplňuje {deficit_kw:.1f} kW"
-            )
-        else:
-            block["rationale"] = (
-                "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
-                f"{spot_price:.1f} Kč/kWh ze sítě"
-            )
-    elif mode == mode_home_ii:
-        if solar_kw > load_kw + 0.1:
-            surplus_kw = solar_kw - load_kw
-            block["rationale"] = (
-                "Nabíjíme baterii z FVE přebytku "
-                f"({surplus_kw:.1f} kW) - připravujeme na večerní špičku"
-            )
-        else:
-            if spot_price > 4.0:
-                block["rationale"] = (
-                    f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - "
-                    "ale ještě ne vrcholová cena"
-                )
-            else:
-                block["rationale"] = (
-                    f"Levný proud ze sítě ({spot_price:.1f} Kč/kWh) - "
-                    "šetříme baterii na dražší období"
-                )
-    elif mode == mode_home_iii:
-        if solar_kw > 0.2:
-            block["rationale"] = (
-                "Maximální nabíjení baterie - veškeré FVE "
-                f"({solar_kw:.1f} kW) jde do baterie, spotřeba ze sítě"
-            )
-        else:
-            block["rationale"] = (
-                "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
-                f"{spot_price:.1f} Kč/kWh ze sítě"
-            )
-    elif mode == mode_home_ups:
-        if spot_price < 3.0:
-            block["rationale"] = (
-                "Nabíjíme ze sítě - velmi levný proud "
-                f"({spot_price:.1f} Kč/kWh), připravujeme plnou baterii"
-            )
-        else:
-            block["rationale"] = (
-                f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - "
-                "připravujeme na dražší špičku"
-            )
-    else:
-        block["rationale"] = "Optimalizovaný režim podle aktuálních podmínek"
+        return _rationale_home_i(solar_kw=solar_kw, load_kw=load_kw, spot_price=spot_price)
+    if mode == mode_home_ii:
+        return _rationale_home_ii(solar_kw=solar_kw, load_kw=load_kw, spot_price=spot_price)
+    if mode == mode_home_iii:
+        return _rationale_home_iii(solar_kw=solar_kw, spot_price=spot_price)
+    if mode == mode_home_ups:
+        return _rationale_home_ups(spot_price=spot_price)
+    return "Optimalizovaný režim podle aktuálních podmínek"
+
+
+def _rationale_home_i(*, solar_kw: float, load_kw: float, spot_price: float) -> str:
+    if solar_kw > load_kw + 0.1:
+        surplus_kw = solar_kw - load_kw
+        return (
+            "Nabíjíme baterii z FVE přebytku "
+            f"({surplus_kw:.1f} kW) - ukládáme levnou energii na později"
+        )
+    if solar_kw > 0.2:
+        deficit_kw = load_kw - solar_kw
+        return (
+            f"FVE pokrývá část spotřeby ({solar_kw:.1f} kW), "
+            f"baterie doplňuje {deficit_kw:.1f} kW"
+        )
+    return (
+        "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
+        f"{spot_price:.1f} Kč/kWh ze sítě"
+    )
+
+
+def _rationale_home_ii(*, solar_kw: float, load_kw: float, spot_price: float) -> str:
+    if solar_kw > load_kw + 0.1:
+        surplus_kw = solar_kw - load_kw
+        return (
+            "Nabíjíme baterii z FVE přebytku "
+            f"({surplus_kw:.1f} kW) - připravujeme na večerní špičku"
+        )
+    if spot_price > 4.0:
+        return (
+            f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - "
+            "ale ještě ne vrcholová cena"
+        )
+    return (
+        f"Levný proud ze sítě ({spot_price:.1f} Kč/kWh) - "
+        "šetříme baterii na dražší období"
+    )
+
+
+def _rationale_home_iii(*, solar_kw: float, spot_price: float) -> str:
+    if solar_kw > 0.2:
+        return (
+            "Maximální nabíjení baterie - veškeré FVE "
+            f"({solar_kw:.1f} kW) jde do baterie, spotřeba ze sítě"
+        )
+    return (
+        "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
+        f"{spot_price:.1f} Kč/kWh ze sítě"
+    )
+
+
+def _rationale_home_ups(*, spot_price: float) -> str:
+    if spot_price < 3.0:
+        return (
+            "Nabíjíme ze sítě - velmi levný proud "
+            f"({spot_price:.1f} Kč/kWh), připravujeme plnou baterii"
+        )
+    return (
+        f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - "
+        "připravujeme na dražší špičku"
+    )

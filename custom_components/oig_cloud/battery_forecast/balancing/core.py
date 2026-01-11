@@ -694,83 +694,19 @@ class BalancingManager:
                 hours=self._get_holding_time_hours()
             )
         else:
-            # Evaluate each possible window
-            timestamps = sorted(prices.keys())
             holding_time_hours = self._get_holding_time_hours()
-            intervals_needed = holding_time_hours * 4  # 15min intervals
-
-            # Restrict balancing to "cheap" windows. This prevents opportunistic balancing
-            # from selecting expensive evening windows just because waiting has a modeled cost.
-            # Users expect balancing to happen primarily in the cheapest part of the day (night).
-            all_price_values = [float(p) for p in prices.values()]
-            all_price_values.sort()
-            cheap_pct = self._get_cheap_window_percentile()
-            cheap_idx = int(len(all_price_values) * cheap_pct / 100)
-            if all_price_values and cheap_idx >= len(all_price_values):
-                cheap_idx = len(all_price_values) - 1
-            cheap_price_threshold = (
-                all_price_values[cheap_idx] if all_price_values else float("inf")
+            best_window_start, min_cost = await self._select_best_window(
+                prices=prices,
+                immediate_cost=immediate_cost,
+                holding_time_hours=holding_time_hours,
+                current_soc_percent=current_soc_percent,
             )
-            price_threshold = self._get_price_threshold_for_opportunistic()
-            if price_threshold > 0:
-                cheap_price_threshold = min(cheap_price_threshold, price_threshold)
-
-            min_cost = immediate_cost
-            best_window_start = None  # None means immediate is best
-
-            for i in range(len(timestamps) - intervals_needed + 1):
-                window_start = timestamps[i]
-
-                # Skip if window starts in past
-                if window_start <= datetime.now():
-                    continue
-
-                # Skip windows that are not in the cheap price band.
-                window_prices = [
-                    float(prices[timestamps[j]]) for j in range(i, i + intervals_needed)
-                ]
-                window_avg_price = sum(window_prices) / len(window_prices)
-                if window_avg_price > cheap_price_threshold:
-                    continue
-
-                # Calculate total cost for this window
-                delayed_cost = await self._calculate_total_balancing_cost(
-                    window_start, current_soc_percent
-                )
-
-                if delayed_cost < min_cost:
-                    min_cost = delayed_cost
-                    best_window_start = window_start
-
-            # Log decision
-            if best_window_start is None:
-                # Immediate is cheapest
-                _LOGGER.info(
-                    f"✅ Immediate balancing selected: {immediate_cost:.2f} CZK "
-                    f"(cheapest option)"
-                )
-                holding_start = datetime.now() + timedelta(hours=1)
-                holding_end = holding_start + timedelta(hours=holding_time_hours)
-
-                # Store costs for sensor
-                self._last_immediate_cost = immediate_cost
-                self._last_selected_cost = immediate_cost
-                self._last_cost_savings = 0.0
-            else:
-                # Delayed window is cheaper
-                holding_start = best_window_start
-                holding_end = holding_start + timedelta(hours=holding_time_hours)
-                savings = immediate_cost - min_cost
-                _LOGGER.info(
-                    f"⏰ Delayed balancing selected: {min_cost:.2f} CZK at "
-                    f"{holding_start.strftime('%H:%M')} "
-                    f"(vs immediate {immediate_cost:.2f} CZK, saving {savings:.2f} CZK)"
-                )
-
-                # Store costs for sensor
-                self._last_immediate_cost = immediate_cost
-                self._last_selected_cost = min_cost
-                self._last_cost_savings = savings
+            holding_start, holding_end = self._apply_opportunistic_costs(
+                best_window_start=best_window_start,
+                min_cost=min_cost,
+                immediate_cost=immediate_cost,
+                holding_time_hours=holding_time_hours,
+            )
 
         # Plan UPS intervals before holding window
         charging_intervals = self._plan_ups_charging(
@@ -792,6 +728,90 @@ class BalancingManager:
             charging_intervals=all_intervals,
             days_since_last=int(self._get_days_since_last_balancing()),
         )
+
+    async def _select_best_window(
+        self,
+        *,
+        prices: Dict[datetime, float],
+        immediate_cost: float,
+        holding_time_hours: int,
+        current_soc_percent: float,
+    ) -> tuple[Optional[datetime], float]:
+        timestamps = sorted(prices.keys())
+        intervals_needed = holding_time_hours * 4
+        cheap_price_threshold = self._get_cheap_price_threshold(prices)
+        min_cost = immediate_cost
+        best_window_start: Optional[datetime] = None
+        now = datetime.now()
+
+        for i in range(len(timestamps) - intervals_needed + 1):
+            window_start = timestamps[i]
+            if window_start <= now:
+                continue
+
+            window_prices = [
+                float(prices[timestamps[j]]) for j in range(i, i + intervals_needed)
+            ]
+            window_avg_price = sum(window_prices) / len(window_prices)
+            if window_avg_price > cheap_price_threshold:
+                continue
+
+            delayed_cost = await self._calculate_total_balancing_cost(
+                window_start, current_soc_percent
+            )
+            if delayed_cost < min_cost:
+                min_cost = delayed_cost
+                best_window_start = window_start
+
+        return best_window_start, min_cost
+
+    def _get_cheap_price_threshold(self, prices: Dict[datetime, float]) -> float:
+        all_price_values = [float(p) for p in prices.values()]
+        all_price_values.sort()
+        cheap_pct = self._get_cheap_window_percentile()
+        cheap_idx = int(len(all_price_values) * cheap_pct / 100)
+        if all_price_values and cheap_idx >= len(all_price_values):
+            cheap_idx = len(all_price_values) - 1
+        cheap_price_threshold = (
+            all_price_values[cheap_idx] if all_price_values else float("inf")
+        )
+        price_threshold = self._get_price_threshold_for_opportunistic()
+        if price_threshold > 0:
+            cheap_price_threshold = min(cheap_price_threshold, price_threshold)
+        return cheap_price_threshold
+
+    def _apply_opportunistic_costs(
+        self,
+        *,
+        best_window_start: Optional[datetime],
+        min_cost: float,
+        immediate_cost: float,
+        holding_time_hours: int,
+    ) -> tuple[datetime, datetime]:
+        if best_window_start is None:
+            _LOGGER.info(
+                f"✅ Immediate balancing selected: {immediate_cost:.2f} CZK "
+                f"(cheapest option)"
+            )
+            holding_start = datetime.now() + timedelta(hours=1)
+            holding_end = holding_start + timedelta(hours=holding_time_hours)
+            self._last_immediate_cost = immediate_cost
+            self._last_selected_cost = immediate_cost
+            self._last_cost_savings = 0.0
+            return holding_start, holding_end
+
+        holding_start = best_window_start
+        holding_end = holding_start + timedelta(hours=holding_time_hours)
+        savings = immediate_cost - min_cost
+        _LOGGER.info(
+            f"⏰ Delayed balancing selected: {min_cost:.2f} CZK at "
+            f"{holding_start.strftime('%H:%M')} "
+            f"(vs immediate {immediate_cost:.2f} CZK, saving {savings:.2f} CZK)"
+        )
+        self._last_immediate_cost = immediate_cost
+        self._last_selected_cost = min_cost
+        self._last_cost_savings = savings
+        return holding_start, holding_end
 
     async def _create_forced_plan(self) -> Optional[BalancingPlan]:
         """Create forced balancing plan.

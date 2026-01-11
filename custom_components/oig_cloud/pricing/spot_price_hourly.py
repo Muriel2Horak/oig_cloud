@@ -178,7 +178,6 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
             delay,
             _LOGGER,
             self.entity_id,
-            "spot data",
         )
 
     def _cancel_retry_timer(self) -> None:

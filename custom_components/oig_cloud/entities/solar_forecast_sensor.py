@@ -331,6 +331,138 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             self._update_interval_remover = None
         await super().async_will_remove_from_hass()
 
+    def _is_rate_limited(self, current_time: float) -> bool:
+        if current_time - self._last_api_call >= self._min_api_interval:
+            return False
+        remaining_time = self._min_api_interval - (current_time - self._last_api_call)
+        _LOGGER.warning(
+            "🌞 Rate limiting: waiting %.1f seconds before next API call",
+            remaining_time,
+        )
+        return True
+
+    def _build_forecast_url(
+        self,
+        *,
+        api_key: str,
+        lat: float,
+        lon: float,
+        declination: float,
+        azimuth: float,
+        kwp: float,
+    ) -> str:
+        if api_key:
+            return FORECAST_SOLAR_API_URL_WITH_KEY.format(
+                api_key=api_key,
+                lat=lat,
+                lon=lon,
+                declination=declination,
+                azimuth=azimuth,
+                kwp=kwp,
+            )
+        return FORECAST_SOLAR_API_URL.format(
+            lat=lat,
+            lon=lon,
+            declination=declination,
+            azimuth=azimuth,
+            kwp=kwp,
+        )
+
+    async def _fetch_forecast_solar_strings(
+        self,
+        *,
+        lat: float,
+        lon: float,
+        api_key: str,
+        string1_enabled: bool,
+        string2_enabled: bool,
+    ) -> tuple[Optional[dict], Optional[dict]]:
+        data_string1: Optional[dict] = None
+        data_string2: Optional[dict] = None
+
+        async with aiohttp.ClientSession() as session:
+            if string1_enabled:
+                data_string1, fatal = await self._fetch_forecast_string(
+                    session=session,
+                    label="string 1",
+                    lat=lat,
+                    lon=lon,
+                    api_key=api_key,
+                    declination=self._config_entry.options.get(
+                        "solar_forecast_string1_declination", 10
+                    ),
+                    azimuth=self._config_entry.options.get(
+                        "solar_forecast_string1_azimuth", 138
+                    ),
+                    kwp=self._config_entry.options.get(
+                        "solar_forecast_string1_kwp", 5.4
+                    ),
+                    fatal_on_error=True,
+                )
+                if fatal:
+                    return None, None
+            else:
+                _LOGGER.debug("🌞 String 1 disabled")
+
+            if string2_enabled:
+                data_string2, _fatal = await self._fetch_forecast_string(
+                    session=session,
+                    label="string 2",
+                    lat=lat,
+                    lon=lon,
+                    api_key=api_key,
+                    declination=self._config_entry.options.get(
+                        "solar_forecast_string2_declination", 10
+                    ),
+                    azimuth=self._config_entry.options.get(
+                        "solar_forecast_string2_azimuth", 138
+                    ),
+                    kwp=self._config_entry.options.get("solar_forecast_string2_kwp", 0),
+                    fatal_on_error=False,
+                )
+            else:
+                _LOGGER.debug("🌞 String 2 disabled")
+
+        return data_string1, data_string2
+
+    async def _fetch_forecast_string(
+        self,
+        *,
+        session: aiohttp.ClientSession,
+        label: str,
+        lat: float,
+        lon: float,
+        api_key: str,
+        declination: float,
+        azimuth: float,
+        kwp: float,
+        fatal_on_error: bool,
+    ) -> tuple[Optional[dict], bool]:
+        url = self._build_forecast_url(
+            api_key=api_key,
+            lat=lat,
+            lon=lon,
+            declination=declination,
+            azimuth=azimuth,
+            kwp=kwp,
+        )
+        _LOGGER.info("🌞 Calling forecast.solar API for %s: %s", label, url)
+        async with session.get(url, timeout=30) as response:
+            if response.status == 200:
+                data = await response.json()
+                _LOGGER.debug("🌞 %s data received successfully", label)
+                return data, False
+            if response.status == 422:
+                error_text = await response.text()
+                _LOGGER.warning("🌞 %s API error 422: %s", label, error_text)
+                return None, fatal_on_error
+            if response.status == 429:
+                _LOGGER.warning("🌞 %s rate limited", label)
+                return None, fatal_on_error
+            error_text = await response.text()
+            _LOGGER.error("🌞 %s API error %s: %s", label, response.status, error_text)
+            return None, fatal_on_error
+
     async def async_fetch_forecast_data(self) -> None:
         """Získání forecast dat z API pro oba stringy."""
         try:
@@ -338,14 +470,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
             current_time = time.time()
 
-            # Kontrola rate limiting
-            if current_time - self._last_api_call < self._min_api_interval:
-                remaining_time = self._min_api_interval - (
-                    current_time - self._last_api_call
-                )
-                _LOGGER.warning(
-                    f"🌞 Rate limiting: waiting {remaining_time:.1f} seconds before next API call"
-                )
+            if self._is_rate_limited(current_time):
                 return
 
             provider = self._config_entry.options.get(
@@ -370,127 +495,16 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 "solar_forecast_string2_enabled", False
             )
 
-            _LOGGER.debug(f"🌞 String 1: enabled={string1_enabled}")
-            _LOGGER.debug(f"🌞 String 2: enabled={string2_enabled}")
+            _LOGGER.debug("🌞 String 1: enabled=%s", string1_enabled)
+            _LOGGER.debug("🌞 String 2: enabled=%s", string2_enabled)
 
-            # Pro API key už nepotřebujeme headers, protože je v URL
-            headers = {}
-            data_string1 = None
-            data_string2 = None
-
-            # Získání dat pro String 1 (pokud je zapnutý)
-            if string1_enabled:
-                string1_declination = self._config_entry.options.get(
-                    "solar_forecast_string1_declination", 10
-                )
-                string1_azimuth = self._config_entry.options.get(
-                    "solar_forecast_string1_azimuth", 138
-                )
-                string1_kwp = self._config_entry.options.get(
-                    "solar_forecast_string1_kwp", 5.4
-                )
-
-                # URL s nebo bez API key
-                if api_key:
-                    url_string1 = FORECAST_SOLAR_API_URL_WITH_KEY.format(
-                        api_key=api_key,
-                        lat=lat,
-                        lon=lon,
-                        declination=string1_declination,
-                        azimuth=string1_azimuth,
-                        kwp=string1_kwp,
-                    )
-                else:
-                    url_string1 = FORECAST_SOLAR_API_URL.format(
-                        lat=lat,
-                        lon=lon,
-                        declination=string1_declination,
-                        azimuth=string1_azimuth,
-                        kwp=string1_kwp,
-                    )
-
-                _LOGGER.info(
-                    f"🌞 Calling forecast.solar API for string 1: {url_string1}"
-                )
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        url_string1, headers=headers, timeout=30
-                    ) as response:
-                        if response.status == 200:
-                            data_string1 = await response.json()
-                            _LOGGER.debug("🌞 String 1 data received successfully")
-                        elif response.status == 422:
-                            error_text = await response.text()
-                            _LOGGER.warning(f"🌞 String 1 API error 422: {error_text}")
-                            return
-                        elif response.status == 429:
-                            _LOGGER.warning("🌞 String 1 rate limited")
-                            return
-                        else:
-                            error_text = await response.text()
-                            _LOGGER.error(
-                                f"🌞 String 1 API error {response.status}: {error_text}"
-                            )
-                            return
-            else:
-                _LOGGER.debug("🌞 String 1 disabled")
-
-            # Získání dat pro String 2 (pokud je zapnutý)
-            if string2_enabled:
-                string2_declination = self._config_entry.options.get(
-                    "solar_forecast_string2_declination", 10
-                )
-                string2_azimuth = self._config_entry.options.get(
-                    "solar_forecast_string2_azimuth", 138
-                )
-                string2_kwp = self._config_entry.options.get(
-                    "solar_forecast_string2_kwp", 0
-                )
-
-                # URL s nebo bez API key
-                if api_key:
-                    url_string2 = FORECAST_SOLAR_API_URL_WITH_KEY.format(
-                        api_key=api_key,
-                        lat=lat,
-                        lon=lon,
-                        declination=string2_declination,
-                        azimuth=string2_azimuth,
-                        kwp=string2_kwp,
-                    )
-                else:
-                    url_string2 = FORECAST_SOLAR_API_URL.format(
-                        lat=lat,
-                        lon=lon,
-                        declination=string2_declination,
-                        azimuth=string2_azimuth,
-                        kwp=string2_kwp,
-                    )
-
-                _LOGGER.info(
-                    f"🌞 Calling forecast.solar API for string 2: {url_string2}"
-                )
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        url_string2, headers=headers, timeout=30
-                    ) as response:
-                        if response.status == 200:
-                            data_string2 = await response.json()
-                            _LOGGER.debug("🌞 String 2 data received successfully")
-                        elif response.status == 422:
-                            error_text = await response.text()
-                            _LOGGER.warning(f"🌞 String 2 API error 422: {error_text}")
-                            # Pro string 2 pokračujeme i s chybou
-                        elif response.status == 429:
-                            _LOGGER.warning("🌞 String 2 rate limited")
-                        else:
-                            error_text = await response.text()
-                            _LOGGER.error(
-                                f"🌞 String 2 API error {response.status}: {error_text}"
-                            )
-            else:
-                _LOGGER.debug("🌞 String 2 disabled")
+            data_string1, data_string2 = await self._fetch_forecast_solar_strings(
+                lat=lat,
+                lon=lon,
+                api_key=api_key,
+                string1_enabled=string1_enabled,
+                string2_enabled=string2_enabled,
+            )
 
             # Kontrola, zda máme alespoň jeden string s daty
             if not data_string1 and not data_string2:

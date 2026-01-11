@@ -238,7 +238,7 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
 
         self._cancel_retry_timer()
         self._retry_remove = schedule_retry_task(
-            self.hass, fetch_coro, delay, _LOGGER, self.entity_id, self._log_label
+            self.hass, fetch_coro, delay, _LOGGER, self.entity_id
         )
 
     def _cancel_retry_timer(self) -> None:

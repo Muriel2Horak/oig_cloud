@@ -1170,118 +1170,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_solar")
 
-            # Detekce změny stavu checkboxů - pokud se změnil, znovu zobrazit formulář s rozbalenými poli
-            old_string1_enabled = self._wizard_data.get(
-                CONF_SOLAR_FORECAST_STRING1_ENABLED, True
-            )
-            old_string2_enabled = self._wizard_data.get(
-                "solar_forecast_string2_enabled", False
-            )
-            new_string1_enabled = user_input.get(
-                CONF_SOLAR_FORECAST_STRING1_ENABLED, False
-            )
-            new_string2_enabled = user_input.get(
-                "solar_forecast_string2_enabled", False
-            )
-
-            # Pokud se změnil stav checkboxu, aktualizovat data a znovu zobrazit formulář
-            if (
-                old_string1_enabled != new_string1_enabled
-                or old_string2_enabled != new_string2_enabled
-            ):
-                self._wizard_data.update(user_input)
-                return self.async_show_form(
-                    step_id="wizard_solar",
-                    data_schema=self._get_solar_schema(user_input),
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_solar"
-                    ),
-                )
+            if self._should_refresh_solar_form(user_input):
+                return self._show_solar_form(user_input)
 
             errors = {}
-
-            provider = user_input.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
-            # Validace API klíče podle módu
-            api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
-            mode = user_input.get("solar_forecast_mode", "daily_optimized")
-
-            if provider == "forecast_solar":
-                if mode in ["every_4h", "hourly"] and not api_key:
-                    errors[
-                        "solar_forecast_mode"
-                    ] = "api_key_required_for_frequent_updates"
-            else:
-                solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
-                if not solcast_api_key:
-                    errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
-
-            # Validace GPS souřadnic
-            try:
-                lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
-                lon = float(user_input.get(CONF_SOLAR_FORECAST_LONGITUDE, 14.0))
-                if not (-90 <= lat <= 90):
-                    errors[CONF_SOLAR_FORECAST_LATITUDE] = "invalid_latitude"
-                if not (-180 <= lon <= 180):
-                    errors[CONF_SOLAR_FORECAST_LONGITUDE] = "invalid_longitude"
-            except (ValueError, TypeError):
-                errors["base"] = "invalid_coordinates"
-
-            # Validace stringů
-            string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
-            string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
-
-            if not string1_enabled and not string2_enabled:
-                errors["base"] = "no_strings_enabled"
-
-            # Validace parametrů String 1
-            if string1_enabled:
-                try:
-                    kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
-                    decl1 = int(
-                        user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35)
-                    )
-                    azim1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
-
-                    if not (0 < kwp1 <= 15):
-                        errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
-                    if not (0 <= decl1 <= 90):
-                        errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = (
-                            "invalid_declination"
-                        )
-                    if not (0 <= azim1 <= 360):
-                        errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
-                except (ValueError, TypeError):
-                    errors["base"] = "invalid_string1_params"
-
-            # Validace parametrů String 2
-            if string2_enabled:
-                try:
-                    kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
-                    decl2 = int(
-                        user_input.get("solar_forecast_string2_declination", 35)
-                    )
-                    azim2 = int(user_input.get("solar_forecast_string2_azimuth", 180))
-
-                    if not (0 < kwp2 <= 15):
-                        errors["solar_forecast_string2_kwp"] = "invalid_kwp"
-                    if not (0 <= decl2 <= 90):
-                        errors["solar_forecast_string2_declination"] = (
-                            "invalid_declination"
-                        )
-                    if not (0 <= azim2 <= 360):
-                        errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
-                except (ValueError, TypeError):
-                    errors["base"] = "invalid_string2_params"
+            errors.update(self._validate_solar_provider(user_input))
+            errors.update(self._validate_solar_coordinates(user_input))
+            errors.update(self._validate_solar_strings(user_input))
 
             if errors:
-                return self.async_show_form(
-                    step_id="wizard_solar",
-                    data_schema=self._get_solar_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_solar"
-                    ),
-                )
+                return self._show_solar_form(user_input, errors=errors)
 
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_solar")
@@ -1294,6 +1192,115 @@ Kliknutím na "Odeslat" spustíte průvodce.
             data_schema=self._get_solar_schema(),
             description_placeholders=self._get_step_placeholders("wizard_solar"),
         )
+
+    def _show_solar_form(
+        self,
+        user_input: Optional[Dict[str, Any]] = None,
+        *,
+        errors: Optional[Dict[str, str]] = None,
+    ) -> FlowResult:
+        return self.async_show_form(
+            step_id="wizard_solar",
+            data_schema=self._get_solar_schema(user_input),
+            errors=errors,
+            description_placeholders=self._get_step_placeholders("wizard_solar"),
+        )
+
+    def _should_refresh_solar_form(self, user_input: Dict[str, Any]) -> bool:
+        old_string1_enabled = self._wizard_data.get(
+            CONF_SOLAR_FORECAST_STRING1_ENABLED, True
+        )
+        old_string2_enabled = self._wizard_data.get(
+            "solar_forecast_string2_enabled", False
+        )
+        new_string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
+        new_string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
+
+        if (
+            old_string1_enabled != new_string1_enabled
+            or old_string2_enabled != new_string2_enabled
+        ):
+            self._wizard_data.update(user_input)
+            return True
+        return False
+
+    def _validate_solar_provider(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        provider = user_input.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+        api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
+        mode = user_input.get("solar_forecast_mode", "daily_optimized")
+
+        if provider == "forecast_solar":
+            if mode in ["every_4h", "hourly"] and not api_key:
+                errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
+        else:
+            solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
+            if not solcast_api_key:
+                errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
+        return errors
+
+    def _validate_solar_coordinates(
+        self, user_input: Dict[str, Any]
+    ) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        try:
+            lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
+            lon = float(user_input.get(CONF_SOLAR_FORECAST_LONGITUDE, 14.0))
+            if not (-90 <= lat <= 90):
+                errors[CONF_SOLAR_FORECAST_LATITUDE] = "invalid_latitude"
+            if not (-180 <= lon <= 180):
+                errors[CONF_SOLAR_FORECAST_LONGITUDE] = "invalid_longitude"
+        except (ValueError, TypeError):
+            errors["base"] = "invalid_coordinates"
+        return errors
+
+    def _validate_solar_strings(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
+        string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
+
+        if not string1_enabled and not string2_enabled:
+            errors["base"] = "no_strings_enabled"
+
+        if string1_enabled:
+            errors.update(self._validate_solar_string1(user_input))
+        if string2_enabled:
+            errors.update(self._validate_solar_string2(user_input))
+        return errors
+
+    def _validate_solar_string1(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        try:
+            kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
+            decl1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35))
+            azim1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+
+            if not (0 < kwp1 <= 15):
+                errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
+            if not (0 <= decl1 <= 90):
+                errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = "invalid_declination"
+            if not (0 <= azim1 <= 360):
+                errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
+        except (ValueError, TypeError):
+            errors["base"] = "invalid_string1_params"
+        return errors
+
+    def _validate_solar_string2(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        try:
+            kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
+            decl2 = int(user_input.get("solar_forecast_string2_declination", 35))
+            azim2 = int(user_input.get("solar_forecast_string2_azimuth", 180))
+
+            if not (0 < kwp2 <= 15):
+                errors["solar_forecast_string2_kwp"] = "invalid_kwp"
+            if not (0 <= decl2 <= 90):
+                errors["solar_forecast_string2_declination"] = "invalid_declination"
+            if not (0 <= azim2 <= 360):
+                errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
+        except (ValueError, TypeError):
+            errors["base"] = "invalid_string2_params"
+        return errors
 
     def _get_solar_schema(
         self, defaults: Optional[Dict[str, Any]] = None

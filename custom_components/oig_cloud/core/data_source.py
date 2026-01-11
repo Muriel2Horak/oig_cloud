@@ -192,6 +192,66 @@ def _get_latest_local_entity_update(
         return None
 
 
+def _pick_latest_source(
+    proxy_last_dt: Optional[dt_util.dt.datetime],
+    proxy_entity_dt: Optional[dt_util.dt.datetime],
+    local_entities_dt: Optional[dt_util.dt.datetime],
+) -> tuple[str, Optional[dt_util.dt.datetime]]:
+    candidates: list[tuple[str, dt_util.dt.datetime]] = []
+    if proxy_last_dt:
+        candidates.append(("proxy_last_data", proxy_last_dt))
+    if proxy_entity_dt:
+        candidates.append(("proxy_entity_updated", proxy_entity_dt))
+    if local_entities_dt:
+        candidates.append(("local_entities", local_entities_dt))
+    if not candidates:
+        return "none", None
+    source, last_dt = max(candidates, key=lambda item: item[1])
+    return source, last_dt
+
+
+def _evaluate_local_freshness(
+    *,
+    last_dt: Optional[dt_util.dt.datetime],
+    now: dt_util.dt.datetime,
+    stale_minutes: int,
+    source: str,
+) -> tuple[bool, str]:
+    if not last_dt:
+        return False, "local_missing"
+    age = (now - last_dt).total_seconds()
+    if age <= stale_minutes * 60:
+        return True, f"local_ok_{source}"
+    return False, f"local_stale_{int(age)}s_{source}"
+
+
+def _validate_expected_box_id(
+    *,
+    local_available: bool,
+    expected_box_id: Optional[str],
+    proxy_box_id: Optional[str],
+    local_entities_dt: Optional[dt_util.dt.datetime],
+) -> tuple[bool, Optional[str]]:
+    if not local_available or not expected_box_id:
+        return local_available, None
+    # Extra safety: if proxy reports a box_id, it must match the configured one.
+    if proxy_box_id is None:
+        # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
+        # exist for the configured box id.
+        if local_entities_dt is None:
+            return False, "proxy_box_id_missing"
+        return True, None
+    if proxy_box_id != expected_box_id:
+        return False, "proxy_box_id_mismatch"
+    return True, None
+
+
+def _effective_mode(configured: str, local_available: bool) -> str:
+    if configured == DATA_SOURCE_CLOUD_ONLY:
+        return DATA_SOURCE_CLOUD_ONLY
+    return configured if local_available else DATA_SOURCE_CLOUD_ONLY
+
+
 def _evaluate_local_state(
     *,
     configured: str,
@@ -203,46 +263,24 @@ def _evaluate_local_state(
     now: dt_util.dt.datetime,
     stale_minutes: int,
 ) -> tuple[bool, Optional[dt_util.dt.datetime], str, str]:
-    candidates: list[tuple[str, dt_util.dt.datetime]] = []
-    if proxy_last_dt:
-        candidates.append(("proxy_last_data", proxy_last_dt))
-    if proxy_entity_dt:
-        candidates.append(("proxy_entity_updated", proxy_entity_dt))
-    if local_entities_dt:
-        candidates.append(("local_entities", local_entities_dt))
-
-    source = "none"
-    last_dt: Optional[dt_util.dt.datetime] = None
-    if candidates:
-        source, last_dt = max(candidates, key=lambda item: item[1])
-
-    local_available = False
-    reason = "local_missing"
-    if last_dt:
-        age = (now - last_dt).total_seconds()
-        if age <= stale_minutes * 60:
-            local_available = True
-            reason = f"local_ok_{source}"
-        else:
-            reason = f"local_stale_{int(age)}s_{source}"
-
-    if local_available and expected_box_id:
-        # Extra safety: if proxy reports a box_id, it must match the configured one.
-        if proxy_box_id is None:
-            # Proxy box id sensor missing/unparseable; allow only if we can confirm local entities
-            # exist for the configured box id.
-            if local_entities_dt is None:
-                local_available = False
-                reason = "proxy_box_id_missing"
-        elif proxy_box_id != expected_box_id:
-            local_available = False
-            reason = "proxy_box_id_mismatch"
-
-    if configured == DATA_SOURCE_CLOUD_ONLY:
-        effective = DATA_SOURCE_CLOUD_ONLY
-    else:
-        effective = configured if local_available else DATA_SOURCE_CLOUD_ONLY
-
+    source, last_dt = _pick_latest_source(
+        proxy_last_dt, proxy_entity_dt, local_entities_dt
+    )
+    local_available, reason = _evaluate_local_freshness(
+        last_dt=last_dt,
+        now=now,
+        stale_minutes=stale_minutes,
+        source=source,
+    )
+    local_available, override_reason = _validate_expected_box_id(
+        local_available=local_available,
+        expected_box_id=expected_box_id,
+        proxy_box_id=proxy_box_id,
+        local_entities_dt=local_entities_dt,
+    )
+    if override_reason:
+        reason = override_reason
+    effective = _effective_mode(configured, local_available)
     return local_available, last_dt, reason, effective
 
 

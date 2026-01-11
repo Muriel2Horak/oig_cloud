@@ -64,7 +64,6 @@ def schedule_retry_task(
     delay: int,
     logger,
     entity_id: str,
-    label: str,
 ) -> Any:
     """Schedule a delayed retry task."""
 
