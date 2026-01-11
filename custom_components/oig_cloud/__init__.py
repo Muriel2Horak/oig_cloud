@@ -495,8 +495,8 @@ async def _migrate_entity_unique_ids(
                             f"🔄 Renamed entity: {entity_id} -> {base_entity_id}"
                         )
                         entity_id = base_entity_id  # Aktualizujeme pro další kontroly
-                    except Exception:
-                        _LOGGER.warning("⚠️ Failed to rename %s: {e}", entity_id)
+                    except Exception as err:
+                        _LOGGER.warning("⚠️ Failed to rename %s: %s", entity_id, err)
 
             # Pokud je disabled, enable ji
             if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
@@ -504,8 +504,8 @@ async def _migrate_entity_unique_ids(
                     entity_registry.async_update_entity(entity_id, disabled_by=None)
                     enabled_count += 1
                     _LOGGER.info("✅ Re-enabled correct entity: %s", entity_id)
-                except Exception:
-                    _LOGGER.warning("⚠️ Failed to enable %s: {e}", entity_id)
+                except Exception as err:
+                    _LOGGER.warning("⚠️ Failed to enable %s: %s", entity_id, err)
 
             skipped_count += 1
             continue
@@ -528,8 +528,8 @@ async def _migrate_entity_unique_ids(
                         f"(unique_id={old_unique_id} doesn't match entity_id suffix)"
                     )
                     continue
-                except Exception:
-                    _LOGGER.warning("⚠️ Failed to remove %s: {e}", entity_id)
+                except Exception as err:
+                    _LOGGER.warning("⚠️ Failed to remove %s: %s", entity_id, err)
                     continue
 
         # 3. Migrace unique_id na nový formát
@@ -548,34 +548,8 @@ async def _migrate_entity_unique_ids(
             _LOGGER.info(
                 f"✅ Migrated entity {entity_id}: {old_unique_id} -> {new_unique_id}"
             )
-        except Exception:
-            _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
-
-        # Přeskočíme entity, které už mají správný formát
-        if old_unique_id.startswith("oig_cloud_"):
-            skipped_count += 1
-            continue
-
-        # Migrace formátů unique_id
-        if old_unique_id.startswith("oig_") and not old_unique_id.startswith(
-            "oig_cloud_"
-        ):
-            # Formát oig_{boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
-            new_unique_id = f"oig_cloud_{old_unique_id[4:]}"
-        else:
-            # Formát {boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
-            new_unique_id = f"oig_cloud_{old_unique_id}"
-
-        try:
-            entity_registry.async_update_entity(
-                entity.entity_id, new_unique_id=new_unique_id
-            )
-            migrated_count += 1
-            _LOGGER.info(
-                f"✅ Migrated entity {entity.entity_id}: {old_unique_id} -> {new_unique_id}"
-            )
-        except Exception:
-            _LOGGER.warning("⚠️ Failed to migrate %s: {e}", entity_id)
+        except Exception as err:
+            _LOGGER.warning("⚠️ Failed to migrate %s: %s", entity_id, err)
 
     # Summary
     _LOGGER.info(
@@ -709,6 +683,206 @@ async def _cleanup_invalid_empty_devices(
         _LOGGER.debug("Device registry cleanup failed (non-critical): %s", err)
 
 
+def _migrate_enable_spot_prices_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    if "enable_spot_prices" not in entry.options:
+        return
+
+    _LOGGER.info("🔄 Migrating enable_spot_prices to enable_pricing")
+    new_options = dict(entry.options)
+    if new_options.get("enable_spot_prices", False):
+        new_options["enable_pricing"] = True
+        _LOGGER.info("✅ Migrated: enable_spot_prices=True -> enable_pricing=True")
+    new_options.pop("enable_spot_prices", None)
+    hass.config_entries.async_update_entry(entry, options=new_options)
+    _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
+
+
+def _init_entry_storage(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].setdefault(entry.entry_id, {})
+
+
+def _maybe_persist_box_id_from_proxy_or_local(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    try:
+        options = dict(entry.options)
+        if options.get("box_id"):
+            return
+
+        proxy_box = hass.states.get(
+            "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
+        )
+        if proxy_box and isinstance(proxy_box.state, str) and proxy_box.state.isdigit():
+            options["box_id"] = proxy_box.state
+            hass.config_entries.async_update_entry(entry, options=options)
+            _LOGGER.info("Inferred box_id=%s from proxy sensor", proxy_box.state)
+            return
+
+        inferred = _infer_box_id_from_local_entities(hass)
+        if inferred:
+            options["box_id"] = inferred
+            hass.config_entries.async_update_entry(entry, options=options)
+            _LOGGER.info("Inferred box_id=%s from local entities", inferred)
+    except Exception as err:
+        _LOGGER.debug(
+            "Inferring box_id from local entities failed (non-critical): %s", err
+        )
+
+
+async def _start_service_shield(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> Any | None:
+    service_shield = None
+    try:
+        from .shield.core import ServiceShield
+
+        service_shield = ServiceShield(hass, entry)
+        await service_shield.start()
+        _LOGGER.info("ServiceShield inicializován a spuštěn")
+    except Exception as err:
+        _LOGGER.error("ServiceShield není dostupný - obecná chyba: %s", err)
+        service_shield = None
+
+    hass.data[DOMAIN][entry.entry_id]["service_shield"] = service_shield
+    return service_shield
+
+
+def _load_entry_auth_config(
+    entry: ConfigEntry,
+) -> tuple[str | None, str | None, bool, int, int]:
+    username = entry.data.get(CONF_USERNAME) or entry.options.get(CONF_USERNAME)
+    password = entry.data.get(CONF_PASSWORD) or entry.options.get(CONF_PASSWORD)
+
+    _LOGGER.debug("Username: %s", "***" if username else "MISSING")
+    _LOGGER.debug("Password: %s", "***" if password else "MISSING")
+
+    no_telemetry = entry.data.get(CONF_NO_TELEMETRY, False) or entry.options.get(
+        CONF_NO_TELEMETRY, False
+    )
+    standard_scan_interval = entry.options.get("standard_scan_interval") or entry.data.get(
+        CONF_STANDARD_SCAN_INTERVAL, 30
+    )
+    extended_scan_interval = entry.options.get("extended_scan_interval") or entry.data.get(
+        CONF_EXTENDED_SCAN_INTERVAL, 300
+    )
+    _LOGGER.debug(
+        "Using intervals: standard=%ss, extended=%ss",
+        standard_scan_interval,
+        extended_scan_interval,
+    )
+    return (
+        username,
+        password,
+        no_telemetry,
+        standard_scan_interval,
+        extended_scan_interval,
+    )
+
+
+async def _ensure_live_data_enabled(
+    oig_api: OigCloudApi,
+) -> None:
+    _LOGGER.debug("Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'...")
+    try:
+        test_stats = await oig_api.get_stats()
+        if test_stats:
+            first_device = next(iter(test_stats.values())) if test_stats else None
+            if not first_device or "actual" not in first_device:
+                _LOGGER.error(
+                    "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
+                    "API odpověď neobsahuje element 'actual'. "
+                    "Uživatel musí v mobilní aplikaci zapnout: Nastavení → Přístup k datům → Živá data"
+                )
+                raise ConfigEntryNotReady(
+                    "V aplikaci OIG Cloud nejsou zapnutá 'Živá data'. "
+                    "Zapněte je v mobilní aplikaci OIG Cloud (Nastavení → Přístup k datům → Živá data) "
+                    "a restartujte Home Assistant."
+                )
+            _LOGGER.info(
+                "✅ Kontrola živých dat úspěšná - element 'actual' nalezen v API odpovědi"
+            )
+        else:
+            _LOGGER.warning(
+                "API vrátilo prázdnou odpověď, přeskakuji kontrolu živých dat"
+            )
+    except ConfigEntryNotReady:
+        raise
+    except Exception as err:
+        _LOGGER.warning("Nelze ověřit stav živých dat: %s", err)
+
+
+async def _init_session_manager_and_coordinator(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    username: str,
+    password: str,
+    no_telemetry: bool,
+    standard_scan_interval: int,
+    extended_scan_interval: int,
+) -> tuple[OigCloudCoordinator, Any]:
+    oig_api = OigCloudApi(username, password, no_telemetry)
+
+    from .api.oig_cloud_session_manager import OigCloudSessionManager
+
+    session_manager = OigCloudSessionManager(oig_api)
+
+    state = get_data_source_state(hass, entry.entry_id)
+    should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
+    if should_check_cloud_now:
+        _LOGGER.debug("Initial authentication via session manager")
+        await session_manager._ensure_auth()
+        await _ensure_live_data_enabled(oig_api)
+    else:
+        _LOGGER.info(
+            "Local telemetry mode active (configured=%s, local_ok=%s) – skipping initial cloud authentication and live-data check",
+            state.configured_mode,
+            state.local_available,
+        )
+
+    coordinator = OigCloudCoordinator(
+        hass, session_manager, standard_scan_interval, extended_scan_interval, entry
+    )
+    _LOGGER.debug("Waiting for initial coordinator data...")
+    await coordinator.async_config_entry_first_refresh()
+    if coordinator.data is None:
+        _LOGGER.error("Failed to get initial data from coordinator")
+        raise ConfigEntryNotReady("No data received from OIG Cloud API")
+    _LOGGER.debug("Coordinator data received: %s devices", len(coordinator.data))
+
+    try:
+        options = dict(entry.options)
+        if not options.get("box_id") and coordinator.data:
+            box_id = next(
+                (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
+                None,
+            )
+            if box_id:
+                options["box_id"] = box_id
+                hass.config_entries.async_update_entry(entry, options=options)
+                _LOGGER.info("Persisted box_id=%s into config entry options", box_id)
+    except Exception as err:
+        _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
+
+    return coordinator, session_manager
+
+
+def _resolve_entry_box_id(entry: ConfigEntry, coordinator: OigCloudCoordinator | None) -> str | None:
+    try:
+        opt_box = entry.options.get("box_id")
+        if isinstance(opt_box, str) and opt_box.isdigit():
+            return opt_box
+    except Exception:
+        pass
+
+    if coordinator and coordinator.data and isinstance(coordinator.data, dict):
+        return next(
+            (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
+            None,
+        )
+    return None
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> bool:  # noqa: C901
@@ -721,108 +895,31 @@ async def async_setup_entry(
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
-
-    # MIGRACE 1: enable_spot_prices -> enable_pricing
-    if "enable_spot_prices" in entry.options:
-        _LOGGER.info("🔄 Migrating enable_spot_prices to enable_pricing")
-        new_options = dict(entry.options)
-
-        # Pokud enable_spot_prices byl True, zapneme enable_pricing
-        if new_options.get("enable_spot_prices", False):
-            new_options["enable_pricing"] = True
-            _LOGGER.info("✅ Migrated: enable_spot_prices=True -> enable_pricing=True")
-
-        # Odstraníme starý flag
-        new_options.pop("enable_spot_prices", None)
-
-        # Aktualizujeme entry
-        hass.config_entries.async_update_entry(entry, options=new_options)
-        _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
+    _migrate_enable_spot_prices_option(hass, entry)
 
     # POZN: Automatická migrace entity/device registry při startu je riziková (může mazat/rozbíjet entity).
     # Pokud je potřeba cleanup/migrace, dělejme ji explicitně (script / servis), ne automaticky v setupu.
 
-    # Inicializace hass.data struktury pro tento entry PŘED použitím
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault(entry.entry_id, {})
-
     # Initialize data source state early so coordinator setup can respect local/hybrid modes.
     # Also try to infer box_id from local entities so local mapping works without cloud.
+    _init_entry_storage(hass, entry)
     init_data_source_state(hass, entry)
-    try:
-        options = dict(entry.options)
-        if not options.get("box_id"):
-            # Prefer explicit proxy box id sensor (most reliable)
-            proxy_box = hass.states.get(
-                "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
-            )
-            if (
-                proxy_box
-                and isinstance(proxy_box.state, str)
-                and proxy_box.state.isdigit()
-            ):
-                options["box_id"] = proxy_box.state
-                hass.config_entries.async_update_entry(entry, options=options)
-                _LOGGER.info("Inferred box_id=%s from proxy sensor", proxy_box.state)
-            else:
-                inferred = _infer_box_id_from_local_entities(hass)
-                if inferred:
-                    options["box_id"] = inferred
-                    hass.config_entries.async_update_entry(entry, options=options)
-                    _LOGGER.info("Inferred box_id=%s from local entities", inferred)
-    except Exception as err:
-        _LOGGER.debug(
-            "Inferring box_id from local entities failed (non-critical): %s", err
-        )
+    _maybe_persist_box_id_from_proxy_or_local(hass, entry)
 
-    # OPRAVA: Inicializujeme service_shield jako None před try blokem
-    service_shield = None
+    service_shield = await _start_service_shield(hass, entry)
 
     try:
-        # Inicializujeme ServiceShield s entry parametrem
-        from .shield.core import ServiceShield
-
-        service_shield = ServiceShield(hass, entry)
-        await service_shield.start()
-
-        hass.data[DOMAIN][entry.entry_id]["service_shield"] = service_shield
-
-        _LOGGER.info("ServiceShield inicializován a spuštěn")
-    except Exception as e:
-        _LOGGER.error("ServiceShield není dostupný - obecná chyba: %s", e)
-        # Pokračujeme bez ServiceShield
-        hass.data[DOMAIN][entry.entry_id]["service_shield"] = None
-        # OPRAVA: Ujistíme se, že service_shield je None
-        service_shield = None
-
-    try:
-        # Načtení konfigurace z entry.data nebo entry.options
-        username = entry.data.get(CONF_USERNAME) or entry.options.get(CONF_USERNAME)
-        password = entry.data.get(CONF_PASSWORD) or entry.options.get(CONF_PASSWORD)
-
-        # Debug log pro diagnostiku
-        _LOGGER.debug(f"Username: {'***' if username else 'MISSING'}")
-        _LOGGER.debug(f"Password: {'***' if password else 'MISSING'}")
+        (
+            username,
+            password,
+            no_telemetry,
+            standard_scan_interval,
+            extended_scan_interval,
+        ) = _load_entry_auth_config(entry)
 
         if not username or not password:
             _LOGGER.error("Username or password is missing from configuration")
             return False
-
-        no_telemetry = entry.data.get(CONF_NO_TELEMETRY, False) or entry.options.get(
-            CONF_NO_TELEMETRY, False
-        )
-
-        # OPRAVA: Preferuj options před data, jen pokud options neexistují, použij data nebo default
-        standard_scan_interval = entry.options.get(
-            "standard_scan_interval"
-        ) or entry.data.get(CONF_STANDARD_SCAN_INTERVAL, 30)
-        extended_scan_interval = entry.options.get(
-            "extended_scan_interval"
-        ) or entry.data.get(CONF_EXTENDED_SCAN_INTERVAL, 300)
-
-        _LOGGER.debug(
-            f"Using intervals: standard={standard_scan_interval}s, extended={extended_scan_interval}s"
-        )
 
         # DEBUG: DOČASNĚ ZAKÁZAT telemetrii kvůli problémům s výkonem
         # OPRAVA: Telemetrie způsobovala nekonečnou smyčku
@@ -834,98 +931,15 @@ async def async_setup_entry(
 
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
-        # NOVÉ: Vytvoření OigCloudApi a zabalení do SessionManageru
-        oig_api = OigCloudApi(username, password, no_telemetry)
-
-        _LOGGER.debug("Creating session manager wrapper")
-        from .api.oig_cloud_session_manager import OigCloudSessionManager
-
-        session_manager = OigCloudSessionManager(oig_api)
-
-        # Respect local/hybrid mode: if local proxy is healthy, do not hit cloud during setup.
-        # Session manager will authenticate on-demand if we later fall back to cloud.
-        state = get_data_source_state(hass, entry.entry_id)
-        should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
-
-        if should_check_cloud_now:
-            _LOGGER.debug("Initial authentication via session manager")
-            # Session manager zavolá authenticate() při prvním požadavku,
-            # ale provedeme to i zde pro kontrolu přihlašovacích údajů
-            await session_manager._ensure_auth()
-
-            # CRITICAL: Check if live data is enabled (actual element present in API response)
-            # Stats structure: { "box_id": { "actual": {...}, "settings": {...} } }
-            _LOGGER.debug(
-                "Kontrola, zda jsou v aplikaci OIG Cloud zapnutá 'Živá data'..."
-            )
-            try:
-                test_stats = await oig_api.get_stats()
-                if test_stats:
-                    # Get first device data
-                    first_device = (
-                        next(iter(test_stats.values())) if test_stats else None
-                    )
-                    if not first_device or "actual" not in first_device:
-                        _LOGGER.error(
-                            "❌ KRITICKÁ CHYBA: V aplikaci OIG Cloud nejsou zapnutá 'Živá data'! "
-                            "API odpověď neobsahuje element 'actual'. "
-                            "Uživatel musí v mobilní aplikaci zapnout: Nastavení → Přístup k datům → Živá data"
-                        )
-                        raise ConfigEntryNotReady(
-                            "V aplikaci OIG Cloud nejsou zapnutá 'Živá data'. "
-                            "Zapněte je v mobilní aplikaci OIG Cloud (Nastavení → Přístup k datům → Živá data) "
-                            "a restartujte Home Assistant."
-                        )
-                    _LOGGER.info(
-                        "✅ Kontrola živých dat úspěšná - element 'actual' nalezen v API odpovědi"
-                    )
-                else:
-                    _LOGGER.warning(
-                        "API vrátilo prázdnou odpověď, přeskakuji kontrolu živých dat"
-                    )
-            except ConfigEntryNotReady:
-                raise
-            except Exception as e:
-                _LOGGER.warning("Nelze ověřit stav živých dat: %s", e)
-                # Pokračujeme i tak - může jít o dočasný problém s API
-        else:
-            _LOGGER.info(
-                "Local telemetry mode active (configured=%s, local_ok=%s) – skipping initial cloud authentication and live-data check",
-                state.configured_mode,
-                state.local_available,
-            )
-
-        # Inicializace koordinátoru - použijeme session_manager.api (wrapper)
-        coordinator = OigCloudCoordinator(
-            hass, session_manager, standard_scan_interval, extended_scan_interval, entry
+        coordinator, session_manager = await _init_session_manager_and_coordinator(
+            hass,
+            entry,
+            username,
+            password,
+            no_telemetry,
+            standard_scan_interval,
+            extended_scan_interval,
         )
-
-        # OPRAVA: Počkej na první data před vytvořením senzorů
-        _LOGGER.debug("Waiting for initial coordinator data...")
-        await coordinator.async_config_entry_first_refresh()
-
-        if coordinator.data is None:
-            _LOGGER.error("Failed to get initial data from coordinator")
-            raise ConfigEntryNotReady("No data received from OIG Cloud API")
-
-        _LOGGER.debug(f"Coordinator data received: {len(coordinator.data)} devices")
-
-        # Persist box_id once so sensors can be initialized without relying on coordinator.data order
-        try:
-            options = dict(entry.options)
-            if not options.get("box_id") and coordinator.data:
-                box_id = next(
-                    (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
-                    None,
-                )
-                if box_id:
-                    options["box_id"] = box_id
-                    hass.config_entries.async_update_entry(entry, options=options)
-                    _LOGGER.info(
-                        "Persisted box_id=%s into config entry options", box_id
-                    )
-        except Exception as err:
-            _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
 
         # OPRAVA: Inicializace notification manageru se správným error handling
         notification_manager = None
@@ -954,22 +968,7 @@ async def async_setup_entry(
                 )
 
                 # Nastavíme device_id deterministicky (numerický box_id)
-                device_id = None
-                try:
-                    opt_box = entry.options.get("box_id")
-                    if isinstance(opt_box, str) and opt_box.isdigit():
-                        device_id = opt_box
-                except Exception:
-                    device_id = None
-                if (
-                    device_id is None
-                    and coordinator.data
-                    and isinstance(coordinator.data, dict)
-                ):
-                    device_id = next(
-                        (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
-                        None,
-                    )
+                device_id = _resolve_entry_box_id(entry, coordinator)
                 if device_id:
                     notification_manager.set_device_id(device_id)
                     _LOGGER.debug(
@@ -1018,7 +1017,8 @@ async def async_setup_entry(
 
             except Exception as e:
                 _LOGGER.warning(
-                    f"Failed to setup notification manager (API may not be available): {e}"
+                    "Failed to setup notification manager (API may not be available): %s",
+                    e,
                 )
                 # Pokračujeme bez notification manageru - API endpoint možná neexistuje nebo je nedostupný
                 notification_manager = None
@@ -1123,23 +1123,7 @@ async def async_setup_entry(
             try:
                 _LOGGER.info("oig_cloud: Initializing BalancingManager")
                 # Get box_id deterministicky (entry.options → coordinator numeric keys)
-                box_id = None
-                try:
-                    opt_box = entry.options.get("box_id")
-                    if isinstance(opt_box, str) and opt_box.isdigit():
-                        box_id = opt_box
-                except Exception:
-                    box_id = None
-
-                if (
-                    box_id is None
-                    and coordinator.data
-                    and isinstance(coordinator.data, dict)
-                ):
-                    box_id = next(
-                        (str(k) for k in coordinator.data.keys() if str(k).isdigit()),
-                        None,
-                    )
+                box_id = _resolve_entry_box_id(entry, coordinator)
 
                 if not box_id:
                     _LOGGER.warning(
@@ -1167,7 +1151,7 @@ async def async_setup_entry(
                     try:
                         await balancing_manager.check_balancing()
                     except Exception as e:
-                        _LOGGER.error(f"Error checking balancing: {e}", exc_info=True)
+                    _LOGGER.error("Error checking balancing: %s", e, exc_info=True)
 
                 # Aktualizace každých 30 minut
                 entry.async_on_unload(
@@ -1190,7 +1174,7 @@ async def async_setup_entry(
                             _LOGGER.debug("Initial check: no plan needed yet")
                     except Exception as e:
                         _LOGGER.error(
-                            f"Error in initial balancing check: {e}", exc_info=True
+                            "Error in initial balancing check: %s", e, exc_info=True
                         )
 
                 # První kontrola za 2 minuty (aby forecast měl čas se inicializovat)
@@ -1357,7 +1341,9 @@ async def async_setup_entry(
             _LOGGER.info("✅ OIG Cloud REST API endpoints registered successfully")
         except Exception as e:
             _LOGGER.error(
-                f"Failed to register OIG Cloud REST API endpoints: {e}", exc_info=True
+                "Failed to register OIG Cloud REST API endpoints: %s",
+                e,
+                exc_info=True,
             )
             # Pokračujeme i bez API - senzory budou fungovat s attributes
 
@@ -1418,7 +1404,7 @@ async def async_setup_entry(
         return True
 
     except Exception as e:
-        _LOGGER.error(f"Error initializing OIG Cloud: {e}", exc_info=True)
+        _LOGGER.error("Error initializing OIG Cloud: %s", e, exc_info=True)
         raise ConfigEntryNotReady(f"Error initializing OIG Cloud: {e}") from e
 
 
@@ -1445,7 +1431,7 @@ async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
             _LOGGER.debug("Telemetry initialization skipped (no handler)")
 
     except Exception as e:
-        _LOGGER.warning(f"Failed to setup telemetry: {e}", exc_info=True)
+        _LOGGER.warning("Failed to setup telemetry: %s", e, exc_info=True)
         # Pokračujeme bez telemetrie
 
 
