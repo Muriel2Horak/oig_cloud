@@ -79,6 +79,25 @@ def test_get_cooldown_hours_invalid_config():
     assert mgr._get_cooldown_hours() >= 24
 
 
+def test_get_price_threshold_for_opportunistic():
+    mgr = _make_manager(
+        {
+            "balancing_interval_days": 7,
+            "balancing_opportunistic_threshold": 1.0,
+            "balancing_economic_threshold": 3.0,
+        }
+    )
+    mgr._get_days_since_last_balancing = lambda: 3
+    assert mgr._get_price_threshold_for_opportunistic() == 1.0
+
+    mgr._get_days_since_last_balancing = lambda: 6
+    assert mgr._get_price_threshold_for_opportunistic() == 3.0
+
+    mgr = _make_manager({"balancing_opportunistic_threshold": "bad"})
+    mgr._get_days_since_last_balancing = lambda: 1
+    assert mgr._get_price_threshold_for_opportunistic() == 1.1
+
+
 def test_set_coordinator():
     mgr = _make_manager()
     coord = object()
@@ -643,6 +662,64 @@ async def test_create_opportunistic_plan_skips_past_and_expensive(monkeypatch):
     monkeypatch.setattr(mgr, "_get_current_soc_percent", AsyncMock(return_value=90.0))
     monkeypatch.setattr(mgr, "_calculate_immediate_balancing_cost", AsyncMock(return_value=1.0))
     monkeypatch.setattr(mgr, "_calculate_total_balancing_cost", AsyncMock(return_value=0.5))
+
+    plan = await mgr._create_opportunistic_plan()
+    assert plan is not None
+    assert mgr._last_selected_cost == 1.0
+
+
+@pytest.mark.asyncio
+async def test_create_opportunistic_plan_threshold_skips_delayed(monkeypatch):
+    mgr = _make_manager(
+        options={
+            "balancing_opportunistic_threshold": 1.0,
+            "cheap_window_percentile": 100,
+        },
+        states={"sensor.oig_123_batt_bat_c": DummyState("90")},
+    )
+
+    now = datetime.now()
+    prices = {now + timedelta(minutes=15 * i + 60): 2.0 for i in range(16)}
+
+    monkeypatch.setattr(mgr, "_get_spot_prices_48h", AsyncMock(return_value=prices))
+    monkeypatch.setattr(mgr, "_get_current_soc_percent", AsyncMock(return_value=90.0))
+    monkeypatch.setattr(mgr, "_get_days_since_last_balancing", lambda: 1)
+    monkeypatch.setattr(
+        mgr, "_calculate_immediate_balancing_cost", AsyncMock(return_value=1.0)
+    )
+    delayed = AsyncMock(return_value=0.5)
+    monkeypatch.setattr(mgr, "_calculate_total_balancing_cost", delayed)
+
+    plan = await mgr._create_opportunistic_plan()
+    assert plan is not None
+    delayed.assert_not_awaited()
+    assert mgr._last_selected_cost == 1.0
+
+
+@pytest.mark.asyncio
+async def test_create_opportunistic_plan_uses_economic_threshold(monkeypatch):
+    mgr = _make_manager(
+        options={
+            "balancing_interval_days": 7,
+            "balancing_opportunistic_threshold": 1.0,
+            "balancing_economic_threshold": 3.0,
+            "cheap_window_percentile": 100,
+        },
+        states={"sensor.oig_123_batt_bat_c": DummyState("90")},
+    )
+
+    now = datetime.now()
+    prices = {now + timedelta(minutes=15 * i + 60): 2.5 for i in range(16)}
+
+    monkeypatch.setattr(mgr, "_get_spot_prices_48h", AsyncMock(return_value=prices))
+    monkeypatch.setattr(mgr, "_get_current_soc_percent", AsyncMock(return_value=90.0))
+    monkeypatch.setattr(mgr, "_get_days_since_last_balancing", lambda: 6)
+    monkeypatch.setattr(
+        mgr, "_calculate_immediate_balancing_cost", AsyncMock(return_value=10.0)
+    )
+    monkeypatch.setattr(
+        mgr, "_calculate_total_balancing_cost", AsyncMock(return_value=1.0)
+    )
 
     plan = await mgr._create_opportunistic_plan()
     assert plan is not None

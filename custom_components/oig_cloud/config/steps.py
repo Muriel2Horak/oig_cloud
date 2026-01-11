@@ -2330,6 +2330,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
                         CONF_AUTO_MODE_SWITCH, False
                     ),
+                    "disable_planning_min_guard": self._wizard_data.get(
+                        "disable_planning_min_guard", False
+                    ),
                     # Planner safety limit (CZK/kWh)
                     "max_ups_price_czk": self._wizard_data.get(
                         "max_ups_price_czk", 10.0
@@ -2371,6 +2374,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "boiler_temp_sensor_bottom": self._wizard_data.get(
                         "boiler_temp_sensor_bottom", ""
                     ),
+                    "boiler_temp_sensor_position": self._wizard_data.get(
+                        "boiler_temp_sensor_position", "top"
+                    ),
                     "boiler_stratification_mode": self._wizard_data.get(
                         "boiler_stratification_mode", "simple_avg"
                     ),
@@ -2392,6 +2398,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     "boiler_alt_cost_kwh": self._wizard_data.get(
                         "boiler_alt_cost_kwh", 0.0
+                    ),
+                    "boiler_alt_energy_sensor": self._wizard_data.get(
+                        "boiler_alt_energy_sensor", ""
                     ),
                     "boiler_spot_price_sensor": self._wizard_data.get(
                         "boiler_spot_price_sensor", ""
@@ -2612,6 +2621,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
                     CONF_AUTO_MODE_SWITCH, False
                 ),
+                "disable_planning_min_guard": self._wizard_data.get(
+                    "disable_planning_min_guard", False
+                ),
                 # Planner safety limit (CZK/kWh)
                 "max_ups_price_czk": self._wizard_data.get("max_ups_price_czk", 10.0),
                 # Battery balancing
@@ -2649,6 +2661,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 "boiler_temp_sensor_bottom": self._wizard_data.get(
                     "boiler_temp_sensor_bottom", ""
                 ),
+                "boiler_temp_sensor_position": self._wizard_data.get(
+                    "boiler_temp_sensor_position", "top"
+                ),
                 "boiler_stratification_mode": self._wizard_data.get(
                     "boiler_stratification_mode", "simple_avg"
                 ),
@@ -2670,6 +2685,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 ),
                 "boiler_alt_cost_kwh": self._wizard_data.get(
                     "boiler_alt_cost_kwh", 0.0
+                ),
+                "boiler_alt_energy_sensor": self._wizard_data.get(
+                    "boiler_alt_energy_sensor", ""
                 ),
                 "boiler_spot_price_sensor": self._wizard_data.get(
                     "boiler_spot_price_sensor", ""

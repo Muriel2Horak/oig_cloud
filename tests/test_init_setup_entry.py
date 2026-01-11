@@ -175,6 +175,7 @@ async def test_async_setup_entry_missing_credentials(monkeypatch):
     )
 
     hass = DummyHass()
+    hass.loop = asyncio.get_running_loop()
     entry = DummyEntry(data={}, options={})
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
@@ -225,6 +226,10 @@ async def test_async_setup_entry_success_local(monkeypatch):
     monkeypatch.setattr(
         "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
         lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
     )
     monkeypatch.setattr(
         "homeassistant.helpers.event.async_track_time_interval",
@@ -1221,6 +1226,120 @@ async def test_async_setup_entry_optional_modules(monkeypatch):
     assert result is True
     assert callbacks["interval"] is not None
     await callbacks["interval"](None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "enable_pricing,enable_solar,enable_boiler",
+    [
+        (True, True, True),
+        (False, False, False),
+    ],
+)
+async def test_async_setup_entry_runtime_flags(
+    monkeypatch, enable_pricing, enable_solar, enable_boiler
+):
+    def _no_interval(*_a, **_k):
+        return lambda: None
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval", _no_interval
+    )
+
+    class DummyOteApi:
+        created = 0
+
+        def __init__(self):
+            DummyOteApi.created += 1
+
+    class DummyBoilerCoordinator:
+        refresh_calls = 0
+
+        def __init__(self, hass, config):
+            self.hass = hass
+            self.config = config
+
+        async def async_config_entry_first_refresh(self):
+            DummyBoilerCoordinator.refresh_calls += 1
+            return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+    monkeypatch.setattr("custom_components.oig_cloud.api.ote_api.OteApi", DummyOteApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.coordinator.BoilerCoordinator",
+        DummyBoilerCoordinator,
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_setup_frontend_panel", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.api_views.register_boiler_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+
+    hass = DummyHass()
+    hass.loop = asyncio.get_running_loop()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={
+            "enable_pricing": enable_pricing,
+            "enable_solar_forecast": enable_solar,
+            "enable_boiler": enable_boiler,
+            "enable_dashboard": False,
+            "balancing_enabled": False,
+        },
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    data = hass.data[DOMAIN][entry.entry_id]
+    assert (data.get("ote_api") is not None) is enable_pricing
+    assert (data.get("solar_forecast") is not None) is enable_solar
+    assert (data.get("boiler_coordinator") is not None) is enable_boiler
+    assert DummyOteApi.created == (1 if enable_pricing else 0)
+    assert DummyBoilerCoordinator.refresh_calls == (1 if enable_boiler else 0)
+    if enable_solar:
+        assert data["solar_forecast"]["enabled"] is True
 
 
 @pytest.mark.asyncio

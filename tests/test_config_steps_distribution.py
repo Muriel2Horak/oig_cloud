@@ -118,6 +118,78 @@ async def test_pricing_distribution_invalid_weekend_hours():
 
 
 @pytest.mark.asyncio
+async def test_pricing_distribution_invalid_nt_fee():
+    flow = DummyWizard()
+    flow._wizard_data = {
+        "tariff_count": "dual",
+        "tariff_weekend_same_as_weekday": True,
+    }
+
+    result = await flow.async_step_wizard_pricing_distribution(
+        {
+            "tariff_count": "dual",
+            "tariff_weekend_same_as_weekday": True,
+            "distribution_fee_vt_kwh": 1.1,
+            "distribution_fee_nt_kwh": 20.0,
+            "tariff_vt_start_weekday": "6",
+            "tariff_nt_start_weekday": "22,2",
+            "vat_rate": 21.0,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["distribution_fee_nt_kwh"] == "invalid_distribution_fee"
+
+
+@pytest.mark.asyncio
+async def test_pricing_distribution_tariff_gaps():
+    flow = DummyWizard()
+    flow._wizard_data = {
+        "tariff_count": "dual",
+        "tariff_weekend_same_as_weekday": True,
+    }
+
+    result = await flow.async_step_wizard_pricing_distribution(
+        {
+            "tariff_count": "dual",
+            "tariff_weekend_same_as_weekday": True,
+            "distribution_fee_vt_kwh": 1.1,
+            "distribution_fee_nt_kwh": 0.9,
+            "tariff_vt_start_weekday": "6",
+            "tariff_nt_start_weekday": "",
+            "vat_rate": 21.0,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["tariff_vt_start_weekday"] == "tariff_gaps"
+
+
+@pytest.mark.asyncio
+async def test_pricing_distribution_invalid_hour_range():
+    flow = DummyWizard()
+    flow._wizard_data = {
+        "tariff_count": "dual",
+        "tariff_weekend_same_as_weekday": True,
+    }
+
+    result = await flow.async_step_wizard_pricing_distribution(
+        {
+            "tariff_count": "dual",
+            "tariff_weekend_same_as_weekday": True,
+            "distribution_fee_vt_kwh": 1.1,
+            "distribution_fee_nt_kwh": 0.9,
+            "tariff_vt_start_weekday": "25",
+            "tariff_nt_start_weekday": "22",
+            "vat_rate": 21.0,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["tariff_vt_start_weekday"] == "invalid_hour_range"
+
+
+@pytest.mark.asyncio
 async def test_pricing_distribution_back_button():
     flow = DummyWizard()
     flow._step_history = ["wizard_pricing_export", "wizard_pricing_distribution"]

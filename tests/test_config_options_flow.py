@@ -166,3 +166,149 @@ async def test_options_flow_summary_flags():
     assert "Cenové senzory" in summary
     assert "Rozšířené senzory" in summary
     assert "Webový dashboard" in summary
+
+
+@pytest.mark.asyncio
+async def test_options_flow_summary_maps_selected_fields():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {
+        "enable_statistics": True,
+        "enable_solar_forecast": True,
+        "enable_battery_prediction": True,
+        "enable_pricing": True,
+        "enable_extended_sensors": True,
+        "enable_dashboard": True,
+        "data_source_mode": "hybrid",
+        "solar_forecast_mode": "hourly",
+        "solar_forecast_string2_enabled": True,
+        "min_capacity_percent": 25.0,
+        "target_capacity_percent": 75.0,
+        "max_ups_price_czk": 9.5,
+        "disable_planning_min_guard": True,
+        "import_pricing_scenario": "spot_fixed",
+        "spot_fixed_fee_kwh": 0.55,
+        "export_pricing_scenario": "fix_price",
+        "export_fixed_price_kwh": 2.6,
+        "tariff_count": "single",
+        "distribution_fee_vt_kwh": 1.1,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["data_source_mode"] == "local_only"
+    assert options["solar_forecast_mode"] == "hourly"
+    assert options["solar_forecast_string2_enabled"] is True
+    assert options["min_capacity_percent"] == 25.0
+    assert options["target_capacity_percent"] == 75.0
+    assert options["max_ups_price_czk"] == 9.5
+    assert options["disable_planning_min_guard"] is True
+    assert options["spot_pricing_model"] == "fixed"
+    assert options["spot_fixed_fee_mwh"] == 550.0
+    assert options["export_pricing_model"] == "fixed_prices"
+    assert options["export_fixed_price"] == 2.6
+
+
+@pytest.mark.asyncio
+async def test_options_flow_summary_boiler_defaults():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {
+        "enable_boiler": True,
+        "boiler_volume_l": 120,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["boiler_volume_l"] == 120
+    assert options["boiler_target_temp_c"] == 60.0
+    assert options["boiler_temp_sensor_position"] == "top"
+    assert options["boiler_alt_energy_sensor"] == ""
+    assert options["boiler_deadline_time"] == "20:00"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_summary_solar_battery_defaults():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {
+        "enable_solar_forecast": True,
+        "enable_battery_prediction": True,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["solar_forecast_mode"] == "daily_optimized"
+    assert options["solar_forecast_api_key"] == ""
+    assert options["solar_forecast_string1_enabled"] is True
+    assert options["solar_forecast_string2_enabled"] is False
+    assert options["min_capacity_percent"] == 20.0
+    assert options["target_capacity_percent"] == 80.0
+    assert options["home_charge_rate"] == 2.8
+    assert options["max_ups_price_czk"] == 10.0
+    assert options["balancing_enabled"] is True
+    assert options["balancing_interval_days"] == 7
+    assert options["balancing_hold_hours"] == 3
+
+
+@pytest.mark.asyncio
+async def test_options_flow_summary_auto_balancing_solar_string2():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {
+        "enable_battery_prediction": True,
+        "auto_mode_switch_enabled": True,
+        "balancing_enabled": False,
+        "balancing_interval_days": 9,
+        "balancing_hold_hours": 4,
+        "balancing_opportunistic_threshold": 1.5,
+        "balancing_economic_threshold": 3.0,
+        "cheap_window_percentile": 40,
+        "enable_solar_forecast": True,
+        "solar_forecast_string2_enabled": True,
+        "solar_forecast_string2_declination": 40,
+        "solar_forecast_string2_azimuth": 190,
+        "solar_forecast_string2_kwp": 2.4,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["auto_mode_switch_enabled"] is True
+    assert options["balancing_enabled"] is False
+    assert options["balancing_interval_days"] == 9
+    assert options["balancing_hold_hours"] == 4
+    assert options["balancing_opportunistic_threshold"] == 1.5
+    assert options["balancing_economic_threshold"] == 3.0
+    assert options["cheap_window_percentile"] == 40
+    assert options["solar_forecast_string2_enabled"] is True
+    assert options["solar_forecast_string2_declination"] == 40
+    assert options["solar_forecast_string2_azimuth"] == 190
+    assert options["solar_forecast_string2_kwp"] == 2.4

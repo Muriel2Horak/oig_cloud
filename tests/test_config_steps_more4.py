@@ -8,6 +8,10 @@ import pytest
 
 from custom_components.oig_cloud.config import steps as steps_module
 from custom_components.oig_cloud.config.steps import ConfigFlow, WizardMixin
+from custom_components.oig_cloud.core.data_source import (
+    PROXY_BOX_ID_ENTITY_ID,
+    PROXY_LAST_DATA_ENTITY_ID,
+)
 
 
 class DummyWizard(WizardMixin):
@@ -75,6 +79,53 @@ async def test_wizard_intervals_local_proxy_missing():
 
 
 @pytest.mark.asyncio
+async def test_wizard_intervals_local_proxy_present():
+    def _get_state(entity_id: str):
+        if entity_id == PROXY_LAST_DATA_ENTITY_ID:
+            return SimpleNamespace(state="2024-01-01T00:00:00+00:00")
+        if entity_id == PROXY_BOX_ID_ENTITY_ID:
+            return SimpleNamespace(state="123")
+        return None
+
+    flow = DummyWizard(states=_get_state)
+    result = await flow.async_step_wizard_intervals(
+        {
+            "standard_scan_interval": 60,
+            "extended_scan_interval": 600,
+            "data_source_mode": "local_only",
+            "local_proxy_stale_minutes": 10,
+            "local_event_debounce_ms": 300,
+        }
+    )
+
+    assert result["type"] == "summary"
+
+
+@pytest.mark.asyncio
+async def test_wizard_intervals_local_proxy_invalid_box_id():
+    def _get_state(entity_id: str):
+        if entity_id == PROXY_LAST_DATA_ENTITY_ID:
+            return SimpleNamespace(state="2024-01-01T00:00:00+00:00")
+        if entity_id == PROXY_BOX_ID_ENTITY_ID:
+            return SimpleNamespace(state="not-a-number")
+        return None
+
+    flow = DummyWizard(states=_get_state)
+    result = await flow.async_step_wizard_intervals(
+        {
+            "standard_scan_interval": 60,
+            "extended_scan_interval": 600,
+            "data_source_mode": "local_only",
+            "local_proxy_stale_minutes": 10,
+            "local_event_debounce_ms": 300,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["data_source_mode"] == "local_proxy_missing"
+
+
+@pytest.mark.asyncio
 async def test_wizard_solar_validation_errors():
     flow = DummyWizard()
     flow._wizard_data = {
@@ -96,6 +147,51 @@ async def test_wizard_solar_validation_errors():
     assert result["errors"]["solar_forecast_latitude"] == "invalid_latitude"
     assert result["errors"]["solar_forecast_longitude"] == "invalid_longitude"
     assert result["errors"]["base"] == "no_strings_enabled"
+
+
+@pytest.mark.asyncio
+async def test_wizard_solar_requires_api_key_every_4h():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_solar(
+        {
+            "solar_forecast_mode": "every_4h",
+            "solar_forecast_api_key": "",
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 5.0,
+            "solar_forecast_string1_declination": 35,
+            "solar_forecast_string1_azimuth": 0,
+            "solar_forecast_string2_enabled": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["solar_forecast_mode"] == "api_key_required_for_frequent_updates"
+
+
+@pytest.mark.asyncio
+async def test_wizard_solar_string2_only_success():
+    flow = DummyWizard()
+    flow._wizard_data = {
+        "solar_forecast_string1_enabled": False,
+        "solar_forecast_string2_enabled": True,
+    }
+    result = await flow.async_step_wizard_solar(
+        {
+            "solar_forecast_mode": "daily",
+            "solar_forecast_api_key": "",
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+            "solar_forecast_string1_enabled": False,
+            "solar_forecast_string2_enabled": True,
+            "solar_forecast_string2_kwp": 4.0,
+            "solar_forecast_string2_declination": 30,
+            "solar_forecast_string2_azimuth": 180,
+        }
+    )
+
+    assert result["type"] == "summary"
 
 
 @pytest.mark.asyncio

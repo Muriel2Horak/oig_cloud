@@ -141,6 +141,35 @@ class BalancingManager:
         except Exception:
             return 30
 
+    def _get_opportunistic_price_threshold(self) -> float:
+        """Absolute price threshold for opportunistic balancing (CZK/kWh)."""
+        try:
+            value = float(
+                self._config_entry.options.get("balancing_opportunistic_threshold", 1.1)
+            )
+        except (TypeError, ValueError):
+            return 1.1
+        return value if value > 0 else 1.1
+
+    def _get_economic_price_threshold(self) -> float:
+        """Absolute price threshold for economic balancing (CZK/kWh)."""
+        try:
+            value = float(
+                self._config_entry.options.get("balancing_economic_threshold", 2.5)
+            )
+        except (TypeError, ValueError):
+            return 2.5
+        return value if value > 0 else 2.5
+
+    def _get_price_threshold_for_opportunistic(self) -> float:
+        """Select price threshold based on proximity to the cycle deadline."""
+        cycle_days = self._get_cycle_days()
+        days_since_last = self._get_days_since_last_balancing()
+        economic_window_start = max(1, cycle_days - 2)
+        if days_since_last >= economic_window_start:
+            return self._get_economic_price_threshold()
+        return self._get_opportunistic_price_threshold()
+
     def _is_plan_cooldown_active(self, cooldown_hours: float) -> bool:
         """Return True if we recently created a balancing plan."""
         if not self._last_plan_ts or cooldown_hours <= 0:
@@ -675,9 +704,14 @@ class BalancingManager:
             all_price_values.sort()
             cheap_pct = self._get_cheap_window_percentile()
             cheap_idx = int(len(all_price_values) * cheap_pct / 100)
+            if all_price_values and cheap_idx >= len(all_price_values):
+                cheap_idx = len(all_price_values) - 1
             cheap_price_threshold = (
                 all_price_values[cheap_idx] if all_price_values else float("inf")
             )
+            price_threshold = self._get_price_threshold_for_opportunistic()
+            if price_threshold > 0:
+                cheap_price_threshold = min(cheap_price_threshold, price_threshold)
 
             min_cost = immediate_cost
             best_window_start = None  # None means immediate is best

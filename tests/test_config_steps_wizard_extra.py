@@ -142,6 +142,26 @@ async def test_wizard_modules_success_moves_forward():
 
 
 @pytest.mark.asyncio
+async def test_wizard_modules_all_enabled_moves_forward():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_modules(
+        {
+            "enable_statistics": True,
+            "enable_solar_forecast": True,
+            "enable_battery_prediction": True,
+            "enable_pricing": True,
+            "enable_extended_sensors": True,
+            "enable_chmu_warnings": True,
+            "enable_dashboard": True,
+            "enable_boiler": True,
+            "enable_auto": True,
+        }
+    )
+
+    assert result["step_id"] == "wizard_intervals"
+
+
+@pytest.mark.asyncio
 async def test_wizard_solar_toggle_expands_form():
     flow = DummyWizard()
     flow._wizard_data = {steps_module.CONF_SOLAR_FORECAST_STRING1_ENABLED: True}
@@ -215,6 +235,21 @@ async def test_wizard_battery_validation_errors():
     )
 
     assert result["errors"]["min_capacity_percent"] == "min_must_be_less_than_target"
+    assert result["errors"]["max_ups_price_czk"] == "invalid_price"
+
+
+@pytest.mark.asyncio
+async def test_wizard_battery_max_price_too_high():
+    flow = DummyWizard()
+    result = await flow.async_step_wizard_battery(
+        {
+            "min_capacity_percent": 20,
+            "target_capacity_percent": 80,
+            "max_ups_price_czk": 99.0,
+        }
+    )
+
+    assert result["type"] == "form"
     assert result["errors"]["max_ups_price_czk"] == "invalid_price"
 
 

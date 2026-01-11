@@ -146,6 +146,33 @@ async def test_read_temperatures_paths(monkeypatch):
     assert temps["upper_zone"] == 52.0
 
 
+@pytest.mark.asyncio
+async def test_read_temperatures_uses_sensor_position(monkeypatch):
+    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
+    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+    monkeypatch.setattr(module, "validate_temperature_sensor", lambda *_a: 50.0)
+
+    captured = {}
+
+    def _calc(**kwargs):
+        captured["sensor_position"] = kwargs["sensor_position"]
+        return (55.0, 45.0)
+
+    monkeypatch.setattr(module, "calculate_stratified_temp", _calc)
+
+    hass = DummyHass({"sensor.top": DummyState("50")})
+    config = {
+        module.CONF_BOILER_TEMP_SENSOR_TOP: "sensor.top",
+        module.CONF_BOILER_TEMP_SENSOR_POSITION: "lower_quarter",
+        module.CONF_BOILER_TWO_ZONE_SPLIT_RATIO: 0.5,
+    }
+    coordinator = module.BoilerCoordinator(hass, config)
+    temps = await coordinator._read_temperatures()
+
+    assert captured["sensor_position"] == "lower_quarter"
+    assert temps["upper_zone"] == 55.0
+
+
 def test_calculate_energy_state(monkeypatch):
     monkeypatch.setattr(module, "calculate_energy_to_heat", lambda **_k: 2.0)
     coordinator = module.BoilerCoordinator(DummyHass(), {})

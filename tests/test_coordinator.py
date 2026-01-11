@@ -285,6 +285,34 @@ async def test_async_update_data_telemetry_snapshot_exception(monkeypatch, coord
 
 
 @pytest.mark.asyncio
+async def test_async_update_data_skips_battery_forecast_when_disabled(
+    monkeypatch, coordinator
+):
+    coordinator._startup_grace_seconds = 0
+    coordinator.config_entry.options.pop("enable_battery_prediction", None)
+    coordinator._try_get_stats = AsyncMock(return_value={})
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.get_data_source_state",
+        lambda *_a, **_k: DataSourceState(
+            configured_mode=DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=None,
+            reason="local_ok",
+        ),
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.random.uniform",
+        lambda *_a, **_k: -1,
+    )
+    monkeypatch.setattr(coordinator, "_update_battery_forecast", AsyncMock())
+
+    await coordinator._async_update_data()
+
+    assert coordinator._update_battery_forecast.called is False
+
+
+@pytest.mark.asyncio
 async def test_async_update_data_local_mode_no_telemetry_store(
     monkeypatch, coordinator
 ):

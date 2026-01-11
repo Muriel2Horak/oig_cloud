@@ -248,3 +248,114 @@ async def test_async_update_happy_path(monkeypatch):
     assert sensor._forecast_in_progress is False
     assert sensor._write_called is True
     assert sensor._precompute_called is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "disable_guard,expected_min_percent",
+    [
+        (False, 30.0),
+        (True, 0.0),
+    ],
+)
+async def test_async_update_planner_options(monkeypatch, disable_guard, expected_min_percent):
+    fixed_now = datetime(2025, 1, 1, 12, 7, 0)
+    sensor = DummySensor()
+    sensor.hass = SimpleNamespace()
+    sensor._config_entry = SimpleNamespace(
+        options={
+            "disable_planning_min_guard": disable_guard,
+            "min_capacity_percent": 30.0,
+            "target_capacity_percent": 85.0,
+            "max_ups_price_czk": 12.5,
+            "home_charge_rate": 4.2,
+        }
+    )
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.forecast_update.dt_util.now",
+        lambda: fixed_now,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.forecast_update.get_load_avg_for_timestamp",
+        lambda *_a, **_k: 0.25,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.forecast_update.get_solar_for_timestamp",
+        lambda *_a, **_k: 0.1,
+    )
+
+    class DummyAdaptiveHelper:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def get_adaptive_load_prediction(self):
+            return None
+
+        async def calculate_recent_consumption_ratio(self, _profiles):
+            return None
+
+        def calculate_consumption_summary(self, _profiles):
+            return {}
+
+        def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(
+        forecast_update_module, "AdaptiveConsumptionHelper", DummyAdaptiveHelper
+    )
+
+    class DummyResult:
+        modes = ["HOME1"]
+        decisions = []
+        infeasible = False
+        infeasible_reason = None
+
+    captured = {}
+
+    class DummyStrategy:
+        def __init__(self, hybrid_config, sim_config):
+            captured["hybrid"] = hybrid_config
+            captured["sim"] = sim_config
+
+        def optimize(self, *_args, **_kwargs):
+            return DummyResult()
+
+    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module.mode_guard_module,
+        "build_plan_lock",
+        lambda *_a, **_k: (None, None),
+    )
+    monkeypatch.setattr(
+        forecast_update_module.mode_guard_module,
+        "apply_mode_guard",
+        lambda *_a, **_k: (["HOME1"], {}, None),
+    )
+    monkeypatch.setattr(
+        forecast_update_module,
+        "build_planner_timeline",
+        lambda *_a, **_k: [{"battery_capacity_kwh": 4.0}],
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "attach_planner_reasons", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "add_decision_reasons_to_timeline", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        forecast_update_module.mode_guard_module,
+        "apply_guard_reasons_to_timeline",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.dispatcher.async_dispatcher_send",
+        lambda *_a, **_k: None,
+    )
+
+    await forecast_update_module.async_update(sensor)
+
+    assert captured["hybrid"].planning_min_percent == expected_min_percent
+    assert captured["hybrid"].target_percent == 85.0
+    assert captured["hybrid"].max_ups_price_czk == 12.5
+    assert captured["sim"].charge_rate_kw == 4.2

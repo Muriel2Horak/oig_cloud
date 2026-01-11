@@ -75,6 +75,29 @@ def test_map_pricing_to_backend():
     assert backend["vat_rate"] == 20.0
 
 
+def test_map_pricing_to_backend_weekend_custom():
+    wizard_data = {
+        "import_pricing_scenario": "spot_fixed",
+        "spot_fixed_fee_kwh": 0.55,
+        "export_pricing_scenario": "fix_price",
+        "export_fixed_price_kwh": 2.6,
+        "tariff_count": "dual",
+        "distribution_fee_vt_kwh": 1.5,
+        "distribution_fee_nt_kwh": 0.9,
+        "tariff_vt_start_weekday": "6",
+        "tariff_nt_start_weekday": "22,2",
+        "tariff_weekend_same_as_weekday": False,
+        "tariff_vt_start_weekend": "8",
+        "tariff_nt_start_weekend": "0",
+        "vat_rate": 20.0,
+    }
+
+    backend = WizardMixin._map_pricing_to_backend(wizard_data)
+
+    assert backend["tariff_vt_start_weekend"] == "8"
+    assert backend["tariff_nt_start_weekend"] == "0"
+
+
 def test_map_backend_to_frontend():
     backend_data = {
         "spot_pricing_model": "fixed_prices",
@@ -103,6 +126,74 @@ def test_map_backend_to_frontend():
     assert frontend["tariff_count"] == "dual"
     assert frontend["tariff_weekend_same_as_weekday"] is False
     assert frontend["vat_rate"] == 19.0
+
+
+@pytest.mark.parametrize(
+    "scenario,expected",
+    [
+        (
+            "spot_percentage",
+            {"spot_pricing_model": "percentage", "spot_positive_fee_percent": 11.0},
+        ),
+        ("spot_fixed", {"spot_pricing_model": "fixed", "spot_fixed_fee_mwh": 420.0}),
+        (
+            "fix_price",
+            {
+                "spot_pricing_model": "fixed_prices",
+                "fixed_commercial_price_vt": 4.0,
+                "fixed_commercial_price_nt": 3.5,
+            },
+        ),
+    ],
+)
+def test_map_pricing_to_backend_import_scenarios(scenario, expected):
+    wizard_data = {
+        "import_pricing_scenario": scenario,
+        "spot_positive_fee_percent": 11.0,
+        "spot_negative_fee_percent": 6.0,
+        "spot_fixed_fee_kwh": 0.42,
+        "fixed_price_kwh": 4.0,
+        "fixed_price_vt_kwh": 4.0,
+        "fixed_price_nt_kwh": 3.5,
+    }
+
+    backend = WizardMixin._map_pricing_to_backend(wizard_data)
+
+    for key, value in expected.items():
+        assert backend[key] == value
+
+
+@pytest.mark.parametrize(
+    "scenario,expected",
+    [
+        ("spot_percentage", {"export_pricing_model": "percentage"}),
+        ("spot_fixed", {"export_pricing_model": "fixed"}),
+        ("fix_price", {"export_pricing_model": "fixed_prices"}),
+    ],
+)
+def test_map_pricing_to_backend_export_scenarios(scenario, expected):
+    wizard_data = {
+        "export_pricing_scenario": scenario,
+        "export_fee_percent": 12.0,
+        "export_fixed_fee_czk": 0.25,
+        "export_fixed_price_kwh": 2.2,
+    }
+
+    backend = WizardMixin._map_pricing_to_backend(wizard_data)
+
+    for key, value in expected.items():
+        assert backend[key] == value
+
+
+def test_map_pricing_to_backend_single_tariff_defaults():
+    wizard_data = {
+        "tariff_count": "single",
+        "distribution_fee_vt_kwh": 1.2,
+    }
+    backend = WizardMixin._map_pricing_to_backend(wizard_data)
+    assert backend["dual_tariff_enabled"] is False
+    assert backend["distribution_fee_vt_kwh"] == 1.2
+    assert "distribution_fee_nt_kwh" not in backend
 
 
 class DummyWizard(WizardMixin):

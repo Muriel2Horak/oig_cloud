@@ -410,6 +410,23 @@ async def test_dashboard_modules_view():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_modules_view_enable_auto():
+    entry = DummyEntry(
+        entry_id="entry1", options={"enable_boiler": False, "enable_auto": True}
+    )
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    view = api_module.OIGCloudDashboardModulesView()
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "entry1")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["enable_boiler"] is False
+    assert payload["enable_auto"] is True
+
+
+@pytest.mark.asyncio
 async def test_dashboard_modules_view_missing():
     hass = DummyHass(config_entries=DummyConfigEntries([]))
     view = api_module.OIGCloudDashboardModulesView()
