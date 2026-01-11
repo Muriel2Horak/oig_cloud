@@ -1,12 +1,10 @@
 """Senzory pro spotové ceny elektřiny z OTE (spot hourly)."""
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.dt import now as dt_now
 
@@ -16,10 +14,11 @@ from ..sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
 from .spot_price_shared import (
     DAILY_FETCH_HOUR,
     DAILY_FETCH_MINUTE,
-    HOURLY_RETRY_SECONDS,
-    RETRY_DELAYS_SECONDS,
     _ote_cache_path,
     _resolve_box_id_from_coordinator,
+    get_retry_delay_seconds,
+    schedule_daily_fetch,
+    schedule_retry_task,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,26 +98,8 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
 
     def _setup_time_tracking(self) -> None:
         """Nastavení pravidelného stahování dat - jednou denně po 13:00 s retry logikou."""
-        # Aktualizace jednou denně ve 13:00 (po publikaci dat)
-        daily_update_time = (
-            DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
-        )  # 13:00 v minutách
-
-        # Pokud je aktuální čas po 13:00, stáhneme data hned
-        now = dt_now()
-        current_minutes = now.hour * 60 + now.minute
-
-        if current_minutes >= daily_update_time:
-            # Data pro dnešek už jsou k dispozici
-            self.hass.async_create_task(self._fetch_spot_data_with_retry())
-
-        # Nastavit denní aktualizaci ve 13:00
-        self._track_time_interval_remove = async_track_time_change(
-            self.hass,
-            self._fetch_spot_data_with_retry,
-            hour=DAILY_FETCH_HOUR,
-            minute=DAILY_FETCH_MINUTE,
-            second=0,
+        self._track_time_interval_remove = schedule_daily_fetch(
+            self.hass, self._fetch_spot_data_with_retry
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -184,26 +165,21 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
 
     def _schedule_retry(self, fetch_coro) -> None:
         """Naplánuje další pokus podle retry schématu."""
-        delay = (
-            RETRY_DELAYS_SECONDS[self._retry_attempt]
-            if self._retry_attempt < len(RETRY_DELAYS_SECONDS)
-            else HOURLY_RETRY_SECONDS
-        )
+        delay = get_retry_delay_seconds(self._retry_attempt)
         self._retry_attempt += 1
         _LOGGER.info(
             f"[{self.entity_id}] Retrying spot data in {delay // 60} minutes (attempt {self._retry_attempt})"
         )
 
         self._cancel_retry_timer()
-
-        async def _retry_after_delay():
-            """Čeká a pak zavolá fetch."""
-            _LOGGER.info(f"[{self.entity_id}] ⏰ Retry task waiting {delay}s...")
-            await asyncio.sleep(delay)
-            _LOGGER.info(f"[{self.entity_id}] 🔔 Retry timer fired!")
-            await fetch_coro()
-
-        self._retry_remove = self.hass.async_create_task(_retry_after_delay())
+        self._retry_remove = schedule_retry_task(
+            self.hass,
+            fetch_coro,
+            delay,
+            _LOGGER,
+            self.entity_id,
+            "spot data",
+        )
 
     def _cancel_retry_timer(self) -> None:
         """Zruší naplánovaný retry task, pokud existuje."""

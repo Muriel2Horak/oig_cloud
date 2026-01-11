@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
-import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -21,7 +21,6 @@ SEASON_NAMES = {
     "summer": "letní",
     "autumn": "podzimní",
 }
-SIMILARITY_PARENS_RE = re.compile(r"\([^)]*(podobn|shoda)[^)]*\)", re.IGNORECASE)
 
 
 class AdaptiveConsumptionHelper:
@@ -39,7 +38,27 @@ class AdaptiveConsumptionHelper:
 
     @staticmethod
     def _strip_similarity_parens(value: str) -> str:
-        return SIMILARITY_PARENS_RE.sub("", value)
+        if "(" not in value:
+            return value
+        lowered = value.lower()
+        out: List[str] = []
+        idx = 0
+        while idx < len(value):
+            if value[idx] == "(":
+                end = value.find(")", idx + 1)
+                if end == -1:
+                    out.append(value[idx:])
+                    break
+                segment = lowered[idx + 1 : end]
+                if "podobn" in segment or "shoda" in segment:
+                    idx = end + 1
+                    continue
+                out.append(value[idx : end + 1])
+                idx = end + 1
+            else:
+                out.append(value[idx])
+                idx += 1
+        return "".join(out)
 
     @classmethod
     def _normalize_profile_name(cls, raw_name: Any) -> str:
@@ -277,6 +296,7 @@ class AdaptiveConsumptionHelper:
 
     async def get_adaptive_load_prediction(self) -> Optional[Dict[str, Any]]:
         """Načte adaptive load prediction přímo z adaptive_load_profiles sensoru."""
+        await asyncio.sleep(0)
         try:
             profiles_sensor = f"sensor.oig_{self._box_id}_adaptive_load_profiles"
 

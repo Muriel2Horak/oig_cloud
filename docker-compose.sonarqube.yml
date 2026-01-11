@@ -1,22 +1,39 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: oig_sonarqube_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${SONAR_DB_USER:-sonar}"
+      POSTGRES_PASSWORD: "${SONAR_DB_PASSWORD:-sonar}"
+      POSTGRES_DB: "${SONAR_DB_NAME:-sonar}"
+    volumes:
+      - oig_sonarqube_db:/var/lib/postgresql/data
+
   sonarqube:
-    image: sonarqube:lts-community
+    image: sonarqube:latest
     container_name: oig_sonarqube
     restart: unless-stopped
+    depends_on:
+      - postgres
     ports:
       # Use 9001 by default to avoid collisions with other local SonarQube instances.
       - "${SONAR_PORT:-9001}:9000"
     environment:
       # Local/dev convenience; avoids bootstrap checks in Docker Desktop.
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      # PostgreSQL backend
+      SONAR_JDBC_URL: "jdbc:postgresql://postgres:5432/${SONAR_DB_NAME:-sonar}"
+      SONAR_JDBC_USERNAME: "${SONAR_DB_USER:-sonar}"
+      SONAR_JDBC_PASSWORD: "${SONAR_DB_PASSWORD:-sonar}"
       # Stabilize JVM heaps to avoid random ES/Web/CE crashes on dev machines.
-      SONAR_WEB_JAVAOPTS: "-Xms512m -Xmx768m"
-      SONAR_CE_JAVAOPTS: "-Xms512m -Xmx768m"
-      SONAR_ES_JAVAOPTS: "-Xms1g -Xmx1g"
+      SONAR_WEB_JAVAOPTS: "-Xms1g -Xmx1g"
+      SONAR_CE_JAVAOPTS: "-Xms1g -Xmx1g"
+      SONAR_ES_JAVAOPTS: "-Xms2g -Xmx2g"
       # Fallback for older env naming (some builds still read *_JAVA_OPTS)
-      SONAR_WEB_JAVA_OPTS: "-Xms512m -Xmx768m"
-      SONAR_CE_JAVA_OPTS: "-Xms512m -Xmx768m"
-      SONAR_ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      SONAR_WEB_JAVA_OPTS: "-Xms1g -Xmx1g"
+      SONAR_CE_JAVA_OPTS: "-Xms1g -Xmx1g"
+      SONAR_ES_JAVA_OPTS: "-Xms2g -Xmx2g"
     ulimits:
       nofile:
         soft: 65536
@@ -30,3 +47,4 @@ volumes:
   oig_sonarqube_data:
   oig_sonarqube_extensions:
   oig_sonarqube_logs:
+  oig_sonarqube_db:

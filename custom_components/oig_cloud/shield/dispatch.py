@@ -522,6 +522,7 @@ async def log_event(
     context: Optional[Context] = None,
 ) -> None:
     """Log an event to logbook + fire event."""
+    await asyncio.sleep(0)
     params = data.get("params", {}) if data else {}
     entities = data.get("entities", {}) if data else {}
 

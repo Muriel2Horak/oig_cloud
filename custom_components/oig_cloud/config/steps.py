@@ -264,6 +264,149 @@ class WizardMixin:
 
         return backend_data
 
+    def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build shared options payload for config and options flows."""
+        pricing_backend = self._map_pricing_to_backend(wizard_data)
+        return {
+            # Intervaly
+            "standard_scan_interval": wizard_data.get("standard_scan_interval", 30),
+            "extended_scan_interval": wizard_data.get("extended_scan_interval", 300),
+            # Data source (cloud vs local with fallback)
+            "data_source_mode": self._sanitize_data_source_mode(
+                wizard_data.get("data_source_mode", "cloud_only")
+            ),
+            "local_proxy_stale_minutes": wizard_data.get("local_proxy_stale_minutes", 10),
+            "local_event_debounce_ms": wizard_data.get("local_event_debounce_ms", 300),
+            # Moduly
+            "enable_statistics": wizard_data.get("enable_statistics", True),
+            "enable_solar_forecast": wizard_data.get("enable_solar_forecast", False),
+            "enable_battery_prediction": wizard_data.get(
+                "enable_battery_prediction", False
+            ),
+            "enable_pricing": wizard_data.get("enable_pricing", False),
+            "enable_extended_sensors": wizard_data.get(
+                "enable_extended_sensors", True
+            ),
+            "enable_chmu_warnings": wizard_data.get("enable_chmu_warnings", False),
+            "enable_dashboard": wizard_data.get("enable_dashboard", False),
+            # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
+            CONF_SOLAR_FORECAST_PROVIDER: wizard_data.get(
+                CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
+            ),
+            "solar_forecast_mode": wizard_data.get(
+                "solar_forecast_mode", "daily_optimized"
+            ),
+            CONF_SOLAR_FORECAST_API_KEY: wizard_data.get(
+                CONF_SOLAR_FORECAST_API_KEY, ""
+            ),
+            CONF_SOLCAST_API_KEY: wizard_data.get(CONF_SOLCAST_API_KEY, ""),
+            CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
+                CONF_SOLAR_FORECAST_LATITUDE, 50.0
+            ),
+            CONF_SOLAR_FORECAST_LONGITUDE: wizard_data.get(
+                CONF_SOLAR_FORECAST_LONGITUDE, 14.0
+            ),
+            # String 1
+            CONF_SOLAR_FORECAST_STRING1_ENABLED: wizard_data.get(
+                CONF_SOLAR_FORECAST_STRING1_ENABLED, True
+            ),
+            CONF_SOLAR_FORECAST_STRING1_DECLINATION: wizard_data.get(
+                CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
+            ),
+            CONF_SOLAR_FORECAST_STRING1_AZIMUTH: wizard_data.get(
+                CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
+            ),
+            CONF_SOLAR_FORECAST_STRING1_KWP: wizard_data.get(
+                CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
+            ),
+            # String 2
+            "solar_forecast_string2_enabled": wizard_data.get(
+                "solar_forecast_string2_enabled", False
+            ),
+            "solar_forecast_string2_declination": wizard_data.get(
+                "solar_forecast_string2_declination", 35
+            ),
+            "solar_forecast_string2_azimuth": wizard_data.get(
+                "solar_forecast_string2_azimuth", 180
+            ),
+            "solar_forecast_string2_kwp": wizard_data.get(
+                "solar_forecast_string2_kwp", 5.0
+            ),
+            # Battery prediction - všechny parametry
+            "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
+            "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
+            "home_charge_rate": wizard_data.get("home_charge_rate", 2.8),
+            CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
+            "disable_planning_min_guard": wizard_data.get(
+                "disable_planning_min_guard", False
+            ),
+            # Planner safety limit (CZK/kWh)
+            "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
+            # Battery balancing
+            "balancing_enabled": wizard_data.get("balancing_enabled", True),
+            "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
+            "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
+            "balancing_opportunistic_threshold": wizard_data.get(
+                "balancing_opportunistic_threshold", 1.1
+            ),
+            "balancing_economic_threshold": wizard_data.get(
+                "balancing_economic_threshold", 2.5
+            ),
+            # Used by balancer window selection
+            "cheap_window_percentile": wizard_data.get("cheap_window_percentile", 30),
+            # Pricing - použít mapované backend atributy
+            **pricing_backend,
+            # Boiler module
+            "enable_boiler": wizard_data.get("enable_boiler", False),
+            "boiler_volume_l": wizard_data.get("boiler_volume_l", 120),
+            "boiler_target_temp_c": wizard_data.get("boiler_target_temp_c", 60.0),
+            "boiler_cold_inlet_temp_c": wizard_data.get(
+                "boiler_cold_inlet_temp_c", 10.0
+            ),
+            "boiler_temp_sensor_top": wizard_data.get("boiler_temp_sensor_top", ""),
+            "boiler_temp_sensor_bottom": wizard_data.get(
+                "boiler_temp_sensor_bottom", ""
+            ),
+            "boiler_temp_sensor_position": wizard_data.get(
+                "boiler_temp_sensor_position", "top"
+            ),
+            "boiler_stratification_mode": wizard_data.get(
+                "boiler_stratification_mode", "simple_avg"
+            ),
+            "boiler_two_zone_split_ratio": wizard_data.get(
+                "boiler_two_zone_split_ratio", 0.5
+            ),
+            "boiler_heater_power_kw_entity": wizard_data.get(
+                "boiler_heater_power_kw_entity",
+                "sensor.oig_2206237016_boiler_install_power",
+            ),
+            "boiler_heater_switch_entity": wizard_data.get(
+                "boiler_heater_switch_entity", ""
+            ),
+            "boiler_alt_heater_switch_entity": wizard_data.get(
+                "boiler_alt_heater_switch_entity", ""
+            ),
+            "boiler_has_alternative_heating": wizard_data.get(
+                "boiler_has_alternative_heating", False
+            ),
+            "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
+            "boiler_alt_energy_sensor": wizard_data.get(
+                "boiler_alt_energy_sensor", ""
+            ),
+            "boiler_spot_price_sensor": wizard_data.get(
+                "boiler_spot_price_sensor", ""
+            ),
+            "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
+            "boiler_planning_horizon_hours": wizard_data.get(
+                "boiler_planning_horizon_hours", 36
+            ),
+            "boiler_plan_slot_minutes": wizard_data.get(
+                "boiler_plan_slot_minutes", 30
+            ),
+            # Auto module
+            "enable_auto": wizard_data.get("enable_auto", False),
+        }
+
     @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
         """Map backend attribute names back to UI-friendly frontend names.
@@ -2258,199 +2401,13 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._handle_back_button("wizard_summary")
 
             # Vytvořit entry s nakonfigurovanými daty
-
-            # Převést UI pricing scénáře na backend atributy
-            pricing_backend = self._map_pricing_to_backend(self._wizard_data)
-
             return self.async_create_entry(
                 title=DEFAULT_NAME,
                 data={
                     CONF_USERNAME: self._wizard_data[CONF_USERNAME],
                     CONF_PASSWORD: self._wizard_data[CONF_PASSWORD],
                 },
-                options={
-                    # Intervaly
-                    "standard_scan_interval": self._wizard_data.get(
-                        "standard_scan_interval", 30
-                    ),
-                    "extended_scan_interval": self._wizard_data.get(
-                        "extended_scan_interval", 300
-                    ),
-                    # Data source (cloud vs local with fallback)
-                    "data_source_mode": self._sanitize_data_source_mode(
-                        self._wizard_data.get("data_source_mode", "cloud_only")
-                    ),
-                    "local_proxy_stale_minutes": self._wizard_data.get(
-                        "local_proxy_stale_minutes", 10
-                    ),
-                    "local_event_debounce_ms": self._wizard_data.get(
-                        "local_event_debounce_ms", 300
-                    ),
-                    # Moduly
-                    "enable_statistics": self._wizard_data.get(
-                        "enable_statistics", True
-                    ),
-                    "enable_solar_forecast": self._wizard_data.get(
-                        "enable_solar_forecast", False
-                    ),
-                    "enable_battery_prediction": self._wizard_data.get(
-                        "enable_battery_prediction", False
-                    ),
-                    "enable_pricing": self._wizard_data.get("enable_pricing", False),
-                    "enable_extended_sensors": self._wizard_data.get(
-                        "enable_extended_sensors", True
-                    ),
-                    "enable_chmu_warnings": self._wizard_data.get(
-                        "enable_chmu_warnings", False
-                    ),
-                    "enable_dashboard": self._wizard_data.get(
-                        "enable_dashboard", False
-                    ),
-                    # Extended sensors (single toggle)
-                    # (Per-category sub-toggles were removed; they were unused in runtime.)
-                    # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
-                    CONF_SOLAR_FORECAST_PROVIDER: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
-                    ),
-                    "solar_forecast_mode": self._wizard_data.get(
-                        "solar_forecast_mode", "daily_optimized"
-                    ),
-                    CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_API_KEY, ""
-                    ),
-                    CONF_SOLCAST_API_KEY: self._wizard_data.get(
-                        CONF_SOLCAST_API_KEY, ""
-                    ),
-                    CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_LATITUDE, 50.0
-                    ),
-                    CONF_SOLAR_FORECAST_LONGITUDE: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_LONGITUDE, 14.0
-                    ),
-                    # String 1
-                    CONF_SOLAR_FORECAST_STRING1_ENABLED: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_ENABLED, True
-                    ),
-                    CONF_SOLAR_FORECAST_STRING1_DECLINATION: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
-                    ),
-                    CONF_SOLAR_FORECAST_STRING1_AZIMUTH: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
-                    ),
-                    CONF_SOLAR_FORECAST_STRING1_KWP: self._wizard_data.get(
-                        CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
-                    ),
-                    # String 2
-                    "solar_forecast_string2_enabled": self._wizard_data.get(
-                        "solar_forecast_string2_enabled", False
-                    ),
-                    "solar_forecast_string2_declination": self._wizard_data.get(
-                        "solar_forecast_string2_declination", 35
-                    ),
-                    "solar_forecast_string2_azimuth": self._wizard_data.get(
-                        "solar_forecast_string2_azimuth", 180
-                    ),
-                    "solar_forecast_string2_kwp": self._wizard_data.get(
-                        "solar_forecast_string2_kwp", 5.0
-                    ),
-                    # Battery prediction - všechny parametry
-                    "min_capacity_percent": self._wizard_data.get(
-                        "min_capacity_percent", 20.0
-                    ),
-                    "target_capacity_percent": self._wizard_data.get(
-                        "target_capacity_percent", 80.0
-                    ),
-                    "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
-                    CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
-                        CONF_AUTO_MODE_SWITCH, False
-                    ),
-                    "disable_planning_min_guard": self._wizard_data.get(
-                        "disable_planning_min_guard", False
-                    ),
-                    # Planner safety limit (CZK/kWh)
-                    "max_ups_price_czk": self._wizard_data.get(
-                        "max_ups_price_czk", 10.0
-                    ),
-                    # Battery balancing
-                    "balancing_enabled": self._wizard_data.get(
-                        "balancing_enabled", True
-                    ),
-                    "balancing_interval_days": self._wizard_data.get(
-                        "balancing_interval_days", 7
-                    ),
-                    "balancing_hold_hours": self._wizard_data.get(
-                        "balancing_hold_hours", 3
-                    ),
-                    "balancing_opportunistic_threshold": self._wizard_data.get(
-                        "balancing_opportunistic_threshold", 1.1
-                    ),
-                    "balancing_economic_threshold": self._wizard_data.get(
-                        "balancing_economic_threshold", 2.5
-                    ),
-                    # Used by balancer window selection
-                    "cheap_window_percentile": self._wizard_data.get(
-                        "cheap_window_percentile", 30
-                    ),
-                    # Pricing - použít mapované backend atributy
-                    **pricing_backend,
-                    # Boiler module
-                    "enable_boiler": self._wizard_data.get("enable_boiler", False),
-                    "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
-                    "boiler_target_temp_c": self._wizard_data.get(
-                        "boiler_target_temp_c", 60.0
-                    ),
-                    "boiler_cold_inlet_temp_c": self._wizard_data.get(
-                        "boiler_cold_inlet_temp_c", 10.0
-                    ),
-                    "boiler_temp_sensor_top": self._wizard_data.get(
-                        "boiler_temp_sensor_top", ""
-                    ),
-                    "boiler_temp_sensor_bottom": self._wizard_data.get(
-                        "boiler_temp_sensor_bottom", ""
-                    ),
-                    "boiler_temp_sensor_position": self._wizard_data.get(
-                        "boiler_temp_sensor_position", "top"
-                    ),
-                    "boiler_stratification_mode": self._wizard_data.get(
-                        "boiler_stratification_mode", "simple_avg"
-                    ),
-                    "boiler_two_zone_split_ratio": self._wizard_data.get(
-                        "boiler_two_zone_split_ratio", 0.5
-                    ),
-                    "boiler_heater_power_kw_entity": self._wizard_data.get(
-                        "boiler_heater_power_kw_entity",
-                        "sensor.oig_2206237016_boiler_install_power",
-                    ),
-                    "boiler_heater_switch_entity": self._wizard_data.get(
-                        "boiler_heater_switch_entity", ""
-                    ),
-                    "boiler_alt_heater_switch_entity": self._wizard_data.get(
-                        "boiler_alt_heater_switch_entity", ""
-                    ),
-                    "boiler_has_alternative_heating": self._wizard_data.get(
-                        "boiler_has_alternative_heating", False
-                    ),
-                    "boiler_alt_cost_kwh": self._wizard_data.get(
-                        "boiler_alt_cost_kwh", 0.0
-                    ),
-                    "boiler_alt_energy_sensor": self._wizard_data.get(
-                        "boiler_alt_energy_sensor", ""
-                    ),
-                    "boiler_spot_price_sensor": self._wizard_data.get(
-                        "boiler_spot_price_sensor", ""
-                    ),
-                    "boiler_deadline_time": self._wizard_data.get(
-                        "boiler_deadline_time", "20:00"
-                    ),
-                    "boiler_planning_horizon_hours": self._wizard_data.get(
-                        "boiler_planning_horizon_hours", 36
-                    ),
-                    "boiler_plan_slot_minutes": self._wizard_data.get(
-                        "boiler_plan_slot_minutes", 30
-                    ),
-                    # Auto module
-                    "enable_auto": self._wizard_data.get("enable_auto", False),
-                },
+                options=self._build_options_payload(self._wizard_data),
             )
 
         # Vygenerovat detailní shrnutí konfigurace
@@ -2565,183 +2522,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_summary")
 
-            # Převést UI pricing scénáře na backend atributy (stejně jako v ConfigFlow)
-            pricing_backend = self._map_pricing_to_backend(self._wizard_data)
-
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
-            new_options = {
-                # Intervaly
-                "standard_scan_interval": self._wizard_data.get(
-                    "standard_scan_interval", 30
-                ),
-                "extended_scan_interval": self._wizard_data.get(
-                    "extended_scan_interval", 300
-                ),
-                "data_source_mode": self._sanitize_data_source_mode(
-                    self._wizard_data.get("data_source_mode", "cloud_only")
-                ),
-                "local_proxy_stale_minutes": self._wizard_data.get(
-                    "local_proxy_stale_minutes", 10
-                ),
-                "local_event_debounce_ms": self._wizard_data.get(
-                    "local_event_debounce_ms", 300
-                ),
-                # Moduly
-                "enable_statistics": self._wizard_data.get("enable_statistics", True),
-                "enable_solar_forecast": self._wizard_data.get(
-                    "enable_solar_forecast", False
-                ),
-                "enable_battery_prediction": self._wizard_data.get(
-                    "enable_battery_prediction", False
-                ),
-                "enable_pricing": self._wizard_data.get("enable_pricing", False),
-                "enable_extended_sensors": self._wizard_data.get(
-                    "enable_extended_sensors", True
-                ),
-                "enable_chmu_warnings": self._wizard_data.get(
-                    "enable_chmu_warnings", False
-                ),
-                "enable_dashboard": self._wizard_data.get("enable_dashboard", False),
-                # Extended sensors detail
-                # Extended sensors (single toggle)
-                # (Per-category sub-toggles were removed; they were unused in runtime.)
-                # Solar forecast - použít všechny parametry stejně jako v ConfigFlow
-                CONF_SOLAR_FORECAST_PROVIDER: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
-                ),
-                "solar_forecast_mode": self._wizard_data.get(
-                    "solar_forecast_mode", "daily_optimized"
-                ),
-                CONF_SOLAR_FORECAST_API_KEY: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_API_KEY, ""
-                ),
-                CONF_SOLCAST_API_KEY: self._wizard_data.get(CONF_SOLCAST_API_KEY, ""),
-                CONF_SOLAR_FORECAST_LATITUDE: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_LATITUDE, 50.0
-                ),
-                CONF_SOLAR_FORECAST_LONGITUDE: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_LONGITUDE, 14.0
-                ),
-                # String 1
-                CONF_SOLAR_FORECAST_STRING1_ENABLED: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_STRING1_ENABLED, True
-                ),
-                CONF_SOLAR_FORECAST_STRING1_DECLINATION: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
-                ),
-                CONF_SOLAR_FORECAST_STRING1_AZIMUTH: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
-                ),
-                CONF_SOLAR_FORECAST_STRING1_KWP: self._wizard_data.get(
-                    CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
-                ),
-                # String 2
-                "solar_forecast_string2_enabled": self._wizard_data.get(
-                    "solar_forecast_string2_enabled", False
-                ),
-                "solar_forecast_string2_declination": self._wizard_data.get(
-                    "solar_forecast_string2_declination", 35
-                ),
-                "solar_forecast_string2_azimuth": self._wizard_data.get(
-                    "solar_forecast_string2_azimuth", 180
-                ),
-                "solar_forecast_string2_kwp": self._wizard_data.get(
-                    "solar_forecast_string2_kwp", 5.0
-                ),
-                # Battery prediction - všechny parametry
-                "min_capacity_percent": self._wizard_data.get(
-                    "min_capacity_percent", 20.0
-                ),
-                "target_capacity_percent": self._wizard_data.get(
-                    "target_capacity_percent", 80.0
-                ),
-                "home_charge_rate": self._wizard_data.get("home_charge_rate", 2.8),
-                CONF_AUTO_MODE_SWITCH: self._wizard_data.get(
-                    CONF_AUTO_MODE_SWITCH, False
-                ),
-                "disable_planning_min_guard": self._wizard_data.get(
-                    "disable_planning_min_guard", False
-                ),
-                # Planner safety limit (CZK/kWh)
-                "max_ups_price_czk": self._wizard_data.get("max_ups_price_czk", 10.0),
-                # Battery balancing
-                "balancing_enabled": self._wizard_data.get("balancing_enabled", True),
-                "balancing_interval_days": self._wizard_data.get(
-                    "balancing_interval_days", 7
-                ),
-                "balancing_hold_hours": self._wizard_data.get(
-                    "balancing_hold_hours", 3
-                ),
-                "balancing_opportunistic_threshold": self._wizard_data.get(
-                    "balancing_opportunistic_threshold", 1.1
-                ),
-                "balancing_economic_threshold": self._wizard_data.get(
-                    "balancing_economic_threshold", 2.5
-                ),
-                # Used by balancer window selection
-                "cheap_window_percentile": self._wizard_data.get(
-                    "cheap_window_percentile", 30
-                ),
-                # Pricing - použít mapované backend atributy
-                **pricing_backend,
-                # Boiler module
-                "enable_boiler": self._wizard_data.get("enable_boiler", False),
-                "boiler_volume_l": self._wizard_data.get("boiler_volume_l", 120),
-                "boiler_target_temp_c": self._wizard_data.get(
-                    "boiler_target_temp_c", 60.0
-                ),
-                "boiler_cold_inlet_temp_c": self._wizard_data.get(
-                    "boiler_cold_inlet_temp_c", 10.0
-                ),
-                "boiler_temp_sensor_top": self._wizard_data.get(
-                    "boiler_temp_sensor_top", ""
-                ),
-                "boiler_temp_sensor_bottom": self._wizard_data.get(
-                    "boiler_temp_sensor_bottom", ""
-                ),
-                "boiler_temp_sensor_position": self._wizard_data.get(
-                    "boiler_temp_sensor_position", "top"
-                ),
-                "boiler_stratification_mode": self._wizard_data.get(
-                    "boiler_stratification_mode", "simple_avg"
-                ),
-                "boiler_two_zone_split_ratio": self._wizard_data.get(
-                    "boiler_two_zone_split_ratio", 0.5
-                ),
-                "boiler_heater_power_kw_entity": self._wizard_data.get(
-                    "boiler_heater_power_kw_entity",
-                    "sensor.oig_2206237016_boiler_install_power",
-                ),
-                "boiler_heater_switch_entity": self._wizard_data.get(
-                    "boiler_heater_switch_entity", ""
-                ),
-                "boiler_alt_heater_switch_entity": self._wizard_data.get(
-                    "boiler_alt_heater_switch_entity", ""
-                ),
-                "boiler_has_alternative_heating": self._wizard_data.get(
-                    "boiler_has_alternative_heating", False
-                ),
-                "boiler_alt_cost_kwh": self._wizard_data.get(
-                    "boiler_alt_cost_kwh", 0.0
-                ),
-                "boiler_alt_energy_sensor": self._wizard_data.get(
-                    "boiler_alt_energy_sensor", ""
-                ),
-                "boiler_spot_price_sensor": self._wizard_data.get(
-                    "boiler_spot_price_sensor", ""
-                ),
-                "boiler_deadline_time": self._wizard_data.get(
-                    "boiler_deadline_time", "20:00"
-                ),
-                "boiler_planning_horizon_hours": self._wizard_data.get(
-                    "boiler_planning_horizon_hours", 36
-                ),
-                "boiler_plan_slot_minutes": self._wizard_data.get(
-                    "boiler_plan_slot_minutes", 30
-                ),
-                # Auto module
-                "enable_auto": self._wizard_data.get("enable_auto", False),
-            }
+            new_options = self._build_options_payload(self._wizard_data)
 
             # Přidat debug log
             _LOGGER.warning(

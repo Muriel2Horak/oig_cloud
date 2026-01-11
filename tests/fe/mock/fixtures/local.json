@@ -1,0 +1,281 @@
+{
+  "hass": {
+    "states": {
+      "sensor.oig_2206237016_box_prms_mode": {
+        "entity_id": "sensor.oig_2206237016_box_prms_mode",
+        "state": "Home 2",
+        "attributes": {"friendly_name": "Mode"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_batt_bat_c": {
+        "entity_id": "sensor.oig_2206237016_batt_bat_c",
+        "state": "70",
+        "attributes": {"unit_of_measurement": "%"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_chmu_warning_level": {
+        "entity_id": "sensor.oig_2206237016_chmu_warning_level",
+        "state": "2",
+        "attributes": {"message": "Local warning", "event_type": "Local alert", "warnings_count": 2},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_service_shield_status": {
+        "entity_id": "sensor.oig_2206237016_service_shield_status",
+        "state": "Idle",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_service_shield_queue": {
+        "entity_id": "sensor.oig_2206237016_service_shield_queue",
+        "state": "0",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_service_shield_activity": {
+        "entity_id": "sensor.oig_2206237016_service_shield_activity",
+        "state": "Idle",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_spot_price_current_15min": {
+        "entity_id": "sensor.oig_2206237016_spot_price_current_15min",
+        "state": "2.80",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_export_price_current_15min": {
+        "entity_id": "sensor.oig_2206237016_export_price_current_15min",
+        "state": "1.90",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_solar_forecast": {
+        "entity_id": "sensor.oig_2206237016_solar_forecast",
+        "state": "5.1",
+        "attributes": {"tomorrow_total_sum_kw": 3.6, "provider": "forecast_solar"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_solar_forecast_string1": {
+        "entity_id": "sensor.oig_2206237016_solar_forecast_string1",
+        "state": "2.8",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_solar_forecast_string2": {
+        "entity_id": "sensor.oig_2206237016_solar_forecast_string2",
+        "state": "2.3",
+        "attributes": {},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_dc_in_fv_p1": {
+        "entity_id": "sensor.oig_2206237016_dc_in_fv_p1",
+        "state": "900",
+        "attributes": {"unit_of_measurement": "W"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_dc_in_fv_p2": {
+        "entity_id": "sensor.oig_2206237016_dc_in_fv_p2",
+        "state": "600",
+        "attributes": {"unit_of_measurement": "W"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_extended_fve_voltage_1": {
+        "entity_id": "sensor.oig_2206237016_extended_fve_voltage_1",
+        "state": "365",
+        "attributes": {"unit_of_measurement": "V"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_extended_fve_voltage_2": {
+        "entity_id": "sensor.oig_2206237016_extended_fve_voltage_2",
+        "state": "360",
+        "attributes": {"unit_of_measurement": "V"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_extended_fve_current_1": {
+        "entity_id": "sensor.oig_2206237016_extended_fve_current_1",
+        "state": "2.7",
+        "attributes": {"unit_of_measurement": "A"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_extended_fve_current_2": {
+        "entity_id": "sensor.oig_2206237016_extended_fve_current_2",
+        "state": "2.1",
+        "attributes": {"unit_of_measurement": "A"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_computed_batt_charge_fve_energy_today": {
+        "entity_id": "sensor.oig_2206237016_computed_batt_charge_fve_energy_today",
+        "state": "1.9",
+        "attributes": {"unit_of_measurement": "kWh"},
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_battery_forecast": {
+        "entity_id": "sensor.oig_2206237016_battery_forecast",
+        "state": "ok",
+        "attributes": {
+          "max_capacity_kwh": 9,
+          "min_capacity_kwh": 1,
+          "planned_consumption_today": 3.4,
+          "planned_consumption_tomorrow": 4.1,
+          "mode_optimization": {
+            "alternatives": [
+              {"label": "Eco", "savings_pct": 4.1},
+              {"label": "Aggressive", "savings_pct": 6.2}
+            ]
+          }
+        },
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_battery_efficiency": {
+        "entity_id": "sensor.oig_2206237016_battery_efficiency",
+        "state": "90.1",
+        "attributes": {
+          "efficiency_last_month_pct": 90.1,
+          "losses_last_month_pct": 9.9,
+          "losses_last_month_kwh": 15.0,
+          "last_month_charge_kwh": 140.0,
+          "last_month_discharge_kwh": 126.0
+        },
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      },
+      "sensor.oig_2206237016_battery_health": {
+        "entity_id": "sensor.oig_2206237016_battery_health",
+        "state": "86.0",
+        "attributes": {
+          "capacity_kwh": 8.9,
+          "measurement_count": 9,
+          "last_measured": "2024-12-30T00:00:00+00:00",
+          "min_capacity_kwh": 8.5,
+          "max_capacity_kwh": 9.2,
+          "quality_score": 78.0,
+          "degradation_3_months_percent": -0.8,
+          "degradation_6_months_percent": -1.5,
+          "degradation_12_months_percent": -2.5,
+          "degradation_per_year_percent": -2.8,
+          "estimated_eol_date": "2032-06-01",
+          "years_to_80pct": 5.8,
+          "trend_confidence": 0.78
+        },
+        "last_updated": "2025-01-01T11:00:00+00:00",
+        "last_changed": "2025-01-01T11:00:00+00:00"
+      }
+    }
+  },
+  "api": {
+    "modules": {"modules": ["battery_forecast", "pricing"]},
+    "boiler_profile": {"profile": {"name": "Local", "volume_liters": 80}},
+    "boiler_plan": {"plan": [{"timestamp": "2025-01-01T11:00:00+00:00", "target_temp": 50}]},
+    "planner_settings": {"min_soc": 30, "max_soc": 95},
+    "timeline": {
+      "timeline": [
+        {
+          "timestamp": "2025-01-01T11:00:00+00:00",
+          "mode": "Home 2",
+          "spot_price_czk": 2.8,
+          "export_price_czk": 1.9,
+          "battery_capacity_kwh": 6.2,
+          "solar_charge_kwh": 0.3,
+          "grid_charge_kwh": 0.1,
+          "grid_import": 0.2,
+          "grid_export": 0.0,
+          "load_kwh": 0.5
+        }
+      ]
+    },
+    "detail_tabs": {
+      "today": {
+        "date": "2025-01-01",
+        "summary": {
+          "planned_cost": 9.8,
+          "actual_cost": 9.2,
+          "planned_consumption_kwh": 2.0,
+          "actual_consumption_kwh": 1.9,
+          "planned_solar_kwh": 0.9,
+          "actual_solar_kwh": 0.8
+        },
+        "mode_blocks": [
+          {
+            "mode_name": "HOME 2",
+            "start": "2025-01-01T11:00:00+00:00",
+            "end": "2025-01-01T11:15:00+00:00",
+            "status": "current",
+            "planned": { "mode_name": "HOME 2", "net_cost": 1.0 },
+            "actual": { "mode_name": "HOME 2", "net_cost": 0.95 }
+          }
+        ],
+        "intervals": [
+          { "time": "11:00", "planned": { "mode": 1, "mode_name": "HOME 2" } }
+        ]
+      },
+      "yesterday": {
+        "date": "2024-12-31",
+        "summary": {
+          "planned_cost": 9.1,
+          "actual_cost": 8.7,
+          "planned_consumption_kwh": 1.9,
+          "actual_consumption_kwh": 1.8,
+          "planned_solar_kwh": 0.8,
+          "actual_solar_kwh": 0.8
+        },
+        "mode_blocks": [
+          {
+            "mode_name": "HOME 2",
+            "start": "2024-12-31T11:00:00+00:00",
+            "end": "2024-12-31T11:15:00+00:00",
+            "status": "past",
+            "planned": { "mode_name": "HOME 2", "net_cost": 0.95 },
+            "actual": { "mode_name": "HOME 2", "net_cost": 0.9 }
+          }
+        ],
+        "intervals": [
+          { "time": "11:00", "planned": { "mode": 1, "mode_name": "HOME 2" } }
+        ]
+      },
+      "tomorrow": {
+        "date": "2025-01-02",
+        "summary": {
+          "planned_cost": 10.2,
+          "actual_cost": 0.0,
+          "planned_consumption_kwh": 2.1,
+          "actual_consumption_kwh": 0.0,
+          "planned_solar_kwh": 0.9,
+          "actual_solar_kwh": 0.0
+        },
+        "mode_blocks": [
+          {
+            "mode_name": "HOME 2",
+            "start": "2025-01-02T11:00:00+00:00",
+            "end": "2025-01-02T11:15:00+00:00",
+            "status": "future",
+            "planned": { "mode_name": "HOME 2", "net_cost": 1.05 },
+            "actual": { "mode_name": "HOME 2", "net_cost": 0.0 }
+          }
+        ],
+        "intervals": [
+          { "time": "11:00", "planned": { "mode": 1, "mode_name": "HOME 2" } }
+        ]
+      }
+    },
+    "unified_cost_tile": {"total_cost": 98.7, "currency": "CZK"}
+  }
+}

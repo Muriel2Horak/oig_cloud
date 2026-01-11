@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -311,6 +312,7 @@ class DataSourceController:
         )
 
     async def async_start(self) -> None:
+        await asyncio.sleep(0)
         self._update_state(force=True)
 
         # Seed coordinator payload from existing local states (only in configured local/hybrid mode).
@@ -366,6 +368,7 @@ class DataSourceController:
         )
 
     async def async_stop(self) -> None:
+        await asyncio.sleep(0)
         for unsub in self._unsubs:
             try:
                 unsub()
@@ -453,6 +456,7 @@ class DataSourceController:
         - Updates DataSourceState (may switch effective mode)
         - Applies local mapping into coordinator.data (cloud-shaped payload)
         """
+        await asyncio.sleep(0)
         try:
             _, mode_changed = self._update_state()
             if mode_changed:
@@ -622,6 +626,7 @@ class DataSourceController:
                 _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
 
     async def _poke_coordinator(self) -> None:
+        await asyncio.sleep(0)
         try:
             if self.coordinator and getattr(self.coordinator, "data", None) is not None:
                 self.coordinator.async_set_updated_data(self.coordinator.data)

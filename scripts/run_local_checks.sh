@@ -39,7 +39,12 @@ if [[ -f "package.json" ]]; then
   npm install --no-audit --no-fund
   echo "==> Running frontend lint"
   npm run lint
+  echo "==> Running frontend unit tests"
+  npm run test:fe:unit
 fi
+
+echo "==> Running hassfest"
+scripts/run_hassfest.sh
 
 echo "==> Running pytest + coverage"
 "$PYTHON_BIN" -m pytest -q --cov=custom_components/oig_cloud --cov-report=term-missing --cov-report=xml

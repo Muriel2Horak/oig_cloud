@@ -1,5 +1,6 @@
 """Plánovač ohřevu bojleru s optimalizací nákladů."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -56,6 +57,7 @@ class BoilerPlanner:
         Returns:
             BoilerPlan s doporučenými zdroji
         """
+        await asyncio.sleep(0)
         _ = deadline_time
         now = dt_util.now()
         plan_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -250,6 +252,7 @@ class BoilerPlanner:
         Returns:
             List [(start, end)] datetime dvojic
         """
+        await asyncio.sleep(0)
         if not battery_forecast_data:
             _LOGGER.debug("Battery forecast data nejsou dostupná")
             return []

@@ -1,5 +1,6 @@
 """Platform pro OIG Cloud senzory."""
 
+import asyncio
 import logging
 from typing import Any, Dict, List
 
@@ -112,6 +113,7 @@ async def _cleanup_renamed_sensors(
     Returns:
         Počet odstraněných senzorů
     """
+    await asyncio.sleep(0)
     removed = 0
 
     # Známé přejmenování a deprecated senzory
@@ -189,6 +191,7 @@ async def _cleanup_removed_devices(
     Returns:
         Počet odstraněných zařízení
     """
+    await asyncio.sleep(0)
     if not coordinator or not coordinator.data:
         return 0
 
@@ -259,6 +262,7 @@ async def _cleanup_empty_devices_internal(
     Returns:
         Počet odstraněných zařízení
     """
+    await asyncio.sleep(0)
     removed = 0
 
     from homeassistant.helpers import device_registry as dr
@@ -366,6 +370,7 @@ async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up OIG Cloud sensors from a config entry."""
+    await asyncio.sleep(0)
     _LOGGER.debug("Starting sensor setup with coordinator data")
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -1360,6 +1365,7 @@ async def _cleanup_empty_devices(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> None:
     """Clean up devices that have no entities, including service devices."""
+    await asyncio.sleep(0)
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.device_registry import DeviceEntryType

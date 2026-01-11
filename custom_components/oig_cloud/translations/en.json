@@ -6,7 +6,7 @@
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ For updates every 4 hours or every hour, API key from Forecast.Solar is required",
-      "solcast_api_key_required": "⚠️ Solcast API key is required"
+      "solcast_api_key_required": "⚠️ Solcast API key is required",
       "cannot_connect": "Failed to connect to OIG Cloud API",
       "dashboard_requires_all": "⚠️ Dashboard requires all other modules (Statistics, Solar forecast, Battery prediction, Price sensors, Spot prices, Extended sensors)",
       "endpoint_must_start_with_slash": "⚠️ Endpoint must start with slash (/)",

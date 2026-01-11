@@ -180,6 +180,7 @@ async def async_added_to_hass(sensor):  # noqa: C901
 
     async def _on_profiles_updated():
         """Called when AdaptiveLoadProfiles completes update."""
+        await asyncio.sleep(0)
         # Do not recompute immediately; keep forecast cadence at 1 / 15 minutes.
         # Mark inputs dirty and let the next scheduled 15-min tick pick it up.
         sensor._profiles_dirty = True
@@ -207,6 +208,7 @@ async def async_added_to_hass(sensor):  # noqa: C901
 
         async def _mark_ready():
             nonlocal profiles_ready
+            await asyncio.sleep(0)
             profiles_ready = True
 
         # Temporary listener for initial profiles

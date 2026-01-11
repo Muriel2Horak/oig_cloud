@@ -19,12 +19,19 @@ Usage:
   scripts/sonar_local.sh status       # show container status
   scripts/sonar_local.sh coverage     # run pytest with coverage.xml
   scripts/sonar_local.sh scan         # run sonar-scanner (requires SONAR_TOKEN)
+  scripts/sonar_local.sh project      # create project (requires admin credentials)
+  scripts/sonar_local.sh token        # create user token (requires admin credentials)
+  scripts/sonar_local.sh bootstrap    # wait for SonarQube + create project + token
 
 Env:
   SONAR_PORT=9001                     # host port mapped to SonarQube 9000
   SONAR_HOST_URL=http://localhost:9001
   SONAR_TOKEN=...                     # required for 'scan'
   SONAR_PROJECT_KEY=oig_cloud         # default is 'oig_cloud'
+  SONAR_PROJECT_NAME=oig_cloud        # default is SONAR_PROJECT_KEY
+  SONAR_ADMIN_LOGIN=admin
+  SONAR_ADMIN_PASSWORD=admin
+  SONAR_TOKEN_NAME=local-oig_cloud
 TXT
 }
 
@@ -32,8 +39,8 @@ wait_for_sonarqube() {
   echo "Waiting for SonarQube at ${SONAR_HOST_URL} ..."
   # First boot can take a while (image pull, DB migrations, indexing).
   for _ in $(seq 1 360); do
-    if curl -fsS "${SONAR_HOST_URL}/api/system/status" >/dev/null 2>&1; then
-      status="$(curl -fsS "${SONAR_HOST_URL}/api/system/status" | sed -n 's/.*\"status\":\"\\([A-Z]*\\)\".*/\\1/p')"
+    if curl -fsS --max-time 5 "${SONAR_HOST_URL}/api/system/status" >/dev/null 2>&1; then
+      status="$(curl -fsS --max-time 5 "${SONAR_HOST_URL}/api/system/status" | sed -n 's/.*\"status\":\"\\([A-Z]*\\)\".*/\\1/p')"
       if [[ "$status" == "UP" ]]; then
         echo "SonarQube is UP: ${SONAR_HOST_URL}"
         return 0
@@ -43,6 +50,39 @@ wait_for_sonarqube() {
   done
   echo "Timed out waiting for SonarQube. Try: scripts/sonar_local.sh logs"
   return 1
+}
+
+sonar_api() {
+  local endpoint="$1"
+  local data="${2:-}"
+  local login="${SONAR_ADMIN_LOGIN:-admin}"
+  local password="${SONAR_ADMIN_PASSWORD:-admin}"
+
+  if [[ -n "$data" ]]; then
+    curl -fsS --max-time 10 -u "${login}:${password}" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "$data" \
+      "${SONAR_HOST_URL}${endpoint}"
+  else
+    curl -fsS --max-time 10 -u "${login}:${password}" \
+      "${SONAR_HOST_URL}${endpoint}"
+  fi
+}
+
+json_token() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY'
+import json
+import sys
+print(json.load(sys.stdin)["token"])
+PY
+  else
+    python - <<'PY'
+import json
+import sys
+print(json.load(sys.stdin)["token"])
+PY
+  fi
 }
 
 start() {
@@ -117,6 +157,32 @@ scan() {
   echo "Scan submitted. Check: ${SONAR_HOST_URL}"
 }
 
+project() {
+  wait_for_sonarqube
+  SONAR_PROJECT_KEY="${SONAR_PROJECT_KEY:-oig_cloud}"
+  SONAR_PROJECT_NAME="${SONAR_PROJECT_NAME:-${SONAR_PROJECT_KEY}}"
+
+  sonar_api "/api/projects/create" \
+    "project=${SONAR_PROJECT_KEY}&name=${SONAR_PROJECT_NAME}" >/dev/null
+  echo "Project created: ${SONAR_PROJECT_KEY} (${SONAR_PROJECT_NAME})"
+}
+
+token() {
+  wait_for_sonarqube
+  SONAR_PROJECT_KEY="${SONAR_PROJECT_KEY:-oig_cloud}"
+  SONAR_TOKEN_NAME="${SONAR_TOKEN_NAME:-local-${SONAR_PROJECT_KEY}}"
+
+  response="$(sonar_api "/api/user_tokens/generate" "name=${SONAR_TOKEN_NAME}")"
+  echo "${response}" | json_token
+}
+
+bootstrap() {
+  wait_for_sonarqube
+  project
+  echo "Token:"
+  token
+}
+
 case "$cmd" in
   start) start ;;
   stop) stop ;;
@@ -124,6 +190,9 @@ case "$cmd" in
   status) status ;;
   coverage) coverage ;;
   scan) scan ;;
+  project) project ;;
+  token) token ;;
+  bootstrap) bootstrap ;;
   ""|-h|--help|help) usage ;;
   *) echo "Unknown command: $cmd"; usage; exit 2 ;;
 esac

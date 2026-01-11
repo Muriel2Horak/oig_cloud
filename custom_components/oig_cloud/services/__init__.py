@@ -1,5 +1,6 @@
 """Služby pro integraci OIG Cloud."""
 
+import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -170,6 +171,7 @@ STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
 
 async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
     """Nastavení základních služeb pro OIG Cloud."""
+    await asyncio.sleep(0)
 
     async def handle_update_solar_forecast(call: ServiceCall) -> None:
         """Zpracování služby pro manuální aktualizaci solární předpovědi."""
@@ -666,6 +668,7 @@ async def async_setup_entry_services_fallback(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
     """Setup entry-specific services WITHOUT shield protection as fallback."""
+    await asyncio.sleep(0)
     _LOGGER.info(f"Registering fallback services for entry {entry.entry_id}")
 
     async def handle_set_box_mode(call: ServiceCall) -> None:
@@ -845,6 +848,7 @@ async def async_setup_entry_services_fallback(
 
 async def async_unload_services(hass: HomeAssistant) -> None:
     """Odregistrace služeb při unload integrace."""
+    await asyncio.sleep(0)
     services_to_remove = [
         "update_solar_forecast",
         "save_dashboard_tiles",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -463,6 +464,7 @@ class OigCloudPlannerRecommendedModeSensor(
         signal_name = f"oig_cloud_{self._box_id}_forecast_updated"
 
         async def _on_forecast_updated() -> None:
+            await asyncio.sleep(0)
             self.hass.async_create_task(self._async_recompute())
 
         try:
@@ -473,6 +475,7 @@ class OigCloudPlannerRecommendedModeSensor(
             pass
 
         async def _on_tick(_now: datetime) -> None:
+            await asyncio.sleep(0)
             self.hass.async_create_task(self._async_recompute())
 
         try:

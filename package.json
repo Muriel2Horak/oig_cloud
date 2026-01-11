@@ -7,12 +7,33 @@
     "lint:css": "stylelint --allow-empty-input \"custom_components/oig_cloud/www/**/*.css\"",
     "lint:html": "htmlhint \"custom_components/oig_cloud/www/**/*.html\"",
     "lint": "npm run lint:js && npm run lint:css && npm run lint:html",
-    "test": "npm run lint"
+    "test": "npm run lint",
+    "test:fe:unit": "vitest run",
+    "test:fe:unit:coverage": "vitest run --coverage",
+    "test:fe:e2e": "scripts/run_fe_e2e.sh",
+    "fe:mock:up": "scripts/fe_mock_up.sh",
+    "fe:mock:down": "scripts/fe_mock_down.sh"
+  },
+  "vitest": {
+    "test": {
+      "environment": "jsdom",
+      "include": [
+        "tests/fe/unit/**/*.test.js"
+      ]
+    },
+    "coverage": {
+      "provider": "v8"
+    }
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "baseline-browser-mapping": "^2.9.14",
     "eslint": "^8.57.0",
     "htmlhint": "^1.1.4",
+    "jsdom": "^24.0.0",
     "stylelint": "^16.0.0",
-    "stylelint-config-standard": "^36.0.0"
+    "stylelint-config-standard": "^36.0.0",
+    "vitest": "^2.0.5"
   }
 }

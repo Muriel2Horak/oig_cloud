@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -407,6 +408,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Odebrání frontend panelu."""
+    await asyncio.sleep(0)
     try:
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
@@ -650,6 +652,7 @@ async def _cleanup_invalid_empty_devices(
     This is a targeted/safe cleanup to get rid of stale registry entries created by
     older versions when box_id resolution was unstable.
     """
+    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er
@@ -1373,6 +1376,7 @@ async def async_setup_entry(
 
             # Přidáme test callback pro ověření funkčnosti
             async def test_shield_monitoring(_now: Any) -> None:
+                await asyncio.sleep(0)
                 status = service_shield.get_shield_status()
                 queue_info = service_shield.get_queue_info()
                 _LOGGER.debug(
@@ -1420,6 +1424,7 @@ async def async_setup_entry(
 
 async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
     """Setup telemetry if enabled."""
+    await asyncio.sleep(0)
     try:
         _LOGGER.debug("Starting telemetry setup...")
 
@@ -1483,6 +1488,7 @@ async def async_remove_config_entry_device(
     Home Assistant calls this when the user tries to delete a device from the UI.
     We only allow removing devices that have no entities.
     """
+    await asyncio.sleep(0)
     _ = config_entry
     try:
         from homeassistant.helpers import entity_registry as er
@@ -1563,6 +1569,7 @@ async def async_update_options(
 
 async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Vyčištění nepoužívaných zařízení."""
+    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er

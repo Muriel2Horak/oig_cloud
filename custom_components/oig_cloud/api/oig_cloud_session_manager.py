@@ -417,6 +417,7 @@ class OigCloudSessionManager:
 
     async def close(self) -> None:
         """Cleanup resources and log final statistics."""
+        await asyncio.sleep(0)
         uptime = datetime.now() - self._stats["session_created"]
 
         _LOGGER.info("=" * 60)

@@ -21,6 +21,37 @@ from ..types import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _iter_interval_inputs(
+    sensor: Any,
+    *,
+    spot_prices: List[Dict[str, Any]],
+    export_prices: List[Dict[str, Any]],
+    solar_forecast: Dict[str, Any],
+    load_forecast: List[float],
+):
+    """Yield normalized interval inputs for simulation loops."""
+    for idx in range(len(spot_prices)):
+        timestamp_str = spot_prices[idx].get("time", "")
+        spot_price = spot_prices[idx].get("price", 0.0)
+        export_price = (
+            export_prices[idx].get("price", 0.0) if idx < len(export_prices) else 0.0
+        )
+        load_kwh = load_forecast[idx] if idx < len(load_forecast) else 0.0
+
+        solar_kwh = 0.0
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+            solar_kwh = get_solar_for_timestamp(
+                timestamp,
+                solar_forecast,
+                log_rate_limited=sensor._log_rate_limited,
+            )
+        except Exception:
+            solar_kwh = 0.0
+
+        yield idx, timestamp_str, spot_price, export_price, load_kwh, solar_kwh
+
+
 def simulate_interval(
     *,
     mode: int,
@@ -124,25 +155,13 @@ def calculate_fixed_mode_cost(
     battery_soc = current_capacity
     timeline_cache = []
 
-    for t in range(len(spot_prices)):
-        timestamp_str = spot_prices[t].get("time", "")
-        spot_price = spot_prices[t].get("price", 0.0)
-        export_price = (
-            export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-        )
-        load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-        solar_kwh = 0.0
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-            solar_kwh = get_solar_for_timestamp(
-                timestamp,
-                solar_forecast,
-                log_rate_limited=sensor._log_rate_limited,
-            )
-        except Exception:
-            solar_kwh = 0.0
-
+    for _, timestamp_str, spot_price, export_price, load_kwh, solar_kwh in _iter_interval_inputs(
+        sensor,
+        spot_prices=spot_prices,
+        export_prices=export_prices,
+        solar_forecast=solar_forecast,
+        load_forecast=load_forecast,
+    ):
         sim_result = simulate_interval(
             mode=fixed_mode,
             solar_kwh=solar_kwh,
@@ -273,25 +292,13 @@ def calculate_do_nothing_cost(
     total_cost = 0.0
     battery_soc = current_capacity
 
-    for t in range(len(spot_prices)):
-        timestamp_str = spot_prices[t].get("time", "")
-        spot_price = spot_prices[t].get("price", 0.0)
-        export_price = (
-            export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-        )
-        load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-        solar_kwh = 0.0
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-            solar_kwh = get_solar_for_timestamp(
-                timestamp,
-                solar_forecast,
-                log_rate_limited=sensor._log_rate_limited,
-            )
-        except Exception:
-            solar_kwh = 0.0
-
+    for _, _timestamp_str, spot_price, export_price, load_kwh, solar_kwh in _iter_interval_inputs(
+        sensor,
+        spot_prices=spot_prices,
+        export_prices=export_prices,
+        solar_forecast=solar_forecast,
+        load_forecast=load_forecast,
+    ):
         sim_result = simulate_interval(
             mode=current_mode,
             solar_kwh=solar_kwh,
@@ -361,26 +368,14 @@ def calculate_full_ups_cost(
     total_cost = 0.0
     battery_soc = current_capacity
 
-    for t in range(len(spot_prices)):
-        timestamp_str = spot_prices[t].get("time", "")
-        spot_price = spot_prices[t].get("price", 0.0)
-        export_price = (
-            export_prices[t].get("price", 0.0) if t < len(export_prices) else 0.0
-        )
-        load_kwh = load_forecast[t] if t < len(load_forecast) else 0.0
-
-        solar_kwh = 0.0
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-            solar_kwh = get_solar_for_timestamp(
-                timestamp,
-                solar_forecast,
-                log_rate_limited=sensor._log_rate_limited,
-            )
-        except Exception:
-            solar_kwh = 0.0
-
-        if t in cheapest_intervals and battery_soc < max_capacity:
+    for idx, _timestamp_str, spot_price, export_price, load_kwh, solar_kwh in _iter_interval_inputs(
+        sensor,
+        spot_prices=spot_prices,
+        export_prices=export_prices,
+        solar_forecast=solar_forecast,
+        load_forecast=load_forecast,
+    ):
+        if idx in cheapest_intervals and battery_soc < max_capacity:
             mode = CBB_MODE_HOME_UPS
         else:
             mode = CBB_MODE_HOME_I

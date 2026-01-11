@@ -15,6 +15,7 @@ It does NOT:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from datetime import datetime, timedelta
@@ -599,6 +600,7 @@ class BalancingManager:
         Returns:
             Natural BalancingPlan if 100% window found, None otherwise
         """
+        await asyncio.sleep(0)
         _LOGGER.debug("_check_natural_balancing: Getting HYBRID timeline...")
         timeline = self._get_hybrid_timeline()
         if not timeline:
@@ -1182,6 +1184,7 @@ class BalancingManager:
         Returns:
             SoC as percentage (0-100) or None
         """
+        await asyncio.sleep(0)
         sensor_id = f"sensor.oig_{self.box_id}_batt_bat_c"
         state = self.hass.states.get(sensor_id)
 
@@ -1233,6 +1236,7 @@ class BalancingManager:
         Returns:
             Dict mapping datetime to price (CZK/kWh)
         """
+        await asyncio.sleep(0)
         if not self._forecast_sensor:
             _LOGGER.warning("Forecast sensor not set, cannot get spot prices")
             return {}

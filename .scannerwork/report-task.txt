@@ -1,0 +1,6 @@
+projectKey=oig_cloud
+serverUrl=http://localhost:9001
+serverVersion=26.1.0.118079
+dashboardUrl=http://localhost:9001/dashboard?id=oig_cloud
+ceTaskId=65131b41-3b2b-4227-afa7-a7b89df491ed
+ceTaskUrl=http://localhost:9001/api/ce/task?id=65131b41-3b2b-4227-afa7-a7b89df491ed

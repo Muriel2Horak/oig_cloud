@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -266,6 +267,7 @@ class ServiceShield:
 
     async def register_services(self) -> None:
         """Registruje služby ServiceShield."""
+        await asyncio.sleep(0)
         _LOGGER.info("[OIG Shield] Registering ServiceShield services")
 
         try:
@@ -722,6 +724,7 @@ class ModeTransitionTracker:
 
     async def async_cleanup(self) -> None:
         """Cleanup listeners."""
+        await asyncio.sleep(0)
         if self._state_listener_unsub:
             self._state_listener_unsub()
             self._state_listener_unsub = None

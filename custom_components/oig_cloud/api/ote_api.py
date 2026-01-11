@@ -604,6 +604,7 @@ class OteApi:
         qh_rates_eur: Optional[Dict[datetime, Decimal]] = None,
     ) -> Dict[str, Any]:
         """Sestaví výsledek – hlavní výstup jsou hodinové ceny; 15m jsou přiloženy aditivně."""
+        await asyncio.sleep(0)
         today = reference_date.date()
         tomorrow = today + timedelta(days=1)
 

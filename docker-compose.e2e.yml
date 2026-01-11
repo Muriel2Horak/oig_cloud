@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  ha-mock:
+    build:
+      context: .
+      dockerfile: tests/fe/mock/Dockerfile
+    environment:
+      OIG_MOCK_PORT: 8124
+      OIG_REPO_ROOT: /repo
+    ports:
+      - "8124:8124"
+    volumes:
+      - .:/repo
+    restart: "no"

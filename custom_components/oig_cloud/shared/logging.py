@@ -1,5 +1,6 @@
 """Shared logging utilities for OIG Cloud."""
 
+import asyncio
 import json
 import logging
 import time
@@ -22,6 +23,7 @@ class SimpleTelemetry:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Získá nebo vytvoří aiohttp session."""
+        await asyncio.sleep(0)
         if self.session is None or self.session.closed:
             connector = aiohttp.TCPConnector(ssl=not OT_INSECURE)
             self.session = aiohttp.ClientSession(connector=connector)
