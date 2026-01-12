@@ -246,7 +246,7 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     _LOGGER.info("✅ Static paths registered successfully")
 
 
-async def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
     inverter_sn = None
     opt_box = entry.options.get("box_id")
     if isinstance(opt_box, str) and opt_box.isdigit():
@@ -400,7 +400,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
         # OPRAVA: inverter_sn musí být numerické box_id (nikdy ne helper klíče jako "spot_prices")
-        inverter_sn = await _resolve_inverter_sn(hass, entry)
+        inverter_sn = _resolve_inverter_sn(hass, entry)
 
         if inverter_sn is None:
             inverter_sn = "unknown"
