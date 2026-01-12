@@ -21,6 +21,140 @@ DATE_FMT = "%Y-%m-%d"
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
 
 
+async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
+    if not getattr(sensor, "_plans_store", None):
+        return {}
+    try:
+        storage_plans = await sensor._plans_store.async_load() or {}
+        _LOGGER.debug(
+            "📦 Loaded Storage Helper data for timeline building: %s days",
+            len(storage_plans.get("detailed", {})),
+        )
+        return storage_plans
+    except Exception as err:
+        _LOGGER.error("Failed to load Storage Helper data: %s", err)
+        return {}
+
+
+def _get_day_source(day: date, today: date) -> str:
+    if day < today:
+        return "historical_only"
+    if day == today:
+        return "mixed"
+    return "planned_only"
+
+
+async def _build_planned_intervals_map(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    day: date,
+    date_str: str,
+) -> Dict[str, Dict[str, Any]]:
+    planned_intervals_map: Dict[str, Dict[str, Any]] = {}
+    if not storage_plans:
+        return planned_intervals_map
+
+    planned_intervals_list: List[Dict[str, Any]] = []
+    yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
+    if yesterday_plan and not sensor._is_baseline_plan_invalid(yesterday_plan):
+        planned_intervals_list = yesterday_plan.get("intervals", [])
+    else:
+        archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
+        if archive_day and archive_day.get("plan"):
+            planned_intervals_list = archive_day.get("plan", [])
+            archive_plan = {
+                "intervals": planned_intervals_list,
+                "filled_intervals": None,
+            }
+            if sensor._plans_store and not sensor._is_baseline_plan_invalid(
+                archive_plan
+            ):
+                try:
+                    await sensor._save_plan_to_storage(
+                        date_str,
+                        planned_intervals_list,
+                        {"baseline": True, "filled_intervals": None},
+                    )
+                    _LOGGER.info(
+                        "Rebuilt baseline plan for %s from daily archive",
+                        date_str,
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Failed to persist archive baseline for %s: %s",
+                        date_str,
+                        err,
+                    )
+            else:
+                _LOGGER.info(
+                    "Using daily archive plan for %s (baseline invalid)",
+                    date_str,
+                )
+        else:
+            planned_intervals_list = yesterday_plan.get("intervals", [])
+
+    for planned_entry in planned_intervals_list:
+        time_key = planned_entry.get("time", "")
+        if not time_key:
+            continue
+        try:
+            if "T" in time_key:
+                planned_dt = datetime.fromisoformat(time_key.replace("Z", "+00:00"))
+            else:
+                planned_dt = datetime.combine(
+                    day, datetime.strptime(time_key, "%H:%M").time()
+                )
+            planned_dt = dt_util.as_local(planned_dt)
+            time_str = planned_dt.strftime(DATETIME_FMT)
+            planned_intervals_map[time_str] = planned_entry
+        except Exception:  # nosec B112
+            continue
+
+    _LOGGER.debug(
+        "📊 Loaded %s planned intervals from Storage for %s",
+        len(planned_intervals_map),
+        date_str,
+    )
+    return planned_intervals_map
+
+
+async def _build_historical_actual_data(
+    sensor: Any,
+    interval_time: datetime,
+    mode_from_recorder: Dict[str, Any],
+) -> Dict[str, Any]:
+    interval_end = interval_time + timedelta(minutes=15)
+    historical_metrics = await history_module.fetch_interval_from_history(
+        sensor, interval_time, interval_end
+    )
+
+    if historical_metrics:
+        return {
+            "mode": mode_from_recorder.get("mode", 0),
+            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+            "consumption_kwh": historical_metrics.get("consumption_kwh", 0),
+            "solar_kwh": historical_metrics.get("solar_kwh", 0),
+            "battery_soc": historical_metrics.get("battery_soc", 0),
+            "battery_kwh": historical_metrics.get("battery_kwh", 0),
+            "grid_import_kwh": historical_metrics.get("grid_import", 0),
+            "grid_export_kwh": historical_metrics.get("grid_export", 0),
+            "net_cost": historical_metrics.get("net_cost", 0),
+            "savings": 0,
+        }
+    return {
+        "mode": mode_from_recorder.get("mode", 0),
+        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+        "consumption_kwh": 0,
+        "solar_kwh": 0,
+        "battery_soc": 0,
+        "battery_kwh": 0,
+        "grid_import_kwh": 0,
+        "grid_export_kwh": 0,
+        "net_cost": 0,
+        "savings": 0,
+    }
+
+
 async def build_timeline_extended(
     sensor: Any, *, mode_names: Optional[Dict[int, str]] = None
 ) -> Dict[str, Any]:
@@ -33,17 +167,7 @@ async def build_timeline_extended(
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    storage_plans = {}
-    if self._plans_store:
-        try:
-            storage_plans = await self._plans_store.async_load() or {}
-            _LOGGER.debug(
-                "📦 Loaded Storage Helper data for timeline building: %s days",
-                len(storage_plans.get("detailed", {})),
-            )
-        except Exception as e:
-            _LOGGER.error("Failed to load Storage Helper data: %s", e)
-            storage_plans = {}
+    storage_plans = await _load_storage_plans(self)
 
     yesterday_data = await build_day_timeline(
         self, yesterday, storage_plans, mode_names=mode_names
@@ -87,12 +211,7 @@ async def build_day_timeline(  # noqa: C901
     intervals: List[Dict[str, Any]] = []
     date_str = day.strftime(DATE_FMT)
 
-    if day < today:
-        source = "historical_only"
-    elif day == today:
-        source = "mixed"
-    else:
-        source = "planned_only"
+    source = _get_day_source(day, today)
 
     historical_modes_lookup = {}
     if source in ["historical_only", "mixed"] and self._hass:
@@ -116,70 +235,9 @@ async def build_day_timeline(  # noqa: C901
             historical_modes_lookup = {}
 
     if source == "historical_only":
-        planned_intervals_map: Dict[str, Dict[str, Any]] = {}
-        if storage_plans:
-            planned_intervals_list: List[Dict[str, Any]] = []
-            yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
-            if yesterday_plan and not self._is_baseline_plan_invalid(yesterday_plan):
-                planned_intervals_list = yesterday_plan.get("intervals", [])
-            else:
-                archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
-                if archive_day and archive_day.get("plan"):
-                    planned_intervals_list = archive_day.get("plan", [])
-                    archive_plan = {
-                        "intervals": planned_intervals_list,
-                        "filled_intervals": None,
-                    }
-                    if self._plans_store and not self._is_baseline_plan_invalid(
-                        archive_plan
-                    ):
-                        try:
-                            await self._save_plan_to_storage(
-                                date_str,
-                                planned_intervals_list,
-                                {"baseline": True, "filled_intervals": None},
-                            )
-                            _LOGGER.info(
-                                "Rebuilt baseline plan for %s from daily archive",
-                                date_str,
-                            )
-                        except Exception as err:
-                            _LOGGER.debug(
-                                "Failed to persist archive baseline for %s: %s",
-                                date_str,
-                                err,
-                            )
-                    else:
-                        _LOGGER.info(
-                            "Using daily archive plan for %s (baseline invalid)",
-                            date_str,
-                        )
-                else:
-                    planned_intervals_list = yesterday_plan.get("intervals", [])
-
-            for planned_entry in planned_intervals_list:
-                time_key = planned_entry.get("time", "")
-                if time_key:
-                    try:
-                        if "T" in time_key:
-                            planned_dt = datetime.fromisoformat(
-                                time_key.replace("Z", "+00:00")
-                            )
-                        else:
-                            planned_dt = datetime.combine(
-                                day, datetime.strptime(time_key, "%H:%M").time()
-                            )
-                        planned_dt = dt_util.as_local(planned_dt)
-                        time_str = planned_dt.strftime(DATETIME_FMT)
-                        planned_intervals_map[time_str] = planned_entry
-                    except Exception:  # nosec B112
-                        continue
-
-            _LOGGER.debug(
-                "📊 Loaded %s planned intervals from Storage for %s",
-                len(planned_intervals_map),
-                date_str,
-            )
+        planned_intervals_map = await _build_planned_intervals_map(
+            self, storage_plans, day, date_str
+        )
 
         interval_time = day_start
         while interval_time.date() == day:
@@ -190,37 +248,9 @@ async def build_day_timeline(  # noqa: C901
 
             actual_data = {}
             if mode_from_recorder:
-                interval_end = interval_time + timedelta(minutes=15)
-                historical_metrics = await history_module.fetch_interval_from_history(
-                    self, interval_time, interval_end
+                actual_data = await _build_historical_actual_data(
+                    self, interval_time, mode_from_recorder
                 )
-
-                if historical_metrics:
-                    actual_data = {
-                        "mode": mode_from_recorder.get("mode", 0),
-                        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                        "consumption_kwh": historical_metrics.get("consumption_kwh", 0),
-                        "solar_kwh": historical_metrics.get("solar_kwh", 0),
-                        "battery_soc": historical_metrics.get("battery_soc", 0),
-                        "battery_kwh": historical_metrics.get("battery_kwh", 0),
-                        "grid_import_kwh": historical_metrics.get("grid_import", 0),
-                        "grid_export_kwh": historical_metrics.get("grid_export", 0),
-                        "net_cost": historical_metrics.get("net_cost", 0),
-                        "savings": 0,
-                    }
-                else:
-                    actual_data = {
-                        "mode": mode_from_recorder.get("mode", 0),
-                        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                        "consumption_kwh": 0,
-                        "solar_kwh": 0,
-                        "battery_soc": 0,
-                        "battery_kwh": 0,
-                        "grid_import_kwh": 0,
-                        "grid_export_kwh": 0,
-                        "net_cost": 0,
-                        "savings": 0,
-                    }
 
             planned_data = {}
             if planned_from_storage:

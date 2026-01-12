@@ -16,6 +16,71 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
 
+def _split_grid_delivery_params(params: Dict[str, Any]) -> Optional[list[Dict[str, Any]]]:
+    if "mode" in params and "limit" in params:
+        mode_params = {k: v for k, v in params.items() if k != "limit"}
+        limit_params = {k: v for k, v in params.items() if k != "mode"}
+        return [mode_params, limit_params]
+    return None
+
+
+def _is_duplicate(
+    shield: Any,
+    service_name: str,
+    params: Dict[str, Any],
+    expected_entities: Dict[str, str],
+) -> Optional[str]:
+    new_expected_set = frozenset(expected_entities.items())
+    new_params_set = frozenset(params.items()) if params else frozenset()
+
+    for q in shield.queue:
+        queue_service = q[0]
+        queue_params = q[1]
+        queue_expected = q[2]
+
+        queue_params_set = (
+            frozenset(queue_params.items()) if queue_params else frozenset()
+        )
+        queue_expected_set = frozenset(queue_expected.items())
+
+        if (
+            queue_service == service_name
+            and queue_params_set == new_params_set
+            and queue_expected_set == new_expected_set
+        ):
+            return "queue"
+
+    for pending_service_key, pending_info in shield.pending.items():
+        pending_entities = pending_info.get("entities", {})
+        pending_expected_set = frozenset(pending_entities.items())
+
+        if (
+            pending_service_key == service_name
+            and pending_expected_set == new_expected_set
+        ):
+            return "pending"
+
+    return None
+
+
+def _entities_already_match(
+    shield: Any, expected_entities: Dict[str, str]
+) -> bool:
+    for entity_id, expected_value in expected_entities.items():
+        state = shield.hass.states.get(entity_id)
+        current = shield._normalize_value(state.state if state else None)
+        expected = shield._normalize_value(expected_value)
+        _LOGGER.debug(
+            "Intercept: entity=%s current=%r expected=%r",
+            entity_id,
+            current,
+            expected,
+        )
+        if current != expected:
+            return False
+    return True
+
+
 async def intercept_service_call(
     shield: Any,
     domain: str,
@@ -30,24 +95,20 @@ async def intercept_service_call(
     params = data["params"]
     trace_id = str(uuid.uuid4())[:8]
 
-    if (
-        service_name == "oig_cloud.set_grid_delivery"
-        and "mode" in params
-        and "limit" in params
-    ):
+    split_params = None
+    if service_name == "oig_cloud.set_grid_delivery":
+        split_params = _split_grid_delivery_params(params)
+    if split_params:
         _LOGGER.info(
             "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
         )
-
-        mode_params = {k: v for k, v in params.items() if k != "limit"}
-        limit_params = {k: v for k, v in params.items() if k != "mode"}
 
         _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
         await intercept_service_call(
             shield,
             domain,
             service,
-            {"params": mode_params},
+            {"params": split_params[0]},
             original_call,
             blocking,
             context,
@@ -58,7 +119,7 @@ async def intercept_service_call(
             shield,
             domain,
             service,
-            {"params": limit_params},
+            {"params": split_params[1]},
             original_call,
             blocking,
             context,
@@ -111,8 +172,6 @@ async def intercept_service_call(
         )
         return
 
-    new_expected_set = frozenset(expected_entities.items())
-
     _LOGGER.debug("Dedup: checking for duplicates")
     _LOGGER.debug("Dedup: new service=%s", service_name)
     _LOGGER.debug("Dedup: new params=%s", params)
@@ -130,53 +189,11 @@ async def intercept_service_call(
             pending_info.get("entities", {}),
         )
 
-    duplicate_found = False
-    duplicate_location = None
-    new_params_set = frozenset(params.items()) if params else frozenset()
+    duplicate_location = _is_duplicate(
+        shield, service_name, params, expected_entities
+    )
 
-    for q in shield.queue:
-        queue_service = q[0]
-        queue_params = q[1]
-        queue_expected = q[2]
-
-        queue_params_set = (
-            frozenset(queue_params.items()) if queue_params else frozenset()
-        )
-        queue_expected_set = frozenset(queue_expected.items())
-
-        if (
-            queue_service == service_name
-            and queue_params_set == new_params_set
-            and queue_expected_set == new_expected_set
-        ):
-            duplicate_found = True
-            duplicate_location = "queue"
-            _LOGGER.debug("Dedup: duplicate found in queue")
-            _LOGGER.debug(
-                "Dedup: matching service=%s params=%s expected=%s", q[0], q[1], q[2]
-            )
-            break
-
-    if not duplicate_found:
-        for pending_service_key, pending_info in shield.pending.items():
-            pending_entities = pending_info.get("entities", {})
-            pending_expected_set = frozenset(pending_entities.items())
-
-            if (
-                pending_service_key == service_name
-                and pending_expected_set == new_expected_set
-            ):
-                duplicate_found = True
-                duplicate_location = "pending"
-                _LOGGER.debug("Dedup: duplicate found in pending")
-                _LOGGER.debug(
-                    "Dedup: matching service=%s expected=%s",
-                    pending_service_key,
-                    pending_entities,
-                )
-                break
-
-    if duplicate_found:
+    if duplicate_location:
         _LOGGER.debug(
             "Intercept: service already in %s; returning early", duplicate_location
         )
@@ -198,22 +215,7 @@ async def intercept_service_call(
         )
         return
 
-    all_ok = True
-    for entity_id, expected_value in expected_entities.items():
-        state = shield.hass.states.get(entity_id)
-        current = shield._normalize_value(state.state if state else None)
-        expected = shield._normalize_value(expected_value)
-        _LOGGER.debug(
-            "Intercept: entity=%s current=%r expected=%r",
-            entity_id,
-            current,
-            expected,
-        )
-        if current != expected:
-            all_ok = False
-            break
-
-    if all_ok:
+    if _entities_already_match(shield, expected_entities):
         _LOGGER.debug("Intercept: all entities already match; returning early")
         await shield._log_telemetry(
             "skipped",

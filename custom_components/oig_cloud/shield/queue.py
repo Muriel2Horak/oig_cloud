@@ -113,6 +113,84 @@ async def handle_remove_from_queue(shield: Any, call: Any) -> None:
     )
 
 
+def _clear_state_listener(shield: Any) -> None:
+    if shield._state_listener_unsub:
+        shield._state_listener_unsub()
+        shield._state_listener_unsub = None
+
+
+def _get_timeout_minutes(service_name: str) -> int:
+    return 2 if service_name == "oig_cloud.set_formating_mode" else TIMEOUT_MINUTES
+
+
+async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) -> None:
+    if service_name == "oig_cloud.set_formating_mode":
+        _LOGGER.info(
+            "[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
+        )
+        await shield._log_event(
+            "completed",
+            service_name,
+            {
+                "params": info["params"],
+                "entities": info["entities"],
+                "original_states": info.get("original_states", {}),
+            },
+            reason="Formátování dokončeno (automaticky po 2 min)",
+        )
+        await shield._log_telemetry(
+            "completed",
+            service_name,
+            {
+                "params": info["params"],
+                "entities": info["entities"],
+                "reason": "auto_timeout",
+            },
+        )
+        return
+
+    _LOGGER.warning("[OIG Shield] Timeout pro službu %s", service_name)
+    await shield._log_event(
+        "timeout",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "original_states": info.get("original_states", {}),
+        },
+    )
+    await shield._log_telemetry(
+        "timeout",
+        service_name,
+        {"params": info["params"], "entities": info["entities"]},
+    )
+
+
+def _get_power_monitor_state(
+    shield: Any, power_monitor: Dict[str, Any]
+) -> Optional[float]:
+    power_entity = power_monitor["entity_id"]
+    power_state = shield.hass.states.get(power_entity)
+
+    if not power_state:
+        _LOGGER.warning(
+            "[OIG Shield] Power monitor: entita %s neexistuje",
+            power_entity,
+        )
+        return None
+    if power_state.state in ["unknown", "unavailable"]:
+        _LOGGER.debug(
+            "[OIG Shield] Power monitor: entita %s je %s",
+            power_entity,
+            power_state.state,
+        )
+        return None
+    try:
+        return float(power_state.state)
+    except (ValueError, TypeError):
+        return None
+
+
 def get_shield_status(shield: Any) -> str:
     """Return shield status."""
     if shield.running:
@@ -181,9 +259,7 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
 
         if not shield.pending and not shield.queue and not shield.running:
             _LOGGER.debug("[OIG Shield] Check loop - vše prázdné, žádná akce")
-            if shield._state_listener_unsub:
-                shield._state_listener_unsub()
-                shield._state_listener_unsub = None
+            _clear_state_listener(shield)
             return
 
         finished = []
@@ -191,73 +267,19 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
         for service_name, info in shield.pending.items():
             _LOGGER.debug("[OIG Shield] Kontroluji pending službu: %s", service_name)
 
-            timeout_minutes = (
-                2 if service_name == "oig_cloud.set_formating_mode" else TIMEOUT_MINUTES
-            )
+            timeout_minutes = _get_timeout_minutes(service_name)
 
             if datetime.now() - info["called_at"] > timedelta(minutes=timeout_minutes):
-                if service_name == "oig_cloud.set_formating_mode":
-                    _LOGGER.info(
-                        "[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
-                    )
-                    await shield._log_event(
-                        "completed",
-                        service_name,
-                        {
-                            "params": info["params"],
-                            "entities": info["entities"],
-                            "original_states": info.get("original_states", {}),
-                        },
-                        reason="Formátování dokončeno (automaticky po 2 min)",
-                    )
-                    await shield._log_telemetry(
-                        "completed",
-                        service_name,
-                        {
-                            "params": info["params"],
-                            "entities": info["entities"],
-                            "reason": "auto_timeout",
-                        },
-                    )
-                else:
-                    _LOGGER.warning("[OIG Shield] Timeout pro službu %s", service_name)
-                    await shield._log_event(
-                        "timeout",
-                        service_name,
-                        {
-                            "params": info["params"],
-                            "entities": info["entities"],
-                            "original_states": info.get("original_states", {}),
-                        },
-                    )
-                    await shield._log_telemetry(
-                        "timeout",
-                        service_name,
-                        {"params": info["params"], "entities": info["entities"]},
-                    )
+                await _handle_timeout(shield, service_name, info)
                 finished.append(service_name)
                 continue
 
             power_completed = False
             power_monitor = info.get("power_monitor")
             if power_monitor:
-                power_entity = power_monitor["entity_id"]
-                power_state = shield.hass.states.get(power_entity)
-
-                if not power_state:
-                    _LOGGER.warning(
-                        "[OIG Shield] Power monitor: entita %s neexistuje",
-                        power_entity,
-                    )
-                elif power_state.state in ["unknown", "unavailable"]:
-                    _LOGGER.debug(
-                        "[OIG Shield] Power monitor: entita %s je %s",
-                        power_entity,
-                        power_state.state,
-                    )
-                else:
+                current_power = _get_power_monitor_state(shield, power_monitor)
+                if current_power is not None:
                     try:
-                        current_power = float(power_state.state)
                         last_power = power_monitor["last_power"]
                         is_going_to_home_ups = power_monitor["is_going_to_home_ups"]
                         threshold_w = power_monitor["threshold_kw"] * 1000

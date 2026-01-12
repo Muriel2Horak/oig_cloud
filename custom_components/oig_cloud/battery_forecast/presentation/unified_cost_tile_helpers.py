@@ -71,62 +71,88 @@ def analyze_today_variance(
     _ = sensor
 
     completed = [i for i in intervals if i.get("actual")]
-
     if not completed:
         return (
             f"Dnes plánujeme utratit {plan_total:.0f} Kč. "
             "Den právě začal, zatím žádná data."
         )
 
+    totals = _summarize_plan_actual_totals(completed)
+    text = _format_variance_header(plan_total, predicted_total)
+    text += _format_solar_variance(totals)
+    text += _format_load_variance(totals)
+    text += _format_largest_impact(totals)
+    return text
+
+
+def _summarize_plan_actual_totals(
+    completed: List[Dict[str, Any]],
+) -> Dict[str, float]:
     total_plan_solar = sum(i.get("planned", {}).get("solar_kwh", 0) for i in completed)
     total_actual_solar = sum(i.get("actual", {}).get("solar_kwh", 0) for i in completed)
-
     total_plan_load = sum(i.get("planned", {}).get("load_kwh", 0) for i in completed)
     total_actual_load = sum(i.get("actual", {}).get("load_kwh", 0) for i in completed)
+    return {
+        "plan_solar": total_plan_solar,
+        "actual_solar": total_actual_solar,
+        "plan_load": total_plan_load,
+        "actual_load": total_actual_load,
+        "solar_diff": total_actual_solar - total_plan_solar,
+        "load_diff": total_actual_load - total_plan_load,
+    }
 
-    solar_diff = total_actual_solar - total_plan_solar
-    load_diff = total_actual_load - total_plan_load
+
+def _format_variance_header(plan_total: float, predicted_total: float) -> str:
     cost_diff = predicted_total - plan_total
-
     text = (
         f"Měli jsme naplánováno {plan_total:.0f} Kč, "
         f"ale vypadá to na {predicted_total:.0f} Kč"
     )
-
     if abs(cost_diff) >= 1:
-        text += f" ({cost_diff:+.0f} Kč).\n"
-    else:
-        text += " (přesně dle plánu).\n"
+        return text + f" ({cost_diff:+.0f} Kč).\n"
+    return text + " (přesně dle plánu).\n"
 
-    if abs(solar_diff) >= 0.5:
-        text += (
-            f"Slunce svítilo o {abs(solar_diff):.1f} kWh "
-            f"{'VÍC' if solar_diff > 0 else 'MÉNĚ'} než odhad "
-            f"(plán: {total_plan_solar:.1f} kWh, real: {total_actual_solar:.1f} kWh).\n"
-        )
 
-    if abs(load_diff) >= 0.5:
-        text += (
-            f"Spotřeba byla o {abs(load_diff):.1f} kWh "
-            f"{'VĚTŠÍ' if load_diff > 0 else 'MENŠÍ'} "
-            f"(plán: {total_plan_load:.1f} kWh, real: {total_actual_load:.1f} kWh).\n"
-        )
+def _format_solar_variance(totals: Dict[str, float]) -> str:
+    solar_diff = totals["solar_diff"]
+    if abs(solar_diff) < 0.5:
+        return ""
+    return (
+        f"Slunce svítilo o {abs(solar_diff):.1f} kWh "
+        f"{'VÍC' if solar_diff > 0 else 'MÉNĚ'} než odhad "
+        f"(plán: {totals['plan_solar']:.1f} kWh, "
+        f"real: {totals['actual_solar']:.1f} kWh).\n"
+    )
 
+
+def _format_load_variance(totals: Dict[str, float]) -> str:
+    load_diff = totals["load_diff"]
+    if abs(load_diff) < 0.5:
+        return ""
+    return (
+        f"Spotřeba byla o {abs(load_diff):.1f} kWh "
+        f"{'VĚTŠÍ' if load_diff > 0 else 'MENŠÍ'} "
+        f"(plán: {totals['plan_load']:.1f} kWh, "
+        f"real: {totals['actual_load']:.1f} kWh).\n"
+    )
+
+
+def _format_largest_impact(totals: Dict[str, float]) -> str:
+    solar_diff = totals["solar_diff"]
+    load_diff = totals["load_diff"]
     solar_cost_impact = abs(solar_diff) * 4.0
     load_cost_impact = abs(load_diff) * 4.0
-
     if solar_cost_impact > load_cost_impact and abs(solar_diff) >= 0.5:
-        text += (
+        return (
             f"Největší dopad: {'menší' if solar_diff < 0 else 'větší'} "
             f"solární výroba ({solar_cost_impact:+.0f} Kč)."
         )
-    elif abs(load_diff) >= 0.5:
-        text += (
+    if abs(load_diff) >= 0.5:
+        return (
             f"Největší dopad: {'vyšší' if load_diff > 0 else 'nižší'} "
             f"spotřeba ({load_cost_impact:+.0f} Kč)."
         )
-
-    return text
+    return ""
 
 
 async def analyze_yesterday_performance(sensor: Any) -> str:
