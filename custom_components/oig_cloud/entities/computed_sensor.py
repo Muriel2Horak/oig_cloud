@@ -531,44 +531,50 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if not self._has_numeric_box():
             return None
 
-        if self._sensor_type == "real_data_update":
-            return self._state_real_data_update()
-
-        if self._sensor_type == "ac_in_aci_wtotal":
-            return self._sum_three_phase("ac_in_aci")
-
-        if self._sensor_type == "actual_aci_wtotal":
-            return self._sum_three_phase("actual_aci")
-
-        if self._sensor_type == "dc_in_fv_total":
-            return self._sum_two_phase("dc_in_fv")
-
-        if self._sensor_type == "actual_fv_total":
-            return self._sum_two_phase("actual_fv")
-
-        if self._sensor_type == "boiler_current_w":
-            return self._get_boiler_consumption_from_entities()
-
-        if self._sensor_type == "batt_batt_comp_p_charge":
-            bat_p = self._get_oig_number("batt_batt_comp_p")
-            if bat_p is None:
-                return None
-            return float(bat_p) if bat_p > 0 else 0.0
-
-        if self._sensor_type == "batt_batt_comp_p_discharge":
-            bat_p = self._get_oig_number("batt_batt_comp_p")
-            if bat_p is None:
-                return None
-            return float(-bat_p) if bat_p < 0 else 0.0
-
-        if self._sensor_type.startswith("computed_batt_"):
-            return self._accumulate_energy()
+        state = self._state_from_mapping()
+        if state is not None:
+            return state
 
         battery_state = self._state_battery_metrics()
         if battery_state is not None:
             return battery_state
 
         return None
+
+    def _state_from_mapping(self) -> Optional[Union[float, str]]:
+        if self._sensor_type == "real_data_update":
+            return self._state_real_data_update()
+
+        mapping = {
+            "ac_in_aci_wtotal": lambda: self._sum_three_phase("ac_in_aci"),
+            "actual_aci_wtotal": lambda: self._sum_three_phase("actual_aci"),
+            "dc_in_fv_total": lambda: self._sum_two_phase("dc_in_fv"),
+            "actual_fv_total": lambda: self._sum_two_phase("actual_fv"),
+            "boiler_current_w": self._get_boiler_consumption_from_entities,
+            "batt_batt_comp_p_charge": self._state_batt_comp_charge,
+            "batt_batt_comp_p_discharge": self._state_batt_comp_discharge,
+        }
+
+        handler = mapping.get(self._sensor_type)
+        if handler:
+            return handler()
+
+        if self._sensor_type.startswith("computed_batt_"):
+            return self._accumulate_energy()
+
+        return None
+
+    def _state_batt_comp_charge(self) -> Optional[float]:
+        bat_p = self._get_oig_number("batt_batt_comp_p")
+        if bat_p is None:
+            return None
+        return float(bat_p) if bat_p > 0 else 0.0
+
+    def _state_batt_comp_discharge(self) -> Optional[float]:
+        bat_p = self._get_oig_number("batt_batt_comp_p")
+        if bat_p is None:
+            return None
+        return float(-bat_p) if bat_p < 0 else 0.0
 
     def _accumulate_energy(self) -> Optional[float]:
         self._update_shared_energy_cache()

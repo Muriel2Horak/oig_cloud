@@ -182,9 +182,16 @@ class WizardMixin:
 
         Returns dict with backend-compatible attribute names.
         """
-        backend_data = {}
+        backend_data: Dict[str, Any] = {}
+        backend_data.update(WizardMixin._map_import_pricing(wizard_data))
+        backend_data.update(WizardMixin._map_export_pricing(wizard_data))
+        backend_data.update(WizardMixin._map_distribution_fees(wizard_data))
+        backend_data["vat_rate"] = wizard_data.get("vat_rate", 21.0)
+        return backend_data
 
-        # Import (purchase) pricing
+    @staticmethod
+    def _map_import_pricing(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        backend_data: Dict[str, Any] = {}
         import_scenario = wizard_data.get("import_pricing_scenario", "spot_percentage")
 
         if import_scenario == "spot_percentage":
@@ -197,7 +204,6 @@ class WizardMixin:
             )
         elif import_scenario == "spot_fixed":
             backend_data["spot_pricing_model"] = "fixed"
-            # Convert kWh to MWh (backend expects MWh)
             fee_kwh = wizard_data.get("spot_fixed_fee_kwh", 0.50)
             backend_data["spot_fixed_fee_mwh"] = fee_kwh * 1000.0
         elif import_scenario == "fix_price":
@@ -209,7 +215,11 @@ class WizardMixin:
             backend_data["fixed_commercial_price_vt"] = fixed_price_vt
             backend_data["fixed_commercial_price_nt"] = fixed_price_nt
 
-        # Export (sell) pricing
+        return backend_data
+
+    @staticmethod
+    def _map_export_pricing(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        backend_data: Dict[str, Any] = {}
         export_scenario = wizard_data.get("export_pricing_scenario", "spot_percentage")
 
         if export_scenario == "spot_percentage":
@@ -228,14 +238,16 @@ class WizardMixin:
                 "export_fixed_price_kwh", 2.50
             )
 
-        # Distribution fees (tariff count determines dual/single)
+        return backend_data
+
+    @staticmethod
+    def _map_distribution_fees(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        backend_data: Dict[str, Any] = {}
         tariff_count = wizard_data.get("tariff_count", "single")
         backend_data["dual_tariff_enabled"] = tariff_count == "dual"
-
         backend_data["distribution_fee_vt_kwh"] = wizard_data.get(
             "distribution_fee_vt_kwh", 1.42
         )
-
         if tariff_count == "dual":
             backend_data["distribution_fee_nt_kwh"] = wizard_data.get(
                 "distribution_fee_nt_kwh", 0.91
@@ -264,10 +276,6 @@ class WizardMixin:
                     "tariff_nt_start_weekend",
                     backend_data["tariff_nt_start_weekday"],
                 )
-
-        # VAT rate
-        backend_data["vat_rate"] = wizard_data.get("vat_rate", 21.0)
-
         return backend_data
 
     def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -420,9 +428,16 @@ class WizardMixin:
         This is the reverse of _map_pricing_to_backend - used when loading
         existing configuration in OptionsFlow.
         """
-        frontend_data = {}
+        frontend_data: Dict[str, Any] = {}
+        frontend_data.update(WizardMixin._map_import_frontend(backend_data))
+        frontend_data.update(WizardMixin._map_export_frontend(backend_data))
+        frontend_data.update(WizardMixin._map_distribution_frontend(backend_data))
+        frontend_data["vat_rate"] = backend_data.get("vat_rate", 21.0)
+        return frontend_data
 
-        # Import (purchase) pricing
+    @staticmethod
+    def _map_import_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
+        frontend_data: Dict[str, Any] = {}
         spot_model = backend_data.get("spot_pricing_model", "percentage")
         if spot_model == "percentage":
             frontend_data["import_pricing_scenario"] = "spot_percentage"
@@ -434,7 +449,6 @@ class WizardMixin:
             )
         elif spot_model == "fixed":
             frontend_data["import_pricing_scenario"] = "spot_fixed"
-            # Convert MWh back to kWh (backend stores MWh)
             fee_mwh = backend_data.get("spot_fixed_fee_mwh", 500.0)
             frontend_data["spot_fixed_fee_kwh"] = fee_mwh / 1000.0
         elif spot_model == "fixed_prices":
@@ -448,8 +462,11 @@ class WizardMixin:
             frontend_data["fixed_price_nt_kwh"] = backend_data.get(
                 "fixed_commercial_price_nt", frontend_data["fixed_price_kwh"]
             )
+        return frontend_data
 
-        # Export (sell) pricing
+    @staticmethod
+    def _map_export_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
+        frontend_data: Dict[str, Any] = {}
         export_model = backend_data.get("export_pricing_model", "percentage")
         if export_model == "percentage":
             frontend_data["export_pricing_scenario"] = "spot_percentage"
@@ -466,15 +483,16 @@ class WizardMixin:
             frontend_data["export_fixed_price_kwh"] = backend_data.get(
                 "export_fixed_price", 2.50
             )
+        return frontend_data
 
-        # Distribution fees (tariff)
+    @staticmethod
+    def _map_distribution_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
+        frontend_data: Dict[str, Any] = {}
         dual_tariff = backend_data.get("dual_tariff_enabled", False)
         frontend_data["tariff_count"] = "dual" if dual_tariff else "single"
-
         frontend_data["distribution_fee_vt_kwh"] = backend_data.get(
             "distribution_fee_vt_kwh", 1.42
         )
-
         if dual_tariff:
             frontend_data["distribution_fee_nt_kwh"] = backend_data.get(
                 "distribution_fee_nt_kwh", 0.91
@@ -500,10 +518,6 @@ class WizardMixin:
             frontend_data["tariff_nt_start_weekend"] = (
                 weekend_nt if weekend_nt is not None else weekday_nt
             )
-
-        # VAT rate
-        frontend_data["vat_rate"] = backend_data.get("vat_rate", 21.0)
-
         return frontend_data
 
     def __init__(self) -> None:

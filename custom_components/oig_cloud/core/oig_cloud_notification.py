@@ -169,45 +169,50 @@ class OigNotificationParser:
 
     def parse_from_controller_call(self, content: str) -> List[OigNotification]:
         """Parse notifications from Controller.Call.php content."""
-        notifications = []
-
         try:
             _LOGGER.debug(f"Parsing notification content preview: {content[:500]}...")
 
-            # NOVÉ: Zkusit parsovat JSON wrapper first
-            html_content = self._extract_html_from_json_response(content)
-            if html_content:
-                _LOGGER.debug(
-                    f"Extracted HTML from JSON wrapper, length: {len(html_content)}"
-                )
-                _LOGGER.debug(f"HTML content preview: {html_content[:300]}...")
-                content = html_content
-
-            # Nejdřív zkusíme parsovat HTML strukturu
-            html_notifications = self._parse_html_notifications(content)
-            notifications.extend(html_notifications)
-
-            # Pokud nenajdeme HTML notifikace, zkusíme JSON
-            if not html_notifications:
-                json_notifications = self._parse_json_notifications(content)
-                notifications.extend(json_notifications)
-
-            # Odstranit duplicity podle ID
-            unique_notifications = []
-            seen_ids = set()
-            for notification in notifications:
-                if notification.id not in seen_ids:
-                    unique_notifications.append(notification)
-                    seen_ids.add(notification.id)
-
+            notifications = self._parse_notifications_from_content(content)
             _LOGGER.debug(
-                f"Parsed {len(unique_notifications)} unique notifications from controller"
+                "Parsed %d unique notifications from controller",
+                len(notifications),
             )
-            return unique_notifications
+            return notifications
 
         except Exception as e:
             _LOGGER.error(f"Error parsing notifications: {e}")
             return []
+
+    def _parse_notifications_from_content(
+        self, content: str
+    ) -> List[OigNotification]:
+        html_content = self._extract_html_from_json_response(content)
+        if html_content:
+            _LOGGER.debug(
+                "Extracted HTML from JSON wrapper, length: %s", len(html_content)
+            )
+            _LOGGER.debug("HTML content preview: %s...", html_content[:300])
+            content = html_content
+
+        notifications = []
+        html_notifications = self._parse_html_notifications(content)
+        notifications.extend(html_notifications)
+
+        if not html_notifications:
+            notifications.extend(self._parse_json_notifications(content))
+
+        return self._dedupe_notifications(notifications)
+
+    def _dedupe_notifications(
+        self, notifications: List[OigNotification]
+    ) -> List[OigNotification]:
+        unique_notifications = []
+        seen_ids = set()
+        for notification in notifications:
+            if notification.id not in seen_ids:
+                unique_notifications.append(notification)
+                seen_ids.add(notification.id)
+        return unique_notifications
 
     def _extract_html_from_json_response(self, content: str) -> Optional[str]:
         """Extract HTML content from JSON wrapper response."""
@@ -866,102 +871,83 @@ class OigNotificationManager:
 
             # OPRAVA: Použít API metodu přímo
             if hasattr(self._api, "get_notifications"):
-                _LOGGER.debug("API object has get_notifications method, calling...")
-                result = await self._api.get_notifications(self._device_id)
+                return await self._update_from_notification_api()
 
-                if result.get("status") == "success" and "content" in result:
-                    content = result["content"]
-                    _LOGGER.debug(
-                        f"Fetched notification content length: {len(content)}"
-                    )
-
-                    # Parsovat notifikace
-                    notifications = self._parser.parse_from_controller_call(content)
-                    filtered_notifications = []
-                    for notif in notifications:
-                        if (
-                            notif.device_id == self._device_id
-                            or notif.device_id is None
-                        ):
-                            filtered_notifications.append(notif)
-
-                    bypass_status = self._parser.detect_bypass_status(content)
-                    await self._update_notifications(filtered_notifications)
-                    self._bypass_status = bypass_status
-
-                    _LOGGER.info(
-                        f"Successfully updated {len(self._notifications)} notifications, bypass: {bypass_status}"
-                    )
-                    return True
-
-                elif result.get("error"):
-                    error = result["error"]
-                    _LOGGER.warning(f"API returned error: {error}")
-
-                    # Načíst z cache při chybě
-                    cached_notifications = await self._load_notifications_from_storage()
-                    if cached_notifications:
-                        _LOGGER.info(
-                            f"Using {len(cached_notifications)} cached notifications due to API error: {error}"
-                        )
-                        self._notifications = cached_notifications
-                        return True
-
-                    return False
-                else:
-                    _LOGGER.warning("API returned unexpected response format")
-                    return False
-            else:
-                # ROZŠÍŘENÁ diagnostika
-                available_methods = [
-                    method
-                    for method in dir(self._api)
-                    if callable(getattr(self._api, method))
-                    and not method.startswith("_")
-                ]
-                _LOGGER.error(
-                    f"API object {type(self._api)} doesn't have get_notifications method"
-                )
-                _LOGGER.error(f"Available callable methods: {available_methods}")
-
-                # Zkusit najít podobné metody
-                notification_methods = [
-                    method
-                    for method in available_methods
-                    if "notification" in method.lower()
-                ]
-                if notification_methods:
-                    _LOGGER.info(
-                        f"Found notification-related methods: {notification_methods}"
-                    )
-
-                # Fallback na cache
-                cached_notifications = await self._load_notifications_from_storage()
-                if cached_notifications:
-                    _LOGGER.info(
-                        f"Using {len(cached_notifications)} cached notifications due to missing API method"
-                    )
-                    self._notifications = cached_notifications
-                    return True
-
-                return False
+            return await self._handle_missing_notification_api()
 
         except Exception as e:
             _LOGGER.error(f"Error in update_from_api: {e}")
+            return await self._use_cached_notifications_on_error("exception")
 
-            # Při chybě zkusit načíst z cache
-            try:
-                cached_notifications = await self._load_notifications_from_storage()
-                if cached_notifications:
-                    _LOGGER.info(
-                        f"Using {len(cached_notifications)} cached notifications due to exception"
-                    )
-                    self._notifications = cached_notifications
-                    return True
-            except Exception as cache_error:
-                _LOGGER.warning(f"Error loading cached notifications: {cache_error}")
+    async def _update_from_notification_api(self) -> bool:
+        _LOGGER.debug("API object has get_notifications method, calling...")
+        result = await self._api.get_notifications(self._device_id)
 
-            return False
+        if result.get("status") == "success" and "content" in result:
+            content = result["content"]
+            _LOGGER.debug("Fetched notification content length: %s", len(content))
+
+            notifications = self._parser.parse_from_controller_call(content)
+            filtered_notifications = [
+                notif
+                for notif in notifications
+                if notif.device_id == self._device_id or notif.device_id is None
+            ]
+
+            bypass_status = self._parser.detect_bypass_status(content)
+            await self._update_notifications(filtered_notifications)
+            self._bypass_status = bypass_status
+
+            _LOGGER.info(
+                "Successfully updated %d notifications, bypass: %s",
+                len(self._notifications),
+                bypass_status,
+            )
+            return True
+
+        if result.get("error"):
+            error = result["error"]
+            _LOGGER.warning("API returned error: %s", error)
+            return await self._use_cached_notifications_on_error(error)
+
+        _LOGGER.warning("API returned unexpected response format")
+        return False
+
+    async def _handle_missing_notification_api(self) -> bool:
+        available_methods = [
+            method
+            for method in dir(self._api)
+            if callable(getattr(self._api, method)) and not method.startswith("_")
+        ]
+        _LOGGER.error(
+            "API object %s doesn't have get_notifications method", type(self._api)
+        )
+        _LOGGER.error("Available callable methods: %s", available_methods)
+
+        notification_methods = [
+            method for method in available_methods if "notification" in method.lower()
+        ]
+        if notification_methods:
+            _LOGGER.info(
+                "Found notification-related methods: %s", notification_methods
+            )
+
+        return await self._use_cached_notifications_on_error("missing_api")
+
+    async def _use_cached_notifications_on_error(self, error: str) -> bool:
+        try:
+            cached_notifications = await self._load_notifications_from_storage()
+            if cached_notifications:
+                _LOGGER.info(
+                    "Using %d cached notifications due to API error: %s",
+                    len(cached_notifications),
+                    error,
+                )
+                self._notifications = cached_notifications
+                return True
+        except Exception as cache_error:
+            _LOGGER.warning(f"Error loading cached notifications: {cache_error}")
+        return False
 
     async def get_notifications_and_status(self) -> Tuple[List[OigNotification], bool]:
         """Get current notifications and bypass status."""

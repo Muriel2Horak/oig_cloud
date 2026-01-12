@@ -199,150 +199,15 @@ async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
 
     async def handle_save_dashboard_tiles(call: ServiceCall) -> None:
         """Zpracování služby pro uložení konfigurace dashboard tiles."""
-        import json
-
-        config_str = call.data.get("config")
-        if not config_str:
-            _LOGGER.error("Dashboard tiles config is empty")
-            return
-
-        try:
-            # Validace JSON
-            config = json.loads(config_str)
-
-            # Základní validace struktury
-            if not isinstance(config, dict):
-                raise ValueError("Config must be a JSON object")
-
-            required_keys = ["tiles_left", "tiles_right", "version"]
-            for key in required_keys:
-                if key not in config:
-                    raise ValueError(f"Missing required key: {key}")
-
-            # Uložení do HA storage
-            from homeassistant.helpers.storage import Store
-
-            store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
-            await store.async_save(config)
-
-            _LOGGER.info(
-                f"Dashboard tiles config saved successfully: {len(config.get('tiles_left', []))} left, {len(config.get('tiles_right', []))} right"
-            )
-
-        except json.JSONDecodeError as e:
-            _LOGGER.error(f"Invalid JSON in dashboard tiles config: {e}")
-        except ValueError as e:
-            _LOGGER.error(f"Invalid dashboard tiles config structure: {e}")
-        except Exception as e:
-            _LOGGER.error(f"Failed to save dashboard tiles config: {e}")
+        await _save_dashboard_tiles_config(hass, call.data.get("config"))
 
     async def handle_get_dashboard_tiles(call: ServiceCall) -> dict:
         """Služba pro načtení konfigurace dashboard tiles."""
-        try:
-            from homeassistant.helpers.storage import Store
-
-            store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
-            config = await store.async_load()
-
-            if config:
-                _LOGGER.info("Dashboard tiles config loaded from storage")
-                return {"config": config}
-            else:
-                _LOGGER.info("No dashboard tiles config found in storage")
-                return {"config": None}
-
-        except Exception as e:
-            _LOGGER.error(f"Failed to load dashboard tiles config: {e}")
-            return {"config": None}
+        return await _load_dashboard_tiles_config(hass)
 
     async def handle_check_balancing(call: ServiceCall) -> dict:
         """Manuálně spustí balancing kontrolu přes BalancingManager."""
-
-        def _serialize_dt(value: Any) -> Optional[str]:
-            if value is None:
-                return None
-            if isinstance(value, str):
-                return value
-            if hasattr(value, "isoformat"):
-                return value.isoformat()
-            return str(value)
-
-        requested_box = call.data.get("box_id")
-        force_balancing = call.data.get("force", False)
-        results: List[Dict[str, Any]] = []
-        domain_data = hass.data.get(DOMAIN, {})
-
-        for entry_id, entry_data in domain_data.items():
-            # Skip non-entry keys (e.g., ServiceShield)
-            if not isinstance(entry_data, dict) or entry_id == "shield":
-                continue
-
-            balancing_manager = entry_data.get("balancing_manager")
-            if not balancing_manager:
-                continue
-
-            manager_box_id = getattr(balancing_manager, "box_id", None)
-            if requested_box and manager_box_id != requested_box:
-                continue
-
-            try:
-                plan = await balancing_manager.check_balancing(force=force_balancing)
-                if plan:
-                    plan_summary = {
-                        "entry_id": entry_id,
-                        "box_id": manager_box_id,
-                        "plan_mode": plan.mode.value,
-                        "reason": plan.reason,
-                        "holding_start": _serialize_dt(plan.holding_start),
-                        "holding_end": _serialize_dt(plan.holding_end),
-                        "priority": plan.priority.value,
-                    }
-                    results.append(plan_summary)
-                    _LOGGER.info(
-                        "Manual balancing check created %s plan for box %s (%s)",
-                        plan.mode.value,
-                        manager_box_id,
-                        plan.reason,
-                    )
-                else:
-                    results.append(
-                        {
-                            "entry_id": entry_id,
-                            "box_id": manager_box_id,
-                            "plan_mode": None,
-                            "reason": "no_plan_needed",
-                        }
-                    )
-                    _LOGGER.info(
-                        "Manual balancing check executed for box %s - no plan needed",
-                        manager_box_id,
-                    )
-            except Exception as err:
-                _LOGGER.error(
-                    "Manual balancing check failed for box %s: %s",
-                    manager_box_id or "unknown",
-                    err,
-                    exc_info=True,
-                )
-                results.append(
-                    {
-                        "entry_id": entry_id,
-                        "box_id": manager_box_id,
-                        "error": str(err),
-                    }
-                )
-
-        if not results:
-            _LOGGER.warning(
-                "Manual balancing check: no BalancingManager instances matched box_id=%s",
-                requested_box or "any",
-            )
-
-        return {
-            "requested_box_id": requested_box,
-            "processed_entries": len(results),
-            "results": results,
-        }
+        return await _run_manual_balancing_checks(hass, call)
 
     # Registrace služby pouze pokud ještě není registrovaná
     if not hass.services.has_service(DOMAIN, "update_solar_forecast"):
@@ -844,6 +709,154 @@ async def async_setup_entry_services_fallback(
         _LOGGER.info("All fallback services registration completed")
     else:
         _LOGGER.info("Services already registered, skipping fallback registration")
+
+
+async def _save_dashboard_tiles_config(
+    hass: HomeAssistant, config_str: Optional[str]
+) -> None:
+    import json
+
+    if not config_str:
+        _LOGGER.error("Dashboard tiles config is empty")
+        return
+
+    try:
+        config = json.loads(config_str)
+        _validate_dashboard_tiles_config(config)
+
+        from homeassistant.helpers.storage import Store
+
+        store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+        await store.async_save(config)
+
+        _LOGGER.info(
+            "Dashboard tiles config saved successfully: %s left, %s right",
+            len(config.get("tiles_left", [])),
+            len(config.get("tiles_right", [])),
+        )
+
+    except json.JSONDecodeError as e:
+        _LOGGER.error(f"Invalid JSON in dashboard tiles config: {e}")
+    except ValueError as e:
+        _LOGGER.error(f"Invalid dashboard tiles config structure: {e}")
+    except Exception as e:
+        _LOGGER.error(f"Failed to save dashboard tiles config: {e}")
+
+
+async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
+    try:
+        from homeassistant.helpers.storage import Store
+
+        store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+        config = await store.async_load()
+        if config:
+            _LOGGER.info("Dashboard tiles config loaded from storage")
+            return {"config": config}
+        _LOGGER.info("No dashboard tiles config found in storage")
+        return {"config": None}
+
+    except Exception as e:
+        _LOGGER.error(f"Failed to load dashboard tiles config: {e}")
+        return {"config": None}
+
+
+def _validate_dashboard_tiles_config(config: Any) -> None:
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a JSON object")
+    required_keys = ["tiles_left", "tiles_right", "version"]
+    for key in required_keys:
+        if key not in config:
+            raise ValueError(f"Missing required key: {key}")
+
+
+async def _run_manual_balancing_checks(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict:
+    def _serialize_dt(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+    requested_box = call.data.get("box_id")
+    force_balancing = call.data.get("force", False)
+    results: List[Dict[str, Any]] = []
+    domain_data = hass.data.get(DOMAIN, {})
+
+    for entry_id, entry_data in domain_data.items():
+        if not isinstance(entry_data, dict) or entry_id == "shield":
+            continue
+
+        balancing_manager = entry_data.get("balancing_manager")
+        if not balancing_manager:
+            continue
+
+        manager_box_id = getattr(balancing_manager, "box_id", None)
+        if requested_box and manager_box_id != requested_box:
+            continue
+
+        try:
+            plan = await balancing_manager.check_balancing(force=force_balancing)
+            if plan:
+                results.append(
+                    {
+                        "entry_id": entry_id,
+                        "box_id": manager_box_id,
+                        "plan_mode": plan.mode.value,
+                        "reason": plan.reason,
+                        "holding_start": _serialize_dt(plan.holding_start),
+                        "holding_end": _serialize_dt(plan.holding_end),
+                        "priority": plan.priority.value,
+                    }
+                )
+                _LOGGER.info(
+                    "Manual balancing check created %s plan for box %s (%s)",
+                    plan.mode.value,
+                    manager_box_id,
+                    plan.reason,
+                )
+            else:
+                results.append(
+                    {
+                        "entry_id": entry_id,
+                        "box_id": manager_box_id,
+                        "plan_mode": None,
+                        "reason": "no_plan_needed",
+                    }
+                )
+                _LOGGER.info(
+                    "Manual balancing check executed for box %s - no plan needed",
+                    manager_box_id,
+                )
+        except Exception as err:
+            _LOGGER.error(
+                "Manual balancing check failed for box %s: %s",
+                manager_box_id or "unknown",
+                err,
+                exc_info=True,
+            )
+            results.append(
+                {
+                    "entry_id": entry_id,
+                    "box_id": manager_box_id,
+                    "error": str(err),
+                }
+            )
+
+    if not results:
+        _LOGGER.warning(
+            "Manual balancing check: no BalancingManager instances matched box_id=%s",
+            requested_box or "any",
+        )
+
+    return {
+        "requested_box_id": requested_box,
+        "processed_entries": len(results),
+        "results": results,
+    }
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:

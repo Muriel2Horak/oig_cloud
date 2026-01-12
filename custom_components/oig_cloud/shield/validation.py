@@ -109,33 +109,7 @@ def extract_expected_entities(
 
     def find_entity(suffix: str) -> str | None:
         _LOGGER.info("[FIND ENTITY] Hledám cloud entitu se suffixem: %s", suffix)
-
-        box_id = None
-        for key in ("box_id", "inverter_sn"):
-            val = shield.entry.options.get(key) or shield.entry.data.get(key)
-            if isinstance(val, str) and val.isdigit():
-                box_id = val
-                break
-
-        if not box_id:
-            try:
-                from ..entities.base_sensor import resolve_box_id
-
-                coordinator = None
-                for entry_data in shield.hass.data.get(DOMAIN, {}).values():
-                    if not isinstance(entry_data, dict):
-                        continue
-                    if entry_data.get("service_shield") != shield:
-                        continue
-                    coordinator = entry_data.get("coordinator")
-                    break
-                if coordinator:
-                    resolved = resolve_box_id(coordinator)
-                    if isinstance(resolved, str) and resolved.isdigit():
-                        box_id = resolved
-            except Exception:
-                box_id = None
-
+        box_id = _resolve_box_id_for_shield(shield)
         if not box_id:
             _LOGGER.warning(
                 "[FIND ENTITY] box_id nelze určit, cloud entitu pro suffix '%s' nelze vybrat",
@@ -144,19 +118,16 @@ def extract_expected_entities(
             shield._expected_entity_missing = True
             return None
 
-        prefix = f"sensor.oig_{box_id}_"
-        matching_entities = [
-            entity.entity_id
-            for entity in shield.hass.states.async_all()
-            if entity.entity_id.startswith(prefix) and entity.entity_id.endswith(suffix)
-        ]
-
-        if matching_entities:
-            entity_id = matching_entities[0]
+        entity_id = _find_entity_by_suffix(shield, box_id, suffix)
+        if entity_id:
             _LOGGER.info("[FIND ENTITY] Vybrána cloud entita: %s", entity_id)
             return entity_id
 
-        _LOGGER.warning("[FIND ENTITY] NENALEZENA cloud entita %s*%s", prefix, suffix)
+        _LOGGER.warning(
+            "[FIND ENTITY] NENALEZENA cloud entita sensor.oig_%s_*%s",
+            box_id,
+            suffix,
+        )
         shield._expected_entity_missing = True
         return None
 
@@ -312,6 +283,46 @@ def extract_expected_entities(
         return {}
 
     return {}
+
+
+def _resolve_box_id_for_shield(shield: Any) -> Optional[str]:
+    box_id = None
+    for key in ("box_id", "inverter_sn"):
+        val = shield.entry.options.get(key) or shield.entry.data.get(key)
+        if isinstance(val, str) and val.isdigit():
+            box_id = val
+            break
+
+    if not box_id:
+        try:
+            from ..entities.base_sensor import resolve_box_id
+
+            coordinator = None
+            for entry_data in shield.hass.data.get(DOMAIN, {}).values():
+                if not isinstance(entry_data, dict):
+                    continue
+                if entry_data.get("service_shield") != shield:
+                    continue
+                coordinator = entry_data.get("coordinator")
+                break
+            if coordinator:
+                resolved = resolve_box_id(coordinator)
+                if isinstance(resolved, str) and resolved.isdigit():
+                    box_id = resolved
+        except Exception:
+            box_id = None
+
+    return box_id
+
+
+def _find_entity_by_suffix(shield: Any, box_id: str, suffix: str) -> Optional[str]:
+    prefix = f"sensor.oig_{box_id}_"
+    matching_entities = [
+        entity.entity_id
+        for entity in shield.hass.states.async_all()
+        if entity.entity_id.startswith(prefix) and entity.entity_id.endswith(suffix)
+    ]
+    return matching_entities[0] if matching_entities else None
 
 
 def check_entity_state_change(shield: Any, entity_id: str, expected_value: Any) -> bool:

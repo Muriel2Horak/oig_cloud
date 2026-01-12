@@ -1260,35 +1260,7 @@ async def async_setup_entry(
                 "data_source_controller"
             ] = data_source_controller
 
-        # OPRAVA: Přidání ServiceShield dat do globálního úložiště pro senzory
-        if service_shield:
-            # Vytvoříme globální odkaz na ServiceShield pro senzory
-            hass.data[DOMAIN]["shield"] = service_shield
-
-            # Vytvoříme device info pro ServiceShield (per-box service device)
-            try:
-                from .entities.base_sensor import resolve_box_id
-
-                shield_box_id = resolve_box_id(coordinator)
-            except Exception:
-                shield_box_id = entry.options.get("box_id")
-            if not (isinstance(shield_box_id, str) and shield_box_id.isdigit()):
-                shield_box_id = "unknown"
-            shield_device_info = {
-                "identifiers": {(DOMAIN, f"{shield_box_id}_shield")},
-                "name": f"ServiceShield {shield_box_id}",
-                "manufacturer": "OIG",
-                "model": "Shield",
-                "via_device": (DOMAIN, shield_box_id),
-                "entry_type": "service",
-            }
-            hass.data[DOMAIN][entry.entry_id]["shield_device_info"] = shield_device_info
-
-            _LOGGER.debug("ServiceShield data prepared for sensors")
-
-            # OPRAVA: Přidání debug logování pro ServiceShield stav
-            _LOGGER.info(f"ServiceShield status: {service_shield.get_shield_status()}")
-            _LOGGER.info(f"ServiceShield queue info: {service_shield.get_queue_info()}")
+        _setup_service_shield_data(hass, entry, coordinator, service_shield)
 
         # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
         # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
@@ -1300,108 +1272,15 @@ async def async_setup_entry(
         # that can be left behind after unique_id/device_id stabilization.
         hass.async_create_task(_cleanup_invalid_empty_devices(hass, entry))
 
-        # OPRAVA: Dashboard registrujeme až TERAZ - po vytvoření všech senzorů A POUZE pokud je enabled
-        if dashboard_enabled:
-            await _setup_frontend_panel(hass, entry)
-            _LOGGER.info("OIG Cloud Dashboard panel enabled and registered")
-        else:
-            await _remove_frontend_panel(hass, entry)
-            _LOGGER.info(
-                "OIG Cloud Dashboard panel disabled - panel not registered"
-            )  # OPRAVA: lepší log message
+        await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
         # Přidáme listener pro změny konfigurace - OPRAVEN callback na async funkci
         entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-        # Async importy pro vyhnání se blokování event loopu
-        from .services import (
-            async_setup_entry_services_with_shield,
-            async_setup_services,
-        )
+        await _register_entry_services(hass, entry, service_shield)
+        _register_api_endpoints(hass, boiler_coordinator)
 
-        # Setup základních služeb (pouze jednou pro celou integraci)
-        if len([k for k in hass.data[DOMAIN].keys() if k != "shield"]) == 1:
-            await async_setup_services(hass)
-
-        # Setup entry-specific služeb s shield ochranou
-        # OPRAVA: Předání service_shield přímo, ne z hass.data
-        await async_setup_entry_services_with_shield(hass, entry, service_shield)
-
-        # NOVÉ: Registrace HTTP API endpointů pro boiler
-        if boiler_coordinator:
-            from .boiler.api_views import register_boiler_api_views
-
-            register_boiler_api_views(hass)
-            _LOGGER.info("Boiler API endpoints registered")
-
-        # NOVÉ: Registrace Planning API endpointů
-        from .api.planning_api import setup_planning_api_views
-
-        setup_planning_api_views(hass)
-        _LOGGER.info("Planning API endpoints registered")
-
-        # NOVÉ: Registrace OIG Cloud REST API endpointů pro heavy data
-        # (timeline, spot prices, analytics)
-        try:
-            from .api.ha_rest_api import setup_api_endpoints
-
-            setup_api_endpoints(hass)
-            _LOGGER.info("✅ OIG Cloud REST API endpoints registered successfully")
-        except Exception as e:
-            _LOGGER.error(
-                "Failed to register OIG Cloud REST API endpoints: %s",
-                e,
-                exc_info=True,
-            )
-            # Pokračujeme i bez API - senzory budou fungovat s attributes
-
-        # OPRAVA: Zajistit, že ServiceShield je připojený k volání služeb
-        if service_shield:
-            _LOGGER.info(
-                "ServiceShield je aktivní a připravený na interceptování služeb"
-            )
-            # Test interceptu - simulace volání pro debug
-            _LOGGER.debug(f"ServiceShield pending: {len(service_shield.pending)}")
-            _LOGGER.debug(f"ServiceShield queue: {len(service_shield.queue)}")
-            _LOGGER.debug(f"ServiceShield running: {service_shield.running}")
-
-            # OPRAVA: Explicitní spuštění monitorování
-            _LOGGER.debug("Ověřuji, že ServiceShield monitoring běží...")
-
-            # Přidáme test callback pro ověření funkčnosti
-            async def test_shield_monitoring(_now: Any) -> None:
-                await asyncio.sleep(0)
-                status = service_shield.get_shield_status()
-                queue_info = service_shield.get_queue_info()
-                _LOGGER.debug(
-                    f"[OIG Shield] Test monitoring tick - pending: {len(service_shield.pending)}, queue: {len(service_shield.queue)}, running: {service_shield.running}"
-                )
-                _LOGGER.debug("[OIG Shield] Status: %s", status)
-                _LOGGER.debug("[OIG Shield] Queue info: %s", queue_info)
-
-                # OPRAVA: Debug telemetrie - ukážeme co by se odesílalo
-                if service_shield.telemetry_handler:
-                    _LOGGER.debug("[OIG Shield] Telemetry handler je aktivní")
-                    if hasattr(service_shield, "_log_telemetry"):
-                        _LOGGER.debug(
-                            "[OIG Shield] Telemetry logging metoda je dostupná"
-                        )
-                else:
-                    _LOGGER.debug("[OIG Shield] Telemetry handler není aktivní")
-
-            # Registrujeme test callback na kratší interval pro debug
-            from datetime import timedelta
-
-            from homeassistant.helpers.event import async_track_time_interval
-
-            entry.async_on_unload(
-                async_track_time_interval(
-                    hass, test_shield_monitoring, timedelta(seconds=30)
-                )
-            )
-
-        else:
-            _LOGGER.warning("ServiceShield není dostupný - služby nebudou chráněny")
+        _setup_service_shield_monitoring(hass, entry, service_shield)
 
         # OPRAVA: ODSTRANĚNÍ duplicitní registrace služeb - způsobovala přepsání správného schématu
         # Služby se už registrovaly výše v async_setup_entry_services_with_shield
@@ -1414,6 +1293,141 @@ async def async_setup_entry(
     except Exception as e:
         _LOGGER.error("Error initializing OIG Cloud: %s", e, exc_info=True)
         raise ConfigEntryNotReady(f"Error initializing OIG Cloud: {e}") from e
+
+
+def _setup_service_shield_data(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    service_shield: Any | None,
+) -> None:
+    if not service_shield:
+        return
+    # Vytvoříme globální odkaz na ServiceShield pro senzory
+    hass.data[DOMAIN]["shield"] = service_shield
+
+    # Vytvoříme device info pro ServiceShield (per-box service device)
+    try:
+        from .entities.base_sensor import resolve_box_id
+
+        shield_box_id = resolve_box_id(coordinator)
+    except Exception:
+        shield_box_id = entry.options.get("box_id")
+    if not (isinstance(shield_box_id, str) and shield_box_id.isdigit()):
+        shield_box_id = "unknown"
+    shield_device_info = {
+        "identifiers": {(DOMAIN, f"{shield_box_id}_shield")},
+        "name": f"ServiceShield {shield_box_id}",
+        "manufacturer": "OIG",
+        "model": "Shield",
+        "via_device": (DOMAIN, shield_box_id),
+        "entry_type": "service",
+    }
+    hass.data[DOMAIN][entry.entry_id]["shield_device_info"] = shield_device_info
+
+    _LOGGER.debug("ServiceShield data prepared for sensors")
+    _LOGGER.info("ServiceShield status: %s", service_shield.get_shield_status())
+    _LOGGER.info("ServiceShield queue info: %s", service_shield.get_queue_info())
+
+
+async def _sync_dashboard_panel(
+    hass: HomeAssistant, entry: ConfigEntry, enabled: bool
+) -> None:
+    if enabled:
+        await _setup_frontend_panel(hass, entry)
+        _LOGGER.info("OIG Cloud Dashboard panel enabled and registered")
+    else:
+        await _remove_frontend_panel(hass, entry)
+        _LOGGER.info("OIG Cloud Dashboard panel disabled - panel not registered")
+
+
+async def _register_entry_services(
+    hass: HomeAssistant, entry: ConfigEntry, service_shield: Any | None
+) -> None:
+    # Async importy pro vyhnání se blokování event loopu
+    from .services import (
+        async_setup_entry_services_with_shield,
+        async_setup_services,
+    )
+
+    # Setup základních služeb (pouze jednou pro celou integraci)
+    if len([k for k in hass.data[DOMAIN].keys() if k != "shield"]) == 1:
+        await async_setup_services(hass)
+
+    # Setup entry-specific služeb s shield ochranou
+    await async_setup_entry_services_with_shield(hass, entry, service_shield)
+
+
+def _register_api_endpoints(hass: HomeAssistant, boiler_coordinator: Any | None) -> None:
+    # NOVÉ: Registrace HTTP API endpointů pro boiler
+    if boiler_coordinator:
+        from .boiler.api_views import register_boiler_api_views
+
+        register_boiler_api_views(hass)
+        _LOGGER.info("Boiler API endpoints registered")
+
+    # NOVÉ: Registrace Planning API endpointů
+    from .api.planning_api import setup_planning_api_views
+
+    setup_planning_api_views(hass)
+    _LOGGER.info("Planning API endpoints registered")
+
+    # NOVÉ: Registrace OIG Cloud REST API endpointů pro heavy data
+    # (timeline, spot prices, analytics)
+    try:
+        from .api.ha_rest_api import setup_api_endpoints
+
+        setup_api_endpoints(hass)
+        _LOGGER.info("✅ OIG Cloud REST API endpoints registered successfully")
+    except Exception as e:
+        _LOGGER.error(
+            "Failed to register OIG Cloud REST API endpoints: %s",
+            e,
+            exc_info=True,
+        )
+        # Pokračujeme i bez API - senzory budou fungovat s attributes
+
+
+def _setup_service_shield_monitoring(
+    hass: HomeAssistant, entry: ConfigEntry, service_shield: Any | None
+) -> None:
+    if not service_shield:
+        _LOGGER.warning("ServiceShield není dostupný - služby nebudou chráněny")
+        return
+
+    _LOGGER.info("ServiceShield je aktivní a připravený na interceptování služeb")
+    _LOGGER.debug("ServiceShield pending: %s", len(service_shield.pending))
+    _LOGGER.debug("ServiceShield queue: %s", len(service_shield.queue))
+    _LOGGER.debug("ServiceShield running: %s", service_shield.running)
+    _LOGGER.debug("Ověřuji, že ServiceShield monitoring běží...")
+
+    async def test_shield_monitoring(_now: Any) -> None:
+        await asyncio.sleep(0)
+        status = service_shield.get_shield_status()
+        queue_info = service_shield.get_queue_info()
+        _LOGGER.debug(
+            "[OIG Shield] Test monitoring tick - pending: %s, queue: %s, running: %s",
+            len(service_shield.pending),
+            len(service_shield.queue),
+            service_shield.running,
+        )
+        _LOGGER.debug("[OIG Shield] Status: %s", status)
+        _LOGGER.debug("[OIG Shield] Queue info: %s", queue_info)
+
+        if service_shield.telemetry_handler:
+            _LOGGER.debug("[OIG Shield] Telemetry handler je aktivní")
+            if hasattr(service_shield, "_log_telemetry"):
+                _LOGGER.debug("[OIG Shield] Telemetry logging metoda je dostupná")
+        else:
+            _LOGGER.debug("[OIG Shield] Telemetry handler není aktivní")
+
+    from datetime import timedelta
+
+    from homeassistant.helpers.event import async_track_time_interval
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, test_shield_monitoring, timedelta(seconds=30))
+    )
 
 
 async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:

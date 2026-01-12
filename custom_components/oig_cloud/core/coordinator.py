@@ -509,271 +509,27 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
 
         try:
-            # Standardní OIG data (cloud telemetry) – může být vypnuto v hybrid/local režimu,
-            # pokud lokální proxy běží (viz DataSourceController).
-            use_cloud = True
-            try:
-                if self.config_entry:
-                    state = get_data_source_state(self.hass, self.config_entry.entry_id)
-                    _LOGGER.debug(
-                        "Data source state: configured=%s effective=%s local_ok=%s reason=%s",
-                        state.configured_mode,
-                        state.effective_mode,
-                        state.local_available,
-                        state.reason,
-                    )
-                    use_cloud = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
-            except Exception:
-                use_cloud = True
+            use_cloud = self._resolve_use_cloud()
+            stats = await self._get_stats_for_mode(use_cloud)
 
-            if use_cloud:
-                stats = await self._try_get_stats()
-            else:
-                # Local mode: coordinator.data must already be cloud-shaped (filled by TelemetryStore).
-                telemetry_store = getattr(self, "telemetry_store", None)
-                if telemetry_store is not None:
-                    try:
-                        snap = telemetry_store.get_snapshot()
-                        stats = snap.payload
-                    except Exception:
-                        stats = self.data or {}
-                else:
-                    stats = self.data or {}
-
-                # Local mode: some configuration nodes can legitimately be missing/unknown.
-                # Fetch those from cloud as a lightweight fallback (no other exceptions).
-                try:
-                    if isinstance(stats, dict):
-                        await self._maybe_fill_config_nodes_from_cloud(stats)
-                except Exception as err:
-                    _LOGGER.debug("Failed to fill config nodes from cloud: %s", err)
-
-            # Cloud notifications are optional and should never run in local/hybrid effective mode.
             cloud_notifications_enabled = bool(
                 self.config_entry
                 and self.config_entry.options.get("enable_cloud_notifications", True)
             )
+            self._configure_notification_manager(use_cloud, cloud_notifications_enabled)
 
-            # NOVÉ: Inicializovat notification manager pokud ještě není
-            if use_cloud and cloud_notifications_enabled:
-                if (
-                    not hasattr(self, "notification_manager")
-                    or self.notification_manager is None
-                ):
-                    _LOGGER.debug("Initializing notification manager")
-                    try:
-                        from .oig_cloud_notification import OigNotificationManager
+            extended_enabled = self._resolve_extended_enabled()
+            if self._is_startup_grace_active(stats):
+                return self._build_startup_result(stats)
 
-                        # NOVÉ: Použít get_session() z API pro sdílení autentifikace
-                        self.notification_manager = OigNotificationManager(
-                            self.hass, self.api, "https://www.oigpower.cz"
-                        )
-                        _LOGGER.debug(
-                            "Notification manager initialized with API session"
-                        )
-                    except Exception as e:
-                        _LOGGER.error(f"Failed to initialize notification manager: {e}")
-                        self.notification_manager = None
-            else:
-                self.notification_manager = None
-
-            # NOVÉ: Debug notification manager status
-            _LOGGER.debug(
-                f"Notification manager status: {hasattr(self, 'notification_manager')}"
+            await self._maybe_update_extended_data(
+                use_cloud=use_cloud,
+                extended_enabled=extended_enabled,
+                cloud_notifications_enabled=cloud_notifications_enabled,
             )
-            if hasattr(self, "notification_manager"):
-                _LOGGER.debug(
-                    f"Notification manager value: {self.notification_manager}"
-                )
-                _LOGGER.debug(
-                    f"Notification manager is None: {self.notification_manager is None}"
-                )
-                if self.notification_manager is not None:
-                    _LOGGER.debug(
-                        f"Notification manager ready: device_id={getattr(self.notification_manager, '_device_id', None)}"
-                    )
-            else:
-                _LOGGER.debug(
-                    "Coordinator does not have notification_manager attribute"
-                )
 
-            # OPRAVA: Použít uložený config_entry místo hledání
-            config_entry = self.config_entry
-            extended_enabled = False
-
-            if config_entry:
-                extended_enabled = config_entry.options.get(
-                    "enable_extended_sensors", False
-                )
-                _LOGGER.debug("Config entry found: True")
-                # Do not log full options (may contain secrets)
-                try:
-                    _LOGGER.debug(
-                        "Config entry option keys: %s",
-                        sorted(list(getattr(config_entry, "options", {}).keys())),
-                    )
-                except Exception:
-                    _LOGGER.debug("Config entry option keys: <unavailable>")
-                _LOGGER.debug(
-                    f"Extended sensors enabled from options: {extended_enabled}"
-                )
-            else:
-                _LOGGER.warning("No config entry available for this coordinator")
-
-            # Startup grace: během prvních X sekund po startu dělej jen lehké operace
-            elapsed = (self._utcnow() - self._startup_ts).total_seconds()
-            if elapsed < self._startup_grace_seconds:
-                remaining = self._startup_grace_seconds - int(elapsed)
-                _LOGGER.debug(
-                    f"Startup grace active ({remaining}s left) – skipping extended stats, spot fetch, and forecast"
-                )
-                # Minimal return: základní stats + případné cached spot ceny
-                result = stats.copy() if stats else {}
-                if self._spot_prices_cache:
-                    result["spot_prices"] = self._spot_prices_cache
-                    _LOGGER.debug("Including cached spot prices during startup grace")
-                return result
-
-            should_update_extended = self._should_update_extended()
-            _LOGGER.debug(f"Should update extended: {should_update_extended}")
-            _LOGGER.debug(f"Last extended update: {self._last_extended_update}")
-            _LOGGER.debug(f"Extended interval: {self.extended_interval}s")
-
-            if use_cloud and extended_enabled and should_update_extended:
-                _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
-                try:
-                    today_from, today_to = self._today_range()
-                    _LOGGER.debug(
-                        f"Date range for extended stats: {today_from} to {today_to}"
-                    )
-
-                    extended_batt = await self.api.get_extended_stats(
-                        "batt", today_from, today_to
-                    )
-                    extended_fve = await self.api.get_extended_stats(
-                        "fve", today_from, today_to
-                    )
-                    extended_grid = await self.api.get_extended_stats(
-                        "grid", today_from, today_to
-                    )
-                    extended_load = await self.api.get_extended_stats(
-                        "load", today_from, today_to
-                    )
-
-                    self.extended_data = {
-                        "extended_batt": extended_batt,
-                        "extended_fve": extended_fve,
-                        "extended_grid": extended_grid,
-                        "extended_load": extended_load,
-                    }
-
-                    # OPRAVA: Používat lokální čas místo UTC
-                    self._last_extended_update = dt_util.now()
-                    _LOGGER.debug("Extended stats updated successfully")
-
-                    # NOVÉ: Aktualizovat notifikace současně s extended daty
-                    if cloud_notifications_enabled and (
-                        hasattr(self, "notification_manager")
-                        and self.notification_manager
-                        and hasattr(self.notification_manager, "_device_id")
-                        and self.notification_manager._device_id is not None
-                    ):
-                        try:
-                            _LOGGER.debug(
-                                "Refreshing notification data with extended stats"
-                            )
-                            # OPRAVA: Použít správnou metodu pro aktualizaci notifikací
-                            await self.notification_manager.update_from_api()
-                            _LOGGER.debug("Notification data updated successfully")
-                        except Exception as e:
-                            _LOGGER.debug(f"Notification data fetch failed: {e}")
-                    elif cloud_notifications_enabled:
-                        _LOGGER.debug(
-                            "Notification manager not ready for extended data refresh - device_id not set yet"
-                        )
-
-                except Exception as e:
-                    _LOGGER.warning(f"Failed to fetch extended stats: {e}")
-                    # Pokračujeme s prázdnými extended daty
-                    self.extended_data = {}
-            elif not extended_enabled:
-                _LOGGER.debug("Extended sensors disabled in configuration")
-
-                # NOVÉ: I když extended nejsou povoleny, aktualizovat notifikace samostatně
-                if cloud_notifications_enabled and (
-                    hasattr(self, "notification_manager")
-                    and self.notification_manager
-                    and hasattr(self.notification_manager, "_device_id")
-                    and self.notification_manager._device_id is not None
-                ):
-                    # Aktualizovat notifikace každých 5 minut i bez extended dat
-                    if not hasattr(self, "_last_notification_update"):
-                        self._last_notification_update = None
-
-                    now = dt_util.now()
-                    should_refresh_notifications = False
-
-                    if self._last_notification_update is None:
-                        should_refresh_notifications = True
-                    else:
-                        time_since_notification = (
-                            now - self._last_notification_update
-                        ).total_seconds()
-                        if time_since_notification >= 300:  # 5 minut
-                            should_refresh_notifications = True
-
-                    if should_refresh_notifications:
-                        try:
-                            _LOGGER.debug("Refreshing notification data (standalone)")
-                            # OPRAVA: Použít správnou metodu pro aktualizaci notifikací
-                            await self.notification_manager.update_from_api()
-                            self._last_notification_update = now
-                            _LOGGER.debug(
-                                "Standalone notification data updated successfully"
-                            )
-                        except Exception as e:
-                            _LOGGER.debug(
-                                f"Standalone notification data fetch failed: {e}"
-                            )
-                elif cloud_notifications_enabled:
-                    _LOGGER.debug(
-                        "Notification manager not available for standalone refresh - device_id not set yet"
-                    )
-
-            # Aktualizuj battery forecast pokud je povolen
-            if self.config_entry and self.config_entry.options.get(
-                "enable_battery_prediction", False
-            ):
-                # Do not block coordinator update/startup; run in background
-                if (
-                    not self._battery_forecast_task
-                    or self._battery_forecast_task.done()
-                ):
-                    self._battery_forecast_task = self.hass.async_create_task(
-                        self._update_battery_forecast()
-                    )
-                else:
-                    _LOGGER.debug("Battery forecast task already running, skipping")
-
-            # NOVÉ: Přidáme spotové ceny pokud jsou k dispozici
-            if self._spot_prices_cache:
-                stats["spot_prices"] = self._spot_prices_cache
-                _LOGGER.debug("Including cached spot prices in coordinator data")
-            elif self.ote_api and not hasattr(self, "_initial_spot_attempted"):
-                # První pokus o získání spotových cen při startu
-                self._initial_spot_attempted = True
-                try:
-                    _LOGGER.debug("Attempting initial spot price fetch")
-                    spot_data = await self.ote_api.get_spot_prices()
-                    if spot_data and spot_data.get("hours_count", 0) > 0:
-                        stats["spot_prices"] = spot_data
-                        self._spot_prices_cache = spot_data
-                        _LOGGER.info("Initial spot price data loaded successfully")
-                    else:
-                        _LOGGER.warning("Initial spot price fetch returned empty data")
-                except Exception as e:
-                    _LOGGER.warning(f"Initial spot price fetch failed: {e}")
-                    # Nebudeme dělat retry při inicializaci
+            self._maybe_update_battery_forecast()
+            await self._maybe_include_spot_prices(stats)
 
             # Sloučíme standardní a extended data
             result = stats.copy() if stats else {}
@@ -795,6 +551,269 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Error communicating with OIG API: {exception}"
             ) from exception
+
+    def _resolve_use_cloud(self) -> bool:
+        use_cloud = True
+        try:
+            if self.config_entry:
+                state = get_data_source_state(self.hass, self.config_entry.entry_id)
+                _LOGGER.debug(
+                    "Data source state: configured=%s effective=%s local_ok=%s reason=%s",
+                    state.configured_mode,
+                    state.effective_mode,
+                    state.local_available,
+                    state.reason,
+                )
+                use_cloud = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
+        except Exception:
+            use_cloud = True
+        return use_cloud
+
+    async def _get_stats_for_mode(self, use_cloud: bool) -> Dict[str, Any]:
+        if use_cloud:
+            return await self._try_get_stats()
+
+        telemetry_store = getattr(self, "telemetry_store", None)
+        if telemetry_store is not None:
+            try:
+                snap = telemetry_store.get_snapshot()
+                stats = snap.payload
+            except Exception:
+                stats = self.data or {}
+        else:
+            stats = self.data or {}
+
+        try:
+            if isinstance(stats, dict):
+                await self._maybe_fill_config_nodes_from_cloud(stats)
+        except Exception as err:
+            _LOGGER.debug("Failed to fill config nodes from cloud: %s", err)
+
+        return stats
+
+    def _configure_notification_manager(
+        self, use_cloud: bool, cloud_notifications_enabled: bool
+    ) -> None:
+        if use_cloud and cloud_notifications_enabled:
+            if (
+                not hasattr(self, "notification_manager")
+                or self.notification_manager is None
+            ):
+                _LOGGER.debug("Initializing notification manager")
+                try:
+                    from .oig_cloud_notification import OigNotificationManager
+
+                    self.notification_manager = OigNotificationManager(
+                        self.hass, self.api, "https://www.oigpower.cz"
+                    )
+                    _LOGGER.debug("Notification manager initialized with API session")
+                except Exception as e:
+                    _LOGGER.error(f"Failed to initialize notification manager: {e}")
+                    self.notification_manager = None
+        else:
+            self.notification_manager = None
+
+        _LOGGER.debug(
+            "Notification manager status: %s", hasattr(self, "notification_manager")
+        )
+        if hasattr(self, "notification_manager"):
+            _LOGGER.debug("Notification manager value: %s", self.notification_manager)
+            _LOGGER.debug(
+                "Notification manager is None: %s", self.notification_manager is None
+            )
+            if self.notification_manager is not None:
+                _LOGGER.debug(
+                    "Notification manager ready: device_id=%s",
+                    getattr(self.notification_manager, "_device_id", None),
+                )
+        else:
+            _LOGGER.debug("Coordinator does not have notification_manager attribute")
+
+    def _resolve_extended_enabled(self) -> bool:
+        config_entry = self.config_entry
+        if config_entry:
+            extended_enabled = config_entry.options.get("enable_extended_sensors", False)
+            _LOGGER.debug("Config entry found: True")
+            try:
+                _LOGGER.debug(
+                    "Config entry option keys: %s",
+                    sorted(list(getattr(config_entry, "options", {}).keys())),
+                )
+            except Exception:
+                _LOGGER.debug("Config entry option keys: <unavailable>")
+            _LOGGER.debug("Extended sensors enabled from options: %s", extended_enabled)
+            return extended_enabled
+
+        _LOGGER.warning("No config entry available for this coordinator")
+        return False
+
+    def _is_startup_grace_active(self, stats: Dict[str, Any]) -> bool:
+        elapsed = (self._utcnow() - self._startup_ts).total_seconds()
+        if elapsed >= self._startup_grace_seconds:
+            return False
+        remaining = self._startup_grace_seconds - int(elapsed)
+        _LOGGER.debug(
+            "Startup grace active (%ss left) – skipping extended stats, spot fetch, and forecast",
+            remaining,
+        )
+        return True
+
+    def _build_startup_result(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+        result = stats.copy() if stats else {}
+        if self._spot_prices_cache:
+            result["spot_prices"] = self._spot_prices_cache
+            _LOGGER.debug("Including cached spot prices during startup grace")
+        return result
+
+    async def _maybe_update_extended_data(
+        self,
+        *,
+        use_cloud: bool,
+        extended_enabled: bool,
+        cloud_notifications_enabled: bool,
+    ) -> None:
+        should_update_extended = self._should_update_extended()
+        _LOGGER.debug("Should update extended: %s", should_update_extended)
+        _LOGGER.debug("Last extended update: %s", self._last_extended_update)
+        _LOGGER.debug("Extended interval: %ss", self.extended_interval)
+
+        if use_cloud and extended_enabled and should_update_extended:
+            await self._refresh_extended_stats(cloud_notifications_enabled)
+            return
+
+        if not extended_enabled:
+            _LOGGER.debug("Extended sensors disabled in configuration")
+            await self._maybe_refresh_notifications_standalone(
+                cloud_notifications_enabled
+            )
+
+    async def _refresh_extended_stats(self, cloud_notifications_enabled: bool) -> None:
+        _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
+        try:
+            today_from, today_to = self._today_range()
+            _LOGGER.debug("Date range for extended stats: %s to %s", today_from, today_to)
+
+            extended_batt = await self.api.get_extended_stats(
+                "batt", today_from, today_to
+            )
+            extended_fve = await self.api.get_extended_stats(
+                "fve", today_from, today_to
+            )
+            extended_grid = await self.api.get_extended_stats(
+                "grid", today_from, today_to
+            )
+            extended_load = await self.api.get_extended_stats(
+                "load", today_from, today_to
+            )
+
+            self.extended_data = {
+                "extended_batt": extended_batt,
+                "extended_fve": extended_fve,
+                "extended_grid": extended_grid,
+                "extended_load": extended_load,
+            }
+            self._last_extended_update = dt_util.now()
+            _LOGGER.debug("Extended stats updated successfully")
+
+            await self._maybe_refresh_notifications_with_extended(
+                cloud_notifications_enabled
+            )
+
+        except Exception as e:
+            _LOGGER.warning(f"Failed to fetch extended stats: {e}")
+            self.extended_data = {}
+
+    async def _maybe_refresh_notifications_with_extended(
+        self, cloud_notifications_enabled: bool
+    ) -> None:
+        if not cloud_notifications_enabled:
+            return
+        if not (
+            hasattr(self, "notification_manager")
+            and self.notification_manager
+            and hasattr(self.notification_manager, "_device_id")
+            and self.notification_manager._device_id is not None
+        ):
+            _LOGGER.debug(
+                "Notification manager not ready for extended data refresh - device_id not set yet"
+            )
+            return
+        try:
+            _LOGGER.debug("Refreshing notification data with extended stats")
+            await self.notification_manager.update_from_api()
+            _LOGGER.debug("Notification data updated successfully")
+        except Exception as e:
+            _LOGGER.debug(f"Notification data fetch failed: {e}")
+
+    async def _maybe_refresh_notifications_standalone(
+        self, cloud_notifications_enabled: bool
+    ) -> None:
+        if not cloud_notifications_enabled:
+            return
+        if not (
+            hasattr(self, "notification_manager")
+            and self.notification_manager
+            and hasattr(self.notification_manager, "_device_id")
+            and self.notification_manager._device_id is not None
+        ):
+            _LOGGER.debug(
+                "Notification manager not available for standalone refresh - device_id not set yet"
+            )
+            return
+
+        if not hasattr(self, "_last_notification_update"):
+            self._last_notification_update = None
+
+        now = dt_util.now()
+        if self._last_notification_update is None:
+            should_refresh_notifications = True
+        else:
+            time_since_notification = (
+                now - self._last_notification_update
+            ).total_seconds()
+            should_refresh_notifications = time_since_notification >= 300
+
+        if not should_refresh_notifications:
+            return
+        try:
+            _LOGGER.debug("Refreshing notification data (standalone)")
+            await self.notification_manager.update_from_api()
+            self._last_notification_update = now
+            _LOGGER.debug("Standalone notification data updated successfully")
+        except Exception as e:
+            _LOGGER.debug(f"Standalone notification data fetch failed: {e}")
+
+    def _maybe_update_battery_forecast(self) -> None:
+        if not (
+            self.config_entry
+            and self.config_entry.options.get("enable_battery_prediction", False)
+        ):
+            return
+        if not self._battery_forecast_task or self._battery_forecast_task.done():
+            self._battery_forecast_task = self.hass.async_create_task(
+                self._update_battery_forecast()
+            )
+        else:
+            _LOGGER.debug("Battery forecast task already running, skipping")
+
+    async def _maybe_include_spot_prices(self, stats: Dict[str, Any]) -> None:
+        if self._spot_prices_cache:
+            stats["spot_prices"] = self._spot_prices_cache
+            _LOGGER.debug("Including cached spot prices in coordinator data")
+            return
+        if self.ote_api and not hasattr(self, "_initial_spot_attempted"):
+            self._initial_spot_attempted = True
+            try:
+                _LOGGER.debug("Attempting initial spot price fetch")
+                spot_data = await self.ote_api.get_spot_prices()
+                if spot_data and spot_data.get("hours_count", 0) > 0:
+                    stats["spot_prices"] = spot_data
+                    self._spot_prices_cache = spot_data
+                    _LOGGER.info("Initial spot price data loaded successfully")
+                else:
+                    _LOGGER.warning("Initial spot price fetch returned empty data")
+            except Exception as e:
+                _LOGGER.warning(f"Initial spot price fetch failed: {e}")
 
     async def _try_get_stats(self) -> Optional[Dict[str, Any]]:
         """Wrapper na načítání standardních statistik s ošetřením chyb."""

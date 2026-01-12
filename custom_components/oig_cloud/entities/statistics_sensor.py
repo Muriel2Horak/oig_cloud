@@ -530,62 +530,13 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 )
                 return None
 
-            # Seskupit data podle dnů
-            daily_medians = []
-
-            # Projít každý z posledních N dní (podle max_age_days)
-            for days_ago in range(max_days):
-                day_date = (end_time - timedelta(days=days_ago)).date()
-
-                # Kontrola typu dne (weekday/weekend)
-                day_datetime = datetime.combine(day_date, datetime.min.time())
-                is_weekend = day_datetime.weekday() >= 5
-
-                # Přeskočit dny které nesedí s day_type
-                if hasattr(self, "_day_type"):
-                    if (self._day_type == "weekend" and not is_weekend) or (
-                        self._day_type == "weekday" and is_weekend
-                    ):
-                        continue
-
-                # Vyfiltrovat data pro tento den v daném časovém intervalu
-                day_values = []
-
-                for state in states[source_entity_id]:
-                    state_time = state.last_updated.replace(tzinfo=None)
-
-                    # Je to správný den?
-                    if state_time.date() != day_date:
-                        continue
-
-                    # Je to ve správném časovém intervalu?
-                    hour = state_time.hour
-
-                    if end_hour > start_hour:
-                        # Normální interval (např. 6-8, 16-22)
-                        if not (start_hour <= hour < end_hour):
-                            continue
-                    else:
-                        # Interval přes půlnoc (např. 22-6)
-                        if not (hour >= start_hour or hour < end_hour):
-                            continue
-
-                    # Přidat hodnotu
-                    if state.state not in ("unavailable", "unknown", None):
-                        try:
-                            value = float(state.state)
-                            if value >= 0:  # Ignorovat záporné hodnoty
-                                day_values.append(value)
-                        except (ValueError, TypeError):
-                            pass
-
-                # Spočítat medián pro tento den
-                if day_values:
-                    day_median = median(day_values)
-                    daily_medians.append(day_median)
-                    _LOGGER.debug(
-                        f"[{self.entity_id}] Day {day_date}: {len(day_values)} values, median={day_median:.1f}W"
-                    )
+            daily_medians = self._calculate_daily_medians(
+                states[source_entity_id],
+                start_hour,
+                end_hour,
+                end_time,
+                max_days,
+            )
 
             # Spočítat celkový medián z denních mediánů
             if daily_medians:
@@ -606,6 +557,78 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 f"[{self.entity_id}] Error calculating interval statistics: {e}",
                 exc_info=True,
             )
+            return None
+
+    def _calculate_daily_medians(
+        self,
+        state_list: List[Any],
+        start_hour: int,
+        end_hour: int,
+        end_time: datetime,
+        max_days: int,
+    ) -> List[float]:
+        daily_medians: List[float] = []
+        for days_ago in range(max_days):
+            day_date = (end_time - timedelta(days=days_ago)).date()
+            if not self._should_include_day(day_date):
+                continue
+            day_values = self._extract_day_values(
+                state_list, day_date, start_hour, end_hour
+            )
+            if day_values:
+                day_median = median(day_values)
+                daily_medians.append(day_median)
+                _LOGGER.debug(
+                    "[%s] Day %s: %s values, median=%.1fW",
+                    self.entity_id,
+                    day_date,
+                    len(day_values),
+                    day_median,
+                )
+        return daily_medians
+
+    def _should_include_day(self, day_date: datetime.date) -> bool:
+        day_datetime = datetime.combine(day_date, datetime.min.time())
+        is_weekend = day_datetime.weekday() >= 5
+
+        if hasattr(self, "_day_type"):
+            if (self._day_type == "weekend" and not is_weekend) or (
+                self._day_type == "weekday" and is_weekend
+            ):
+                return False
+        return True
+
+    def _extract_day_values(
+        self,
+        state_list: List[Any],
+        day_date: datetime.date,
+        start_hour: int,
+        end_hour: int,
+    ) -> List[float]:
+        day_values: List[float] = []
+        for state in state_list:
+            state_time = state.last_updated.replace(tzinfo=None)
+            if state_time.date() != day_date:
+                continue
+            if not self._is_in_interval(state_time.hour, start_hour, end_hour):
+                continue
+            value = self._safe_state_value(state.state)
+            if value is not None:
+                day_values.append(value)
+        return day_values
+
+    def _is_in_interval(self, hour: int, start_hour: int, end_hour: int) -> bool:
+        if end_hour > start_hour:
+            return start_hour <= hour < end_hour
+        return hour >= start_hour or hour < end_hour
+
+    def _safe_state_value(self, value: Any) -> Optional[float]:
+        if value in ("unavailable", "unknown", None):
+            return None
+        try:
+            parsed = float(value)
+            return parsed if parsed >= 0 else None
+        except (ValueError, TypeError):
             return None
 
     def _get_actual_load_value(self) -> Optional[float]:
