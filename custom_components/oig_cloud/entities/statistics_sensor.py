@@ -181,19 +181,9 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 # Načtení základních sampling dat
                 if "sampling_data" in data:
                     sampling_list = data["sampling_data"]
-                    self._sampling_data = []
-                    for item in sampling_list[-self._max_sampling_size :]:
-                        try:
-                            # Převod na naive datetime pro konzistenci
-                            dt = datetime.fromisoformat(item[0])
-                            if dt.tzinfo is not None:
-                                dt = dt.replace(tzinfo=None)  # Odstranění timezone info
-                            self._sampling_data.append((dt, item[1]))
-                        except (ValueError, TypeError) as e:
-                            _LOGGER.warning(
-                                f"[{self.entity_id}] Skipping invalid sample: {item[0]} - {e}"
-                            )
-                            continue
+                    self._sampling_data = self._load_sampling_data(
+                        sampling_list, self._max_sampling_size
+                    )
 
                 # Načtení intervalových dat
                 if "interval_data" in data:
@@ -201,29 +191,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
                 # Načtení hodinových dat s bezpečným parsing
                 if "hourly_data" in data:
-                    safe_hourly_data = []
-                    for record in data["hourly_data"]:
-                        try:
-                            # Validace struktury záznamu
-                            if (
-                                isinstance(record, dict)
-                                and "datetime" in record
-                                and "value" in record
-                            ):
-                                # Test parsování datetime - neukládáme ho, jen validujeme
-                                datetime.fromisoformat(record["datetime"])
-                                safe_hourly_data.append(record)
-                            else:
-                                _LOGGER.warning(
-                                    f"[{self.entity_id}] Invalid hourly record structure: {record}"
-                                )
-                        except (ValueError, TypeError, KeyError) as e:
-                            _LOGGER.warning(
-                                f"[{self.entity_id}] Skipping invalid hourly record: {record} - {e}"
-                            )
-                            continue
-
-                    self._hourly_data = safe_hourly_data
+                    self._hourly_data = self._load_hourly_data(data["hourly_data"])
 
                 # Načtení aktuální hodinové hodnoty
                 if "current_hourly_value" in data:
@@ -282,31 +250,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         try:
             store = Store(self.hass, version=1, key=self._storage_key)
 
-            # Příprava dat k uložení - zajistir naive datetime
-            sampling_data_serializable = []
-            for dt, value in self._sampling_data:
-                # Ujistit se, že ukládáme naive datetime
-                if dt.tzinfo is not None:
-                    dt = dt.replace(tzinfo=None)
-                sampling_data_serializable.append((dt.isoformat(), value))
-
-            # Oprava: Ujistit se, že hodinová data používají naive datetime (bez timestamp)
-            safe_hourly_data = []
-            for record in self._hourly_data:
-                safe_record = {"datetime": "", "value": 0.0}
-                try:
-                    # Převést datetime na naive pokud je timezone-aware
-                    if "datetime" in record:
-                        dt = datetime.fromisoformat(record["datetime"])
-                        if dt.tzinfo is not None:
-                            dt = dt.replace(tzinfo=None)
-                        safe_record["datetime"] = dt.isoformat()
-
-                    if "value" in record:
-                        safe_record["value"] = float(record["value"])
-                except (ValueError, TypeError):
-                    continue
-                safe_hourly_data.append(safe_record)
+            sampling_data_serializable = self._serialize_sampling_data()
+            safe_hourly_data = self._serialize_hourly_data()
 
             save_data = {
                 "sampling_data": sampling_data_serializable,
@@ -332,19 +277,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         # Vyčištění sampling dat - ponechat jen posledních N minut
         if self._sampling_data:
-            cutoff_time = now - timedelta(
-                minutes=self._sampling_minutes * 2
-            )  # 2x buffer
-
-            # Bezpečné porovnání - zajistit naive datetime pro všechny objekty
-            cleaned_data = []
-            for dt, value in self._sampling_data:
-                # Převod na naive datetime pokud je timezone-aware
-                dt_naive = dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
-                if dt_naive > cutoff_time:
-                    cleaned_data.append((dt_naive, value))
-
-            self._sampling_data = cleaned_data
+            cutoff_time = now - timedelta(minutes=self._sampling_minutes * 2)
+            self._sampling_data = self._filter_sampling_data(cutoff_time)
 
         # Vyčištění intervalových dat - ponechat jen posledních N dní
         if hasattr(self, "_max_age_days") and self._interval_data:
@@ -360,27 +294,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         # Vyčištění hodinových dat - ponechat jen posledních 48 hodin
         if self._hourly_data:
             cutoff_time = now - timedelta(hours=48)
-            cleaned_hourly_data = []
-            for record in self._hourly_data:
-                try:
-                    # Bezpečné parsování datetime z uloženého záznamu
-                    record_dt = datetime.fromisoformat(record["datetime"])
-                    # Převod na naive datetime pro konzistentní porovnání
-                    record_dt_naive = (
-                        record_dt.replace(tzinfo=None)
-                        if record_dt.tzinfo is not None
-                        else record_dt
-                    )
-
-                    if record_dt_naive > cutoff_time:
-                        cleaned_hourly_data.append(record)
-                except (ValueError, TypeError, KeyError) as e:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] Invalid hourly record format: {record} - {e}"
-                    )
-                    continue
-
-            self._hourly_data = cleaned_hourly_data
+            self._hourly_data = self._filter_hourly_data(cutoff_time)
 
     async def _update_sampling_data(self, now: datetime) -> None:
         """Aktualizuje sampling data pro základní mediánový senzor."""
@@ -481,27 +395,11 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
                         # Omezení na posledních 48 hodin (včera + dnes)
                         cutoff_time = now - timedelta(hours=48)
-                        cleaned_hourly_data = []
-                        for record in self._hourly_data:
-                            try:
-                                record_dt = datetime.fromisoformat(record["datetime"])
-                                record_dt_naive = (
-                                    record_dt.replace(tzinfo=None)
-                                    if record_dt.tzinfo is not None
-                                    else record_dt
-                                )
-                                cutoff_time_naive = (
-                                    cutoff_time.replace(tzinfo=None)
-                                    if cutoff_time.tzinfo is not None
-                                    else cutoff_time
-                                )
-
-                                if record_dt_naive > cutoff_time_naive:
-                                    cleaned_hourly_data.append(record)
-                            except (ValueError, TypeError, KeyError):
-                                continue
-
-                        self._hourly_data = cleaned_hourly_data
+                        self._hourly_data = self._filter_hourly_data(
+                            cutoff_time.replace(tzinfo=None)
+                            if cutoff_time.tzinfo is not None
+                            else cutoff_time
+                        )
 
                         # Uložení hodnoty do historie - použití naive datetime
                         self._last_hour_reset = current_hour_naive
@@ -709,89 +607,6 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 exc_info=True,
             )
             return None
-        """Získá mediánová data z základního senzoru pro daný interval."""
-        try:
-            # Najdeme základní mediánový senzor
-            median_entity_id = f"sensor.oig_{self._data_key}_battery_load_median"
-
-            # Vypočítat časy intervalu
-            # end_time je konec intervalu (např. 22:00)
-            # Interval je např. 16-22, takže potřebujeme data od 16:00 do 22:00
-
-            # Začátek intervalu
-            if end_hour > start_hour:
-                # Normální interval (např. 6-8, 16-22)
-                hours_diff = end_hour - start_hour
-                interval_start = end_time - timedelta(hours=hours_diff)
-            else:
-                # Interval přes půlnoc (např. 22-6)
-                hours_diff = (24 - start_hour) + end_hour
-                interval_start = end_time - timedelta(hours=hours_diff)
-
-            # Načíst historická data z HA databáze
-            from homeassistant.components import history
-
-            _LOGGER.debug(
-                f"[{self.entity_id}] Loading history for {median_entity_id} "
-                f"from {interval_start.strftime('%H:%M')} to {end_time.strftime('%H:%M')}"
-            )
-
-            # Načíst historii (vrací list of states)
-            states = await self.hass.async_add_executor_job(
-                history.state_changes_during_period,
-                self.hass,
-                interval_start,
-                end_time,
-                median_entity_id,
-            )
-
-            # Extrahovat hodnoty
-            values = []
-            if median_entity_id in states:
-                for state in states[median_entity_id]:
-                    if state.state not in ("unavailable", "unknown", None):
-                        try:
-                            values.append(float(state.state))
-                        except (ValueError, TypeError):
-                            pass
-
-            _LOGGER.debug(
-                f"[{self.entity_id}] Loaded {len(values)} historical values from interval"
-            )
-
-            if values:
-                return values
-
-            # Fallback - pokud nemáme historii, použijeme aktuální hodnotu
-            median_sensor = self.hass.states.get(median_entity_id)
-            if median_sensor and median_sensor.state not in (
-                "unavailable",
-                "unknown",
-                None,
-            ):
-                try:
-                    current_median = float(median_sensor.state)
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] No historical data, using current value: {current_median:.1f}W"
-                    )
-                    return [current_median]
-                except (ValueError, TypeError):
-                    pass
-
-            # Fallback - přímé vzorkování ze source senzoru
-            source_value = self._get_actual_load_value()
-            if source_value is not None:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Using source sensor value as fallback: {source_value:.1f}W"
-                )
-                return [source_value]
-
-        except Exception as e:
-            _LOGGER.error(
-                f"[{self.entity_id}] Error getting interval data: {e}", exc_info=True
-            )
-
-        return []
 
     def _get_actual_load_value(self) -> Optional[float]:
         """Získá aktuální hodnotu odběru ze source senzoru."""
@@ -989,9 +804,12 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
     def available(self) -> bool:
         """Return True if sensor is available."""
         # OPRAVA: Kontrola zda jsou statistics povoleny
-        statistics_enabled = getattr(
-            self._coordinator.config_entry.options, "enable_statistics", True
-        )
+        entry = getattr(self._coordinator, "config_entry", None)
+        options = entry.options if entry else {}
+        if isinstance(options, dict):
+            statistics_enabled = options.get("enable_statistics", True)
+        else:
+            statistics_enabled = getattr(options, "enable_statistics", True)
 
         if not statistics_enabled:
             return False  # Statistics jsou vypnuté - senzor není dostupný
@@ -1126,6 +944,94 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             attributes["error"] = str(e)
 
         return attributes
+
+    def _load_sampling_data(
+        self, sampling_list: List[Tuple[Any, Any]], max_size: int
+    ) -> List[Tuple[datetime, float]]:
+        samples: List[Tuple[datetime, float]] = []
+        for item in sampling_list[-max_size:]:
+            try:
+                dt = datetime.fromisoformat(item[0])
+                if dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+                samples.append((dt, item[1]))
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Skipping invalid sample: {item[0]} - {err}"
+                )
+        return samples
+
+    def _load_hourly_data(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        safe_hourly_data = []
+        for record in raw_data:
+            try:
+                if (
+                    isinstance(record, dict)
+                    and "datetime" in record
+                    and "value" in record
+                ):
+                    datetime.fromisoformat(record["datetime"])
+                    safe_hourly_data.append(record)
+                else:
+                    _LOGGER.warning(
+                        f"[{self.entity_id}] Invalid hourly record structure: {record}"
+                    )
+            except (ValueError, TypeError, KeyError) as err:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Skipping invalid hourly record: {record} - {err}"
+                )
+        return safe_hourly_data
+
+    def _serialize_sampling_data(self) -> List[Tuple[str, float]]:
+        data: List[Tuple[str, float]] = []
+        for dt, value in self._sampling_data:
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            data.append((dt.isoformat(), value))
+        return data
+
+    def _serialize_hourly_data(self) -> List[Dict[str, Any]]:
+        safe_hourly_data: List[Dict[str, Any]] = []
+        for record in self._hourly_data:
+            safe_record = {"datetime": "", "value": 0.0}
+            try:
+                if "datetime" in record:
+                    dt = datetime.fromisoformat(record["datetime"])
+                    if dt.tzinfo is not None:
+                        dt = dt.replace(tzinfo=None)
+                    safe_record["datetime"] = dt.isoformat()
+                if "value" in record:
+                    safe_record["value"] = float(record["value"])
+            except (ValueError, TypeError):
+                continue
+            safe_hourly_data.append(safe_record)
+        return safe_hourly_data
+
+    def _filter_sampling_data(self, cutoff_time: datetime) -> List[Tuple[datetime, float]]:
+        cleaned: List[Tuple[datetime, float]] = []
+        for dt, value in self._sampling_data:
+            dt_naive = dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+            if dt_naive > cutoff_time:
+                cleaned.append((dt_naive, value))
+        return cleaned
+
+    def _filter_hourly_data(self, cutoff_time: datetime) -> List[Dict[str, Any]]:
+        cleaned_hourly_data: List[Dict[str, Any]] = []
+        for record in self._hourly_data:
+            try:
+                record_dt = datetime.fromisoformat(record["datetime"])
+                record_dt_naive = (
+                    record_dt.replace(tzinfo=None)
+                    if record_dt.tzinfo is not None
+                    else record_dt
+                )
+                if record_dt_naive > cutoff_time:
+                    cleaned_hourly_data.append(record)
+            except (ValueError, TypeError, KeyError) as err:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Invalid hourly record format: {record} - {err}"
+                )
+        return cleaned_hourly_data
 
 
 def ensure_timezone_aware(dt: datetime) -> datetime:

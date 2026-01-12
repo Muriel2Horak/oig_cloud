@@ -94,20 +94,10 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         """Calculate current tariff based on time and day."""
         return self._get_tariff_for_datetime(dt_util.now())
 
-    def _get_next_tariff_change(
-        self, current_time: datetime, is_weekend: bool
-    ) -> Tuple[str, datetime]:
-        """Get next tariff change time and type."""
-        # Pokud není dvoutarifní sazba povolena, žádné změny
-        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
-        if not dual_tariff_enabled:
-            return "VT", current_time + timedelta(
-                days=365
-            )  # Žádná změna v dohledné době
-
+    def _get_tariff_change_hours(
+        self, is_weekend: bool
+    ) -> Tuple[List[int], List[int]]:
         options = self._entry.options
-
-        # Získání tarifních časů podle dne
         if is_weekend:
             nt_times = self._parse_tariff_times(
                 options.get("tariff_nt_start_weekend", "0")
@@ -122,58 +112,69 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             vt_times = self._parse_tariff_times(
                 options.get("tariff_vt_start_weekday", "6")
             )
+        return nt_times, vt_times
+
+    def _build_tariff_changes(self, nt_times: List[int], vt_times: List[int]) -> List[Tuple[int, str]]:
+        changes: List[Tuple[int, str]] = []
+        for hour in nt_times:
+            changes.append((hour, "NT"))
+        for hour in vt_times:
+            changes.append((hour, "VT"))
+        return changes
+
+    def _get_next_change_for_day(
+        self, change_hours: List[Tuple[int, str]], current_hour: int, day_date: datetime.date
+    ) -> Optional[Tuple[str, datetime]]:
+        for hour, tariff in sorted(change_hours):
+            if hour > current_hour:
+                next_change = datetime.combine(day_date, time(hour, 0))
+                return tariff, next_change
+        return None
+
+    def _get_first_change_for_day(
+        self, change_hours: List[Tuple[int, str]], day_date: datetime.date
+    ) -> Optional[Tuple[str, datetime]]:
+        if not change_hours:
+            return None
+        hour, tariff = sorted(change_hours)[0]
+        next_change = datetime.combine(day_date, time(hour, 0))
+        return tariff, next_change
+
+    def _get_next_tariff_change(
+        self, current_time: datetime, is_weekend: bool
+    ) -> Tuple[str, datetime]:
+        """Get next tariff change time and type."""
+        # Pokud není dvoutarifní sazba povolena, žádné změny
+        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
+        if not dual_tariff_enabled:
+            return "VT", current_time + timedelta(
+                days=365
+            )  # Žádná změna v dohledné době
+
+        nt_times, vt_times = self._get_tariff_change_hours(is_weekend)
 
         current_hour = current_time.hour
         today = current_time.date()
 
         # Kombinuj všechny změny tarifu pro dnes
-        changes_today: List[Tuple[int, str]] = []
-        for hour in nt_times:
-            changes_today.append((hour, "NT"))
-        for hour in vt_times:
-            changes_today.append((hour, "VT"))
-
-        # Seřaď podle času
-        changes_today.sort()
-
-        # Najdi další změnu dnes
-        for hour, tariff in changes_today:
-            if hour > current_hour:
-                next_change = datetime.combine(today, time(hour, 0))
-                return tariff, next_change
+        changes_today = self._build_tariff_changes(nt_times, vt_times)
+        next_today = self._get_next_change_for_day(changes_today, current_hour, today)
+        if next_today:
+            return next_today
 
         # Žádná změna dnes, hledej zítra
         tomorrow = today + timedelta(days=1)
         is_tomorrow_weekend = tomorrow.weekday() >= 5
 
-        # Tarifní časy pro zítra
-        if is_tomorrow_weekend:
-            nt_times_tomorrow = self._parse_tariff_times(
-                options.get("tariff_nt_start_weekend", "0")
-            )
-            vt_times_tomorrow = self._parse_tariff_times(
-                options.get("tariff_vt_start_weekend", "")
-            )
-        else:
-            nt_times_tomorrow = self._parse_tariff_times(
-                options.get("tariff_nt_start_weekday", "22,2")
-            )
-            vt_times_tomorrow = self._parse_tariff_times(
-                options.get("tariff_vt_start_weekday", "6")
-            )
-
-        changes_tomorrow: List[Tuple[int, str]] = []
-        for hour in nt_times_tomorrow:
-            changes_tomorrow.append((hour, "NT"))
-        for hour in vt_times_tomorrow:
-            changes_tomorrow.append((hour, "VT"))
-
-        changes_tomorrow.sort()
-
-        if changes_tomorrow:
-            hour, tariff = changes_tomorrow[0]
-            next_change = datetime.combine(tomorrow, time(hour, 0))
-            return tariff, next_change
+        nt_times_tomorrow, vt_times_tomorrow = self._get_tariff_change_hours(
+            is_tomorrow_weekend
+        )
+        changes_tomorrow = self._build_tariff_changes(
+            nt_times_tomorrow, vt_times_tomorrow
+        )
+        next_tomorrow = self._get_first_change_for_day(changes_tomorrow, tomorrow)
+        if next_tomorrow:
+            return next_tomorrow
 
         # Fallback - žádné změny
         return "NT", current_time + timedelta(hours=1)
@@ -254,23 +255,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             return "VT"
 
         is_weekend = target_datetime.weekday() >= 5
-        options = self._entry.options
-
-        # Získání tarifních časů
-        if is_weekend:
-            nt_times = self._parse_tariff_times(
-                options.get("tariff_nt_start_weekend", "0")
-            )
-            vt_times = self._parse_tariff_times(
-                options.get("tariff_vt_start_weekend", "")
-            )
-        else:
-            nt_times = self._parse_tariff_times(
-                options.get("tariff_nt_start_weekday", "22,2")
-            )
-            vt_times = self._parse_tariff_times(
-                options.get("tariff_vt_start_weekday", "6")
-            )
+        nt_times, vt_times = self._get_tariff_change_hours(is_weekend)
 
         current_hour = target_datetime.hour
 
@@ -279,11 +264,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         last_hour = -1
 
         # Zkontroluj změny dnes
-        all_changes: List[Tuple[int, str]] = []
-        for hour in nt_times:
-            all_changes.append((hour, "NT"))
-        for hour in vt_times:
-            all_changes.append((hour, "VT"))
+        all_changes = self._build_tariff_changes(nt_times, vt_times)
 
         all_changes.sort(reverse=True)  # Od největší hodiny
 
@@ -297,26 +278,12 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             yesterday = target_datetime.date() - timedelta(days=1)
             is_yesterday_weekend = yesterday.weekday() >= 5
 
-            if is_yesterday_weekend:
-                nt_times_yesterday = self._parse_tariff_times(
-                    options.get("tariff_nt_start_weekend", "0")
-                )
-                vt_times_yesterday = self._parse_tariff_times(
-                    options.get("tariff_vt_start_weekend", "")
-                )
-            else:
-                nt_times_yesterday = self._parse_tariff_times(
-                    options.get("tariff_nt_start_weekday", "22,2")
-                )
-                vt_times_yesterday = self._parse_tariff_times(
-                    options.get("tariff_vt_start_weekday", "6")
-                )
-
-            yesterday_changes: List[Tuple[int, str]] = []
-            for hour in nt_times_yesterday:
-                yesterday_changes.append((hour, "NT"))
-            for hour in vt_times_yesterday:
-                yesterday_changes.append((hour, "VT"))
+            nt_times_yesterday, vt_times_yesterday = self._get_tariff_change_hours(
+                is_yesterday_weekend
+            )
+            yesterday_changes = self._build_tariff_changes(
+                nt_times_yesterday, vt_times_yesterday
+            )
 
             yesterday_changes.sort(reverse=True)
 
@@ -672,52 +639,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             # OPRAVA: Přidat atributy pro spot_price_hourly_all - pouze finální ceny
             if spot_data and self._sensor_type == "spot_price_hourly_all":
                 if pricing_model == "fixed_prices":
-                    # Pro fixní ceny vytvoříme simulované hodinové ceny
-                    final_prices = {}
-                    vat_rate = self._entry.options.get("vat_rate", 21.0)
-
-                    # Vygenerujeme ceny pro dnes a zítra
-                    for day_offset in [0, 1]:
-                        target_date = datetime.now().date() + timedelta(days=day_offset)
-                        for hour in range(24):
-                            hour_datetime = datetime.combine(target_date, time(hour, 0))
-                            time_key = hour_datetime.strftime("%Y-%m-%dT%H:00:00")
-                            tariff = self._get_tariff_for_datetime(hour_datetime)
-
-                            fixed_price_vt = self._entry.options.get(
-                                "fixed_commercial_price_vt", 4.50
-                            )
-                            fixed_price_nt = self._entry.options.get(
-                                "fixed_commercial_price_nt", 3.20
-                            )
-                            distribution_fee_vt_kwh = self._entry.options.get(
-                                "distribution_fee_vt_kwh", 1.35
-                            )
-                            distribution_fee_nt_kwh = self._entry.options.get(
-                                "distribution_fee_nt_kwh", 1.05
-                            )
-
-                            commercial_price = (
-                                fixed_price_vt if tariff == "VT" else fixed_price_nt
-                            )
-                            distribution_fee = (
-                                distribution_fee_vt_kwh
-                                if tariff == "VT"
-                                else distribution_fee_nt_kwh
-                            )
-
-                            price_without_vat = commercial_price + distribution_fee
-                            final_price = round(
-                                price_without_vat * (1 + vat_rate / 100.0), 2
-                            )
-
-                            final_prices[time_key] = {
-                                "tariff": tariff,
-                                "distribution_fee": round(distribution_fee, 2),
-                                "price_without_vat": round(price_without_vat, 2),
-                                "vat_rate": vat_rate,
-                                "final_price": final_price,
-                            }
+                    final_prices = self._build_fixed_hourly_prices()
 
                     # OPRAVA: Pouze finální ceny v atributech
                     attrs["hourly_final_prices"] = final_prices
@@ -731,90 +653,16 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                 else:
                     # Původní logika pro spotové ceny
                     raw_prices = spot_data.get("prices_czk_kwh", {})
-                    final_prices = {}
-                    vat_rate = self._entry.options.get("vat_rate", 21.0)
-
-                    for time_key, spot_price in raw_prices.items():
-                        try:
-                            price_datetime = datetime.fromisoformat(
-                                time_key.replace("Z", ISO_TZ_OFFSET)
-                            )
-                            tariff = self._get_tariff_for_datetime(price_datetime)
-
-                            # Výpočet finální ceny
-                            pricing_model = self._entry.options.get(
-                                "spot_pricing_model", "percentage"
-                            )
-                            positive_fee_percent = self._entry.options.get(
-                                "spot_positive_fee_percent", 15.0
-                            )
-                            negative_fee_percent = self._entry.options.get(
-                                "spot_negative_fee_percent", 9.0
-                            )
-                            fixed_fee_mwh = self._entry.options.get(
-                                "spot_fixed_fee_mwh", 500.0
-                            )
-                            distribution_fee_vt_kwh = self._entry.options.get(
-                                "distribution_fee_vt_kwh", 1.35
-                            )
-                            distribution_fee_nt_kwh = self._entry.options.get(
-                                "distribution_fee_nt_kwh", 1.05
-                            )
-
-                            if pricing_model == "percentage":
-                                if spot_price >= 0:
-                                    commercial_price = spot_price * (
-                                        1 + positive_fee_percent / 100.0
-                                    )
-                                else:
-                                    commercial_price = spot_price * (
-                                        1 - negative_fee_percent / 100.0
-                                    )
-                            else:  # fixed
-                                fixed_fee_kwh = fixed_fee_mwh / 1000.0
-                                commercial_price = spot_price + fixed_fee_kwh
-
-                            distribution_fee = (
-                                distribution_fee_vt_kwh
-                                if tariff == "VT"
-                                else distribution_fee_nt_kwh
-                            )
-
-                            price_without_vat = commercial_price + distribution_fee
-                            final_price = round(
-                                price_without_vat * (1 + vat_rate / 100.0), 2
-                            )
-
-                            final_prices[time_key] = {
-                                "spot_price": round(spot_price, 2),
-                                "commercial_price": round(commercial_price, 2),
-                                "tariff": tariff,
-                                "distribution_fee": round(distribution_fee, 2),
-                                "price_without_vat": round(price_without_vat, 2),
-                                "vat_rate": vat_rate,
-                                "final_price": final_price,
-                            }
-                        except (ValueError, AttributeError):
-                            continue
+                    final_prices = self._build_dynamic_hourly_prices(raw_prices)
 
                     # OPRAVA: Pouze finální ceny v atributech
                     attrs["hourly_final_prices"] = final_prices
                     attrs["hours_count"] = len(final_prices)
 
                     # OPRAVA: Přidat date_range i pro spotové ceny
-                    if final_prices:
-                        timestamps = list(final_prices.keys())
-                        timestamps.sort()
-                        start_date = datetime.fromisoformat(
-                            timestamps[0].replace("Z", ISO_TZ_OFFSET)
-                        ).strftime("%Y-%m-%d")
-                        end_date = datetime.fromisoformat(
-                            timestamps[-1].replace("Z", ISO_TZ_OFFSET)
-                        ).strftime("%Y-%m-%d")
-                        attrs["date_range"] = {
-                            "start": start_date,
-                            "end": end_date,
-                        }
+                    date_range = self._build_date_range_from_prices(final_prices)
+                    if date_range:
+                        attrs["date_range"] = date_range
 
                 # Přidat informace o použité konfiguraci pro všechny CZK senzory
                 if (
@@ -897,6 +745,125 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
         return is_available
 
+    def _build_fixed_hourly_prices(self) -> Dict[str, Dict[str, Union[str, float]]]:
+        final_prices: Dict[str, Dict[str, Union[str, float]]] = {}
+        vat_rate = self._entry.options.get("vat_rate", 21.0)
+
+        fixed_price_vt = self._entry.options.get("fixed_commercial_price_vt", 4.50)
+        fixed_price_nt = self._entry.options.get("fixed_commercial_price_nt", 3.20)
+        distribution_fee_vt_kwh = self._entry.options.get(
+            "distribution_fee_vt_kwh", 1.35
+        )
+        distribution_fee_nt_kwh = self._entry.options.get(
+            "distribution_fee_nt_kwh", 1.05
+        )
+
+        for day_offset in [0, 1]:
+            target_date = datetime.now().date() + timedelta(days=day_offset)
+            for hour in range(24):
+                hour_datetime = datetime.combine(target_date, time(hour, 0))
+                time_key = hour_datetime.strftime("%Y-%m-%dT%H:00:00")
+                tariff = self._get_tariff_for_datetime(hour_datetime)
+
+                commercial_price = (
+                    fixed_price_vt if tariff == "VT" else fixed_price_nt
+                )
+                distribution_fee = (
+                    distribution_fee_vt_kwh
+                    if tariff == "VT"
+                    else distribution_fee_nt_kwh
+                )
+
+                price_without_vat = commercial_price + distribution_fee
+                final_price = round(price_without_vat * (1 + vat_rate / 100.0), 2)
+
+                final_prices[time_key] = {
+                    "tariff": tariff,
+                    "distribution_fee": round(distribution_fee, 2),
+                    "price_without_vat": round(price_without_vat, 2),
+                    "vat_rate": vat_rate,
+                    "final_price": final_price,
+                }
+
+        return final_prices
+
+    def _build_dynamic_hourly_prices(
+        self, raw_prices: Dict[str, Any]
+    ) -> Dict[str, Dict[str, Union[str, float]]]:
+        final_prices: Dict[str, Dict[str, Union[str, float]]] = {}
+        vat_rate = self._entry.options.get("vat_rate", 21.0)
+
+        positive_fee_percent = self._entry.options.get(
+            "spot_positive_fee_percent", 15.0
+        )
+        negative_fee_percent = self._entry.options.get("spot_negative_fee_percent", 9.0)
+        fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
+        distribution_fee_vt_kwh = self._entry.options.get(
+            "distribution_fee_vt_kwh", 1.35
+        )
+        distribution_fee_nt_kwh = self._entry.options.get(
+            "distribution_fee_nt_kwh", 1.05
+        )
+        pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
+
+        for time_key, spot_price in raw_prices.items():
+            try:
+                price_datetime = datetime.fromisoformat(
+                    time_key.replace("Z", ISO_TZ_OFFSET)
+                )
+                tariff = self._get_tariff_for_datetime(price_datetime)
+
+                if pricing_model == "percentage":
+                    if spot_price >= 0:
+                        commercial_price = spot_price * (
+                            1 + positive_fee_percent / 100.0
+                        )
+                    else:
+                        commercial_price = spot_price * (
+                            1 - negative_fee_percent / 100.0
+                        )
+                else:
+                    fixed_fee_kwh = fixed_fee_mwh / 1000.0
+                    commercial_price = spot_price + fixed_fee_kwh
+
+                distribution_fee = (
+                    distribution_fee_vt_kwh
+                    if tariff == "VT"
+                    else distribution_fee_nt_kwh
+                )
+
+                price_without_vat = commercial_price + distribution_fee
+                final_price = round(price_without_vat * (1 + vat_rate / 100.0), 2)
+
+                final_prices[time_key] = {
+                    "spot_price": round(spot_price, 2),
+                    "commercial_price": round(commercial_price, 2),
+                    "tariff": tariff,
+                    "distribution_fee": round(distribution_fee, 2),
+                    "price_without_vat": round(price_without_vat, 2),
+                    "vat_rate": vat_rate,
+                    "final_price": final_price,
+                }
+            except (ValueError, AttributeError):
+                continue
+
+        return final_prices
+
+    def _build_date_range_from_prices(
+        self, final_prices: Dict[str, Any]
+    ) -> Optional[Dict[str, str]]:
+        if not final_prices:
+            return None
+        timestamps = list(final_prices.keys())
+        timestamps.sort()
+        start_date = datetime.fromisoformat(
+            timestamps[0].replace("Z", ISO_TZ_OFFSET)
+        ).strftime("%Y-%m-%d")
+        end_date = datetime.fromisoformat(
+            timestamps[-1].replace("Z", ISO_TZ_OFFSET)
+        ).strftime("%Y-%m-%d")
+        return {"start": start_date, "end": end_date}
+
     @property
     def state(self) -> Optional[Union[str, float]]:
         """Return the state of the sensor."""
@@ -904,29 +871,12 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             _LOGGER.debug(
                 f"💰 [{self.entity_id}] Getting state for sensor: {self._sensor_type}"
             )
-
-            # OPRAVA: Kontrola dostupnosti na začátku
-            if not self.available:
-                return None
-
-            # Pro tarifní senzor
-            if self._sensor_type == "current_tariff":
-                return self._calculate_current_tariff()
-
-            # OPRAVA: Načíst spotové ceny z coordinator.data místo ote_api.spot_data
-            if self.coordinator.data and "spot_prices" in self.coordinator.data:
-                spot_data = self.coordinator.data["spot_prices"]
-                result = self._get_spot_price_value(spot_data)
-                _LOGGER.debug(f"💰 [{self.entity_id}] State calculated: {result}")
-                return result
-
-        except Exception as e:
+            return self.native_value
+        except Exception as err:
             _LOGGER.error(
-                f"💰 [{self.entity_id}] Error getting state: {e}", exc_info=True
+                f"💰 [{self.entity_id}] Error getting state: {err}", exc_info=True
             )
             return None
-
-        return None
 
     @property
     def sensor_type(self) -> str:
