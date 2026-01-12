@@ -141,7 +141,8 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
         if len(ids) == 1:
             return next(iter(ids))
         return None
-    except Exception:
+    except Exception as err:
+        _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)
         return None
 
 
@@ -181,7 +182,8 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
     if "max_price_conf" in options and "max_ups_price_czk" not in options:
         try:
             options["max_ups_price_czk"] = float(options.get("max_price_conf", 10.0))
-        except Exception:
+        except (TypeError, ValueError) as err:
+            _LOGGER.debug("Planner option conversion failed: %s", err, exc_info=True)
             options["max_ups_price_czk"] = defaults["max_ups_price_czk"]
         options.pop("max_price_conf", None)
 
@@ -264,7 +266,8 @@ def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
         resolved = resolve_box_id(coordinator_data)
         if isinstance(resolved, str) and resolved.isdigit():
             inverter_sn = resolved
-    except Exception:
+    except Exception as err:
+        _LOGGER.debug("Failed to resolve inverter_sn: %s", err, exc_info=True)
         return None
     return inverter_sn
 
@@ -438,6 +441,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Odebrání frontend panelu."""
+    await asyncio.sleep(0)
     try:
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
@@ -535,6 +539,62 @@ def _build_new_unique_id(old_unique_id: str) -> str:
     return f"oig_cloud_{old_unique_id}"
 
 
+def _process_entity_unique_id(
+    entity_registry: Any,
+    entity: Any,
+    duplicate_pattern: re.Pattern[str],
+) -> dict[str, int]:
+    old_unique_id = entity.unique_id
+    entity_id = entity.entity_id
+
+    if _is_boiler_unique_id(old_unique_id):
+        _LOGGER.debug("Skipping boiler sensor (correct format): %s", entity_id)
+        return {"skipped": 1}
+
+    if old_unique_id.startswith("oig_cloud_"):
+        updated_entity_id, renamed = _maybe_rename_entity_id(
+            entity_registry, entity_id, old_unique_id, duplicate_pattern
+        )
+        enabled = _maybe_enable_entity(entity_registry, updated_entity_id, entity)
+        return {
+            "skipped": 1,
+            "renamed": int(renamed),
+            "enabled": int(enabled),
+        }
+
+    if _is_duplicate_entity(entity_id, old_unique_id, duplicate_pattern):
+        try:
+            entity_registry.async_remove(entity_id)
+            _LOGGER.info(
+                "🗑️ Removed duplicate entity: %s (unique_id=%s doesn't match entity_id suffix)",
+                entity_id,
+                old_unique_id,
+            )
+            return {"removed": 1}
+        except Exception as err:
+            _LOGGER.warning("⚠️ Failed to remove %s: %s", entity_id, err)
+            return {}
+
+    new_unique_id = _build_new_unique_id(old_unique_id)
+    try:
+        entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
+        _LOGGER.info(
+            "✅ Migrated entity %s: %s -> %s",
+            entity_id,
+            old_unique_id,
+            new_unique_id,
+        )
+        return {"migrated": 1}
+    except Exception as err:
+        _LOGGER.warning("⚠️ Failed to migrate %s: %s", entity_id, err)
+        return {}
+
+
+def _apply_migration_deltas(counts: dict[str, int], deltas: dict[str, int]) -> None:
+    for key, value in deltas.items():
+        counts[key] = counts.get(key, 0) + value
+
+
 def _build_migration_notification(
     renamed_count: int,
     removed_count: int,
@@ -625,106 +685,59 @@ async def _migrate_entity_unique_ids(
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     _LOGGER.info("📊 Found %s entities for config entry", len(entities))
 
-    migrated_count = 0
-    skipped_count = 0
-    removed_count = 0
-    enabled_count = 0
-    renamed_count = 0
+    counts: dict[str, int] = {
+        "migrated": 0,
+        "skipped": 0,
+        "removed": 0,
+        "enabled": 0,
+        "renamed": 0,
+    }
+    duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
 
     # Projdeme všechny entity a upravíme je
     for entity in entities:
-        old_unique_id = entity.unique_id
-        entity_id = entity.entity_id
-        duplicate_pattern = re.compile(r"^(.+?)(_\d+)$")
-
-        # OPRAVA: Přeskočit bojler senzory - mají vlastní formát unique_id bez oig_cloud_ prefixu
-        # Formát: {entry_id}_boiler_{sensor_type}
-        if _is_boiler_unique_id(old_unique_id):
-            skipped_count += 1
-            _LOGGER.debug("Skipping boiler sensor (correct format): %s", entity_id)
-            continue
-
-        # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
-        if old_unique_id.startswith("oig_cloud_"):
-            # Zkontrolujeme, jestli entity_id má příponu, ale unique_id ne
-            entity_id, renamed = _maybe_rename_entity_id(
-                entity_registry, entity_id, old_unique_id, duplicate_pattern
-            )
-            if renamed:
-                renamed_count += 1
-
-            # Pokud je disabled, enable ji
-            if _maybe_enable_entity(entity_registry, entity_id, entity):
-                enabled_count += 1
-
-            skipped_count += 1
-            continue
-
-        # 2. Má starý formát unique_id - potřebuje migraci
-        # Zjistíme, jestli entity_id má příponu _X (znamená duplicitu)
-        if _is_duplicate_entity(entity_id, old_unique_id, duplicate_pattern):
-            try:
-                entity_registry.async_remove(entity_id)
-                removed_count += 1
-                _LOGGER.info(
-                    "🗑️ Removed duplicate entity: %s (unique_id=%s doesn't match entity_id suffix)",
-                    entity_id,
-                    old_unique_id,
-                )
-                continue
-            except Exception as err:
-                _LOGGER.warning("⚠️ Failed to remove %s: %s", entity_id, err)
-                continue
-
-        # 3. Migrace unique_id na nový formát
-        new_unique_id = _build_new_unique_id(old_unique_id)
-
-        try:
-            entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
-            migrated_count += 1
-            _LOGGER.info(
-                "✅ Migrated entity %s: %s -> %s",
-                entity_id,
-                old_unique_id,
-                new_unique_id,
-            )
-        except Exception as err:
-            _LOGGER.warning("⚠️ Failed to migrate %s: %s", entity_id, err)
+        deltas = _process_entity_unique_id(entity_registry, entity, duplicate_pattern)
+        _apply_migration_deltas(counts, deltas)
 
     # Summary
     _LOGGER.info(
         "📊 Migration summary: migrated=%s, removed=%s, renamed=%s, enabled=%s, skipped=%s",
-        migrated_count,
-        removed_count,
-        renamed_count,
-        enabled_count,
-        skipped_count,
+        counts["migrated"],
+        counts["removed"],
+        counts["renamed"],
+        counts["enabled"],
+        counts["skipped"],
     )
 
-    if removed_count > 0 or migrated_count > 0 or renamed_count > 0:
+    if counts["removed"] > 0 or counts["migrated"] > 0 or counts["renamed"] > 0:
         await hass.services.async_call(
             "persistent_notification",
             "create",
             {
                 "title": "OIG Cloud: Migrace entit dokončena",
                 "message": _build_migration_notification(
-                    renamed_count, removed_count, migrated_count, enabled_count
+                    counts["renamed"],
+                    counts["removed"],
+                    counts["migrated"],
+                    counts["enabled"],
                 ),
                 "notification_id": "oig_cloud_migration_complete",
             },
         )
 
-    if renamed_count > 0:
-        _LOGGER.info("🔄 Renamed %s entities to correct entity_id", renamed_count)
-    if migrated_count > 0:
-        _LOGGER.info("🔄 Migrated %s entities to new unique_id format", migrated_count)
-    if removed_count > 0:
-        _LOGGER.warning("🗑️ Removed %s duplicate entities", removed_count)
-    if enabled_count > 0:
-        _LOGGER.info("✅ Re-enabled %s correct entities", enabled_count)
-    if skipped_count > 0:
+    if counts["renamed"] > 0:
+        _LOGGER.info("🔄 Renamed %s entities to correct entity_id", counts["renamed"])
+    if counts["migrated"] > 0:
+        _LOGGER.info(
+            "🔄 Migrated %s entities to new unique_id format", counts["migrated"]
+        )
+    if counts["removed"] > 0:
+        _LOGGER.warning("🗑️ Removed %s duplicate entities", counts["removed"])
+    if counts["enabled"] > 0:
+        _LOGGER.info("✅ Re-enabled %s correct entities", counts["enabled"])
+    if counts["skipped"] > 0:
         _LOGGER.debug(
-            "⏭️ Skipped %s entities (already in correct format)", skipped_count
+            "⏭️ Skipped %s entities (already in correct format)", counts["skipped"]
         )
 
 
@@ -736,6 +749,7 @@ async def _cleanup_invalid_empty_devices(
     This is a targeted/safe cleanup to get rid of stale registry entries created by
     older versions when box_id resolution was unstable.
     """
+    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
 
@@ -1359,7 +1373,7 @@ async def async_setup_entry(
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
-        hass.async_create_task(_cleanup_invalid_empty_devices(hass, entry))
+        await _cleanup_invalid_empty_devices(hass, entry)
 
         await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
@@ -1491,6 +1505,7 @@ def _setup_service_shield_monitoring(
     _LOGGER.debug("Ověřuji, že ServiceShield monitoring běží...")
 
     async def test_shield_monitoring(_now: Any) -> None:
+        await asyncio.sleep(0)
         status = service_shield.get_shield_status()
         queue_info = service_shield.get_queue_info()
         _LOGGER.debug(
@@ -1520,6 +1535,7 @@ def _setup_service_shield_monitoring(
 
 async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
     """Setup telemetry if enabled."""
+    await asyncio.sleep(0)
     try:
         _LOGGER.debug("Starting telemetry setup...")
 
@@ -1586,6 +1602,7 @@ async def async_remove_config_entry_device(
     We only allow removing devices that have no entities.
     """
     _ = config_entry
+    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import entity_registry as er
 
@@ -1600,7 +1617,8 @@ async def async_remove_config_entry_device(
         return any(
             identifier[0] in allowed_domains for identifier in device_entry.identifiers
         )
-    except Exception:
+    except Exception as err:
+        _LOGGER.debug("Failed to evaluate device removal: %s", err, exc_info=True)
         return False
 
 
@@ -1699,6 +1717,7 @@ def _should_keep_device(device: Any, entity_registry: Any, keep_patterns: list[s
 
 async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Vyčištění nepoužívaných zařízení."""
+    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er

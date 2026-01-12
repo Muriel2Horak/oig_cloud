@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -36,6 +36,7 @@ BOILER_MODE_LABELS = (BOILER_CBB_LABEL, BOILER_MANUAL_LABEL)
 FORMAT_NO_CHARGE_LABEL = "Nenabíjet"
 FORMAT_CHARGE_LABEL = "Nabíjet"
 FORMAT_BATTERY_LABELS = (FORMAT_NO_CHARGE_LABEL, FORMAT_CHARGE_LABEL)
+SHIELD_LOG_PREFIX = "[SHIELD]"
 
 SET_BOX_MODE_SCHEMA = vol.Schema(
     {
@@ -289,35 +290,281 @@ tracer = trace.get_tracer(__name__)
 STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
 
 
-async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
+def _iter_entry_data(hass: HomeAssistant) -> Iterable[tuple[str, dict[str, Any]]]:
+    for entry_id, entry_data in hass.data.get(DOMAIN, {}).items():
+        if isinstance(entry_data, dict):
+            yield entry_id, entry_data
+
+
+def _get_solar_forecast(entry_data: dict[str, Any]) -> Optional[Any]:
+    coordinator = entry_data.get("coordinator")
+    if coordinator and hasattr(coordinator, "solar_forecast"):
+        return coordinator.solar_forecast
+    return None
+
+
+async def _update_solar_forecast_for_entry(entry_id: str, entry_data: dict[str, Any]) -> None:
+    solar_forecast = _get_solar_forecast(entry_data)
+    if not solar_forecast:
+        _LOGGER.debug("Config entry %s nemá solární předpověď", entry_id)
+        return
+    try:
+        await solar_forecast.async_update()
+        _LOGGER.info("Manuálně aktualizována solární předpověď pro %s", entry_id)
+    except Exception as exc:
+        _LOGGER.error("Chyba při aktualizaci solární předpovědi: %s", exc)
+
+
+def _register_service_definitions(
+    hass: HomeAssistant,
+    service_definitions: Iterable[
+        tuple[str, Callable[[ServiceCall], Awaitable[Any]], vol.Schema, bool, str]
+    ],
+) -> None:
+    for name, handler, schema, supports_response, log_message in service_definitions:
+        if _register_service_if_missing(
+            hass, name, handler, schema, supports_response=supports_response
+        ):
+            _LOGGER.debug(log_message)
+
+
+def _log_prefix(prefix: str) -> str:
+    return f"{prefix} " if prefix else ""
+
+
+async def _action_set_box_mode(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service_data: Dict[str, Any],
+    log_prefix: str,
+) -> None:
+    client = _get_entry_client(hass, entry)
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "set_box_mode")
+    if not box_id:
+        return
+
+    mode: Optional[str] = service_data.get("mode")
+    mode_value: Optional[str] = MODES.get(mode) if mode else None
+    _LOGGER.info(
+        "%sSetting box mode for device %s to %s (value: %s)",
+        log_prefix,
+        box_id,
+        mode,
+        mode_value,
+    )
+    await client.set_box_mode(mode_value)
+
+
+async def _action_set_boiler_mode(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service_data: Dict[str, Any],
+    log_prefix: str,
+) -> None:
+    client = _get_entry_client(hass, entry)
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "set_boiler_mode")
+    if not box_id:
+        return
+
+    mode: Optional[str] = service_data.get("mode")
+    mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
+    _LOGGER.info(
+        "%sSetting boiler mode for device %s to %s (value: %s)",
+        log_prefix,
+        box_id,
+        mode,
+        mode_value,
+    )
+    await client.set_boiler_mode(mode_value)
+
+
+async def _action_set_grid_delivery(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service_data: Dict[str, Any],
+    log_prefix: str,
+    enforce_limit_success: bool,
+) -> None:
+    grid_mode: Optional[str] = service_data.get("mode")
+    limit: Optional[int] = service_data.get("limit")
+    _validate_grid_delivery_inputs(grid_mode, limit)
+
+    client = _get_entry_client(hass, entry)
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "set_grid_delivery")
+    if not box_id:
+        return
+
+    _LOGGER.info(
+        "%sSetting grid delivery for device %s: mode=%s, limit=%s",
+        log_prefix,
+        box_id,
+        grid_mode,
+        limit,
+    )
+
+    if grid_mode is not None:
+        mode_value: Optional[int] = GRID_DELIVERY.get(grid_mode)
+        await client.set_grid_delivery(mode_value)
+    if limit is not None:
+        success = await client.set_grid_delivery_limit(int(limit))
+        if enforce_limit_success and not success:
+            raise vol.Invalid("Limit se nepodařilo nastavit.")
+
+
+async def _action_set_formating_mode(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service_data: Dict[str, Any],
+    log_prefix: str,
+) -> None:
+    client = _get_entry_client(hass, entry)
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "set_formating_mode")
+    if not box_id:
+        return
+
+    mode: Optional[str] = service_data.get("mode")
+    limit: Optional[int] = service_data.get("limit")
+    _LOGGER.info(
+        "%sSetting formating mode for device %s: mode=%s, limit=%s",
+        log_prefix,
+        box_id,
+        mode,
+        limit,
+    )
+
+    if not _acknowledged(service_data, "set_formating_mode"):
+        return
+
+    if limit is not None:
+        await client.set_formating_mode(str(limit))
+    else:
+        mode_value: Optional[int] = FORMAT_BATTERY.get(mode) if mode else None
+        if mode_value is not None:
+            await client.set_formating_mode(str(mode_value))
+
+
+async def _shield_set_box_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    with tracer.start_as_current_span("async_set_box_mode"):
+        await _action_set_box_mode(
+            hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX)
+        )
+
+
+async def _shield_set_grid_delivery(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    with tracer.start_as_current_span("async_set_grid_delivery"):
+        await _action_set_grid_delivery(
+            hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX), True
+        )
+
+
+async def _shield_set_boiler_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    with tracer.start_as_current_span("async_set_boiler_mode"):
+        await _action_set_boiler_mode(
+            hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX)
+        )
+
+
+async def _shield_set_formating_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    with tracer.start_as_current_span("async_set_formating_mode"):
+        await _action_set_formating_mode(
+            hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX)
+        )
+
+
+async def _fallback_set_box_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_set_box_mode(hass, entry, service_data, "")
+
+
+async def _fallback_set_grid_delivery(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_set_grid_delivery(hass, entry, service_data, "", False)
+
+
+async def _fallback_set_boiler_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_set_boiler_mode(hass, entry, service_data, "")
+
+
+async def _fallback_set_formating_mode(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_set_formating_mode(hass, entry, service_data, "")
+
+
+def _make_shield_action(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+) -> Callable[[str, str, Dict[str, Any], bool, Optional[Context]], Awaitable[None]]:
+    @callback
+    async def handler(
+        domain: str,
+        service: str,
+        service_data: Dict[str, Any],
+        blocking: bool,
+        context: Optional[Context],
+    ) -> None:
+        _ = domain, service, blocking, context
+        await action(hass, entry, service_data)
+
+    return handler
+
+
+def _wrap_with_shield(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    shield: Any,
+    service_name: str,
+    action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+) -> Callable[[ServiceCall], Awaitable[None]]:
+    shield_handler = _make_shield_action(hass, entry, action)
+
+    async def wrapper(call: ServiceCall) -> None:
+        data: Dict[str, Any] = dict(call.data)
+        await shield.intercept_service_call(
+            DOMAIN,
+            service_name,
+            {"params": data},
+            shield_handler,
+            blocking=False,
+            context=call.context,
+        )
+
+    return wrapper
+
+
+def _make_fallback_handler(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+) -> Callable[[ServiceCall], Awaitable[None]]:
+    async def handler(call: ServiceCall) -> None:
+        data: Dict[str, Any] = dict(call.data)
+        await action(hass, entry, data)
+
+    return handler
+
+async def async_setup_services(hass: HomeAssistant) -> None:
     """Nastavení základních služeb pro OIG Cloud."""
     await asyncio.sleep(0)
 
     async def handle_update_solar_forecast(call: ServiceCall) -> None:
         """Zpracování služby pro manuální aktualizaci solární předpovědi."""
-        # Procházíme všechny config entries
-        for entry_id in hass.data.get(DOMAIN, {}):
-            entry_data = hass.data[DOMAIN][entry_id]
-            if not isinstance(entry_data, dict):
-                continue
-
-            # Kontrolujeme, zda má coordinator a solar_forecast
-            if "coordinator" in entry_data and hasattr(
-                entry_data["coordinator"], "solar_forecast"
-            ):
-                try:
-                    solar_forecast = entry_data["coordinator"].solar_forecast
-                    # Spustit update
-                    await solar_forecast.async_update()
-                    _LOGGER.info(
-                        f"Manuálně aktualizována solární předpověď pro {entry_id}"
-                    )
-                except Exception as e:
-                    _LOGGER.error(
-                        "Chyba při aktualizaci solární předpovědi: %s", e
-                    )
-            else:
-                _LOGGER.debug("Config entry %s nemá solární předpověď", entry_id)
+        _ = call
+        for entry_id, entry_data in _iter_entry_data(hass):
+            await _update_solar_forecast_for_entry(entry_id, entry_data)
 
     async def handle_save_dashboard_tiles(call: ServiceCall) -> None:
         """Zpracování služby pro uložení konfigurace dashboard tiles."""
@@ -331,48 +578,44 @@ async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
         """Manuálně spustí balancing kontrolu přes BalancingManager."""
         return await _run_manual_balancing_checks(hass, call)
 
-    if _register_service_if_missing(
-        hass,
-        "update_solar_forecast",
-        handle_update_solar_forecast,
-        SOLAR_FORECAST_UPDATE_SCHEMA,
-    ):
-        _LOGGER.debug("Zaregistrovány základní služby pro %s", DOMAIN)
-
-    if _register_service_if_missing(
-        hass,
-        "save_dashboard_tiles",
-        handle_save_dashboard_tiles,
-        vol.Schema({vol.Required("config"): cv.string}),
-    ):
-        _LOGGER.debug("Registered save_dashboard_tiles service")
-
-    if _register_service_if_missing(
-        hass,
-        "get_dashboard_tiles",
-        handle_get_dashboard_tiles,
-        vol.Schema({}),
-        supports_response=True,
-    ):
-        _LOGGER.debug("Registered get_dashboard_tiles service")
-
-    if _register_service_if_missing(
-        hass,
-        "check_balancing",
-        handle_check_balancing,
-        CHECK_BALANCING_SCHEMA,
-        supports_response=True,
-    ):
-        _LOGGER.debug("Registered check_balancing service")
+    service_definitions = [
+        (
+            "update_solar_forecast",
+            handle_update_solar_forecast,
+            SOLAR_FORECAST_UPDATE_SCHEMA,
+            False,
+            f"Zaregistrovány základní služby pro {DOMAIN}",
+        ),
+        (
+            "save_dashboard_tiles",
+            handle_save_dashboard_tiles,
+            vol.Schema({vol.Required("config"): cv.string}),
+            False,
+            "Registered save_dashboard_tiles service",
+        ),
+        (
+            "get_dashboard_tiles",
+            handle_get_dashboard_tiles,
+            vol.Schema({}),
+            True,
+            "Registered get_dashboard_tiles service",
+        ),
+        (
+            "check_balancing",
+            handle_check_balancing,
+            CHECK_BALANCING_SCHEMA,
+            True,
+            "Registered check_balancing service",
+        ),
+    ]
+    _register_service_definitions(hass, service_definitions)
 
 
 async def async_setup_entry_services_with_shield(
     hass: HomeAssistant, entry: ConfigEntry, shield: Any
 ) -> None:
     """Setup entry-specific services with shield protection - direct shield parameter."""
-    _LOGGER.debug(
-        "Setting up entry services for %s with shield", entry.entry_id
-    )
+    _LOGGER.debug("Setting up entry services for %s with shield", entry.entry_id)
     _LOGGER.debug("Shield object: %s", shield)
     _LOGGER.debug("Shield type: %s", type(shield))
 
@@ -381,196 +624,38 @@ async def async_setup_entry_services_with_shield(
         await async_setup_entry_services_fallback(hass, entry)
         return
 
-    def wrap_with_shield(
-        service_name: str,
-        handler_func: Callable[
-            [str, str, Dict[str, Any], bool, Optional[Context]], Awaitable[None]
-        ],
-    ) -> Callable[[ServiceCall], Awaitable[None]]:
-        async def wrapper(call: ServiceCall) -> None:
-            data: Dict[str, Any] = dict(call.data)
-            await shield.intercept_service_call(
-                DOMAIN,
-                service_name,
-                {"params": data},
-                handler_func,
-                blocking=False,
-                context=call.context,
-            )
-
-        return wrapper
-
-    @callback
-    async def real_call_set_box_mode(
-        domain: str,
-        service: str,
-        service_data: Dict[str, Any],
-        blocking: bool,
-        context: Optional[Context],
-    ) -> None:
-        with tracer.start_as_current_span("async_set_box_mode"):
-            client = _get_entry_client(hass, entry)
-            box_id = _resolve_box_id_from_service(
-                hass, entry, service_data, "set_box_mode"
-            )
-            if not box_id:
-                return
-
-            mode: Optional[str] = service_data.get("mode")
-            mode_value: Optional[str] = MODES.get(mode) if mode else None
-
-            _LOGGER.info(
-                f"[SHIELD] Setting box mode for device {box_id} to {mode} (value: {mode_value})"
-            )
-
-            await client.set_box_mode(mode_value)
-
-    @callback
-    async def real_call_set_grid_delivery(
-        domain: str,
-        service: str,
-        service_data: Dict[str, Any],
-        blocking: bool,
-        context: Optional[Context],
-    ) -> None:
-        grid_mode: Optional[str] = service_data.get("mode")
-        limit: Optional[int] = service_data.get("limit")
-        _validate_grid_delivery_inputs(grid_mode, limit)
-
-        with tracer.start_as_current_span("async_set_grid_delivery"):
-            client = _get_entry_client(hass, entry)
-            box_id = _resolve_box_id_from_service(
-                hass, entry, service_data, "set_grid_delivery"
-            )
-            if not box_id:
-                return
-
-            _LOGGER.info(
-                f"[SHIELD] Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
-            )
-
-            if grid_mode is not None:
-                mode: Optional[int] = GRID_DELIVERY.get(grid_mode)
-                await client.set_grid_delivery(mode)
-            if limit is not None:
-                success: bool = await client.set_grid_delivery_limit(int(limit))
-                if not success:
-                    raise vol.Invalid("Limit se nepodařilo nastavit.")
-
-    @callback
-    async def real_call_set_boiler_mode(
-        domain: str,
-        service: str,
-        service_data: Dict[str, Any],
-        blocking: bool,
-        context: Optional[Context],
-    ) -> None:
-        with tracer.start_as_current_span("async_set_boiler_mode"):
-            client = _get_entry_client(hass, entry)
-            box_id = _resolve_box_id_from_service(
-                hass, entry, service_data, "set_boiler_mode"
-            )
-            if not box_id:
-                return
-
-            mode: Optional[str] = service_data.get("mode")
-            mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
-
-            _LOGGER.info(
-                f"[SHIELD] Setting boiler mode for device {box_id} to {mode} (value: {mode_value})"
-            )
-
-            await client.set_boiler_mode(mode_value)
-
-    @callback
-    async def real_call_set_formating_mode(
-        domain: str,
-        service: str,
-        service_data: Dict[str, Any],
-        blocking: bool,
-        context: Optional[Context],
-    ) -> None:
-        with tracer.start_as_current_span("async_set_formating_mode"):
-            client = _get_entry_client(hass, entry)
-            box_id = _resolve_box_id_from_service(
-                hass, entry, service_data, "set_formating_mode"
-            )
-            if not box_id:
-                return
-
-            mode: Optional[str] = service_data.get("mode")
-            limit: Optional[int] = service_data.get("limit")
-
-            _LOGGER.info(
-                f"[SHIELD] Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
-            )
-
-            if not _acknowledged(service_data, "set_formating_mode"):
-                return
-
-            # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
-            if limit is not None:
-                await client.set_formating_mode(str(limit))
-            else:
-                mode_value: Optional[int] = FORMAT_BATTERY.get(mode) if mode else None
-                if mode_value is not None:
-                    await client.set_formating_mode(str(mode_value))
-
-    # Kontrola, zda služby již nejsou registrované (kvůli vícenásobným entries)
-    if not hass.services.has_service(DOMAIN, "set_box_mode"):
-        _LOGGER.debug("Registering all entry services with shield protection")
-
-        # Registrace VŠECH služeb se shield ochranou
-        hass.services.async_register(
-            DOMAIN,
-            "set_box_mode",
-            wrap_with_shield("set_box_mode", real_call_set_box_mode),
-            schema=SET_BOX_MODE_SCHEMA,
-        )
-        _LOGGER.debug("Registered set_box_mode")
-
-        hass.services.async_register(
-            DOMAIN,
-            "set_grid_delivery",
-            wrap_with_shield("set_grid_delivery", real_call_set_grid_delivery),
-            schema=SET_GRID_DELIVERY_SCHEMA,
-        )
-        _LOGGER.debug("Registered set_grid_delivery")
-
-        hass.services.async_register(
-            DOMAIN,
-            "set_boiler_mode",
-            wrap_with_shield("set_boiler_mode", real_call_set_boiler_mode),
-            schema=SET_BOILER_MODE_SCHEMA,
-        )
-        _LOGGER.debug("Registered set_boiler_mode")
-
-        hass.services.async_register(
-            DOMAIN,
-            "set_formating_mode",
-            wrap_with_shield("set_formating_mode", real_call_set_formating_mode),
-            schema=SET_FORMATING_MODE_SCHEMA,
-        )
-        _LOGGER.debug("Registered set_formating_mode")
-
-        # Setup Boiler services if enabled
-        boiler_coordinator = (
-            hass.data[DOMAIN].get(entry.entry_id, {}).get("boiler_coordinator")
-        )
-        if boiler_coordinator:
-            try:
-                from .boiler import setup_boiler_services
-
-                setup_boiler_services(hass, boiler_coordinator)
-                _LOGGER.info("Boiler services registered")
-            except Exception as e:
-                _LOGGER.error(
-                    "Failed to register boiler services: %s", e, exc_info=True
-                )
-
-        _LOGGER.info("All entry services registered with shield protection")
-    else:
+    if hass.services.has_service(DOMAIN, "set_box_mode"):
         _LOGGER.debug("Entry services already registered, skipping")
+        return
+
+    _LOGGER.debug("Registering all entry services with shield protection")
+    service_actions = [
+        ("set_box_mode", _shield_set_box_mode, SET_BOX_MODE_SCHEMA),
+        ("set_grid_delivery", _shield_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
+        ("set_boiler_mode", _shield_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
+        ("set_formating_mode", _shield_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
+    ]
+
+    for service_name, action, schema in service_actions:
+        hass.services.async_register(
+            DOMAIN,
+            service_name,
+            _wrap_with_shield(hass, entry, shield, service_name, action),
+            schema=schema,
+        )
+        _LOGGER.debug("Registered %s", service_name)
+
+    boiler_coordinator = hass.data[DOMAIN].get(entry.entry_id, {}).get("boiler_coordinator")
+    if boiler_coordinator:
+        try:
+            from .boiler import setup_boiler_services
+
+            setup_boiler_services(hass, boiler_coordinator)
+            _LOGGER.info("Boiler services registered")
+        except Exception as exc:
+            _LOGGER.error("Failed to register boiler services: %s", exc, exc_info=True)
+
+    _LOGGER.info("All entry services registered with shield protection")
 
 
 async def async_setup_entry_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -592,118 +677,27 @@ async def async_setup_entry_services_fallback(
     """Setup entry-specific services WITHOUT shield protection as fallback."""
     await asyncio.sleep(0)
     _LOGGER.info("Registering fallback services for entry %s", entry.entry_id)
-
-    async def handle_set_box_mode(call: ServiceCall) -> None:
-        client = _get_entry_client(hass, entry)
-        box_id = _resolve_box_id_from_service(
-            hass, entry, call.data, "set_box_mode"
-        )
-        if not box_id:
-            return
-
-        mode: Optional[str] = call.data.get("mode")
-        mode_value: Optional[str] = MODES.get(mode) if mode else None
-
-        _LOGGER.info(
-            f"Setting box mode for device {box_id} to {mode} (value: {mode_value})"
-        )
-
-        # DOČASNĚ: API nemá box_id parametr, použij původní metodu
-        # NOTE: Update API to accept box_id.
-        await client.set_box_mode(mode_value)
-
-    async def handle_set_boiler_mode(call: ServiceCall) -> None:
-        client = _get_entry_client(hass, entry)
-        box_id = _resolve_box_id_from_service(
-            hass, entry, call.data, "set_boiler_mode"
-        )
-        if not box_id:
-            return
-
-        mode: Optional[str] = call.data.get("mode")
-        mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
-
-        _LOGGER.info(
-            f"Setting boiler mode for device {box_id} to {mode} (value: {mode_value})"
-        )
-
-        # DOČASNĚ: API nemá box_id parametr
-        await client.set_boiler_mode(mode_value)
-
-    async def handle_set_grid_delivery(call: ServiceCall) -> None:
-        grid_mode: Optional[str] = call.data.get("mode")
-        limit: Optional[int] = call.data.get("limit")
-        _validate_grid_delivery_inputs(grid_mode, limit)
-
-        client = _get_entry_client(hass, entry)
-        box_id = _resolve_box_id_from_service(
-            hass, entry, call.data, "set_grid_delivery"
-        )
-        if not box_id:
-            return
-
-        _LOGGER.info(
-            f"Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
-        )
-
-        if grid_mode is not None:
-            mode: Optional[int] = GRID_DELIVERY.get(grid_mode)
-            await client.set_grid_delivery(mode)
-        if limit is not None:
-            await client.set_grid_delivery_limit(int(limit))
-
-    async def handle_set_formating_mode(call: ServiceCall) -> None:
-        client = _get_entry_client(hass, entry)
-        box_id = _resolve_box_id_from_service(
-            hass, entry, call.data, "set_formating_mode"
-        )
-        if not box_id:
-            return
-
-        mode: Optional[str] = call.data.get("mode")
-        limit: Optional[int] = call.data.get("limit")
-
-        _LOGGER.info(
-            f"Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
-        )
-
-        if not _acknowledged(call.data, "set_formating_mode"):
-            return
-
-        # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
-        if limit is not None:
-            await client.set_formating_mode(str(limit))
-        else:
-            mode_value: Optional[int] = FORMAT_BATTERY.get(mode) if mode else None
-            if mode_value is not None:
-                await client.set_formating_mode(str(mode_value))
-
-    # Kontrola, zda služby již nejsou registrované
-    if not hass.services.has_service(DOMAIN, "set_box_mode"):
-        _LOGGER.info("No existing services found, registering all fallback services")
-
-        # Registrace bez shield ochrany
-        services_to_register = [
-            ("set_box_mode", handle_set_box_mode, SET_BOX_MODE_SCHEMA),
-            ("set_boiler_mode", handle_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
-            ("set_grid_delivery", handle_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
-            ("set_formating_mode", handle_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
-        ]
-
-        for service_name, handler, schema in services_to_register:
-            try:
-                hass.services.async_register(
-                    DOMAIN, service_name, handler, schema=schema
-                )
-                _LOGGER.info(
-                    f"Successfully registered fallback service: {service_name}"
-                )
-            except Exception as e:
-                _LOGGER.error("Failed to register service %s: %s", service_name, e)
-
-        _LOGGER.info("All fallback services registration completed")
-    else:
+    if hass.services.has_service(DOMAIN, "set_box_mode"):
         _LOGGER.info("Services already registered, skipping fallback registration")
+        return
+
+    _LOGGER.info("No existing services found, registering all fallback services")
+    services_to_register = [
+        ("set_box_mode", _fallback_set_box_mode, SET_BOX_MODE_SCHEMA),
+        ("set_boiler_mode", _fallback_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
+        ("set_grid_delivery", _fallback_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
+        ("set_formating_mode", _fallback_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
+    ]
+
+    for service_name, action, schema in services_to_register:
+        handler = _make_fallback_handler(hass, entry, action)
+        try:
+            hass.services.async_register(DOMAIN, service_name, handler, schema=schema)
+            _LOGGER.info("Successfully registered fallback service: %s", service_name)
+        except Exception as exc:
+            _LOGGER.error("Failed to register service %s: %s", service_name, exc)
+
+    _LOGGER.info("All fallback services registration completed")
 
 
 async def _save_dashboard_tiles_config(
