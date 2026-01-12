@@ -32,6 +32,11 @@ def _as_utc(dt_value: datetime) -> datetime:
     return dt_value.astimezone(timezone.utc) if dt_value.tzinfo else dt_value
 
 
+def _state_last_updated_utc(state: Any) -> datetime:
+    dt_value = state.last_updated
+    return dt_value.astimezone(timezone.utc) if dt_value.tzinfo else dt_value
+
+
 def _safe_float(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -64,16 +69,16 @@ def _select_interval_states(
     interval_states = [
         s
         for s in entity_states
-        if start_utc <= s.last_updated.astimezone(timezone.utc) <= end_utc
+        if start_utc <= _state_last_updated_utc(s) <= end_utc
     ]
     if interval_states:
         return interval_states
 
     before_states = [
-        s for s in entity_states if s.last_updated.astimezone(timezone.utc) < start_utc
+        s for s in entity_states if _state_last_updated_utc(s) < start_utc
     ]
     after_states = [
-        s for s in entity_states if s.last_updated.astimezone(timezone.utc) > end_utc
+        s for s in entity_states if _state_last_updated_utc(s) > end_utc
     ]
     if before_states and after_states:
         return [before_states[-1], after_states[0]]
@@ -106,7 +111,7 @@ def _get_value_at_end(entity_states: list[Any], end_time: datetime) -> Any:
     closest_state = min(
         entity_states,
         key=lambda s: abs(
-            (s.last_updated.astimezone(timezone.utc) - end_utc).total_seconds()
+            (_state_last_updated_utc(s) - end_utc).total_seconds()
         ),
     )
     return closest_state.state

@@ -153,19 +153,25 @@ class WizardMixin:
 
         # VT/NT hodiny (pokud je dvoutarif)
         if dual_tariff:
-            migrated["vt_hours_start"] = data.get("vt_hours_start", "6:00")
-            migrated["vt_hours_end"] = data.get("vt_hours_end", "22:00")
-            weekday_vt = data.get(
-                "tariff_vt_start_weekday", data.get("vt_hours_start", "6")
-            )
-            weekday_nt = data.get("tariff_nt_start_weekday", "22,2")
-            migrated.setdefault("tariff_vt_start_weekday", weekday_vt)
-            migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
-            migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
-            migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
-            migrated.setdefault("tariff_weekend_same_as_weekday", True)
+            WizardMixin._apply_dual_tariff_defaults(migrated, data)
 
         return migrated
+
+    @staticmethod
+    def _apply_dual_tariff_defaults(
+        migrated: Dict[str, Any], source: Dict[str, Any]
+    ) -> None:
+        migrated["vt_hours_start"] = source.get("vt_hours_start", "6:00")
+        migrated["vt_hours_end"] = source.get("vt_hours_end", "22:00")
+        weekday_vt = source.get(
+            "tariff_vt_start_weekday", source.get("vt_hours_start", "6")
+        )
+        weekday_nt = source.get("tariff_nt_start_weekday", "22,2")
+        migrated.setdefault("tariff_vt_start_weekday", weekday_vt)
+        migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
+        migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
+        migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
+        migrated.setdefault("tariff_weekend_same_as_weekday", True)
 
     @staticmethod
     def _map_pricing_to_backend(wizard_data: Dict[str, Any]) -> Dict[str, Any]:

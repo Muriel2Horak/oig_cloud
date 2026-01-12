@@ -224,16 +224,7 @@ class ServiceShield:
             return
 
         # Získáme všechny entity, které sledujeme
-        entity_ids = []
-        for service_info in self.pending.values():
-            entity_ids.extend(service_info.get("entities", {}).keys())
-
-            # Přidat power monitor entity pokud existuje
-            power_monitor = service_info.get("power_monitor")
-            if power_monitor:
-                power_entity = power_monitor.get("entity_id")
-                if power_entity and power_entity not in entity_ids:
-                    entity_ids.append(power_entity)
+        entity_ids = self._collect_pending_entity_ids()
 
         if not entity_ids:
             _LOGGER.debug("[OIG Shield] Žádné entity ke sledování")
@@ -247,6 +238,18 @@ class ServiceShield:
         self._state_listener_unsub = async_track_state_change_event(
             self.hass, entity_ids, self._on_entity_state_changed
         )
+
+    def _collect_pending_entity_ids(self) -> list[str]:
+        entity_ids: list[str] = []
+        for service_info in self.pending.values():
+            entity_ids.extend(service_info.get("entities", {}).keys())
+
+            power_monitor = service_info.get("power_monitor")
+            if power_monitor:
+                power_entity = power_monitor.get("entity_id")
+                if power_entity and power_entity not in entity_ids:
+                    entity_ids.append(power_entity)
+        return entity_ids
 
     @callback
     def _on_entity_state_changed(self, event: Event) -> None:

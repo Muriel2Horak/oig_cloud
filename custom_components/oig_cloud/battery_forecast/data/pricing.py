@@ -182,6 +182,20 @@ def calculate_final_spot_price(
     return _round_czk(final_price)
 
 
+def _build_price_timeline(
+    price_dict: Dict[str, Any], *, label: str
+) -> List[Dict[str, Any]]:
+    timeline: List[Dict[str, Any]] = []
+    for timestamp_str, price in sorted(price_dict.items()):
+        try:
+            datetime.fromisoformat(timestamp_str)
+            timeline.append({"time": timestamp_str, "price": price})
+        except ValueError:
+            _LOGGER.warning("Invalid timestamp in %s prices: %s", label, timestamp_str)
+            continue
+    return timeline
+
+
 async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
     """Return 15-minute spot prices with fees applied."""
     spot_data = await _resolve_spot_data(sensor, price_type="spot")
@@ -196,17 +210,18 @@ async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
         _LOGGER.warning("No prices15m_czk_kwh in spot price data")
         return []
 
-    timeline = []
-    for timestamp_str, raw_spot_price in sorted(raw_prices_dict.items()):
+    computed_prices: Dict[str, Any] = {}
+    for timestamp_str, raw_spot_price in raw_prices_dict.items():
         try:
             target_datetime = datetime.fromisoformat(timestamp_str)
-            final_price = calculate_final_spot_price(
+            computed_prices[timestamp_str] = calculate_final_spot_price(
                 sensor, raw_spot_price, target_datetime
             )
-            timeline.append({"time": timestamp_str, "price": final_price})
         except ValueError:
             _LOGGER.warning("Invalid timestamp in spot prices: %s", timestamp_str)
             continue
+
+    timeline = _build_price_timeline(computed_prices, label="spot")
 
     _LOGGER.info(
         "Loaded %s spot price points from coordinator (final price with fees)",
@@ -240,14 +255,7 @@ async def get_export_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
             spot_prices_dict, _get_export_config(sensor)
         )
 
-    timeline = []
-    for timestamp_str, price in sorted(export_prices_dict.items()):
-        try:
-            datetime.fromisoformat(timestamp_str)
-            timeline.append({"time": timestamp_str, "price": price})
-        except ValueError:
-            _LOGGER.warning("Invalid timestamp in export prices: %s", timestamp_str)
-            continue
+    timeline = _build_price_timeline(export_prices_dict, label="export")
 
     _LOGGER.info("Loaded %s export price points from coordinator", len(timeline))
     return timeline
