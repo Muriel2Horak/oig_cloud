@@ -69,6 +69,11 @@ def test_get_next_tariff_change_no_changes():
     assert next_change == current + timedelta(hours=1)
 
 
+def test_build_date_range_from_prices_empty():
+    sensor = _make_sensor({"enable_pricing": True}, sensor_type="price_range")
+    assert sensor._build_date_range_from_prices({}) is None
+
+
 def test_calculate_tariff_intervals_no_changes():
     sensor = _make_sensor(
         {

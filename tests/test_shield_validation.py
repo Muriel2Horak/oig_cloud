@@ -85,3 +85,7 @@ def test_extract_expected_entities_formating():
     key = next(iter(expected))
     assert key.startswith("fake_formating_mode_")
     assert expected[key] == "completed_after_timeout"
+
+
+def test_matches_box_mode_invalid_type():
+    assert validation_module._matches_box_mode({"bad": 1}, "Home 1") is False

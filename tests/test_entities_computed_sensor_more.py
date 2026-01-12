@@ -76,6 +76,20 @@ def test_get_entity_number_invalid_inputs():
     sensor = _make_sensor()
     assert sensor._get_entity_number("sensor.oig_123_batt_bat_c") is None
 
+
+def test_get_last_energy_update_fallback():
+    sensor = _make_sensor()
+    sensor._box_id = None
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    sensor._last_update = now
+    assert sensor._get_last_energy_update() == now
+
+
+def test_maybe_schedule_energy_save_no_hass():
+    sensor = _make_sensor()
+    sensor.hass = None
+    sensor._maybe_schedule_energy_save()
+
     sensor.hass = DummyHass({"sensor.oig_123_batt_bat_c": DummyState("unknown")})
     assert sensor._get_entity_number("sensor.oig_123_batt_bat_c") is None
 

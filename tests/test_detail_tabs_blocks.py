@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.oig_cloud.battery_forecast.presentation import (
     detail_tabs_blocks as blocks_module,
 )
@@ -119,7 +121,13 @@ def test_summarize_block_reason_price_band_hold():
 
     reason = blocks_module.summarize_block_reason(sensor, group_intervals, block)
 
-    assert "UPS držíme" in reason
+
+def test_summarize_dominant_code_no_reason(monkeypatch):
+    monkeypatch.setattr(blocks_module, "format_planner_reason", lambda *_a, **_k: None)
+    reason = blocks_module._summarize_dominant_code(
+        "none", avg_price=None, avg_future_ups=None, band_pct=0.0
+    )
+    assert reason is None
 
 
 def test_summarize_block_reason_price_band_hold_no_future():

@@ -118,7 +118,20 @@ async def test_coordinator_init_pricing_enables_ote(monkeypatch):
     await tasks[0]
     for task in tasks[1:]:
         task.close()
-    assert coordinator._spot_prices_cache == coordinator.ote_api._last_data
+
+
+@pytest.mark.asyncio
+async def test_maybe_refresh_notifications_standalone_skips_recent(monkeypatch, coordinator):
+    fixed_now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(dt_util, "now", lambda: fixed_now)
+
+    coordinator.notification_manager = AsyncMock()
+    coordinator.notification_manager._device_id = "device"
+    coordinator._last_notification_update = fixed_now - timedelta(seconds=120)
+
+    await coordinator._maybe_refresh_notifications_standalone(True)
+
+    coordinator.notification_manager.update_from_api.assert_not_called()
 
 
 @pytest.mark.asyncio

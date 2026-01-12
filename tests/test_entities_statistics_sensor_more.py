@@ -233,6 +233,18 @@ def test_safe_datetime_compare_error():
     assert safe_datetime_compare("bad", datetime.now()) is False
 
 
+def test_restore_last_hour_reset_missing():
+    sensor = _make_sensor()
+    sensor._last_hour_reset = datetime(2025, 1, 1, 0, 0)
+    sensor._restore_last_hour_reset({})
+    assert sensor._last_hour_reset == datetime(2025, 1, 1, 0, 0)
+
+
+def test_safe_state_value_unavailable():
+    sensor = _make_sensor()
+    assert sensor._safe_state_value("unknown") is None
+
+
 @pytest.mark.asyncio
 async def test_calculate_interval_statistics_from_history_no_data(monkeypatch):
     sensor = _make_sensor(sensor_type="interval_test")

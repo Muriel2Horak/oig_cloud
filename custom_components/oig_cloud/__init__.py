@@ -324,7 +324,7 @@ def _remove_existing_panel(hass: HomeAssistant, panel_id: str) -> None:
             )
 
 
-async def _register_frontend_panel(
+def _register_frontend_panel(
     hass: HomeAssistant, panel_id: str, panel_title: str, dashboard_url: str
 ) -> None:
     from homeassistant.components import frontend
@@ -349,7 +349,7 @@ async def _register_frontend_panel(
     )
 
     if hasattr(result, "__await__"):
-        await result
+        hass.async_create_task(result)
 
     _LOGGER.info("✅ Panel '%s' registered successfully", panel_title)
 
@@ -429,7 +429,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
         # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
         _remove_existing_panel(hass, panel_id)
-        await _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
+        _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
         _log_dashboard_entities(hass, entry, inverter_sn)
 
     except Exception as e:

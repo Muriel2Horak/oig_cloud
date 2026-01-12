@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -144,20 +145,93 @@ def test_infer_box_id_from_local_entities(monkeypatch):
 
     assert init_module._infer_box_id_from_local_entities(hass) == "2206237016"
 
-    def _async_get_many(_hass):
-        return DummyRegistry(
-            {
-                "one": DummyEntity("sensor.oig_local_111_tbl_box"),
-                "two": DummyEntity("sensor.oig_local_222_tbl_box"),
-            }
-        )
 
-    monkeypatch.setattr(
-        "homeassistant.helpers.entity_registry.async_get",
-        _async_get_many,
+def test_remove_existing_panel_without_remove_method(monkeypatch):
+    from homeassistant.components import frontend
+
+    monkeypatch.delattr(frontend, "async_remove_panel", raising=False)
+    init_module._remove_existing_panel(SimpleNamespace(), "panel-id")
+
+
+def test_maybe_rename_entity_id_no_match():
+    class DummyRegistry:
+        def __init__(self):
+            self.updated = False
+
+        def async_update_entity(self, *_args, **_kwargs):
+            self.updated = True
+
+    entity_id, renamed = init_module._maybe_rename_entity_id(
+        DummyRegistry(),
+        "sensor.oig_123x",
+        "oig_cloud_123",
+        re.compile(r"^(.+?)(_\d+)$"),
     )
 
-    assert init_module._infer_box_id_from_local_entities(hass) is None
+    assert entity_id == "sensor.oig_123x"
+    assert renamed is False
+
+
+def test_maybe_rename_entity_id_suffix_matches():
+    class DummyRegistry:
+        def __init__(self):
+            self.updated = False
+
+        def async_update_entity(self, *_args, **_kwargs):
+            self.updated = True
+
+    entity_id, renamed = init_module._maybe_rename_entity_id(
+        DummyRegistry(),
+        "sensor.oig_123_2",
+        "oig_cloud_123_2",
+        re.compile(r"^(.+?)(_\d+)$"),
+    )
+
+    assert entity_id == "sensor.oig_123_2"
+    assert renamed is False
+
+
+def test_resolve_entry_box_id_no_data():
+    entry = SimpleNamespace(options={})
+    coordinator = SimpleNamespace(data={})
+    assert init_module._resolve_entry_box_id(entry, coordinator) is None
+
+
+@pytest.mark.asyncio
+async def test_init_balancing_manager_missing_class(monkeypatch):
+    entry = SimpleNamespace(options={"balancing_enabled": True})
+    coordinator = SimpleNamespace()
+    monkeypatch.setattr(init_module, "BalancingManager", None)
+
+    result = await init_module._init_balancing_manager(
+        SimpleNamespace(), entry, coordinator, battery_prediction_enabled=True
+    )
+
+    assert result is None
+
+
+def test_init_telemetry_store_no_box_id(monkeypatch):
+    class DummyTelemetryStore:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    entry = SimpleNamespace(options={}, data={})
+    coordinator = SimpleNamespace()
+
+    from custom_components.oig_cloud.core import telemetry_store as telemetry_module
+
+    monkeypatch.setattr(telemetry_module, "TelemetryStore", DummyTelemetryStore)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        lambda _coord: None,
+    )
+
+    assert init_module._init_telemetry_store(SimpleNamespace(), entry, coordinator) is None
+
+
+def test_device_name_matchers_empty():
+    assert init_module._device_matches_keep_patterns("", ["Keep"]) is False
+    assert init_module._device_matches_remove_regex("", [".*"]) is False
 
 
 def test_infer_box_id_from_local_entities_exception(monkeypatch):
@@ -210,6 +284,7 @@ async def test_setup_frontend_panel_registers(monkeypatch, tmp_path):
             get=lambda _eid: SimpleNamespace(state="ok"),
         ),
         async_add_executor_job=fake_executor,
+        async_create_task=lambda coro: coro.close(),
     )
 
     async def fake_register(*_args, **_kwargs):

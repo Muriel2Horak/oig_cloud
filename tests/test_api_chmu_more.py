@@ -217,6 +217,20 @@ def test_filter_by_location_geocode_fallback():
     assert alerts == [alert]
 
 
+def test_match_area_no_filter():
+    api = module.ChmuApi()
+    matched, method = api._match_area({}, (0.0, 0.0))
+    assert matched is False
+    assert method == "no_filter"
+
+
+def test_ray_intersects_vertical_line():
+    api = module.ChmuApi()
+    assert (
+        api._ray_intersects(0.0, float("nan"), 0.0, 1.0, 0.0, 1.0) is True
+    )
+
+
 def test_select_top_alert_and_prefer_language_empty():
     api = module.ChmuApi()
     assert api._select_top_alert([]) is None

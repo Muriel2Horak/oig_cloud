@@ -127,6 +127,28 @@ async def test_build_day_timeline_historical_archive_save_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_load_storage_plans_no_store():
+    sensor = DummySensor()
+    assert await module._load_storage_plans(sensor) == {}
+
+
+@pytest.mark.asyncio
+async def test_build_planned_intervals_map_skips_missing_time(monkeypatch):
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore()
+    day = dt_util.as_local(datetime(2025, 1, 1)).date()
+    date_str = day.strftime(module.DATE_FMT)
+    storage_plans = {"detailed": {date_str: {"intervals": [{"time": ""}]}}}
+
+    monkeypatch.setattr(module.dt_util, "as_local", lambda dt: dt)
+
+    planned = await module._build_planned_intervals_map(
+        sensor, storage_plans, day, date_str
+    )
+    assert planned == {}
+
+
+@pytest.mark.asyncio
 async def test_build_day_timeline_historical_archive_invalid(monkeypatch):
     sensor = DummySensor()
     sensor._hass = SimpleNamespace()

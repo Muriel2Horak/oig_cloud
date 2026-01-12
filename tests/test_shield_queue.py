@@ -124,6 +124,28 @@ async def test_check_loop_empty_cleans_listener():
 
 
 @pytest.mark.asyncio
+async def test_check_loop_power_monitor_parse_error():
+    shield = DummyShield(states={"sensor.power": "1000"})
+    shield.pending = {
+        "oig_cloud.set_box_mode": {
+            "called_at": datetime.now(),
+            "params": {"mode": "home1"},
+            "entities": {"box_prms_mode": "Home 1"},
+            "power_monitor": {
+                "entity_id": "sensor.power",
+                "last_power": "bad",
+                "threshold_kw": 0.5,
+                "is_going_to_home_ups": True,
+            },
+        }
+    }
+
+    await queue_module.check_loop(shield, None)
+
+    assert "oig_cloud.set_box_mode" in shield.pending
+
+
+@pytest.mark.asyncio
 async def test_handle_remove_from_queue_invalid_position():
     shield = DummyShield()
     shield.queue = [("svc", {"p": 1}, {"sensor.x": "on"})]

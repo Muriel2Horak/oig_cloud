@@ -77,6 +77,28 @@ def test_calculate_data_hash():
     assert len(value) == 64
 
 
+def test_state_attributes_helpers_empty_timeline():
+    class DummyTimelineSensor:
+        _timeline_data = []
+
+    sensor = DummyTimelineSensor()
+    assert state_attributes._get_current_battery_kwh(sensor) == 0
+    assert state_attributes._get_current_timestamp(sensor) is None
+
+
+def test_attach_mode_optimization_no_result():
+    class DummySensor:
+        _mode_optimization_result = None
+
+    attrs = {}
+    state_attributes._attach_mode_optimization(attrs, DummySensor())
+    assert attrs == {}
+
+
+def test_build_boiler_summary_empty():
+    assert state_attributes._build_boiler_summary([]) is None
+
+
 def test_build_baseline_comparison():
     sensor = DummySensor()
     result = unified_cost_tile_helpers.build_baseline_comparison(sensor, hybrid_cost=90)
@@ -140,6 +162,17 @@ def test_decorate_plan_tabs_adds_metadata_and_comparison():
 
     assert result["today"]["metadata"]["active_plan"] == "hybrid"
     assert result["today"]["comparison"]["plan"] == "legacy"
+
+
+def test_attach_comparison_no_source_and_current():
+    tab_copy = {"mode_blocks": [{"status": "planned"}]}
+    plan_tabs._attach_comparison(tab_copy, None, "secondary")
+    assert "comparison" not in tab_copy
+
+    tab_copy = {"mode_blocks": [{"status": "current"}]}
+    comparison_source = {"mode_blocks": [{"status": "planned"}]}
+    plan_tabs._attach_comparison(tab_copy, comparison_source, "secondary")
+    assert "comparison" not in tab_copy
 
 
 @pytest.mark.asyncio
