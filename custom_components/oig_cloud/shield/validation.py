@@ -334,61 +334,81 @@ def check_entity_state_change(shield: Any, entity_id: str, expected_value: Any) 
     current_value = current_state.state
 
     if "boiler_manual_mode" in entity_id:
-        return (expected_value == 0 and current_value == "CBB") or (
-            expected_value == 1 and current_value == "Manuální"
-        )
+        return _matches_boiler_mode(expected_value, current_value)
     if "ssr" in entity_id:
-        off_values = {"Vypnuto/Off", "Vypnuto", "Off"}
-        on_values = {"Zapnuto/On", "Zapnuto", "On"}
-        return (expected_value == 0 and current_value in off_values) or (
-            expected_value == 1 and current_value in on_values
-        )
+        return _matches_ssr_mode(expected_value, current_value)
     if "box_prms_mode" in entity_id:
-        mode_mapping = {
-            0: "Home 1",
-            1: "Home 2",
-            2: "Home 3",
-            3: "Home UPS",
-            4: "Home 5",
-            5: "Home 6",
-        }
-        if isinstance(expected_value, str):
-            if normalize_value(current_value) == normalize_value(expected_value):
-                return True
-            if expected_value.isdigit():
-                expected_value = int(expected_value)
-        if isinstance(expected_value, int):
-            return current_value == mode_mapping.get(expected_value)
+        return _matches_box_mode(expected_value, current_value)
     if "invertor_prms_to_grid" in entity_id:
-        norm_expected = normalize_value(expected_value)
-        norm_current = normalize_value(current_value)
-        if isinstance(expected_value, int) or str(expected_value).isdigit():
-            norm_expected = "zapnuto" if int(expected_value) == 1 else "vypnuto"
-        if norm_expected == "vypnuto":
-            return norm_current in {"vypnuto"}
-        if norm_expected == "zapnuto":
-            if entity_id.startswith("binary_sensor."):
-                return norm_current in {"zapnuto", "omezeno"}
-            return norm_current == "zapnuto"
-        if norm_expected == "omezeno":
-            if entity_id.startswith("binary_sensor."):
-                return norm_current in {"zapnuto", "omezeno"}
-            return norm_current == "omezeno"
-        return False
+        return _matches_inverter_mode(entity_id, expected_value, current_value)
     if "p_max_feed_grid" in entity_id:
-        try:
-            current_num = round(float(current_value))
-            expected_num = round(float(expected_value))
-            if current_num == expected_num:
-                return True
-        except (ValueError, TypeError):
-            pass
-    else:
-        try:
-            if float(current_value) == float(expected_value):
-                return True
-        except (ValueError, TypeError):
-            if str(current_value) == str(expected_value):
-                return True
+        return _matches_numeric(expected_value, current_value)
 
+    return _matches_generic(expected_value, current_value)
+
+
+def _matches_boiler_mode(expected_value: Any, current_value: Any) -> bool:
+    return (expected_value == 0 and current_value == "CBB") or (
+        expected_value == 1 and current_value == "Manuální"
+    )
+
+
+def _matches_ssr_mode(expected_value: Any, current_value: Any) -> bool:
+    off_values = {"Vypnuto/Off", "Vypnuto", "Off"}
+    on_values = {"Zapnuto/On", "Zapnuto", "On"}
+    return (expected_value == 0 and current_value in off_values) or (
+        expected_value == 1 and current_value in on_values
+    )
+
+
+def _matches_box_mode(expected_value: Any, current_value: Any) -> bool:
+    mode_mapping = {
+        0: "Home 1",
+        1: "Home 2",
+        2: "Home 3",
+        3: "Home UPS",
+        4: "Home 5",
+        5: "Home 6",
+    }
+    if isinstance(expected_value, str):
+        if normalize_value(current_value) == normalize_value(expected_value):
+            return True
+        if expected_value.isdigit():
+            expected_value = int(expected_value)
+    if isinstance(expected_value, int):
+        return current_value == mode_mapping.get(expected_value)
     return False
+
+
+def _matches_inverter_mode(
+    entity_id: str, expected_value: Any, current_value: Any
+) -> bool:
+    norm_expected = normalize_value(expected_value)
+    norm_current = normalize_value(current_value)
+    if isinstance(expected_value, int) or str(expected_value).isdigit():
+        norm_expected = "zapnuto" if int(expected_value) == 1 else "vypnuto"
+    if norm_expected == "vypnuto":
+        return norm_current in {"vypnuto"}
+    if norm_expected == "zapnuto":
+        if entity_id.startswith("binary_sensor."):
+            return norm_current in {"zapnuto", "omezeno"}
+        return norm_current == "zapnuto"
+    if norm_expected == "omezeno":
+        if entity_id.startswith("binary_sensor."):
+            return norm_current in {"zapnuto", "omezeno"}
+        return norm_current == "omezeno"
+    return False
+
+
+def _matches_numeric(expected_value: Any, current_value: Any) -> bool:
+    try:
+        return round(float(current_value)) == round(float(expected_value))
+    except (ValueError, TypeError):
+        return False
+
+
+def _matches_generic(expected_value: Any, current_value: Any) -> bool:
+    try:
+        return float(current_value) == float(expected_value)
+    except (ValueError, TypeError):
+        return str(current_value) == str(expected_value)
