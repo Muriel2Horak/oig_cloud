@@ -132,11 +132,10 @@ def validate_tariff_hours(
         return False, "tariff_gaps"
 
     hour_map: Dict[int, str] = {}
-    all_starts = sorted(vt_starts + nt_starts)
 
-    if not _fill_tariff_hours(hour_map, vt_starts, all_starts, "VT"):
+    if not _fill_tariff_hours(hour_map, vt_starts, vt_starts, nt_starts, "VT"):
         return False, "overlapping_tariffs"
-    if not _fill_tariff_hours(hour_map, nt_starts, all_starts, "NT"):
+    if not _fill_tariff_hours(hour_map, nt_starts, vt_starts, nt_starts, "NT"):
         return False, "overlapping_tariffs"
 
     if len(hour_map) != 24:
@@ -168,10 +167,12 @@ def _next_tariff_start(all_starts: List[int], start: int) -> int:
 def _fill_tariff_hours(
     hour_map: Dict[int, str],
     starts: List[int],
-    all_starts: List[int],
+    vt_starts: List[int],
+    nt_starts: List[int],
     label: str,
 ) -> bool:
     for start in sorted(starts):
+        all_starts = sorted(vt_starts + nt_starts)
         next_start = _next_tariff_start(all_starts, start)
         h = start
         while h != next_start:
